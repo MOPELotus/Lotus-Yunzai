@@ -204,6 +204,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         join: class extends plugin {
           constructor() { super({ event: "notice.group.increase", priority: 1 }); }
           async accept(e) {
+            if (e.group_id !== 77) return false;
             const sent = await this.reply([segment.image("https://example.invalid/join.jpg")]);
             if (!sent) this.reply(JSON.stringify({
               type: e.notice_type, change: e.sub_type, action: e.increase_type,
@@ -216,11 +217,11 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           constructor() {
             super({ event: "notice.group.decrease", rule: [{ fnc: "onLeave" }] });
           }
-          onLeave(e) { return this.reply(e.decrease_type + " " + e.operator_id); }
+          onLeave(e) { return e.group_id === 77 && this.reply(e.decrease_type + " " + e.operator_id); }
         },
         catchall: class extends plugin {
           constructor() { super({ event: "notice.group.increase", rule: [{ fnc: "unexpected" }] }); }
-          unexpected() { return this.reply("意外匹配进群规则"); }
+          unexpected(e) { return e.group_id === 77 && this.reply("意外匹配进群规则"); }
         },
       };
     `);
@@ -448,10 +449,43 @@ failsMsg: 协议拒绝
     client.send(JSON.stringify({ echo: fallback.echo, status: "ok", retcode: 0 }));
 
     const leaveFrame = nextFrame();
-    client.send(JSON.stringify({ ...joinEvent, notice_type: "group_decrease", sub_type: "kick" }));
+    client.send(JSON.stringify({ ...joinEvent, user_id: 99, notice_type: "group_decrease", sub_type: "kick_me" }));
     const leave = await leaveFrame;
-    expect(leave).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "kick 51" } });
+    expect(leave).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "kick_me 51" } });
     client.send(JSON.stringify({ echo: leave.echo, status: "ok", retcode: 0 }));
+
+    const actualJoin = { ...joinEvent, group_id: 78, group_name: "图鉴群" };
+    const actualWelcomeFrame = nextFrame();
+    client.send(JSON.stringify({ ...actualJoin, user_id: 99 }));
+    client.send(JSON.stringify(actualJoin));
+    const actualWelcome = await actualWelcomeFrame;
+    const welcomeBody = [
+      { type: "text", data: { text: "🌸 欢迎来到「图鉴群」\n\n" } },
+      { type: "at", data: { qq: "43" } },
+      { type: "text", data: { text: " 欢迎加入～\n先看看群公告，有问题随时交流。" } },
+    ];
+    const avatar = { type: "image", data: { file: "https://q1.qlogo.cn/g?b=qq&nk=43&s=100" } };
+    const newline = { type: "text", data: { text: "\n" } };
+    expect(actualWelcome).toMatchObject({ action: "send_msg", params: { group_id: 78,
+      message: [avatar, newline, ...welcomeBody],
+    } });
+    const actualFallbackFrame = nextFrame();
+    client.send(JSON.stringify({ echo: actualWelcome.echo, status: "failed", retcode: 100 }));
+    const actualFallback = await actualFallbackFrame;
+    expect(actualFallback).toMatchObject({ action: "send_msg", params: { group_id: 78, message: welcomeBody } });
+    client.send(JSON.stringify({ echo: actualFallback.echo, status: "ok", retcode: 0 }));
+    client.send(JSON.stringify({ ...actualJoin, user_id: 44 }));
+    expect(await send("#状态")).toMatchObject({
+      group_id: 77, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+
+    const actualLeaveFrame = nextFrame();
+    client.send(JSON.stringify({ ...actualJoin, notice_type: "group_decrease", sub_type: "kick" }));
+    const actualLeave = await actualLeaveFrame;
+    expect(actualLeave).toMatchObject({ action: "send_msg", params: { group_id: 78, message: [
+      avatar, newline, { type: "text", data: { text: "📋 成员变动\n\n莲（43） 已被移出本群。" } },
+    ] } });
+    client.send(JSON.stringify({ echo: actualLeave.echo, status: "ok", retcode: 0 }));
 
     const sendForRecall = nextFrame();
     client.send(JSON.stringify({ ...event, user_id: 51, message: "#回复撤回", message_id: 600 }));
