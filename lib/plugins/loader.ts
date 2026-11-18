@@ -1,3 +1,4 @@
+import { addAbortListener } from "node:events";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -158,6 +159,7 @@ export async function loadPlugins(
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
   const cleanups: { name: string; cleanup: () => unknown }[] = [];
+  let interruptedCleanup: Promise<void> | undefined;
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
@@ -172,6 +174,7 @@ export async function loadPlugins(
     return false;
   };
   for (const candidate of await listCandidates(root)) {
+    if (services.signal.aborted) break;
     const label = relative(root, candidate.path);
     try {
       if (candidate.kind === "script") {
@@ -220,11 +223,30 @@ export async function loadPlugins(
     }
   }
 
+  const { signal } = services;
   for (const { label, entry, moduleName, directory, packageName } of ready) {
+    if (signal.aborted) break;
     const started = performance.now();
     let cleanup: (() => unknown) | undefined;
-    try {
+    let unregister: (() => void) | undefined;
+    const cancel = () => {
+      unregister?.();
+      unregister = undefined;
+    };
+    const disposeEntry = async () => {
+      const dispose = cleanup;
+      cleanup = undefined;
+      if (dispose) await disposeModule(label, dispose);
+    };
+    const interrupted = Promise.withResolvers<never>();
+    const cancellation = addAbortListener(signal, () => {
+      cancel();
+      if (cleanup) interruptedCleanup = disposeEntry();
+      interrupted.reject(signal.reason);
+    });
+    const loading = (async () => {
       const published = await import(pathToFileURL(entry).href);
+      signal.throwIfAborted();
       if (moduleName) {
         const create = published.createModule;
         if (create !== undefined && typeof create !== "function") {
@@ -236,34 +258,38 @@ export async function loadPlugins(
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
         }
+        signal.throwIfAborted();
         if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
           throw new Error("入口必须通过默认导出提供 commands。");
         }
         if (aliases !== undefined && (aliases === null || typeof aliases !== "object" || Array.isArray(aliases))) {
           throw new Error("aliases 须为指令别名与本模块指令名的映射。");
         }
-        const unregister = commands.registerModule({
+        unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
         }, label);
-        try {
-          if (published.apps !== undefined) {
-            if (published.apps === null || typeof published.apps !== "object") {
-              throw new Error("apps 须导出 V3 插件类。");
-            }
-            await legacy.register(published, label, packageName);
+        if (published.apps !== undefined) {
+          if (published.apps === null || typeof published.apps !== "object") {
+            throw new Error("apps 须导出 V3 插件类。");
           }
-        } catch (error) {
-          unregister();
-          throw error;
+          await legacy.register(published, label, packageName, signal);
         }
-      } else {
-        const result = await legacy.register(published, label, packageName);
-        if (result !== "loaded") {
-          const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
-          console.warn(`[插件] 跳过 ${label}：${reason}`);
-          records.push({ name: label, status: "skipped", reason });
-          continue;
-        }
+        return "loaded" as const;
+      }
+      return legacy.register(published, label, packageName, signal);
+    })().catch(async (error: unknown) => {
+      cancel();
+      await disposeEntry();
+      throw error;
+    });
+    try {
+      const result = await Promise.race([loading, interrupted.promise]);
+      if (signal.aborted) break;
+      if (result !== "loaded") {
+        const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
+        console.warn(`[插件] 跳过 ${label}：${reason}`);
+        records.push({ name: label, status: "skipped", reason });
+        continue;
       }
       console.log(`[插件] 已加载 ${label}。`);
       records.push({ name: label, status: "loaded" });
@@ -271,10 +297,12 @@ export async function loadPlugins(
       if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
       if (cleanup) cleanups.push({ name: label, cleanup });
     } catch (error) {
-      if (cleanup) await disposeModule(label, cleanup);
+      if (signal.aborted) break;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[插件] 加载 ${label} 失败：${message}`);
       records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
+    } finally {
+      cancellation[Symbol.dispose]();
     }
   }
   let disposal: Promise<void> | undefined;
@@ -282,6 +310,7 @@ export async function loadPlugins(
     records, directories, timings,
     dispose() {
       return disposal ??= (async () => {
+        await interruptedCleanup;
         for (const { name, cleanup } of cleanups.splice(0).reverse()) await disposeModule(name, cleanup);
       })();
     },

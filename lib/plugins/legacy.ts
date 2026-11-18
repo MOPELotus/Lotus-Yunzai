@@ -1,3 +1,4 @@
+import { addAbortListener } from "node:events";
 import { segment, type BotEvent, type MessageEvent } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
@@ -97,19 +98,39 @@ export class LegacyPlugins {
     Object.assign(globalThis, { plugin: Plugin, segment });
   }
 
-  async register(exports: Record<string, unknown>, label: string, packageName = label): Promise<"loaded" | "skipped" | "empty"> {
+  async register(
+    exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal,
+  ): Promise<"loaded" | "skipped" | "empty"> {
+    signal?.throwIfAborted();
     const published = exports.apps ?? exports;
     if (typeof published !== "object" || published === null) return "empty";
 
+    const scopes = new Set<HandlerScope>();
     const initializers: { initializer: PluginInstance; scope: HandlerScope }[] = [];
     const staged: App[] = [];
     const active: App[] = [];
+    let abortCleanup: Promise<void> | undefined;
+
+    const rollback = async () => {
+      await this.#tasks.cancel(scopes);
+      for (const { initializer, scope } of [...initializers].reverse()) await dispose(initializer, scope);
+    };
+    const abort = () => {
+      for (const scope of scopes) scope.dispose();
+      abortCleanup = Promise.resolve().then(rollback).catch((error: unknown) => {
+        console.warn(`[插件] 清理 ${label} 失败：`, error);
+      });
+    };
+
+    const abortListener = signal && addAbortListener(signal, abort);
     try {
       for (const value of new Set(Object.values(published))) {
+        signal?.throwIfAborted();
         if (typeof value !== "function" || !(value.prototype instanceof Plugin)) continue;
 
         const create = value as PluginClass;
         const scope = new HandlerScope();
+        scopes.add(scope);
         let initializer: PluginInstance;
         try {
           initializer = scope.run(() => new create());
@@ -130,20 +151,30 @@ export class LegacyPlugins {
       }
 
       for (const app of staged) {
+        signal?.throwIfAborted();
         const { initializer, scope } = app;
         const init = initializer.init;
-        if (typeof init === "function" && await scope.run(() => init.call(initializer)) === "return") {
+        const result = typeof init === "function" ? await scope.run(() => init.call(initializer)) : undefined;
+        signal?.throwIfAborted();
+        if (result === "return") {
           await dispose(initializer, scope);
         } else {
           registerHandlers(app, label);
           active.push(app);
         }
       }
-      for (const { initializer, scope } of active) this.#tasks.register(scope, initializer);
+      for (const { initializer, scope } of active) {
+        signal?.throwIfAborted();
+        this.#tasks.register(scope, initializer);
+      }
+      signal?.throwIfAborted();
     } catch (error) {
-      await this.#tasks.cancel(new Set(initializers.map(({ scope }) => scope)));
-      for (const { initializer, scope } of initializers.reverse()) await dispose(initializer, scope);
-      throw error;
+      if (abortCleanup) await abortCleanup;
+      // Initializers can add cleanup callbacks while a cancelled init is still settling.
+      await rollback();
+      throw signal?.aborted ? signal.reason : error;
+    } finally {
+      abortListener?.[Symbol.dispose]();
     }
 
     this.#initializers.push(...active);

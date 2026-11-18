@@ -974,3 +974,58 @@ test("V3 定时任务去重，调度失败回滚，退出等待正在运行的�
     await rm(root, { recursive: true, force: true });
   }
 }, 7_000);
+
+test("宿主启动期间停止，清理已加载和正在初始化的模块", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugin-shutdown-"));
+  try {
+    await copyHost(root);
+    for (const name of ["a-loaded", "b-pending", "c-next"]) {
+      const path = join(root, "plugins", name);
+      await mkdir(path);
+      await writeFile(join(path, "package.json"), JSON.stringify({ name, lotusYunzai: { entry: "./index.js" } }));
+    }
+    await writeFile(join(root, "plugins/a-loaded/index.js"), `
+      export default { commands: {}, async dispose() { await Bun.sleep(20); console.log("trace:dispose-loaded"); } };
+    `);
+    await writeFile(join(root, "plugins/b-pending/index.js"), `
+      export default { commands: {}, async dispose() { await Bun.sleep(25); console.log("trace:dispose-pending"); } };
+      export const apps = { pending: class extends plugin {
+        async init() {
+          this.addCleanup(() => { console.log("trace:dispose-legacy"); });
+          console.log("trace:pending");
+          await new Promise(() => {});
+        }
+      } };
+    `);
+    await writeFile(join(root, "plugins/c-next/index.js"), `console.log("trace:unexpected-entry");`);
+    const child = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root, env: { PATH: process.env.PATH }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    });
+    const deadline = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    const errors = new Response(child.stderr).text();
+    const decoder = new TextDecoder();
+    let output = "";
+    let signalled = false;
+    try {
+      for await (const chunk of child.stdout) {
+        output += decoder.decode(chunk, { stream: true });
+        if (!signalled && output.includes("trace:pending")) {
+          signalled = true;
+          child.kill("SIGTERM");
+        }
+      }
+      expect(await child.exited).toBe(143);
+      expect(await errors).toBe("");
+      expect(output).not.toContain("Lotus-Yunzai 已启动");
+      expect(output.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+        "trace:pending", "trace:dispose-legacy", "trace:dispose-pending", "trace:dispose-loaded",
+      ]);
+    } finally {
+      clearTimeout(deadline);
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await child.exited;
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 7_000);
