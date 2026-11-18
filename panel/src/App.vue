@@ -2,6 +2,7 @@
 import { ElButton, ElInput } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import { CredentialsError, pluginStatuses, readPanel, type PanelSnapshot, type PluginStatus } from "./api.ts";
+import ExtensionPages from "./ExtensionPages.vue";
 import GuobaSettings from "./GuobaSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
 
@@ -12,7 +13,7 @@ const error = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "guoba";
+type PanelView = "overview" | "likes" | "guoba" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -35,7 +36,9 @@ function setView(next: PanelView, discard = false) {
   settingsDirty.value = false;
   discardTo.value = undefined;
   view.value = next;
-  const heading = { overview: "overview-title", likes: "like-settings-title", guoba: "guoba-title" }[next];
+  const heading = {
+    overview: "overview-title", likes: "like-settings-title", guoba: "guoba-title", extensions: "extensions-title",
+  }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
 }
 
@@ -162,6 +165,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
       <ElButton :type="view === 'guoba' ? 'primary' : 'default'"
         :aria-current="view === 'guoba' ? 'page' : undefined" @click="setView('guoba')">旧锅巴配置</ElButton>
+      <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
+        :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
     <div v-if="discardTo" class="panel-discard" role="alert">
       <span>当前配置还有未保存的改动。</span>
@@ -172,6 +177,7 @@ onBeforeUnmount(() => {
       @dirty-change="updateDirty" />
     <GuobaSettings v-else-if="view === 'guoba'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
+    <ExtensionPages v-else-if="view === 'extensions'" :token="token" @unauthorized="expireSession" />
     <template v-else>
       <section aria-labelledby="overview-title" :aria-busy="busy">
         <div class="section-heading">

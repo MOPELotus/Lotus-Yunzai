@@ -7,6 +7,7 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
+import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
@@ -91,12 +92,13 @@ if (import.meta.main) {
       const statusRoute = http && httpStatus(http.auth);
       const likes = panelGroupSettings(plugins.directories);
       const guoba = panelGuobaRoutes(plugins.directories);
+      const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories);
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
-        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path));
+        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path));
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       const fetch = statusRoute && (async (request: Request) => stopping
         ? new Response(null, { status: 503 })
-        : await panel?.(request) ?? await assets?.(request) ?? statusRoute(request));
+        : await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {

@@ -65,7 +65,7 @@ const assetName = /^assets\/[\w.-]+\.(?:js|css|svg|woff2)$/u;
 const documentHeaders = {
   "Content-Security-Policy": [
     "default-src 'none'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
-    "connect-src 'self'", "img-src 'self' data:", "font-src 'self'",
+    "connect-src 'self'", "img-src 'self' data:", "font-src 'self'", "frame-src 'self'",
     "form-action 'none'", "frame-ancestors 'none'", "base-uri 'none'",
   ].join("; "),
   "Referrer-Policy": "no-referrer",

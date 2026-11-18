@@ -40,6 +40,13 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
         } };
       }
     `);
+    const pages = join(compatible, "guoba");
+    await mkdir(pages);
+    await writeFile(join(pages, "page.json"), JSON.stringify({
+      id: "dashboard", title: "示例扩展", html: "<h1>扩展页</h1>", script: "dashboard.js",
+    }));
+    await writeFile(join(pages, "dashboard.js"), 'document.body.dataset.loaded = "true";');
+    await writeFile(join(pages, "hidden.js"), 'throw new Error("未声明");');
 
     const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const wsPort = reservation.port;
@@ -136,6 +143,24 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(savedForm.status).toBe(200);
       expect(await savedForm.text()).not.toContain("fixture-hidden");
       expect(await (await fetch(form, { headers: auth("panel-fixture") })).json()).toMatchObject({ values: { enabled: true } });
+
+      const extensionList = new URL("/panel/api/extensions", statusUrl);
+      expect((await fetch(extensionList)).status).toBe(401);
+      expect(await (await fetch(extensionList, { headers: auth("panel-fixture") })).json()).toEqual({
+        pages: [{ id: "dashboard", plugin: "compatible", title: "示例扩展", priority: 100 }], issues: [],
+      });
+      const open = new URL("/panel/api/extensions/dashboard/open", statusUrl);
+      expect((await fetch(open, { method: "POST" })).status).toBe(401);
+      const ticket = await (await fetch(open, { method: "POST", headers: auth("panel-fixture") })).json() as { url: string };
+      const frame = new URL(ticket.url, statusUrl);
+      expect(frame.search).toBe("");
+      const contents = await fetch(frame);
+      expect(contents.headers.get("Content-Security-Policy")).toContain("sandbox allow-scripts");
+      expect(contents.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(await contents.text()).toContain("<h1>扩展页</h1>");
+      expect(await (await fetch(new URL("dashboard.js", frame))).text()).toContain("dataset.loaded");
+      expect((await fetch(new URL("hidden.js", frame))).status).toBe(404);
+      expect((await fetch(new URL(frame.pathname.replace("/dashboard/", "/other/"), frame))).status).toBe(404);
       expect((await fetch(wsUrl, { headers: auth("http-fixture") })).status).toBe(401);
       expect((await fetch(wsUrl, {
         headers: { ...auth("onebot-fixture"), "X-Client-Role": "Universal" },
