@@ -3,6 +3,7 @@ import type { MessageEvent } from "./messages.ts";
 
 const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹果|ck|cookie|体力)帮助|^#?帮助$|^#*(?:删除|我的)ck$|^#(?:我的)?(?:uid|UID)[0-9]{0,2}$/u;
 const accountEntry = /^#(?:登录列表|账号列表|(?:清除|删除)(?:登录|扫码登录|[cC]ookie)[0-9]{0,2})$/u;
+const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;
 const defaultMessage = "私聊功能已禁用，仅支持发送cookie，抽卡记录链接，记录日志文件";
 const cooldownMs = 10_000;
@@ -29,6 +30,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
 
   async function blocked(event: MessageEvent): Promise<boolean> {
     if (!enabled || event.message_type !== "private" || event.isMaster) return false;
+    if (event.groupRequestScope === "milky" && event.canReviewGroupRequests === true && groupReviewEntry.test(event.msg)) return false;
     const files = typeof event.message === "string" ? [] : event.message.filter(({ type }) => type === "file");
     const text = event.raw_message || event.msg;
     const allowed = files.length > 0

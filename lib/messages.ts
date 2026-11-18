@@ -28,6 +28,8 @@ export interface MessageEvent {
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
+  readonly groupRequestScope?: "milky";
+  readonly canReviewGroupRequests?: boolean;
   readonly recallReply?: () => Promise<readonly RecallResult[]>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
@@ -89,6 +91,8 @@ export interface GroupRequest {
   readonly user_id: number;
   readonly group_id: number;
   readonly flag: string;
+  readonly groupRequestScope?: "milky";
+  readonly inviter_id?: number;
   readonly comment?: string;
   readonly group_name?: string;
   readonly isGroup: true;

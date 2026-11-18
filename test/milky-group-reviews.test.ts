@@ -1,0 +1,31 @@
+import { expect, test } from "bun:test";
+import type { MilkyConfirmation } from "../lib/adapters/milky-api.ts";
+import { createMilkyGroupReviews } from "../lib/adapters/milky-group-reviews.ts";
+
+test("Milky 审核使用当前连接，结果未知后阻止再次提交", async () => {
+  const reviews = createMilkyGroupReviews();
+  const request = { self_id: 99, sub_type: "add", flag: "fixture" } as const;
+  const decision = (allow: boolean) => ({
+    action: allow ? "accept_group_request" : "reject_group_request", params: { group_id: 42, notification_seq: 1 },
+  });
+  expect(reviews.register(request, decision)).toBe(true);
+
+  const pending = Promise.withResolvers<MilkyConfirmation>();
+  const attempts: unknown[] = [];
+  const invoke = (action: string, params: Record<string, unknown>) => {
+    attempts.push({ action, params });
+    return pending.promise;
+  };
+  const review = reviews.review(99, request.flag, "add", true, undefined, invoke);
+  expect(reviews.register(request, decision)).toBe(false);
+  expect(await reviews.review(98, request.flag, "add", true, undefined, invoke)).toBe(false);
+  expect(await reviews.review(99, request.flag, "invite", true, undefined, invoke)).toBe(false);
+  expect(await reviews.review(99, request.flag, "add", true, undefined, invoke)).toBe(false);
+  pending.resolve({ status: "rejected" });
+  expect(await review).toBe(false);
+
+  await expect(reviews.review(99, request.flag, "add", true, undefined, async () => ({ status: "unknown" }))).rejects.toThrow("未确认");
+  expect(reviews.register(request, decision)).toBe(false);
+  await expect(reviews.review(99, request.flag, "add", true, undefined, invoke)).rejects.toThrow("未确认");
+  expect(attempts).toEqual([decision(true)]);
+});

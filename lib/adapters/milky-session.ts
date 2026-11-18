@@ -2,6 +2,8 @@ import type { BotEvent, MessageReply } from "../messages.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
+import { milkyGroupRequest } from "./milky-group-request.ts";
+import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import { encodeMilkyReply, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 
@@ -10,6 +12,8 @@ export interface MilkyTransportOptions {
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (event: BotEvent, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
+  readonly isMaster?: (botId: number, userId: number) => boolean;
+  readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
 
 export interface MilkySession {
@@ -34,6 +38,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const login = await call("get_login_info", {});
   const account = login?.uin;
   if (signal.aborted || !positiveId(account)) return;
+  const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
+  const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
@@ -95,10 +101,34 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return true;
     }
 
-    const request = body.event_type === "friend_request"
+    const friendRequest = body.event_type === "friend_request"
       ? milkyFriendRequest(body, account, approveFriendRequest, (user_id, reply) => sendReply({ user_id }, reply), options.masterIds?.(account) ?? [])
       : undefined;
-    const event = message ?? request ?? milkyNotice(body, account, call, sendReply);
+    let groupRequest;
+    if (body.event_type === "group_invitation" || body.event_type === "group_join_request" || body.event_type === "group_invited_join_request") {
+      const kind = body.event_type === "group_invitation" ? "invite" : "add";
+      const candidate = milkyGroupRequest(body, account, {
+        isMaster,
+        approve: (flag, accept, reason) => signal.aborted ? Promise.resolve(false)
+          : groupReviews.review(account, flag, kind, accept, reason, call.confirmed),
+        sendGroup: (group_id, reply) => sendReply({ group_id }, reply),
+        sendPrivate: (user_id, reply) => sendReply({ user_id }, reply),
+        masterIds: options.masterIds?.(account) ?? [],
+      });
+      if (candidate) {
+        const { decision, ...request } = candidate;
+        if (groupReviews.register(request, decision)) groupRequest = request;
+      }
+    }
+    const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
+    const scopedMessage = message && {
+      ...message, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
+      reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
+        !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
+          ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)
+          : Promise.resolve(false) : undefined,
+    };
+    const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply);
     if (event) void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };

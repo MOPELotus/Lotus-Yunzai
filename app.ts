@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
+import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
 import type { MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
 import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
@@ -531,6 +532,8 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
+      isMaster: permissions.isMaster,
+      groupReviews: milky && createMilkyGroupReviews(),
     };
     const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, milkyOptions) : undefined;
     const milkyWs = milky?.connection === "ws" ? createMilkyWs(milky, milkyOptions) : undefined;
