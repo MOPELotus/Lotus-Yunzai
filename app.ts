@@ -23,6 +23,7 @@ if (import.meta.main) {
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
+  const lifecycle = new AbortController();
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -32,6 +33,7 @@ if (import.meta.main) {
     if (stopping) return;
     stopping = true;
     process.exitCode = code;
+    lifecycle.abort();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -74,7 +76,9 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
-    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({ groups: groups.transport() }));
+    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
+      groups: groups.transport(), signal: lifecycle.signal,
+    }));
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
@@ -126,6 +130,7 @@ if (import.meta.main) {
     }
   } finally {
     stopping = true;
+    lifecycle.abort();
     try {
       consoleInput?.close();
       legacy.stopContexts();

@@ -27,7 +27,8 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     await copyHost(root);
     const hello = await install("a-hello", "hello", { repository: "https://github.com/example/hello.git" }, true);
     await writeFile(join(hello, "index.ts"), `
-      export function createModule({ groups }) {
+      export function createModule({ groups, signal }) {
+        signal.addEventListener("abort", () => console.log("模块收到退出信号"), { once: true });
         return { commands: { "#问候": (name) => groups.onlineBots().length === 0 ? "你好，" + name : "意外在线" } };
       }
     `);
@@ -73,7 +74,7 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     expect(exit).toBe(0);
     expect(stdout).toContain("你好，Lotus");
     expect(stdout).toContain("请输入内容\n收到 Lotus\n");
-    expect(stdout).toContain("请输入内容\n会话已结束\n");
+    expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
     expect(stdout).toContain("#状态 查看宿主运行状态");
     expect(stdout).not.toContain("拒载入口已执行");

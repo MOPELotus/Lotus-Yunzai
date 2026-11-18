@@ -133,6 +133,7 @@ async function findEntry(directory: string, value: string): Promise<string> {
 
 interface PluginServices {
   readonly groups: GroupTransport;
+  readonly signal: AbortSignal;
 }
 
 export async function loadPlugins(
