@@ -7,3 +7,6 @@
 [submodule "plugins/meme"]
 	path = plugins/meme
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Meme.git
+[submodule "plugins/notice"]
+	path = plugins/notice
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Notice.git

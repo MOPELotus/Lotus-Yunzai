@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
@@ -55,6 +55,14 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
 
     root = await mkdtemp(join(tmpdir(), "lotus-yunzai-storage-"));
     await copyHost(root);
+    await cp(new URL("../plugins/notice", import.meta.url), join(root, "plugins", "notice"), {
+      recursive: true, filter: (path) => !path.endsWith("/.git"),
+    });
+    await legacy.set("notice:current", "00001ABC");
+    await legacy.hSet("notice:ann:00001ABC", {
+      creator: "42", status: "当前", timestamp: "2026-11-19 00:00",
+      content: "旧公告 [CQ:at,qq=all]",
+    });
     await writeFile(join(root, "plugins", "storage-check.js"), `
       import { storage } from "@lotus-yunzai/storage";
       export default class extends plugin {
@@ -69,7 +77,7 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH, LOTUS_VALKEY_URL: url },
-      stdin: new Blob(["#状态\n"]),
+      stdin: new Blob(["#状态\n#公告\n#发布公告 未授权\n"]),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -84,6 +92,9 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
       expect(stdout).toContain("Lotus-Yunzai 正在运行");
       expect(stdout).toContain("插件读取：旧版/原神");
       expect(stdout).toContain("清理时可连接：PONG");
+      expect(stdout).toContain("旧公告 [CQ:at,qq=all]");
+      expect(stdout).toContain("仅机器人主人可管理公告");
+      expect(await legacy.get("notice:current")).toBe("00001ABC");
       expect(stdout).not.toContain(password);
     } finally {
       clearTimeout(hostTimeout);

@@ -16,6 +16,7 @@ const builtInDirectories = new Map([
   [systemModuleName, "system"],
   ["@lotus-yunzai/atlas", "atlas"],
   ["@lotus-yunzai/meme", "meme"],
+  ["@lotus-yunzai/notice", "notice"],
 ]);
 
 const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);
