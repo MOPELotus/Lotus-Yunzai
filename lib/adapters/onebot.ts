@@ -1,4 +1,4 @@
-import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent } from "../messages.ts";
+import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -38,6 +38,12 @@ async function dispatchRequest(
   const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
   if (!isId(self_id) || !isId(user_id) || !isRequestFlag(flag)) return;
 
+  function replyToApplicant(reply: MessageReply): boolean | Promise<boolean> {
+    const message = encodeOneBotReply(reply);
+    return message !== undefined &&
+      calls.replyWithConfirmation(send, { message_type: "private", user_id, message, auto_escape: true });
+  }
+
   const common = () => ({
     post_type: "request" as const, self_id, user_id, flag,
     comment: stringField(event.comment),
@@ -56,11 +62,7 @@ async function dispatchRequest(
     await dispatch({
       ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
       approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
-      reply(reply) {
-        const message = encodeOneBotReply(reply);
-        if (message === undefined) return false;
-        return calls.replyWithConfirmation(send, { message_type: "private", user_id, message, auto_escape: true });
-      },
+      reply: replyToApplicant,
     });
     return;
   }
@@ -69,7 +71,9 @@ async function dispatchRequest(
 
   await dispatch({
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
+    group_name: stringField(event.group_name),
     approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
+    replyToApplicant,
     reply(reply) {
       const message = encodeOneBotReply(reply);
       if (message === undefined) return false;

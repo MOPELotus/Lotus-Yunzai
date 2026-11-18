@@ -76,10 +76,13 @@ export interface GroupRequest {
   readonly group_id: number;
   readonly flag: string;
   readonly comment?: string;
+  readonly group_name?: string;
   readonly isGroup: true;
   readonly isPrivate: false;
   readonly isMaster: boolean;
   readonly approve: (approve?: boolean, reason?: string) => Promise<boolean>;
+  readonly replyToApplicant?: MessageEvent["reply"];
+  readonly deferManualReview?: (review: () => Promise<void>) => void;
   readonly notifyMasters: (message: string) => Promise<number>;
   readonly reply: MessageEvent["reply"];
 }
