@@ -37,6 +37,10 @@ export async function readMasterPermissions(root: URL) {
     masterIds(bot: number): readonly number[] {
       return [...snapshot.owners.get(String(bot)) ?? []].map(Number).filter(Number.isSafeInteger);
     },
+    botIds(): readonly number[] {
+      return [...snapshot.owners.keys()].map(Number).filter((id) => Number.isSafeInteger(id) && id > 0)
+        .sort((left, right) => left - right);
+    },
     legacyMasterIds(): readonly number[] {
       return snapshot.globalMasters;
     },

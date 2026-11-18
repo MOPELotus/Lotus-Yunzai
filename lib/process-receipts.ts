@@ -6,11 +6,10 @@ import { fileURLToPath } from "node:url";
 export interface ProcessReceipt {
   readonly kind: "stop" | "restart";
   readonly at: number;
-  readonly target: { readonly type: "terminal" } | {
-    readonly type: "group" | "private";
-    readonly botId: number;
-    readonly id: number;
-  };
+  readonly target:
+    | { readonly type: "terminal" }
+    | { readonly type: "masters"; readonly botId: number }
+    | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
 }
 
 const maxAge = 30 * 24 * 60 * 60 * 1_000;
@@ -35,7 +34,9 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
   if ((kind !== "stop" && kind !== "restart") || !positiveInteger(at) || !isRecord(target)) return;
   const { type, botId, id } = target;
   if (type === "terminal") return { kind, at, target: { type } };
-  if ((type === "group" || type === "private") && positiveInteger(botId) && positiveInteger(id)) {
+  if (!positiveInteger(botId)) return;
+  if (type === "masters") return { kind, at, target: { type, botId } };
+  if ((type === "group" || type === "private") && positiveInteger(id)) {
     return { kind, at, target: { type, botId, id } };
   }
 }

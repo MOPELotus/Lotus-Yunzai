@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { persistMaster } from "../lib/master-config.ts";
+import { readMasterPermissions } from "../lib/permissions.ts";
 
 const lockName = ".other.yaml.lotus-master.sqlite";
 
@@ -68,6 +69,18 @@ test("只有当前机器人主人或已明确配置的本机 stdin 才可审批"
   const written = await readFile(file, "utf8");
   expect(written).toContain("# 本机授权");
   expect(written).toContain("# 既有豁免");
+}));
+
+test("机器人账号清单仅包含有效的显式账号绑定，随授权实时刷新", () => fixture(async (root, directory) => {
+  await setup(directory, `master: ["99:42", "12:43", "99:44", "stdin:stdin", "9007199254740992:45"]
+masterQQ: [987]
+`);
+  const permissions = await readMasterPermissions(root);
+  expect(permissions.botIds()).toEqual([12, 99]);
+  expect(await permissions.grant(98, 46, 42)).toBe(false);
+  expect(permissions.botIds()).toEqual([12, 99]);
+  expect(await permissions.grant(98, 46, "stdin")).toBe(true);
+  expect(permissions.botIds()).toEqual([12, 98, 99]);
 }));
 
 test("跟随配置符号链接并保留链接本身，多个授权并发时不会丢失", () => fixture(async (root, directory) => {

@@ -15,9 +15,9 @@ export function formatElapsed(milliseconds: number): string {
   return parts.map(([amount, unit]) => amount ? `${amount}${unit}` : "").join("") || "0秒";
 }
 
-export function createDispatchPower(now = Date.now) {
-  let paused = false;
-  let since = now();
+export function createDispatchPower(now = Date.now, pausedAt?: number) {
+  let paused = pausedAt !== undefined;
+  let since = pausedAt ?? now();
 
   function setPaused(value: boolean): string | undefined {
     if (paused === value) return;
@@ -30,6 +30,7 @@ export function createDispatchPower(now = Date.now) {
 
   return {
     get paused() { return paused; },
+    get pausedAt() { return paused ? since : undefined; },
     setPaused,
     async handle(event: MessageEvent): Promise<void> {
       if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) return;

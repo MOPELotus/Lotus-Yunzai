@@ -30,7 +30,8 @@ import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
-import { canRestartHost, restartHost } from "./lib/process-restart.ts";
+import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
+import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
@@ -52,15 +53,21 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
-  const dispatchPower = createDispatchPower();
+  const dispatchPower = createDispatchPower(Date.now, readRestartPausedAt());
   let plugins: PluginLoadReport | undefined;
   let stopPowerSchedule: (() => Promise<void>) | undefined;
+  let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
   const processReceipts = createProcessReceipts(root);
-  let processAction: ProcessReceipt | undefined;
+  type ProcessAction = Pick<ProcessReceipt, "kind" | "at"> & {
+    readonly targets: readonly ProcessReceipt["target"][];
+    readonly pausedAt?: number;
+  };
+  let processAction: ProcessAction | undefined;
+  let masterPermissions: Awaited<ReturnType<typeof readMasterPermissions>>;
   let privateAccess: Awaited<ReturnType<typeof readPrivateAccess>>;
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
@@ -81,6 +88,7 @@ if (import.meta.main) {
     process.exitCode = code;
     lifecycle.abort();
     void stopPowerSchedule?.();
+    void stopRestartSchedule?.();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -94,6 +102,12 @@ if (import.meta.main) {
         return true;
       }
       if (target.type === "private") return await groups.sendPrivate(target.botId, target.id, message);
+      if (target.type === "masters") {
+        const outcomes = await Promise.allSettled(masterPermissions.masterIds(target.botId)
+          .filter((user) => user !== target.botId)
+          .map((user) => groups.sendPrivate(target.botId, user, message)));
+        return outcomes.every((result) => result.status === "fulfilled" && result.value);
+      }
       await groups.sendGroup(target.botId, target.id, message);
       return true;
     } catch {
@@ -141,11 +155,25 @@ if (import.meta.main) {
       return;
     }
 
-    processAction = { kind, at: Date.now(), target };
-    const elapsed = formatElapsed(process.uptime() * 1000);
-    const operation = kind === "restart" ? "重启" : "停止";
-    if (!await sendProcessMessage(target, `开始${operation}，本次运行时长${elapsed}`)) {
-      console.warn("[进程管理] 未确认进程操作开始通知。");
+    await startProcessAction(kind, [target]);
+  }
+
+  async function startProcessAction(kind: ProcessReceipt["kind"], targets: readonly ProcessReceipt["target"][]) {
+    if (stopping || processAction) return;
+    const pausedAt = dispatchPower.pausedAt;
+    processAction = { kind, at: Date.now(), targets: pausedAt === undefined ? targets : [], pausedAt };
+    if (pausedAt === undefined) {
+      const elapsed = formatElapsed(process.uptime() * 1000);
+      const operation = kind === "restart" ? "重启" : "停止";
+      const online = new Set(groups.onlineBots());
+      const outcomes = await Promise.all(targets
+        .filter((target) => target.type !== "masters" || online.has(target.botId))
+        .map((target) => sendProcessMessage(target, `开始${operation}，本次运行时长${elapsed}`)));
+      if (outcomes.includes(false)) console.warn("[进程管理] 未确认进程操作开始通知。");
+    }
+    const currentPause = dispatchPower.pausedAt;
+    if (kind === "restart" && currentPause !== pausedAt) {
+      processAction = { ...processAction, targets: currentPause === undefined ? targets : [], pausedAt: currentPause };
     }
     stop(0);
   }
@@ -294,6 +322,7 @@ if (import.meta.main) {
       readLocalConfig(root, "bot"),
       readRuntimeVersion(root),
     ]);
+    masterPermissions = permissions;
     privateAccess = access;
     try {
       runtimeLog = await attachRuntimeLog(root, botConfig);
@@ -376,12 +405,21 @@ if (import.meta.main) {
         const reply = dispatchPower.setPaused(paused);
         if (reply === undefined) return;
         console.log(`[进程管理] ${reply}`);
-        const notifications = await Promise.allSettled(groups.onlineBots().flatMap((bot) =>
-          permissions.masterIds(bot).filter((user) => user !== bot).map((user) => groups.sendPrivate(bot, user, reply))));
-        if (notifications.some((result) => result.status === "rejected" || !result.value)) {
+        const notifications = await Promise.all(groups.onlineBots()
+          .map((botId) => sendProcessMessage({ type: "masters", botId }, reply)));
+        if (notifications.includes(false)) {
           console.warn("[进程管理] 部分主人未收到定时开关机通知。");
         }
       });
+      if (canRestartHost()) {
+        stopRestartSchedule = scheduleProcessRestart(botConfig, () => {
+          const targets: ProcessReceipt["target"][] = permissions.botIds().map((botId) => ({ type: "masters", botId }));
+          if (permissions.terminal) targets.push({ type: "terminal" });
+          return startProcessAction("restart", targets);
+        });
+      } else if (botConfig.restart_time || botConfig.restart_cron) {
+        console.warn("[进程管理] 当前运行环境不支持定时重启。");
+      }
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
       queueProcessReceipt();
 
@@ -418,7 +456,7 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.allSettled([...pending, stopPowerSchedule?.()]);
+      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.()]);
       await plugins?.dispose();
     } finally {
       try {
@@ -441,19 +479,20 @@ if (import.meta.main) {
     }
   }
   if (processAction && process.exitCode === 0) {
-    const { kind, target } = processAction;
-    let saved = false;
-    try {
-      await processReceipts.save(processAction);
-      saved = true;
-    } catch {
+    const { kind, at, targets, pausedAt } = processAction;
+    const saved = await Promise.allSettled(targets.map((target) => processReceipts.save({ kind, at, target })));
+    if (saved.some((result) => result.status === "rejected")) {
       console.warn("[进程管理] 无法保存进程操作回执。");
     }
     if (kind === "restart") {
       try {
-        restartHost();
+        restartHost(pausedAt);
       } catch {
-        if (saved) await processReceipts.discard(target.type === "terminal" ? undefined : target.botId).catch(() => {});
+        await Promise.allSettled(targets.map((target, index) => {
+          if (saved[index]?.status === "fulfilled") {
+            return processReceipts.discard(target.type === "terminal" ? undefined : target.botId);
+          }
+        }));
         console.error("[进程管理] 无法重新启动宿主。");
         process.exitCode = 1;
       }

@@ -55,6 +55,23 @@ test("不同实例并发领取时只有一个成功，撤销失败尝试仅移�
   expect(await receipts.take()).toEqual(terminal);
 });
 
+test("发给主人组的回执按机器人存放且只持久化机器人账号", async () => {
+  const { directory, receipts, root } = await fixture();
+  const at = Date.now();
+  await receipts.save({ kind: "restart", at, target: { type: "private", botId: 99, id: 42 } });
+  const target = { type: "masters", botId: 99, id: 42, masterIds: [42] } as const;
+  await receipts.save({ kind: "restart", at, target });
+  const expected: ProcessReceipt = { kind: "restart", at, target: { type: "masters", botId: 99 } };
+  expect(JSON.parse(await readFile(join(directory, "99.json"), "utf8"))).toEqual(expected);
+
+  const next = createProcessReceipts(root);
+  expect(await next.take()).toBeUndefined();
+  expect(await next.take(100)).toBeUndefined();
+  expect(await next.take(99)).toEqual(expected);
+  expect(await next.take(99)).toBeUndefined();
+  await expect(receipts.save({ kind: "restart", at, target: { type: "masters", botId: 0 } })).rejects.toThrow("进程回执无效");
+});
+
 test("目标错配、时间异常、损坏文件及符号链接均不产生回执", async () => {
   const { directory, path, receipts } = await fixture();
   const now = Date.now();
