@@ -134,7 +134,16 @@ if (import.meta.main) {
       event.reply(reply);
       return;
     }
-    await legacy.dispatch(command, allowed);
+    if (await legacy.dispatch(command, allowed)) return;
+
+    if (command.isMaster && command.recallReply && /^#?撤回$/u.test(command.msg) &&
+        allowed(["回复撤回", "system", "@lotus-yunzai/system"])) {
+      const results = await command.recallReply();
+      const confirmed = results.filter((result) => result === "confirmed").length;
+      if (!results.length) await command.reply("没有可撤回的消息。");
+      else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);
+      else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
+    }
   }
 
   const interrupt = () => stop(130);

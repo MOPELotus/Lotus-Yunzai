@@ -1,4 +1,4 @@
-import type { GroupMembership, GroupRequestType } from "../messages.ts";
+import type { GroupMembership, GroupRequestType, RecallResult } from "../messages.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 type Send = (message: string) => boolean;
@@ -175,6 +175,15 @@ export class OneBotCalls {
 
   async deleteMessage(send: Send, messageId: number): Promise<void> {
     await this.#request(send, "delete_msg", { message_id: messageId });
+  }
+
+  async recallMessage(send: Send, messageId: number): Promise<RecallResult> {
+    try {
+      await this.deleteMessage(send, messageId);
+      return "confirmed";
+    } catch (error) {
+      return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";
+    }
   }
 
   #messageId(result: unknown): number | undefined {

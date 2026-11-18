@@ -17,6 +17,11 @@ function stringField(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function recallId(value: unknown): number | undefined {
+  const id = typeof value === "string" && /^-?\d+$/u.test(value) ? Number(value) : value;
+  if (typeof id === "number" && Number.isInteger(id) && id !== 0 && id >= -2_147_483_648 && id <= 2_147_483_647) return id;
+}
+
 interface ConnectionData {
   readonly calls: OneBotCalls;
   readonly mutes: OneBotMutes;
@@ -156,6 +161,7 @@ async function dispatchMessage(
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
   mutes?: OneBotMutes,
+  connectedBotId?: number,
 ): Promise<void> {
   const userId = event.user_id;
   if (event.post_type !== "message" || !isId(userId) || userId === event.self_id) return;
@@ -209,6 +215,10 @@ async function dispatchMessage(
     reviewGroupRequest: messageType === "private" && owner
       ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
       : undefined,
+    recallReply: owner && selfId === connectedBotId ? () => {
+      const ids = new Set([recallId(messageId), recallId(incoming.reply_id)].filter((id) => id !== undefined));
+      return Promise.all([...ids].map((id) => calls.recallMessage(send, id)));
+    } : undefined,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
       const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))
@@ -308,7 +318,7 @@ export function startOneBot(
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options);
           } else {
-            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes, botId);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");

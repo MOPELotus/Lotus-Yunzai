@@ -25,6 +25,7 @@ export interface MessageEvent {
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
+  readonly recallReply?: () => Promise<readonly RecallResult[]>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
@@ -36,6 +37,8 @@ export interface MessageEvent {
   readonly file?: InboundSegment;
   readonly reply: (message: MessageReply, quote?: boolean, options?: ReplyOptions) => boolean | Promise<boolean>;
 }
+
+export type RecallResult = "confirmed" | "rejected" | "unknown";
 
 export interface ReplyOptions {
   readonly at?: boolean | string | number;
