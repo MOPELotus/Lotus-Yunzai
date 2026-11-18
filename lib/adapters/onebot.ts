@@ -1,4 +1,5 @@
 import type { MessageEvent } from "../messages.ts";
+import { authorized } from "../server.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -74,22 +75,24 @@ async function dispatchMessage(
   });
 }
 
-export function startOneBot(dispatch: (event: MessageEvent) => Promise<void>, token: string, port: number) {
-  if (!token.trim()) {
-    throw new Error("LOTUS_ONEBOT_TOKEN 不能为空。");
-  }
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error("LOTUS_ONEBOT_PORT 必须是 0 到 65535 之间的整数。");
-  }
-
+export function startOneBot(
+  dispatch: (event: MessageEvent) => Promise<void>,
+  options: {
+    hostname: string;
+    port: number;
+    auth: Headers;
+    http?: (request: Request) => Response;
+  },
+) {
   return Bun.serve({
-    hostname: "127.0.0.1",
-    port,
+    hostname: options.hostname,
+    port: options.port,
     fetch(request, server) {
-      if (new URL(request.url).pathname !== "/OneBotv11") {
-        return new Response(null, { status: 404 });
+      const path = new URL(request.url).pathname;
+      if (path !== "/OneBotv11" && path !== "/OneBotv11/") {
+        return options.http?.(request) ?? new Response(null, { status: 404 });
       }
-      if (request.headers.get("Authorization") !== `Bearer ${token}`) {
+      if (!authorized(request, options.auth)) {
         return new Response(null, { status: 401 });
       }
       if (request.headers.get("X-Client-Role")?.toLowerCase() !== "universal") {

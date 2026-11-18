@@ -6,6 +6,7 @@ import { CommandRegistry } from "./lib/commands.ts";
 import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
+import { httpStatus, readServerSettings } from "./lib/server.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -19,7 +20,8 @@ if (import.meta.main) {
   const shutdown = Promise.withResolvers<void>();
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
-  let server: ReturnType<typeof startOneBot> | undefined;
+  const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
+  const root = new URL("./", import.meta.url);
 
   function stop(code: number) {
     if (stopping) return;
@@ -55,22 +57,30 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
+    const network = await readServerSettings(root, Bun.env);
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);
       console.log("[存储] Valkey 已连接。");
     }
-    await loadPlugins(fileURLToPath(new URL("./plugins", import.meta.url)), commands, legacy);
+    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy);
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
-      const token = Bun.env.LOTUS_ONEBOT_TOKEN;
-      if (token !== undefined) {
-        const portSetting = Bun.env.LOTUS_ONEBOT_PORT ?? "25360";
-        const port = /^\d+$/u.test(portSetting) ? Number(portSetting) : NaN;
-        server = startOneBot(dispatch, token, port);
-        console.log(`OneBot 11 正在监听 ws://127.0.0.1:${server.port}/OneBotv11`);
+      const { hostname, http, oneBot } = network;
+      const statusRoute = http && httpStatus(http.auth);
+      const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
+      if (oneBot) {
+        const server = startOneBot(dispatch, { hostname, ...oneBot, http: shared ? statusRoute : undefined });
+        servers.push(server);
+        console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
+        if (shared) console.log(`HTTP 正在监听 ${server.url.origin}/status`);
+      }
+      if (http && !shared && statusRoute) {
+        const server = Bun.serve({ hostname, port: http.port, fetch: statusRoute });
+        servers.push(server);
+        console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
 
@@ -98,13 +108,13 @@ if (import.meta.main) {
           console.error("处理终端指令失败。");
         }
       }
-      if (server) await shutdown.promise;
+      if (servers.length) await shutdown.promise;
     }
   } finally {
     stopping = true;
     try {
       consoleInput?.close();
-      await server?.stop(true);
+      await Promise.all(servers.map((server) => server.stop(true)));
       await Promise.allSettled(pending);
     } finally {
       try {

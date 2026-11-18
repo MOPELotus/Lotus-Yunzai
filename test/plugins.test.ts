@@ -175,9 +175,12 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       throw new Error("被拒载的旧入口已执行");
     `);
 
+    await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config", "server.yaml"),
+      "port: 0\nauth:\n  Authorization: Bearer test-token\n  X-Server-Key: integration\n");
     const backend = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_TOKEN: "test-token", LOTUS_ONEBOT_PORT: "0" },
+      env: { PATH: process.env.PATH },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -195,10 +198,19 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     }
     reader.releaseLock();
 
+    const http = new URL("/status", endpoint.replace(/^ws/u, "http"));
+    const authorizedHeaders = { Authorization: "Bearer test-token", "X-Server-Key": "integration" };
+    expect((await fetch(http)).status).toBe(401);
+    const status = await fetch(http, { headers: authorizedHeaders });
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({ status: "ok", name: "Lotus-Yunzai", bun: Bun.version });
+    expect((await fetch(http, { headers: authorizedHeaders, method: "POST" })).status).toBe(405);
+    expect((await fetch(http, { headers: authorizedHeaders, method: "HEAD" })).status).toBe(200);
+
     // Bun accepts HTTP headers in the client constructor.
     const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
     const client = new BunWebSocket(endpoint, {
-      headers: { Authorization: "Bearer test-token", "X-Client-Role": "Universal" },
+      headers: { ...authorizedHeaders, "X-Client-Role": "Universal" },
     });
     socket = client;
     await new Promise<void>((ok, fail) => {
