@@ -411,7 +411,8 @@ failsMsg: 协议拒绝
       { type: "text", data: { text: "\n" } },
       { type: "text", data: { text: "测试撤回" } },
     ] } });
-    const deletions = new Promise<Array<Record<string, unknown>>>((resolve) => {
+    function awaitDeletions() {
+      const { promise, resolve } = Promise.withResolvers<Array<Record<string, unknown>>>();
       const frames: Array<Record<string, unknown>> = [];
       function collect({ data }: MessageEvent) {
         const frame = JSON.parse(data);
@@ -424,9 +425,33 @@ failsMsg: 协议拒绝
         }
       }
       client.addEventListener("message", collect);
-    });
+      return promise;
+    }
+
+    const deletions = awaitDeletions();
     client.send(JSON.stringify({ echo: pendingRecall.echo, status: "ok", retcode: 0, data: { message_id: 601 } }));
     expect((await deletions).map((frame) => frame.params)).toEqual([{ message_id: 601 }, { message_id: 600 }]);
+
+    expect(await send("#复读")).toMatchObject({ group_id: 77, message: "暂无权限执行此指令。" });
+    expect(await send("#复读", { user_id: 51 })).toMatchObject({ group_id: 77, message: [
+      { type: "at", data: { qq: "51" } },
+      { type: "text", data: { text: "\n" } },
+      { type: "text", data: { text: "请发送要复读的内容" } },
+    ] });
+    expect(await send("#状态")).toMatchObject({
+      group_id: 77, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    const repeatMessage = [
+      { type: "text", data: { text: "带表情的复读" } },
+      { type: "face", data: { id: "14" } },
+    ];
+    const repeatFrame = nextFrame();
+    client.send(JSON.stringify({ ...event, user_id: 51, message: repeatMessage, message_id: 602 }));
+    const repeated = await repeatFrame;
+    expect(repeated).toMatchObject({ action: "send_msg", params: { group_id: 77, message: repeatMessage } });
+    const repeatDeletions = awaitDeletions();
+    client.send(JSON.stringify({ echo: repeated.echo, status: "ok", retcode: 0, data: { message_id: 603 } }));
+    expect((await repeatDeletions).map((frame) => frame.params)).toEqual([{ message_id: 603 }, { message_id: 602 }]);
 
     const friendRequest = nextFrame();
     client.send(JSON.stringify({ ...event, message: "赞我" }));
@@ -465,7 +490,7 @@ failsMsg: 协议拒绝
     await host?.exited;
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 12_000);
 
 test("V3 初始化失败和跳过会清理资源，正常退出按初始化的反序清理", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-init-"));
