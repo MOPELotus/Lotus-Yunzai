@@ -514,6 +514,39 @@ failsMsg: 协议拒绝
       message_type: "private", user_id: 51, message: "审核被拒绝",
     } });
 
+    const groupRequest = { ...invited, group_id: 91, sub_type: "add", flag: "opaque-request" };
+    const groupNotificationFrame = nextFrame();
+    client.send(JSON.stringify(groupRequest));
+    const groupNotification = await groupNotificationFrame;
+    const notification = (groupNotification.params as { message: string }).message;
+    expect(groupNotification).toMatchObject({ action: "send_msg", params: {
+      message_type: "private", user_id: 51,
+    } });
+    expect(notification).toContain("待审核群请求");
+    expect(notification).not.toContain(groupRequest.flag);
+    const requestId = /#同意入群 ([a-f0-9]{12})/u.exec(notification)?.[1];
+    expect(requestId).toBeDefined();
+    client.send(JSON.stringify({ echo: groupNotification.echo, status: "ok", retcode: 0 }));
+    const privateOwner = { message_type: "private", sub_type: "friend", user_id: 51 };
+    expect(await send("#入群申请", privateOwner)).toMatchObject({ message: expect.stringContaining(requestId!) });
+    expect(await send(`#同意入群 ${requestId}`, { user_id: 51 })).toMatchObject({
+      group_id: 77, message: expect.stringContaining("主人私聊"),
+    });
+
+    const groupReviewFrame = nextFrame();
+    client.send(JSON.stringify({ ...event, ...privateOwner, message: `#同意入群 ${requestId}` }));
+    const groupReview = await groupReviewFrame;
+    expect(groupReview).toMatchObject({ action: "set_group_add_request", params: {
+      flag: groupRequest.flag, sub_type: "add", approve: true,
+    } });
+    const decisionReply = nextFrame();
+    client.send(JSON.stringify({ echo: groupReview.echo, status: "ok", retcode: 0 }));
+    expect(await decisionReply).toMatchObject({ action: "send_msg", params: {
+      message_type: "private", user_id: 51, message: "已同意群请求。",
+    } });
+    client.send(JSON.stringify(groupRequest));
+    expect(await send("#入群申请", privateOwner)).toMatchObject({ message: "当前没有待审核的群请求。" });
+
     const joinEvent = {
       post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: 99,
       user_id: 43, group_id: 77, operator_id: 51, member: { nickname: "莲" },
