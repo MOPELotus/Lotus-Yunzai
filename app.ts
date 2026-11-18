@@ -11,6 +11,7 @@ import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { createDispatchPower, formatElapsed } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
+import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
@@ -37,12 +38,14 @@ import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
+import { createPublicFiles } from "./lib/public-files.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
+import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { createUpdateCommand, describeUpdateProgress, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
@@ -64,6 +67,7 @@ if (import.meta.main) {
   const reportLoading = createPluginLoadingReporter();
   const handoff = createManagedHandoff();
   const legacy = new LegacyPlugins(() => handoff.accepting);
+  const publicFiles = createPublicFiles();
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
   const boundDeliveries = new Map<number, Promise<void>>();
@@ -434,7 +438,7 @@ if (import.meta.main) {
     }
     const reply = await commands.dispatch(command.msg, command, allowed);
     if (reply !== undefined) {
-      event.reply(reply);
+      await event.reply(reply);
       return;
     }
     if (await legacy.dispatch(command, allowed)) return;
@@ -511,10 +515,13 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
+    let fileBase = network.http && (network.publicUrl ?? listenerFileBase(network.hostname, network.http.port));
+    const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
+    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
-      groups: groups.transport(), signal: lifecycle.signal,
+      groups: groups.transport(), signal: lifecycle.signal, fileToUrl,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {
@@ -540,7 +547,7 @@ if (import.meta.main) {
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       const fetch = statusRoute && (async (request: Request) => stopping || !handoff.accepting
         ? new Response(null, { status: 503 })
-        : await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ?? statusRoute(request));
+        : publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
@@ -553,11 +560,15 @@ if (import.meta.main) {
         });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
-        if (shared) console.log(`HTTP 正在监听 ${server.url.origin}/status`);
+        if (shared) {
+          fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
+          console.log(`HTTP 正在监听 ${server.url.origin}/status`);
+        }
       }
       if (http && !shared && fetch) {
         const server = Bun.serve({ hostname, port: http.port, fetch });
         servers.push(server);
+        fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
@@ -589,6 +600,7 @@ if (import.meta.main) {
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
       queueStartupMessages();
 
+      const terminalReply = createTerminalReply(fileToUrl, terminalOutput);
       consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const message of consoleInput) {
         if (stopping) break;
@@ -603,12 +615,7 @@ if (import.meta.main) {
           isPrivate: false,
           isMaster: permissions.terminal,
           onAwaitInput: waiting.resolve,
-          reply(text) {
-            if (typeof text !== "string") return false;
-
-            terminalOutput(text);
-            return true;
-          },
+          reply: terminalReply,
         }).catch(() => {
           console.error("处理终端指令失败。");
         });
@@ -620,6 +627,7 @@ if (import.meta.main) {
     if (!stopping) throw error;
   } finally {
     stopping = true;
+    publicFiles.close();
     lifecycle.abort();
     handoff.cancelUpdate();
     try {

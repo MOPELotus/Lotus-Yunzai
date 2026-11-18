@@ -12,6 +12,7 @@ export interface ServerSettings {
   readonly http?: Listener;
   readonly oneBot?: Listener;
   readonly panelToken?: string;
+  readonly publicUrl?: URL;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -25,6 +26,19 @@ function port(value: unknown, source: string): number | undefined {
     throw new Error(`${source} 须为 0–65535 的端口号。`);
   }
   return number;
+}
+
+function publicHttpUrl(value: unknown): URL | undefined {
+  if (value === null || value === undefined) return;
+  const source = typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string" && !source) return;
+  const url = /^https?:\/\/[^/@]+(?:\/.*)?$/iu.test(source) && !/[\s\\?#\0]/u.test(source)
+    ? URL.parse(source) : null;
+  if (!url || url.username || url.password) {
+    throw new Error("config/server.yaml 的 url 须为不含认证信息、查询参数或片段的 HTTP(S) 绝对地址。");
+  }
+  url.pathname = `${url.pathname.replace(/\/+$/u, "")}/`;
+  return url;
 }
 
 function authHeaders(value: unknown): Headers {
@@ -73,6 +87,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
     http: httpPort === undefined ? undefined : { port: httpPort, auth: httpAuth },
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
     panelToken,
+    publicUrl: publicHttpUrl(config.url),
   };
 }
 
