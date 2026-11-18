@@ -475,10 +475,14 @@ failsMsg: 协议拒绝
     expect(leave).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "kick_me 51" } });
     client.send(JSON.stringify({ echo: leave.echo, status: "ok", retcode: 0 }));
 
-    const actualJoin = { ...joinEvent, group_id: 78, group_name: "图鉴群" };
-    const actualWelcomeFrame = nextFrame();
+    const actualJoin = { ...joinEvent, group_id: 78 };
+    const actualGroupFrame = nextFrame();
     client.send(JSON.stringify({ ...actualJoin, user_id: 99 }));
     client.send(JSON.stringify(actualJoin));
+    const actualGroup = await actualGroupFrame;
+    expect(actualGroup).toMatchObject({ action: "get_group_info", params: { group_id: 78 } });
+    const actualWelcomeFrame = nextFrame();
+    client.send(JSON.stringify({ echo: actualGroup.echo, status: "ok", retcode: 0, data: { group_name: "图鉴群" } }));
     const actualWelcome = await actualWelcomeFrame;
     const welcomeBody = [
       { type: "text", data: { text: "🌸 欢迎来到「图鉴群」\n\n" } },
