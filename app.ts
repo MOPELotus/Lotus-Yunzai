@@ -13,6 +13,7 @@ import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
+import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
@@ -26,6 +27,8 @@ import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plug
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess } from "./lib/private-access.ts";
+import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
+import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 
@@ -34,6 +37,7 @@ declare global {
 }
 
 const commands = new CommandRegistry();
+const terminalOutput = console.log.bind(console);
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 
 if (import.meta.main) {
@@ -56,6 +60,11 @@ if (import.meta.main) {
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
   let keywords: ReturnType<typeof createKeywords>;
   let counts: ReturnType<typeof createMessageCounts>;
+  let runtimeLog: Awaited<ReturnType<typeof attachRuntimeLog>> | undefined;
+  const logCommand = createLogCommand(async (kind, query) => {
+    await runtimeLog?.flush();
+    return readRuntimeLogs(root, kind, query);
+  });
 
   function stop(code: number) {
     if (stopping) return;
@@ -158,6 +167,10 @@ if (import.meta.main) {
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
 
     const command = normalizeGameCommand(event);
+    if (isLogCommand(command.msg)) {
+      if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
+      return;
+    }
     const reply = await commands.dispatch(command.msg, command, allowed);
     if (reply !== undefined) {
       event.reply(reply);
@@ -193,6 +206,11 @@ if (import.meta.main) {
       readRuntimeVersion(root),
     ]);
     privateAccess = access;
+    try {
+      runtimeLog = await attachRuntimeLog(root, botConfig);
+    } catch {
+      console.warn("[日志] 无法启用本地日志写入。");
+    }
     autoFriend = friendRequests;
     groupDispatch = routing;
     keywords = createKeywords(createKeywordStore(root), routing.keywordSettings, undefined, {
@@ -282,7 +300,7 @@ if (import.meta.main) {
           reply(text) {
             if (typeof text !== "string") return false;
 
-            console.log(text);
+            terminalOutput(text);
             return true;
           },
         }).catch(() => {
@@ -311,7 +329,11 @@ if (import.meta.main) {
           process.off("SIGTERM", terminate);
           await Promise.allSettled(pendingCounts);
           globalThis.redis = undefined;
-          await Promise.all([closeStorage(), stopStaticRenderer()]);
+          try {
+            await Promise.all([closeStorage(), stopStaticRenderer()]);
+          } finally {
+            await runtimeLog?.close();
+          }
         }
       }
     }
