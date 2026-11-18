@@ -204,3 +204,30 @@ test("候选验证期间外部停止会回滚并结束托管器，旧进程不�
   expect(recorded.filter((event) => event.event === "serving").map((event) => event.revision)).toEqual([oldRevision]);
   expect(recorded.filter((event) => event.event === "cleanup").map((event) => event.revision)).toEqual([oldRevision, newRevision]);
 }), 14_000);
+
+test("候选在提交后退出时，反向切换保留实际迁移的插件状态", () => fixture("ready", async ({
+  active, candidate, supervisor, stage, waitForEvent,
+}) => {
+  await mkdir(join(active, "plugins"));
+  await writeFile(join(active, "plugins/loose.js"), "// local script");
+  const replacement = await supervisor.replace({
+    ...stage,
+    async activate(verify) {
+      const result = await activateUpdate(active, candidate, verify, ["plugins/loose.js"]);
+      const { pid } = await waitForEvent((event) => event.event === "ready" && event.revision === newRevision);
+      process.kill(pid, "SIGKILL");
+      await waitFor(async () => {
+        try {
+          process.kill(pid, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
+          throw error;
+        }
+      }, "候选夹具没有退出。");
+      return result;
+    },
+  });
+  expect(replacement).toBe("rolled-back");
+  expect(await readFile(join(active, "revision.txt"), "utf8")).toBe(oldRevision);
+  expect(await readFile(join(active, "plugins/loose.js"), "utf8")).toBe("// local script");
+}), 14_000);

@@ -131,6 +131,18 @@ async function trackedPluginNames(directory: string): Promise<Set<string>> {
   throw new Error("无法检查宿主跟踪的插件目录。");
 }
 
+async function unmanagedPluginPaths(host: string, managed: ReadonlySet<string>): Promise<string[]> {
+  const root = join(host, "plugins");
+  try {
+    if (!(await lstat(root)).isDirectory()) throw new Error("活动插件目录不是实体目录。");
+    return (await readdir(root)).filter((name) => name !== "node_modules" && !managed.has(name))
+      .sort().map((name) => `plugins/${name}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 function dotenvFile(name: string): boolean {
   return name === ".env" || name.startsWith(".env.");
 }
@@ -257,6 +269,14 @@ export async function stageUpdate(
     }
     if (targets.size) throw new Error("候选插件未加载。");
 
+    const managed = new Set([
+      ...trackedActive, ...copies.map(({ source }) => basename(source)), ...localCopies.map((source) => basename(source)),
+    ]);
+    const unmanaged = await unmanagedPluginPaths(host, managed);
+    if (unmanaged.some((path) => trackedCandidate.has(basename(path)))) {
+      throw new Error("候选占用活动插件目录。");
+    }
+
     phase = "运行候选初始化和类型检查";
     await buildUpdateCheckout(directory, cache, signal);
 
@@ -301,8 +321,13 @@ export async function stageUpdate(
             ...localCopies.map((source) => pluginStatePaths(source, false)),
           ])).flat();
           await probeStagedUpdate(directory, stagedHead, state);
-          return await activateUpdate(host, directory, verify, [...state, ...(additionalStatePaths ?? [])], async (paths) => {
+          return await activateUpdate(host, directory, verify, [...state, ...unmanaged, ...(additionalStatePaths ?? [])], async (paths) => {
             await checkRevisions();
+            const activePaths = await unmanagedPluginPaths(host, managed);
+            if (activePaths.length !== unmanaged.length || activePaths.some((path, index) => path !== unmanaged[index]) ||
+                unmanaged.some((path) => !paths.includes(path))) {
+              throw new Error("活动插件目录在检查期间已变更。");
+            }
             const forced = [...(hostTarget?.force ? [host] : []), ...copies.filter(({ target }) => target?.force).map(({ source }) => source)];
             await Promise.all(forced.map((source) => verifyArchiveState(host, source, paths)));
             await ready.release();

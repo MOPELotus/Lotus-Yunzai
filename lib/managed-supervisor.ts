@@ -6,7 +6,7 @@ import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-upda
 import { spawnManagedWorker } from "./managed-worker.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./process-receipts.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
-import { activateUpdate, recoverUpdateActivation } from "./update-activation.ts";
+import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
 import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
 import { stageUpdate } from "./update-staging.ts";
 
@@ -17,7 +17,7 @@ type NotifyResult = (result: Exclude<SwitchResult, "stopped">, previous?: string
 
 interface PreparedUpdate {
   readonly revision: string;
-  activate(verify: (directory: string) => Promise<void>, statePaths?: readonly string[]): Promise<{ previous: string }>;
+  activate(verify: (directory: string) => Promise<void>, statePaths?: readonly string[]): Promise<ActivatedUpdate>;
 }
 
 export function createManagedSupervisor(directory: string, options: { env?: NodeJS.ProcessEnv } = {}) {
@@ -178,9 +178,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     const git = createLocalGit();
     const original = await git?.(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
     let candidate: Worker | undefined;
-    let previous: string | undefined;
+    let activated: ActivatedUpdate | undefined;
     try {
-      ({ previous } = await stage.activate(async (active) => {
+      activated = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
         const worker = launch(active, stage.revision, pausedAt, expectedPlugins);
         candidate = worker;
@@ -191,13 +191,13 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
           await worker.stop(stopped);
           throw error;
         }
-      }, statePaths));
+      }, statePaths);
       if (!candidate) throw new Error("候选宿主未启动。");
       if (stopped) {
         await candidate.stop(stopped);
         return "stopped" as const;
       }
-      await notify?.("updated", previous);
+      await notify?.("updated", activated.previous);
       if (stopped) {
         await candidate.stop(stopped);
         return "stopped" as const;
@@ -208,7 +208,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     } catch {
       await candidate?.stop(stopped);
       try {
-        if (previous && !stopped) await activateUpdate(root, previous, async () => {}, statePaths);
+        if (activated && !stopped) await activateUpdate(root, activated.previous, async () => {}, activated.state);
         else await recoverUpdateActivation(root);
         if (!stopped && original) {
           const check = createLocalGit();

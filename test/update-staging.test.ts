@@ -148,20 +148,36 @@ test.skipIf(noGit)("已构建候选探测后可切换，失败可重试且旧仓
   repo.checkout(active);
   const root = pathToFileURL(`${active}/`);
   await writeFiles(active, { "data/fixture.txt": "live state", "logs/fixture.txt": "live logs" });
+  await writeFiles(active, {
+    "plugins/rejected/data/fixture.txt": "rejected plugin state",
+    "plugins/loose.js": "// local script",
+  });
+  await symlink("absent", join(active, "plugins/occupied"));
   await writeFile(join(repo.writer, "revision.txt"), "next");
   repo.publish("Fixture deployable candidate");
   const ready = requireReady(await prepareUpdate(root, new Map()));
   const stage = await stageUpdate(root, new Map(), ready, temporary);
   try {
+    expect(await readdir(join(stage.directory, "plugins"))).toEqual([]);
+    await writeFile(join(active, "plugins/late.js"), "// added after staging");
+    await expect(stage.activate(async () => {
+      throw new Error("changed inventory must not become active");
+    })).rejects.toThrow("活动插件目录在检查期间已变更");
+    expect(await readFile(join(active, "plugins/late.js"), "utf8")).toBe("// added after staging");
+    await unlink(join(active, "plugins/late.js"));
     await expect(stage.activate(async (current) => {
       await verifyUpdateHealth(current, ready.candidate);
       throw new Error("fixture health rejected");
     })).rejects.toThrow("fixture health rejected");
     expect(await readFile(join(active, "revision.txt"), "utf8")).toBe("old");
+    expect(await readFile(join(active, "plugins/rejected/data/fixture.txt"), "utf8")).toBe("rejected plugin state");
     const result = await stage.activate((current) => verifyUpdateHealth(current, ready.candidate));
     expect(await readFile(join(active, "revision.txt"), "utf8")).toBe("next");
     expect(await readFile(join(active, "data/fixture.txt"), "utf8")).toBe("live state");
     expect(await readFile(join(active, "panel/dist/fixture.txt"), "utf8")).toBe("built next");
+    expect(await readFile(join(active, "plugins/loose.js"), "utf8")).toBe("// local script");
+    expect(await readFile(join(active, "plugins/rejected/data/fixture.txt"), "utf8")).toBe("rejected plugin state");
+    expect((await readdir(join(active, "plugins"))).sort()).toEqual(["loose.js", "occupied", "rejected"]);
     expect(git(active, "symbolic-ref", "--short", "HEAD")).toBe("main");
     expect(git(result.previous, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
   } finally {

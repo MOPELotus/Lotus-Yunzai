@@ -9,6 +9,11 @@ interface Activation {
   readonly committed: boolean;
 }
 
+export interface ActivatedUpdate {
+  readonly previous: string;
+  readonly state: readonly string[];
+}
+
 const persistentDirectories = ["config", "data", "logs", "internal"];
 const dotenvPaths = [".env", ".env.local", ".env.production", ".env.development", ".env.test"];
 const idPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
@@ -142,7 +147,7 @@ export async function activateUpdate(
   verify: (directory: string) => Promise<void>,
   additionalStatePaths: readonly string[] = [],
   validate?: (state: readonly string[]) => Promise<void>,
-): Promise<{ previous: string }> {
+): Promise<ActivatedUpdate> {
   const root = await canonicalLocation(active);
   const next = await canonicalLocation(candidate);
   const path = journalPath(root);
@@ -157,7 +162,7 @@ export async function activateUpdate(
 async function switchVersion(
   root: string, next: string, verify: (directory: string) => Promise<void>, additionalStatePaths: readonly string[], path: string,
   validate?: (state: readonly string[]) => Promise<void>,
-): Promise<{ previous: string }> {
+): Promise<ActivatedUpdate> {
   const [currentInfo, nextInfo] = await Promise.all([lstat(root), lstat(next)]);
   if (!currentInfo.isDirectory() || !nextInfo.isDirectory() || currentInfo.dev !== nextInfo.dev ||
       within(root, next) || within(next, root)) throw new Error("候选和活动宿主须为同文件系统的独立目录。");
@@ -195,7 +200,7 @@ async function switchVersion(
 
   await writeJournal(path, { ...entry, committed: true }, false);
   await removeJournal(path);
-  return { previous };
+  return { previous, state };
 }
 
 export async function recoverUpdateActivation(active: string): Promise<boolean> {
