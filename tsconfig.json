@@ -4,6 +4,7 @@
     "module": "Preserve",
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,

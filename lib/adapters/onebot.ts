@@ -1,4 +1,4 @@
-import type { CommandRegistry } from "../commands.ts";
+import type { MessageEvent } from "../messages.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -27,7 +27,11 @@ function readText(message: unknown): string | undefined {
   return parts.join("");
 }
 
-async function replyToMessage(commands: CommandRegistry, input: string) {
+async function dispatchMessage(
+  dispatch: (event: MessageEvent) => Promise<void>,
+  send: (message: string) => boolean,
+  input: string,
+): Promise<void> {
   let event: unknown;
   try {
     event = JSON.parse(input);
@@ -53,16 +57,45 @@ async function replyToMessage(commands: CommandRegistry, input: string) {
   if (text === undefined) {
     return;
   }
-  const reply = await commands.dispatch(text);
-  if (reply !== undefined) {
-    return JSON.stringify({
-      action: "send_msg",
-      params: { message_type: event.message_type, ...target, message: reply, auto_escape: true },
-    });
-  }
+  const messageType = event.message_type;
+  const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
+    ? event.message_id : undefined;
+  const sender = isRecord(event.sender) ? event.sender : undefined;
+  await dispatch({
+    msg: text.trim(),
+    raw_message: typeof event.raw_message === "string" ? event.raw_message : text,
+    message: Array.isArray(event.message) ? event.message : text,
+    post_type: "message",
+    message_type: messageType,
+    sub_type: typeof event.sub_type === "string" ? event.sub_type : undefined,
+    message_id: messageId,
+    self_id: isId(event.self_id) ? event.self_id : undefined,
+    user_id: event.user_id,
+    group_id: "group_id" in target ? target.group_id : undefined,
+    sender,
+    member: messageType === "group" ? {
+      is_admin: sender?.role === "admin",
+      is_owner: sender?.role === "owner",
+    } : undefined,
+    isGroup: messageType === "group",
+    isPrivate: messageType === "private",
+    isMaster: false,
+    reply(reply, quote = false) {
+      if (typeof reply !== "string") return false;
+
+      const message = quote && messageId !== undefined ? [
+        { type: "reply", data: { id: String(messageId) } },
+        { type: "text", data: { text: reply } },
+      ] : reply;
+      return send(JSON.stringify({
+        action: "send_msg",
+        params: { message_type: messageType, ...target, message, auto_escape: true },
+      }));
+    },
+  });
 }
 
-export function startOneBot(commands: CommandRegistry, token: string, port: number) {
+export function startOneBot(dispatch: (event: MessageEvent) => Promise<void>, token: string, port: number) {
   if (!token.trim()) {
     throw new Error("LOTUS_ONEBOT_TOKEN 不能为空。");
   }
@@ -93,10 +126,8 @@ export function startOneBot(commands: CommandRegistry, token: string, port: numb
           return;
         }
         try {
-          const reply = await replyToMessage(commands, input);
-          if (reply !== undefined && socket.readyState === WebSocket.OPEN) {
-            socket.send(reply);
-          }
+          await dispatchMessage(dispatch, (message) =>
+            socket.readyState === WebSocket.OPEN && socket.send(message) !== 0, input);
         } catch {
           console.error("处理 OneBot 消息失败。");
         }

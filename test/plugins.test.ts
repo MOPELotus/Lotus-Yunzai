@@ -66,3 +66,132 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规则优先级和权限", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-v3-"));
+  let host: ReturnType<typeof Bun.spawn> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
+    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    const plugins = join(root, "plugins");
+    await mkdir(join(plugins, "legacy"), { recursive: true });
+    await mkdir(join(plugins, "example"), { recursive: true });
+    await mkdir(join(plugins, "folder-apps", "apps"), { recursive: true });
+    await mkdir(join(plugins, "miao-plugin"), { recursive: true });
+
+    await writeFile(join(plugins, "legacy", "index.js"), `
+      import Plugin from "../../lib/plugins/plugin.js";
+      export const apps = {
+        group: class extends Plugin {
+          constructor() {
+            super({ event: "message.group", priority: 10, rule: [
+              { reg: /^#优先$/, fnc: "skip" },
+              { reg: "^#管理$", fnc: "admin", permission: "admin" },
+            ] });
+          }
+          skip() { return false; }
+          admin(e) { return this.reply("管理群 " + e.group_id, true); }
+        }
+      };
+    `);
+    await writeFile(join(plugins, "example", "legacy.js"), `
+      export class Legacy extends plugin {
+        constructor() {
+          super({ priority: 20, rule: [
+            { reg: /^#优先$/g, fnc: "replyLower" },
+            { reg: "^#管理$", fnc: "replyLower", permission: "master" },
+          ] });
+        }
+        replyLower(e) {
+          return e.reply("收到 " + e.msg + " " + e.user_id);
+        }
+      }
+    `);
+    await writeFile(join(plugins, "folder-apps", "apps", "private.js"), `
+      export default class extends plugin {
+        constructor() {
+          super({ event: "message.private.friend", rule: [{ reg: "^#私聊$", fnc: "say" }] });
+        }
+        say() { return this.reply("私聊可用"); }
+      }
+    `);
+    await writeFile(join(plugins, "miao-plugin", "index.js"), `
+      throw new Error("被拒载的旧入口已执行");
+    `);
+
+    const backend = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root,
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_TOKEN: "test-token", LOTUS_ONEBOT_PORT: "0" },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    host = backend;
+    const reader = backend.stdout.getReader();
+    const decoder = new TextDecoder();
+    let startup = "";
+    let endpoint: string | undefined;
+    while (!endpoint) {
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error("OneBot 未启动");
+      startup += decoder.decode(chunk.value, { stream: true });
+      endpoint = /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(startup)?.[0];
+    }
+    reader.releaseLock();
+
+    // Bun accepts HTTP headers in the client constructor.
+    const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
+    const client = new BunWebSocket(endpoint, {
+      headers: { Authorization: "Bearer test-token", "X-Client-Role": "Universal" },
+    });
+    socket = client;
+    await new Promise<void>((ok, fail) => {
+      client.addEventListener("open", () => ok(), { once: true });
+      client.addEventListener("error", fail, { once: true });
+    });
+
+    const event = {
+      post_type: "message", message_type: "group", sub_type: "normal",
+      self_id: 99, user_id: 42, group_id: 77, message_id: 123,
+    };
+    async function send(message: string, fields: Record<string, unknown> = {}) {
+      const reply = new Promise<Record<string, unknown>>((ok) => {
+        client.addEventListener("message", ({ data }) => ok(JSON.parse(data).params), { once: true });
+      });
+      client.send(JSON.stringify({ ...event, message, ...fields }));
+      return reply;
+    }
+
+    expect(await send("#优先")).toMatchObject({ group_id: 77, message: "收到 #优先 42" });
+    expect(await send("#优先")).toMatchObject({ group_id: 77, message: "收到 #优先 42" });
+    expect(await send("#管理", { sender: { role: "member" } })).toMatchObject({
+      group_id: 77, message: "暂无权限执行此指令。",
+    });
+    expect(await send("#管理", { sender: { role: "admin" } })).toMatchObject({
+      group_id: 77,
+      message: [
+        { type: "reply", data: { id: "123" } },
+        { type: "text", data: { text: "管理群 77" } },
+      ],
+    });
+    expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
+      user_id: 42, message: "私聊可用",
+    });
+    expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
+      user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+
+    client.close();
+    backend.kill();
+    await backend.exited;
+    const stderr = await new Response(backend.stderr).text();
+    expect(stderr).toContain("拒绝加载 miao-plugin");
+    expect(stderr).not.toContain("被拒载的旧入口已执行");
+  } finally {
+    socket?.close();
+    host?.kill();
+    await host?.exited;
+    await rm(root, { recursive: true, force: true });
+  }
+});
