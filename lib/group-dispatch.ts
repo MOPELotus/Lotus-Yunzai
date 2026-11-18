@@ -86,10 +86,10 @@ export async function readGroupDispatch(root: URL) {
     return text.replace(/^[＃井]\s*/u, "#").replace(/^[＊※]\s*/u, "*");
   }
 
-  function groupConfig(event: BotEvent): Record<string, unknown> {
+  function groupConfig(event: BotEvent, groupId?: number): Record<string, unknown> {
     if (!groups) return {};
     const bot = id(event.self_id);
-    const group = "group_id" in event ? id(event.group_id) : undefined;
+    const group = id(groupId ?? ("group_id" in event ? event.group_id : undefined));
     return {
       ...defaults,
       ...record(groups.default),
@@ -159,5 +159,17 @@ export async function readGroupDispatch(root: URL) {
       (enabled.length === 0 || names.some((name) => enabled.includes(name)));
   }
 
-  return { admit, prepare, allows };
+  function keywordSettings(event: MessageEvent, groupId?: number) {
+    const { addLimit, addPrivate, addReply, addAt, addRecall } = groupConfig(event, groupId);
+    const limit = Number(addLimit);
+    return {
+      addLimit: limit === 1 ? 1 as const : limit === 2 ? 2 as const : 0 as const,
+      addPrivate: addPrivate === undefined || addPrivate === true || addPrivate === 1 || addPrivate === "1",
+      addReply: addReply === undefined || addReply === true || addReply === 1 || addReply === "1",
+      addAt: addAt === true || addAt === 1 || addAt === "1",
+      addRecall: Math.min(cooldown(addRecall ?? 60), 120),
+    };
+  }
+
+  return { admit, prepare, allows, keywordSettings };
 }

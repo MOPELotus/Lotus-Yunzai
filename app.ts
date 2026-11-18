@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
+import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
@@ -10,6 +10,8 @@ import { CommandRegistry } from "./lib/commands.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
+import { createKeywords } from "./lib/keywords.ts";
+import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
@@ -28,6 +30,7 @@ declare global {
 }
 
 const commands = new CommandRegistry();
+const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 
 if (import.meta.main) {
   const legacy = new LegacyPlugins();
@@ -46,6 +49,7 @@ if (import.meta.main) {
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
+  let keywords: ReturnType<typeof createKeywords>;
 
   function stop(code: number) {
     if (stopping) return;
@@ -132,7 +136,9 @@ if (import.meta.main) {
       return;
     }
     if (await privateAccess.blocked(event)) return;
-    if (await legacy.dispatchContext(event, allowed) || !allowNew) return;
+    if (await legacy.dispatchContext(event, allowed)) return;
+    const useKeywords = allowed(keywordFeatureNames);
+    if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
 
     const command = normalizeGameCommand(event);
     const reply = await commands.dispatch(command.msg, command, allowed);
@@ -149,7 +155,9 @@ if (import.meta.main) {
       if (!results.length) await command.reply("没有可撤回的消息。");
       else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
+      return;
     }
+    if (useKeywords) await keywords.dispatch(event);
   }
 
   const interrupt = () => stop(130);
@@ -168,6 +176,16 @@ if (import.meta.main) {
     privateAccess = access;
     autoFriend = friendRequests;
     groupDispatch = routing;
+    keywords = createKeywords(createKeywordStore(root), routing.keywordSettings, undefined, {
+      async read(actor) {
+        if (!globalThis.redis) return;
+        const id = Number(await storage("keywords").get(`recent:${actor}`));
+        if (Number.isSafeInteger(id) && id > 0) return id;
+      },
+      async write(actor, id) {
+        if (globalThis.redis) await storage("keywords").set(`recent:${actor}`, String(id), 2_592_000);
+      },
+    });
     reviewInvitation = invitations;
     autoQuit = await readAutoQuit(root, permissions.masterIds, permissions.legacyMasterIds);
     masterEnrollment = createMasterEnrollment({

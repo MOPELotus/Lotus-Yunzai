@@ -1,11 +1,10 @@
-import { Database } from "bun:sqlite";
 import { constants } from "node:fs";
-import { lstat, mkdtemp, open, realpath, rename, rm } from "node:fs/promises";
+import { mkdtemp, open, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isNode, isScalar, isSeq, parseDocument } from "yaml";
+import { lockFile } from "./file-lock.ts";
 
 const ownerFields = new Set(["master", "masterQQ"]);
 const ownerPair = /^(?:stdin:stdin|[1-9]\d*:[1-9]\d*)$/u;
@@ -33,34 +32,6 @@ async function effectiveFile(root: URL): Promise<string> {
     }
   }
   throw new Error("请先在本机配置 other.yaml 并设置主人授权。");
-}
-
-async function lock(file: string) {
-  try {
-    if (!(await lstat(file)).isFile()) throw new Error("主人配置锁须为普通文件。");
-  } catch (error) {
-    if (errno(error) !== "ENOENT") throw error;
-  }
-
-  // SQLite releases the OS lock on process exit. The sidecar path stays stable.
-  const database = new Database(file);
-  const deadline = performance.now() + 2_000;
-  try {
-    database.exec("PRAGMA busy_timeout = 0");
-    for (;;) {
-      try {
-        database.exec("BEGIN IMMEDIATE");
-        return database;
-      } catch (error) {
-        if (!errno(error)?.startsWith("SQLITE_BUSY")) throw error;
-        if (performance.now() >= deadline) throw new Error("主人配置正在更新，请稍后重试。");
-        await delay(20);
-      }
-    }
-  } catch (error) {
-    database.close();
-    throw error;
-  }
 }
 
 async function readSnapshot(file: string) {
@@ -119,8 +90,7 @@ export async function persistMaster(root: URL, bot: number, user: number, approv
   }
 
   const file = await effectiveFile(root);
-  const lockFile = join(dirname(file), `.${basename(file)}.lotus-master.sqlite`);
-  const database = await lock(lockFile);
+  const database = await lockFile(join(dirname(file), `.${basename(file)}.lotus-master.sqlite`), "主人配置");
   try {
     if (await effectiveFile(root) !== file) throw new Error("主人配置位置已变更，请重新发起授权。");
     const current = await readSnapshot(file);

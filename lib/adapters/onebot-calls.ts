@@ -115,10 +115,11 @@ export class OneBotCalls {
     }
   }
 
-  async getGroupRole(send: Send, groupId: number, userId: number): Promise<"member" | "admin" | "owner" | undefined> {
+  async getGroupRole(send: Send, groupId: number, userId: number, verifyIds = false): Promise<GroupMembership["botRole"] | undefined> {
     try {
       const result = await this.#getGroupMember(send, groupId, userId);
-      const role = isRecord(result) ? result.role : undefined;
+      if (!isRecord(result) || (verifyIds && (result.group_id !== groupId || result.user_id !== userId))) return;
+      const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") return role;
     } catch {
       return undefined;
@@ -175,6 +176,16 @@ export class OneBotCalls {
 
   async deleteMessage(send: Send, messageId: number): Promise<void> {
     await this.#request(send, "delete_msg", { message_id: messageId });
+  }
+
+  async sendForward(send: Send, target: { group_id: number } | { user_id: number }, messages: readonly object[]): Promise<boolean> {
+    const action = "group_id" in target ? "send_group_forward_msg" : "send_private_forward_msg";
+    try {
+      return await this.#confirmAction(send, action, { ...target, messages });
+    } catch (error) {
+      if (error instanceof OneBotNotSentError) return false;
+      throw error;
+    }
   }
 
   async recallMessage(send: Send, messageId: number): Promise<RecallResult> {

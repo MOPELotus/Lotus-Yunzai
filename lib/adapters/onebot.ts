@@ -213,6 +213,18 @@ async function dispatchMessage(
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
+    getGroupRole: selfId !== undefined && selfId === connectedBotId
+      ? (id) => isId(id) ? calls.getGroupRole(send, id, userId, true) : Promise.resolve(undefined)
+      : undefined,
+    forward: selfId === undefined ? undefined : async (nodes) => {
+      const messages = [];
+      for (const node of nodes) {
+        const content = encodeOneBotReply(typeof node === "string" ? [node] : node);
+        if (!Array.isArray(content)) return false;
+        messages.push({ type: "node", data: { uin: String(selfId), name: "Lotus-Yunzai", content } });
+      }
+      return messages.length > 0 && calls.sendForward(send, target, messages);
+    },
     reviewGroupRequest: messageType === "private" && owner
       ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
       : undefined,

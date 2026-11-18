@@ -25,6 +25,8 @@ export interface MessageEvent {
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
+  readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
+  readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
   readonly recallReply?: () => Promise<readonly RecallResult[]>;
   readonly raw_message: string;
