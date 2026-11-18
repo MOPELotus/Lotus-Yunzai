@@ -11,6 +11,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
   const config = join(root, "config", "config");
   await mkdir(config, { recursive: true });
   await writeFile(join(config, "other.yaml"), 'master: ["99:51"]\n');
+  await writeFile(join(config, "bot.yaml"), "online_msg_exp: 0\n");
   const host = Bun.spawn([process.execPath, "app.ts"], {
     cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     env: {

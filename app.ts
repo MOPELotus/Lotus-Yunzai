@@ -25,6 +25,7 @@ import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-en
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
+import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
@@ -65,6 +66,7 @@ if (import.meta.main) {
   const legacy = new LegacyPlugins(() => handoff.accepting);
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
+  const boundDeliveries = new Map<number, Promise<void>>();
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
@@ -95,6 +97,8 @@ if (import.meta.main) {
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
   let keywords: ReturnType<typeof createKeywords>;
   let counts: ReturnType<typeof createMessageCounts>;
+  let onlineCooldown: number | undefined;
+  let onlineVersion: string | undefined;
   let runtimeLog: Awaited<ReturnType<typeof attachRuntimeLog>> | undefined;
   const logCommand = createLogCommand(async (kind, query) => {
     await runtimeLog?.flush();
@@ -237,13 +241,33 @@ if (import.meta.main) {
     }
   }
 
-  function queueProcessReceipt(botId?: number) {
+  function queueStartupMessages(botId?: number) {
     if (stopping) return;
-    const delivery = Promise.all([
-      deliverProcessReceipt(botId), deliverProcessReceipt(botId, true), deliverProcessReceipt(botId, "install"),
-    ]).then(() => undefined);
+    const previous = botId === undefined ? undefined : boundDeliveries.get(botId);
+    const delivery = (previous ?? Promise.resolve()).then(async () => {
+      if (stopping) return;
+      await Promise.all([
+        deliverProcessReceipt(botId), deliverProcessReceipt(botId, true), deliverProcessReceipt(botId, "install"),
+      ]);
+      if (botId === undefined) return;
+      await notifyOnlineMasters(botId, onlineCooldown, {
+        signal: lifecycle.signal,
+        version: onlineVersion,
+        masterIds: (id) => masterPermissions.masterIds(id),
+        async claim(id, seconds) {
+          const redis = globalThis.redis;
+          return redis?.isReady === true && await redis.set(`Yz:loginMsg:${id}`, "1", { NX: true, EX: seconds }) === "OK";
+        },
+        send: (id, userId, message) => groups.sendPrivate(id, userId, message),
+      });
+    });
+    if (botId !== undefined) boundDeliveries.set(botId, delivery);
     pending.add(delivery);
-    void delivery.then(() => pending.delete(delivery));
+    const finished = () => {
+      pending.delete(delivery);
+      if (botId !== undefined && boundDeliveries.get(botId) === delivery) boundDeliveries.delete(botId);
+    };
+    void delivery.then(finished, finished);
   }
 
   function sessionTarget(event: MessageEvent): Exclude<ProcessReceipt["target"], { type: "masters" }> | undefined {
@@ -479,6 +503,8 @@ if (import.meta.main) {
     });
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     const segmentCounts = botConfig.msg_type_count;
+    onlineCooldown = onlineNoticeSeconds(botConfig.online_msg_exp);
+    onlineVersion = runtimeVersion.version;
     counts = createMessageCounts(() => globalThis.redis, segmentCounts === true || segmentCounts === 1 || segmentCounts === "1");
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);
@@ -520,7 +546,7 @@ if (import.meta.main) {
         const server = startOneBot(dispatch, {
           hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
           accepting: () => !stopping && handoff.accepting,
-          onBind: queueProcessReceipt,
+          onBind: queueStartupMessages,
           onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
           http: shared ? fetch : undefined,
         });
@@ -560,7 +586,7 @@ if (import.meta.main) {
         console.warn("[更新] 定时更新需要通过 bun scripts/run-managed.ts 启动宿主。");
       }
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
-      queueProcessReceipt();
+      queueStartupMessages();
 
       consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const message of consoleInput) {

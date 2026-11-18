@@ -103,7 +103,7 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
   };
 
   async function runHost(segmentOption: string, run: (connect: (botId: number) => Promise<ReturnType<typeof gateway>>) => Promise<void>) {
-    await writeFile(join(root, "config/config/bot.yaml"), `msg_type_count: ${segmentOption}\n`);
+    await writeFile(join(root, "config/config/bot.yaml"), `msg_type_count: ${segmentOption}\nonline_msg_exp: 0\n`);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: {
