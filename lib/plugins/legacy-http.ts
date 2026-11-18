@@ -1,6 +1,6 @@
 import { STATUS_CODES } from "node:http";
-import { isReservedServerPath } from "../server-redirect.ts";
-import { authorized } from "../server.ts";
+import { readWebhookJson } from "../http-json.ts";
+import { authorized, publicPostPath } from "../server.ts";
 import { HandlerScope } from "./handler.ts";
 
 type LegacyHttpHandler = (request: { readonly body: unknown }, response: { sendStatus(status: number): void }) => unknown;
@@ -15,80 +15,34 @@ interface PendingRoutes {
   accepting: boolean;
 }
 
-type JsonResult = { body: unknown } | { status: 400 | 408 | 413 | 415 };
-
-const jsonLimit = 100 * 1024;
-const jsonDeadline = 5_000;
-const routePath = /^\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\/?$/u;
-const dotSegment = /(?:^|\/)\.{1,2}(?:\/|$)/u;
-
-function routeKey(path: string): string | undefined {
-  if (!routePath.test(path) || dotSegment.test(path)) return;
-  return path.replace(/\/$/u, "").toLowerCase();
-}
-
 function reply(status: number, body: string | null = null): Response {
   return new Response(body, { status, headers: { "Cache-Control": "no-store" } });
-}
-
-async function readJson(request: Request): Promise<JsonResult> {
-  const contentType = request.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
-  if (contentType !== "application/json") return { status: 415 };
-  if (!request.body || request.bodyUsed || request.body.locked) return { status: 400 };
-
-  const length = request.headers.get("Content-Length");
-  if (length && /^\d+$/u.test(length) && Number(length) > jsonLimit) return { status: 413 };
-
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const abortRead = () => { void reader.cancel().catch(() => undefined); };
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    abortRead();
-  }, jsonDeadline);
-  const { signal } = request;
-  signal.addEventListener("abort", abortRead, { once: true });
-  let bytes = 0;
-  let raw = "";
-  try {
-    if (signal.aborted) return { status: 400 };
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (timedOut) return { status: 408 };
-      if (signal.aborted) return { status: 400 };
-      if (done) return { body: JSON.parse(raw + decoder.decode()) as unknown };
-      bytes += value.byteLength;
-      if (bytes > jsonLimit) return { status: 413 };
-      raw += decoder.decode(value, { stream: true });
-    }
-  } catch {
-    return { status: timedOut ? 408 : 400 };
-  } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", abortRead);
-    abortRead();
-    reader.releaseLock();
-  }
 }
 
 export class LegacyHttpRoutes {
   readonly #pending = new Map<HandlerScope, PendingRoutes>();
   #routes = new Map<string, Route>();
+  readonly #reserved = new Set<string>();
 
   readonly express = Object.freeze({
     post: (path: string, handler: LegacyHttpHandler): void => {
       const owner = HandlerScope.current();
       const pending = owner && this.#pending.get(owner);
       if (!owner || !pending?.accepting) throw new Error("Bot.express.post 须在旧插件初始化期间调用。");
-      const key = typeof path === "string" ? routeKey(path) : undefined;
-      if (!key || isReservedServerPath(key) || typeof handler !== "function") {
+      const key = typeof path === "string" ? publicPostPath(path) : undefined;
+      if (!key || this.#reserved.has(key) || typeof handler !== "function") {
         throw new Error("Bot.express.post 需要可用的固定路径和处理函数。");
       }
       if (pending.routes.has(key)) throw new Error("Bot.express.post 重复注册路径。");
       pending.routes.set(key, { owner, handler });
     },
   });
+
+  reserve(path: string): void {
+    const key = publicPostPath(path);
+    if (!key) throw new Error("原生 POST 路径无效。");
+    this.#reserved.add(key);
+  }
 
   open(scope: HandlerScope): void {
     if (!this.#pending.has(scope)) this.#pending.set(scope, { routes: new Map(), accepting: true });
@@ -132,14 +86,14 @@ export class LegacyHttpRoutes {
 
   async handle(request: Request, auth: Headers, accepting: () => boolean = () => true): Promise<Response | undefined> {
     if (request.method !== "POST" || request.headers.has("Upgrade")) return;
-    const path = routeKey(new URL(request.url).pathname);
+    const path = publicPostPath(new URL(request.url).pathname);
     if (!path) return;
     const route = this.#routes.get(path);
     if (!route) return;
     if (!authorized(request, auth)) return reply(401);
     if (!accepting()) return reply(503);
 
-    const json = await readJson(request);
+    const json = await readWebhookJson(request);
     if (this.#routes.get(path) !== route || !accepting()) return reply(503);
     if ("status" in json) return reply(json.status);
 

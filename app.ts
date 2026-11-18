@@ -3,6 +3,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
+import { readMilkySettings } from "./lib/adapters/milky-config.ts";
+import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -81,6 +83,7 @@ if (import.meta.main) {
   let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
+  let stopMilky: (() => Promise<void>) | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -471,7 +474,7 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
-    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig, runtimeVersion] = await Promise.all([
+    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig, runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
@@ -480,6 +483,10 @@ if (import.meta.main) {
       readGroupInvitations(root),
       readLocalConfig(root, "bot"),
       readRuntimeVersion(root),
+      probingUpdate ? undefined : readMilkySettings(root).catch(() => {
+        console.warn("[Milky] 无法读取有效的适配器配置。");
+        return undefined;
+      }),
     ]);
     masterPermissions = permissions;
     privateAccess = access;
@@ -516,7 +523,17 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
-    const { hostname, http, oneBot, https, panelToken } = network;
+    const { hostname, oneBot, https, panelToken } = network;
+    const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, {
+      signal: lifecycle.signal,
+      dispatch,
+      onSent: (event, message) => recordCount("send", event, message),
+    }) : undefined;
+    if (milkyWebhook && milky) {
+      legacy.httpRoutes.reserve(milky.webhookPath);
+      stopMilky = milkyWebhook.stop;
+    }
+    const http = network.http ?? (milkyWebhook && !https ? { port: 2536, auth: new Headers() } : undefined);
     // Plugins may create file links during initialization. Keep the bound listeners guarded until routes are ready.
     let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
     const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
@@ -603,9 +620,10 @@ if (import.meta.main) {
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
         publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
-        await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
+        await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
+      milkyWebhook?.start();
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
@@ -667,7 +685,7 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.()]);
+      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(), stopMilky?.()]);
       await plugins?.dispose();
     } finally {
       try {

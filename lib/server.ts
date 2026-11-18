@@ -1,5 +1,5 @@
 import { readLocalConfig } from "./config.ts";
-import { readServerRedirect } from "./server-redirect.ts";
+import { isReservedServerPath, readServerRedirect } from "./server-redirect.ts";
 
 type ServerEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -136,6 +136,12 @@ export function authorized(request: Request, required: Headers): boolean {
     if (request.headers.get(key) !== value) return false;
   }
   return true;
+}
+
+export function publicPostPath(path: string): string | undefined {
+  if (!/^\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\/?$/u.test(path) ||
+      /(?:^|\/)\.{1,2}(?:\/|$)/u.test(path) || isReservedServerPath(path)) return;
+  return path.replace(/\/$/u, "").toLowerCase();
 }
 
 export interface StatusVersion {
