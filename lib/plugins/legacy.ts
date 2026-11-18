@@ -16,6 +16,7 @@ interface Rule {
 }
 
 interface App {
+  readonly label: string;
   readonly create: PluginClass;
   readonly initializer: PluginInstance;
   readonly scope: HandlerScope;
@@ -24,7 +25,10 @@ interface App {
   readonly priority: number;
   readonly event: string;
   readonly names: readonly string[];
+  published: boolean;
 }
+
+type Registration = "loaded" | "skipped" | "empty";
 
 function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
   return rules.map((value) => {
@@ -89,30 +93,54 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
 }
 
 export class LegacyPlugins {
-  readonly #apps: App[] = [];
-  readonly #initializers: App[] = [];
+  #apps: App[] = [];
+  #initializers: App[] = [];
   readonly #tasks: LegacyTasks;
+  readonly #preparing = new Map<string, AbortController>();
+  readonly #retiring = new Set<Promise<void>>();
+  #disposal?: Promise<void>;
 
   constructor(acceptingTasks?: () => boolean) {
     this.#tasks = new LegacyTasks(acceptingTasks);
     Object.assign(globalThis, { plugin: Plugin, segment });
   }
 
-  async register(
+  register(
     exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal,
-  ): Promise<"loaded" | "skipped" | "empty"> {
-    signal?.throwIfAborted();
-    const published = exports.apps ?? exports;
-    if (typeof published !== "object" || published === null) return "empty";
+  ): Promise<Registration> {
+    return this.#install(exports, label, packageName, false, signal);
+  }
+
+  replace(
+    exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal,
+    validate?: () => Promise<boolean>,
+  ): Promise<Registration> {
+    return this.#install(exports, label, packageName, true, signal, validate);
+  }
+
+  async #install(
+    exports: Record<string, unknown>, label: string, packageName: string, replace: boolean,
+    externalSignal?: AbortSignal, validate?: () => Promise<boolean>,
+  ): Promise<Registration> {
+    externalSignal?.throwIfAborted();
+    if (this.#disposal) throw new Error("插件加载器已关闭。");
+
+    const transaction = new AbortController();
+    const previous = replace ? this.#initializers.filter((app) => app.label === label) : [];
+    const oldScopes = new Set(previous.map(({ scope }) => scope));
+    this.#preparing.get(label)?.abort(new Error("插件入口有更新的加载请求。"));
+    this.#preparing.set(label, transaction);
+    const signal = externalSignal ? AbortSignal.any([externalSignal, transaction.signal]) : transaction.signal;
 
     const scopes = new Set<HandlerScope>();
     const initializers: { initializer: PluginInstance; scope: HandlerScope }[] = [];
     const staged: App[] = [];
     const active: App[] = [];
+    let jobs: ReturnType<LegacyTasks["prepare"]> | undefined;
     let abortCleanup: Promise<void> | undefined;
 
     const rollback = async () => {
-      await this.#tasks.cancel(scopes);
+      jobs?.cancel();
       for (const { initializer, scope } of [...initializers].reverse()) await dispose(initializer, scope);
     };
     const abort = () => {
@@ -122,14 +150,16 @@ export class LegacyPlugins {
       });
     };
 
-    const abortListener = signal && addAbortListener(signal, abort);
+    const abortListener = addAbortListener(signal, abort);
     try {
+      const published = exports.apps ?? exports;
+      if (typeof published !== "object" || published === null) return "empty";
       for (const value of new Set(Object.values(published))) {
-        signal?.throwIfAborted();
+        signal.throwIfAborted();
         if (typeof value !== "function" || !(value.prototype instanceof Plugin)) continue;
 
         const create = value as PluginClass;
-        const scope = new HandlerScope();
+        const scope = new HandlerScope(replace);
         scopes.add(scope);
         let initializer: PluginInstance;
         try {
@@ -145,17 +175,18 @@ export class LegacyPlugins {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
         staged.push({
-          create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
+          label, create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
           priority, event, names: typeof name === "string" ? [name, label, packageName] : [label, packageName],
+          published: false,
         });
       }
 
       for (const app of staged) {
-        signal?.throwIfAborted();
+        signal.throwIfAborted();
         const { initializer, scope } = app;
         const init = initializer.init;
         const result = typeof init === "function" ? await scope.run(() => init.call(initializer)) : undefined;
-        signal?.throwIfAborted();
+        signal.throwIfAborted();
         if (result === "return") {
           await dispose(initializer, scope);
         } else {
@@ -163,24 +194,67 @@ export class LegacyPlugins {
           active.push(app);
         }
       }
-      for (const { initializer, scope } of active) {
-        signal?.throwIfAborted();
-        this.#tasks.register(scope, initializer);
+      signal.throwIfAborted();
+      if (!active.length) return staged.length ? "skipped" : "empty";
+
+      jobs = this.#tasks.prepare(active.map(({ initializer, scope }) => ({ app: initializer, owner: scope })), oldScopes);
+      if (validate && !await validate()) {
+        signal.throwIfAborted();
+        await rollback();
+        signal.throwIfAborted();
+        return "skipped";
       }
-      signal?.throwIfAborted();
+      signal.throwIfAborted();
+      jobs.publish();
+      if (replace) active.forEach((app, index) => app.scope.publish(previous[index]?.scope));
+      for (const app of active) app.published = true;
+      const index = previous.length ? this.#initializers.indexOf(previous[0]!) : this.#initializers.length;
+      if (previous.length) this.#initializers = this.#initializers.filter((app) => app.label !== label);
+      this.#initializers.splice(index, 0, ...active);
+      this.#refreshApps();
+      this.#retire(previous);
+      return "loaded";
     } catch (error) {
       if (abortCleanup) await abortCleanup;
       // Initializers can add cleanup callbacks while a cancelled init is still settling.
       await rollback();
-      throw signal?.aborted ? signal.reason : error;
+      throw signal.aborted ? signal.reason : error;
     } finally {
-      abortListener?.[Symbol.dispose]();
+      abortListener[Symbol.dispose]();
+      if (this.#preparing.get(label) === transaction) this.#preparing.delete(label);
     }
+  }
 
-    this.#initializers.push(...active);
-    this.#apps.push(...active);
-    this.#apps.sort((left, right) => left.priority - right.priority);
-    return active.length > 0 ? "loaded" : staged.length > 0 ? "skipped" : "empty";
+  #refreshApps(): void {
+    this.#apps = [...this.#initializers].sort((left, right) => left.priority - right.priority);
+  }
+
+  #retire(apps: readonly App[]): void {
+    if (!apps.length) return;
+    for (const app of apps) {
+      app.published = false;
+      app.contexts.close();
+      app.scope.dispose();
+    }
+    const tasks = this.#tasks.cancel(new Set(apps.map(({ scope }) => scope)));
+    const settled = Promise.allSettled([tasks, ...apps.map(({ scope }) => scope.drain())]);
+    const cleanup = settled.then(async () => {
+      for (const { initializer, scope } of [...apps].reverse()) await dispose(initializer, scope);
+    });
+    this.#retiring.add(cleanup);
+    void cleanup.then(() => this.#retiring.delete(cleanup), (error: unknown) => {
+      this.#retiring.delete(cleanup);
+      console.warn("[插件] 清理已撤销的入口失败：", error);
+    });
+  }
+
+  async remove(label: string): Promise<void> {
+    this.#preparing.get(label)?.abort(new Error("插件入口已撤销。"));
+    const previous = this.#initializers.filter((app) => app.label === label);
+    if (!previous.length) return;
+    this.#initializers = this.#initializers.filter((app) => app.label !== label);
+    this.#refreshApps();
+    this.#retire(previous);
   }
 
   stopContexts(): void {
@@ -189,14 +263,15 @@ export class LegacyPlugins {
 
   async dispatchContext(event: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
     for (const app of this.#apps) {
-      if (!app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
+      if (!app.published || !app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
       if (app.contexts.resolve(event)) return true;
       const contexts = { ...app.contexts.get(event, false), ...app.contexts.get(event, true) };
       if (!Object.keys(contexts).length) continue;
 
-      const result = await app.scope.run(async () => {
+      const result = await app.scope.invoke(async () => {
         let result: unknown;
         for (const [method, origin] of Object.entries(contexts)) {
+          if (!app.published) return "continue";
           const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
           const handler = instance[method];
           if (typeof handler === "function") result = await handler.call(instance, origin);
@@ -213,20 +288,28 @@ export class LegacyPlugins {
     return this.#tasks.stop();
   }
 
-  async dispose(): Promise<void> {
-    this.stopContexts();
-    this.#apps.length = 0;
-    await this.stopTasks();
-    for (const { initializer, scope } of this.#initializers.splice(0).reverse()) {
-      await dispose(initializer, scope);
+  dispose(): Promise<void> {
+    if (this.#disposal) return this.#disposal;
+    for (const transaction of this.#preparing.values()) transaction.abort(new Error("插件加载器已关闭。"));
+    const apps = this.#initializers;
+    for (const app of apps) {
+      app.published = false;
+      app.contexts.close();
     }
+    this.#initializers = [];
+    this.#apps = [];
+    return this.#disposal = (async () => {
+      await this.stopTasks();
+      this.#retire(apps);
+      await Promise.all(this.#retiring);
+    })();
   }
 
   async dispatch(event: PluginEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
     const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {
-      if (typeof app.initializer.accept !== "function") continue;
-      const result = await app.scope.run(() => {
+      if (!app.published || typeof app.initializer.accept !== "function") continue;
+      const result = await app.scope.invoke(() => {
         const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
         return typeof instance.accept === "function" ? instance.accept(event) : undefined;
       });
@@ -236,6 +319,7 @@ export class LegacyPlugins {
 
     for (const app of matching) {
       for (const rule of app.rules) {
+        if (!app.published) break;
         if (rule.event && !matches(rule.event, event)) continue;
         rule.reg.lastIndex = 0;
         if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
@@ -244,7 +328,7 @@ export class LegacyPlugins {
           return true;
         }
 
-        const result = await app.scope.run(() => {
+        const result = await app.scope.invoke(() => {
           const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
           const handle = instance[rule.fnc];
           return typeof handle === "function" ? handle.call(instance, event) : false;

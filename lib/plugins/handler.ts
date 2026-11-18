@@ -22,11 +22,38 @@ interface Entry {
 const scopes = new AsyncLocalStorage<HandlerScope>();
 const handlers = new Map<string, Entry[]>();
 
+function insert(registry: Map<string, Entry[]>, key: string, entry: Entry, replacing?: HandlerScope): void {
+  const entries = registry.get(key) ?? [];
+  const previous = replacing === undefined ? -1 : entries.findIndex((candidate) =>
+    candidate.owner === replacing && candidate.ns === entry.ns && candidate.priority === entry.priority);
+  if (previous === -1) entries.push(entry);
+  else entries.splice(previous, 0, entry);
+  entries.sort((left, right) => left.priority - right.priority);
+  registry.set(key, entries);
+}
+
 export class HandlerScope {
   #active = true;
+  #staged?: Map<string, Entry[]>;
+  readonly #running = new Set<Promise<void>>();
+
+  constructor(staged = false) {
+    if (staged) this.#staged = new Map();
+  }
 
   run<T>(fn: () => T): T {
     return scopes.run(this, fn);
+  }
+
+  async invoke<T>(fn: () => T): Promise<Awaited<T>> {
+    const finished = Promise.withResolvers<void>();
+    this.#running.add(finished.promise);
+    try {
+      return await this.run(fn);
+    } finally {
+      this.#running.delete(finished.promise);
+      finished.resolve();
+    }
   }
 
   add(config: Registration): void {
@@ -38,33 +65,50 @@ export class HandlerScope {
     }
 
     this.del(config.ns, key);
-    const entries = handlers.get(key) ?? [];
-    entries.push({
+    insert(this.#staged ?? handlers, key, {
       owner: this,
       fn: config.fn,
       self: config.self,
       ns: config.ns,
       priority: typeof config.priority === "number" && Number.isFinite(config.priority) ? config.priority : 500,
     });
-    entries.sort((left, right) => left.priority - right.priority);
-    handlers.set(key, entries);
   }
 
   del(ns?: string, key?: string): void {
-    for (const name of key ? [key] : handlers.keys()) {
-      const remaining = handlers.get(name)?.filter((entry) => entry.owner !== this || entry.ns !== ns);
-      if (remaining?.length) handlers.set(name, remaining);
-      else handlers.delete(name);
+    const registry = this.#staged ?? handlers;
+    for (const name of key ? [key] : registry.keys()) {
+      const remaining = registry.get(name)?.filter((entry) => entry.owner !== this || entry.ns !== ns);
+      if (remaining?.length) registry.set(name, remaining);
+      else registry.delete(name);
     }
   }
 
+  publish(replacing?: HandlerScope): void {
+    if (!this.#active || !this.#staged) return;
+    // The caller retires the old scope in this same turn, after its entries provide the insertion positions.
+    for (const [key, entries] of this.#staged) {
+      for (const entry of entries) insert(handlers, key, entry, replacing);
+    }
+    this.#staged = undefined;
+  }
+
   dispose(): void {
+    if (!this.#active) return;
     this.#active = false;
+    if (this.#staged) {
+      this.#staged.clear();
+      return;
+    }
     for (const [key, entries] of handlers) {
       const remaining = entries.filter((entry) => entry.owner !== this);
       if (remaining.length) handlers.set(key, remaining);
       else handlers.delete(key);
     }
+  }
+
+  async drain(): Promise<void> {
+    // After disposal, no new Handler calls can join this scope.
+    await Promise.all(this.#running);
   }
 }
 
@@ -85,7 +129,7 @@ const Handler = {
     for (const entry of [...(handlers.get(key) ?? [])]) {
       if (!handlers.get(key)?.includes(entry)) continue;
       let next = false;
-      result = await entry.owner.run(() => entry.fn.call(entry.self, event, args, () => { next = true; }));
+      result = await entry.owner.invoke(() => entry.fn.call(entry.self, event, args, () => { next = true; }));
       if (!next && !all) return result;
     }
     return result;
