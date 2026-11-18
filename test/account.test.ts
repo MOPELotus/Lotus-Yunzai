@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createProfileStore } from "../packages/account/index.ts";
+import { createProfileStore, importProfiles } from "../packages/account/index.ts";
 import { createHoyoClient } from "../packages/hoyo-client/index.ts";
 
 test("旧版多档案按自身账号、角色和设备构建请求上下文", async () => {
@@ -93,6 +93,44 @@ device:
     await expect(profiles.summary(qq, 4)).rejects.toMatchObject({ code: "invalid" });
     await expect(profiles.summary(qq, 5)).rejects.toMatchObject({ code: "missing" });
     await expect(profiles.summary("../100001")).rejects.toMatchObject({ code: "invalid" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("档案导入预检无写入，并行导入与重跑保留目标冲突", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-profile-import-"));
+  try {
+    const source = join(root, "source");
+    const destination = join(root, "destination");
+    await mkdir(source);
+    const original = "profile: { id: 1 }\naccount: { cookie: fixture, stoken: fixture }\n";
+    await writeFile(join(source, "42.yaml"), original);
+    await writeFile(join(source, "42-2.yaml"), "profile: { id: 2 }\n");
+    await writeFile(join(source, "42-3.yaml"), "profile: { id: 4 }\n");
+    await symlink(join(source, "42.yaml"), join(source, "42-4.yaml"));
+
+    expect(await importProfiles(source, destination)).toEqual({
+      ready: 2, invalid: 2, unchanged: 0, imported: 0, conflict: 0,
+    });
+    await expect(stat(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await mkdir(destination);
+    await writeFile(join(destination, "42-2.yaml"), "profile: { id: 2, name: 已存在 }\n");
+
+    const applied = await Promise.all([
+      importProfiles(source, destination, true), importProfiles(source, destination, true),
+    ]);
+    expect(applied.reduce((sum, item) => sum + item.imported, 0)).toBe(1);
+    expect(applied.reduce((sum, item) => sum + item.unchanged, 0)).toBe(1);
+    expect(applied.every((item) => item.invalid === 2 && item.conflict === 1)).toBe(true);
+    expect(await readFile(join(destination, "42.yaml"), "utf8")).toBe(original);
+    expect(await readFile(join(source, "42.yaml"), "utf8")).toBe(original);
+    expect((await stat(join(destination, "42.yaml"))).mode & 0o777).toBe(0o600);
+    expect(await readFile(join(destination, "42-2.yaml"), "utf8")).toContain("已存在");
+    expect(await importProfiles(source, destination, true)).toEqual({
+      ready: 0, invalid: 2, unchanged: 1, imported: 0, conflict: 1,
+    });
+    await expect(importProfiles(source, source, true)).rejects.toThrow("不同的来源和目标");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

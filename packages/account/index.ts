@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
-import { open, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { link, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const games = ["gs", "sr", "zzz"] as const;
@@ -98,19 +98,27 @@ function readIdentity(value: unknown, qq: string, id: number) {
 
 export type ProfileSummary = Readonly<ReturnType<typeof readIdentity>["summary"]>;
 
+async function readFileSnapshot(path: string): Promise<Buffer> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!(await file.stat()).isFile()) throw new Error("档案须为普通文件。");
+    return await file.readFile();
+  } finally {
+    await file.close();
+  }
+}
+
+function decodeProfile(buffer: Buffer, qq: string, id: number) {
+  return readIdentity(Bun.YAML.parse(buffer.toString("utf8")), qq, id);
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
 
   async function read(qq: string, id: number) {
     const path = join(root, profileFilename(qq, id));
     try {
-      const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-      try {
-        if (!(await file.stat()).isFile()) throw new Error();
-        return readIdentity(Bun.YAML.parse(await file.readFile("utf8")), qq, id);
-      } finally {
-        await file.close();
-      }
+      return decodeProfile(await readFileSnapshot(path), qq, id);
     } catch (error) {
       if (error instanceof ProfileError) throw error;
       if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
@@ -165,3 +173,71 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 export type ProfileRequestContext = Awaited<ReturnType<ReturnType<typeof createProfileStore>["requestContext"]>>;
 
 export type ProfileAccountContext = Awaited<ReturnType<ReturnType<typeof createProfileStore>["accountContext"]>>;
+
+export async function importProfiles(source: string, destination: string, apply = false) {
+  const from = await realpath(source);
+  const into = await realpath(destination).catch((error: unknown) => {
+    if (record(error).code === "ENOENT") return resolve(destination);
+    throw error;
+  });
+  if (from === into) throw new Error("档案导入需要不同的来源和目标目录。");
+
+  const files = await readdir(from, { withFileTypes: true });
+  const result = { ready: 0, imported: 0, unchanged: 0, conflict: 0, invalid: 0 };
+  if (apply) await mkdir(into, { recursive: true, mode: 0o700 });
+
+  for (const file of files) {
+    const match = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u.exec(file.name);
+    const qq = match?.[1];
+    if (!qq) continue;
+    const id = Number(match?.[2] ?? 1);
+    let snapshot: Buffer;
+    try {
+      if (!file.isFile() || profileFilename(qq, id) !== file.name) throw new Error();
+      snapshot = await readFileSnapshot(join(from, file.name));
+      decodeProfile(snapshot, qq, id);
+    } catch {
+      result.invalid++;
+      continue;
+    }
+
+    const target = join(into, file.name);
+    async function existing(): Promise<"unchanged" | "conflict" | undefined> {
+      try {
+        const bytes = await readFileSnapshot(target);
+        return bytes.equals(snapshot) ? "unchanged" : "conflict";
+      } catch (error) {
+        if (record(error).code === "ENOENT") return;
+        if (record(error).code === "ELOOP") return "conflict";
+        if (!record(error).code) return "conflict";
+        throw error;
+      }
+    }
+
+    const current = await existing();
+    if (current) {
+      result[current]++;
+      continue;
+    }
+    if (!apply) {
+      result.ready++;
+      continue;
+    }
+
+    const staging = await mkdtemp(join(into, ".profile-import-"));
+    try {
+      const staged = join(staging, "profile.yaml");
+      await writeFile(staged, snapshot, { mode: 0o600 });
+      try {
+        await link(staged, target);
+        result.imported++;
+      } catch (error) {
+        if (record(error).code !== "EEXIST") throw error;
+        result[(await existing()) ?? "conflict"]++;
+      }
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+  return result;
+}
