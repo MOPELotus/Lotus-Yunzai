@@ -18,17 +18,25 @@ function formatElapsed(milliseconds: number): string {
 export function createDispatchPower(now = Date.now) {
   let paused = false;
   let since = now();
+
+  function setPaused(value: boolean): string | undefined {
+    if (paused === value) return;
+    const timestamp = now();
+    const elapsed = formatElapsed(timestamp - since);
+    since = timestamp;
+    paused = value;
+    return paused ? `关机成功，本次运行时长${elapsed}` : `开机成功，距离上次关机${elapsed}`;
+  }
+
   return {
     get paused() { return paused; },
+    setPaused,
     async handle(event: MessageEvent): Promise<void> {
       if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) return;
       if (event.msg !== (paused ? resume : pause)) return;
 
-      const timestamp = now();
-      const elapsed = formatElapsed(timestamp - since);
-      since = timestamp;
-      paused = !paused;
-      await event.reply(paused ? `关机成功，本次运行时长${elapsed}` : `开机成功，距离上次关机${elapsed}`);
+      const message = setPaused(!paused);
+      if (message !== undefined) await event.reply(message);
     },
   };
 }

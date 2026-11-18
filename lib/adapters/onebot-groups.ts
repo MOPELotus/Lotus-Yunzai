@@ -75,6 +75,15 @@ export class OneBotGroups implements GroupTransport {
     return calls.sendGroup(send, groupId, message);
   }
 
+  async sendPrivate(botId: number, userId: number, content: MessageReply): Promise<boolean> {
+    const message = encodeOneBotReply(content);
+    if (message === undefined || !Number.isSafeInteger(userId) || userId < 1) {
+      throw new OneBotNotSentError("用户 QQ 或待发送消息无效。");
+    }
+    const { calls, send } = this.#connection(botId);
+    return calls.replyWithConfirmation(send, { message_type: "private", user_id: userId, message, auto_escape: true });
+  }
+
   async deleteMessage(botId: number, messageId: number): Promise<void> {
     if (!Number.isSafeInteger(messageId)) throw new OneBotNotSentError("消息编号无效。");
     const { calls, send } = this.#connection(botId);

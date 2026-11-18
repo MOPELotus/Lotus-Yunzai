@@ -7,8 +7,9 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
-import { createDispatchPower } from "./lib/dispatch-power.ts";
 import { readLocalConfig } from "./lib/config.ts";
+import { createDispatchPower } from "./lib/dispatch-power.ts";
+import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
@@ -50,6 +51,7 @@ if (import.meta.main) {
   const lifecycle = new AbortController();
   const dispatchPower = createDispatchPower();
   let plugins: PluginLoadReport | undefined;
+  let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -73,6 +75,7 @@ if (import.meta.main) {
     stopping = true;
     process.exitCode = code;
     lifecycle.abort();
+    void stopPowerSchedule?.();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -295,6 +298,17 @@ if (import.meta.main) {
         servers.push(server);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
+      stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
+        if (stopping) return;
+        const reply = dispatchPower.setPaused(paused);
+        if (reply === undefined) return;
+        console.log(`[进程管理] ${reply}`);
+        const notifications = await Promise.allSettled(groups.onlineBots().flatMap((bot) =>
+          permissions.masterIds(bot).filter((user) => user !== bot).map((user) => groups.sendPrivate(bot, user, reply))));
+        if (notifications.some((result) => result.status === "rejected" || !result.value)) {
+          console.warn("[进程管理] 部分主人未收到定时开关机通知。");
+        }
+      });
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
 
       consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -330,7 +344,7 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.allSettled(pending);
+      await Promise.allSettled([...pending, stopPowerSchedule?.()]);
       await plugins?.dispose();
     } finally {
       try {
