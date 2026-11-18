@@ -265,20 +265,20 @@ export async function loadPlugins(
         }
         const unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
-        });
+        }, label);
         try {
           if (published.apps !== undefined) {
             if (published.apps === null || typeof published.apps !== "object") {
               throw new Error("apps 须导出 V3 插件类。");
             }
-            await legacy.register(published, label);
+            await legacy.register(published, label, packageName);
           }
         } catch (error) {
           unregister();
           throw error;
         }
       } else {
-        const result = await legacy.register(published, label);
+        const result = await legacy.register(published, label, packageName);
         if (result !== "loaded") {
           const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
           console.warn(`[插件] 跳过 ${label}：${reason}`);

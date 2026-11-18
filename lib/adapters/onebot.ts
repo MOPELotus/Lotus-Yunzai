@@ -3,6 +3,7 @@ import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
+import { OneBotMutes } from "./onebot-mutes.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,6 +19,7 @@ function stringField(value: unknown): string | undefined {
 
 interface ConnectionData {
   readonly calls: OneBotCalls;
+  readonly mutes: OneBotMutes;
   botId?: number;
   detach?: () => void;
 }
@@ -144,6 +146,7 @@ async function dispatchMessage(
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
+  mutes?: OneBotMutes,
 ): Promise<void> {
   const userId = event.user_id;
   if (event.post_type !== "message" || !isId(userId) || userId === event.self_id) return;
@@ -163,6 +166,9 @@ async function dispatchMessage(
   const { text, ...messageFields } = incoming;
 
   const messageType = event.message_type;
+  const botMute = mutes && selfId !== undefined && "group_id" in target
+    ? await mutes.forMessage(target.group_id, selfId, () => calls.getGroupRole(send, target.group_id, selfId))
+    : undefined;
   const owner = selfId !== undefined && isMaster(selfId, userId);
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
@@ -184,6 +190,7 @@ async function dispatchMessage(
       is_admin: sender?.role === "admin",
       is_owner: sender?.role === "owner",
     } : undefined,
+    botMute,
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
     isMaster: owner,
@@ -246,7 +253,7 @@ export function startOneBot(
       }
       const header = request.headers.get("X-Self-ID");
       const id = header !== null && /^[1-9]\d*$/u.test(header) ? Number(header) : undefined;
-      const data = { calls: new OneBotCalls(), botId: isId(id) ? id : undefined };
+      const data = { calls: new OneBotCalls(), mutes: new OneBotMutes(), botId: isId(id) ? id : undefined };
       if (!server.upgrade(request, { data })) {
         return new Response(null, { status: 426 });
       }
@@ -263,7 +270,7 @@ export function startOneBot(
         } catch {
           return;
         }
-        const { calls, botId } = socket.data;
+        const { calls, botId, mutes } = socket.data;
         if (!isRecord(message) || calls.receive(message)) return;
         if (botId !== undefined && isId(message.self_id) && message.self_id !== botId) return;
         if (message.post_type === "meta_event") {
@@ -277,6 +284,7 @@ export function startOneBot(
         try {
           const send = (output: string) => sendFrame(socket, output);
           if (message.post_type === "notice") {
+            if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
             if (message.notice_type === "offline_file" && isId(message.self_id) &&
                 !message.group_id && isRecord(message.file)) {
               await dispatchMessage(dispatch, send, {
@@ -291,7 +299,7 @@ export function startOneBot(
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options);
           } else {
-            await dispatchMessage(dispatch, send, message, calls, options.isMaster);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");

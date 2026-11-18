@@ -22,6 +22,7 @@ interface App {
   readonly rules: readonly Rule[];
   readonly priority: number;
   readonly event: string;
+  readonly names: readonly string[];
 }
 
 function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
@@ -95,7 +96,7 @@ export class LegacyPlugins {
     Object.assign(globalThis, { plugin: Plugin, segment });
   }
 
-  async register(exports: Record<string, unknown>, label: string): Promise<"loaded" | "skipped" | "empty"> {
+  async register(exports: Record<string, unknown>, label: string, packageName = label): Promise<"loaded" | "skipped" | "empty"> {
     const published = exports.apps ?? exports;
     if (typeof published !== "object" || published === null) return "empty";
 
@@ -116,12 +117,15 @@ export class LegacyPlugins {
           throw error;
         }
         initializers.push({ initializer, scope });
-        const { rule, event, priority } = initializer;
+        const { rule, event, priority, name } = initializer;
         if (!Array.isArray(rule) || typeof event !== "string" ||
             typeof priority !== "number" || !Number.isFinite(priority)) {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
-        staged.push({ create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule), priority, event });
+        staged.push({
+          create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
+          priority, event, names: typeof name === "string" ? [name, label, packageName] : [label, packageName],
+        });
       }
 
       for (const app of staged) {
@@ -151,9 +155,9 @@ export class LegacyPlugins {
     for (const app of this.#apps) app.contexts.close();
   }
 
-  async dispatchContext(event: MessageEvent): Promise<boolean> {
+  async dispatchContext(event: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
     for (const app of this.#apps) {
-      if (!app.contexts.active || !matches(app.event, event)) continue;
+      if (!app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
       if (app.contexts.resolve(event)) return true;
       const contexts = { ...app.contexts.get(event, false), ...app.contexts.get(event, true) };
       if (!Object.keys(contexts).length) continue;
@@ -186,8 +190,8 @@ export class LegacyPlugins {
     }
   }
 
-  async dispatch(event: PluginEvent): Promise<boolean> {
-    const matching = this.#apps.filter((app) => matches(app.event, event));
+  async dispatch(event: PluginEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+    const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {
       if (typeof app.initializer.accept !== "function") continue;
       const result = await app.scope.run(() => {

@@ -4,8 +4,10 @@ import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
+import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import type { BotEvent, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -37,6 +39,7 @@ if (import.meta.main) {
   const root = new URL("./", import.meta.url);
   let privateAccess: Awaited<ReturnType<typeof readPrivateAccess>>;
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
+  let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
 
   function stop(code: number) {
     if (stopping) return;
@@ -50,7 +53,7 @@ if (import.meta.main) {
   }
 
   async function dispatch(event: BotEvent) {
-    if (stopping) return;
+    if (stopping || !groupDispatch.admit(event)) return;
     const handling = handleEvent(event);
     pending.add(handling);
     try {
@@ -63,6 +66,7 @@ if (import.meta.main) {
   async function handleEvent(event: BotEvent) {
     if (event.post_type === "message") return dispatchMessage(event);
     if (event.post_type === "notice" && event.notice_type === "friend" && await privateAccess.blockedPoke(event)) return;
+    const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.post_type === "request" && event.request_type === "friend") {
       let reviewed = false;
       const consumed = await legacy.dispatch({
@@ -71,23 +75,26 @@ if (import.meta.main) {
           reviewed = true;
           return event.approve(approve, remark);
         },
-      });
-      if (!reviewed && !consumed) await autoFriend(event, lifecycle.signal);
+      }, allowed);
+      if (!reviewed && !consumed && allowed(["autoFriend"])) await autoFriend(event, lifecycle.signal);
       return;
     }
-    await legacy.dispatch(event);
+    await legacy.dispatch(event, allowed);
   }
 
-  async function dispatchMessage(event: MessageEvent) {
+  async function dispatchMessage(incoming: MessageEvent) {
+    const { event, allowNew } = groupDispatch.prepare(incoming);
     if (await privateAccess.blocked(event)) return;
-    if (await legacy.dispatchContext(event)) return;
+    const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    if (await legacy.dispatchContext(event, allowed) || !allowNew) return;
 
-    const reply = await commands.dispatch(event.msg, event);
+    const command = normalizeGameCommand(event);
+    const reply = await commands.dispatch(command.msg, command, allowed);
     if (reply !== undefined) {
       event.reply(reply);
       return;
     }
-    await legacy.dispatch(event);
+    await legacy.dispatch(command, allowed);
   }
 
   const interrupt = () => stop(130);
@@ -95,14 +102,16 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
-    const [network, permissions, canRefresh, access, friendRequests] = await Promise.all([
+    const [network, permissions, canRefresh, access, friendRequests, routing] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
       readFriendRequests(root),
+      readGroupDispatch(root),
     ]);
     privateAccess = access;
     autoFriend = friendRequests;
+    groupDispatch = routing;
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);

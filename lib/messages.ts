@@ -9,6 +9,15 @@ export interface MessageEvent {
   readonly group_id?: number;
   readonly sender?: Readonly<Record<string, unknown>>;
   readonly member?: { readonly is_admin: boolean; readonly is_owner: boolean };
+  readonly botMute?: {
+    readonly remainingSeconds?: number;
+    readonly allMembers?: boolean;
+    readonly isAdmin?: boolean;
+    readonly isOwner?: boolean;
+  };
+  game?: "gs" | "sr" | "zzz";
+  isSr?: boolean;
+  isGs?: boolean;
   readonly isGroup: boolean;
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
@@ -19,6 +28,8 @@ export interface MessageEvent {
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
+  readonly hasAlias?: boolean;
+  readonly only_reply_at?: boolean;
   readonly at?: string | number;
   readonly reply_id?: string | number;
   readonly img?: readonly string[];

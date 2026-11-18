@@ -107,6 +107,16 @@ export class OneBotCalls {
     }
   }
 
+  async getGroupRole(send: Send, groupId: number, userId: number): Promise<"member" | "admin" | "owner" | undefined> {
+    try {
+      const result = await this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true });
+      const role = typeof result === "object" && result !== null && "role" in result ? result.role : undefined;
+      if (role === "member" || role === "admin" || role === "owner") return role;
+    } catch {
+      return undefined;
+    }
+  }
+
   async sendGroup(send: Send, groupId: number, message: unknown): Promise<number> {
     const result = await this.#request(send, "send_msg", {
       message_type: "group", group_id: groupId, message, auto_escape: true,
