@@ -3,6 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "../packages/account/index.ts";
+import { createHoyoClient } from "../packages/hoyo-client/index.ts";
 
 test("旧版多档案按自身账号、角色和设备构建请求上下文", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-account-"));
@@ -63,6 +64,29 @@ device:
       device: { id: "fixture-device-two", fp: "fixture-fp-two", androidVersion: "15" },
     });
     expect((await profiles.requestContext(qq, 2, "gs", "800004")).role.uid).toBe("800004");
+    const beforeRoleBinding = await profiles.accountContext(qq, 2);
+    const captured: Array<{ biz: string | null; cookie: string | null }> = [];
+    const hoyo = createHoyoClient(async (endpoint, init) => {
+      expect(endpoint.origin).toBe("https://api-takumi.mihoyo.com");
+      expect(endpoint.pathname).toBe("/binding/api/getUserGameRolesByCookie");
+      expect(init.redirect).toBe("error");
+      captured.push({ biz: endpoint.searchParams.get("game_biz"), cookie: new Headers(init.headers).get("Cookie") });
+      return Response.json({ retcode: 0, data: { list: [
+        { game_biz: "nap_cn", game_uid: "910001", region: "prod_gf_cn", nickname: "示例" },
+        { game_biz: "nap_cn", game_uid: "910001" },
+        { game_biz: "hk4e_cn", game_uid: "810001" },
+      ] } });
+    });
+    expect(await hoyo.listRoles(beforeRoleBinding, "zzz")).toEqual([
+      { uid: "910001", gameBiz: "nap_cn", region: "prod_gf_cn", nickname: "示例", chosen: false },
+    ]);
+    expect(captured).toEqual([{ biz: "nap_cn", cookie: "fixture-cookie-two" }]);
+    const failure = createHoyoClient(async () => Response.json({
+      retcode: -100, message: "fixture-cookie-two",
+    }));
+    await expect(failure.listRoles(beforeRoleBinding, "sr")).rejects.toMatchObject({
+      code: "api", retcode: -100, message: "米游社角色查询失败。",
+    });
     await expect(profiles.requestContext(qq, 2, "gs", "800001")).rejects.toMatchObject({ code: "role-missing" });
     await expect(profiles.requestContext(qq, 7, "sr")).rejects.toMatchObject({ code: "login-required" });
     await expect(profiles.summary(qq, 3)).rejects.toMatchObject({ code: "invalid" });

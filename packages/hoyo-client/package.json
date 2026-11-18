@@ -1,0 +1,9 @@
+{
+  "name": "@lotus-yunzai/hoyo-client",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "dependencies": {
+    "@lotus-yunzai/account": "workspace:*"
+  }
+}

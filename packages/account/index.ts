@@ -36,21 +36,25 @@ function profileFilename(qq: string, id: number): string {
   return `${qq}${id === 1 ? "" : `-${id}`}.yaml`;
 }
 
-interface GameRole {
+export interface GameRole {
   readonly uid: string;
   readonly region: string;
   readonly gameBiz: string;
   readonly chosen: boolean;
+  readonly nickname: string;
 }
 
-function gameRoles(value: unknown): GameRole[] {
+export function normalizeGameRoles(value: unknown): GameRole[] {
   if (!Array.isArray(value)) return [];
   const roles = new Map<string, GameRole>();
   for (const item of value) {
     const raw = record(item);
     const uid = accountId(raw.uid) || accountId(raw.game_uid) || accountId(item);
     if (uid && !roles.has(uid)) {
-      roles.set(uid, { uid, region: text(raw.region), gameBiz: text(raw.game_biz), chosen: raw.is_chosen === true });
+      roles.set(uid, {
+        uid, region: text(raw.region), gameBiz: text(raw.game_biz),
+        chosen: raw.is_chosen === true, nickname: text(raw.nickname),
+      });
     }
   }
   return [...roles.values()];
@@ -114,6 +118,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     }
   }
 
+  async function readLoggedIn(qq: string, id: number) {
+    const profile = await read(qq, id);
+    if (!profile.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+    return profile;
+  }
+
   return {
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
@@ -134,12 +144,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         throw new ProfileError("invalid", "无法读取档案目录。");
       }
     },
+    async accountContext(qq: string, id = 1) {
+      const { account, device } = await readLoggedIn(qq, id);
+      return { qq, profileId: id, account, device };
+    },
     async requestContext(qq: string, id: number, game: Game, uid?: string) {
       if (!games.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
-      const profile = await read(qq, id);
-      if (!profile.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
-
-      const roles = gameRoles(profile.roles[game]);
+      const profile = await readLoggedIn(qq, id);
+      const roles = normalizeGameRoles(profile.roles[game]);
       const role = uid !== undefined ? roles.find((item) => item.uid === uid)
         : roles.find((item) => item.uid === accountId(profile.selected[game]))
           ?? roles.find((item) => item.chosen) ?? roles[0];
@@ -151,3 +163,5 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 }
 
 export type ProfileRequestContext = Awaited<ReturnType<ReturnType<typeof createProfileStore>["requestContext"]>>;
+
+export type ProfileAccountContext = Awaited<ReturnType<ReturnType<typeof createProfileStore>["accountContext"]>>;

@@ -17,6 +17,12 @@
     "packages/account": {
       "name": "@lotus-yunzai/account",
     },
+    "packages/hoyo-client": {
+      "name": "@lotus-yunzai/hoyo-client",
+      "dependencies": {
+        "@lotus-yunzai/account": "workspace:*",
+      },
+    },
     "packages/storage": {
       "name": "@lotus-yunzai/storage",
       "dependencies": {
@@ -29,6 +35,8 @@
   },
   "packages": {
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
+
+    "@lotus-yunzai/hoyo-client": ["@lotus-yunzai/hoyo-client@workspace:packages/hoyo-client"],
 
     "@lotus-yunzai/storage": ["@lotus-yunzai/storage@workspace:packages/storage"],
 
