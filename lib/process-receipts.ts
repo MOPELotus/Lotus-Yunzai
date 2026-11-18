@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import { isInstallName } from "./install-command.ts";
 import { isGitRevision } from "./local-git.ts";
 
+type ReceiptAdapter = "milky";
+type ReceiptAccount = { readonly botId: number; readonly adapter?: ReceiptAdapter };
 type ReceiptTarget =
   | { readonly type: "terminal" }
-  | { readonly type: "masters"; readonly botId: number }
-  | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
+  | (ReceiptAccount & { readonly type: "masters" })
+  | (ReceiptAccount & { readonly type: "group" | "private"; readonly id: number });
 
 type ProcessOrUpdate = { readonly target: ReceiptTarget } & (
   | { readonly kind: "stop" | "restart" }
@@ -73,17 +75,14 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
 }
 
 function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"] | undefined {
-  const { type, botId, id } = target;
-  if (type === "terminal") return { type };
-  if (!positiveInteger(botId)) return;
-  if (type === "masters") return { type, botId };
+  const { type, botId, id, adapter } = target;
+  if (type === "terminal") return adapter === undefined ? { type } : undefined;
+  if (!positiveInteger(botId) || (adapter !== undefined && adapter !== "milky")) return;
+  const account: ReceiptAccount = adapter === undefined ? { botId } : { botId, adapter };
+  if (type === "masters") return { type, ...account };
   if ((type === "group" || type === "private") && positiveInteger(id)) {
-    return { type, botId, id };
+    return { type, ...account, id };
   }
-}
-
-function targetBotId(receipt: ProcessReceipt): number | undefined {
-  return receipt.target.type === "terminal" ? undefined : receipt.target.botId;
 }
 
 function receiptSlot(kind: ProcessReceipt["kind"]): ReceiptSlot {
@@ -122,18 +121,52 @@ async function readReceipt(file: string): Promise<ProcessReceipt | undefined> {
 export function createProcessReceipts(root: URL) {
   const directory = fileURLToPath(new URL("data/process-receipts/", root));
 
-  function receiptPath(botId?: number, slot: ReceiptSlot = false): string {
+  function receiptPath(botId: number | undefined, adapter: ReceiptAdapter | undefined, slot: ReceiptSlot): string {
     const suffix = slot === "install" ? ".install.json" : slot ? ".update.json" : ".json";
+    if (adapter !== undefined && (adapter !== "milky" || botId === undefined)) {
+      throw new Error("进程回执的适配器无效。");
+    }
     if (botId === undefined) return join(directory, `terminal${suffix}`);
-    if (positiveInteger(botId)) return join(directory, `${botId}${suffix}`);
+    if (positiveInteger(botId)) return join(directory, `${adapter === "milky" ? "milky-" : ""}${botId}${suffix}`);
     throw new Error("进程回执的机器人账号无效。");
+  }
+
+  async function claim(botId: number | undefined, adapter: ReceiptAdapter | undefined, slot: ReceiptSlot): Promise<ProcessReceipt | undefined> {
+    const file = receiptPath(botId, adapter, slot);
+    const claimed = join(directory, `.claim-${crypto.randomUUID()}`);
+    try {
+      await rename(file, claimed);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return;
+      throw error;
+    }
+
+    try {
+      const receipt = await readReceipt(claimed);
+      if (!receipt || receiptSlot(receipt.kind) !== slot) return;
+      const { target } = receipt;
+      if (target.type === "terminal" ? botId !== undefined : target.botId !== botId || target.adapter !== adapter) return;
+      const age = Date.now() - receipt.at;
+      if (age >= -maxClockSkew && age <= maxAge) return receipt;
+    } finally {
+      await rm(claimed, { force: true });
+    }
+  }
+
+  function take(botId?: number, adapter?: ReceiptAdapter): Promise<ProcessReceipt | undefined>;
+  function take(botId: number | undefined, slot: ReceiptSlot): Promise<ProcessReceipt | undefined>;
+  function take(botId?: number, adapter?: ReceiptAdapter | ReceiptSlot): Promise<ProcessReceipt | undefined> {
+    if (adapter === true || adapter === false || adapter === "install") return claim(botId, undefined, adapter);
+    return claim(botId, adapter, false);
   }
 
   return {
     async save(receipt: ProcessReceipt): Promise<void> {
       const value = receiptFrom(receipt);
       if (!value) throw new Error("进程回执无效。");
-      const file = receiptPath(targetBotId(value), receiptSlot(value.kind));
+      const { target } = value;
+      const slot = receiptSlot(value.kind);
+      const file = target.type === "terminal" ? receiptPath(undefined, undefined, slot) : receiptPath(target.botId, target.adapter, slot);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const staged = join(directory, `.write-${crypto.randomUUID()}`);
       try {
@@ -151,28 +184,11 @@ export function createProcessReceipts(root: URL) {
       }
     },
 
-    async take(botId?: number, slot: ReceiptSlot = false): Promise<ProcessReceipt | undefined> {
-      const file = receiptPath(botId, slot);
-      const claimed = join(directory, `.claim-${crypto.randomUUID()}`);
-      try {
-        await rename(file, claimed);
-      } catch (error) {
-        if (errorCode(error) === "ENOENT") return;
-        throw error;
-      }
-
-      try {
-        const receipt = await readReceipt(claimed);
-        if (!receipt || targetBotId(receipt) !== botId || receiptSlot(receipt.kind) !== slot) return;
-        const age = Date.now() - receipt.at;
-        if (age >= -maxClockSkew && age <= maxAge) return receipt;
-      } finally {
-        await rm(claimed, { force: true });
-      }
-    },
-
-    async discard(botId?: number): Promise<void> {
-      await rm(receiptPath(botId), { force: true });
+    take,
+    takeUpdate: (botId?: number, adapter?: ReceiptAdapter) => claim(botId, adapter, true),
+    takeInstall: (botId?: number, adapter?: ReceiptAdapter) => claim(botId, adapter, "install"),
+    async discard(botId?: number, adapter?: ReceiptAdapter): Promise<void> {
+      await rm(receiptPath(botId, adapter, false), { force: true });
     },
   };
 }

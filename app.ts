@@ -5,7 +5,7 @@ import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
-import type { MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
+import type { MilkySession, MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
 import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
@@ -76,7 +76,7 @@ if (import.meta.main) {
   const publicFiles = createPublicFiles();
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
-  const boundDeliveries = new Map<number, Promise<void>>();
+  const boundDeliveries = new Map<string, Promise<void>>();
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
@@ -87,7 +87,7 @@ if (import.meta.main) {
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
-  let milkyOnline: { id: number; startedAt: number; signal: AbortSignal } | undefined;
+  let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"] } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -207,11 +207,23 @@ if (import.meta.main) {
   }
   const stopOnDisconnect = handoff.onDisconnect(() => stop(143));
 
-  async function sendProcessMessage(target: ProcessReceipt["target"], message: string): Promise<boolean> {
+  async function sendProcessMessage(target: ProcessReceipt["target"], message: string, signal?: AbortSignal): Promise<boolean> {
     try {
+      if (signal?.aborted) return false;
       if (target.type === "terminal") {
         terminalOutput(message);
         return true;
+      }
+      if (target.adapter === "milky") {
+        const online = milkyOnline;
+        if (!online || online.id !== target.botId || online.signal.aborted || (signal && signal !== online.signal)) return false;
+        if (target.type === "masters") {
+          const outcomes = await Promise.allSettled(masterPermissions.masterIds(target.botId)
+            .filter((user_id) => user_id !== target.botId)
+            .map((user_id) => online.send({ user_id }, message)));
+          return outcomes.every((outcome) => outcome.status === "fulfilled" && outcome.value);
+        }
+        return await online.send(target.type === "private" ? { user_id: target.id } : { group_id: target.id }, message);
       }
       if (target.type === "private") return await groups.sendPrivate(target.botId, target.id, message);
       if (target.type === "masters") {
@@ -227,9 +239,11 @@ if (import.meta.main) {
     }
   }
 
-  async function deliverProcessReceipt(botId?: number, update: boolean | "install" = false) {
+  async function deliverProcessReceipt(botId?: number, update: boolean | "install" = false, adapter?: "milky", signal?: AbortSignal) {
     try {
-      const receipt = await processReceipts.take(botId, update);
+      if (signal?.aborted) return;
+      const take = update === "install" ? processReceipts.takeInstall : update ? processReceipts.takeUpdate : processReceipts.take;
+      const receipt = await take(botId, adapter);
       if (!receipt) return;
       const elapsed = formatElapsed(Date.now() - receipt.at);
       let reply: string;
@@ -247,21 +261,24 @@ if (import.meta.main) {
       } else {
         reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
       }
-      if (!await sendProcessMessage(receipt.target, reply)) console.warn("[进程管理] 未确认进程操作回执。");
+      if (!await sendProcessMessage(receipt.target, reply, signal)) console.warn("[进程管理] 未确认进程操作回执。");
     } catch {
       console.warn("[进程管理] 无法读取进程操作回执。");
     }
   }
 
-  function queueStartupMessages(botId?: number) {
+  function queueStartupMessages(botId?: number, adapter?: "milky", signal?: AbortSignal) {
     if (stopping) return;
-    const previous = botId === undefined ? undefined : boundDeliveries.get(botId);
+    const key = botId === undefined ? undefined : `${adapter ?? "onebot"}:${botId}`;
+    const previous = key === undefined ? undefined : boundDeliveries.get(key);
     const delivery = (previous ?? Promise.resolve()).then(async () => {
-      if (stopping) return;
+      if (stopping || signal?.aborted) return;
       await Promise.all([
-        deliverProcessReceipt(botId), deliverProcessReceipt(botId, true), deliverProcessReceipt(botId, "install"),
+        deliverProcessReceipt(botId, false, adapter, signal),
+        deliverProcessReceipt(botId, true, adapter, signal),
+        deliverProcessReceipt(botId, "install", adapter, signal),
       ]);
-      if (botId === undefined) return;
+      if (botId === undefined || adapter === "milky") return;
       await notifyOnlineMasters(botId, onlineCooldown, {
         signal: lifecycle.signal,
         version: onlineVersion,
@@ -273,11 +290,11 @@ if (import.meta.main) {
         send: (id, userId, message) => groups.sendPrivate(id, userId, message),
       });
     });
-    if (botId !== undefined) boundDeliveries.set(botId, delivery);
+    if (key !== undefined) boundDeliveries.set(key, delivery);
     pending.add(delivery);
     const finished = () => {
       pending.delete(delivery);
-      if (botId !== undefined && boundDeliveries.get(botId) === delivery) boundDeliveries.delete(botId);
+      if (key !== undefined && boundDeliveries.get(key) === delivery) boundDeliveries.delete(key);
     };
     void delivery.then(finished, finished);
   }
@@ -533,7 +550,10 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (id, signal) => { milkyOnline = { id, startedAt: performance.now(), signal }; },
+      onOnline: (id, signal, send) => {
+        milkyOnline = { id, startedAt: performance.now(), signal, send };
+        queueStartupMessages(id, "milky", signal);
+      },
       isMaster: permissions.isMaster,
       groupReviews: milky && createMilkyGroupReviews(),
     };

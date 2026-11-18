@@ -55,6 +55,71 @@ test("安装、更新与进程回执分槽存放，安装回执只由原账号�
   expect(await next.take(undefined, "install")).toBeUndefined();
 });
 
+test("同一机器人账号的 Milky、OneBot 与终端回执独立领取和清除", async () => {
+  const { directory, receipts, root } = await fixture();
+  const at = Date.now();
+  const oneBot = { type: "private", botId: 99, id: 42 } as const;
+  const milky = { ...oneBot, adapter: "milky" } as const;
+  const restart = { kind: "restart", at, target: oneBot } as const;
+  const milkyRestart = { ...restart, target: milky } as const;
+  const update = { kind: "update", result: "rolled-back", at, target: oneBot } as const;
+  const milkyUpdate = { ...update, target: milky } as const;
+  const install = { kind: "install", result: "rolled-back", name: "工具", at, target: oneBot } as const;
+  const milkyInstall = { ...install, target: milky } as const;
+  const terminal = { ...restart, target: { type: "terminal" } } as const;
+
+  await Promise.all([restart, milkyRestart, update, milkyUpdate, install, milkyInstall, terminal]
+    .map((receipt) => receipts.save(receipt)));
+  expect((await readdir(directory)).sort()).toEqual([
+    "99.install.json", "99.json", "99.update.json", "milky-99.install.json", "milky-99.json", "milky-99.update.json", "terminal.json",
+  ]);
+
+  const next = createProcessReceipts(root);
+  expect(await next.take(99)).toEqual(restart);
+  expect(await next.take(99)).toBeUndefined();
+  expect(await next.take(99, "milky")).toEqual(milkyRestart);
+  await Promise.all([next.save(restart), next.save(milkyRestart)]);
+  await next.discard(99, "milky");
+  expect(await next.take(99, "milky")).toBeUndefined();
+  expect(await next.take(99)).toEqual(restart);
+  expect(await next.take()).toEqual(terminal);
+
+  expect(await next.takeUpdate(99)).toEqual(update);
+  expect(await next.takeUpdate(99, "milky")).toEqual(milkyUpdate);
+  expect(await next.takeInstall(99)).toEqual(install);
+  const claims = await Promise.all([receipts.takeInstall(99, "milky"), next.takeInstall(99, "milky")]);
+  expect(claims.filter(Boolean)).toEqual([milkyInstall]);
+  expect(await readdir(directory)).toEqual([]);
+});
+
+test("领取时拒绝适配器与文件名不一致或未识别的回执", async () => {
+  const { directory, receipts } = await fixture();
+  const at = Date.now();
+  const target = { type: "masters", botId: 99, adapter: "milky" } as const;
+  const scoped = { kind: "restart", at, target } as const;
+  const unscoped = { ...scoped, target: { type: "masters", botId: 99 } } as const;
+  const invalid = { ...scoped, target: { ...target, adapter: "onebot" } };
+  const invalidTerminal = { ...scoped, target: { type: "terminal", adapter: "milky" } };
+  for (const receipt of [invalid, invalidTerminal]) {
+    await expect(receipts.save(receipt as ProcessReceipt)).rejects.toThrow("进程回执无效");
+  }
+  await expect(receipts.take(undefined, "milky")).rejects.toThrow("适配器无效");
+  await expect(receipts.discard(99, "onebot" as "milky")).rejects.toThrow("适配器无效");
+
+  await receipts.save(scoped);
+  expect(await receipts.take(99, "milky")).toEqual(scoped);
+  await writeFile(join(directory, "99.json"), JSON.stringify(scoped));
+  await writeFile(join(directory, "milky-99.json"), JSON.stringify(unscoped));
+  expect(await receipts.take(99)).toBeUndefined();
+  expect(await receipts.take(99, "milky")).toBeUndefined();
+
+  await writeFile(join(directory, "99.json"), JSON.stringify(unscoped));
+  expect(await receipts.take(99)).toEqual(unscoped);
+  await writeFile(join(directory, "99.json"), JSON.stringify(invalid));
+  expect(await receipts.take(99)).toBeUndefined();
+  expect(await readdir(directory)).toEqual([]);
+});
+
 test("安装回执拒绝不安全名称、错误修订号、主人组和错槽数据", async () => {
   const { directory, receipts } = await fixture();
   const at = Date.now();

@@ -13,13 +13,14 @@ export interface MilkyTransportOptions {
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (event: BotEvent, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
-  readonly onOnline?: (botId: number, signal: AbortSignal) => void;
+  readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"]) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
 
 export interface MilkySession {
   readonly botId: number;
+  send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
 
@@ -74,7 +75,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return result.status === "confirmed";
   }
 
-  return { botId: account, receive(body) {
+  async function send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean> {
+    const group = "group_id" in target;
+    if (!positiveId(group ? target.group_id : target.user_id)) return false;
+    const message = encodeMilkyReply(reply);
+    if (!message) return false;
+    const result = await call(group ? "send_group_message" : "send_private_message", { ...target, message });
+    return hasMessageSequence(result?.message_seq);
+  }
+
+  return { botId: account, send, receive(body) {
     if (signal.aborted) return "offline";
     if (!record(body) || !positiveId(body.self_id) || typeof body.event_type !== "string" ||
         !body.event_type || !record(body.data)) return "invalid";
