@@ -274,6 +274,59 @@ test("父进程只转发有效的活动宿主更新请求，串行报告进度�
   }
 }));
 
+test("宿主停止时处理最后一条已认证的暂停状态，省略时间表示已恢复", async () => {
+  const source = `
+    const token = process.env.LOTUS_MANAGED_TOKEN;
+    const snapshot = { type: "lotus-power", token };
+    process.on("SIGTERM", () => {
+      process.send({ ...snapshot, pausedAt: 200 });
+      process.send({ ...snapshot, pausedAt: "300" });
+      process.send({ ...snapshot, pausedAt: -300 });
+      process.send({ ...snapshot, pausedAt: undefined });
+      process.send({ ...snapshot, pausedAt: 300, token: "mismatched" });
+      process.send({ ...snapshot, type: "lotus-restart", pausedAt: 300 });
+      if (process.env.LOTUS_POWER_TEST_CLEAR === "yes") process.send(snapshot);
+      process.send({ ...snapshot, pausedAt: null }, () => process.exit(27));
+    });
+    process.send({ ...snapshot, pausedAt: 81 });
+    process.send({ type: "lotus-ready", token });
+    setInterval(() => {}, 1000);
+  `;
+  for (const clear of [false, true]) {
+    await fixture(source, async (root) => {
+      let restarts = 0;
+      const worker = spawnManagedWorker(root, {
+        pausedAt: 72, env: { ...process.env, LOTUS_POWER_TEST_CLEAR: clear ? "yes" : "no" }, onRestart() { restarts++; },
+      });
+      try {
+        expect(worker.pausedAt).toBe(72);
+        await worker.ready;
+        expect(worker.pausedAt).toBe(72);
+        expect(await worker.stop()).toBe(27);
+        expect(worker.pausedAt).toBe(clear ? undefined : 200);
+        expect(restarts).toBe(0);
+      } finally {
+        await worker.stop();
+      }
+    });
+  }
+});
+
+test("候选就绪但未激活时无法写入暂停状态", () => fixture(`
+  const token = process.env.LOTUS_MANAGED_TOKEN;
+  process.send({ type: "lotus-ready", token, revision: "${revision}" });
+  process.send({ type: "lotus-power", token, pausedAt: 500 }, () => process.exit(0));
+`, async (root) => {
+  const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, pausedAt: -1 });
+  try {
+    await worker.ready;
+    expect(await worker.exited).toBe(0);
+    expect(worker.pausedAt).toBeUndefined();
+  } finally {
+    await worker.stop();
+  }
+}));
+
 test("宿主不发就绪消息会超时，并收到停止信号", () => fixture(`
   import { writeFileSync } from "node:fs";
   process.on("SIGTERM", () => { writeFileSync("stopped", "yes"); process.exit(0); });

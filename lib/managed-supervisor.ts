@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { createLocalGit, gitHead } from "./local-git.ts";
 import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { spawnManagedWorker } from "./managed-worker.ts";
-import { createProcessReceipts } from "./process-receipts.ts";
+import { createProcessReceipts, type ProcessReceipt } from "./process-receipts.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation } from "./update-activation.ts";
 import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
@@ -101,22 +101,34 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       }
       if (stopped || signal.aborted || current !== worker) return;
       report("switching");
+      const target = request.target;
+      const targets: readonly ProcessReceipt["target"][] = target.type === "scheduled"
+        ? [
+          ...target.botIds.map((botId) => ({ type: "masters" as const, botId })),
+          ...(target.terminal ? [{ type: "terminal" as const }] : []),
+        ] : [target];
       let archived: string | undefined;
       transition = switchWorker(stage, undefined, async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
-        try {
-          const destination = { kind: "update", at: Date.now(), target: request.target } as const;
-          await receipts.save(outcome === "updated"
+        const at = Date.now();
+        const saved = await Promise.allSettled(targets.map((target) => {
+          const destination = { kind: "update", at, target } as const;
+          return receipts.save(outcome === "updated"
             ? { ...destination, result: "updated", revision, repositories,
               ...(request.force ? { preserved: true } : {}) }
             : { ...destination, result: "rolled-back" });
-        } catch {
-          console.warn("[更新] 无法保存原会话回执。");
+        }));
+        if (saved.some((item) => item.status === "rejected")) {
+          console.warn("[更新] 部分会话的更新回执未能保存。");
         }
       }, expectedPlugins).finally(() => { transition = undefined; });
       const outcome = await transition;
       if (request.force && outcome === "updated" && archived) {
         console.log(`[更新] 强制更新前的工作区保存在 ${JSON.stringify(archived)}。`);
+      }
+      if (target.type === "scheduled") {
+        if (outcome === "updated") console.log("[更新] 定时更新成功。");
+        if (outcome === "rolled-back") console.warn("[更新] 定时更新失败，已恢复旧版本。");
       }
     } catch (error) {
       if (!stopped && !signal.aborted) {
@@ -140,11 +152,11 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     await worker.ready;
   }
 
-  async function restartPrevious(notify?: NotifyResult) {
+  async function restartPrevious(notify?: NotifyResult, pausedAt?: number) {
     if (stopped) return "stopped" as const;
     try {
       await notify?.("rolled-back");
-      await startWorker();
+      await startWorker(pausedAt);
     } catch {
       completion.resolve(1);
       throw new Error("旧宿主未能重新启动。");
@@ -159,8 +171,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
     current = undefined;
     const oldExit = await previousWorker.stop();
+    const pausedAt = previousWorker.pausedAt;
     if (stopped) return "stopped" as const;
-    if (oldExit !== 143 && oldExit !== 0) return restartPrevious(notify);
+    if (oldExit !== 143 && oldExit !== 0) return restartPrevious(notify, pausedAt);
 
     const git = createLocalGit();
     const original = await git?.(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
@@ -169,7 +182,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     try {
       ({ previous } = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
-        const worker = launch(active, stage.revision, undefined, expectedPlugins);
+        const worker = launch(active, stage.revision, pausedAt, expectedPlugins);
         candidate = worker;
         try {
           await worker.ready;
@@ -205,7 +218,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         completion.resolve(1);
         throw new Error("宿主版本恢复失败。");
       }
-      return restartPrevious(notify);
+      return restartPrevious(notify, pausedAt);
     }
   }
 

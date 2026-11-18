@@ -24,7 +24,7 @@ function validPause(value: unknown): value is number {
 }
 
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
-  const { expectedRevision, expectedPlugins = [], held, onRestart, onUpdate, pausedAt } = options;
+  const { expectedRevision, expectedPlugins = [], held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
     throw new Error("宿主启动检查需要完整的 Git 提交号。");
   }
@@ -36,9 +36,11 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   const env: NodeJS.ProcessEnv = {
     ...(options.env ?? process.env), LOTUS_MANAGED_TOKEN: token, LOTUS_MANAGED_HELD: held ? "1" : "0",
   };
-  if (validPause(pausedAt)) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
+  let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
+  if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
   else delete env.LOTUS_MANAGED_PAUSED_AT;
   const readiness = Promise.withResolvers<void>();
+  const disconnected = Promise.withResolvers<void>();
   let ready = false;
   let active = !held;
   let stopping = false;
@@ -53,9 +55,17 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     cwd: root,
     env,
     stdin: "inherit", stdout: "inherit", stderr: "inherit", detached: processGroup,
+    onDisconnect() { disconnected.resolve(); },
     ipc(message: unknown) {
-      if (stopping || !message || typeof message !== "object" || !("token" in message) || message.token !== token ||
+      if (!message || typeof message !== "object" || !("token" in message) || message.token !== token ||
           !("type" in message)) return;
+      if (message.type === "lotus-power") {
+        if (!ready || !active) return;
+        if (!("pausedAt" in message)) pausedAt = undefined;
+        else if (validPause(message.pausedAt)) pausedAt = message.pausedAt;
+        return;
+      }
+      if (stopping) return;
       if (message.type === "lotus-ready" && !ready) {
         const revision = "revision" in message ? message.revision : undefined;
         if (expectedRevision !== undefined && revision !== expectedRevision) {
@@ -143,12 +153,14 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     startupError = new Error("等待宿主就绪超时。");
     void stop();
   }, startupTimeout);
-  const exited = child.exited.then((code) => {
+  const exited = child.exited.then(async (code) => {
     stopping = true;
     pendingUpdate = undefined;
     clearTimeout(startupTimer);
     clearTimeout(stopTimer);
     signalGroup("SIGKILL");
+    // Power state may be the worker's last IPC message during cleanup.
+    await disconnected.promise;
     if (!ready) readiness.reject(startupError ?? new Error("宿主在就绪前退出。"));
     const signal = child.signalCode;
     return signal === null ? code : 128 + (typeof signal === "number" ? signal : constants.signals[signal]);
@@ -171,6 +183,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   return {
     ready: readiness.promise,
     exited,
+    get pausedAt() { return pausedAt; },
     activate() {
       if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");
       if (active) return;

@@ -8,12 +8,14 @@ interface ManagedHandoff {
   readonly pausedAt?: number;
   ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[]): Promise<void>;
   restart(pausedAt?: number): boolean;
+  reportPower(pausedAt?: number): boolean;
   update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
   cancelUpdate(): void;
   onDisconnect(handler: () => void): () => void;
 }
 
 type Notice = { type: "lotus-ready"; revision?: string; plugins?: readonly string[] } | { type: "lotus-restart"; pausedAt?: number } |
+  { type: "lotus-power"; pausedAt?: number } |
   { type: "lotus-update"; requestId: string; request: ManagedUpdateRequest };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
@@ -37,6 +39,7 @@ export function createManagedHandoff(): ManagedHandoff {
       accepting: true,
       async ready() {},
       restart: () => false,
+      reportPower: () => false,
       update: () => false,
       cancelUpdate() {},
       onDisconnect: () => () => {},
@@ -50,7 +53,7 @@ export function createManagedHandoff(): ManagedHandoff {
   let disconnected = false;
   let restarting = false;
   let readiness: Promise<void> | undefined;
-  let readyForUpdate = false;
+  let activated = false;
   let cancelUpdate: (() => void) | undefined;
 
   function connected() {
@@ -90,7 +93,7 @@ export function createManagedHandoff(): ManagedHandoff {
       ...(plugins === undefined ? {} : { plugins }) } as const;
     if (!held) {
       if (!notify(message)) throw failed();
-      readyForUpdate = true;
+      activated = true;
       return;
     }
 
@@ -107,7 +110,7 @@ export function createManagedHandoff(): ManagedHandoff {
     try {
       if (!notify(message) || !await activation.promise || signal.aborted || !connected()) throw failed();
       accepting = true;
-      readyForUpdate = true;
+      activated = true;
     } finally {
       stopWatching();
       signal.removeEventListener("abort", abort);
@@ -117,7 +120,7 @@ export function createManagedHandoff(): ManagedHandoff {
   }
 
   function update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean {
-    if (!readyForUpdate || !accepting || restarting || !connected()) return false;
+    if (!activated || !accepting || restarting || !connected()) return false;
     if (cancelUpdate) {
       onProgress("busy");
       return true;
@@ -165,6 +168,10 @@ export function createManagedHandoff(): ManagedHandoff {
       if (!notify({ type: "lotus-restart", ...(pausedAt === undefined ? {} : { pausedAt }) })) return false;
       restarting = true;
       return true;
+    },
+    reportPower(pausedAt) {
+      if (!activated || !accepting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;
+      return notify({ type: "lotus-power", ...(pausedAt === undefined ? {} : { pausedAt }) });
     },
     update,
     cancelUpdate() { cancelUpdate?.(); },

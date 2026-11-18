@@ -10,6 +10,7 @@ const startupLine = "Lotus-Yunzai 已启动。";
 
 type Target = { readonly user_id: number } | { readonly group_id: number };
 type UpdateTarget = "host" | "plugin" | "all";
+type Schedule = "interval" | "cron";
 interface Frame {
   readonly action: string;
   readonly echo?: string;
@@ -74,7 +75,76 @@ function gateway(endpoint: string, botId?: number) {
 
 type Gateway = ReturnType<typeof gateway>;
 
-async function fixtureRepository(temporary: string, fail: boolean, audit?: string) {
+function bootSupervisor(active: string, env: NodeJS.ProcessEnv = {}) {
+  const clients: Gateway[] = [];
+  const supervisor = Bun.spawn([process.execPath, "scripts/run-managed.ts", active], {
+    cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, FIXTURE_MANAGED_FAILURE: "1", ...env },
+  });
+  const stderr = new Response(supervisor.stderr).text();
+  const reader = supervisor.stdout.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  async function nextEndpoint() {
+    while (true) {
+      const started = output.indexOf(startupLine);
+      if (started !== -1) {
+        const endpoints = [...output.slice(0, started).matchAll(/ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/gu)];
+        output = output.slice(started + startupLine.length);
+        const endpoint = endpoints.at(-1)?.[0];
+        if (endpoint) return endpoint;
+        throw new Error("托管宿主启动时未公布 OneBot 地址。");
+      }
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error(`未读到下一次托管宿主启动。\n${output}\n${await stderr}`);
+      output += decoder.decode(chunk.value, { stream: true });
+    }
+  }
+  return {
+    stderr, nextEndpoint,
+    async open(endpoint: string, id?: number) {
+      const client = gateway(endpoint, id);
+      clients.push(client);
+      await deadline(client.opened, "托管更新测试网关连接超时。");
+      return client;
+    },
+    async stop() {
+      supervisor.kill("SIGTERM");
+      expect(await deadline(supervisor.exited, "托管更新测试宿主退出超时。", 12_000)).toBe(143);
+    },
+    async close() {
+      for (const { socket } of clients) socket.close();
+      if (supervisor.exitCode === null && supervisor.signalCode === null) {
+        supervisor.kill("SIGTERM");
+        await deadline(supervisor.exited, "托管更新测试清理失败。", 3_000).catch(() => supervisor.kill("SIGKILL"));
+      }
+      await supervisor.exited;
+      await reader.cancel();
+      reader.releaseLock();
+    },
+  };
+}
+
+// Preserve real timers and move only the fixture's wall clock past the cron after handoff.
+const cronClock = `
+  import { existsSync as fixtureExists, readFileSync as fixtureRead, writeFileSync as fixtureWrite } from "node:fs";
+  const fixtureEpoch = Bun.env.FIXTURE_UPDATE_EPOCH;
+  if (fixtureEpoch) {
+    const DateConstructor = Date;
+    const replacement = fixtureExists(fixtureEpoch);
+    if (!replacement) fixtureWrite(fixtureEpoch, String(DateConstructor.now()));
+    const started = Number(fixtureRead(fixtureEpoch, "utf8"));
+    const offset = Math.floor(started / 60_000) * 60_000 - 4_000 - started;
+    const now = () => DateConstructor.now() + offset + (replacement ? 60_000 : 0);
+    globalThis.Date = new Proxy(DateConstructor, {
+      get: (target, key, receiver) => key === "now" ? now : Reflect.get(target, key, receiver),
+      construct: (target, args, constructor) => Reflect.construct(target, args.length ? args : [now()], constructor),
+      apply: () => new DateConstructor(now()).toString(),
+    });
+  }
+`;
+
+async function fixtureRepository(temporary: string, fail: boolean, audit?: string, schedule?: Schedule) {
   const writer = join(temporary, "writer");
   const active = join(temporary, "active");
   const remote = join(temporary, "origin.git");
@@ -106,6 +176,10 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
       ${original}
     `);
   }
+  if (schedule === "cron") {
+    const app = join(writer, "app.ts");
+    await writeFile(app, cronClock + await readFile(app, "utf8"));
+  }
   git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", remote);
   git(writer, "init", "--quiet", "--initial-branch=main");
   git(writer, "add", "--all");
@@ -135,7 +209,12 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
 
   await mkdir(join(active, "config/config"), { recursive: true });
   await symlink(dependencies, join(active, "node_modules"), "dir");
-  await writeFile(join(active, "config/config/other.yaml"), 'master: ["99:51", "100:51"]\n');
+  await writeFile(join(active, "config/config/other.yaml"), schedule
+    ? 'master: ["99:51", "100:52"]\n' : 'master: ["99:51", "100:51"]\n');
+  if (schedule) {
+    await writeFile(join(active, "config/config/bot.yaml"), schedule === "interval"
+      ? "update_time: 0.025\n" : 'update_cron: "0 * * * * *"\n');
+  }
   if (audit) {
     await Promise.all([mkdir(join(active, "data")), mkdir(join(active, "logs"))]);
     await Promise.all([
@@ -206,7 +285,6 @@ async function addLocalChanges(repository: string, source: string) {
 
 async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host", force = false) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-managed-update-"));
-  const clients: Gateway[] = [];
   const prefix = updateTarget === "all" ? "全部" : "";
   const argument = updateTarget === "plugin" ? "local-fixture" : "";
   const command = `#${prefix}${force ? "强制" : ""}更新${argument}`;
@@ -241,38 +319,8 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
     const previousPlugin = git(localPlugin, "rev-parse", "HEAD");
     if (force) expect(git(active, "merge-base", initialHead, candidate)).toBe(fail ? candidate : old);
 
-    const supervisor = Bun.spawn([process.execPath, "scripts/run-managed.ts", active], {
-      cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: {
-        PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token,
-        FIXTURE_MANAGED_FAILURE: "1", FIXTURE_WORKER_AUDIT: audit,
-      },
-    });
-    const stderr = new Response(supervisor.stderr).text();
-    const reader = supervisor.stdout.getReader();
-    const decoder = new TextDecoder();
-    let output = "";
-    async function nextEndpoint() {
-      while (true) {
-        const started = output.indexOf(startupLine);
-        if (started !== -1) {
-          const endpoints = [...output.slice(0, started).matchAll(/ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/gu)];
-          output = output.slice(started + startupLine.length);
-          const endpoint = endpoints.at(-1)?.[0];
-          if (endpoint) return endpoint;
-          throw new Error("托管宿主启动时未公布 OneBot 地址。");
-        }
-        const chunk = await reader.read();
-        if (chunk.done) throw new Error(`未读到下一次托管宿主启动。\n${output}\n${await stderr}`);
-        output += decoder.decode(chunk.value, { stream: true });
-      }
-    }
-    const open = async (endpoint: string, id?: number) => {
-      const client = gateway(endpoint, id);
-      clients.push(client);
-      await deadline(client.opened, "托管更新测试网关连接超时。");
-      return client;
-    };
+    const supervisor = bootSupervisor(active, { FIXTURE_WORKER_AUDIT: audit });
+    const { nextEndpoint, open } = supervisor;
 
     try {
       const initialEndpoint = await deadline(nextEndpoint(), "托管更新测试宿主启动超时。");
@@ -354,19 +402,11 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
         expect(await readFile(join(active, "logs/fixture-marker.txt"), "utf8")).toBe("active host log");
       }
 
-      supervisor.kill("SIGTERM");
-      expect(await deadline(supervisor.exited, "托管更新测试宿主退出超时。", 12_000)).toBe(143);
-      if (fail) expect(await stderr).toContain(liveFailure);
-      else expect(await stderr).not.toContain(liveFailure);
+      await supervisor.stop();
+      if (fail) expect(await supervisor.stderr).toContain(liveFailure);
+      else expect(await supervisor.stderr).not.toContain(liveFailure);
     } finally {
-      for (const { socket } of clients) socket.close();
-      if (supervisor.exitCode === null && supervisor.signalCode === null) {
-        supervisor.kill("SIGTERM");
-        await deadline(supervisor.exited, "托管更新测试清理失败。", 3_000).catch(() => supervisor.kill("SIGKILL"));
-      }
-      await supervisor.exited;
-      await reader.cancel();
-      reader.releaseLock();
+      await supervisor.close();
     }
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -382,3 +422,62 @@ test.skipIf(!Bun.which("git"))("#全部更新遇到仅在活动环境加载失�
 test.skipIf(!Bun.which("git"))("#强制更新对齐分叉的宿主并归档私有分支和暂存区", () => exerciseUpdate(false, "host", true), 35_000);
 test.skipIf(!Bun.which("git"))("#强制更新对齐领先的宿主失败后恢复原分支和暂存区", () => exerciseUpdate(true, "host", true), 35_000);
 test.skipIf(!Bun.which("git"))("#全部强制更新同时对齐宿主和插件并归档两份本地修改", () => exerciseUpdate(false, "all", true), 35_000);
+
+async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-scheduled-update-"));
+  try {
+    const { active, old, candidate } = await fixtureRepository(temporary, fail, undefined, schedule);
+    const supervisor = bootSupervisor(active, {
+      TZ: "UTC", FIXTURE_UPDATE_EPOCH: schedule === "cron" ? join(temporary, "fixture-epoch") : undefined,
+    });
+    try {
+      const initial = await deadline(supervisor.nextEndpoint(), "定时更新测试宿主启动超时。");
+      const first = await supervisor.open(initial, 99);
+      const second = await supervisor.open(initial, 100);
+      await expectVersion(first, old);
+      first.command("#关机", 51);
+      expectText(await first.next(), { user_id: 51 }, /^关机成功/u);
+      first.command("#状态", 42);
+      second.command("#状态", 42);
+
+      const [replacement] = await Promise.all([
+        deadline(supervisor.nextEndpoint(), "定时更新没有启动新的工作进程。", 16_000),
+        deadline(first.closed, "定时更新后原连接没有关闭。", 16_000),
+        deadline(second.closed, "定时更新后第二个原连接没有关闭。", 16_000),
+      ]);
+      expect(first.frames).toEqual([]);
+      expect(second.frames).toEqual([]);
+
+      const expected = fail ? old : candidate;
+      expect(git(active, "rev-parse", "HEAD")).toBe(expected);
+      const receipt = fail ? /^更新失败，已恢复旧版本/u : /^更新成功/u;
+      const secondAgain = await supervisor.open(replacement, 100);
+      expectText(await secondAgain.next(), { user_id: 52 }, receipt);
+      const firstAgain = await supervisor.open(replacement, 99);
+      expectText(await firstAgain.next(), { user_id: 51 }, receipt);
+      firstAgain.command("#状态", 51);
+      secondAgain.command("#状态", 52);
+      await Bun.sleep(100);
+      expect(firstAgain.frames).toEqual([]);
+      expect(secondAgain.frames).toEqual([]);
+
+      firstAgain.command("#开机", 51);
+      const elapsed = schedule === "cron" ? /1分/u : /[1-9]\d*秒/u;
+      const resumed = await firstAgain.next();
+      expectText(resumed, { user_id: 51 }, /^开机成功，距离上次关机/u);
+      expect(resumed.params.message).toMatch(elapsed);
+      await expectVersion(firstAgain, expected);
+      await expectVersion(secondAgain, expected);
+
+      await supervisor.stop();
+      if (fail) expect(await supervisor.stderr).toContain(liveFailure);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(!Bun.which("git"))("update_time 在软关机期间静默更新并向各机器人主人回执", () => exerciseScheduledUpdate("interval", false), 35_000);
+test.skipIf(!Bun.which("git"))("update_cron 启动失败后恢复旧提交和原关机时间并向各机器人主人回执", () => exerciseScheduledUpdate("cron", true), 35_000);

@@ -6,7 +6,8 @@ export interface ManagedUpdateRequest {
   readonly force?: boolean;
   readonly quiet: boolean;
   readonly target: { readonly type: "terminal" } |
-    { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
+    { readonly type: "group" | "private"; readonly botId: number; readonly id: number } |
+    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean };
   readonly directories: readonly { readonly name: string; readonly path: string; readonly packageName: string }[];
 }
 
@@ -20,6 +21,7 @@ const scopedName = /^@[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const controls = /[\u0000-\u001f\u007f-\u009f]/u;
 export const managedUpdateDirectoryLimit = 128;
+export const managedUpdateScheduledBotLimit = 128;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -44,6 +46,16 @@ function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined
   const { type, botId, id } = value;
   if (type === "terminal") return { type };
   if ((type === "group" || type === "private") && positiveId(botId) && positiveId(id)) return { type, botId, id };
+  if (type === "scheduled") {
+    const { botIds, terminal } = value;
+    if (!Array.isArray(botIds) || botIds.length > managedUpdateScheduledBotLimit || typeof terminal !== "boolean") return;
+    const unique = new Set<number>();
+    for (const id of botIds) {
+      if (!positiveId(id) || unique.has(id)) return;
+      unique.add(id);
+    }
+    return { type, botIds: [...unique], terminal };
+  }
 }
 
 export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest | undefined {
@@ -54,6 +66,7 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
       !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit) return;
   const recipient = parseTarget(target);
   if (!recipient) return;
+  if (recipient.type === "scheduled" && (all !== true || quiet !== true || force === true)) return;
 
   const plugins: ManagedUpdateRequest["directories"][number][] = [];
   const names = new Set<string>();

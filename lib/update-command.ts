@@ -21,6 +21,10 @@ const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   failed: "更新失败，请检查宿主日志。",
 };
 
+export function describeUpdateProgress(status: ManagedUpdateProgress): string {
+  return replies[status];
+}
+
 function updatePrefix(message: string): RegExpExecArray | undefined {
   const match = command.exec(message);
   if (!match || (match[1] === undefined && message.startsWith("日志", match[0].length))) return;

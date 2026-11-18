@@ -55,6 +55,35 @@ test("强制更新标记仅接受布尔值，可用于单项和全量", () => {
   }
 });
 
+test("定时更新目标只接受普通静默全量请求", () => {
+  const scheduled = {
+    all: true, quiet: true, target: { type: "scheduled" as const, botIds: [99, 88], terminal: true }, directories: [directory],
+  };
+  expect(parseManagedUpdateRequest(scheduled)).toEqual(scheduled);
+  expect(parseManagedUpdateRequest({ ...scheduled, force: false })).toEqual({ ...scheduled, force: false });
+  for (const overrides of [{ requested: "system" }, { all: false }, { all: undefined }, { quiet: false }, { force: true }]) {
+    expect(parseManagedUpdateRequest({ ...scheduled, ...overrides })).toBeUndefined();
+  }
+  const noRecipients = { ...scheduled, target: { ...scheduled.target, botIds: [], terminal: false } };
+  expect(parseManagedUpdateRequest(noRecipients)).toEqual(noRecipients);
+});
+
+test("定时更新目标只保留唯一安全账号和布尔终端标记", () => {
+  const target = { type: "scheduled" as const, botIds: Array.from({ length: 128 }, (_, index) => index + 1), terminal: false };
+  const scheduled = { all: true, quiet: true, target, directories: [] };
+  const parsed = parseManagedUpdateRequest({ ...scheduled, target: { ...target, id: 77, fake: true } });
+  expect(parsed).toEqual(scheduled);
+  if (parsed?.target.type !== "scheduled") throw new Error("未解析出定时更新目标。");
+  expect(parsed.target.botIds).not.toBe(target.botIds);
+  for (const botIds of [undefined, "99", [0], [-1], [1.5], ["99"], [2 ** 53], [NaN], [99, 99], Array(1),
+    [...target.botIds, 129]]) {
+    expect(parseManagedUpdateRequest({ ...scheduled, target: { ...target, botIds } })).toBeUndefined();
+  }
+  for (const terminal of [undefined, 0, 1, null, "false"]) {
+    expect(parseManagedUpdateRequest({ ...scheduled, target: { ...target, terminal } })).toBeUndefined();
+  }
+});
+
 test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isManagedUpdateRequestId(crypto.randomUUID())).toBe(true);
   expect(isManagedUpdateRequestId(crypto.randomUUID() + "\n")).toBe(false);

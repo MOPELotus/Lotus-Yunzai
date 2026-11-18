@@ -17,6 +17,7 @@ import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createManagedHandoff } from "./lib/managed-handoff.ts";
+import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
@@ -37,9 +38,10 @@ import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
-import { createUpdateCommand, isUpdateCommand } from "./lib/update-command.ts";
+import { createUpdateCommand, describeUpdateProgress, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
+import { scheduleUpdates } from "./lib/update-schedule.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -64,6 +66,7 @@ if (import.meta.main) {
   let plugins: PluginLoadReport | undefined;
   let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopRestartSchedule: (() => Promise<void>) | undefined;
+  let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -95,20 +98,53 @@ if (import.meta.main) {
   const updateCommand = createUpdateCommand((event, requested, quiet, report, all, force) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
-    const directories = [...plugins.directories].map(([name, metadata]) => ({ name, ...metadata }));
     return handoff.update({
-      requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target, directories,
+      requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target,
+      directories: updateDirectories(),
     }, report);
   });
+
+  function updateDirectories() {
+    return [...plugins?.directories ?? []].map(([name, metadata]) => ({ name, ...metadata }));
+  }
+
+  async function requestScheduledUpdate() {
+    if (stopping || !plugins) return;
+    const signal = lifecycle.signal;
+    const botIds = masterPermissions.botIds().slice(0, managedUpdateScheduledBotLimit);
+    const terminal = masterPermissions.terminal;
+    const progress = Promise.withResolvers<ManagedUpdateProgress | undefined>();
+    const abort = () => progress.resolve(undefined);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      if (!handoff.update({
+        all: true, quiet: true, target: { type: "scheduled", botIds, terminal }, directories: updateDirectories(),
+      }, (status) => { if (isTerminalManagedUpdateProgress(status)) progress.resolve(status); })) {
+        progress.resolve("unavailable");
+      }
+      const result = await progress.promise;
+      if (!result || result === "current" || result === "switching" || signal.aborted) return;
+      const reply = `定时更新未完成。${describeUpdateProgress(result)}`;
+      if (terminal) terminalOutput(reply);
+      else console.warn(`[更新] ${reply}`);
+      const recipients = new Set(botIds);
+      await Promise.all(groups.onlineBots().filter((botId) => recipients.has(botId))
+        .map((botId) => sendProcessMessage({ type: "masters", botId }, reply)));
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
+  }
 
   function stop(code: number) {
     if (stopping) return;
     stopping = true;
     process.exitCode = code;
+    handoff.reportPower(dispatchPower.pausedAt);
     lifecycle.abort();
     handoff.cancelUpdate();
     void stopPowerSchedule?.();
     void stopRestartSchedule?.();
+    void stopUpdateSchedule?.();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -467,6 +503,10 @@ if (import.meta.main) {
       } else if (botConfig.restart_time || botConfig.restart_cron) {
         console.warn("[进程管理] 当前运行环境不支持定时重启。");
       }
+      if (handoff.managed) stopUpdateSchedule = scheduleUpdates(botConfig, requestScheduledUpdate);
+      else if (botConfig.update_time || botConfig.update_cron) {
+        console.warn("[更新] 定时更新需要通过 bun scripts/run-managed.ts 启动宿主。");
+      }
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
       queueProcessReceipt();
 
@@ -506,7 +546,7 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.()]);
+      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.()]);
       await plugins?.dispose();
     } finally {
       try {
@@ -526,6 +566,7 @@ if (import.meta.main) {
           } finally {
             process.off("SIGINT", interrupt);
             process.off("SIGTERM", terminate);
+            handoff.reportPower(dispatchPower.pausedAt);
             stopOnDisconnect();
           }
         }

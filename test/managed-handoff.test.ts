@@ -45,6 +45,7 @@ test("候选只凭同 token 激活，发送完整修订并携带软关机状态�
     assert.equal(handoff.pausedAt, 20);
     assert.equal(handoff.accepting, false);
     assert.equal(handoff.restart(20), false);
+    assert.equal(handoff.reportPower(20), false);
     const probe = (message) => {
       if (message.type === "fixture-probe") process.send({ type: "fixture-state", accepting: handoff.accepting });
     };
@@ -57,6 +58,9 @@ test("候选只凭同 token 激活，发送完整修订并携带软关机状态�
     assert.equal(process.listenerCount("message"), existing);
     process.off("message", probe);
     assert.equal(handoff.accepting, true);
+    assert.equal(handoff.reportPower(-1), false);
+    assert.equal(handoff.reportPower(20), true);
+    assert.equal(handoff.reportPower(), true);
     assert.equal(handoff.restart(0), false);
     assert.equal(handoff.restart(20), true);
     assert.equal(handoff.restart(20), false);
@@ -73,6 +77,7 @@ test("候选只凭同 token 激活，发送完整修订并携带软关机状态�
   });
   expect(messages).toEqual([
     { type: "lotus-ready", token, revision }, { type: "fixture-state", accepting: false },
+    { type: "lotus-power", token, pausedAt: 20 }, { type: "lotus-power", token },
     { type: "lotus-restart", token, pausedAt: 20 },
   ]);
 });
@@ -129,6 +134,7 @@ test("活动工作进程的管理连接断开时，清理回调能结束运行",
       clearInterval(running);
       assert.equal(handoff.accepting, false);
       assert.equal(handoff.restart(), false);
+      assert.equal(handoff.reportPower(20), false);
       disconnected.resolve();
     });
     assert.equal(handoff.accepting, true);
@@ -171,6 +177,7 @@ test("无 IPC 或 token 无效时保留非受管模式", async () => {
     assert.equal(handoff.accepting, true);
     await handoff.ready(undefined, AbortSignal.abort());
     assert.equal(handoff.restart(), false);
+    assert.equal(handoff.reportPower(20), false);
     assert.equal(handoff.update({ quiet: false, target: { type: "terminal" }, directories: [] }, () => assert.fail()), false);
     handoff.onDisconnect(() => assert.fail("unmanaged hook invoked"))();
   `;
