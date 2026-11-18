@@ -2,6 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { accountCommands } from "../lib/account-commands.ts";
+import { CommandRegistry } from "../lib/commands.ts";
+import { readAccountRefreshPermission } from "../lib/permissions.ts";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
 import { createCredentialExchange, createHoyoClient, createProfileHoyoClient } from "../packages/hoyo-client/index.ts";
 
@@ -259,6 +263,42 @@ test("使用旧 v1/v2 令牌交换路径，校验账号后重试并保留混合�
     });
     await expect(mismatch.listRoles(second, "gs")).rejects.toMatchObject({ code: "refresh" });
     expect((await profiles.accountContext("42", 2)).account.cookie).toBe("old");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("旧刷新指令支持单档案后缀和批量刷新，沿用旧权限配置", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-refresh-command-"));
+  try {
+    const config = join(root, "config");
+    await mkdir(config);
+    await writeFile(join(config, "global.yaml"), `
+permissions:
+  users: { deny: [51] }
+  scopes:
+    checkin.refresh: { policy: master_only }
+`);
+    await writeFile(join(root, "42.yaml"), "account: { cookie: old, stuid: '71', stoken: login-1 }\n");
+    await writeFile(join(root, "42-2.yaml"), "profile: { id: 2 }\naccount: { cookie: old, stuid: '72', stoken: login-2 }\n");
+    const seen: Array<string | null> = [];
+    const registry = new CommandRegistry();
+    registry.registerModule(accountCommands(root, await readAccountRefreshPermission(pathToFileURL(root + "/")), (profiles) =>
+      createProfileHoyoClient(profiles, async (url) => {
+        seen.push(url.searchParams.get("stoken"));
+        return Response.json({ retcode: 0, data: url.pathname.endsWith("getLTokenBySToken")
+          ? { ltoken: "lt" }
+          : { cookie_token: "ck", uid: url.searchParams.get("uid") } });
+      })));
+    const user = { user_id: 42, message_type: "private", isMaster: false } as const;
+    const owner = { ...user, isMaster: true };
+    expect(await registry.dispatch("#刷新cookie2", user)).toContain("当前不允许");
+    expect(await registry.dispatch("#刷新cookie", { ...owner, user_id: 51 })).toContain("当前不允许");
+    expect(seen).toEqual([]);
+    expect(await registry.dispatch("#刷新ck2", owner)).toBe("Cookie 刷新\n档案 2 · 刷新成功");
+    expect(seen).toEqual(["login-2", "login-2"]);
+    expect(await registry.dispatch("#刷新Cookie", owner)).toBe("Cookie 刷新\n档案 1 · 刷新成功\n档案 2 · 刷新成功");
+    expect(seen).toEqual(["login-2", "login-2", "login-1", "login-1", "login-2", "login-2"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

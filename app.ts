@@ -8,7 +8,7 @@ import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
-import { readMasterPermissions } from "./lib/permissions.ts";
+import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 
 declare global {
@@ -60,15 +60,15 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
-    const [network, permissions] = await Promise.all([
-      readServerSettings(root, Bun.env), readMasterPermissions(root),
+    const [network, permissions, canRefresh] = await Promise.all([
+      readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
     ]);
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);
       console.log("[存储] Valkey 已连接。");
     }
-    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined));
+    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
     await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy);
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {

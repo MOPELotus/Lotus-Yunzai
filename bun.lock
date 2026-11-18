@@ -6,6 +6,7 @@
       "name": "lotus-yunzai",
       "dependencies": {
         "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/hoyo-client": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
         "@pixel.js/shotium": "0.12.4",
         "art-template": "4.13.2",

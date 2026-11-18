@@ -110,6 +110,7 @@ export function createHoyoClient(
   }
 
   return {
+    refreshCredentials: recover,
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       try {
         return await list(context, game, signal);
