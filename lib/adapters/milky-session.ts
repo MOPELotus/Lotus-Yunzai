@@ -51,14 +51,21 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.self_id !== account) return "foreign";
     if (body.event_type === "bot_offline") return "offline";
 
-    const message = milkyMessage(body, account, async (action, params) => {
-      const result = await call(action, params);
+    function confirmSent(result: Record<string, unknown> | undefined, params: Record<string, unknown>) {
       const sequence = result?.message_seq;
       if (message && typeof sequence === "number" && Number.isSafeInteger(sequence) && sequence >= 0) {
         onSent?.(message, params.message);
       }
       return result;
-    }, scheduleRecall);
+    }
+
+    const message = milkyMessage(body, account, async (action, params) => {
+      return confirmSent(await call(action, params), params);
+    }, scheduleRecall, async (action, params) => {
+      const result = await call.confirmed(action, params);
+      if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
+      if (result.status === "confirmed") return confirmSent(result.data, params);
+    });
     if (message) void dispatch(message).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };

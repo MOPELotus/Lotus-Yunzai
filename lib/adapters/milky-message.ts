@@ -17,8 +17,15 @@ type OutgoingSegment =
 
 type MediaType = "image" | "record" | "video";
 
+interface ForwardNode {
+  readonly user_id: number;
+  readonly sender_name: string;
+  readonly segments: readonly OutgoingSegment[];
+}
+
 const inlinePrefix = "base64://";
 const maxMediaLinkLength = 4_096;
+const maxForwardNodes = 100;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -123,9 +130,8 @@ function encodeSegment(value: unknown, remainingMediaBytes: number): OutgoingSeg
   }
 }
 
-function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: ReplyOptions["at"]): OutgoingSegment[] | undefined {
+function encodeSegments(reply: MessageReply, remainingMediaBytes: number) {
   const message: OutgoingSegment[] = [];
-  let remainingMediaBytes = maxPublicFileBytes;
   for (const part of Array.isArray(reply) ? reply : [reply]) {
     const encoded = encodeSegment(part, remainingMediaBytes);
     if (!encoded) return;
@@ -136,6 +142,13 @@ function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: 
     message.push(encoded);
   }
   if (message.length === 0) return;
+  return { message, remainingMediaBytes };
+}
+
+function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: ReplyOptions["at"]): OutgoingSegment[] | undefined {
+  const encoded = encodeSegments(reply, maxPublicFileBytes);
+  if (!encoded) return;
+  const { message } = encoded;
   if (mention !== undefined && mention !== false) {
     const encoded = mentionSegment(mention);
     if (!encoded) return;
@@ -145,6 +158,19 @@ function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: 
     message.unshift({ type: "reply", data: { message_seq: quoteId } });
   }
   return message;
+}
+
+function encodeForward(nodes: readonly MessageReply[], selfId: number): ForwardNode[] | undefined {
+  if (!Array.isArray(nodes) || nodes.length === 0 || nodes.length > maxForwardNodes) return;
+  const messages: ForwardNode[] = [];
+  let remainingMediaBytes = maxPublicFileBytes;
+  for (const node of nodes) {
+    const encoded = encodeSegments(node, remainingMediaBytes);
+    if (!encoded) return;
+    remainingMediaBytes = encoded.remainingMediaBytes;
+    messages.push({ user_id: selfId, sender_name: "Lotus-Yunzai", segments: encoded.message });
+  }
+  return messages;
 }
 
 function mediaText(value: unknown): string | undefined {
@@ -279,7 +305,9 @@ function senderMetadata(data: Record<string, unknown>, groupId: number | undefin
   return { sender, member: { is_admin: role === "admin", is_owner: role === "owner" } };
 }
 
-export function milkyMessage(value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall): MessageEvent | undefined {
+export function milkyMessage(
+  value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall, forwardCall?: MilkyCall,
+): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "message_receive" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
   const { message_scene: scene, sender_id: userId, peer_id: peerId, message_seq: messageId, segments } = value.data;
@@ -319,6 +347,14 @@ export function milkyMessage(value: unknown, selfId: number, call: MilkyCall, sc
       const result = await call("send_profile_like", { user_id: userId, count });
       return result === undefined ? 0 : count;
     },
+    forward: forwardCall && (async (nodes) => {
+      const messages = encodeForward(nodes, selfId);
+      if (!messages) return false;
+      const result = await forwardCall(action, { ...target, message: [{ type: "forward", data: { messages } }] });
+      if (result === undefined) return false;
+      if (!isSequence(result?.message_seq)) throw new Error("Milky 合并转发结果未确认。");
+      return true;
+    }),
     async reply(reply, quote = false, options = {}) {
       const mention = isGroup ? options.at === true ? userId : options.at : undefined;
       const message = encodeReply(reply, quote ? messageId : undefined, mention);

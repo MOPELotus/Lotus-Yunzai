@@ -257,3 +257,56 @@ test("Milky 拒绝带非法表情编号、语音、视频或缩略图的整条�
   for (const part of invalid) expect(await event?.reply(["内容", part])).toBe(false);
   expect(calls).toEqual([]);
 });
+
+test("Milky 合并转发以登录 QQ 为节点发送者，按原顺序提交一次普通消息", async () => {
+  const reply = fixture();
+  const forward = fixture();
+  const group = milkyMessage(incoming({ message_scene: "group", peer_id: groupId }), selfId, reply.call, undefined, forward.call);
+  const friend = milkyMessage(incoming(), selfId, reply.call, undefined, forward.call);
+  expect(await group?.forward?.(["第一条", [segment.face(14), "第二条", segment.record(Uint8Array.of(4, 5))]])).toBe(true);
+  expect(await friend?.forward?.(["私聊节点"])).toBe(true);
+  expect(reply.calls).toEqual([]);
+  expect(forward.calls).toEqual([
+    { action: "send_group_message", params: { group_id: groupId, message: [{ type: "forward", data: { messages: [
+      { user_id: selfId, sender_name: "Lotus-Yunzai", segments: [text("第一条")] },
+      { user_id: selfId, sender_name: "Lotus-Yunzai", segments: [
+        { type: "face", data: { face_id: "14" } }, text("第二条"), { type: "record", data: { uri: "base64://BAU=" } },
+      ] },
+    ] } }] } },
+    { action: "send_private_message", params: { user_id: senderId, message: [{ type: "forward", data: { messages: [
+      { user_id: selfId, sender_name: "Lotus-Yunzai", segments: [text("私聊节点")] },
+    ] } }] } },
+  ]);
+});
+
+test("Milky 合并转发整体校验节点和共享媒体上限", async () => {
+  const { calls, call } = fixture();
+  const event = milkyMessage(incoming(), selfId, call, undefined, call);
+  expect(await event?.forward?.([])).toBe(false);
+  expect(await event?.forward?.(["前一条", []])).toBe(false);
+  expect(await event?.forward?.(["前一条", segment.image("/tmp/local.png")])).toBe(false);
+  expect(await event?.forward?.(Array(101).fill("节点"))).toBe(false);
+  expect(await event?.forward?.([
+    segment.image(new Uint8Array(maxPublicFileBytes - 1)), segment.video("base64://AQI="),
+  ])).toBe(false);
+  expect(calls).toEqual([]);
+  expect(await event?.forward?.(Array(100).fill("节点"))).toBe(true);
+  expect(calls).toHaveLength(1);
+});
+
+test("Milky 合并转发区分明确失败和发送结果未知", async () => {
+  const { call } = fixture();
+  const ordinary = milkyMessage(incoming(), selfId, call);
+  expect(ordinary?.forward).toBeUndefined();
+
+  const rejected = milkyMessage(incoming(), selfId, call, undefined, async () => undefined);
+  expect(await rejected?.forward?.(["节点"])).toBe(false);
+
+  for (const result of [{}, { message_seq: 2 ** 53 }, { message_seq: "12" }]) {
+    const uncertain = milkyMessage(incoming(), selfId, call, undefined, async () => result);
+    await expect(uncertain!.forward!(["节点"])).rejects.toThrow("合并转发结果未确认");
+  }
+  const error = new Error("发送结果未知");
+  const lost = milkyMessage(incoming(), selfId, call, undefined, async () => { throw error; });
+  await expect(lost!.forward!(["节点"])).rejects.toBe(error);
+});
