@@ -261,6 +261,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
             { type: "at", qq: user_id },
           ];
         },
+        "#消息段": (args, { message, raw_message }) => JSON.stringify({ args, message, raw_message }),
       } };
       export const apps = {
         recall: class extends plugin {
@@ -409,6 +410,17 @@ failsMsg: 协议拒绝
     ) } }, { type: "at", data: { qq: "42" } }]);
     expect(await send([{ type: "image", data: { url: "https://example.invalid/input.jpg" } }]))
       .toMatchObject({ group_id: 77, message: "收到图片" });
+    const structured = await send([
+      { type: "text", data: { text: "#消息段" } },
+      { type: "image", data: { url: "https://example.invalid/input.jpg" } },
+    ], { raw_message: "#消息段[CQ:image,file=fixture]" });
+    expect(JSON.parse(String(structured.message))).toEqual({
+      args: "", raw_message: "#消息段[CQ:image,file=fixture]",
+      message: [
+        { type: "text", text: "#消息段" },
+        { type: "image", url: "https://example.invalid/input.jpg" },
+      ],
+    });
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: "私聊可用",
     });
