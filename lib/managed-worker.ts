@@ -2,6 +2,7 @@ import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
 import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
   type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
+import { pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
 
 type StopSignal = "SIGINT" | "SIGTERM";
 
@@ -15,7 +16,6 @@ interface ManagedWorkerOptions {
   readonly onUpdate?: (request: ManagedUpdateRequest, report: (status: ManagedUpdateProgress) => void) => void | Promise<void>;
 }
 
-const startupTimeout = 10_000;
 const gracefulStopTimeout = 10_000;
 const startupStopTimeout = 1_000;
 
@@ -42,12 +42,14 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   const readiness = Promise.withResolvers<void>();
   const disconnected = Promise.withResolvers<void>();
   let ready = false;
+  let nextPluginIndex = 1;
   let active = !held;
   let stopping = false;
   let restartRequested = false;
   let pendingUpdate: string | undefined;
   const updateRequests = new Set<string>();
   let startupError: Error | undefined;
+  let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   const processGroup = process.platform !== "win32" && !process.stdin.isTTY;
 
@@ -66,7 +68,13 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
         return;
       }
       if (stopping) return;
-      if (message.type === "lotus-ready" && !ready) {
+      if (message.type === "lotus-plugin-loading" && !ready) {
+        const wait = readPluginLoading(message, token, nextPluginIndex);
+        if (wait !== undefined) {
+          nextPluginIndex++;
+          watchStartup(wait);
+        }
+      } else if (message.type === "lotus-ready" && !ready) {
         const revision = "revision" in message ? message.revision : undefined;
         if (expectedRevision !== undefined && revision !== expectedRevision) {
           startupError = new Error("宿主报告的 Git 提交与预期不符。");
@@ -149,10 +157,15 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     if (child.exitCode === null && child.signalCode === null) child.kill(signal);
   }
 
-  const startupTimer = setTimeout(() => {
-    startupError = new Error("等待宿主就绪超时。");
-    void stop();
-  }, startupTimeout);
+  function watchStartup(wait: number) {
+    clearTimeout(startupTimer);
+    startupTimer = setTimeout(() => {
+      startupError = new Error("等待宿主就绪超时。");
+      void stop();
+    }, wait + pluginStartupGraceMs);
+  }
+
+  watchStartup(0);
   const exited = child.exited.then(async (code) => {
     stopping = true;
     pendingUpdate = undefined;

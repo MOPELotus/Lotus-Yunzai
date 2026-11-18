@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
+import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
@@ -154,12 +155,13 @@ export async function loadPlugins(
   commands: CommandRegistry,
   legacy: LegacyPlugins,
   services: PluginServices,
+  options: { readonly loadTimeout?: number; readonly reportLoading?: (wait: number) => void } = {},
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
   const cleanups: { name: string; cleanup: () => unknown }[] = [];
-  let interruptedCleanup: Promise<void> | undefined;
+  const interruptedCleanups: Promise<void>[] = [];
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
@@ -223,9 +225,13 @@ export async function loadPlugins(
     }
   }
 
-  const { signal } = services;
+  const loadTimeout = options.loadTimeout ?? defaultPluginLoadMs;
   for (const { label, entry, moduleName, directory, packageName } of ready) {
-    if (signal.aborted) break;
+    if (services.signal.aborted) break;
+    const deadline = new AbortController();
+    const signal = AbortSignal.any([services.signal, deadline.signal]);
+    options.reportLoading?.(loadTimeout);
+    const timer = setTimeout(() => deadline.abort(), loadTimeout);
     const started = performance.now();
     let cleanup: (() => unknown) | undefined;
     let unregister: (() => void) | undefined;
@@ -241,7 +247,7 @@ export async function loadPlugins(
     const interrupted = Promise.withResolvers<never>();
     const cancellation = addAbortListener(signal, () => {
       cancel();
-      if (cleanup) interruptedCleanup = disposeEntry();
+      if (cleanup) interruptedCleanups.push(disposeEntry());
       interrupted.reject(signal.reason);
     });
     const loading = (async () => {
@@ -252,7 +258,7 @@ export async function loadPlugins(
         if (create !== undefined && typeof create !== "function") {
           throw new Error("createModule 须为模块工厂函数。");
         }
-        const module = create ? await create(services) : published.default;
+        const module = create ? await create(Object.freeze({ ...services, signal })) : published.default;
         const { commands: handlers, aliases, dispose } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
@@ -284,7 +290,7 @@ export async function loadPlugins(
     });
     try {
       const result = await Promise.race([loading, interrupted.promise]);
-      if (signal.aborted) break;
+      signal.throwIfAborted();
       if (result !== "loaded") {
         const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
         console.warn(`[插件] 跳过 ${label}：${reason}`);
@@ -297,20 +303,27 @@ export async function loadPlugins(
       if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
       if (cleanup) cleanups.push({ name: label, cleanup });
     } catch (error) {
-      if (signal.aborted) break;
+      if (services.signal.aborted) break;
+      if (deadline.signal.aborted) {
+        console.warn(`[插件] ${label} 加载超时。`);
+        records.push({ name: label, status: "failed", reason: "插件加载超时。" });
+        continue;
+      }
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[插件] 加载 ${label} 失败：${message}`);
       records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
     } finally {
+      clearTimeout(timer);
       cancellation[Symbol.dispose]();
     }
   }
+  if (!services.signal.aborted) options.reportLoading?.(0);
   let disposal: Promise<void> | undefined;
   return {
     records, directories, timings,
     dispose() {
       return disposal ??= (async () => {
-        await interruptedCleanup;
+        await Promise.all(interruptedCleanups);
         for (const { name, cleanup } of cleanups.splice(0).reverse()) await disposeModule(name, cleanup);
       })();
     },

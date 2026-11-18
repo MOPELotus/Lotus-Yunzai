@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
+import { pluginProbeTokenEnvironment, pluginStartupGraceMs } from "../lib/plugin-load-progress.ts";
 import { verifyUpdateHealth } from "../lib/update-health.ts";
 import { copyHost } from "./host-fixture.ts";
 
@@ -21,6 +22,34 @@ async function expectReaped(root: string) {
   const pid = Number(await readFile(join(root, "pid"), "utf8"));
   expect(pid).toBeGreaterThan(1);
   expect(() => process.kill(pid, 0)).toThrow();
+}
+
+async function scaledProbe(root: string, assertion: string): Promise<number[]> {
+  const implementation = new URL("../lib/update-health.ts", import.meta.url).href;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "-e", `
+    import assert from "node:assert/strict";
+    import { verifyUpdateHealth } from ${JSON.stringify(implementation)};
+    const scheduled = [];
+    const schedule = globalThis.setTimeout;
+    globalThis.setTimeout = (callback, timeout, ...args) => {
+      if (timeout >= ${pluginStartupGraceMs}) {
+        scheduled.push(timeout);
+        timeout = timeout - ${pluginStartupGraceMs} + 500;
+      }
+      return schedule(callback, timeout, ...args);
+    };
+    const probe = verifyUpdateHealth(process.cwd(), ${JSON.stringify(revision)});
+    ${assertion}
+    console.log(JSON.stringify(scheduled));
+  `], {
+    cwd: root, env: { PATH: process.env.PATH }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    timeout: 5_000, killSignal: "SIGKILL",
+  });
+  const [status, stdout, stderr] = await Promise.all([
+    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+  ]);
+  if (status !== 0) throw new Error(`探测夹具失败。\n${stderr}`);
+  return JSON.parse(stdout);
 }
 
 test("隔离目录启动真实宿主，检查完整提交和状态后等待插件清理", () => fixture(async (root) => {
@@ -112,6 +141,69 @@ test("超时仍等待拒绝 SIGTERM 的候选进程被回收", () => fixture(asy
     await Bun.write("pid", String(process.pid));
     setInterval(() => {}, 1000);
   `);
-  await expect(verifyUpdateHealth(root, revision)).rejects.toThrow(failure);
+  expect(await scaledProbe(root, `await assert.rejects(probe, { message: ${failure} });`)).toEqual([pluginStartupGraceMs]);
   await expectReaped(root);
-}), 15_000);
+}));
+
+test("隔离探测逐入口延长启动预算，HTTP 验证开始后忽略 IPC 进度", () => fixture(async (root) => {
+  await writeFile(join(root, "app.ts"), `
+    import assert from "node:assert/strict";
+    const token = process.env[${JSON.stringify(pluginProbeTokenEnvironment)}];
+    assert.ok(token);
+    assert.notEqual(token, process.env.LOTUS_HTTP_TOKEN);
+    assert.equal(process.env.LOTUS_MANAGED_TOKEN, undefined);
+    function report(index, wait, source = token) {
+      process.send({ type: "lotus-plugin-loading", token: source, index, wait });
+    }
+    await Bun.write("pid", String(process.pid));
+    report(1, 391, "wrong-token");
+    report(2, 392);
+    report(1, 500);
+    await Bun.sleep(625);
+    report(2, 0);
+    await Bun.sleep(30);
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+      assert.equal(request.headers.get("Authorization"), "Bearer " + process.env.LOTUS_HTTP_TOKEN);
+      report(3, 393);
+      await Bun.sleep(30);
+      return Response.json({ status: "ok", revision: "${revision}" });
+    } });
+    console.log("HTTP 正在监听 " + server.url.origin + "/status");
+  `);
+
+  expect(await scaledProbe(root, "await probe;")).toEqual([
+    pluginStartupGraceMs, pluginStartupGraceMs + 500, pluginStartupGraceMs, pluginStartupGraceMs,
+  ]);
+  await expectReaped(root);
+}));
+
+test("取消隔离探测会等待清理，且隐藏取消原因", () => fixture(async (root) => {
+  const pid = join(root, "pid");
+  const reason = new Error("fixture abort cause stays private");
+  await writeFile(join(root, "app.ts"), `
+    process.on("SIGTERM", async () => {
+      await Bun.write("stopped", "clean");
+      process.exit(0);
+    });
+    await Bun.write("pid", String(process.pid));
+    setInterval(() => {}, 1000);
+  `);
+  await expect(verifyUpdateHealth(root, revision, AbortSignal.abort(reason))).rejects.toThrow(failure);
+  expect(await Bun.file(pid).exists()).toBe(false);
+
+  const controller = new AbortController();
+  const probe = verifyUpdateHealth(root, revision, controller.signal);
+  void probe.catch(() => {});
+  try {
+    const deadline = performance.now() + 2_000;
+    while (!await Bun.file(pid).exists() && performance.now() < deadline) await Bun.sleep(10);
+    expect(await Bun.file(pid).exists()).toBe(true);
+    controller.abort(reason);
+    await expect(probe).rejects.toThrow(failure);
+    expect(await readFile(join(root, "stopped"), "utf8")).toBe("clean");
+    await expectReaped(root);
+  } finally {
+    controller.abort();
+    await probe.catch(() => {});
+  }
+}));

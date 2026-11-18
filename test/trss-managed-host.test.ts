@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPluginLoading } from "../lib/plugin-load-progress.ts";
 import { copyHost } from "./host-fixture.ts";
 
 test("托管入口保持自身 PID，宿主清理后重启并在原终端继续操作", async () => {
@@ -91,6 +92,7 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
     const revision = git("rev-parse", "HEAD");
     const token = crypto.randomUUID();
     const readiness = Promise.withResolvers<unknown>();
+    const startup: number[] = [];
     const worker = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: {
@@ -98,7 +100,13 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
         LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "fixture-token",
       },
       stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: 8_000, killSignal: "SIGKILL",
-      ipc: (message) => readiness.resolve(message),
+      ipc(message: unknown) {
+        const wait = readPluginLoading(message, token, startup.length + 1);
+        if (wait !== undefined) startup.push(wait);
+        if (message && typeof message === "object" && "type" in message && message.type === "lotus-ready") {
+          readiness.resolve(message);
+        }
+      },
     });
     const reader = worker.stdout.getReader();
     const decoder = new TextDecoder();
@@ -115,6 +123,7 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
     try {
       const [notice, status] = await Promise.all([Promise.race([readiness.promise, worker.exited]), waitForHttp()]);
       expect(notice).toMatchObject({ type: "lotus-ready", token, revision, plugins: ["system"] });
+      expect(startup).toEqual([60_000, 0]);
       const gateway = new URL("/OneBotv11", status);
       const headers = { Authorization: "Bearer fixture-token", "X-Client-Role": "Universal" };
       expect((await fetch(status)).status).toBe(503);

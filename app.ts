@@ -29,6 +29,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
+import { createPluginLoadingReporter, parsePluginLoadMilliseconds } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
@@ -58,6 +59,7 @@ const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 
 if (import.meta.main) {
+  const reportLoading = createPluginLoadingReporter();
   const handoff = createManagedHandoff();
   const legacy = new LegacyPlugins(() => handoff.accepting);
   const groups = new OneBotGroups();
@@ -482,6 +484,8 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
+    const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
+    if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
       messageStatistics: createMessageStatistics(counts),
@@ -494,7 +498,7 @@ if (import.meta.main) {
           plugins: plugins?.timings ?? [],
         };
       },
-    }));
+    }), { loadTimeout, reportLoading });
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");

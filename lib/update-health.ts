@@ -1,10 +1,10 @@
 import { delimiter, dirname, isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isGitRevision } from "./local-git.ts";
+import { pluginProbeTokenEnvironment, pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
 
 const failure = "更新候选运行状态验证失败。";
 const listenLine = /(?:^|\n)HTTP 正在监听 http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/status\r?\n/u;
-const healthTimeout = 10_000;
 const stopTimeout = 1_000;
 const maxBodyBytes = 4_096;
 
@@ -94,9 +94,10 @@ async function stopCandidate(child: Pick<Bun.Subprocess, "pid" | "exitCode" | "s
   await child.exited;
 }
 
-export async function verifyUpdateHealth(directory: string, revision: string): Promise<void> {
-  if (!isGitRevision(revision)) throw new Error(failure);
+export async function verifyUpdateHealth(directory: string, revision: string, signal?: AbortSignal): Promise<void> {
+  if (!isGitRevision(revision) || signal?.aborted) throw new Error(failure);
   const token = crypto.randomUUID();
+  const probeToken = crypto.randomUUID();
   const path = (process.env.PATH ?? "").split(delimiter).filter(isAbsolute);
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(?:LANG|LANGUAGE|LC_[A-Z_]+|TZ)$/u.test(key))),
@@ -104,35 +105,63 @@ export async function verifyUpdateHealth(directory: string, revision: string): P
     LOTUS_LISTEN_HOST: "127.0.0.1",
     LOTUS_HTTP_PORT: "0",
     LOTUS_HTTP_TOKEN: token,
+    [pluginProbeTokenEnvironment]: probeToken,
   };
   try {
-    const child = Bun.spawn([process.execPath, "run", "--no-env-file", "--no-orphans", "--no-install", "app.ts"], {
-      cwd: directory, env, detached: true, stdin: "ignore", stdout: "pipe", stderr: "ignore",
-    });
     const lifetime = new AbortController();
     const ended = Promise.withResolvers<undefined>();
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    let nextIndex = 1;
+    let watchingStartup = true;
+
     function finish() {
       lifetime.abort();
       ended.resolve(undefined);
     }
+    function arm(wait = 0) {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(finish, pluginStartupGraceMs + wait);
+    }
+    function onProgress(message: unknown) {
+      if (!watchingStartup || lifetime.signal.aborted) return;
+      const wait = readPluginLoading(message, probeToken, nextIndex);
+      if (wait === undefined) return;
+      nextIndex++;
+      arm(wait);
+    }
+
+    const child = Bun.spawn([process.execPath, "run", "--no-env-file", "--no-orphans", "--no-install", "app.ts"], {
+      cwd: directory, env, detached: true, stdin: "ignore", stdout: "pipe", stderr: "ignore", ipc: onProgress,
+    });
     void child.exited.then(finish, finish);
-    const deadline = setTimeout(finish, healthTimeout);
+    arm();
     const listener = monitorPort(child.stdout);
+    signal?.addEventListener("abort", finish, { once: true });
+    if (signal?.aborted) finish();
+    let verified = false;
     try {
       const port = await Promise.race([listener.port, ended.promise]);
-      if (port === undefined) throw new Error(failure);
+      if (port === undefined || lifetime.signal.aborted) throw new Error(failure);
+      watchingStartup = false;
+      arm();
       while (!lifetime.signal.aborted) {
-        if (await healthy(port, token, revision, lifetime.signal) && !lifetime.signal.aborted) return;
+        if (await healthy(port, token, revision, lifetime.signal) && !lifetime.signal.aborted) {
+          verified = true;
+          break;
+        }
         await delay(50, undefined, { signal: lifetime.signal });
       }
     } finally {
-      clearTimeout(deadline);
+      watchingStartup = false;
+      clearTimeout(watchdog);
+      signal?.removeEventListener("abort", finish);
       try {
         await stopCandidate(child);
       } finally {
         await listener.close();
       }
     }
+    if (verified && !signal?.aborted) return;
   } catch {
     // Fail with a generic message regardless of child output or host error details.
   }

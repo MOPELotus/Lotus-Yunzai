@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,23 @@ import { spawnManagedWorker } from "../lib/managed-worker.ts";
 
 const revision = "a".repeat(40);
 const workerModule = fileURLToPath(new URL("../lib/managed-worker.ts", import.meta.url));
+
+function observeTimers() {
+  const nativeTimeout = globalThis.setTimeout;
+  const scheduled: { delay: number; handle: ReturnType<typeof setTimeout>; fire: () => void }[] = [];
+  const mock = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay: number) => {
+    const handle = nativeTimeout(callback, delay);
+    scheduled.push({ delay, handle, fire: () => { clearTimeout(handle); callback(); } });
+    return handle;
+  }) as typeof setTimeout);
+  return {
+    scheduled,
+    restore() {
+      mock.mockRestore();
+      for (const { handle } of scheduled) clearTimeout(handle);
+    },
+  };
+}
 
 async function fixture(source: string, run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "lotus-managed-worker-"));
@@ -327,13 +344,63 @@ test("候选就绪但未激活时无法写入暂停状态", () => fixture(`
   }
 }));
 
-test("宿主不发就绪消息会超时，并收到停止信号", () => fixture(`
+test("仅认证且连续的插件加载进度会重设就绪看门狗，零等待恢复默认宽限", () => fixture(`
+  const token = process.env.LOTUS_MANAGED_TOKEN;
+  const progress = { type: "lotus-plugin-loading", token };
+  process.send({ ...progress, index: 1, wait: 77, token: "wrong" });
+  process.send({ ...progress, index: 2, wait: 77 });
+  process.send({ ...progress, index: "1", wait: 77 });
+  for (const wait of [-1, 0.5, "77", 2147473648]) process.send({ ...progress, index: 1, wait });
+  process.send({ ...progress, index: 1, wait: 2147473647 });
+  process.send({ ...progress, index: 1, wait: 77 });
+  process.send({ ...progress, index: 3, wait: 77 });
+  process.send({ ...progress, index: 2, wait: 500 });
+  process.send({ ...progress, index: 3, wait: 0 });
+  process.send({ type: "lotus-ready", token });
+  process.send({ ...progress, index: 4, wait: 77 }, () => process.exit(0));
+`, async (root) => {
+  const timers = observeTimers();
+  try {
+    const worker = spawnManagedWorker(root);
+    try {
+      await worker.ready;
+      expect(await worker.exited).toBe(0);
+      expect(timers.scheduled.map(({ delay }) => delay)).toEqual([10_000, 2_147_483_647, 10_500, 10_000]);
+    } finally {
+      await worker.stop();
+    }
+  } finally {
+    timers.restore();
+  }
+}));
+
+test("旧宿主未就绪仍按固定宽限停止，清理期间不接受延长", () => fixture(`
   import { writeFileSync } from "node:fs";
-  process.on("SIGTERM", () => { writeFileSync("stopped", "yes"); process.exit(0); });
+  process.on("SIGTERM", () => {
+    writeFileSync("stopped", "yes");
+    process.send({ type: "lotus-plugin-loading", token: process.env.LOTUS_MANAGED_TOKEN, index: 1, wait: 77 },
+      () => process.exit(0));
+  });
+  writeFileSync("booting", "yes");
   setInterval(() => {}, 1000);
 `, async (root) => {
-  const worker = spawnManagedWorker(root);
-  await expect(worker.ready).rejects.toThrow("就绪超时");
-  expect(await worker.exited).toBe(0);
-  expect(await readFile(join(root, "stopped"), "utf8")).toBe("yes");
-}), 15_000);
+  const timers = observeTimers();
+  try {
+    const worker = spawnManagedWorker(root);
+    try {
+      const deadline = performance.now() + 2_000;
+      while (!await Bun.file(join(root, "booting")).exists() && performance.now() < deadline) await Bun.sleep(5);
+      expect(await Bun.file(join(root, "booting")).exists()).toBe(true);
+      expect(timers.scheduled.map(({ delay }) => delay)).toEqual([10_000]);
+      timers.scheduled[0]!.fire();
+      await expect(worker.ready).rejects.toThrow("就绪超时");
+      expect(await worker.exited).toBe(0);
+      expect(await readFile(join(root, "stopped"), "utf8")).toBe("yes");
+      expect(timers.scheduled.map(({ delay }) => delay)).toEqual([10_000, 1_000]);
+    } finally {
+      await worker.stop();
+    }
+  } finally {
+    timers.restore();
+  }
+}));

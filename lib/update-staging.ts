@@ -167,7 +167,9 @@ async function pluginStatePaths(source: string, tracked: boolean): Promise<strin
   return untracked.map((path) => `plugins/${basename(source)}/${path}`);
 }
 
-async function probeStagedUpdate(directory: string, revision: string, additionalStatePaths: readonly string[]) {
+async function probeStagedUpdate(
+  directory: string, revision: string, additionalStatePaths: readonly string[], signal?: AbortSignal,
+) {
   const paths = ["config", "data", "logs", ...additionalStatePaths].map((name) => join(directory, name));
   async function verifyParent(path: string) {
     let parent = dirname(path);
@@ -191,7 +193,7 @@ async function probeStagedUpdate(directory: string, revision: string, additional
     }
   }
   try {
-    await verifyUpdateHealth(directory, revision);
+    await verifyUpdateHealth(directory, revision, signal);
   } finally {
     await Promise.all(paths.map(async (path) => {
       await verifyParent(path);
@@ -344,7 +346,7 @@ export async function stageUpdate(
             ...copies.filter(({ source }) => source !== installation?.plugin.source).map(({ source }) => pluginStatePaths(source, true)),
             ...localCopies.map((source) => pluginStatePaths(source, false)),
           ])).flat();
-          await probeStagedUpdate(directory, stagedHead, state);
+          await probeStagedUpdate(directory, stagedHead, state, signal);
           return await activateUpdate(host, directory, verify, [...state, ...unmanaged, ...(additionalStatePaths ?? [])], async (paths) => {
             await checkRevisions();
             const activePaths = await unmanagedPluginPaths(host, managed);
