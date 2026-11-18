@@ -1,6 +1,6 @@
 # Lotus-Yunzai
 
-Lotus-Yunzai 是用 Bun 和 TypeScript 开发的云崽机器人宿主。当前版本可从终端输入指令，查询宿主运行状态。
+Lotus-Yunzai 是用 Bun 和 TypeScript 开发的云崽机器人宿主。当前版本支持从终端和 OneBot 11 私聊、群聊发送 `#状态` 查询宿主运行状态。
 
 ## 安装与启动
 
@@ -18,3 +18,10 @@ printf '#状态\n' | bun app.ts
 ```
 
 安装完成后，可运行 `bun run typecheck` 单独检查 TypeScript 类型。
+
+
+## 接入 OneBot 11
+
+在宿主的环境变量中设置 `LOTUS_ONEBOT_TOKEN`，再运行 `bun app.ts`。同一台机器上的 OneBot 11 客户端使用反向 WebSocket 的 Universal 模式，连接 `ws://127.0.0.1:25360/OneBotv11`，访问令牌与宿主相同。
+
+`LOTUS_ONEBOT_PORT` 可修改监听端口，默认是 `25360`。宿主只监听本机地址。连接后，在群聊或私聊中发送纯文本 `#状态`。协议字段见 [OneBot 11 反向 WebSocket 规范](https://github.com/botuniverse/onebot-11/blob/master/communication/ws-reverse.md)。
