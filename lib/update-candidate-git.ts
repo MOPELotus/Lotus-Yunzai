@@ -7,7 +7,7 @@ import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } 
 export type UpdateCandidateResult =
   | { readonly status: "unavailable" | "dirty" }
   | { readonly status: "ready" | "current" | "ahead" | "diverged";
-      readonly current: string; readonly candidate: string; readonly release: () => Promise<void> };
+      readonly current: string; readonly candidate: string; readonly binding?: string; readonly release: () => Promise<void> };
 
 type Upstream = { readonly branch: string; readonly remote: string; readonly merge: string; readonly url: string };
 
@@ -49,6 +49,15 @@ async function readUpstream(git: LocalGit, directory: string): Promise<Upstream 
   const protocol = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//u.exec(url)?.[1];
   if (protocol && !["file", "git", "http", "https", "ssh"].includes(protocol)) return;
   return { branch, remote, merge, url };
+}
+
+function upstreamFingerprint(upstream: Upstream): string {
+  return new Bun.CryptoHasher("sha256").update(JSON.stringify(upstream)).digest("hex");
+}
+
+export async function updateBindingFingerprint(git: LocalGit, directory: string): Promise<string | undefined> {
+  const upstream = await readUpstream(git, directory);
+  return upstream && upstreamFingerprint(upstream);
 }
 
 export async function isUpdateWorktreeDirty(git: LocalGit, directory: string): Promise<boolean | undefined> {
@@ -105,7 +114,7 @@ function releaseRef(directory: string, ref: string): () => Promise<void> {
   };
 }
 
-export async function fetchUpdateCandidate(directory: string, signal?: AbortSignal): Promise<UpdateCandidateResult> {
+export async function fetchUpdateCandidate(directory: string, signal?: AbortSignal, force = false): Promise<UpdateCandidateResult> {
   signal?.throwIfAborted();
   const unavailable = { status: "unavailable" } as const;
   const dirtyResult = { status: "dirty" } as const;
@@ -121,7 +130,7 @@ export async function fetchUpdateCandidate(directory: string, signal?: AbortSign
       readUpstream(git, checkout), gitHead(git, checkout), isUpdateWorktreeDirty(git, checkout),
     ]);
     signal?.throwIfAborted();
-    if (dirty === true) return dirtyResult;
+    if (!force && dirty === true) return dirtyResult;
     if (!upstream || !current || dirty === undefined) return unavailable;
 
     const ref = `refs/lotus-yunzai/update/${crypto.randomUUID()}`;
@@ -138,7 +147,7 @@ export async function fetchUpdateCandidate(directory: string, signal?: AbortSign
         readUpstream(inspect, checkout), isUpdateWorktreeDirty(inspect, checkout),
       ]);
       signal?.throwIfAborted();
-      if (latestDirty === true) return dirtyResult;
+      if (!force && latestDirty === true) return dirtyResult;
       if (latestDirty === undefined || latest !== current || latestUpstream?.branch !== upstream.branch ||
           latestUpstream.remote !== upstream.remote || latestUpstream.merge !== upstream.merge ||
           latestUpstream.url !== upstream.url) return unavailable;
@@ -146,7 +155,9 @@ export async function fetchUpdateCandidate(directory: string, signal?: AbortSign
       if (!candidate || !isGitRevision(candidate)) return unavailable;
 
       let status: "ready" | "current" | "ahead" | "diverged" = "current";
-      if (candidate !== current) {
+      if (force) {
+        if (candidate !== current || latestDirty) status = "ready";
+      } else if (candidate !== current) {
         const output = await inspect(checkout, ["merge-base", current, candidate], true);
         signal?.throwIfAborted();
         if (output === undefined) return unavailable;
@@ -154,8 +165,9 @@ export async function fetchUpdateCandidate(directory: string, signal?: AbortSign
         status = base === current ? "ready" : base === candidate ? "ahead" : "diverged";
       }
       signal?.throwIfAborted();
+      const binding = force && status === "ready" ? upstreamFingerprint(upstream) : undefined;
       handoff = true;
-      return { status, current, candidate, release };
+      return { status, current, candidate, ...(binding === undefined ? {} : { binding }), release };
     } finally {
       if (!handoff) await release();
     }

@@ -15,6 +15,8 @@ interface TreeEntry {
 export interface ReadyUpdate {
   readonly status: "ready";
   readonly scope: "host" | "plugin";
+  readonly force?: boolean;
+  readonly binding?: string;
   readonly name: string;
   readonly directory: string;
   readonly current: string;
@@ -27,7 +29,8 @@ export interface ReadyUpdate {
 export interface ReadyBatchUpdate {
   readonly status: "ready";
   readonly scope: "all";
-  readonly host: Pick<ReadyUpdate, "directory" | "current" | "candidate">;
+  readonly force?: boolean;
+  readonly host: Pick<ReadyUpdate, "directory" | "current" | "candidate" | "force" | "binding">;
   readonly plugins: ReadonlyMap<string, ReadyUpdate>;
   readonly release: () => Promise<void>;
 }
@@ -38,7 +41,7 @@ type BlockedUpdate = {
 };
 
 type UpdatePreflight = ReadyUpdate | BlockedUpdate;
-type Candidate = Pick<ReadyUpdate, "current" | "candidate" | "release">;
+type Candidate = Pick<ReadyUpdate, "current" | "candidate" | "binding" | "release">;
 
 const builtIns = new Set(builtInDirectories.values());
 
@@ -112,11 +115,11 @@ async function pluginCandidateMetadata(
 }
 
 async function inspectCandidate(
-  directory: string, result: Candidate, name?: string, signal?: AbortSignal,
+  directory: string, result: Candidate, name?: string, signal?: AbortSignal, force = false,
 ): Promise<BlockedUpdate | { status: "ready"; update: ReadyUpdate; identities: readonly string[] }> {
   const git = createLocalGit();
   if (!git) return { status: "unavailable" };
-  const { current, candidate, release } = result;
+  const { current, candidate, binding, release } = result;
   const [files, diff] = await Promise.all([
     readTree(git, directory, candidate),
     git(directory, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
@@ -131,6 +134,7 @@ async function inspectCandidate(
   return {
     status: "ready", identities: metadata?.identities ?? [],
     update: { status: "ready", scope: name === undefined ? "host" : "plugin", name: name ?? "Lotus-Yunzai",
+      ...(force ? { force, binding } : {}),
       directory, current, candidate, changedPaths: diff.split("\0").filter(Boolean), gitlinks, release },
   };
 }
@@ -144,7 +148,7 @@ async function installedIdentities(host: string, name: string, plugin: { path: s
 }
 
 export async function prepareUpdate(
-  root: URL, directories: PluginDirectories, requested?: string, signal?: AbortSignal,
+  root: URL, directories: PluginDirectories, requested?: string, signal?: AbortSignal, force = false,
 ): Promise<UpdatePreflight> {
   signal?.throwIfAborted();
   let release: (() => Promise<void>) | undefined;
@@ -158,12 +162,12 @@ export async function prepareUpdate(
     if (query && (!plugin || !path)) return { status: "unavailable" };
     const external = plugin && !builtIns.has(plugin.name) ? plugin : undefined;
     const directory = external && path ? path : host;
-    const result = await fetchUpdateCandidate(directory, signal);
+    const result = await fetchUpdateCandidate(directory, signal, force);
     if ("release" in result) release = result.release;
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status };
     if (result.status !== "ready") return { status: result.status };
-    const inspected = await inspectCandidate(directory, result, external?.name, signal);
+    const inspected = await inspectCandidate(directory, result, external?.name, signal, force);
     if (inspected.status !== "ready") return inspected;
     if (external) {
       const identities = new Set(inspected.identities);
@@ -210,7 +214,7 @@ async function externalBinding(directory: string) {
 }
 
 export async function prepareAllUpdates(
-  root: URL, directories: PluginDirectories, signal?: AbortSignal,
+  root: URL, directories: PluginDirectories, signal?: AbortSignal, force = false,
 ): Promise<ReadyBatchUpdate | BlockedUpdate> {
   const releases = new Set<() => Promise<void>>();
   const release = async () => {
@@ -226,14 +230,15 @@ export async function prepareAllUpdates(
   try {
     signal?.throwIfAborted();
     const directory = await realpath(fileURLToPath(root));
-    const result = await fetchUpdateCandidate(directory, signal);
+    const result = await fetchUpdateCandidate(directory, signal, force);
     if ("release" in result) releases.add(result.release);
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status, target };
     if (result.status === "diverged") return { status: "diverged", target };
 
     const { current } = result;
-    const candidate = result.status === "ready" ? result.candidate : current;
+    const selected = result.status === "ready";
+    const candidate = selected ? result.candidate : current;
     const tracked = await trackedPluginNames(directory, current);
     const plugins = new Map<string, ReadyUpdate>();
     const candidateIdentities = new Map<string, readonly string[]>();
@@ -247,20 +252,20 @@ export async function prepareAllUpdates(
       signal?.throwIfAborted();
       if (binding === "unbound") continue;
       if (binding !== "bound") return { status: binding, target };
-      const result = await fetchUpdateCandidate(path, signal);
+      const result = await fetchUpdateCandidate(path, signal, force);
       if ("release" in result) releases.add(result.release);
       signal?.throwIfAborted();
       if (!("release" in result)) return { status: result.status, target };
       if (result.status === "diverged") return { status: "diverged", target };
       if (result.status !== "ready") continue;
-      const inspected = await inspectCandidate(path, result, name, signal);
+      const inspected = await inspectCandidate(path, result, name, signal, force);
       if (inspected.status !== "ready") return { status: inspected.status, target };
       plugins.set(name, inspected.update);
       candidateIdentities.set(name, inspected.identities);
     }
 
     signal?.throwIfAborted();
-    if (candidate === current && !plugins.size) return { status: "current" };
+    if (!selected && !plugins.size) return { status: "current" };
     if (plugins.size) {
       const peers = new Set<string>();
       for (const [name, plugin] of directories) {
@@ -276,7 +281,10 @@ export async function prepareAllUpdates(
     }
     signal?.throwIfAborted();
     ready = true;
-    return { status: "ready", scope: "all", host: { directory, current, candidate }, plugins, release };
+    return {
+      status: "ready", scope: "all", ...(force ? { force } : {}),
+      host: { directory, current, candidate, ...(force && selected ? { force, binding: result.binding } : {}) }, plugins, release,
+    };
   } catch {
     signal?.throwIfAborted();
     return { status: "unavailable", target };

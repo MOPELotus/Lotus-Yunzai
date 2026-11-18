@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createLocalGit } from "../lib/local-git.ts";
+import { updateBindingFingerprint } from "../lib/update-candidate-git.ts";
 import { prepareAllUpdates, prepareUpdate } from "../lib/update-preflight.ts";
 
 const noGit = !Bun.which("git");
@@ -209,10 +211,10 @@ test.skipIf(noGit)("预检区分无更新、未提交修改、本地领先与分
   git(temporary, "clone", "--quiet", "--no-local", host.remote, checkout);
   const root = pathToFileURL(`${checkout}/`);
 
-  async function expectStatus(expected: "current" | "dirty" | "ahead" | "diverged" | "unavailable") {
+  async function expectStatus(expected: "current" | "dirty" | "ahead" | "diverged" | "unavailable", force = false) {
     const oldHead = head(checkout);
     const oldRefs = refs(checkout);
-    const result = await prepareUpdate(root, new Map());
+    const result = await prepareUpdate(root, new Map(), undefined, undefined, force);
     try {
       expect(result.status).toBe(expected);
       expect(head(checkout)).toBe(oldHead);
@@ -222,21 +224,45 @@ test.skipIf(noGit)("预检区分无更新、未提交修改、本地领先与分
     expect(refs(checkout)).toBe(oldRefs);
   }
 
+  async function expectForcedCandidate(candidate: string, changedPaths: readonly string[]) {
+    const oldHead = head(checkout);
+    const oldRefs = refs(checkout);
+    const ready = requireReady(await prepareUpdate(root, new Map(), undefined, undefined, true));
+    try {
+      expect(ready).toMatchObject({ force: true, current: oldHead, candidate, changedPaths });
+      expect(ready.binding).toMatch(/^[0-9a-f]{64}$/u);
+      expect(await updateBindingFingerprint(createLocalGit()!, checkout)).toBe(ready.binding);
+      expect(head(checkout)).toBe(oldHead);
+    } finally {
+      await ready.release();
+    }
+    expect(refs(checkout)).toBe(oldRefs);
+  }
+
+  const initial = head(checkout);
   await expectStatus("current");
+  await expectStatus("current", true);
   const trackedFile = join(checkout, "tracked.txt");
+  await writeFile(trackedFile, "staged edit\n");
+  git(checkout, "add", "tracked.txt");
   await writeFile(trackedFile, "local edit\n");
   await expectStatus("dirty");
+  await expectForcedCandidate(initial, []);
+  expect(git(checkout, "show", ":tracked.txt")).toBe("staged edit");
   expect(await readFile(trackedFile, "utf8")).toBe("local edit\n");
 
   git(checkout, "add", "tracked.txt");
   git(checkout, "commit", "--quiet", "-m", "Fixture local change");
   await expectStatus("ahead");
+  await expectForcedCandidate(initial, ["tracked.txt"]);
 
   await writeFile(join(host.writer, "tracked.txt"), "remote edit\n");
-  publish(host.writer, "Fixture remote change");
+  const remote = publish(host.writer, "Fixture remote change");
   await expectStatus("diverged");
+  await expectForcedCandidate(remote, ["tracked.txt"]);
   git(checkout, "switch", "--detach", "--quiet");
   await expectStatus("unavailable");
+  await expectStatus("unavailable", true);
 }));
 
 test.skipIf(noGit)("批量预检按最终集合校验插件身份，并释放所有候选引用", () => withTemporary(async (temporary) => {
@@ -287,6 +313,52 @@ test.skipIf(noGit)("批量预检按最终集合校验插件身份，并释放所
   }
   expect(await prepareAllUpdates(root, directories)).toEqual({ status: "rejected", target: "second" });
   expect(paths.map(refs)).toEqual(initialRefs);
+}));
+
+test.skipIf(noGit)("全量强制预检标记同提交的脏目标，继续拒绝上游不合规插件", () => withTemporary(async (temporary) => {
+  const host = await createRemote(temporary, "host", { "app.ts": "export {};\n", ".gitignore": "/plugins/\n" });
+  const plugin = await createRemote(temporary, "plugin", {
+    "package.json": pluginManifest(pluginPackage), "index.js": pluginEntry,
+  });
+  const checkout = join(temporary, "checkout");
+  const path = join(checkout, "plugins/external");
+  git(temporary, "clone", "--quiet", host.remote, checkout);
+  git(temporary, "clone", "--quiet", plugin.remote, path);
+  const root = pathToFileURL(`${checkout}/`);
+  const directories = new Map([["external", { path, packageName: pluginPackage }]]);
+  const hostHead = head(checkout);
+  const pluginHead = head(path);
+  const initialRefs = [checkout, path].map(refs);
+
+  await writeFile(join(checkout, "app.ts"), "export const local = true;\n");
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "dirty", target: "Lotus-Yunzai" });
+  const result = await prepareAllUpdates(root, directories, undefined, true);
+  if (result.status !== "ready") throw new Error(`全量强制预检失败：${JSON.stringify(result)}。`);
+  try {
+    expect(result.force).toBe(true);
+    expect(result.host).toMatchObject({ force: true, current: hostHead, candidate: hostHead });
+    expect(result.host.binding).toBe(await updateBindingFingerprint(createLocalGit()!, checkout));
+    expect(result.plugins.size).toBe(0);
+  } finally {
+    await result.release();
+  }
+
+  git(checkout, "restore", "app.ts");
+  await writeFile(join(path, "index.js"), `${pluginEntry}\nexport const local = true;\n`);
+  const pluginOnly = await prepareAllUpdates(root, directories, undefined, true);
+  if (pluginOnly.status !== "ready") throw new Error(`全量强制预检失败：${JSON.stringify(pluginOnly)}。`);
+  try {
+    expect(pluginOnly.host.force).toBeUndefined();
+    expect(pluginOnly.plugins.get("external")).toMatchObject({ force: true, current: pluginHead, candidate: pluginHead });
+  } finally {
+    await pluginOnly.release();
+  }
+
+  await writeFile(join(plugin.writer, "package.json"), pluginManifest(pluginPackage, ["wuwa"]));
+  publish(plugin.writer, "Disallowed upstream plugin");
+  expect(await prepareAllUpdates(root, directories, undefined, true)).toEqual({ status: "rejected", target: "external" });
+  expect(await prepareUpdate(root, directories, "external", undefined, true)).toEqual({ status: "rejected" });
+  expect([checkout, path].map(refs)).toEqual(initialRefs);
 }));
 
 test.skipIf(noGit)("批量预检保持领先宿主、跳过无绑定插件，并标记已绑定仓库失败", () => withTemporary(async (temporary) => {
