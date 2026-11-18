@@ -42,6 +42,9 @@
     "plugins/atlas": {
       "name": "@lotus-yunzai/atlas",
     },
+    "plugins/group": {
+      "name": "@lotus-yunzai/group",
+    },
     "plugins/meme": {
       "name": "@lotus-yunzai/meme",
       "version": "1.18.0",
@@ -60,6 +63,8 @@
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
 
     "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
+
+    "@lotus-yunzai/group": ["@lotus-yunzai/group@workspace:plugins/group"],
 
     "@lotus-yunzai/hoyo-client": ["@lotus-yunzai/hoyo-client@workspace:packages/hoyo-client"],
 

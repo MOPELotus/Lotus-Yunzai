@@ -10,3 +10,6 @@
 [submodule "plugins/notice"]
 	path = plugins/notice
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Notice.git
+[submodule "plugins/group"]
+	path = plugins/group
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Group.git

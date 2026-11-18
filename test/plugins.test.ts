@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -161,13 +161,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       name: "fixture-context", lotusYunzai: { entry: "./index.ts" },
     }));
     await writeFile(join(plugins, "context", "index.ts"), `
-      export default { aliases: { "测试赞": "#协议赞" }, commands: {
-        "#协议赞": async (_args, context) => {
-          try {
-            if (!await context.isFriend?.()) return "非好友";
-            return "确认 " + await context.likeSelf(3);
-          } catch { return "协议拒绝"; }
-        },
+      export default { commands: {
         "#会话": (args, context) => {
           const { message_type, user_id, group_id, self_id, isMaster, member } = context;
           return [
@@ -186,6 +180,15 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     await writeFile(join(root, "config", "config", "other.yaml"), 'master:\n  - "99:51"\n');
     await writeFile(join(root, "config", "config", "server.yaml"),
       "port: 0\nauth:\n  Authorization: Bearer test-token\n  X-Server-Key: integration\n");
+    await cp(new URL("../plugins/group", import.meta.url), join(plugins, "group"), {
+      recursive: true, filter: (path) => !path.endsWith("/.git"),
+    });
+    await writeFile(join(root, "config", "group.yaml"), `
+strangeThumbUp: false
+count: 3
+successMsg: "确认 {{thumbUpNum}}"
+failsMsg: 协议拒绝
+`);
     const profiles = join(root, "profiles");
     await mkdir(profiles);
     await writeFile(join(profiles, "42.yaml"), "account: { cookie: fixture-private, stoken: fixture-secret }");
@@ -324,7 +327,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     }
 
     const friendRequest = nextFrame();
-    client.send(JSON.stringify({ ...event, message: "测试赞" }));
+    client.send(JSON.stringify({ ...event, message: "赞我" }));
     const friends = await friendRequest;
     expect(friends).toMatchObject({ action: "get_friend_list", params: {} });
     const likeRequest = nextFrame();
@@ -337,7 +340,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     expect(await confirmation).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "确认 3" } });
 
     const privateLike = nextFrame();
-    client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#协议赞" }));
+    client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#赞我" }));
     const refused = await privateLike;
     expect(refused).toMatchObject({ action: "send_like", params: { user_id: 42 } });
     const rejection = nextFrame();
