@@ -1,6 +1,7 @@
-import type { BotEvent } from "../messages.ts";
+import type { BotEvent, MessageReply } from "../messages.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
+import { milkyFriendRequest } from "./milky-friend-request.ts";
 import { encodeMilkyReply, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 
@@ -8,6 +9,7 @@ export interface MilkyTransportOptions {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (event: BotEvent, message: unknown) => void;
+  readonly masterIds?: (botId: number) => readonly number[];
 }
 
 export interface MilkySession {
@@ -34,6 +36,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   if (signal.aborted || !positiveId(account)) return;
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
+  const reviewedFriendRequests = new Set<string>();
   signal.addEventListener("abort", () => {
     for (const timer of recalls) clearTimeout(timer);
     recalls.clear();
@@ -47,6 +50,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }, seconds * 1_000);
     timer.unref();
     recalls.add(timer);
+  }
+
+  async function approveFriendRequest(flag: string, action: string, params: Record<string, unknown>) {
+    if (signal.aborted || reviewedFriendRequests.has(flag)) return false;
+    reviewedFriendRequests.add(flag);
+    if (reviewedFriendRequests.size > 4096) reviewedFriendRequests.delete(reviewedFriendRequests.values().next().value!);
+    const result = await call.confirmed(action, params);
+    if (result.status === "unknown") throw new Error("Milky 好友审批结果未确认。");
+    return result.status === "confirmed";
   }
 
   return { receive(body) {
@@ -70,7 +82,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     });
-    const notice = message ? undefined : milkyNotice(body, account, call, async (target, reply) => {
+    async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply) {
       const content = encodeMilkyReply(reply);
       if (!content) return false;
       const action = "group_id" in target ? "send_group_message" : "send_private_message";
@@ -79,10 +91,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown" || !hasMessageSequence(result.data.message_seq)) {
         throw new Error("Milky 通知回复未确认。");
       }
-      confirmSent(notice, result.data, content);
+      confirmSent(event && { ...event, ...target }, result.data, content);
       return true;
-    });
-    const event = message ?? notice;
+    }
+
+    const request = body.event_type === "friend_request"
+      ? milkyFriendRequest(body, account, approveFriendRequest, (user_id, reply) => sendReply({ user_id }, reply), options.masterIds?.(account) ?? [])
+      : undefined;
+    const event = message ?? request ?? milkyNotice(body, account, call, sendReply);
     if (event) void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };

@@ -530,6 +530,7 @@ if (import.meta.main) {
       signal: lifecycle.signal,
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
+      masterIds: permissions.masterIds,
     };
     const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, milkyOptions) : undefined;
     const milkyWs = milky?.connection === "ws" ? createMilkyWs(milky, milkyOptions) : undefined;
