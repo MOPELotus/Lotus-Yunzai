@@ -2,6 +2,7 @@ import { basename, dirname, isAbsolute, join, normalize } from "node:path";
 
 export interface ManagedUpdateRequest {
   readonly requested?: string;
+  readonly all?: boolean;
   readonly quiet: boolean;
   readonly target: { readonly type: "terminal" } |
     { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
@@ -46,8 +47,9 @@ function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined
 
 export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest | undefined {
   if (!record(value)) return;
-  const { requested, quiet, target, directories } = value;
-  if ((requested !== undefined && !isManagedUpdateName(requested)) || typeof quiet !== "boolean" ||
+  const { requested, all, quiet, target, directories } = value;
+  if ((all !== undefined && typeof all !== "boolean") ||
+      (requested !== undefined && (all === true || !isManagedUpdateName(requested))) || typeof quiet !== "boolean" ||
       !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit) return;
   const recipient = parseTarget(target);
   if (!recipient) return;
@@ -65,7 +67,10 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
     plugins.push({ name, path, packageName });
   }
 
-  return { ...(requested === undefined ? {} : { requested }), quiet, target: recipient, directories: plugins };
+  return {
+    ...(requested === undefined ? {} : { requested }), ...(all === undefined ? {} : { all }),
+    quiet, target: recipient, directories: plugins,
+  };
 }
 
 export function isManagedUpdateRequestId(value: unknown): value is string {

@@ -92,11 +92,11 @@ if (import.meta.main) {
   });
   const updateLogCommand = createUpdateLogCommand((requested) =>
     plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
-  const updateCommand = createUpdateCommand((event, requested, quiet, report) => {
+  const updateCommand = createUpdateCommand((event, requested, quiet, report, all) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
     const directories = [...plugins.directories].map(([name, metadata]) => ({ name, ...metadata }));
-    return handoff.update({ requested, quiet, target, directories }, report);
+    return handoff.update({ requested, ...(all ? { all: true } : {}), quiet, target, directories }, report);
   });
 
   function stop(code: number) {
@@ -141,7 +141,12 @@ if (import.meta.main) {
       const elapsed = formatElapsed(Date.now() - receipt.at);
       let reply: string;
       if (receipt.kind === "update") {
-        reply = receipt.result === "updated" ? `更新成功，提交 ${receipt.revision.slice(0, 12)}` : "更新失败，已恢复旧版本。";
+        if (receipt.result === "rolled-back") reply = "更新失败，已恢复旧版本。";
+        else if (receipt.repositories !== undefined) {
+          reply = `更新成功，本次更新 ${receipt.repositories} 个仓库，宿主提交 ${receipt.revision.slice(0, 12)}`;
+        } else {
+          reply = `更新成功，提交 ${receipt.revision.slice(0, 12)}`;
+        }
       } else {
         reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
       }

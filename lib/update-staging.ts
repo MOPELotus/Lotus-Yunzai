@@ -10,7 +10,7 @@ import { buildUpdateCheckout, initializeUpdateSubmodules } from "./update-build.
 import { isUpdateWorktreeDirty } from "./update-candidate-git.ts";
 import { checkoutUpdateRevision } from "./update-checkout.ts";
 import { verifyUpdateHealth } from "./update-health.ts";
-import type { ReadyUpdate } from "./update-preflight.ts";
+import type { ReadyBatchUpdate, ReadyUpdate } from "./update-preflight.ts";
 import { restoreUpdateTracking } from "./update-tracking.ts";
 
 const builtIns = new Set(builtInDirectories.values());
@@ -132,7 +132,7 @@ async function probeStagedUpdate(directory: string, revision: string, additional
 }
 
 export async function stageUpdate(
-  root: URL, directories: PluginDirectories, ready: ReadyUpdate, stagingParent = tmpdir(), signal?: AbortSignal,
+  root: URL, directories: PluginDirectories, ready: ReadyUpdate | ReadyBatchUpdate, stagingParent = tmpdir(), signal?: AbortSignal,
 ) {
   let staging: string | undefined;
   let phase = "校验当前工作区";
@@ -141,8 +141,17 @@ export async function stageUpdate(
     const [host, parent] = await Promise.all([realpath(fileURLToPath(root)), realpath(stagingParent)]);
     if (within(host, parent)) throw new Error("候选目录必须位于活动宿主之外。");
     const hostHead = await readActiveRevision(host, signal);
-    if (ready.scope === "host" && (ready.directory !== host || ready.current !== hostHead)) {
+    const hostTarget = ready.scope === "all" ? ready.host : ready.scope === "host" ? ready : undefined;
+    if (hostTarget && (hostTarget.directory !== host || hostTarget.current !== hostHead)) {
       throw new Error("宿主提交已变更。");
+    }
+    const targets = new Map<string, ReadyUpdate>(
+      ready.scope === "all" ? ready.plugins : ready.scope === "plugin" ? [[ready.name, ready]] : [],
+    );
+    for (const [name, target] of targets) {
+      if (target.scope !== "plugin" || target.name !== name || !directories.has(name) || builtIns.has(name)) {
+        throw new Error("候选插件未加载或由宿主提交管理。");
+      }
     }
 
     phase = "检出宿主候选";
@@ -150,7 +159,7 @@ export async function stageUpdate(
     const directory = join(staging, "checkout");
     const cache = join(staging, "bun-cache");
     await mkdir(cache);
-    const stagedHead = ready.scope === "host" ? ready.candidate : hostHead;
+    const stagedHead = hostTarget?.candidate ?? hostHead;
     await checkoutUpdateRevision(host, stagedHead, directory, signal);
 
     phase = "准备外部插件";
@@ -160,12 +169,12 @@ export async function stageUpdate(
     const [trackedActive, trackedCandidate] = await Promise.all([trackedPluginNames(host), trackedPluginNames(directory)]);
     const copies: { source: string; head: string; destination: string; stagedHead: string }[] = [];
     const localCopies: string[] = [];
-    let selected = ready.scope === "host";
     for (const [name, plugin] of directories) {
       signal?.throwIfAborted();
       if (builtIns.has(name)) continue;
+      const target = targets.get(name);
       if (trackedActive.has(name)) {
-        if (ready.scope === "plugin" && name === ready.name) throw new Error("插件由宿主提交管理。");
+        if (target) throw new Error("插件由宿主提交管理。");
         continue;
       }
       if (trackedCandidate.has(name)) throw new Error("候选占用活动插件目录。");
@@ -175,23 +184,23 @@ export async function stageUpdate(
       const git = createLocalGit();
       if (!git) throw new Error("无法检查插件工作区。");
       if (!await isGitCheckout(git, source)) {
-        if (ready.scope === "plugin" && name === ready.name) throw new Error("候选插件的 Git 工作区已变更。");
+        if (target) throw new Error("候选插件的 Git 工作区已变更。");
         await copyLocalPlugin(source, destination, signal);
         localCopies.push(source);
         continue;
       }
       const head = await readActiveRevision(source, signal);
       let revision = head;
-      if (ready.scope === "plugin" && name === ready.name) {
-        if (ready.directory !== source || ready.current !== head) throw new Error("插件提交已变更。");
-        revision = ready.candidate;
-        selected = true;
+      if (target) {
+        if (target.directory !== source || target.current !== head) throw new Error("插件提交已变更。");
+        revision = target.candidate;
       }
       await checkoutUpdateRevision(source, revision, destination, signal);
       await initializeUpdateSubmodules(destination, cache, signal);
       copies.push({ source, head, destination, stagedHead: revision });
+      targets.delete(name);
     }
-    if (!selected) throw new Error("候选插件未加载。");
+    if (targets.size) throw new Error("候选插件未加载。");
 
     phase = "运行候选初始化和类型检查";
     await buildUpdateCheckout(directory, cache, signal);

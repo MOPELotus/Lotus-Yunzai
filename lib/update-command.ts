@@ -3,9 +3,9 @@ import type { MessageEvent } from "./messages.ts";
 import { parseUpdateTarget } from "./update-target.ts";
 
 type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet: boolean,
-  report: (status: ManagedUpdateProgress) => void) => boolean;
+  report: (status: ManagedUpdateProgress) => void, all: boolean) => boolean;
 
-const command = /^#(?:安?静)?更新(?!日志)/u;
+const command = /^#(全部)?(安?静)?更新/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
 const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   checking: "开始更新，正在检查上游。",
@@ -21,27 +21,38 @@ const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   failed: "更新失败，请检查宿主日志。",
 };
 
+function updatePrefix(message: string): RegExpExecArray | undefined {
+  const match = command.exec(message);
+  if (!match || (match[1] === undefined && message.startsWith("日志", match[0].length))) return;
+  return match;
+}
+
 export function isUpdateCommand(text: string): boolean {
-  return command.test(text.trimStart());
+  return updatePrefix(text.trimStart()) !== undefined;
 }
 
 export function createUpdateCommand(request: RequestUpdate) {
   return async (event: MessageEvent): Promise<void> => {
     const message = event.msg.trimStart();
-    const match = command.exec(message);
+    const match = updatePrefix(message);
     if (!match) return;
     if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) {
       await event.reply("暂无权限，只有主人才能操作");
       return;
     }
 
+    const all = match[1] !== undefined;
+    const quiet = match[2] !== undefined;
     const requested = parseUpdateTarget(message.slice(match[0].length));
+    if (all && requested !== "") {
+      await event.reply("请只发送 #全部更新、#全部静更新 或 #全部安静更新。");
+      return;
+    }
     if (requested === undefined) {
       await event.reply("请输入有效的插件名，例如 #更新 system 或 #更新 @lotus-yunzai/system。");
       return;
     }
 
-    const quiet = match[0] !== "#更新";
     let pending = Promise.resolve();
     const report = (status: ManagedUpdateProgress) => {
       if (quiet && quietStatuses.has(status)) return;
@@ -49,7 +60,7 @@ export function createUpdateCommand(request: RequestUpdate) {
     };
     let sent: boolean;
     try {
-      sent = request(event, requested || undefined, quiet, report);
+      sent = request(event, requested || undefined, quiet, report, all);
     } catch {
       await event.reply("发送更新请求失败，请稍后重试。");
       return;

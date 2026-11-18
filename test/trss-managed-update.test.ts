@@ -9,6 +9,7 @@ const liveFailure = "fixture candidate exited only under the supervisor environm
 const startupLine = "Lotus-Yunzai 已启动。";
 
 type Target = { readonly user_id: number } | { readonly group_id: number };
+type UpdateTarget = "host" | "plugin" | "all";
 interface Frame {
   readonly action: string;
   readonly echo?: string;
@@ -73,7 +74,7 @@ function gateway(endpoint: string, botId?: number) {
 
 type Gateway = ReturnType<typeof gateway>;
 
-async function fixtureRepository(temporary: string, fail: boolean) {
+async function fixtureRepository(temporary: string, fail: boolean, audit?: string) {
   const writer = join(temporary, "writer");
   const active = join(temporary, "active");
   const remote = join(temporary, "origin.git");
@@ -94,6 +95,17 @@ async function fixtureRepository(temporary: string, fail: boolean) {
     `),
     writeFile(join(writer, "scripts/fixture-typecheck.ts"), 'if (!await Bun.file("app.ts").exists()) process.exit(1);\n'),
   ]);
+  if (audit) {
+    const app = join(writer, "app.ts");
+    const original = await readFile(app, "utf8");
+    await writeFile(app, `
+      import { appendFileSync as recordFixtureWorker } from "node:fs";
+      if (Bun.env.LOTUS_MANAGED_TOKEN && Bun.env.FIXTURE_WORKER_AUDIT) {
+        recordFixtureWorker(Bun.env.FIXTURE_WORKER_AUDIT, process.pid + " " + Bun.env.LOTUS_MANAGED_HELD + "\\n");
+      }
+      ${original}
+    `);
+  }
   git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", remote);
   git(writer, "init", "--quiet", "--initial-branch=main");
   git(writer, "add", "--all");
@@ -124,6 +136,13 @@ async function fixtureRepository(temporary: string, fail: boolean) {
   await mkdir(join(active, "config/config"), { recursive: true });
   await symlink(dependencies, join(active, "node_modules"), "dir");
   await writeFile(join(active, "config/config/other.yaml"), 'master: ["99:51", "100:51"]\n');
+  if (audit) {
+    await Promise.all([mkdir(join(active, "data")), mkdir(join(active, "logs"))]);
+    await Promise.all([
+      writeFile(join(active, "data/fixture-state.txt"), "active host state"),
+      writeFile(join(active, "logs/fixture-marker.txt"), "active host log"),
+    ]);
+  }
   const localPlugin = join(active, "plugins", "local-fixture");
   await mkdir(join(localPlugin, "config"), { recursive: true });
   await mkdir(join(localPlugin, "data"), { recursive: true });
@@ -160,14 +179,16 @@ async function expectVersion(client: Gateway, revision: string) {
   expect(frame.params.message).toContain(`宿主提交　${revision.slice(0, 12)}`);
 }
 
-async function exerciseUpdate(fail: boolean, pluginOnly = false) {
+async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-managed-update-"));
   const clients: Gateway[] = [];
+  const command = { host: "#更新", plugin: "#更新local-fixture", all: "#全部更新" }[updateTarget];
   try {
-    const { active, old, candidate, localPlugin, pluginRemote } = await fixtureRepository(temporary, fail && !pluginOnly);
+    const audit = updateTarget === "all" ? join(temporary, "fixture-workers.txt") : undefined;
+    const { active, old, candidate, localPlugin, pluginRemote } = await fixtureRepository(temporary, fail && updateTarget === "host", audit);
     const previousPlugin = git(localPlugin, "rev-parse", "HEAD");
     let candidatePlugin: string | undefined;
-    if (pluginOnly) {
+    if (updateTarget !== "host") {
       const writer = join(temporary, "plugin-writer");
       git(temporary, "clone", "--quiet", "--no-local", pluginRemote, writer);
       const entry = join(writer, "index.ts");
@@ -182,7 +203,7 @@ async function exerciseUpdate(fail: boolean, pluginOnly = false) {
       cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: {
         PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token,
-        FIXTURE_MANAGED_FAILURE: "1",
+        FIXTURE_MANAGED_FAILURE: "1", FIXTURE_WORKER_AUDIT: audit,
       },
     });
     const stderr = new Response(supervisor.stderr).text();
@@ -217,23 +238,23 @@ async function exerciseUpdate(fail: boolean, pluginOnly = false) {
       expect(git(active, "rev-parse", "HEAD")).toBe(old);
       await expectVersion(initial, old);
 
-      initial.command("#更新", 42, 77, "owner");
+      initial.command(command, 42, 77, "owner");
       expectText(await initial.next(), { group_id: 77 }, /^暂无权限/u);
       const unbound = await open(initialEndpoint);
-      unbound.command("#更新", 51);
+      unbound.command(command, 51);
       expectText(await unbound.next(), { user_id: 51 }, /^暂无权限/u);
       await expectVersion(unbound, old);
       expect(git(active, "rev-parse", "HEAD")).toBe(old);
 
       const groupId = fail ? 88 : undefined;
       const target: Target = groupId ? { group_id: groupId } : { user_id: 51 };
-      initial.command(pluginOnly ? "#更新local-fixture" : "#更新", 51, groupId);
+      initial.command(command, 51, groupId);
       expectText(await initial.next(10_000), target, /^开始更新/u);
       const [replacementEndpoint] = await Promise.all([
         deadline(nextEndpoint(), "更新后的托管宿主启动超时。", 16_000),
         deadline(initial.closed, "更新时旧连接没有关闭。", 16_000),
       ]);
-      const expected = fail || pluginOnly ? old : candidate;
+      const expected = fail || updateTarget === "plugin" ? old : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
       expect(git(localPlugin, "rev-parse", "HEAD")).toBe(fail ? previousPlugin : candidatePlugin ?? previousPlugin);
       expect(await readFile(join(active, "config/config/other.yaml"), "utf8")).toBe('master: ["99:51", "100:51"]\n');
@@ -246,12 +267,23 @@ async function exerciseUpdate(fail: boolean, pluginOnly = false) {
       const originalBot = await open(replacementEndpoint, 99);
       const receipt = await originalBot.next();
       expectText(receipt, target, fail ? /^更新失败，已恢复旧版本/u : /^更新成功/u);
-      if (!fail) expect(receipt.params.message).toContain((candidatePlugin ?? candidate).slice(0, 12));
+      if (!fail) {
+        const reported = updateTarget === "plugin" ? candidatePlugin! : candidate;
+        expect(receipt.params.message).toContain(reported.slice(0, 12));
+        if (updateTarget === "all") expect(receipt.params.message).toContain("本次更新 2 个仓库");
+      }
       await expectVersion(originalBot, expected);
       const reconnect = await open(replacementEndpoint, 99);
       await expectVersion(reconnect, expected);
       expect(otherBot.frames).toEqual([]);
       expect(reconnect.frames).toEqual([]);
+      if (audit) {
+        const generations = (await readFile(audit, "utf8")).trim().split("\n").map((row) => row.split(" "));
+        expect(generations.map(([, held]) => held)).toEqual(fail ? ["0", "1", "0"] : ["0", "1"]);
+        expect(new Set(generations.map(([pid]) => pid)).size).toBe(generations.length);
+        expect(await readFile(join(active, "data/fixture-state.txt"), "utf8")).toBe("active host state");
+        expect(await readFile(join(active, "logs/fixture-marker.txt"), "utf8")).toBe("active host log");
+      }
 
       supervisor.kill("SIGTERM");
       expect(await deadline(supervisor.exited, "托管更新测试宿主退出超时。", 12_000)).toBe(143);
@@ -274,5 +306,7 @@ async function exerciseUpdate(fail: boolean, pluginOnly = false) {
 
 test.skipIf(!Bun.which("git"))("托管 #更新 应用宿主候选并只向原私聊发送一次成功回执", () => exerciseUpdate(false), 35_000);
 test.skipIf(!Bun.which("git"))("托管 #更新 在活动环境失败时恢复旧 HEAD 并回复原群", () => exerciseUpdate(true), 35_000);
-test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回报插件提交", () => exerciseUpdate(false, true), 35_000);
-test.skipIf(!Bun.which("git"))("目标插件在实际环境拒绝加载时回退，宿主就绪不能掩盖失败", () => exerciseUpdate(true, true), 35_000);
+test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回报插件提交", () => exerciseUpdate(false, "plugin"), 35_000);
+test.skipIf(!Bun.which("git"))("目标插件在实际环境拒绝加载时回退，宿主就绪不能掩盖失败", () => exerciseUpdate(true, "plugin"), 35_000);
+test.skipIf(!Bun.which("git"))("#全部更新一次切换宿主和外部插件，向原会话报告两个仓库", () => exerciseUpdate(false, "all"), 35_000);
+test.skipIf(!Bun.which("git"))("#全部更新遇到仅在活动环境加载失败的插件时整批回滚", () => exerciseUpdate(true, "all"), 35_000);

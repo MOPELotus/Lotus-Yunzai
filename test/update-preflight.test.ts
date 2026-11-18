@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { prepareUpdate } from "../lib/update-preflight.ts";
+import { prepareAllUpdates, prepareUpdate } from "../lib/update-preflight.ts";
 
 const noGit = !Bun.which("git");
 const pluginDirectory = "weather-Plugin";
@@ -237,4 +237,153 @@ test.skipIf(noGit)("预检区分无更新、未提交修改、本地领先与分
   await expectStatus("diverged");
   git(checkout, "switch", "--detach", "--quiet");
   await expectStatus("unavailable");
+}));
+
+test.skipIf(noGit)("批量预检按最终集合校验插件身份，并释放所有候选引用", () => withTemporary(async (temporary) => {
+  const host = await createRemote(temporary, "host", { "app.ts": "export {};\n", ".gitignore": "/plugins/\n" });
+  const first = await createRemote(temporary, "first", {
+    "package.json": pluginManifest(pluginPackage), "index.js": pluginEntry,
+  });
+  const second = await createRemote(temporary, "second", {
+    "package.json": pluginManifest(siblingPackage), "index.js": pluginEntry,
+  });
+  const checkout = join(temporary, "checkout");
+  const root = pathToFileURL(`${checkout}/`);
+  const paths = [checkout, join(checkout, "plugins/first"), join(checkout, "plugins/second")] as const;
+  for (const [index, { remote }] of [host, first, second].entries()) git(temporary, "clone", "--quiet", remote, paths[index]!);
+  const directories = new Map([
+    ["first", { path: paths[1], packageName: pluginPackage }],
+    ["second", { path: paths[2], packageName: siblingPackage }],
+  ]);
+  const initialHeads = paths.map(head);
+  const initialRefs = paths.map(refs);
+
+  await writeFile(join(host.writer, "app.ts"), "export const marker = 1;\n");
+  const hostCandidate = publish(host.writer, "Advance host");
+  await writeFile(join(first.writer, "package.json"), pluginManifest(siblingPackage));
+  const firstCandidate = publish(first.writer, "Rename first plugin");
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "rejected", target: "first" });
+  expect(paths.map(refs)).toEqual(initialRefs);
+
+  await writeFile(join(second.writer, "package.json"), pluginManifest(pluginPackage));
+  const secondCandidate = publish(second.writer, "Rename second plugin");
+  const result = await prepareAllUpdates(root, directories);
+  if (result.status !== "ready") throw new Error(`批量预检失败：${JSON.stringify(result)}。`);
+  try {
+    expect(result.host).toEqual({ directory: checkout, current: initialHeads[0]!, candidate: hostCandidate });
+    expect([...result.plugins].map(([name, plugin]) => [name, plugin.candidate])).toEqual([
+      ["first", firstCandidate], ["second", secondCandidate],
+    ]);
+    expect(paths.map(head)).toEqual(initialHeads);
+  } finally {
+    await result.release();
+    await result.release();
+  }
+  expect(paths.map(refs)).toEqual(initialRefs);
+
+  for (const plugin of [first, second]) {
+    await writeFile(join(plugin.writer, "package.json"), pluginManifest("@fixture/new-shared-name"));
+    publish(plugin.writer, "Claim shared new identity");
+  }
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "rejected", target: "second" });
+  expect(paths.map(refs)).toEqual(initialRefs);
+}));
+
+test.skipIf(noGit)("批量预检保持领先宿主、跳过无绑定插件，并标记已绑定仓库失败", () => withTemporary(async (temporary) => {
+  const embedded = await createRemote(temporary, "embedded", {
+    "package.json": pluginManifest("@fixture/embedded"), "index.js": pluginEntry,
+  });
+  const host = await createRemote(temporary, "host", { "app.ts": "export {};\n" });
+  git(host.writer, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", embedded.remote, "plugins/embedded");
+  publish(host.writer, "Track embedded plugin");
+  const checkout = join(temporary, "checkout");
+  git(temporary, "clone", "--quiet", host.remote, checkout);
+  git(checkout, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--quiet");
+  git(checkout, "commit", "--allow-empty", "--quiet", "-m", "Local host commit");
+  const hostHead = head(checkout);
+  const root = pathToFileURL(`${checkout}/`);
+  const pluginPath = join(checkout, "plugins/external");
+  const detachedPath = join(checkout, "plugins/detached");
+  const localPath = join(checkout, "plugins/local");
+  const embeddedPath = join(checkout, "plugins/embedded");
+  const unboundPath = join(checkout, "plugins/unbound");
+  const external = await createRemote(temporary, "external", {
+    "package.json": pluginManifest(pluginPackage), "index.js": pluginEntry,
+  });
+  for (const path of [pluginPath, detachedPath, unboundPath]) git(temporary, "clone", "--quiet", external.remote, path);
+  for (const [path, name] of [[detachedPath, "detached"], [unboundPath, "unbound"]] as const) {
+    await writeFile(join(path, "package.json"), pluginManifest(`@fixture/${name}`));
+    git(path, "commit", "-am", `Rename ${name} fixture`);
+  }
+  git(detachedPath, "switch", "--quiet", "--detach");
+  git(unboundPath, "branch", "--unset-upstream");
+  await mkdir(localPath);
+  git(embeddedPath, "switch", "--quiet", "-c", "independent");
+  git(embeddedPath, "config", "branch.independent.remote", "origin");
+  git(embeddedPath, "config", "branch.independent.merge", "refs/heads/main");
+  git(embeddedPath, "remote", "set-url", "origin", join(temporary, "missing.git"));
+  const directories = new Map([
+    ["external", { path: pluginPath, packageName: pluginPackage }],
+    ["detached", { path: detachedPath, packageName: "@fixture/detached" }],
+    ["unbound", { path: unboundPath, packageName: "@fixture/unbound" }],
+    ["local", { path: localPath, packageName: "local" }],
+    ["embedded", { path: embeddedPath, packageName: "@fixture/embedded" }],
+  ]);
+  const initialRefs = [checkout, pluginPath].map(refs);
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "current" });
+  expect([checkout, pluginPath].map(refs)).toEqual(initialRefs);
+
+  await writeFile(join(external.writer, "index.js"), `${pluginEntry}\nexport const marker = 1;\n`);
+  const candidate = publish(external.writer, "Advance external plugin");
+  const result = await prepareAllUpdates(root, directories);
+  if (result.status !== "ready") throw new Error(`批量预检失败：${JSON.stringify(result)}。`);
+  try {
+    expect(result.host).toMatchObject({ current: hostHead, candidate: hostHead });
+    expect([...result.plugins].map(([name, plugin]) => [name, plugin.candidate])).toEqual([["external", candidate]]);
+  } finally {
+    await result.release();
+  }
+  expect([checkout, pluginPath].map(refs)).toEqual(initialRefs);
+
+  await writeFile(join(unboundPath, "index.js"), "// dirty\n");
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "dirty", target: "unbound" });
+  expect([checkout, pluginPath].map(refs)).toEqual(initialRefs);
+  git(unboundPath, "restore", "index.js");
+  git(unboundPath, "branch", "--set-upstream-to=origin/main");
+  git(unboundPath, "remote", "set-url", "origin", join(temporary, "missing.git"));
+  expect(await prepareAllUpdates(root, directories)).toEqual({ status: "unavailable", target: "unbound" });
+  expect([checkout, pluginPath].map(refs)).toEqual(initialRefs);
+
+  const controller = new AbortController();
+  const abort = new Error("Cancel batch fixture");
+  const served = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch() {
+      served.resolve();
+      await finish.promise;
+      return new Response(null, { status: 404 });
+    },
+  });
+  try {
+    git(unboundPath, "remote", "set-url", "origin", server.url.origin);
+    const pending = prepareAllUpdates(root, directories, controller.signal);
+    try {
+      const fetching = await Promise.race([served.promise.then(() => true), pending.then(() => false)]);
+      expect(fetching).toBe(true);
+      expect(refs(pluginPath)).toContain("refs/lotus-yunzai/update/");
+      controller.abort(abort);
+      await expect(pending).rejects.toBe(abort);
+      expect([checkout, pluginPath].map(refs)).toEqual(initialRefs);
+      expect(refs(unboundPath)).not.toContain("refs/lotus-yunzai/update/");
+    } finally {
+      controller.abort(abort);
+      await pending.catch(() => {});
+    }
+  } finally {
+    finish.resolve();
+    await server.stop(true);
+  }
 }));

@@ -33,6 +33,17 @@ test("托管更新拒绝混淆名称、非规范路径、重复目录和畸形�
   expect(parseManagedUpdateRequest({ ...request, target: { type: "master" } })).toBeUndefined();
 });
 
+test("全量托管更新要求布尔标记且不能同时指定单项", () => {
+  const batch = { quiet: true, all: true, target: { type: "terminal" as const }, directories: [directory] };
+  expect(parseManagedUpdateRequest(batch)).toEqual(batch);
+  expect(parseManagedUpdateRequest({ ...batch, requested: "system" })).toBeUndefined();
+  expect(parseManagedUpdateRequest({ ...batch, requested: "" })).toBeUndefined();
+  expect(parseManagedUpdateRequest({ ...request, all: false })).toEqual({ ...request, all: false });
+  for (const all of [null, 0, 1, "false", "true", {}]) {
+    expect(parseManagedUpdateRequest({ ...batch, all })).toBeUndefined();
+  }
+});
+
 test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isManagedUpdateRequestId(crypto.randomUUID())).toBe(true);
   expect(isManagedUpdateRequestId(crypto.randomUUID() + "\n")).toBe(false);

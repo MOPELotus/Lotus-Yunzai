@@ -7,11 +7,11 @@ type Request = Parameters<typeof createUpdateCommand>[0];
 type Report = Parameters<Request>[3];
 
 function fixture(request: Request = () => true) {
-  const calls: { target?: string; quiet: boolean; type: string }[] = [];
+  const calls: { target?: string; quiet: boolean; type: string; all: boolean }[] = [];
   const replies: MessageReply[] = [];
-  const handler = createUpdateCommand((event, target, quiet, report) => {
-    calls.push({ target, quiet, type: event.message_type });
-    return request(event, target, quiet, report);
+  const handler = createUpdateCommand((event, target, quiet, report, all) => {
+    calls.push({ target, quiet, type: event.message_type, all });
+    return request(event, target, quiet, report, all);
   });
   return {
     calls, replies,
@@ -26,10 +26,10 @@ function fixture(request: Request = () => true) {
   };
 }
 
-test("仅普通与静默更新匹配，兼容紧连目标、中文目录及包名", async () => {
+test("单项更新兼容紧连目标、中文目录及包名，并保留日志与强制指令的边界", async () => {
   const { dispatch, calls, replies } = fixture();
   for (const text of ["#更新日志", "#更新日志system", "#静更新日志", "#安静更新日志system", "#强制更新", "#静强制更新system",
-    "#全部更新", "#全部静更新", "#全部静强制更新", "请发 #更新"]) {
+    "#全部强制更新", "#全部静强制更新", "#全部安静强制更新", "请发 #更新"]) {
     expect(isUpdateCommand(text)).toBe(false);
     await dispatch(text);
   }
@@ -42,12 +42,30 @@ test("仅普通与静默更新匹配，兼容紧连目标、中文目录及包�
   await dispatch("#静更新system");
   await dispatch("#安静更新 @lotus-yunzai/system", { message_type: "terminal", boundAccount: undefined });
   expect(calls).toEqual([
-    { target: undefined, quiet: false, type: "private" },
-    { target: "图鉴插件-2.0", quiet: false, type: "private" },
-    { target: "system", quiet: true, type: "private" },
-    { target: "@lotus-yunzai/system", quiet: true, type: "terminal" },
+    { target: undefined, quiet: false, type: "private", all: false },
+    { target: "图鉴插件-2.0", quiet: false, type: "private", all: false },
+    { target: "system", quiet: true, type: "private", all: false },
+    { target: "@lotus-yunzai/system", quiet: true, type: "terminal", all: false },
   ]);
   expect(replies).toEqual([]);
+});
+
+test("全量更新传递 all 标志并拒绝插件后缀", async () => {
+  const { dispatch, calls, replies } = fixture();
+  for (const command of ["#全部更新", "#全部静更新", " #全部安静更新 "]) {
+    expect(isUpdateCommand(command)).toBe(true);
+    await dispatch(command);
+  }
+  for (const command of ["#全部更新system", "#全部静更新 system", "#全部安静更新 @lotus-yunzai/system", "#全部更新日志", "#全部更新\n"]) {
+    expect(isUpdateCommand(command)).toBe(true);
+    await dispatch(command);
+  }
+  expect(calls).toEqual([
+    { target: undefined, quiet: false, type: "private", all: true },
+    { target: undefined, quiet: true, type: "private", all: true },
+    { target: undefined, quiet: true, type: "private", all: true },
+  ]);
+  expect(replies).toEqual(Array(5).fill("请只发送 #全部更新、#全部静更新 或 #全部安静更新。"));
 });
 
 test("只允许已绑定机器人的主人或授权终端，拒绝路径和控制字符", async () => {
@@ -63,7 +81,7 @@ test("只允许已绑定机器人的主人或授权终端，拒绝路径和控�
   expect(replies.slice(0, 4)).toEqual(Array(4).fill("暂无权限，只有主人才能操作"));
   expect(replies.slice(4)).toEqual(Array(invalid.length).fill("请输入有效的插件名，例如 #更新 system 或 #更新 @lotus-yunzai/system。"));
   await dispatch("#更新", { message_type: "group", isGroup: true, isPrivate: false });
-  expect(calls).toEqual([{ target: undefined, quiet: false, type: "group" }]);
+  expect(calls).toEqual([{ target: undefined, quiet: false, type: "group", all: false }]);
 });
 
 test("进度消息按收到顺序发送，静默仅省略正常进度和已是最新", async () => {

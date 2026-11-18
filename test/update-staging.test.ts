@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
-import { prepareUpdate } from "../lib/update-preflight.ts";
+import { prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "../lib/update-preflight.ts";
 import { stageUpdate } from "../lib/update-staging.ts";
 import { verifyUpdateHealth } from "../lib/update-health.ts";
 
@@ -278,6 +278,91 @@ test.skipIf(noGit)("暂存外部插件候选时固定宿主和其他已加载插
     await ready.release();
   }
 }), 20_000);
+
+test.skipIf(noGit)("批量候选一次切换宿主和两个外部插件，保留状态、上游并清理全部引用", () => fixture(async (temporary) => {
+  const host = await makeRepository(temporary, "batch-host", {
+    ".gitignore": "/plugins/\n",
+    "package.json": JSON.stringify({ name: "batch-host", scripts: { typecheck: "bun -e 'void 0'" } }),
+    "scripts/bootstrap.ts": `await Bun.write("build-marker.txt", "built");`,
+    "stage.txt": "old",
+    "app.ts": `
+      const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"]).stdout.toString().trim();
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+        if (request.headers.get("Authorization") !== "Bearer " + Bun.env.LOTUS_HTTP_TOKEN) return new Response(null, { status: 401 });
+        return Response.json({ status: "ok", revision });
+      } });
+      console.log("HTTP 正在监听 " + server.url.origin + "/status");
+      process.once("SIGTERM", () => { void server.stop(true); });
+    `,
+  });
+  const oldHost = host.publish("Fixture batch host baseline");
+  const active = join(temporary, "active");
+  host.checkout(active);
+  await mkdir(join(active, "plugins"));
+  const root = pathToFileURL(`${active}/`);
+  const directories = new Map();
+  const external = new Map<string, { path: string; old: string; next: string }>();
+  for (const name of ["first", "second"]) {
+    const packageName = `@fixture/${name}`;
+    const plugin = await makeRepository(temporary, name, pluginFiles(packageName, `old ${name}`));
+    const old = plugin.publish(`Fixture ${name} baseline`);
+    const path = join(active, "plugins", name);
+    plugin.checkout(path);
+    await writeFiles(path, { "data/state.txt": `live ${name}` });
+    await writeFile(join(plugin.writer, "revision.txt"), `candidate ${name}`);
+    external.set(name, { path, old, next: plugin.publish(`Fixture ${name} candidate`) });
+    directories.set(name, { path, packageName });
+  }
+  await writeFile(join(host.writer, "stage.txt"), "candidate");
+  const newHost = host.publish("Fixture batch host candidate");
+  const readyHost = requireReady(await prepareUpdate(root, directories));
+  const readyPlugins = new Map<string, ReadyUpdate>();
+  for (const name of external.keys()) readyPlugins.set(name, requireReady(await prepareUpdate(root, directories, name)));
+  const batch: ReadyBatchUpdate = {
+    status: "ready", scope: "all", host: readyHost, plugins: readyPlugins,
+    async release() { await Promise.all([readyHost, ...readyPlugins.values()].map((candidate) => candidate.release())); },
+  };
+  let releases = 0;
+  const invalid = { ...batch, async release() { releases++; } };
+  const snapshot = new Map(directories);
+  snapshot.delete("first");
+  await expect(stageUpdate(root, snapshot, invalid, temporary)).rejects.toThrow("校验当前工作区");
+  snapshot.set("system", directories.get("first"));
+  const first = readyPlugins.get("first")!;
+  const builtIn = { ...invalid, plugins: new Map([["system", { ...first, name: "system" }]]) };
+  await expect(stageUpdate(root, snapshot, builtIn, temporary)).rejects.toThrow("校验当前工作区");
+  expect(releases).toBe(2);
+  const anchor = await stageUpdate(root, directories, { ...batch, host: { ...batch.host, candidate: oldHost } }, temporary);
+  try {
+    expect(anchor.revision).toBe(oldHost);
+    expect(git(join(anchor.directory, "plugins", "first"), "rev-parse", "HEAD")).toBe(first.candidate);
+  } finally {
+    await anchor.release();
+  }
+  const stage = await stageUpdate(root, directories, batch, temporary);
+  try {
+    expect(stage.revision).toBe(newHost);
+    expect(git(active, "rev-parse", "HEAD")).toBe(oldHost);
+    expect(await readFile(join(stage.directory, "build-marker.txt"), "utf8")).toBe("built");
+    for (const [name, { path, old, next }] of external) {
+      expect(git(path, "rev-parse", "HEAD")).toBe(old);
+      expect(git(join(stage.directory, "plugins", name), "rev-parse", "HEAD")).toBe(next);
+    }
+    const result = await stage.activate(async (current) => {
+      expect(git(current, "rev-parse", "HEAD")).toBe(newHost);
+      for (const [name, { path, next }] of external) {
+        expect(git(path, "rev-parse", "HEAD")).toBe(next);
+        expect(git(path, "config", "--get", "branch.main.remote")).toBe("origin");
+        expect(await readFile(join(path, "data/state.txt"), "utf8")).toBe(`live ${name}`);
+      }
+    });
+    for (const path of [result.previous, ...[...external.keys()].map((name) => join(result.previous, "plugins", name))]) {
+      expect(git(path, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
+    }
+  } finally {
+    await stage.release();
+  }
+}), 15_000);
 
 test.skipIf(noGit)("取消运行中的构建会清理暂存目录与候选引用", () => fixture(async (temporary) => {
   const { repo, baseline, active, stagingParent, root } = await fixtureHost(temporary);

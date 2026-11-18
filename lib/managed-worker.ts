@@ -8,7 +8,7 @@ type StopSignal = "SIGINT" | "SIGTERM";
 interface ManagedWorkerOptions {
   readonly held?: boolean;
   readonly expectedRevision?: string;
-  readonly expectedPlugin?: string;
+  readonly expectedPlugins?: readonly string[];
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
   readonly onRestart?: (pausedAt?: number) => void;
@@ -24,11 +24,13 @@ function validPause(value: unknown): value is number {
 }
 
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
-  const { expectedRevision, expectedPlugin, held, onRestart, onUpdate, pausedAt } = options;
+  const { expectedRevision, expectedPlugins = [], held, onRestart, onUpdate, pausedAt } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
     throw new Error("宿主启动检查需要完整的 Git 提交号。");
   }
-  if (expectedPlugin !== undefined && !isManagedPluginDirectory(expectedPlugin)) throw new Error("候选插件目录无效。");
+  if (expectedPlugins.length > managedUpdateDirectoryLimit || !expectedPlugins.every(isManagedPluginDirectory)) {
+    throw new Error("候选插件目录无效。");
+  }
 
   const token = crypto.randomUUID();
   const env: NodeJS.ProcessEnv = {
@@ -61,8 +63,8 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           void stop();
         } else if (revision === undefined || (typeof revision === "string" && isGitRevision(revision) && revision.trim() === revision)) {
           const plugins = "plugins" in message ? message.plugins : undefined;
-          if (expectedPlugin !== undefined && (!Array.isArray(plugins) || plugins.length > managedUpdateDirectoryLimit ||
-              !plugins.every(isManagedPluginDirectory) || !plugins.includes(expectedPlugin))) {
+          if (expectedPlugins.length !== 0 && (!Array.isArray(plugins) || plugins.length > managedUpdateDirectoryLimit ||
+              !plugins.every(isManagedPluginDirectory) || !expectedPlugins.every((plugin) => plugins.includes(plugin)))) {
             startupError = new Error("宿主未加载预期的候选插件。");
             void stop();
             return;

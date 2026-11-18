@@ -11,6 +11,21 @@ export type UpdateCandidateResult =
 
 type Upstream = { readonly branch: string; readonly remote: string; readonly merge: string; readonly url: string };
 
+export async function updateUpstreamBinding(
+  git: LocalGit, directory: string,
+): Promise<"bound" | "unbound" | "unavailable"> {
+  const branch = (await git(directory, ["symbolic-ref", "--quiet", "HEAD"], true))?.trimEnd();
+  if (branch === "") return "unbound";
+  if (!branch?.startsWith("refs/heads/")) return "unavailable";
+  const key = `branch.${branch.slice("refs/heads/".length)}`;
+  const [remote, merge] = await Promise.all([
+    git(directory, ["config", "--local", "--no-includes", "--null", "--get-all", `${key}.remote`], true),
+    git(directory, ["config", "--local", "--no-includes", "--null", "--get-all", `${key}.merge`], true),
+  ]);
+  if (remote === undefined || merge === undefined) return "unavailable";
+  return remote === "" || merge === "" ? "unbound" : "bound";
+}
+
 async function localValue(git: LocalGit, directory: string, key: string): Promise<string | undefined> {
   const output = await git(directory, ["config", "--local", "--no-includes", "--null", "--get-all", key]);
   const match = output && /^([^\u0000-\u001f\u007f]+)\0$/u.exec(output);

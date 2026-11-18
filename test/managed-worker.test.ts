@@ -184,7 +184,7 @@ test.skipIf(process.platform === "win32")("前台终端可输入命令，停止�
   }
 }));
 
-test("插件更新仅在工作进程确认指定目录已加载后就绪", async () => {
+test("插件更新仅在工作进程确认全部指定目录已加载后就绪", async () => {
   const source = (plugins: string[]) => `
     process.on("SIGTERM", () => process.exit(19));
     process.on("message", (message) => { if (message.type === "lotus-activate") process.exit(0); });
@@ -192,13 +192,14 @@ test("插件更新仅在工作进程确认指定目录已加载后就绪", async
       revision: "${revision}" });
     setTimeout(() => process.exit(20), 2500);
   `;
-  await fixture(source(["system"]), async (root) => {
-    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugin: "群插件" });
+  const expectedPlugins = ["群插件", "weather-plugin"];
+  await fixture(source(["system", "群插件"]), async (root) => {
+    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugins });
     await expect(worker.ready).rejects.toThrow("未加载预期");
     expect(await worker.exited).toBe(19);
   });
-  await fixture(source(["system", "群插件"]), async (root) => {
-    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugin: "群插件" });
+  await fixture(source(["system", "群插件", "weather-plugin"]), async (root) => {
+    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugins });
     try {
       await worker.ready;
       worker.activate();

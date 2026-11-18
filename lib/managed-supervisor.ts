@@ -1,11 +1,13 @@
-import { dirname, resolve, sep } from "node:path";
+import { readdir } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createLocalGit, gitHead } from "./local-git.ts";
 import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { spawnManagedWorker } from "./managed-worker.ts";
 import { createProcessReceipts } from "./process-receipts.ts";
+import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation } from "./update-activation.ts";
-import { prepareUpdate, type ReadyUpdate } from "./update-preflight.ts";
+import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
 import { stageUpdate } from "./update-staging.ts";
 
 type Worker = ReturnType<typeof spawnManagedWorker>;
@@ -32,9 +34,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   let transition: Promise<SwitchResult> | undefined;
   let update: { controller: AbortController; done: Promise<void> } | undefined;
 
-  function launch(path = root, expectedRevision?: string, pausedAt?: number, expectedPlugin?: string) {
+  function launch(path = root, expectedRevision?: string, pausedAt?: number, expectedPlugins?: readonly string[]) {
     const worker: Worker = spawnManagedWorker(path, {
-      env: options.env, expectedRevision, held: expectedRevision !== undefined, pausedAt, expectedPlugin,
+      env: options.env, expectedRevision, held: expectedRevision !== undefined, pausedAt, expectedPlugins,
       onRestart(restartPausedAt) {
         if (current === worker && !stopped) restarts.set(worker, restartPausedAt);
       },
@@ -67,13 +69,18 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   async function updateFromWorker(
     worker: Worker, request: ManagedUpdateRequest, report: (status: ManagedUpdateProgress) => void, signal: AbortSignal,
   ) {
-    let ready: ReadyUpdate | undefined;
+    let ready: ReadyUpdate | ReadyBatchUpdate | undefined;
     let stage: Awaited<ReturnType<typeof stageUpdate>> | undefined;
     try {
       report("checking");
       const directories = new Map(request.directories.map(({ name, path, packageName }) => [name, { path, packageName }]));
-      const result = await prepareUpdate(rootUrl, directories, request.requested, signal);
+      const result = request.all
+        ? await prepareAllUpdates(rootUrl, directories, signal)
+        : await prepareUpdate(rootUrl, directories, request.requested, signal);
       if (result.status !== "ready") {
+        if ("target" in result && typeof result.target === "string" && result.status !== "current" && !signal.aborted) {
+          console.warn(`[更新] ${sanitizeRuntimeLog(result.target, 120)} 未通过全量更新检查（${result.status}）。`);
+        }
         if (!signal.aborted) report(result.status);
         return;
       }
@@ -82,18 +89,28 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       report("building");
       stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal);
       if (stopped || signal.aborted || current !== worker) return;
+      const revision = ready.scope === "all" ? ready.host.candidate : ready.candidate;
+      const repositories = ready.scope === "all"
+        ? Number(ready.host.current !== ready.host.candidate) + ready.plugins.size : undefined;
+      let expectedPlugins: readonly string[] | undefined;
+      if (ready.scope === "all") {
+        const installed = new Set(await readdir(join(stage.directory, "plugins")));
+        expectedPlugins = [...directories.keys()].filter((name) => installed.has(name));
+      } else if (ready.scope === "plugin") {
+        expectedPlugins = [ready.name];
+      }
+      if (stopped || signal.aborted || current !== worker) return;
       report("switching");
-      const revision = ready.candidate;
       transition = switchWorker(stage, undefined, async (outcome) => {
         try {
           const destination = { kind: "update", at: Date.now(), target: request.target } as const;
           await receipts.save(outcome === "updated"
-            ? { ...destination, result: "updated", revision }
+            ? { ...destination, result: "updated", revision, repositories }
             : { ...destination, result: "rolled-back" });
         } catch {
           console.warn("[更新] 无法保存原会话回执。");
         }
-      }, ready.scope === "plugin" ? ready.name : undefined).finally(() => { transition = undefined; });
+      }, expectedPlugins).finally(() => { transition = undefined; });
       await transition;
     } catch {
       if (!stopped && !signal.aborted) {
@@ -126,7 +143,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   }
 
   async function switchWorker(
-    stage: PreparedUpdate, statePaths?: readonly string[], notify?: NotifyResult, expectedPlugin?: string,
+    stage: PreparedUpdate, statePaths?: readonly string[], notify?: NotifyResult, expectedPlugins?: readonly string[],
   ) {
     const previousWorker = current;
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
@@ -142,7 +159,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     try {
       ({ previous } = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
-        const worker = launch(active, stage.revision, undefined, expectedPlugin);
+        const worker = launch(active, stage.revision, undefined, expectedPlugins);
         candidate = worker;
         try {
           await worker.ready;

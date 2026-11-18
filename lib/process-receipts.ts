@@ -12,7 +12,7 @@ export type ProcessReceipt = {
     | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
 } & (
   | { readonly kind: "stop" | "restart" }
-  | { readonly kind: "update"; readonly result: "updated"; readonly revision: string }
+  | { readonly kind: "update"; readonly result: "updated"; readonly revision: string; readonly repositories?: number }
   | { readonly kind: "update"; readonly result: "rolled-back" }
 );
 
@@ -42,7 +42,10 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
   if (kind !== "update") return;
   if (value.result === "rolled-back") return { kind, at, target: session, result: value.result };
   if (value.result === "updated" && typeof value.revision === "string" && isGitRevision(value.revision)) {
-    return { kind, at, target: session, result: value.result, revision: value.revision };
+    const repositories = value.repositories;
+    if (repositories !== undefined && (!positiveInteger(repositories) || repositories > 129)) return;
+    return { kind, at, target: session, result: value.result, revision: value.revision,
+      ...(repositories === undefined ? {} : { repositories }) };
   }
 }
 
