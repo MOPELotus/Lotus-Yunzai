@@ -150,6 +150,7 @@ export class LegacyPlugins {
   async dispatchContext(event: MessageEvent): Promise<boolean> {
     for (const app of this.#apps) {
       if (!app.contexts.active || !matches(app.event, event)) continue;
+      if (app.contexts.resolve(event)) return true;
       const contexts = { ...app.contexts.get(event, false), ...app.contexts.get(event, true) };
       if (!Object.keys(contexts).length) continue;
 

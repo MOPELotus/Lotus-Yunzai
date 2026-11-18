@@ -43,10 +43,22 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
 
     await install("g-system", "@lotus-yunzai/system", {});
 
+    await writeFile(join(installed, "await.js"), `
+      export default class extends plugin {
+        constructor() {
+          super({ rule: [{ reg: "^#等待$", fnc: "wait" }] });
+        }
+        async wait() {
+          this.reply("请输入内容");
+          const input = await this.awaitContext();
+          return this.reply(input ? "收到 " + input.msg : "会话已结束");
+        }
+      }
+    `);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
-      stdin: new Blob(["#问候 Lotus\n#状态\n#帮助\n"]),
+      stdin: new Blob(["#问候 Lotus\n#等待\nLotus\n#状态\n#帮助\n#等待\n"]),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -55,6 +67,8 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     ]);
     expect(exit).toBe(0);
     expect(stdout).toContain("你好，Lotus");
+    expect(stdout).toContain("请输入内容\n收到 Lotus\n");
+    expect(stdout).toContain("请输入内容\n会话已结束\n");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
     expect(stdout).toContain("#状态 查看宿主运行状态");
     expect(stdout).not.toContain("拒载入口已执行");
@@ -95,6 +109,8 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
               { reg: "^#检查来信$", fnc: "incoming" },
               { reg: "^#分步$", fnc: "startStep" },
               { reg: "^#跨群$", fnc: "startGroupStep" },
+              { reg: "^#等输入$", fnc: "waitInput" },
+              { reg: "^#等超时$", fnc: "waitTimeout" },
               { reg: "^$", fnc: "imageOnly" },
             ] });
           }
@@ -138,6 +154,15 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           finishGroupStep(origin) {
             this.finish("finishGroupStep", true);
             return this.reply(origin.user_id + " → " + this.e.user_id);
+          }
+          async waitInput() {
+            this.reply("等待同群输入");
+            const input = await this.awaitContext();
+            return this.reply(input ? this.e.msg + " → " + input.msg : "等待结束");
+          }
+          async waitTimeout() {
+            const input = await this.awaitContext(false, 0.01);
+            return this.reply(input === false ? "等待超时" : "意外接续");
           }
           incoming(e) {
             return this.reply(JSON.stringify({
@@ -361,6 +386,15 @@ failsMsg: 协议拒绝
     });
     expect(await send("#跨群")).toMatchObject({ group_id: 77, message: "等群内回复" });
     expect(await send("#状态", { user_id: 43 })).toMatchObject({ group_id: 77, message: "42 → 43" });
+    expect(await send("#等输入")).toMatchObject({ group_id: 77, message: "等待同群输入" });
+    expect(await send("#状态", { user_id: 43 })).toMatchObject({
+      group_id: 77, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    expect(await send("#状态", { group_id: 78 })).toMatchObject({
+      group_id: 78, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    expect(await send("#状态")).toMatchObject({ group_id: 77, message: "#等输入 → #状态" });
+    expect(await send("#等超时")).toMatchObject({ group_id: 77, message: "等待超时" });
 
     function nextFrame(): Promise<Record<string, unknown>> {
       return new Promise((ok) => {

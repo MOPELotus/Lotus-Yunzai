@@ -98,26 +98,27 @@ if (import.meta.main) {
       consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const message of consoleInput) {
         if (stopping) break;
-        try {
-          await dispatch({
-            msg: message.trim(),
-            raw_message: message,
-            message,
-            post_type: "message",
-            message_type: "terminal",
-            isGroup: false,
-            isPrivate: false,
-            isMaster: permissions.terminal,
-            reply(text) {
-              if (typeof text !== "string") return false;
+        const waiting = Promise.withResolvers<void>();
+        const handling = dispatch({
+          msg: message.trim(),
+          raw_message: message,
+          message,
+          post_type: "message",
+          message_type: "terminal",
+          isGroup: false,
+          isPrivate: false,
+          isMaster: permissions.terminal,
+          onAwaitInput: waiting.resolve,
+          reply(text) {
+            if (typeof text !== "string") return false;
 
-              console.log(text);
-              return true;
-            },
-          });
-        } catch {
+            console.log(text);
+            return true;
+          },
+        }).catch(() => {
           console.error("处理终端指令失败。");
-        }
+        });
+        await Promise.race([handling, waiting.promise]);
       }
       if (servers.length) await shutdown.promise;
     }
@@ -125,6 +126,7 @@ if (import.meta.main) {
     stopping = true;
     try {
       consoleInput?.close();
+      legacy.stopContexts();
       await Promise.all(servers.map((server) => server.stop(true)));
       await Promise.allSettled(pending);
     } finally {
