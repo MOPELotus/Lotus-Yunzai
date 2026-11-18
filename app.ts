@@ -26,6 +26,7 @@ import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plug
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess } from "./lib/private-access.ts";
+import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 
 declare global {
@@ -181,7 +182,7 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
-    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig] = await Promise.all([
+    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig, runtimeVersion] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
@@ -189,6 +190,7 @@ if (import.meta.main) {
       readGroupDispatch(root),
       readGroupInvitations(root),
       readLocalConfig(root, "bot"),
+      readRuntimeVersion(root),
     ]);
     privateAccess = access;
     autoFriend = friendRequests;
@@ -220,6 +222,7 @@ if (import.meta.main) {
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
       messageStatistics: createMessageStatistics(counts),
+      runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {
         if (!context.isMaster) return { accounts: [], plugins: [] };
         const accounts = groups.onlineAccounts();
@@ -234,12 +237,12 @@ if (import.meta.main) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
       const { hostname, http, oneBot, panelToken } = network;
-      const statusRoute = http && httpStatus(http.auth);
+      const statusRoute = http && httpStatus(http.auth, runtimeVersion);
       const likes = panelGroupSettings(plugins.directories);
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories);
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
-        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path));
+        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       const fetch = statusRoute && (async (request: Request) => stopping
         ? new Response(null, { status: 503 })

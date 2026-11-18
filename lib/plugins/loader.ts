@@ -3,7 +3,9 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
+import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
+import type { RuntimeVersion } from "../runtime-version.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { rejectionReason, repositoryKey } from "./policy.ts";
 
@@ -12,14 +14,7 @@ interface Candidate {
   readonly kind: "package" | "script";
 }
 
-export const systemModuleName = "@lotus-yunzai/system";
-const builtInDirectories = new Map([
-  [systemModuleName, "system"],
-  ["@lotus-yunzai/atlas", "atlas"],
-  ["@lotus-yunzai/meme", "meme"],
-  ["@lotus-yunzai/notice", "notice"],
-  ["@lotus-yunzai/group", "group"],
-]);
+export { systemModuleName };
 
 const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
@@ -131,6 +126,7 @@ interface PluginServices {
   readonly groups: GroupTransport;
   readonly signal: AbortSignal;
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
+  readonly runtimeVersion: RuntimeVersion;
   readonly runtimeDiagnostics: (context: CommandContext) => {
     readonly accounts: readonly { readonly id: number; readonly seconds: number }[];
     readonly plugins: readonly PluginLoadTiming[];

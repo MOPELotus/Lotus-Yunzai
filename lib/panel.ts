@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { PluginLoadRecord } from "./plugins/loader.ts";
-import { runtimeStatus } from "./server.ts";
+import { runtimeStatus, type StatusVersion } from "./server.ts";
 
 type Endpoint = (request: Request) => Response | Promise<Response>;
 
@@ -10,6 +10,7 @@ export function panelApi(
   token: string,
   plugins: readonly PluginLoadRecord[],
   route?: (path: string) => Endpoint | undefined,
+  version?: StatusVersion,
 ) {
   const hash = (value: string) => createHash("sha256").update(value).digest();
   const required = hash(`Bearer ${token}`);
@@ -30,7 +31,7 @@ export function panelApi(
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { ...headers, Allow: "GET, HEAD" } });
     }
-    const data = path === "/panel/api/status" ? runtimeStatus() : { plugins };
+    const data = path === "/panel/api/status" ? runtimeStatus(version) : { plugins };
     if (request.method === "HEAD") {
       return new Response(null, { headers: { ...headers, "Content-Type": "application/json" } });
     }

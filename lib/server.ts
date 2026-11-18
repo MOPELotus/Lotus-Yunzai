@@ -83,7 +83,13 @@ export function authorized(request: Request, required: Headers): boolean {
   return true;
 }
 
-export function httpStatus(required: Headers) {
+export interface StatusVersion {
+  readonly version?: string;
+  readonly revision?: string;
+  readonly modified?: boolean;
+}
+
+export function httpStatus(required: Headers, version?: StatusVersion) {
   return (request: Request): Response => {
     const pathname = new URL(request.url).pathname;
     if (pathname !== "/status" && pathname !== "/status/") return new Response(null, { status: 404 });
@@ -91,11 +97,16 @@ export function httpStatus(required: Headers) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
     }
-    const response = Response.json(runtimeStatus(), { headers: { "Cache-Control": "no-store" } });
+    const response = Response.json(runtimeStatus(version), { headers: { "Cache-Control": "no-store" } });
     return request.method === "HEAD" ? new Response(null, { headers: response.headers }) : response;
   };
 }
 
-export function runtimeStatus() {
-  return { status: "ok", name: "Lotus-Yunzai", bun: Bun.version, uptime: Math.floor(process.uptime()) };
+export function runtimeStatus({ version, revision, modified }: StatusVersion = {}) {
+  return {
+    status: "ok", name: "Lotus-Yunzai", bun: Bun.version, uptime: Math.floor(process.uptime()),
+    ...(version === undefined ? {} : { version }),
+    ...(revision === undefined ? {} : { revision }),
+    ...(modified === undefined ? {} : { modified }),
+  };
 }

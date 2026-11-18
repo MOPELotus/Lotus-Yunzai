@@ -20,6 +20,7 @@ interface RegisteredCommand {
 function legacyFeatureNames(module: string, command: string): readonly string[] {
   if (module === "@lotus-yunzai/system" && command === "#状态") return ["状态统计", "椰奶状态"];
   if (module === "@lotus-yunzai/system" && command === "#统计") return ["状态统计"];
+  if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];
   return [];
 }
 
