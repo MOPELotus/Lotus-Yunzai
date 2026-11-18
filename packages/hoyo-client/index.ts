@@ -1,4 +1,7 @@
-import { normalizeGameRoles, type Game, type GameRole, type ProfileAccountContext, type RefreshedCredentials, type createProfileStore } from "@lotus-yunzai/account";
+import { normalizeGameRoles, type Game, type GameRole, type ProfileAccountContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
+
+export { createCredentialExchange };
 
 const gameBiz: Record<Game, string> = {
   gs: "hk4e_cn",
@@ -30,7 +33,7 @@ interface CookieRecovery {
 }
 
 export function createHoyoClient(
-  transport: (endpoint: URL, init: RequestInit) => Promise<Response> = fetch,
+  transport: HoyoTransport = fetch,
   recovery?: CookieRecovery,
 ) {
   const refreshes = new Map<string, Promise<ProfileAccountContext>>();
@@ -124,4 +127,11 @@ export function createHoyoClient(
       return list(refreshed, game, signal);
     },
   };
+}
+
+export function createProfileHoyoClient(
+  profiles = createProfileStore(),
+  transport: HoyoTransport = fetch,
+) {
+  return createHoyoClient(transport, { profiles, exchange: createCredentialExchange(transport) });
 }

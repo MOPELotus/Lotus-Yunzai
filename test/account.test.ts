@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
-import { createHoyoClient } from "../packages/hoyo-client/index.ts";
+import { createCredentialExchange, createHoyoClient, createProfileHoyoClient } from "../packages/hoyo-client/index.ts";
 
 test("旧版多档案按自身账号、角色和设备构建请求上下文", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-account-"));
@@ -194,6 +194,71 @@ schedule: { mode: fixed }
     });
     await expect(ordinaryError.listRoles(await profiles.accountContext("42"), "gs"))
       .rejects.toMatchObject({ code: "api", retcode: 10041 });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("使用旧 v1/v2 令牌交换路径，校验账号后重试并保留混合令牌格式", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-exchange-"));
+  try {
+    const primary = "profile: { id: 1 }\naccount: { stuid: '71', stoken: v2_login, mid: login-mid, cookie: expired }\ndevice: { id: device-one, fp: fp-one }\n";
+    await writeFile(join(root, "42.yaml"), primary);
+    await writeFile(join(root, "42-2.yaml"), "profile: { id: 2 }\naccount: { cookie: old, stoken_cookie: 'stuid=72;stoken=legacy-login' }\n");
+    const profiles = createProfileStore(root);
+    const requests: string[] = [];
+    const client = createProfileHoyoClient(profiles, async (url, init) => {
+      expect(init.redirect).toBe("error");
+      requests.push(url.pathname);
+      const headers = new Headers(init.headers);
+      if (url.pathname.endsWith("getUserGameRolesByCookie")) {
+        if (headers.get("cookie") === "expired") return Response.json({ retcode: -100 });
+        expect(headers.get("cookie")).toBe("ltoken_v2=v2_new;ltuid_v2=71;ltmid_v2=login-mid;cookie_token=legacy-new;account_id=71;");
+        return Response.json({ retcode: 0, data: { list: [{ game_biz: "hk4e_cn", game_uid: "81" }] } });
+      }
+      expect(url.origin).toBe("https://passport-api.mihoyo.com");
+      expect(url.searchParams.get("stoken")).toBe("v2_login");
+      expect(url.searchParams.has("stuid")).toBe(false);
+      expect(headers.get("x-rpc-device_id")).toBe("device-one");
+      expect(headers.get("x-rpc-device_fp")).toBe("fp-one");
+      expect(headers.get("ds")).toMatch(/^\d+,\d+,[a-f\d]{32}$/u);
+      return url.pathname.endsWith("getLTokenBySToken")
+        ? Response.json({ retcode: 0, data: { token: { token: "v2_new" }, user_info: { uid: "71" } } })
+        : Response.json({ retcode: 0, data: { cookie_token: "legacy-new", account_id: "71", mid: "login-mid" } });
+    });
+    expect(await client.listRoles(await profiles.accountContext("42"), "gs")).toMatchObject([{ uid: "81" }]);
+    expect(requests).toEqual([
+      "/binding/api/getUserGameRolesByCookie", "/account/auth/api/getLTokenBySToken",
+      "/account/auth/api/getCookieAccountInfoBySToken", "/binding/api/getUserGameRolesByCookie",
+    ]);
+
+    const second = await profiles.accountContext("42", 2);
+    const paths: string[] = [];
+    const legacy = createCredentialExchange(async (url, init) => {
+      paths.push(url.origin + url.pathname);
+      expect(init.method).toBe("GET");
+      expect(url.searchParams.get("stoken")).toBe("legacy-login");
+      if (url.pathname.endsWith("getLTokenBySToken")) {
+        expect(url.searchParams.get("stuid")).toBe("72");
+        return Response.json({ retcode: 0, data: { ltoken: "lt" } });
+      }
+      expect(url.searchParams.get("uid")).toBe("72");
+      expect(url.searchParams.get("game_biz")).toBe("hk4e_cn");
+      return Response.json({ retcode: 0, data: { cookie_token: "ck", uid: "72" } });
+    });
+    expect(await legacy(second)).toMatchObject({ cookie: "ltoken=lt;ltuid=72;cookie_token=ck;account_id=72;" });
+    expect(paths).toEqual([
+      "https://passport-api.mihoyo.com/account/auth/api/getLTokenBySToken",
+      "https://api-takumi.mihoyo.com/auth/api/getCookieAccountInfoBySToken",
+    ]);
+
+    const mismatch = createProfileHoyoClient(profiles, async (url) => {
+      if (url.pathname.endsWith("getUserGameRolesByCookie")) return Response.json({ retcode: -100 });
+      if (url.pathname.endsWith("getLTokenBySToken")) return Response.json({ retcode: 0, data: { ltoken: "lt" } });
+      return Response.json({ retcode: 0, data: { cookie_token: "ck", uid: "99" } });
+    });
+    await expect(mismatch.listRoles(second, "gs")).rejects.toMatchObject({ code: "refresh" });
+    expect((await profiles.accountContext("42", 2)).account.cookie).toBe("old");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
