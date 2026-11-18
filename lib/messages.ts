@@ -22,6 +22,7 @@ export interface MessageEvent {
   readonly at?: string | number;
   readonly reply_id?: string | number;
   readonly img?: readonly string[];
+  readonly file?: InboundSegment;
   readonly reply: (message: MessageReply, quote?: boolean, options?: ReplyOptions) => boolean | Promise<boolean>;
 }
 
@@ -72,7 +73,37 @@ export interface GroupRequest {
   readonly reply: MessageEvent["reply"];
 }
 
-export type BotEvent = MessageEvent | GroupNotice | GroupRequest;
+export interface FriendRequest {
+  readonly post_type: "request";
+  readonly request_type: "friend";
+  readonly sub_type: "add";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly flag: string;
+  readonly comment?: string;
+  readonly isGroup: false;
+  readonly isPrivate: true;
+  readonly isMaster: boolean;
+  readonly approve: (approve?: boolean, remark?: string) => Promise<boolean>;
+  readonly notifyMasters: (message: string) => Promise<number>;
+  readonly reply: MessageEvent["reply"];
+}
+
+export interface FriendPoke {
+  readonly post_type: "notice";
+  readonly notice_type: "friend";
+  readonly sub_type: "poke";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly operator_id: number;
+  readonly target_id: number;
+  readonly isGroup: false;
+  readonly isPrivate: true;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
+
+export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

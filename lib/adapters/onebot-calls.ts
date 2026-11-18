@@ -8,7 +8,7 @@ export class OneBotNotSentError extends Error {
 }
 class OneBotRejectedError extends Error {}
 
-export function isGroupRequestFlag(value: unknown): value is string {
+export function isRequestFlag(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 4096;
 }
 
@@ -61,10 +61,21 @@ export class OneBotCalls {
   }
 
   async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {
-    if (!isGroupRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
+    if (!isRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
         typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;
+    return this.#reviewRequest(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+  }
+
+  async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {
+    if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512) {
+      return false;
+    }
+    return this.#reviewRequest(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
+  }
+
+  async #reviewRequest(send: Send, action: string, params: object): Promise<boolean> {
     try {
-      await this.#request(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+      await this.#request(send, action, params);
       return true;
     } catch (error) {
       if (error instanceof OneBotRejectedError) return false;

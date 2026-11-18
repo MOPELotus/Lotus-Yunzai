@@ -186,7 +186,7 @@ export class LegacyPlugins {
     }
   }
 
-  async dispatch(event: PluginEvent): Promise<void> {
+  async dispatch(event: PluginEvent): Promise<boolean> {
     const matching = this.#apps.filter((app) => matches(app.event, event));
     for (const app of matching) {
       if (typeof app.initializer.accept !== "function") continue;
@@ -194,7 +194,7 @@ export class LegacyPlugins {
         const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
         return typeof instance.accept === "function" ? instance.accept(event) : undefined;
       });
-      if (result === "return") return;
+      if (result === "return") return true;
       if (result) break;
     }
 
@@ -205,7 +205,7 @@ export class LegacyPlugins {
         if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
         if (!canRun(rule.permission, event)) {
           event.reply("暂无权限执行此指令。");
-          return;
+          return true;
         }
 
         const result = await app.scope.run(() => {
@@ -213,8 +213,9 @@ export class LegacyPlugins {
           const handle = instance[rule.fnc];
           return typeof handle === "function" ? handle.call(instance, event) : false;
         });
-        if (result !== false) return;
+        if (result !== false) return true;
       }
     }
+    return false;
   }
 }

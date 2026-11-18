@@ -1,11 +1,11 @@
-import { segment, type BotEvent, type GroupNotice, type GroupRequest, type MessageEvent } from "../messages.ts";
+import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
-import { isGroupRequestFlag, OneBotCalls } from "./onebot-calls.ts";
+import { isRequestFlag, OneBotCalls } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isId(value: unknown): value is number {
@@ -26,31 +26,48 @@ function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string):
   return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
 }
 
-async function dispatchGroupRequest(
-  dispatch: (event: GroupRequest) => Promise<void>,
+async function dispatchRequest(
+  dispatch: (event: FriendRequest | GroupRequest) => Promise<void>,
   send: (message: string) => boolean,
   event: Record<string, unknown>,
   calls: OneBotCalls,
   permissions: { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
 ): Promise<void> {
   const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
-  if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") ||
-      !isId(self_id) || !isId(user_id) || !isId(group_id) || !isGroupRequestFlag(flag)) return;
+  if (!isId(self_id) || !isId(user_id) || !isRequestFlag(flag)) return;
 
-  await dispatch({
-    post_type: "request", request_type, sub_type, self_id, user_id, group_id, flag,
+  const common = () => ({
+    post_type: "request" as const, self_id, user_id, flag,
     comment: stringField(event.comment),
-    isGroup: true,
-    isPrivate: false,
     isMaster: permissions.isMaster(self_id, user_id),
-    approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
-    async notifyMasters(message) {
+    async notifyMasters(message: string) {
       if (typeof message !== "string" || !message) return 0;
       const recipients = permissions.masterIds(self_id).filter((id) => id !== self_id);
       const delivered = await Promise.all(recipients.map((user_id) =>
         calls.replyWithConfirmation(send, { message_type: "private", user_id, message, auto_escape: true })));
       return delivered.filter(Boolean).length;
     },
+  });
+
+  if (request_type === "friend") {
+    if (self_id === user_id) return;
+    await dispatch({
+      ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
+      approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
+      reply(reply) {
+        const message = encodeOneBotReply(reply);
+        if (message === undefined) return false;
+        return calls.replyWithConfirmation(send, { message_type: "private", user_id, message, auto_escape: true });
+      },
+    });
+    return;
+  }
+
+  if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") || !isId(group_id)) return;
+
+  await dispatch({
+    ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
+    approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
     reply(reply) {
       const message = encodeOneBotReply(reply);
       if (message === undefined) return false;
@@ -99,6 +116,28 @@ async function dispatchGroupNotice(
   });
 }
 
+async function dispatchFriendPoke(
+  dispatch: (event: FriendPoke) => Promise<void>,
+  send: (message: string) => boolean,
+  event: Record<string, unknown>,
+  isMaster: (bot: number, user: number) => boolean,
+): Promise<void> {
+  const { self_id, target_id } = event;
+  const user_id = event.user_id ?? event.operator_id;
+  if (!isId(self_id) || target_id !== self_id || !isId(user_id) || user_id === self_id) return;
+  await dispatch({
+    post_type: "notice", notice_type: "friend", sub_type: "poke",
+    self_id, user_id, operator_id: user_id, target_id,
+    isGroup: false, isPrivate: true, isMaster: isMaster(self_id, user_id),
+    reply(reply) {
+      const message = encodeOneBotReply(reply);
+      return message !== undefined && send(JSON.stringify({
+        action: "send_msg", params: { message_type: "private", user_id, message, auto_escape: true },
+      }));
+    },
+  });
+}
+
 async function dispatchMessage(
   dispatch: (event: MessageEvent) => Promise<void>,
   send: (message: string) => boolean,
@@ -132,6 +171,7 @@ async function dispatchMessage(
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
     ...messageFields,
+    file: incoming.message.find(({ type }) => type === "file"),
     post_type: "message",
     message_type: messageType,
     sub_type: typeof event.sub_type === "string" ? event.sub_type : undefined,
@@ -237,9 +277,19 @@ export function startOneBot(
         try {
           const send = (output: string) => sendFrame(socket, output);
           if (message.post_type === "notice") {
-            await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster);
+            if (message.notice_type === "offline_file" && isId(message.self_id) &&
+                !message.group_id && isRecord(message.file)) {
+              await dispatchMessage(dispatch, send, {
+                ...message, post_type: "message", message_type: "private", sub_type: "friend",
+                message: [{ type: "file", data: message.file }],
+              }, calls, options.isMaster);
+            } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
+              await dispatchFriendPoke(dispatch, send, message, options.isMaster);
+            } else {
+              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster);
+            }
           } else if (message.post_type === "request") {
-            await dispatchGroupRequest(dispatch, send, message, calls, options);
+            await dispatchRequest(dispatch, send, message, calls, options);
           } else {
             await dispatchMessage(dispatch, send, message, calls, options.isMaster);
           }
