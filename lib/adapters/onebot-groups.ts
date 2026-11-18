@@ -19,13 +19,24 @@ interface Connection {
   readonly send: Send;
 }
 
+interface ConnectedAccount {
+  readonly connection: Connection;
+  readonly startedAt: number;
+}
+
 export class OneBotGroups implements GroupTransport {
-  readonly #connected = new Map<number, Connection>();
+  readonly #connected = new Map<number, ConnectedAccount>();
+  readonly #now: () => number;
+
+  constructor(now: () => number = () => performance.now()) {
+    this.#now = now;
+  }
 
   connect(botId: number, connection: Connection): () => void {
-    this.#connected.set(botId, connection);
+    const account = { connection, startedAt: this.#now() };
+    this.#connected.set(botId, account);
     return () => {
-      if (this.#connected.get(botId) === connection) this.#connected.delete(botId);
+      if (this.#connected.get(botId) === account) this.#connected.delete(botId);
     };
   }
 
@@ -40,6 +51,14 @@ export class OneBotGroups implements GroupTransport {
 
   onlineBots(): readonly number[] {
     return [...this.#connected.keys()].sort((left, right) => left - right);
+  }
+
+  onlineAccounts(): readonly { readonly id: number; readonly seconds: number }[] {
+    const now = this.#now();
+    return [...this.#connected].sort(([left], [right]) => left - right).map(([id, account]) => ({
+      id,
+      seconds: Math.max(0, Math.floor((now - account.startedAt) / 1_000)),
+    }));
   }
 
   async listGroups(botId: number): Promise<readonly GroupTarget[]> {
@@ -63,8 +82,8 @@ export class OneBotGroups implements GroupTransport {
   }
 
   #connection(botId: number): Connection {
-    const connection = this.#connected.get(botId);
-    if (!connection) throw new OneBotNotSentError("指定机器人未连接 OneBot。");
-    return connection;
+    const account = this.#connected.get(botId);
+    if (!account) throw new OneBotNotSentError("指定机器人未连接 OneBot。");
+    return account.connection;
   }
 }

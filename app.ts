@@ -6,7 +6,7 @@ import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
-import { CommandRegistry } from "./lib/commands.ts";
+import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
@@ -220,6 +220,14 @@ if (import.meta.main) {
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
       messageStatistics: createMessageStatistics(counts),
+      runtimeDiagnostics(context: CommandContext) {
+        if (!context.isMaster) return { accounts: [], plugins: [] };
+        const accounts = groups.onlineAccounts();
+        return {
+          accounts: context.message_type === "terminal" ? accounts : accounts.filter(({ id }) => id === context.self_id),
+          plugins: plugins?.timings ?? [],
+        };
+      },
     }));
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {

@@ -131,6 +131,15 @@ interface PluginServices {
   readonly groups: GroupTransport;
   readonly signal: AbortSignal;
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
+  readonly runtimeDiagnostics: (context: CommandContext) => {
+    readonly accounts: readonly { readonly id: number; readonly seconds: number }[];
+    readonly plugins: readonly PluginLoadTiming[];
+  };
+}
+
+export interface PluginLoadTiming {
+  readonly name: string;
+  readonly milliseconds: number;
 }
 
 export interface PluginLoadRecord {
@@ -142,6 +151,7 @@ export interface PluginLoadRecord {
 export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
+  readonly timings: readonly PluginLoadTiming[];
   dispose(): Promise<void>;
 }
 
@@ -160,6 +170,7 @@ export async function loadPlugins(
   services: PluginServices,
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
+  const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
   const cleanups: { name: string; cleanup: () => unknown }[] = [];
   const seen = new Map<string, string>();
@@ -244,6 +255,7 @@ export async function loadPlugins(
   }
 
   for (const { label, entry, moduleName, directory, packageName } of ready) {
+    const started = performance.now();
     let cleanup: (() => unknown) | undefined;
     try {
       const published = await import(pathToFileURL(entry).href);
@@ -289,6 +301,7 @@ export async function loadPlugins(
       }
       console.log(`[插件] 已加载 ${label}。`);
       records.push({ name: label, status: "loaded" });
+      timings.push({ name: label, milliseconds: performance.now() - started });
       if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
       if (cleanup) cleanups.push({ name: label, cleanup });
     } catch (error) {
@@ -300,7 +313,7 @@ export async function loadPlugins(
   }
   let disposal: Promise<void> | undefined;
   return {
-    records, directories,
+    records, directories, timings,
     dispose() {
       return disposal ??= (async () => {
         for (const { name, cleanup } of cleanups.splice(0).reverse()) await disposeModule(name, cleanup);
