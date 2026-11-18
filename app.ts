@@ -3,7 +3,12 @@ import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 
 const commands = new CommandRegistry();
-commands.register("#状态", () => `Lotus-Yunzai 正在运行（Bun ${Bun.version}）`);
+commands.registerModule({
+  name: "host",
+  commands: {
+    "#状态": () => `Lotus-Yunzai 正在运行（Bun ${Bun.version}）`,
+  },
+});
 
 if (import.meta.main) {
   const token = Bun.env.LOTUS_ONEBOT_TOKEN;
