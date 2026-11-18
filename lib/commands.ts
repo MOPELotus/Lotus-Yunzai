@@ -14,9 +14,13 @@ export class CommandRegistry {
     this.#handlers.set(name, handler);
   }
 
+  hasModule(name: string): boolean {
+    return this.#modules.has(name);
+  }
+
   registerModule(module: CommandModule): () => void {
     const { name } = module;
-    if (this.#modules.has(name)) {
+    if (this.hasModule(name)) {
       throw new Error(`模块已注册：${name}`);
     }
 

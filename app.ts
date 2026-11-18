@@ -1,6 +1,8 @@
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
+import { loadPlugins } from "./lib/plugins/loader.ts";
 
 const commands = new CommandRegistry();
 commands.registerModule({
@@ -11,6 +13,7 @@ commands.registerModule({
 });
 
 if (import.meta.main) {
+  await loadPlugins(fileURLToPath(new URL("./plugins", import.meta.url)), commands);
   const token = Bun.env.LOTUS_ONEBOT_TOKEN;
   if (token !== undefined) {
     const portSetting = Bun.env.LOTUS_ONEBOT_PORT ?? "25360";
@@ -22,9 +25,11 @@ if (import.meta.main) {
 
   const consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const message of consoleInput) {
-    const reply = await commands.dispatch(message);
-    if (reply !== undefined) {
-      console.log(reply);
+    try {
+      const reply = await commands.dispatch(message);
+      if (reply !== undefined) console.log(reply);
+    } catch {
+      console.error("处理终端指令失败。");
     }
   }
 }

@@ -25,3 +25,29 @@ printf '#状态\n' | bun app.ts
 在宿主的环境变量中设置 `LOTUS_ONEBOT_TOKEN`，再运行 `bun app.ts`。同一台机器上的 OneBot 11 客户端使用反向 WebSocket 的 Universal 模式，连接 `ws://127.0.0.1:25360/OneBotv11`，访问令牌与宿主相同。
 
 `LOTUS_ONEBOT_PORT` 可修改监听端口，默认是 `25360`。宿主只监听本机地址。连接后，在群聊或私聊中发送纯文本 `#状态`。协议字段见 [OneBot 11 反向 WebSocket 规范](https://github.com/botuniverse/onebot-11/blob/master/communication/ws-reverse.md)。
+
+## 插件
+
+宿主启动时检查仓库根目录下的 `plugins/`。识别到已归并的旧插件、已登记的鸣潮插件或重复安装时，会在导入入口前写出拒载原因。可从包名、仓库来源及 `lotusYunzai.games` 识别插件。跨游戏插件应在 `games` 中声明所有提供的游戏功能。
+
+目前可加载带 `lotusYunzai.entry` 的模块。例如在 `plugins/hello/package.json` 写入以下内容。
+
+```json
+{
+  "name": "hello",
+  "type": "module",
+  "lotusYunzai": { "entry": "./index.ts" }
+}
+```
+
+在同一目录建立 `index.ts`，由默认导出的 `commands` 提供指令。处理函数接收指令后的参数，可返回字符串或 `Promise<string>`。
+
+```ts
+export default {
+  commands: {
+    "#问候": (name: string) => `你好，${name || "朋友"}！`,
+  },
+};
+```
+
+旧版云崽的 JS 插件兼容层仍在开发。
