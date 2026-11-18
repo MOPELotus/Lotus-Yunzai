@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { builtInDirectories } from "./builtin-modules.ts";
-import { createLocalGit, gitHead, isGitCheckout } from "./local-git.ts";
+import { createLocalGit, gitHead, isGitCheckout, type LocalGit } from "./local-git.ts";
 import { loadedPluginPath, type PluginDirectories } from "./plugins/loaded-directories.ts";
 import { activateUpdate } from "./update-activation.ts";
 import { buildUpdateCheckout, initializeUpdateSubmodules } from "./update-build.ts";
-import { isUpdateWorktreeDirty } from "./update-candidate-git.ts";
+import { isUpdateWorktreeDirty, updateBindingFingerprint } from "./update-candidate-git.ts";
 import { checkoutUpdateRevision } from "./update-checkout.ts";
 import { verifyUpdateHealth } from "./update-health.ts";
 import type { ReadyBatchUpdate, ReadyUpdate } from "./update-preflight.ts";
@@ -20,14 +20,69 @@ function within(parent: string, path: string): boolean {
   return subpath !== ".." && !subpath.startsWith(`..${sep}`) && !isAbsolute(subpath);
 }
 
-async function readActiveRevision(directory: string, signal?: AbortSignal): Promise<string> {
+type SourcePolicy = Pick<ReadyUpdate, "force" | "binding">;
+
+async function readActiveRevision(directory: string, signal?: AbortSignal, policy?: SourcePolicy): Promise<string> {
   signal?.throwIfAborted();
   const git = createLocalGit();
   if (!git || !await isGitCheckout(git, directory)) throw new Error("无有效的 Git 工作区。");
   const [head, dirty] = await Promise.all([gitHead(git, directory), isUpdateWorktreeDirty(git, directory)]);
+  if (policy?.force) {
+    if (!policy.binding || await updateBindingFingerprint(git, directory) !== policy.binding) {
+      throw new Error("强制更新来源的分支或上游已变更。");
+    }
+    await verifyArchiveSource(git, directory);
+  }
   signal?.throwIfAborted();
-  if (!head || dirty !== false) throw new Error("Git 工作区存在修改或不可读。");
+  if (!head || dirty === undefined || (dirty && !policy?.force)) throw new Error("Git 工作区存在修改或不可读。");
   return head;
+}
+
+async function verifyArchiveSource(git: LocalGit, source: string) {
+  const marker = join(source, ".git");
+  const error = () => new Error("强制更新来源无法独立归档。");
+  if (!(await lstat(marker)).isDirectory()) throw error();
+  const [common, worktree, metadata] = await Promise.all([
+    git(source, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+    git(source, ["config", "--null", "--get-all", "core.worktree"], true),
+    readdir(marker, { withFileTypes: true }),
+  ]);
+  if (common !== marker + "\n" || worktree !== "" ||
+      metadata.some((entry) => entry.isSymbolicLink() || entry.name === "commondir")) throw error();
+  if (metadata.some((entry) => entry.name === "worktrees") && (await readdir(join(marker, "worktrees"))).length) throw error();
+  for (const { name } of metadata) {
+    if (name !== "refs" && name !== "logs" && name !== "objects") continue;
+    const entries = await readdir(join(marker, name), { recursive: true, withFileTypes: true });
+    if (entries.some((entry) => entry.isSymbolicLink() ||
+      (name === "objects" && (entry.name === "alternates" || entry.name === "http-alternates")))) throw error();
+  }
+}
+
+async function verifyArchiveState(host: string, source: string, state: readonly string[]) {
+  const affected: string[] = [];
+  for (const path of state) {
+    const location = join(host, path);
+    if (within(location, source)) throw new Error("持久状态路径包含强制更新的 Git 工作区。");
+    if (within(source, location)) affected.push(relative(source, location));
+  }
+  if (!affected.length) return;
+  const git = createLocalGit();
+  const [head, index] = await Promise.all([
+    git?.(source, ["ls-tree", "-r", "-z", "--name-only", "HEAD"]),
+    git?.(source, ["ls-files", "--cached", "-z"]),
+  ]);
+  if (head === undefined || index === undefined) throw new Error("无法检查强制更新来源所跟踪的持久状态。");
+  const paths = new Set(affected);
+  const parents = new Set<string>();
+  for (const path of paths) {
+    for (let parent = dirname(path); parent !== "."; parent = dirname(parent)) parents.add(parent);
+  }
+  for (const tracked of [...head.split("\0"), ...index.split("\0")]) {
+    if (parents.has(tracked)) throw new Error("持久状态与强制更新来源的 Git 路径重叠。");
+    for (let path = tracked; path !== "." && path; path = dirname(path)) {
+      if (paths.has(path)) throw new Error("持久状态与强制更新来源的 Git 路径重叠。");
+    }
+  }
 }
 
 async function copyLocalPlugin(source: string, destination: string, signal?: AbortSignal) {
@@ -140,8 +195,8 @@ export async function stageUpdate(
     signal?.throwIfAborted();
     const [host, parent] = await Promise.all([realpath(fileURLToPath(root)), realpath(stagingParent)]);
     if (within(host, parent)) throw new Error("候选目录必须位于活动宿主之外。");
-    const hostHead = await readActiveRevision(host, signal);
     const hostTarget = ready.scope === "all" ? ready.host : ready.scope === "host" ? ready : undefined;
+    const hostHead = await readActiveRevision(host, signal, hostTarget);
     if (hostTarget && (hostTarget.directory !== host || hostTarget.current !== hostHead)) {
       throw new Error("宿主提交已变更。");
     }
@@ -167,7 +222,7 @@ export async function stageUpdate(
     await mkdir(pluginRoot, { recursive: true });
     if (await realpath(pluginRoot) !== pluginRoot) throw new Error("候选插件目录无效。");
     const [trackedActive, trackedCandidate] = await Promise.all([trackedPluginNames(host), trackedPluginNames(directory)]);
-    const copies: { source: string; head: string; destination: string; stagedHead: string }[] = [];
+    const copies: { source: string; head: string; destination: string; stagedHead: string; target?: ReadyUpdate }[] = [];
     const localCopies: string[] = [];
     for (const [name, plugin] of directories) {
       signal?.throwIfAborted();
@@ -189,7 +244,7 @@ export async function stageUpdate(
         localCopies.push(source);
         continue;
       }
-      const head = await readActiveRevision(source, signal);
+      const head = await readActiveRevision(source, signal, target);
       let revision = head;
       if (target) {
         if (target.directory !== source || target.current !== head) throw new Error("插件提交已变更。");
@@ -197,7 +252,7 @@ export async function stageUpdate(
       }
       await checkoutUpdateRevision(source, revision, destination, signal);
       await initializeUpdateSubmodules(destination, cache, signal);
-      copies.push({ source, head, destination, stagedHead: revision });
+      copies.push({ source, head, destination, stagedHead: revision, target });
       targets.delete(name);
     }
     if (targets.size) throw new Error("候选插件未加载。");
@@ -206,12 +261,12 @@ export async function stageUpdate(
     await buildUpdateCheckout(directory, cache, signal);
 
     async function checkRevisions(checkSignal?: AbortSignal) {
-      if (await readActiveRevision(host, checkSignal) !== hostHead ||
+      if (await readActiveRevision(host, checkSignal, hostTarget) !== hostHead ||
           await readActiveRevision(directory, checkSignal) !== stagedHead) {
         throw new Error("宿主检查期间已变更。");
       }
       for (const plugin of copies) {
-        if (await readActiveRevision(plugin.source, checkSignal) !== plugin.head ||
+        if (await readActiveRevision(plugin.source, checkSignal, plugin.target) !== plugin.head ||
             await readActiveRevision(plugin.destination, checkSignal) !== plugin.stagedHead) throw new Error("插件检查期间已变更。");
       }
     }
@@ -246,8 +301,10 @@ export async function stageUpdate(
             ...localCopies.map((source) => pluginStatePaths(source, false)),
           ])).flat();
           await probeStagedUpdate(directory, stagedHead, state);
-          return await activateUpdate(host, directory, verify, [...state, ...(additionalStatePaths ?? [])], async () => {
+          return await activateUpdate(host, directory, verify, [...state, ...(additionalStatePaths ?? [])], async (paths) => {
             await checkRevisions();
+            const forced = [...(hostTarget?.force ? [host] : []), ...copies.filter(({ target }) => target?.force).map(({ source }) => source)];
+            await Promise.all(forced.map((source) => verifyArchiveState(host, source, paths)));
             await ready.release();
           });
         } finally {

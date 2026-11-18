@@ -92,11 +92,13 @@ if (import.meta.main) {
   });
   const updateLogCommand = createUpdateLogCommand((requested) =>
     plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
-  const updateCommand = createUpdateCommand((event, requested, quiet, report, all) => {
+  const updateCommand = createUpdateCommand((event, requested, quiet, report, all, force) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
     const directories = [...plugins.directories].map(([name, metadata]) => ({ name, ...metadata }));
-    return handoff.update({ requested, ...(all ? { all: true } : {}), quiet, target, directories }, report);
+    return handoff.update({
+      requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target, directories,
+    }, report);
   });
 
   function stop(code: number) {
@@ -147,6 +149,7 @@ if (import.meta.main) {
         } else {
           reply = `更新成功，提交 ${receipt.revision.slice(0, 12)}`;
         }
+        if (receipt.result === "updated" && receipt.preserved) reply += "。原工作区已保留，位置见宿主日志。";
       } else {
         reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
       }

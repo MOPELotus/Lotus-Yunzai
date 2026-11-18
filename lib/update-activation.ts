@@ -141,15 +141,14 @@ export async function activateUpdate(
   candidate: string,
   verify: (directory: string) => Promise<void>,
   additionalStatePaths: readonly string[] = [],
-  validate?: () => Promise<void>,
+  validate?: (state: readonly string[]) => Promise<void>,
 ): Promise<{ previous: string }> {
   const root = await canonicalLocation(active);
   const next = await canonicalLocation(candidate);
   const path = journalPath(root);
   const lock = await lockFile(`${path}.sqlite`, "版本切换", 0);
   try {
-    await validate?.();
-    return await switchVersion(root, next, verify, additionalStatePaths, path);
+    return await switchVersion(root, next, verify, additionalStatePaths, path, validate);
   } finally {
     lock.close();
   }
@@ -157,6 +156,7 @@ export async function activateUpdate(
 
 async function switchVersion(
   root: string, next: string, verify: (directory: string) => Promise<void>, additionalStatePaths: readonly string[], path: string,
+  validate?: (state: readonly string[]) => Promise<void>,
 ): Promise<{ previous: string }> {
   const [currentInfo, nextInfo] = await Promise.all([lstat(root), lstat(next)]);
   if (!currentInfo.isDirectory() || !nextInfo.isDirectory() || currentInfo.dev !== nextInfo.dev ||
@@ -171,6 +171,7 @@ async function switchVersion(
     if (await exists(join(next, name))) throw new Error("候选目录占用了持久状态路径。");
     if (await exists(join(root, name))) state.push(name);
   }
+  await validate?.(state);
   const entry: Activation = { id: crypto.randomUUID(), candidate: next, state, committed: false };
   const previous = backupPath(root, entry.id);
 

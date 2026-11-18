@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -362,6 +362,114 @@ test.skipIf(noGit)("批量候选一次切换宿主和两个外部插件，保留
   } finally {
     await stage.release();
   }
+}), 15_000);
+
+async function forceFixture(temporary: string) {
+  const host = await makeRepository(temporary, "force-host", {
+    ".gitignore": "/config/\n/logs/\n/plugins/\n",
+    "package.json": JSON.stringify({ name: "force-host", scripts: { typecheck: "bun -e 'void 0'" } }),
+    "scripts/bootstrap.ts": "void 0;\n",
+    "source.txt": "committed",
+    "app.ts": `
+      const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"]).stdout.toString().trim();
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+        if (request.headers.get("Authorization") !== "Bearer " + Bun.env.LOTUS_HTTP_TOKEN) return new Response(null, { status: 401 });
+        return Response.json({ status: "ok", revision });
+      } });
+      console.log("HTTP 正在监听 " + server.url.origin + "/status");
+      process.once("SIGTERM", () => { void server.stop(true); });
+    `,
+  });
+  const baseline = host.publish("Force fixture baseline");
+  const active = join(temporary, "active");
+  host.checkout(active);
+  await writeFiles(active, { "config/state.txt": "live settings" });
+  return { host, active, baseline, root: pathToFileURL(`${active}/`) };
+}
+
+test.skipIf(noGit)("强制切换同提交的脏工作区，保留归档的 index 和修改并在切换前复核分支与上游", () => fixture(async (temporary) => {
+  const { active, baseline, root } = await forceFixture(temporary);
+  const directories = new Map();
+  await writeFile(join(active, "source.txt"), "staged edit");
+  git(active, "add", "source.txt");
+  await writeFile(join(active, "source.txt"), "unstaged edit");
+  const status = git(active, "status", "--porcelain=v1");
+  const index = await readFile(join(active, ".git", "index"));
+  const ready = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  expect(ready.current).toBe(baseline);
+  expect(ready.candidate).toBe(baseline);
+  expect(await prepareUpdate(root, directories)).toMatchObject({ status: "dirty" });
+  const batch: ReadyBatchUpdate = {
+    status: "ready", scope: "all", force: true,
+    host: { directory: active, current: baseline, candidate: baseline },
+    plugins: new Map(), async release() {},
+  };
+  await expect(stageUpdate(root, directories, batch, temporary)).rejects.toThrow("校验当前工作区");
+  const stage = await stageUpdate(root, directories, ready, temporary);
+  try {
+    expect(await readFile(join(stage.directory, "source.txt"), "utf8")).toBe("committed");
+    expect(await readFile(join(active, ".git", "index"))).toEqual(index);
+    expect(git(active, "status", "--porcelain=v1")).toBe(status);
+    git(active, "switch", "--quiet", "-c", "same-sha");
+    git(active, "branch", "--quiet", "--set-upstream-to=origin/main");
+    expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+    await expect(stage.activate(async () => {})).rejects.toThrow("分支或上游已变更");
+    git(active, "switch", "--quiet", "main");
+    git(active, "config", "branch.main.merge", "refs/heads/other");
+    await expect(stage.activate(async () => {})).rejects.toThrow("分支或上游已变更");
+    git(active, "config", "branch.main.merge", "refs/heads/main");
+    const archivedIndex = await readFile(join(active, ".git", "index"));
+    const switched = await stage.activate(async () => {});
+    expect(git(active, "status", "--porcelain=v1")).toBe("");
+    expect(await readFile(join(active, "config/state.txt"), "utf8")).toBe("live settings");
+    expect(await readFile(join(switched.previous, ".git", "index"))).toEqual(archivedIndex);
+    expect(git(switched.previous, "show", ":source.txt")).toBe("staged edit");
+    expect(await readFile(join(switched.previous, "source.txt"), "utf8")).toBe("unstaged edit");
+    expect(git(switched.previous, "status", "--porcelain=v1")).toBe(status);
+  } finally {
+    await stage.release();
+    await ready.release();
+  }
+}), 15_000);
+
+test.skipIf(noGit)("强制切换拒绝迁移 index 已跟踪的状态，以及依赖外部对象的工作区", () => fixture(async (temporary) => {
+  const { active, baseline, root } = await forceFixture(temporary);
+  const directories = new Map();
+  git(active, "add", "-f", "config/state.txt");
+  const ready = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  const stage = await stageUpdate(root, directories, ready, temporary);
+  try {
+    await expect(stage.activate(async () => {})).rejects.toThrow("Git 路径重叠");
+    expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+    expect(git(active, "show", ":config/state.txt")).toBe("live settings");
+    expect(await readFile(join(active, "config/state.txt"), "utf8")).toBe("live settings");
+  } finally {
+    await stage.release();
+    await ready.release();
+  }
+  git(active, "commit", "--quiet", "-m", "Fixture accidentally tracked state");
+  const localHead = git(active, "rev-parse", "HEAD");
+  git(active, "rm", "--cached", "-f", "config/state.txt");
+  expect(git(active, "ls-files", "--", "config/state.txt")).toBe("");
+  const committed = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  const stagedCommit = await stageUpdate(root, directories, committed, temporary);
+  try {
+    await expect(stagedCommit.activate(async () => {})).rejects.toThrow("Git 路径重叠");
+    expect(git(active, "show", "HEAD:config/state.txt")).toBe("live settings");
+  } finally {
+    await stagedCommit.release();
+    await committed.release();
+  }
+  const next = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  const alternates = join(active, ".git/objects/info/alternates");
+  await writeFile(alternates, join(temporary, "force-host.git/objects") + "\n");
+  await expect(stageUpdate(root, directories, next, temporary)).rejects.toThrow("校验当前工作区");
+  await unlink(alternates);
+  const linked = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  await symlink(join(active, ".git/refs/heads/main"), join(active, ".git/refs/heads/source-pointer"));
+  await expect(stageUpdate(root, directories, linked, temporary)).rejects.toThrow("校验当前工作区");
+  expect(git(active, "rev-parse", "HEAD")).toBe(localHead);
+  expect(git(active, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
 }), 15_000);
 
 test.skipIf(noGit)("取消运行中的构建会清理暂存目录与候选引用", () => fixture(async (temporary) => {

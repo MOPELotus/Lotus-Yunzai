@@ -3,9 +3,9 @@ import type { MessageEvent } from "./messages.ts";
 import { parseUpdateTarget } from "./update-target.ts";
 
 type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet: boolean,
-  report: (status: ManagedUpdateProgress) => void, all: boolean) => boolean;
+  report: (status: ManagedUpdateProgress) => void, all: boolean, force: boolean) => boolean;
 
-const command = /^#(全部)?(安?静)?更新/u;
+const command = /^#(全部)?(安?静)?(强制)?更新/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
 const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   checking: "开始更新，正在检查上游。",
@@ -43,24 +43,28 @@ export function createUpdateCommand(request: RequestUpdate) {
 
     const all = match[1] !== undefined;
     const quiet = match[2] !== undefined;
+    const force = match[3] !== undefined;
     const requested = parseUpdateTarget(message.slice(match[0].length));
     if (all && requested !== "") {
-      await event.reply("请只发送 #全部更新、#全部静更新 或 #全部安静更新。");
+      await event.reply(force ? "请只发送 #全部强制更新、#全部静强制更新 或 #全部安静强制更新。"
+        : "请只发送 #全部更新、#全部静更新 或 #全部安静更新。");
       return;
     }
     if (requested === undefined) {
-      await event.reply("请输入有效的插件名，例如 #更新 system 或 #更新 @lotus-yunzai/system。");
+      const example = force ? "#强制更新" : "#更新";
+      await event.reply(`请输入有效的插件名，例如 ${example} system 或 ${example} @lotus-yunzai/system。`);
       return;
     }
 
     let pending = Promise.resolve();
     const report = (status: ManagedUpdateProgress) => {
       if (quiet && quietStatuses.has(status)) return;
-      pending = pending.then(async () => { await event.reply(replies[status]); }).catch(() => undefined);
+      const reply = force && status === "checking" ? "开始强制更新，正在检查上游。" : replies[status];
+      pending = pending.then(async () => { await event.reply(reply); }).catch(() => undefined);
     };
     let sent: boolean;
     try {
-      sent = request(event, requested || undefined, quiet, report, all);
+      sent = request(event, requested || undefined, quiet, report, all, force);
     } catch {
       await event.reply("发送更新请求失败，请稍后重试。");
       return;

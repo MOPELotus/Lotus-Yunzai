@@ -13,7 +13,7 @@ import { stageUpdate } from "./update-staging.ts";
 type Worker = ReturnType<typeof spawnManagedWorker>;
 type StopSignal = "SIGINT" | "SIGTERM";
 type SwitchResult = "updated" | "rolled-back" | "stopped";
-type NotifyResult = (result: Exclude<SwitchResult, "stopped">) => Promise<void>;
+type NotifyResult = (result: Exclude<SwitchResult, "stopped">, previous?: string) => Promise<void>;
 
 interface PreparedUpdate {
   readonly revision: string;
@@ -75,8 +75,8 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       report("checking");
       const directories = new Map(request.directories.map(({ name, path, packageName }) => [name, { path, packageName }]));
       const result = request.all
-        ? await prepareAllUpdates(rootUrl, directories, signal)
-        : await prepareUpdate(rootUrl, directories, request.requested, signal);
+        ? await prepareAllUpdates(rootUrl, directories, signal, request.force)
+        : await prepareUpdate(rootUrl, directories, request.requested, signal, request.force);
       if (result.status !== "ready") {
         if ("target" in result && typeof result.target === "string" && result.status !== "current" && !signal.aborted) {
           console.warn(`[更新] ${sanitizeRuntimeLog(result.target, 120)} 未通过全量更新检查（${result.status}）。`);
@@ -91,7 +91,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       if (stopped || signal.aborted || current !== worker) return;
       const revision = ready.scope === "all" ? ready.host.candidate : ready.candidate;
       const repositories = ready.scope === "all"
-        ? Number(ready.host.current !== ready.host.candidate) + ready.plugins.size : undefined;
+        ? Number(ready.host.current !== ready.host.candidate || ready.host.force === true) + ready.plugins.size : undefined;
       let expectedPlugins: readonly string[] | undefined;
       if (ready.scope === "all") {
         const installed = new Set(await readdir(join(stage.directory, "plugins")));
@@ -101,21 +101,31 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       }
       if (stopped || signal.aborted || current !== worker) return;
       report("switching");
-      transition = switchWorker(stage, undefined, async (outcome) => {
+      let archived: string | undefined;
+      transition = switchWorker(stage, undefined, async (outcome, previous) => {
+        if (outcome === "updated") archived = previous;
         try {
           const destination = { kind: "update", at: Date.now(), target: request.target } as const;
           await receipts.save(outcome === "updated"
-            ? { ...destination, result: "updated", revision, repositories }
+            ? { ...destination, result: "updated", revision, repositories,
+              ...(request.force ? { preserved: true } : {}) }
             : { ...destination, result: "rolled-back" });
         } catch {
           console.warn("[更新] 无法保存原会话回执。");
         }
       }, expectedPlugins).finally(() => { transition = undefined; });
-      await transition;
-    } catch {
+      const outcome = await transition;
+      if (request.force && outcome === "updated" && archived) {
+        console.log(`[更新] 强制更新前的工作区保存在 ${JSON.stringify(archived)}。`);
+      }
+    } catch (error) {
       if (!stopped && !signal.aborted) {
-        if (current === worker) report("failed");
-        else console.error("[更新] 无法完成托管宿主切换，请核对恢复记录。");
+        if (current === worker) {
+          if (error instanceof Error) console.warn(`[更新] ${sanitizeRuntimeLog(error.message, 240)}`);
+          report("failed");
+        } else {
+          console.error("[更新] 无法完成托管宿主切换，请核对恢复记录。");
+        }
       }
     } finally {
       await stage?.release().catch(() => console.warn("[更新] 无法清理候选目录。"));
@@ -174,7 +184,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         await candidate.stop(stopped);
         return "stopped" as const;
       }
-      await notify?.("updated");
+      await notify?.("updated", previous);
       if (stopped) {
         await candidate.stop(stopped);
         return "stopped" as const;

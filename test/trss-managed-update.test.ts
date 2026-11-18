@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFile, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
@@ -179,14 +179,40 @@ async function expectVersion(client: Gateway, revision: string) {
   expect(frame.params.message).toContain(`宿主提交　${revision.slice(0, 12)}`);
 }
 
-async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host") {
+async function captureLocalChanges(repository: string, source: string) {
+  return {
+    head: git(repository, "rev-parse", "HEAD"),
+    branch: git(repository, "symbolic-ref", "HEAD"),
+    privateCommit: git(repository, "rev-parse", "refs/heads/fixture-private"),
+    staged: git(repository, "ls-files", "--stage", "--", source),
+    status: git(repository, "status", "--porcelain", "--untracked-files=no"),
+    working: await readFile(join(repository, source), "utf8"),
+  };
+}
+
+async function addLocalChanges(repository: string, source: string) {
+  const file = join(repository, source);
+  await appendFile(file, "\n// fixture private commit\n");
+  git(repository, "add", source);
+  git(repository, "commit", "--quiet", "-m", "Fixture private change");
+  git(repository, "branch", "fixture-private");
+  await appendFile(file, "\n// fixture staged change\n");
+  git(repository, "add", source);
+  await appendFile(file, "\n// fixture unstaged change\n");
+  const captured = await captureLocalChanges(repository, source);
+  expect(captured.status).toBe(`MM ${source}`);
+  return captured;
+}
+
+async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host", force = false) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-managed-update-"));
   const clients: Gateway[] = [];
-  const command = { host: "#更新", plugin: "#更新local-fixture", all: "#全部更新" }[updateTarget];
+  const prefix = updateTarget === "all" ? "全部" : "";
+  const argument = updateTarget === "plugin" ? "local-fixture" : "";
+  const command = `#${prefix}${force ? "强制" : ""}更新${argument}`;
   try {
     const audit = updateTarget === "all" ? join(temporary, "fixture-workers.txt") : undefined;
     const { active, old, candidate, localPlugin, pluginRemote } = await fixtureRepository(temporary, fail && updateTarget === "host", audit);
-    const previousPlugin = git(localPlugin, "rev-parse", "HEAD");
     let candidatePlugin: string | undefined;
     if (updateTarget !== "host") {
       const writer = join(temporary, "plugin-writer");
@@ -199,6 +225,22 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       git(writer, "push", "--quiet", "origin", "main");
       candidatePlugin = git(writer, "rev-parse", "HEAD");
     }
+    if (force) {
+      const app = join(active, "app.ts");
+      const cleanSource = await readFile(app, "utf8");
+      git(active, "fetch", "--quiet", "origin", "main");
+      if (fail) {
+        // Put the healthy local commit ahead of the failing upstream commit.
+        git(active, "merge", "--quiet", "--ff-only", "origin/main");
+        await writeFile(app, cleanSource);
+      }
+    }
+    const localHost = force ? await addLocalChanges(active, "app.ts") : undefined;
+    const localPluginState = force && updateTarget === "all" ? await addLocalChanges(localPlugin, "index.ts") : undefined;
+    const initialHead = localHost?.head ?? old;
+    const previousPlugin = git(localPlugin, "rev-parse", "HEAD");
+    if (force) expect(git(active, "merge-base", initialHead, candidate)).toBe(fail ? candidate : old);
+
     const supervisor = Bun.spawn([process.execPath, "scripts/run-managed.ts", active], {
       cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: {
@@ -235,26 +277,34 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
     try {
       const initialEndpoint = await deadline(nextEndpoint(), "托管更新测试宿主启动超时。");
       const initial = await open(initialEndpoint, 99);
-      expect(git(active, "rev-parse", "HEAD")).toBe(old);
-      await expectVersion(initial, old);
+      expect(git(active, "rev-parse", "HEAD")).toBe(initialHead);
+      await expectVersion(initial, initialHead);
 
       initial.command(command, 42, 77, "owner");
       expectText(await initial.next(), { group_id: 77 }, /^暂无权限/u);
       const unbound = await open(initialEndpoint);
       unbound.command(command, 51);
       expectText(await unbound.next(), { user_id: 51 }, /^暂无权限/u);
-      await expectVersion(unbound, old);
-      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+      await expectVersion(unbound, initialHead);
+      expect(git(active, "rev-parse", "HEAD")).toBe(initialHead);
+
+      if (localHost) {
+        initial.command("#更新", 51);
+        expectText(await initial.next(), { user_id: 51 }, /^开始更新/u);
+        expectText(await initial.next(), { user_id: 51 }, /工作区有未提交的修改/u);
+        expect(await captureLocalChanges(active, "app.ts")).toEqual(localHost);
+        await expectVersion(initial, initialHead);
+      }
 
       const groupId = fail ? 88 : undefined;
       const target: Target = groupId ? { group_id: groupId } : { user_id: 51 };
       initial.command(command, 51, groupId);
-      expectText(await initial.next(10_000), target, /^开始更新/u);
+      expectText(await initial.next(10_000), target, force ? /^开始强制更新/u : /^开始更新/u);
       const [replacementEndpoint] = await Promise.all([
         deadline(nextEndpoint(), "更新后的托管宿主启动超时。", 16_000),
         deadline(initial.closed, "更新时旧连接没有关闭。", 16_000),
       ]);
-      const expected = fail || updateTarget === "plugin" ? old : candidate;
+      const expected = fail || updateTarget === "plugin" ? initialHead : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
       expect(git(localPlugin, "rev-parse", "HEAD")).toBe(fail ? previousPlugin : candidatePlugin ?? previousPlugin);
       expect(await readFile(join(active, "config/config/other.yaml"), "utf8")).toBe('master: ["99:51", "100:51"]\n');
@@ -262,6 +312,21 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       expect(await readFile(join(localPlugin, "config/live.json"), "utf8")).toBe('{"active":true}');
       expect(await readFile(join(localPlugin, "data/state.txt"), "utf8")).toBe("active plugin state");
       expect(await readFile(join(localPlugin, ".env.local"), "utf8")).toBe("FIXTURE_LOCAL_CONFIG=active\n");
+      if (localHost) {
+        if (fail) {
+          expect(await captureLocalChanges(active, "app.ts")).toEqual(localHost);
+        } else {
+          const backups = (await readdir(temporary)).filter((entry) => entry.startsWith(".active.lotus-previous-"));
+          expect(backups).toHaveLength(1);
+          const backup = join(temporary, backups[0]!);
+          expect(await captureLocalChanges(backup, "app.ts")).toEqual(localHost);
+          expect(git(active, "status", "--porcelain", "--untracked-files=no")).toBe("");
+          if (localPluginState) {
+            expect(await captureLocalChanges(join(backup, "plugins/local-fixture"), "index.ts")).toEqual(localPluginState);
+            expect(git(localPlugin, "status", "--porcelain", "--untracked-files=no")).toBe("");
+          }
+        }
+      }
       const otherBot = await open(replacementEndpoint, 100);
       await expectVersion(otherBot, expected);
       const originalBot = await open(replacementEndpoint, 99);
@@ -271,6 +336,10 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
         const reported = updateTarget === "plugin" ? candidatePlugin! : candidate;
         expect(receipt.params.message).toContain(reported.slice(0, 12));
         if (updateTarget === "all") expect(receipt.params.message).toContain("本次更新 2 个仓库");
+        if (force) {
+          expect(receipt.params.message).toContain("原工作区已保留");
+          expect(receipt.params.message).not.toContain(temporary);
+        }
       }
       await expectVersion(originalBot, expected);
       const reconnect = await open(replacementEndpoint, 99);
@@ -310,3 +379,6 @@ test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回
 test.skipIf(!Bun.which("git"))("目标插件在实际环境拒绝加载时回退，宿主就绪不能掩盖失败", () => exerciseUpdate(true, "plugin"), 35_000);
 test.skipIf(!Bun.which("git"))("#全部更新一次切换宿主和外部插件，向原会话报告两个仓库", () => exerciseUpdate(false, "all"), 35_000);
 test.skipIf(!Bun.which("git"))("#全部更新遇到仅在活动环境加载失败的插件时整批回滚", () => exerciseUpdate(true, "all"), 35_000);
+test.skipIf(!Bun.which("git"))("#强制更新对齐分叉的宿主并归档私有分支和暂存区", () => exerciseUpdate(false, "host", true), 35_000);
+test.skipIf(!Bun.which("git"))("#强制更新对齐领先的宿主失败后恢复原分支和暂存区", () => exerciseUpdate(true, "host", true), 35_000);
+test.skipIf(!Bun.which("git"))("#全部强制更新同时对齐宿主和插件并归档两份本地修改", () => exerciseUpdate(false, "all", true), 35_000);

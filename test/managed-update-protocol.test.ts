@@ -44,6 +44,17 @@ test("全量托管更新要求布尔标记且不能同时指定单项", () => {
   }
 });
 
+test("强制更新标记仅接受布尔值，可用于单项和全量", () => {
+  expect(parseManagedUpdateRequest({ ...request, force: true })).toEqual({ ...request, force: true });
+  expect(parseManagedUpdateRequest({ ...request, force: false })).toEqual({ ...request, force: false });
+  expect(parseManagedUpdateRequest({ ...request, all: true, force: true })).toBeUndefined();
+  const batch = { quiet: true, all: true, force: true, target: { type: "terminal" as const }, directories: [directory] };
+  expect(parseManagedUpdateRequest(batch)).toEqual(batch);
+  for (const force of [null, 0, 1, "false", "true", {}]) {
+    expect(parseManagedUpdateRequest({ ...request, force })).toBeUndefined();
+  }
+});
+
 test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isManagedUpdateRequestId(crypto.randomUUID())).toBe(true);
   expect(isManagedUpdateRequestId(crypto.randomUUID() + "\n")).toBe(false);
