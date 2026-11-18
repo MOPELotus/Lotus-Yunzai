@@ -14,6 +14,8 @@ const timestamp = 1_700_000_000;
 const httpToken = "milky-fixture-host-http";
 const milkyToken = "milky-fixture-gateway";
 const command = "#Milky夹具";
+const temporaryImage = "https://images.example.invalid/milky/fixture.png?nonce=sample";
+const fixturePng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
 interface GatewayCall {
   method: string;
@@ -128,7 +130,13 @@ function message(scene: "friend" | "group", selfId = botId) {
       message_seq: scene === "friend" ? 11 : 12,
       sender_id: senderId,
       time: timestamp,
-      segments: [{ type: "text", data: { text: command } }],
+      segments: [
+        { type: "text", data: { text: command } },
+        ...(scene === "group" ? [{
+          type: "image",
+          data: { resource_id: "fixture-image", temp_url: temporaryImage, width: 1, height: 1, summary: "", sub_type: "normal" },
+        }] : []),
+      ],
       ...(scene === "friend" ? {
         friend: {
           user_id: senderId, nickname: "好友", sex: "unknown", qid: "", remark: "",
@@ -185,9 +193,13 @@ test("Milky Webhook 独立鉴权并按已绑定账号分发好友和群消息", 
           super({ event: "message", rule: [{ reg: "^${command}$", fnc: "echo" }] });
         }
         echo(e) {
-          return e.reply(e.isGroup
-            ? "群 " + e.group_id + " 成员 " + e.user_id + " 机器人 " + e.self_id
-            : "好友 " + e.user_id + " 机器人 " + e.self_id);
+          if (!e.isGroup) return e.reply("好友 " + e.user_id + " 机器人 " + e.self_id);
+          const fixture = new Uint8Array(Buffer.from(${JSON.stringify(fixturePng)}, "base64"));
+          return e.reply([
+            "群 " + e.group_id + " 成员 " + e.user_id + " 机器人 " + e.self_id,
+            ...(e.img ?? []).map((url) => segment.image(url)),
+            segment.image(fixture),
+          ]);
         }
       }
     `);
@@ -233,7 +245,12 @@ test("Milky Webhook 独立鉴权并按已绑定账号分发好友和群消息", 
       expect((await webhook(endpoint, message("group"), milkyToken)).status).toBe(200);
       const group = await deadline(gateway.replies.group.promise, "Milky 群消息未收到插件回复。");
       expect(group.body).toEqual({
-        group_id: groupId, message: [{ type: "text", data: { text: `群 ${groupId} 成员 ${senderId} 机器人 ${botId}` } }],
+        group_id: groupId,
+        message: [
+          { type: "text", data: { text: `群 ${groupId} 成员 ${senderId} 机器人 ${botId}` } },
+          { type: "image", data: { uri: temporaryImage, sub_type: "normal" } },
+          { type: "image", data: { uri: `base64://${fixturePng}`, sub_type: "normal" } },
+        ],
       });
       expect(gateway.calls.map(({ path }) => path)).toEqual([
         loginPath, loginPath, `${prefix}/api/send_private_message`, `${prefix}/api/send_group_message`,

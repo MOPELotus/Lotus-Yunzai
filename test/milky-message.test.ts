@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { Buffer } from "node:buffer";
 import { milkyMessage } from "../lib/adapters/milky-message.ts";
 import { segment } from "../lib/messages.ts";
+import { maxPublicFileBytes } from "../lib/public-files.ts";
 
 const selfId = 1001;
 const senderId = 2002;
@@ -41,7 +43,8 @@ test("Milky 群消息保留原文、提及和引用，并且不从事件授予�
     sender: { user_id: senderId },
     message: [
       { type: "at", qq: String(selfId) }, { type: "text", text: "  #状态 " }, { type: "reply", id: "42" },
-      { type: "at", qq: "4004" }, { type: "at", qq: "all" }, { type: "image", data: { temp_url: "https://example.invalid/image.jpg" } },
+      { type: "at", qq: "4004" }, { type: "at", qq: "all" },
+      { type: "image", url: "https://example.invalid/image.jpg", file: "https://example.invalid/image.jpg" },
       { type: "text", text: "全部 " },
     ],
   });
@@ -97,4 +100,62 @@ test("Milky 拒绝混合不支持的回复，且要求发送结果有安全消�
   const offline = milkyMessage(incoming(), selfId, async () => undefined);
   expect(await offline?.reply("离线")).toBe(false);
   expect(calls).toHaveLength(1);
+});
+
+test("Milky 图片保留可用的临时链接和显示数据，不公开无效地址", () => {
+  const { call, calls } = fixture();
+  const first = "https://images.example.invalid/photo.png?signature=x";
+  const second = "http://images.example.invalid/sticker.jpg";
+  const event = milkyMessage(incoming({ segments: [
+    text("原文 "),
+    { type: "image", data: {
+      temp_url: first, resource_id: "opaque-id", width: 640, height: 480, summary: "图片", sub_type: "normal",
+    } },
+    { type: "image", data: {
+      temp_url: "https://name:token@images.example.invalid/a.png", width: -1, height: 2 ** 31, summary: "不安全\n", sub_type: "unknown",
+    } },
+    { type: "image", data: { temp_url: "file:///tmp/a.png" } },
+    { type: "image", data: { temp_url: second, sub_type: "sticker", url: "https://wrong.example.invalid" } },
+  ] }), selfId, call);
+  expect(event).toMatchObject({ msg: "原文", raw_message: "原文 [image][image][image][image]", img: [first, second] });
+  expect(event?.message).toEqual([
+    { type: "text", text: "原文 " },
+    { type: "image", file: first, url: first, resource_id: "opaque-id", width: 640, height: 480, summary: "图片", sub_type: "normal" },
+    { type: "image" }, { type: "image" }, { type: "image", file: second, url: second, sub_type: "sticker" },
+  ]);
+  expect(calls).toEqual([]);
+});
+
+test("Milky 图片回复按字节视图编码，保留 HTTP(S) 地址并规范 Base64 补位", async () => {
+  const { calls, call } = fixture();
+  const view = Uint8Array.of(255, 1, 2, 255).subarray(1, 3);
+  const buffer = Buffer.from([99, 3, 4, 99]).subarray(1, 3);
+  const remote = "http://images.example.invalid/a.png?preview=1";
+  const event = milkyMessage(incoming(), selfId, call);
+  expect(await event?.reply(["图片", segment.image(view), segment.image(buffer), segment.image("base64://BQ"), {
+    type: "image", data: { url: remote },
+  }])).toBe(true);
+  expect(calls).toEqual([{ action: "send_private_message", params: {
+    user_id: senderId,
+    message: [
+      text("图片"),
+      ...["base64://AQI=", "base64://AwQ=", "base64://BQ==", remote].map((uri) =>
+        ({ type: "image", data: { uri, sub_type: "normal" } })),
+    ],
+  } }]);
+});
+
+test("Milky 图片拒绝本地路径、凭据、畸形编码和超出共享字节上限的批次", async () => {
+  const { calls, call } = fixture();
+  const event = milkyMessage(incoming(), selfId, call);
+  for (const file of [
+    "/tmp/a.png", "file:///tmp/a.png", "https://account:secret@images.example.invalid/a.png",
+    "https://@images.example.invalid/a.png", "https://images.example.invalid\\a.png",
+    "base64://", "base64://A", "base64://AQ=I", "base64://AQI==", "base64://AB==", new Uint8Array(),
+    new Uint8Array(maxPublicFileBytes + 1),
+  ]) expect(await event?.reply(["内容", segment.image(file)])).toBe(false);
+  const oversizedUri = "base64://" + "A".repeat(Math.ceil(maxPublicFileBytes / 3) * 4 + 4);
+  expect(await event?.reply(segment.image(oversizedUri))).toBe(false);
+  expect(await event?.reply([segment.image(new Uint8Array(maxPublicFileBytes - 1)), segment.image("base64://AQI=")])).toBe(false);
+  expect(calls).toEqual([]);
 });
