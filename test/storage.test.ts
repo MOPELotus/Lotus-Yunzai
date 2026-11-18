@@ -86,6 +86,21 @@ async function verifyNoticePush(root: string, storageUrl: string) {
     expect(second.action).toBe("get_group_list");
     const duplicate = await confirm(second.echo, membership);
     expect(duplicate.params).toMatchObject({ user_id: 51, message: expect.stringContaining("已跳过 1 个已有投递记录的群") });
+
+    expect(await command("#撤回已发公告 00001ABC 77", 42)).toMatchObject({ action: "send_msg", params: {
+      user_id: 42, message: "仅机器人主人可管理公告。",
+    } });
+    const recalled = await command("#撤回已发公告 00001ABC 77");
+    expect(recalled).toMatchObject({ action: "delete_msg", params: { message_id: -601 } });
+    expect((await confirm(recalled.echo, undefined)).params).toMatchObject({
+      user_id: 51, message: expect.stringContaining("撤回已确认 1"),
+    });
+    expect((await command("#撤回已发公告 00001ABC 77")).params).toMatchObject({
+      user_id: 51, message: expect.stringContaining("已跳过 1 条已有撤回记录的消息"),
+    });
+    expect((await command("#公告推送回执 00001ABC")).params).toMatchObject({
+      user_id: 51, message: expect.stringContaining("撤回已确认"),
+    });
   } finally {
     clearTimeout(timeout);
     socket?.close();
