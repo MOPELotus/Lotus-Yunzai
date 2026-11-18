@@ -44,23 +44,32 @@ async function withHost(
   try {
     await copyHost(root);
     await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config", "server.yaml"), [
-      "port: 0",
-      `url: ${plainPublicBase.href}`,
-      "https:",
-      "  key: fixture.key",
-      "  cert: fixture.crt",
-      `  port: ${httpsPort}`,
-      `  url: ${securePublicBase.href}`,
-    ].join("\n") + "\n");
     disableMemberPrewarm(root);
     await writeFile(join(root, "plugins", "https-fixture.js"), `
+      let startup;
+      let startupStatus;
       export default class extends plugin {
         constructor() {
           super({ event: "message.private", rule: [{ reg: "^${command}$", fnc: "publish" }] });
         }
+        async init() {
+          startup = String(await Bot.fileToUrl(Buffer.from("初始化文件内容")));
+          const probe = process.env.LOTUS_TEST_HTTPS_STARTUP_PROBE;
+          if (probe) {
+            try {
+              const response = await fetch(probe, {
+                headers: { Authorization: ${JSON.stringify(`Bearer ${statusToken}`)} },
+                signal: AbortSignal.timeout(1_000),
+              });
+              startupStatus = response.status;
+            } catch (error) {
+              startupStatus = error.code ?? String(error);
+            }
+          }
+        }
         async publish(e) {
-          return e.reply(String(await Bot.fileToUrl(Buffer.from("共用传输测试"))));
+          const current = String(await Bot.fileToUrl(Buffer.from("共用传输测试")));
+          return e.reply(JSON.stringify({ startup, current, startupStatus }));
         }
       }
     `);
@@ -76,6 +85,24 @@ async function withHost(
       await writeFile(join(root, "fixture.crt"), "invalid-test-certificate");
     }
     const ca = await readFile(join(root, "fixture.crt"), "utf8");
+    // Keep the selected loopback port reserved until the configuration is ready.
+    const reservation = config === "valid" && httpsPort === 0
+      ? Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } })
+      : undefined;
+    const httpPort = reservation?.port ?? 0;
+    try {
+      await writeFile(join(root, "config", "server.yaml"), [
+        `port: ${httpPort}`,
+        `url: ${plainPublicBase.href}`,
+        "https:",
+        "  key: fixture.key",
+        "  cert: fixture.crt",
+        `  port: ${httpsPort}`,
+        `  url: ${securePublicBase.href}`,
+      ].join("\n") + "\n");
+    } finally {
+      reservation?.stop(true);
+    }
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: {
@@ -83,6 +110,7 @@ async function withHost(
         ...(config === "probe"
           ? { [pluginProbeTokenEnvironment]: "https-health-fixture", LOTUS_HTTP_PORT: "0" }
           : { LOTUS_ONEBOT_TOKEN: oneBotToken }),
+        ...(httpPort ? { LOTUS_TEST_HTTPS_STARTUP_PROBE: `http://127.0.0.1:${httpPort}/status` } : {}),
       },
     });
     const stderr = new Response(host.stderr).text();
@@ -127,7 +155,9 @@ async function checkStatus(url: URL, ca?: string) {
   expect(await response.json()).toMatchObject({ status: "ok", name: "Lotus-Yunzai" });
 }
 
-async function getPublishedUrl(listener: URL, ca?: string): Promise<URL> {
+async function getPublishedUrls(
+  listener: URL, ca?: string,
+): Promise<{ startup: string; current: string; startupStatus?: number | string }> {
   const endpoint = new URL("/OneBotv11", listener);
   endpoint.protocol = listener.protocol === "https:" ? "wss:" : "ws:";
   const BunWebSocket = WebSocket as unknown as new (url: URL, options: Bun.WebSocketOptions) => WebSocket;
@@ -144,20 +174,24 @@ async function getPublishedUrl(listener: URL, ca?: string): Promise<URL> {
       })), { once: true });
     }), "未收到文件链接测试帧。");
     expect(frame).toMatchObject({ action: "send_msg", params: { message_type: "private", user_id: 42 } });
-    return new URL(frame.params.message);
+    return JSON.parse(frame.params.message);
   } finally {
     socket.close();
   }
 }
 
 async function checkPublishedFile(listener: URL, advertised: URL, ca?: string) {
-  const published = await getPublishedUrl(listener, ca);
-  expect(published.origin).toBe(advertised.origin);
-  expect(published.pathname).toStartWith(advertised.pathname + "File/");
-  const local = new URL("/" + published.pathname.slice(advertised.pathname.length), listener);
-  const response = await request(local, undefined, ca);
-  expect(response.status).toBe(200);
-  expect(await response.text()).toBe("共用传输测试");
+  const { startup, current, startupStatus } = await getPublishedUrls(listener, ca);
+  for (const [link, content] of [[current, "共用传输测试"], [startup, "初始化文件内容"]] as const) {
+    const published = new URL(link);
+    expect(published.origin).toBe(advertised.origin);
+    expect(published.pathname).toStartWith(advertised.pathname + "File/");
+    const local = new URL("/" + published.pathname.slice(advertised.pathname.length), listener);
+    const response = await request(local, undefined, ca);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(content);
+  }
+  return startupStatus;
 }
 
 test.skipIf(!openssl)("TRSS 可选 HTTPS 与 WSS 共用 TLS 监听并发布 HTTPS 前缀", async () => {
@@ -170,7 +204,7 @@ test.skipIf(!openssl)("TRSS 可选 HTTPS 与 WSS 共用 TLS 监听并发布 HTTP
     const upgrade = new URL("/OneBotv11", secure);
     expect((await request(upgrade, statusToken, ca, { "X-Client-Role": "Universal" })).status).toBe(401);
     expect((await request(upgrade, oneBotToken, ca)).status).toBe(400);
-    await checkPublishedFile(secure, securePublicBase, ca);
+    expect(await checkPublishedFile(secure, securePublicBase, ca)).toBe(503);
   });
 }, 12_000);
 
