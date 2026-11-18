@@ -19,6 +19,19 @@ async function fixture() {
   };
 }
 
+test("更新结果可单独领取，同一机器人原有重启回执得以保留", async () => {
+  const { receipts } = await fixture();
+  const target = { type: "group", botId: 99, id: 123 } as const;
+  const at = Date.now();
+  const restart = { kind: "restart", target, at } as const;
+  const update = { kind: "update", result: "updated", revision: "a".repeat(40), target, at } as const;
+  await Promise.all([receipts.save(restart), receipts.save(update)]);
+  expect(await receipts.take(100, true)).toBeUndefined();
+  expect(await receipts.take(99, true)).toEqual(update);
+  expect(await receipts.take(99, true)).toBeUndefined();
+  expect(await receipts.take(99)).toEqual(restart);
+});
+
 test("回执跨实例保存，终端与不同机器人的目标独立且只领取一次", async () => {
   const { directory, receipts, root } = await fixture();
   const at = Date.now() - 7 * 24 * 60 * 60 * 1_000;

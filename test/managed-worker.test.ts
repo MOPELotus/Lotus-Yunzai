@@ -184,6 +184,95 @@ test.skipIf(process.platform === "win32")("前台终端可输入命令，停止�
   }
 }));
 
+test("插件更新仅在工作进程确认指定目录已加载后就绪", async () => {
+  const source = (plugins: string[]) => `
+    process.on("SIGTERM", () => process.exit(19));
+    process.on("message", (message) => { if (message.type === "lotus-activate") process.exit(0); });
+    process.send({ type: "lotus-ready", token: process.env.LOTUS_MANAGED_TOKEN, plugins: ${JSON.stringify(plugins)},
+      revision: "${revision}" });
+    setTimeout(() => process.exit(20), 2500);
+  `;
+  await fixture(source(["system"]), async (root) => {
+    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugin: "群插件" });
+    await expect(worker.ready).rejects.toThrow("未加载预期");
+    expect(await worker.exited).toBe(19);
+  });
+  await fixture(source(["system", "群插件"]), async (root) => {
+    const worker = spawnManagedWorker(root, { held: true, expectedRevision: revision, expectedPlugin: "群插件" });
+    try {
+      await worker.ready;
+      worker.activate();
+      expect(await worker.exited).toBe(0);
+    } finally {
+      await worker.stop();
+    }
+  });
+});
+
+test("父进程只转发有效的活动宿主更新请求，串行报告进度并丢弃重放", () => fixture(`
+  import assert from "node:assert/strict";
+  import { writeFileSync } from "node:fs";
+  const token = process.env.LOTUS_MANAGED_TOKEN;
+  const create = (requested) => ({ type: "lotus-update", token, requestId: crypto.randomUUID(),
+    request: { requested, quiet: false, target: { type: "terminal" }, directories: [] } });
+  const valid = create("有效");
+  const busy = create("繁忙");
+  const failure = create("失败");
+  const seen = [];
+  process.send(create("启动前"));
+  process.send({ type: "lotus-ready", token, revision: "${revision}" });
+  process.on("message", (message) => {
+    if (message.type === "lotus-activate") {
+      process.send({ ...valid, token: "wrong" });
+      process.send({ ...valid, requestId: "wrong" });
+      process.send({ ...valid, request: { ...valid.request, requested: "bad;value" } });
+      process.send(valid);
+      process.send(valid);
+      return;
+    }
+    assert.equal(message.type, "lotus-update-progress");
+    assert.equal(message.token, token);
+    if (message.requestId === valid.requestId) {
+      seen.push(message.status);
+      if (message.status === "checking") process.send(busy);
+      if (message.status === "current") { process.send(valid); process.send(failure); }
+    } else if (message.requestId === busy.requestId) {
+      assert.equal(message.status, "busy");
+      seen.push(message.status);
+      writeFileSync("busy", "yes");
+    } else {
+      assert.equal(message.requestId, failure.requestId);
+      assert.equal(message.status, "failed");
+      assert.deepEqual(seen, ["checking", "busy", "building", "current"]);
+      process.exit(0);
+    }
+  });
+  setTimeout(() => process.exit(72), 2500);
+`, async (root) => {
+  const requested: (string | undefined)[] = [];
+  const worker = spawnManagedWorker(root, {
+    held: true, expectedRevision: revision,
+    async onUpdate(request, report) {
+      requested.push(request.requested);
+      if (request.requested === "失败") throw new Error("fixture exception");
+      report("checking");
+      const deadline = performance.now() + 1000;
+      while (!await Bun.file(join(root, "busy")).exists() && performance.now() < deadline) await Bun.sleep(5);
+      report("building");
+      report("current");
+      report("failed");
+    },
+  });
+  try {
+    await worker.ready;
+    worker.activate();
+    expect(await worker.exited).toBe(0);
+    expect(requested).toEqual(["有效", "失败"]);
+  } finally {
+    await worker.stop();
+  }
+}));
+
 test("宿主不发就绪消息会超时，并收到停止信号", () => fixture(`
   import { writeFileSync } from "node:fs";
   process.on("SIGTERM", () => { writeFileSync("stopped", "yes"); process.exit(0); });

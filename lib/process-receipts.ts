@@ -2,15 +2,19 @@ import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isGitRevision } from "./local-git.ts";
 
-export interface ProcessReceipt {
-  readonly kind: "stop" | "restart";
+export type ProcessReceipt = {
   readonly at: number;
   readonly target:
     | { readonly type: "terminal" }
     | { readonly type: "masters"; readonly botId: number }
     | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
-}
+} & (
+  | { readonly kind: "stop" | "restart" }
+  | { readonly kind: "update"; readonly result: "updated"; readonly revision: string }
+  | { readonly kind: "update"; readonly result: "rolled-back" }
+);
 
 const maxAge = 30 * 24 * 60 * 60 * 1_000;
 const maxClockSkew = 5 * 60 * 1_000;
@@ -31,13 +35,24 @@ function positiveInteger(value: unknown): value is number {
 function receiptFrom(value: unknown): ProcessReceipt | undefined {
   if (!isRecord(value)) return;
   const { kind, at, target } = value;
-  if ((kind !== "stop" && kind !== "restart") || !positiveInteger(at) || !isRecord(target)) return;
+  if (!positiveInteger(at) || !isRecord(target)) return;
+  const session = receiptTarget(target);
+  if (!session) return;
+  if (kind === "stop" || kind === "restart") return { kind, at, target: session };
+  if (kind !== "update") return;
+  if (value.result === "rolled-back") return { kind, at, target: session, result: value.result };
+  if (value.result === "updated" && typeof value.revision === "string" && isGitRevision(value.revision)) {
+    return { kind, at, target: session, result: value.result, revision: value.revision };
+  }
+}
+
+function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"] | undefined {
   const { type, botId, id } = target;
-  if (type === "terminal") return { kind, at, target: { type } };
+  if (type === "terminal") return { type };
   if (!positiveInteger(botId)) return;
-  if (type === "masters") return { kind, at, target: { type, botId } };
+  if (type === "masters") return { type, botId };
   if ((type === "group" || type === "private") && positiveInteger(id)) {
-    return { kind, at, target: { type, botId, id } };
+    return { type, botId, id };
   }
 }
 
@@ -77,9 +92,10 @@ async function readReceipt(file: string): Promise<ProcessReceipt | undefined> {
 export function createProcessReceipts(root: URL) {
   const directory = fileURLToPath(new URL("data/process-receipts/", root));
 
-  function receiptPath(botId?: number): string {
-    if (botId === undefined) return join(directory, "terminal.json");
-    if (positiveInteger(botId)) return join(directory, `${botId}.json`);
+  function receiptPath(botId?: number, update = false): string {
+    const suffix = update ? ".update.json" : ".json";
+    if (botId === undefined) return join(directory, `terminal${suffix}`);
+    if (positiveInteger(botId)) return join(directory, `${botId}${suffix}`);
     throw new Error("进程回执的机器人账号无效。");
   }
 
@@ -87,7 +103,7 @@ export function createProcessReceipts(root: URL) {
     async save(receipt: ProcessReceipt): Promise<void> {
       const value = receiptFrom(receipt);
       if (!value) throw new Error("进程回执无效。");
-      const file = receiptPath(targetBotId(value));
+      const file = receiptPath(targetBotId(value), value.kind === "update");
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const staged = join(directory, `.write-${crypto.randomUUID()}`);
       try {
@@ -105,8 +121,8 @@ export function createProcessReceipts(root: URL) {
       }
     },
 
-    async take(botId?: number): Promise<ProcessReceipt | undefined> {
-      const file = receiptPath(botId);
+    async take(botId?: number, update = false): Promise<ProcessReceipt | undefined> {
+      const file = receiptPath(botId, update);
       const claimed = join(directory, `.claim-${crypto.randomUUID()}`);
       try {
         await rename(file, claimed);
@@ -117,7 +133,7 @@ export function createProcessReceipts(root: URL) {
 
       try {
         const receipt = await readReceipt(claimed);
-        if (!receipt || targetBotId(receipt) !== botId) return;
+        if (!receipt || targetBotId(receipt) !== botId || (receipt.kind === "update") !== update) return;
         const age = Date.now() - receipt.at;
         if (age >= -maxClockSkew && age <= maxAge) return receipt;
       } finally {

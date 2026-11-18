@@ -1,0 +1,116 @@
+import { expect, test } from "bun:test";
+import type { ManagedUpdateProgress } from "../lib/managed-update-protocol.ts";
+import type { MessageEvent, MessageReply } from "../lib/messages.ts";
+import { createUpdateCommand, isUpdateCommand } from "../lib/update-command.ts";
+
+type Request = Parameters<typeof createUpdateCommand>[0];
+type Report = Parameters<Request>[3];
+
+function fixture(request: Request = () => true) {
+  const calls: { target?: string; quiet: boolean; type: string }[] = [];
+  const replies: MessageReply[] = [];
+  const handler = createUpdateCommand((event, target, quiet, report) => {
+    calls.push({ target, quiet, type: event.message_type });
+    return request(event, target, quiet, report);
+  });
+  return {
+    calls, replies,
+    dispatch(msg: string, event: Partial<MessageEvent> = {}) {
+      return handler({
+        msg, message: msg, raw_message: msg, post_type: "message", message_type: "private",
+        isGroup: false, isPrivate: true, isMaster: true, boundAccount: true, self_id: 99, user_id: 42,
+        reply: (reply) => { replies.push(reply); return true; },
+        ...event,
+      });
+    },
+  };
+}
+
+test("仅普通与静默更新匹配，兼容紧连目标、中文目录及包名", async () => {
+  const { dispatch, calls, replies } = fixture();
+  for (const text of ["#更新日志", "#更新日志system", "#静更新日志", "#安静更新日志system", "#强制更新", "#静强制更新system",
+    "#全部更新", "#全部静更新", "#全部静强制更新", "请发 #更新"]) {
+    expect(isUpdateCommand(text)).toBe(false);
+    await dispatch(text);
+  }
+
+  expect(isUpdateCommand(" #更新图鉴插件 ")).toBe(true);
+  expect(isUpdateCommand("#静更新")).toBe(true);
+  expect(isUpdateCommand("#安静更新 @lotus-yunzai/system")).toBe(true);
+  await dispatch("#更新");
+  await dispatch("#更新图鉴插件-2.0");
+  await dispatch("#静更新system");
+  await dispatch("#安静更新 @lotus-yunzai/system", { message_type: "terminal", boundAccount: undefined });
+  expect(calls).toEqual([
+    { target: undefined, quiet: false, type: "private" },
+    { target: "图鉴插件-2.0", quiet: false, type: "private" },
+    { target: "system", quiet: true, type: "private" },
+    { target: "@lotus-yunzai/system", quiet: true, type: "terminal" },
+  ]);
+  expect(replies).toEqual([]);
+});
+
+test("只允许已绑定机器人的主人或授权终端，拒绝路径和控制字符", async () => {
+  const { dispatch, calls, replies } = fixture();
+  for (const event of [
+    { isMaster: false, sender: { role: "owner", isMaster: true } },
+    { boundAccount: false }, { boundAccount: undefined }, { message_type: "terminal", isMaster: false },
+  ] satisfies Partial<MessageEvent>[]) await dispatch("#更新system", event);
+
+  const invalid = ["../system", "foo/bar", "@foo/../system", "@foo/", "system\x00", "system\n", "x y", "a".repeat(215)];
+  for (const target of invalid) await dispatch(`#更新 ${target}`);
+  expect(calls).toEqual([]);
+  expect(replies.slice(0, 4)).toEqual(Array(4).fill("暂无权限，只有主人才能操作"));
+  expect(replies.slice(4)).toEqual(Array(invalid.length).fill("请输入有效的插件名，例如 #更新 system 或 #更新 @lotus-yunzai/system。"));
+  await dispatch("#更新", { message_type: "group", isGroup: true, isPrivate: false });
+  expect(calls).toEqual([{ target: undefined, quiet: false, type: "group" }]);
+});
+
+test("进度消息按收到顺序发送，静默仅省略正常进度和已是最新", async () => {
+  const statuses: ManagedUpdateProgress[] = ["checking", "building", "switching", "current", "busy", "dirty",
+    "ahead", "diverged", "rejected", "unavailable", "failed"];
+  const regular = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
+  await regular.dispatch("#更新");
+  expect(regular.replies).toHaveLength(statuses.length);
+  expect(regular.replies.slice(0, 4)).toEqual([
+    "开始更新，正在检查上游。", "正在准备候选版本。", "正在切换到候选版本。", "当前已是最新版本。",
+  ]);
+  const quiet = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
+  await quiet.dispatch("#静更新");
+  expect(quiet.replies).toEqual(regular.replies.slice(4));
+
+  let reportLater: Report | undefined;
+  const delayed = fixture((_event, _target, _quiet, report) => { reportLater = report; return true; });
+  const began = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const done = Promise.withResolvers<void>();
+  const replies: MessageReply[] = [];
+  await delayed.dispatch("#更新", {
+    async reply(message) {
+      replies.push(message);
+      if (replies.length === 1) {
+        began.resolve();
+        await release.promise;
+        throw new Error("first delivery failed");
+      }
+      done.resolve();
+      return true;
+    },
+  });
+  reportLater!("checking");
+  reportLater!("failed");
+  await began.promise;
+  expect(replies).toEqual(["开始更新，正在检查上游。"]);
+  release.resolve();
+  await done.promise;
+  expect(replies).toEqual(["开始更新，正在检查上游。", "更新失败，请检查宿主日志。"]);
+});
+
+test("IPC 不可用给出受管启动方式，异常不回显底层内容", async () => {
+  const offline = fixture(() => false);
+  await offline.dispatch("#静更新");
+  expect(offline.replies).toEqual(["当前未启用受管更新。请在宿主目录运行 bun scripts/run-managed.ts 后重试。"]);
+  const failed = fixture(() => { throw new Error("private fixture error"); });
+  await failed.dispatch("#更新");
+  expect(failed.replies).toEqual(["发送更新请求失败，请稍后重试。"]);
+});

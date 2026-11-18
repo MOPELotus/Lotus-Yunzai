@@ -1,6 +1,6 @@
-import { cp, lstat, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { builtInDirectories } from "./builtin-modules.ts";
 import { createLocalGit, gitHead, isGitCheckout } from "./local-git.ts";
@@ -76,9 +76,44 @@ async function trackedPluginNames(directory: string): Promise<Set<string>> {
   throw new Error("无法检查宿主跟踪的插件目录。");
 }
 
-async function probeStagedUpdate(directory: string, revision: string) {
-  const paths = ["config", "data", "logs"].map((name) => join(directory, name));
+function dotenvFile(name: string): boolean {
+  return name === ".env" || name.startsWith(".env.");
+}
+
+async function pluginStatePaths(source: string, tracked: boolean): Promise<string[]> {
+  const paths = (await readdir(source)).filter((name) => dotenvFile(name) ||
+    (tracked && (name === "config" || name === "data" || name === "logs")));
+  if (!tracked || !paths.length) return paths.map((path) => `plugins/${basename(source)}/${path}`);
+  const git = createLocalGit();
+  const output = await git?.(source, ["ls-files", "-z", "--cached", "--", ...paths]);
+  if (output === undefined) throw new Error("无法检查插件持久状态路径。");
+  const managed = new Set(output.split("\0").filter(Boolean).map((path) => path.split("/")[0]));
+  const untracked = paths.filter((path) => !managed.has(path));
+  const sharedPaths = paths.filter((path) => managed.has(path) && !dotenvFile(path));
+  if (sharedPaths.length) {
+    const files = await git?.(source, ["ls-files", "-z", "--others", "--directory", "--no-empty-directory", "--", ...sharedPaths]);
+    if (files === undefined) throw new Error("无法检查插件未跟踪的状态文件。");
+    untracked.push(...files.split("\0").filter(Boolean).map((path) => path.replace(/\/$/u, "")));
+  }
+  return untracked.map((path) => `plugins/${basename(source)}/${path}`);
+}
+
+async function probeStagedUpdate(directory: string, revision: string, additionalStatePaths: readonly string[]) {
+  const paths = ["config", "data", "logs", ...additionalStatePaths].map((name) => join(directory, name));
+  async function verifyParent(path: string) {
+    let parent = dirname(path);
+    if (!within(directory, parent)) throw new Error("候选持久状态路径无效。");
+    while (parent !== directory) {
+      try {
+        if (await realpath(parent) !== parent) throw new Error("候选持久状态路径经过链接。");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
+      }
+      parent = dirname(parent);
+    }
+  }
   for (const path of paths) {
+    await verifyParent(path);
     try {
       await lstat(path);
       throw new Error("候选目录已包含运行状态。");
@@ -89,7 +124,10 @@ async function probeStagedUpdate(directory: string, revision: string) {
   try {
     await verifyUpdateHealth(directory, revision);
   } finally {
-    await Promise.all(paths.map((path) => rm(path, { force: true, recursive: true })));
+    await Promise.all(paths.map(async (path) => {
+      await verifyParent(path);
+      await rm(path, { force: true, recursive: true });
+    }));
   }
 }
 
@@ -121,6 +159,7 @@ export async function stageUpdate(
     if (await realpath(pluginRoot) !== pluginRoot) throw new Error("候选插件目录无效。");
     const [trackedActive, trackedCandidate] = await Promise.all([trackedPluginNames(host), trackedPluginNames(directory)]);
     const copies: { source: string; head: string; destination: string; stagedHead: string }[] = [];
+    const localCopies: string[] = [];
     let selected = ready.scope === "host";
     for (const [name, plugin] of directories) {
       signal?.throwIfAborted();
@@ -138,6 +177,7 @@ export async function stageUpdate(
       if (!await isGitCheckout(git, source)) {
         if (ready.scope === "plugin" && name === ready.name) throw new Error("候选插件的 Git 工作区已变更。");
         await copyLocalPlugin(source, destination, signal);
+        localCopies.push(source);
         continue;
       }
       const head = await readActiveRevision(source, signal);
@@ -192,8 +232,12 @@ export async function stageUpdate(
         if (activating || cleanup) throw new Error("候选正在使用或已释放。");
         activating = true;
         try {
-          await probeStagedUpdate(directory, stagedHead);
-          return await activateUpdate(host, directory, verify, additionalStatePaths, async () => {
+          const state = (await Promise.all([
+            ...copies.map(({ source }) => pluginStatePaths(source, true)),
+            ...localCopies.map((source) => pluginStatePaths(source, false)),
+          ])).flat();
+          await probeStagedUpdate(directory, stagedHead, state);
+          return await activateUpdate(host, directory, verify, [...state, ...(additionalStatePaths ?? [])], async () => {
             await checkRevisions();
             await ready.release();
           });

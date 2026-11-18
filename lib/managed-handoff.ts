@@ -1,15 +1,20 @@
 import { isGitRevision } from "./local-git.ts";
+import { isManagedPluginDirectory, isManagedUpdateProgress, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
+  type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
 
 interface ManagedHandoff {
   readonly managed: boolean;
   readonly accepting: boolean;
   readonly pausedAt?: number;
-  ready(revision: string | undefined, signal: AbortSignal): Promise<void>;
+  ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[]): Promise<void>;
   restart(pausedAt?: number): boolean;
+  update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
+  cancelUpdate(): void;
   onDisconnect(handler: () => void): () => void;
 }
 
-type Notice = { type: "lotus-ready"; revision?: string } | { type: "lotus-restart"; pausedAt?: number };
+type Notice = { type: "lotus-ready"; revision?: string; plugins?: readonly string[] } | { type: "lotus-restart"; pausedAt?: number } |
+  { type: "lotus-update"; requestId: string; request: ManagedUpdateRequest };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const failed = () => new Error("受管进程未能完成启动交接。");
@@ -32,6 +37,8 @@ export function createManagedHandoff(): ManagedHandoff {
       accepting: true,
       async ready() {},
       restart: () => false,
+      update: () => false,
+      cancelUpdate() {},
       onDisconnect: () => () => {},
     };
   }
@@ -43,6 +50,8 @@ export function createManagedHandoff(): ManagedHandoff {
   let disconnected = false;
   let restarting = false;
   let readiness: Promise<void> | undefined;
+  let readyForUpdate = false;
+  let cancelUpdate: (() => void) | undefined;
 
   function connected() {
     return !disconnected && process.connected === true;
@@ -51,6 +60,7 @@ export function createManagedHandoff(): ManagedHandoff {
   process.once("disconnect", () => {
     disconnected = true;
     accepting = false;
+    cancelUpdate?.();
     for (const handler of handlers) handler();
     handlers.clear();
   });
@@ -62,22 +72,25 @@ export function createManagedHandoff(): ManagedHandoff {
     return () => { handlers.delete(handler); };
   }
 
-  function notify(message: Notice): boolean {
+  function notify(message: Notice, onFailure?: () => void): boolean {
     if (!connected()) return false;
     try {
-      return send({ ...message, token }, () => undefined) === true;
+      return send({ ...message, token }, (error) => { if (error) onFailure?.(); }) === true;
     } catch {
       return false;
     }
   }
 
-  async function reportReady(revision: string | undefined, signal: AbortSignal) {
+  async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[]) {
     if (signal.aborted || !connected() || (held && revision === undefined) ||
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
-    const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }) } as const;
+    const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
+    const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }),
+      ...(plugins === undefined ? {} : { plugins }) } as const;
     if (!held) {
       if (!notify(message)) throw failed();
+      readyForUpdate = true;
       return;
     }
 
@@ -94,6 +107,7 @@ export function createManagedHandoff(): ManagedHandoff {
     try {
       if (!notify(message) || !await activation.promise || signal.aborted || !connected()) throw failed();
       accepting = true;
+      readyForUpdate = true;
     } finally {
       stopWatching();
       signal.removeEventListener("abort", abort);
@@ -102,12 +116,49 @@ export function createManagedHandoff(): ManagedHandoff {
     }
   }
 
+  function update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean {
+    if (!readyForUpdate || !accepting || restarting || !connected()) return false;
+    if (cancelUpdate) {
+      onProgress("busy");
+      return true;
+    }
+    const snapshot = parseManagedUpdateRequest(request);
+    if (!snapshot) return false;
+    const requestId = crypto.randomUUID();
+
+    function clear() {
+      cancelUpdate = undefined;
+      process.off("message", receive);
+      process.channel?.unref();
+    }
+
+    function report(status: ManagedUpdateProgress) {
+      if (cancelUpdate !== clear) return;
+      if (isTerminalManagedUpdateProgress(status)) clear();
+      void Promise.resolve().then(() => onProgress(status)).catch(() => {});
+    }
+
+    function receive(message: unknown) {
+      if (typeof message !== "object" || message === null || !("type" in message) || message.type !== "lotus-update-progress" ||
+          !("token" in message) || message.token !== token || !("requestId" in message) || message.requestId !== requestId ||
+          !("status" in message) || !isManagedUpdateProgress(message.status)) return;
+      report(message.status);
+    }
+
+    cancelUpdate = clear;
+    process.on("message", receive);
+    process.channel?.ref();
+    if (notify({ type: "lotus-update", requestId, request: snapshot }, () => report("failed"))) return true;
+    clear();
+    return false;
+  }
+
   return {
     managed: true,
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     get accepting() { return accepting && connected(); },
-    ready(revision, signal) {
-      return readiness ??= reportReady(revision, signal);
+    ready(revision, signal, loadedPlugins) {
+      return readiness ??= reportReady(revision, signal, loadedPlugins);
     },
     restart(pausedAt) {
       if (!accepting || restarting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;
@@ -115,6 +166,8 @@ export function createManagedHandoff(): ManagedHandoff {
       restarting = true;
       return true;
     },
+    update,
+    cancelUpdate() { cancelUpdate?.(); },
     onDisconnect,
   };
 }

@@ -114,7 +114,7 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
     }
     try {
       const [notice, status] = await Promise.all([Promise.race([readiness.promise, worker.exited]), waitForHttp()]);
-      expect(notice).toEqual({ type: "lotus-ready", token, revision });
+      expect(notice).toMatchObject({ type: "lotus-ready", token, revision, plugins: ["system"] });
       const gateway = new URL("/OneBotv11", status);
       const headers = { Authorization: "Bearer fixture-token", "X-Client-Role": "Universal" };
       expect((await fetch(status)).status).toBe(503);

@@ -89,6 +89,21 @@ test("已运行受管进程可省略修订号，IPC 监听不妨碍自然退出"
   expect(messages).toEqual([{ type: "lotus-ready", token }, { type: "lotus-restart", token }]);
 });
 
+test("就绪通知携带已加载目录，取消更新释放监听且不阻塞退出", async () => {
+  const messages = await worker(`
+    await handoff.ready(undefined, new AbortController().signal, ["system", "群 工具", "system", "../fake"]);
+    const existing = process.listenerCount("message");
+    const request = { quiet: true, target: { type: "terminal" }, directories: [] };
+    assert.equal(handoff.update(request, () => assert.fail("cancelled update reported progress")), true);
+    assert.equal(process.listenerCount("message"), existing + 1);
+    handoff.cancelUpdate();
+    handoff.cancelUpdate();
+    assert.equal(process.listenerCount("message"), existing);
+  `);
+  expect(messages[0]).toEqual({ type: "lotus-ready", token, plugins: ["system", "群 工具"] });
+  expect(messages[1]).toMatchObject({ type: "lotus-update", token, request: { quiet: true } });
+});
+
 test("候选等待期间断连会拒绝启动、关闭派发并通知仍登记的清理回调", async () => {
   const messages = await worker(`
     let notifications = 0;
@@ -156,8 +171,51 @@ test("无 IPC 或 token 无效时保留非受管模式", async () => {
     assert.equal(handoff.accepting, true);
     await handoff.ready(undefined, AbortSignal.abort());
     assert.equal(handoff.restart(), false);
+    assert.equal(handoff.update({ quiet: false, target: { type: "terminal" }, directories: [] }, () => assert.fail()), false);
     handoff.onDisconnect(() => assert.fail("unmanaged hook invoked"))();
   `;
   expect(await worker(source, { disconnected: true, held: true, paused: "20" })).toEqual([]);
   expect(await worker(source, { token: "invalid", held: true, paused: "20" })).toEqual([]);
+});
+
+test("更新进度绑定请求与托管令牌，忙时同步通知，终态释放监听", async () => {
+  let messagesSent = 0;
+  const messages = await worker(`
+    const request = { quiet: false, target: { type: "private", botId: 99, id: 51 }, directories: [] };
+    assert.equal(handoff.update(request, () => assert.fail("requested before ready")), false);
+    await handoff.ready(undefined, new AbortController().signal);
+    const existing = process.listenerCount("message");
+    const first = Promise.withResolvers();
+    const statuses = [];
+    assert.equal(handoff.update(request, (status) => {
+      statuses.push(status);
+      if (status === "switching") first.resolve();
+    }), true);
+    assert.equal(handoff.update(request, (status) => statuses.push(status)), true);
+    assert.deepEqual(statuses, ["busy"]);
+    await first.promise;
+    assert.deepEqual(statuses, ["busy", "checking", "building", "switching"]);
+    assert.equal(process.listenerCount("message"), existing);
+    const second = Promise.withResolvers();
+    assert.equal(handoff.update(request, second.resolve), true);
+    assert.equal(await second.promise, "current");
+    assert.equal(process.listenerCount("message"), existing);
+  `, {
+    receive(message, child) {
+      if (message.type !== "lotus-update") return;
+      const reply = { type: "lotus-update-progress", token, requestId: message.requestId };
+      if (messagesSent++ > 0) {
+        child.send({ ...reply, status: "current" });
+        return;
+      }
+      child.send({ ...reply, token: "wrong", status: "failed" });
+      child.send({ ...reply, requestId: crypto.randomUUID(), status: "failed" });
+      child.send({ ...reply, status: "foreign" });
+      for (const status of ["checking", "building", "switching", "failed", "current"]) child.send({ ...reply, status });
+    },
+  });
+  const updates = messages.filter((message) => message.type === "lotus-update");
+  expect(updates).toHaveLength(2);
+  expect(updates[0]?.requestId).not.toBe(updates[1]?.requestId);
+  expect(updates[0]).toMatchObject({ token, request: { quiet: false, target: { type: "private", botId: 99, id: 51 } } });
 });

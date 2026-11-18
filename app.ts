@@ -37,6 +37,7 @@ import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
+import { createUpdateCommand, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 
@@ -48,6 +49,7 @@ const commands = new CommandRegistry();
 const terminalOutput = console.log.bind(console);
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
+const updateFeatureNames = ["更新", "system", systemModuleName];
 
 if (import.meta.main) {
   const handoff = createManagedHandoff();
@@ -67,7 +69,9 @@ if (import.meta.main) {
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
   const processReceipts = createProcessReceipts(root);
-  type ProcessAction = Pick<ProcessReceipt, "kind" | "at"> & {
+  type ProcessAction = {
+    readonly kind: "stop" | "restart";
+    readonly at: number;
     readonly targets: readonly ProcessReceipt["target"][];
     readonly pausedAt?: number;
   };
@@ -88,12 +92,19 @@ if (import.meta.main) {
   });
   const updateLogCommand = createUpdateLogCommand((requested) =>
     plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
+  const updateCommand = createUpdateCommand((event, requested, quiet, report) => {
+    const target = sessionTarget(event);
+    if (!target || !plugins) return false;
+    const directories = [...plugins.directories].map(([name, metadata]) => ({ name, ...metadata }));
+    return handoff.update({ requested, quiet, target, directories }, report);
+  });
 
   function stop(code: number) {
     if (stopping) return;
     stopping = true;
     process.exitCode = code;
     lifecycle.abort();
+    handoff.cancelUpdate();
     void stopPowerSchedule?.();
     void stopRestartSchedule?.();
     void legacy.stopTasks();
@@ -123,12 +134,17 @@ if (import.meta.main) {
     }
   }
 
-  async function deliverProcessReceipt(botId?: number) {
+  async function deliverProcessReceipt(botId?: number, update = false) {
     try {
-      const receipt = await processReceipts.take(botId);
+      const receipt = await processReceipts.take(botId, update);
       if (!receipt) return;
       const elapsed = formatElapsed(Date.now() - receipt.at);
-      const reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+      let reply: string;
+      if (receipt.kind === "update") {
+        reply = receipt.result === "updated" ? `更新成功，提交 ${receipt.revision.slice(0, 12)}` : "更新失败，已恢复旧版本。";
+      } else {
+        reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+      }
       if (!await sendProcessMessage(receipt.target, reply)) console.warn("[进程管理] 未确认进程操作回执。");
     } catch {
       console.warn("[进程管理] 无法读取进程操作回执。");
@@ -137,26 +153,26 @@ if (import.meta.main) {
 
   function queueProcessReceipt(botId?: number) {
     if (stopping) return;
-    const delivery = deliverProcessReceipt(botId);
+    const delivery = Promise.all([deliverProcessReceipt(botId), deliverProcessReceipt(botId, true)]).then(() => undefined);
     pending.add(delivery);
     void delivery.then(() => pending.delete(delivery));
   }
 
-  async function controlProcess(event: MessageEvent, kind: ProcessReceipt["kind"]) {
+  function sessionTarget(event: MessageEvent): Exclude<ProcessReceipt["target"], { type: "masters" }> | undefined {
+    const type = event.message_type;
+    if (type === "terminal") return { type };
+    const id = type === "group" ? event.group_id : event.user_id;
+    const botId = event.self_id;
+    if (event.boundAccount === true && botId && id) return { type, botId, id };
+  }
+
+  async function controlProcess(event: MessageEvent, kind: ProcessAction["kind"]) {
     if (!event.isMaster) {
       await event.reply("暂无权限，只有主人才能操作");
       return;
     }
-    const type = event.message_type;
-    let target: ProcessReceipt["target"];
-    if (type === "terminal") {
-      target = { type };
-    } else {
-      const id = type === "group" ? event.group_id : event.user_id;
-      const botId = event.self_id;
-      if (event.boundAccount !== true || !botId || !id) return;
-      target = { type, botId, id };
-    }
+    const target = sessionTarget(event);
+    if (!target) return;
     if (processAction) return;
     if (kind === "restart" && !handoff.managed && !canRestartHost()) {
       await event.reply("当前运行环境不支持进程内重启。");
@@ -166,7 +182,7 @@ if (import.meta.main) {
     await startProcessAction(kind, [target]);
   }
 
-  async function startProcessAction(kind: ProcessReceipt["kind"], targets: readonly ProcessReceipt["target"][]) {
+  async function startProcessAction(kind: ProcessAction["kind"], targets: readonly ProcessReceipt["target"][]) {
     if (stopping || processAction) return;
     const pausedAt = dispatchPower.pausedAt;
     processAction = { kind, at: Date.now(), targets: pausedAt === undefined ? targets : [], pausedAt };
@@ -293,7 +309,11 @@ if (import.meta.main) {
 
     const command = normalizeGameCommand(event);
     if (isUpdateLogCommand(command.msg)) {
-      if (allowed(["更新", "system", systemModuleName])) await updateLogCommand(command);
+      if (allowed(updateFeatureNames)) await updateLogCommand(command);
+      return;
+    }
+    if (isUpdateCommand(command.msg)) {
+      if (allowed(updateFeatureNames)) await updateCommand(command);
       return;
     }
     if (isLogCommand(command.msg)) {
@@ -418,7 +438,7 @@ if (import.meta.main) {
         servers.push(server);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
-      await handoff.ready(runtimeVersion.revision, lifecycle.signal);
+      await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
         const reply = dispatchPower.setPaused(paused);
@@ -474,6 +494,7 @@ if (import.meta.main) {
   } finally {
     stopping = true;
     lifecycle.abort();
+    handoff.cancelUpdate();
     try {
       consoleInput?.close();
       legacy.stopContexts();
