@@ -155,10 +155,12 @@ schedule: { mode: fixed }
     const profiles = createProfileStore(root);
     const context = await profiles.accountContext("42");
     const seen: Array<string | null> = [];
+    const late = Promise.withResolvers<void>();
     let exchanges = 0;
     const client = createHoyoClient(async (_url, init) => {
       const cookie = new Headers(init.headers).get("Cookie");
       seen.push(cookie);
+      if (cookie === "expired" && seen.length === 2) await late.promise;
       return cookie === "renewed"
         ? Response.json({ retcode: 0, data: { list: [] } })
         : Response.json({ retcode: -100 });
@@ -168,12 +170,14 @@ schedule: { mode: fixed }
         expect(snapshot.account.stoken).toBe("retained");
         expect(snapshot.device.id).toBe("fixture-device");
         exchanges++;
-        await Bun.sleep(10);
         return { cookie: "renewed", ltoken: "updated" };
       },
     });
-    expect(await Promise.all([client.listRoles(context, "gs"), client.listRoles(context, "gs")]))
-      .toEqual([[], []]);
+    const first = client.listRoles(context, "gs");
+    const second = client.listRoles(context, "gs");
+    expect(await first).toEqual([]);
+    late.resolve();
+    expect(await second).toEqual([]);
     expect(exchanges).toBe(1);
     expect(seen).toEqual(["expired", "expired", "renewed", "renewed"]);
     expect((await profiles.accountContext("42")).account).toMatchObject({
@@ -191,6 +195,27 @@ schedule: { mode: fixed }
     });
     await expect(racing.listRoles(updated, "gs")).rejects.toMatchObject({ code: "refresh" });
     expect((await profiles.accountContext("42")).account).toMatchObject({ cookie: "rebound", stoken: "new-login" });
+
+    const delayed = Promise.withResolvers<void>();
+    const rebound = await profiles.accountContext("42");
+    const replayed: string[] = [];
+    const laterRebind = createHoyoClient(async (url, init) => {
+      const cookie = new Headers(init.headers).get("Cookie");
+      if (cookie === "rebound") {
+        if (url.searchParams.get("game_biz") === "hkrpg_cn") await delayed.promise;
+        return Response.json({ retcode: -100 });
+      }
+      replayed.push(String(cookie));
+      return Response.json({ retcode: 0, data: { list: [] } });
+    }, { profiles, async exchange() { return { cookie: "rebound-refreshed", ltoken: "newer-token" }; } });
+    const gs = laterRebind.listRoles(rebound, "gs");
+    const sr = laterRebind.listRoles(rebound, "sr");
+    expect(await gs).toEqual([]);
+    await writeFile(file, original.replace("expired", "another-account").replace("retained", "another-login"));
+    delayed.resolve();
+    await expect(sr).rejects.toMatchObject({ code: "refresh" });
+    expect(replayed).toEqual(["rebound-refreshed"]);
+    expect((await profiles.accountContext("42")).account.cookie).toBe("another-account");
 
     const ordinaryError = createHoyoClient(async () => Response.json({ retcode: 10041 }), {
       profiles,

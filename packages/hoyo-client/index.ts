@@ -32,19 +32,42 @@ interface CookieRecovery {
   readonly exchange: (profile: ProfileAccountContext) => Promise<RefreshedCredentials>;
 }
 
+interface CookieRevision {
+  requests: number;
+  refreshing: boolean;
+  refreshed?: Promise<ProfileAccountContext>;
+}
+
 export function createHoyoClient(
   transport: HoyoTransport = fetch,
   recovery?: CookieRecovery,
 ) {
-  const refreshes = new Map<string, Promise<ProfileAccountContext>>();
+  const revisions = new Map<string, CookieRevision>();
+
+  function keyFor({ qq, profileId, revision }: ProfileAccountContext): string {
+    return JSON.stringify([qq, profileId, revision]);
+  }
+
+  function track(key: string): CookieRevision {
+    const existing = revisions.get(key);
+    if (existing) return existing;
+    const entry = { requests: 0, refreshing: false };
+    revisions.set(key, entry);
+    return entry;
+  }
+
+  function release(key: string, entry: CookieRevision): void {
+    if (entry.requests === 0 && !entry.refreshing) revisions.delete(key);
+  }
 
   function recover(context: ProfileAccountContext): Promise<ProfileAccountContext> {
     if (!recovery) throw new HoyoRequestError("refresh", "未配置登录凭据刷新服务。");
 
-    const key = JSON.stringify([context.qq, context.profileId, context.revision]);
-    const pending = refreshes.get(key);
-    if (pending) return pending;
+    const key = keyFor(context);
+    const entry = track(key);
+    if (entry.refreshed) return entry.refreshed;
 
+    entry.refreshing = true;
     const operation = (async () => {
       const latest = await recovery.profiles.accountContext(context.qq, context.profileId);
       if (latest.revision !== context.revision) {
@@ -53,9 +76,13 @@ export function createHoyoClient(
       const credentials = await recovery.exchange(latest);
       return recovery.profiles.saveRefreshedCredentials(latest.qq, latest.profileId, latest.revision, credentials);
     })();
-    refreshes.set(key, operation);
-    const forget = () => { if (refreshes.get(key) === operation) refreshes.delete(key); };
-    void operation.then(forget, forget);
+    entry.refreshed = operation;
+    const settle = (success: boolean) => {
+      entry.refreshing = false;
+      if (!success) entry.refreshed = undefined;
+      release(key, entry);
+    };
+    void operation.then(() => settle(true), () => settle(false));
     return operation;
   }
 
@@ -74,6 +101,7 @@ export function createHoyoClient(
 
     let response: Response;
     try {
+      signal?.throwIfAborted();
       response = await transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
         redirect: "error",
@@ -112,20 +140,31 @@ export function createHoyoClient(
   }
 
   async function retrieve(context: ProfileAccountContext, game?: Game, signal?: AbortSignal) {
+    if (!recovery) return { context, data: await list(context, game, signal) };
+    const key = keyFor(context);
+    const entry = track(key);
+    entry.requests++;
     try {
-      return { context, data: await list(context, game, signal) };
-    } catch (error) {
-      if (!recovery || signal?.aborted || !(error instanceof HoyoRequestError) ||
-          error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
-    }
+      try {
+        return { context, data: await list(context, game, signal) };
+      } catch (error) {
+        if (signal?.aborted || !(error instanceof HoyoRequestError) ||
+            error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
+      }
 
-    let refreshed: ProfileAccountContext;
-    try {
-      refreshed = await recover(context);
-    } catch {
-      throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
+      let refreshed: ProfileAccountContext;
+      try {
+        const saved = await recover(context);
+        refreshed = await recovery.profiles.accountContext(context.qq, context.profileId);
+        if (refreshed.revision !== saved.revision) throw new Error("档案在刷新后已变更。");
+      } catch {
+        throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
+      }
+      return { context: refreshed, data: await list(refreshed, game, signal) };
+    } finally {
+      entry.requests--;
+      release(key, entry);
     }
-    return { context: refreshed, data: await list(refreshed, game, signal) };
   }
 
   async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
