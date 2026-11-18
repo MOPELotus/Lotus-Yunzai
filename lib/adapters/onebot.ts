@@ -141,7 +141,7 @@ export function startOneBot(
     auth: Headers;
     isMaster: (bot: number, user: number) => boolean;
     groups: OneBotGroups;
-    http?: (request: Request) => Response;
+    http?: (request: Request) => Response | Promise<Response>;
   },
 ) {
   function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {

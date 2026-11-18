@@ -58,3 +58,11 @@ if (!process.exitCode) {
     process.exitCode = 1;
   }
 }
+
+if (!process.exitCode) {
+  const build = await Bun.spawn([process.execPath, "run", "build:panel"], options).exited;
+  if (build !== 0) {
+    console.error("管理面板构建失败，请检查构建日志。");
+    process.exitCode = build;
+  }
+}

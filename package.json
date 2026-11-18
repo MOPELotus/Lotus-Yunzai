@@ -4,13 +4,15 @@
   "type": "module",
   "packageManager": "bun@1.4.4",
   "workspaces": [
+    "panel",
     "packages/*",
     "plugins/*"
   ],
   "scripts": {
     "bootstrap": "bun scripts/bootstrap.ts",
     "start": "bun app.ts",
-    "typecheck": "tsc --noEmit"
+    "build:panel": "bun run --filter @lotus-yunzai/panel build",
+    "typecheck": "tsc --noEmit && bun run --filter @lotus-yunzai/panel typecheck"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

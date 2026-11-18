@@ -1,6 +1,7 @@
 /internal/
 /config/
 /data/
+/panel/dist/
 node_modules/
 .env
 .env.*

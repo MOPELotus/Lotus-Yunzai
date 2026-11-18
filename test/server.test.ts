@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startOneBot } from "../lib/adapters/onebot.ts";
@@ -80,6 +80,26 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(await head.text()).toBe("");
       expect((await fetch(`http://127.0.0.1:${wsPort}${panelUrl.pathname}`, { headers: auth("panel-fixture") })).status)
         .toBe(404);
+      const home = new URL("/panel/", statusUrl);
+      expect((await fetch(home)).status).toBe(503);
+      const dist = join(root, "panel", "dist");
+      await mkdir(join(dist, "assets"), { recursive: true });
+      await writeFile(join(dist, "index.html"), '<html lang="zh-CN"><title>荷花管理面板</title></html>');
+      await writeFile(join(dist, "assets", "main-fixture.js"), 'console.log("panel");');
+      await symlink(broken, join(dist, "assets", "outside.js"));
+      const redirect = await fetch(new URL("/panel", statusUrl), { redirect: "manual" });
+      expect(redirect.status).toBe(308);
+      expect(redirect.headers.get("Location")).toBe("/panel/");
+      const page = await fetch(home);
+      expect(page.status).toBe(200);
+      expect(page.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
+      expect(page.headers.get("Cache-Control")).toBe("no-store");
+      expect(await page.text()).toContain("荷花管理面板");
+      const script = new URL("assets/main-fixture.js", home);
+      expect(await (await fetch(script)).text()).toContain('console.log("panel")');
+      expect(await (await fetch(script, { method: "HEAD" })).text()).toBe("");
+      expect((await fetch(new URL("assets/outside.js", home))).status).toBe(404);
+      expect((await fetch(new URL("/panel/api/missing", statusUrl))).status).toBe(404);
       expect((await fetch(wsUrl, { headers: auth("http-fixture") })).status).toBe(401);
       expect((await fetch(wsUrl, {
         headers: { ...auth("onebot-fixture"), "X-Client-Role": "Universal" },
