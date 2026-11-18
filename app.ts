@@ -36,6 +36,8 @@ import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
+import { readUpdateHistory } from "./lib/update-history.ts";
+import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -81,6 +83,8 @@ if (import.meta.main) {
     await runtimeLog?.flush();
     return readRuntimeLogs(root, kind, query);
   });
+  const updateLogCommand = createUpdateLogCommand((requested) =>
+    plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
 
   function stop(code: number) {
     if (stopping) return;
@@ -284,6 +288,10 @@ if (import.meta.main) {
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
 
     const command = normalizeGameCommand(event);
+    if (isUpdateLogCommand(command.msg)) {
+      if (allowed(["更新", "system", systemModuleName])) await updateLogCommand(command);
+      return;
+    }
     if (isLogCommand(command.msg)) {
       if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
       return;
