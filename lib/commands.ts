@@ -1,7 +1,7 @@
 import type { MessageEvent, MessageReply } from "./messages.ts";
 
 export type CommandContext = Readonly<Pick<
-  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member"
+  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend"
 >>;
 
 export type CommandHandler = (argument: string, context: CommandContext) => MessageReply | Promise<MessageReply>;
@@ -9,6 +9,7 @@ export type CommandHandler = (argument: string, context: CommandContext) => Mess
 export interface CommandModule {
   readonly name: string;
   readonly commands: Readonly<Record<string, CommandHandler>>;
+  readonly aliases?: Readonly<Record<string, string>>;
 }
 
 export class CommandRegistry {
@@ -31,6 +32,7 @@ export class CommandRegistry {
     }
 
     const commands = Object.entries(module.commands);
+    const local = new Map(commands);
     for (const [command, handler] of commands) {
       this.#checkCommand(command);
       if (typeof handler !== "function") {
@@ -38,7 +40,18 @@ export class CommandRegistry {
       }
     }
 
-    for (const [command, handler] of commands) {
+    for (const [alias, target] of Object.entries(module.aliases ?? {})) {
+      if (!/^#?[^\s#]+$/u.test(alias) || this.#handlers.has(alias) || local.has(alias)) {
+        throw new Error(`无效或重复的指令别名：${alias}`);
+      }
+      const handler = local.get(target);
+      if (!handler || !Object.hasOwn(module.commands, target)) {
+        throw new Error(`指令别名 ${alias} 的目标不在当前模块中。`);
+      }
+      local.set(alias, handler);
+    }
+
+    for (const [command, handler] of local) {
       this.#handlers.set(command, handler);
     }
     this.#modules.add(name);
@@ -50,7 +63,7 @@ export class CommandRegistry {
       }
       active = false;
       this.#modules.delete(name);
-      for (const [command] of commands) {
+      for (const command of local.keys()) {
         this.#handlers.delete(command);
       }
     };
@@ -75,9 +88,9 @@ export class CommandRegistry {
     const name = separator === -1 ? input : input.slice(0, separator);
     const argument = separator === -1 ? "" : input.slice(separator).trimStart();
 
-    const { message_type, self_id, user_id, group_id, isMaster, member } = context;
+    const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend } = context;
     return this.#handlers.get(name)?.(argument, {
-      message_type, self_id, user_id, group_id, isMaster,
+      message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend,
       member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
     });
   }

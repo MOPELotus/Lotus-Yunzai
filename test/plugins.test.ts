@@ -161,7 +161,13 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       name: "fixture-context", lotusYunzai: { entry: "./index.ts" },
     }));
     await writeFile(join(plugins, "context", "index.ts"), `
-      export default { commands: {
+      export default { aliases: { "测试赞": "#协议赞" }, commands: {
+        "#协议赞": async (_args, context) => {
+          try {
+            if (!await context.isFriend?.()) return "非好友";
+            return "确认 " + await context.likeSelf(3);
+          } catch { return "协议拒绝"; }
+        },
         "#会话": (args, context) => {
           const { message_type, user_id, group_id, self_id, isMaster, member } = context;
           return [
@@ -311,6 +317,32 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     expect(await send("#登录列表 51")).toMatchObject({ group_id: 77, message: "用法：#登录列表" });
     expect(await send("#登录列表", { user_id: 51, message_type: "private", sub_type: "friend" }))
       .toMatchObject({ user_id: 51, message: "登录列表\n档案 1 · 已登录" });
+    function nextFrame(): Promise<Record<string, unknown>> {
+      return new Promise((ok) => {
+        client.addEventListener("message", ({ data }) => ok(JSON.parse(data)), { once: true });
+      });
+    }
+
+    const friendRequest = nextFrame();
+    client.send(JSON.stringify({ ...event, message: "测试赞" }));
+    const friends = await friendRequest;
+    expect(friends).toMatchObject({ action: "get_friend_list", params: {} });
+    const likeRequest = nextFrame();
+    client.send(JSON.stringify({ echo: friends.echo, status: "ok", retcode: 0, data: [{ user_id: 42 }] }));
+    const like = await likeRequest;
+    expect(like).toMatchObject({ action: "send_like", params: { user_id: 42, times: 3 } });
+    const confirmation = nextFrame();
+    client.send(JSON.stringify({ echo: "unrelated", status: "failed", retcode: 100 }));
+    client.send(JSON.stringify({ echo: like.echo, status: "ok", retcode: 0 }));
+    expect(await confirmation).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "确认 3" } });
+
+    const privateLike = nextFrame();
+    client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#协议赞" }));
+    const refused = await privateLike;
+    expect(refused).toMatchObject({ action: "send_like", params: { user_id: 42 } });
+    const rejection = nextFrame();
+    client.send(JSON.stringify({ echo: refused.echo, status: "failed", retcode: 1404 }));
+    expect(await rejection).toMatchObject({ action: "send_msg", params: { user_id: 42, message: "协议拒绝" } });
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
     });

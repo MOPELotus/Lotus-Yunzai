@@ -1,5 +1,6 @@
 import type { MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
+import { OneBotCalls } from "./onebot-calls.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -13,24 +14,16 @@ function isId(value: unknown): value is number {
 async function dispatchMessage(
   dispatch: (event: MessageEvent) => Promise<void>,
   send: (message: string) => boolean,
-  input: string,
+  event: Record<string, unknown>,
+  calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
 ): Promise<void> {
-  let event: unknown;
-  try {
-    event = JSON.parse(input);
-  } catch {
-    return;
-  }
-
-  if (!isRecord(event) || event.post_type !== "message" ||
-      !isId(event.user_id) || event.user_id === event.self_id) {
-    return;
-  }
+  const userId = event.user_id;
+  if (event.post_type !== "message" || !isId(userId) || userId === event.self_id) return;
 
   let target: { user_id: number } | { group_id: number };
   if (event.message_type === "private") {
-    target = { user_id: event.user_id };
+    target = { user_id: userId };
   } else if (event.message_type === "group" && isId(event.group_id)) {
     target = { group_id: event.group_id };
   } else {
@@ -55,7 +48,7 @@ async function dispatchMessage(
     sub_type: typeof event.sub_type === "string" ? event.sub_type : undefined,
     message_id: messageId,
     self_id: selfId,
-    user_id: event.user_id,
+    user_id: userId,
     group_id: "group_id" in target ? target.group_id : undefined,
     sender,
     member: messageType === "group" ? {
@@ -64,7 +57,10 @@ async function dispatchMessage(
     } : undefined,
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
-    isMaster: selfId !== undefined && isMaster(selfId, event.user_id),
+    isMaster: selfId !== undefined && isMaster(selfId, userId),
+    likeSelf: (count) => calls.likeSelf(send, userId, count),
+    isFriend: () => messageType === "private" && event.sub_type === "friend"
+      ? Promise.resolve(true) : calls.isFriend(send, userId),
     reply(reply, quote = false) {
       const message = encodeOneBotReply(reply, quote ? messageId : undefined);
       if (message === undefined) return false;
@@ -86,7 +82,7 @@ export function startOneBot(
     http?: (request: Request) => Response;
   },
 ) {
-  return Bun.serve({
+  return Bun.serve<OneBotCalls>({
     hostname: options.hostname,
     port: options.port,
     fetch(request, server) {
@@ -100,21 +96,30 @@ export function startOneBot(
       if (request.headers.get("X-Client-Role")?.toLowerCase() !== "universal") {
         return new Response("需要 OneBot 11 Universal 连接。", { status: 400 });
       }
-      if (!server.upgrade(request)) {
+      if (!server.upgrade(request, { data: new OneBotCalls() })) {
         return new Response(null, { status: 426 });
       }
     },
     websocket: {
       async message(socket, input) {
-        if (typeof input !== "string") {
+        if (typeof input !== "string") return;
+        let message: unknown;
+        try {
+          message = JSON.parse(input);
+        } catch {
           return;
         }
+        if (!isRecord(message) || socket.data.receive(message)) return;
+
         try {
-          await dispatchMessage(dispatch, (message) =>
-            socket.readyState === WebSocket.OPEN && socket.send(message) !== 0, input, options.isMaster);
+          await dispatchMessage(dispatch, (output) =>
+            socket.readyState === WebSocket.OPEN && socket.send(output) !== 0, message, socket.data, options.isMaster);
         } catch {
           console.error("处理 OneBot 消息失败。");
         }
+      },
+      close(socket) {
+        socket.data.close();
       },
     },
   });

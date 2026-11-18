@@ -202,11 +202,16 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
     try {
       const published = await import(pathToFileURL(entry).href);
       if (moduleName) {
-        const handlers = record(published.default).commands;
+        const { commands: handlers, aliases } = record(published.default);
         if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
           throw new Error("入口必须通过默认导出提供 commands。");
         }
-        commands.registerModule({ name: moduleName, commands: handlers as CommandModule["commands"] });
+        if (aliases !== undefined && (aliases === null || typeof aliases !== "object" || Array.isArray(aliases))) {
+          throw new Error("aliases 须为指令别名与本模块指令名的映射。");
+        }
+        commands.registerModule({
+          name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
+        });
       } else {
         const result = await legacy.register(published, label);
         if (result !== "loaded") {

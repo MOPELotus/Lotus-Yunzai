@@ -12,6 +12,8 @@ export interface MessageEvent {
   readonly isGroup: boolean;
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
+  readonly likeSelf?: (count: number) => Promise<number>;
+  readonly isFriend?: () => Promise<boolean>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
