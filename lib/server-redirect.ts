@@ -25,15 +25,19 @@ export function readServerRedirect(value: unknown): string | undefined {
   return parsed.href;
 }
 
+export function isReservedServerPath(pathname: string): boolean {
+  try {
+    return reserved.test(decodeURIComponent(pathname));
+  } catch {
+    return true;
+  }
+}
+
 export function createServerRedirect(location?: string) {
   const configured = readServerRedirect(location);
   return (request: Request): Response | undefined => {
     if (!configured || (request.method !== "GET" && request.method !== "HEAD") || request.headers.has("Upgrade")) return;
-    try {
-      if (reserved.test(decodeURIComponent(new URL(request.url).pathname))) return;
-    } catch {
-      return;
-    }
+    if (isReservedServerPath(new URL(request.url).pathname)) return;
     return new Response(null, { status: 302, headers: { Location: configured, "Cache-Control": "no-store" } });
   };
 }

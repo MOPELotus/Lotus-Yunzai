@@ -37,6 +37,10 @@ export class HandlerScope {
   #staged?: Map<string, Entry[]>;
   readonly #running = new Set<Promise<void>>();
 
+  static current(): HandlerScope | undefined {
+    return scopes.getStore();
+  }
+
   constructor(staged = false) {
     if (staged) this.#staged = new Map();
   }

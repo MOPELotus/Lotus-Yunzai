@@ -2,6 +2,7 @@ import { addAbortListener } from "node:events";
 import { segment, type BotEvent, type MessageEvent } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
+import { LegacyHttpRoutes } from "./legacy-http.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
 
@@ -93,6 +94,7 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
 }
 
 export class LegacyPlugins {
+  readonly httpRoutes = new LegacyHttpRoutes();
   #apps: App[] = [];
   #initializers: App[] = [];
   readonly #tasks: LegacyTasks;
@@ -141,10 +143,14 @@ export class LegacyPlugins {
 
     const rollback = async () => {
       jobs?.cancel();
+      for (const scope of scopes) this.httpRoutes.discard(scope);
       for (const { initializer, scope } of [...initializers].reverse()) await dispose(initializer, scope);
     };
     const abort = () => {
-      for (const scope of scopes) scope.dispose();
+      for (const scope of scopes) {
+        this.httpRoutes.discard(scope);
+        scope.dispose();
+      }
       abortCleanup = Promise.resolve().then(rollback).catch((error: unknown) => {
         console.warn(`[插件] 清理 ${label} 失败：`, error);
       });
@@ -185,9 +191,18 @@ export class LegacyPlugins {
         signal.throwIfAborted();
         const { initializer, scope } = app;
         const init = initializer.init;
-        const result = typeof init === "function" ? await scope.run(() => init.call(initializer)) : undefined;
+        let result: unknown;
+        if (typeof init === "function") {
+          this.httpRoutes.open(scope);
+          try {
+            result = await scope.run(() => init.call(initializer));
+          } finally {
+            this.httpRoutes.seal(scope);
+          }
+        }
         signal.throwIfAborted();
         if (result === "return") {
+          this.httpRoutes.discard(scope);
           await dispose(initializer, scope);
         } else {
           registerHandlers(app, label);
@@ -205,8 +220,10 @@ export class LegacyPlugins {
         return "skipped";
       }
       signal.throwIfAborted();
+      const routes = this.httpRoutes.prepare(active.map(({ scope }) => scope), oldScopes);
       jobs.publish();
       if (replace) active.forEach((app, index) => app.scope.publish(previous[index]?.scope));
+      routes.publish();
       for (const app of active) app.published = true;
       const index = previous.length ? this.#initializers.indexOf(previous[0]!) : this.#initializers.length;
       if (previous.length) this.#initializers = this.#initializers.filter((app) => app.label !== label);
@@ -234,6 +251,7 @@ export class LegacyPlugins {
     for (const app of apps) {
       app.published = false;
       app.contexts.close();
+      this.httpRoutes.discard(app.scope);
       app.scope.dispose();
     }
     const tasks = this.#tasks.cancel(new Set(apps.map(({ scope }) => scope)));
@@ -295,6 +313,7 @@ export class LegacyPlugins {
     for (const app of apps) {
       app.published = false;
       app.contexts.close();
+      this.httpRoutes.discard(app.scope);
     }
     this.#initializers = [];
     this.#apps = [];

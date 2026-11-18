@@ -518,21 +518,22 @@ if (import.meta.main) {
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
     const { hostname, http, oneBot, https, panelToken } = network;
     // Plugins may create file links during initialization. Keep the bound listeners guarded until routes are ready.
-    let publicRoutes: ((request: Request) => Promise<Response | undefined>) | undefined;
+    let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
+    const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
     const listenerMessages: string[] = [];
     let fileBase: URL | undefined;
     function httpHandler(auth: Headers) {
       const statusRoute = httpStatus(auth, runtimeVersion);
       return async (request: Request) => {
         if (stopping || !handoff.accepting || !publicRoutes) return new Response(null, { status: 503 });
-        return await publicRoutes(request) ?? statusRoute(request);
+        return await publicRoutes(request, auth) ?? statusRoute(request);
       };
     }
     function listenOneBot(port: number, auth: Headers, fetch?: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
       const server = startOneBot(dispatch, {
         hostname, port, auth, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
         prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
-        accepting: () => !stopping && handoff.accepting && publicRoutes !== undefined,
+        accepting: acceptingPublic,
         onBind: queueStartupMessages,
         onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
         http: fetch,
@@ -573,7 +574,7 @@ if (import.meta.main) {
     }
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
-    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl }) });
+    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl, express: legacy.httpRoutes.express }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
@@ -600,9 +601,9 @@ if (import.meta.main) {
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      publicRoutes = async (request) =>
+      publicRoutes = async (request, auth) =>
         publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
-        fallback?.(request);
+        await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
       plugins.startWatching();

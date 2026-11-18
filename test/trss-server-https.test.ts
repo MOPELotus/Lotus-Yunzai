@@ -54,6 +54,7 @@ async function withHost(
         }
         async init() {
           startup = String(await Bot.fileToUrl(Buffer.from("初始化文件内容")));
+          Bot.express.post("/fixture/secure-notice", (req, res) => res.sendStatus(req.body?.secure === true ? 202 : 400));
           const probe = process.env.LOTUS_TEST_HTTPS_STARTUP_PROBE;
           if (probe) {
             try {
@@ -201,6 +202,14 @@ test.skipIf(!openssl)("TRSS 可选 HTTPS 与 WSS 共用 TLS 监听并发布 HTTP
     expect(secure.port).not.toBe(http.port);
     await checkStatus(http);
     await checkStatus(secure, ca);
+    const webhook = new URL("/fixture/secure-notice", secure);
+    const post = {
+      method: "POST", body: '{"secure":true}', tls: { ca }, signal: AbortSignal.timeout(2_000),
+    };
+    expect((await fetch(webhook, { ...post, headers: auth(oneBotToken) })).status).toBe(401);
+    expect((await fetch(webhook, {
+      ...post, headers: { ...auth(statusToken), "Content-Type": "application/json" },
+    })).status).toBe(202);
     const upgrade = new URL("/OneBotv11", secure);
     expect((await request(upgrade, statusToken, ca, { "X-Client-Role": "Universal" })).status).toBe(401);
     expect((await request(upgrade, oneBotToken, ca)).status).toBe(400);
