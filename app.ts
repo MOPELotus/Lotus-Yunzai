@@ -16,6 +16,7 @@ import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
+import { createManagedHandoff } from "./lib/managed-handoff.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
@@ -49,13 +50,15 @@ const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 
 if (import.meta.main) {
-  const legacy = new LegacyPlugins();
+  const handoff = createManagedHandoff();
+  const legacy = new LegacyPlugins(() => handoff.accepting);
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
-  const dispatchPower = createDispatchPower(Date.now, readRestartPausedAt());
+  const restartPausedAt = readRestartPausedAt();
+  const dispatchPower = createDispatchPower(Date.now, handoff.pausedAt ?? restartPausedAt);
   let plugins: PluginLoadReport | undefined;
   let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopRestartSchedule: (() => Promise<void>) | undefined;
@@ -98,6 +101,7 @@ if (import.meta.main) {
     consoleInput?.close();
     shutdown.resolve();
   }
+  const stopOnDisconnect = handoff.onDisconnect(() => stop(143));
 
   async function sendProcessMessage(target: ProcessReceipt["target"], message: string): Promise<boolean> {
     try {
@@ -154,7 +158,7 @@ if (import.meta.main) {
       target = { type, botId, id };
     }
     if (processAction) return;
-    if (kind === "restart" && !canRestartHost()) {
+    if (kind === "restart" && !handoff.managed && !canRestartHost()) {
       await event.reply("当前运行环境不支持进程内重启。");
       return;
     }
@@ -183,7 +187,7 @@ if (import.meta.main) {
   }
 
   async function dispatch(event: BotEvent) {
-    if (stopping) return;
+    if (stopping || !handoff.accepting) return;
     if (event.post_type !== "message" || event.message_type !== "terminal") {
       recordCount("receive", event, event.post_type === "message" ? event.message : undefined);
     }
@@ -317,8 +321,13 @@ if (import.meta.main) {
 
   const interrupt = () => stop(130);
   const terminate = () => stop(143);
-  process.once("SIGINT", interrupt);
-  process.once("SIGTERM", terminate);
+  if (handoff.managed) {
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", terminate);
+  } else {
+    process.once("SIGINT", interrupt);
+    process.once("SIGTERM", terminate);
+  }
   try {
     const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig, runtimeVersion] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
@@ -388,13 +397,14 @@ if (import.meta.main) {
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      const fetch = statusRoute && (async (request: Request) => stopping
+      const fetch = statusRoute && (async (request: Request) => stopping || !handoff.accepting
         ? new Response(null, { status: 503 })
         : await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
           hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          accepting: () => !stopping && handoff.accepting,
           onBind: queueProcessReceipt,
           onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
           http: shared ? fetch : undefined,
@@ -408,6 +418,7 @@ if (import.meta.main) {
         servers.push(server);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
+      await handoff.ready(runtimeVersion.revision, lifecycle.signal);
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
         const reply = dispatchPower.setPaused(paused);
@@ -419,7 +430,7 @@ if (import.meta.main) {
           console.warn("[进程管理] 部分主人未收到定时开关机通知。");
         }
       });
-      if (canRestartHost()) {
+      if (handoff.managed || canRestartHost()) {
         stopRestartSchedule = scheduleProcessRestart(botConfig, () => {
           const targets: ProcessReceipt["target"][] = permissions.botIds().map((botId) => ({ type: "masters", botId }));
           if (permissions.terminal) targets.push({ type: "terminal" });
@@ -458,6 +469,8 @@ if (import.meta.main) {
       }
       if (servers.length) await shutdown.promise;
     }
+  } catch (error) {
+    if (!stopping) throw error;
   } finally {
     stopping = true;
     lifecycle.abort();
@@ -473,14 +486,18 @@ if (import.meta.main) {
         try {
           await legacy.dispose();
         } finally {
-          process.off("SIGINT", interrupt);
-          process.off("SIGTERM", terminate);
-          await Promise.allSettled(pendingCounts);
-          globalThis.redis = undefined;
           try {
-            await Promise.all([closeStorage(), stopStaticRenderer()]);
+            await Promise.allSettled(pendingCounts);
+            globalThis.redis = undefined;
+            try {
+              await Promise.all([closeStorage(), stopStaticRenderer()]);
+            } finally {
+              await runtimeLog?.close();
+            }
           } finally {
-            await runtimeLog?.close();
+            process.off("SIGINT", interrupt);
+            process.off("SIGTERM", terminate);
+            stopOnDisconnect();
           }
         }
       }
@@ -494,7 +511,11 @@ if (import.meta.main) {
     }
     if (kind === "restart") {
       try {
-        restartHost(pausedAt);
+        if (handoff.managed) {
+          if (!handoff.restart(pausedAt)) throw new Error("托管宿主未接受重启。");
+        } else {
+          restartHost(pausedAt);
+        }
       } catch {
         await Promise.allSettled(targets.map((target, index) => {
           if (saved[index]?.status === "fulfilled") {

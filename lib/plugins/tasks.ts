@@ -11,6 +11,8 @@ export class LegacyTasks {
   readonly #tasks = new Map<string, ScheduledTask>();
   #stopping?: Promise<void>;
 
+  constructor(private readonly accepting: () => boolean = () => true) {}
+
   register(owner: HandlerScope, app: Record<string, unknown>): void {
     if (this.#stopping || app.task === undefined || app.task === null) return;
 
@@ -37,10 +39,11 @@ export class LegacyTasks {
 
       const job = scheduleJob(cron, () => {
         const current = this.#tasks.get(key);
-        if (current?.job !== job || current.running) return;
+        if (current?.job !== job || current.running || !this.accepting()) return;
 
         current.running = Promise.resolve()
           .then(async () => {
+            if (!this.accepting()) return;
             if (task.log !== false) console.log(`[任务] 开始执行 ${name}。`);
             await owner.run(() => callback.call(app));
           })

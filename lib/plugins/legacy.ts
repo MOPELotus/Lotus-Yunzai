@@ -90,9 +90,10 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
 export class LegacyPlugins {
   readonly #apps: App[] = [];
   readonly #initializers: App[] = [];
-  readonly #tasks = new LegacyTasks();
+  readonly #tasks: LegacyTasks;
 
-  constructor() {
+  constructor(acceptingTasks?: () => boolean) {
+    this.#tasks = new LegacyTasks(acceptingTasks);
     Object.assign(globalThis, { plugin: Plugin, segment });
   }
 

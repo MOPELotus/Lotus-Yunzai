@@ -279,6 +279,7 @@ export function startOneBot(
     isMaster: (bot: number, user: number) => boolean;
     masterIds: (bot: number) => readonly number[];
     groups: OneBotGroups;
+    accepting?: () => boolean;
     onBind?: (botId: number) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
@@ -309,6 +310,7 @@ export function startOneBot(
       if (path !== "/OneBotv11" && path !== "/OneBotv11/") {
         return options.http?.(request) ?? new Response(null, { status: 404 });
       }
+      if (options.accepting?.() === false) return new Response(null, { status: 503 });
       if (!authorized(request, options.auth)) {
         return new Response(null, { status: 401 });
       }
