@@ -14,6 +14,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
     await writeFile(broken, 'throw new Error("fixture-private-value");');
     const old = join(root, "plugins", "xhh-tl");
     await mkdir(old);
+    await writeFile(join(old, "package.json"), '{"name":"xhh-tl","lotusYunzai":{"games":["wuwa"]}}');
     await writeFile(join(old, "index.js"), 'throw new Error("拒载入口不应执行");');
     const original = join(root, "plugins", "xhh");
     await mkdir(original);
@@ -68,7 +69,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(await report.json()).toMatchObject({ plugins: expect.arrayContaining([
         { name: "system", status: "loaded" },
         { name: "fixture-broken.js", status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" },
-        { name: "xhh-tl", status: "rejected", reason: expect.stringContaining("鸣潮") },
+        { name: "xhh-tl", status: "rejected", reason: "旧插件功能已归并，请使用 公共账号服务和游戏模块。" },
         { name: "xhh", status: "rejected", reason: expect.stringContaining("media") },
       ]) });
       expect(await (await fetch(panelStatus, { headers: auth("panel-fixture") })).json())
