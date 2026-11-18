@@ -44,6 +44,7 @@ import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
+import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { createUpdateCommand, describeUpdateProgress, isUpdateCommand } from "./lib/update-command.ts";
@@ -539,6 +540,7 @@ if (import.meta.main) {
       }
       const { hostname, http, oneBot, panelToken } = network;
       const statusRoute = http && httpStatus(http.auth, runtimeVersion);
+      const fallback = createServerRedirect(network.redirect);
       const likes = panelGroupSettings(plugins.directories);
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories);
@@ -547,7 +549,8 @@ if (import.meta.main) {
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       const fetch = statusRoute && (async (request: Request) => stopping || !handoff.accepting
         ? new Response(null, { status: 503 })
-        : publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ?? statusRoute(request));
+        : publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+          fallback?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {

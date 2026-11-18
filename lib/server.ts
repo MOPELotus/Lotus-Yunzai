@@ -1,4 +1,5 @@
 import { readLocalConfig } from "./config.ts";
+import { readServerRedirect } from "./server-redirect.ts";
 
 type ServerEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -13,6 +14,7 @@ export interface ServerSettings {
   readonly oneBot?: Listener;
   readonly panelToken?: string;
   readonly publicUrl?: URL;
+  readonly redirect?: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -88,6 +90,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
     panelToken,
     publicUrl: publicHttpUrl(config.url),
+    redirect: readServerRedirect(config.redirect),
   };
 }
 

@@ -78,6 +78,9 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
   const root = await mkdtemp(join(tmpdir(), "lotus-managed-held-"));
   try {
     await copyHost(root);
+    const redirect = "https://public.example.invalid/landing";
+    await mkdir(join(root, "config"));
+    await writeFile(join(root, "config/server.yaml"), `redirect: ${redirect}\n`);
     function git(...args: string[]): string {
       const result = Bun.spawnSync(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
         "-c", "commit.gpgSign=false", ...args], {
@@ -125,9 +128,11 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
       expect(notice).toMatchObject({ type: "lotus-ready", token, revision, plugins: ["system"] });
       expect(startup).toEqual([60_000, 0]);
       const gateway = new URL("/OneBotv11", status);
+      const fallback = new URL("/redirect-probe", status);
       const headers = { Authorization: "Bearer fixture-token", "X-Client-Role": "Universal" };
       expect((await fetch(status)).status).toBe(503);
       expect((await fetch(gateway, { headers })).status).toBe(503);
+      expect((await fetch(fallback, { redirect: "manual" })).status).toBe(503);
       worker.send({ type: "lotus-activate", token });
       const end = performance.now() + 2_000;
       let response = await fetch(status);
@@ -137,6 +142,9 @@ test.skipIf(!Bun.which("git"))("已就绪的真实候选在托管提交前拒绝
       }
       expect(await response.json()).toMatchObject({ status: "ok", revision });
       expect((await fetch(gateway, { headers })).status).toBe(426);
+      const redirected = await fetch(fallback, { redirect: "manual" });
+      expect(redirected.status).toBe(302);
+      expect(redirected.headers.get("Location")).toBe(redirect);
       worker.kill("SIGTERM");
       expect(await worker.exited).toBe(143);
     } finally {
