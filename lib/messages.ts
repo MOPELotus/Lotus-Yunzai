@@ -13,8 +13,16 @@ export interface MessageEvent {
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
   readonly raw_message: string;
-  readonly message: string | readonly unknown[];
+  readonly message: string | readonly InboundSegment[];
+  readonly atBot?: boolean;
+  readonly at?: string | number;
+  readonly reply_id?: string | number;
+  readonly img?: readonly string[];
   readonly reply: (message: MessageReply, quote?: boolean) => boolean;
+}
+
+export interface InboundSegment extends Readonly<Record<string, unknown>> {
+  readonly type: string;
 }
 
 type MediaFile = string | Uint8Array;

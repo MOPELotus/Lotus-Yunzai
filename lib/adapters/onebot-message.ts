@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { InboundSegment } from "../messages.ts";
 
 interface OutboundSegment {
   type: string;
@@ -74,4 +75,59 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
     segments.unshift({ type: "reply", data: { id: String(quoteId) } });
   }
   return segments;
+}
+
+export function decodeOneBotMessage(value: unknown, selfId?: number) {
+  if (typeof value !== "string" && !Array.isArray(value)) return;
+
+  const input: readonly unknown[] = typeof value === "string" ? [value] : value;
+  const message: InboundSegment[] = [];
+  const text: string[] = [];
+  const img: string[] = [];
+  let atBot = false;
+  let at: string | number | undefined;
+  let replyId: string | number | undefined;
+
+  for (const part of input) {
+    if (typeof part === "string") {
+      message.push({ type: "text", text: part });
+      text.push(part);
+      continue;
+    }
+    if (!isRecord(part) || typeof part.type !== "string" || !isRecord(part.data)) return;
+
+    const { type, data } = part;
+    message.push({ ...data, type });
+    switch (type) {
+      case "text":
+        if (typeof data.text !== "string") return;
+        text.push(data.text);
+        break;
+      case "at": {
+        const qq = data.qq;
+        if (typeof qq !== "string" && typeof qq !== "number") return;
+        if (selfId !== undefined && String(qq) === String(selfId)) atBot = true;
+        else at = qq;
+        break;
+      }
+      case "reply": {
+        const id = data.id;
+        if (typeof id !== "string" && typeof id !== "number") return;
+        replyId = id;
+        break;
+      }
+      case "image":
+        if (typeof data.url === "string") img.push(data.url);
+        break;
+    }
+  }
+
+  return {
+    message,
+    text: text.join(""),
+    atBot,
+    at,
+    reply_id: replyId,
+    img: img.length > 0 ? img : undefined,
+  };
 }

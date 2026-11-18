@@ -91,6 +91,8 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
               { reg: "^#媒体$", fnc: "media" },
               { reg: "^#引用$", fnc: "quote" },
               { reg: "^#非法段$", fnc: "invalidSegment" },
+              { reg: "^#检查来信$", fnc: "incoming" },
+              { reg: "^$", fnc: "imageOnly" },
             ] });
           }
           skip() { return false; }
@@ -110,6 +112,17 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           invalidSegment() {
             const sent = this.reply(["不应发送", { type: "image", data: {} }]);
             return this.reply(sent ? "异常发送" : "已拒绝无效消息");
+          }
+          incoming(e) {
+            return this.reply(JSON.stringify({
+              msg: e.msg, raw: e.raw_message, atBot: e.atBot, at: e.at,
+              replyId: e.reply_id, images: e.img,
+              types: e.message.map(({ type }) => type),
+              text: e.message.find(({ type }) => type === "text").text,
+            }));
+          }
+          imageOnly(e) {
+            return e.img?.length ? this.reply("收到图片") : false;
           }
         }
       };
@@ -174,7 +187,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       post_type: "message", message_type: "group", sub_type: "normal",
       self_id: 99, user_id: 42, group_id: 77, message_id: 123,
     };
-    async function send(message: string, fields: Record<string, unknown> = {}) {
+    async function send(message: string | object[], fields: Record<string, unknown> = {}) {
       const reply = new Promise<Record<string, unknown>>((ok) => {
         client.addEventListener("message", ({ data }) => ok(JSON.parse(data).params), { once: true });
       });
@@ -214,6 +227,22 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       ],
     });
     expect(await send("#非法段")).toMatchObject({ group_id: 77, message: "已拒绝无效消息" });
+    client.send(JSON.stringify({ ...event, message: [{ type: "text", data: {} }] }));
+    const received = await send([
+      { type: "reply", data: { id: "456" } },
+      { type: "at", data: { qq: "99" } },
+      { type: "text", data: { text: " #检查" } },
+      { type: "text", data: { text: "来信 " } },
+      { type: "image", data: { url: "https://example.invalid/input.jpg" } },
+      { type: "at", data: { qq: 42 } },
+    ], { raw_message: "协议端原始消息" });
+    expect(JSON.parse(String(received.message))).toEqual({
+      msg: "#检查来信", raw: "协议端原始消息",
+      atBot: true, at: 42, replyId: "456", images: ["https://example.invalid/input.jpg"],
+      types: ["reply", "at", "text", "text", "image", "at"], text: " #检查",
+    });
+    expect(await send([{ type: "image", data: { url: "https://example.invalid/input.jpg" } }]))
+      .toMatchObject({ group_id: 77, message: "收到图片" });
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: "私聊可用",
     });

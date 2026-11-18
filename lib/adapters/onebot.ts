@@ -1,5 +1,5 @@
 import type { MessageEvent } from "../messages.ts";
-import { encodeOneBotReply } from "./onebot-message.ts";
+import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -7,25 +7,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function readText(message: unknown): string | undefined {
-  if (typeof message === "string") {
-    return message;
-  }
-  if (!Array.isArray(message)) {
-    return;
-  }
-
-  const parts: string[] = [];
-  for (const segment of message) {
-    if (!isRecord(segment) || segment.type !== "text" ||
-        !isRecord(segment.data) || typeof segment.data.text !== "string") {
-      return;
-    }
-    parts.push(segment.data.text);
-  }
-  return parts.join("");
 }
 
 async function dispatchMessage(
@@ -54,10 +35,11 @@ async function dispatchMessage(
     return;
   }
 
-  const text = readText(event.message);
-  if (text === undefined) {
-    return;
-  }
+  const selfId = isId(event.self_id) ? event.self_id : undefined;
+  const incoming = decodeOneBotMessage(event.message, selfId);
+  if (incoming === undefined) return;
+  const { text, ...messageFields } = incoming;
+
   const messageType = event.message_type;
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
@@ -65,12 +47,12 @@ async function dispatchMessage(
   await dispatch({
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : text,
-    message: Array.isArray(event.message) ? event.message : text,
+    ...messageFields,
     post_type: "message",
     message_type: messageType,
     sub_type: typeof event.sub_type === "string" ? event.sub_type : undefined,
     message_id: messageId,
-    self_id: isId(event.self_id) ? event.self_id : undefined,
+    self_id: selfId,
     user_id: event.user_id,
     group_id: "group_id" in target ? target.group_id : undefined,
     sender,
