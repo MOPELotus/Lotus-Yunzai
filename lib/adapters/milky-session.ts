@@ -1,12 +1,13 @@
-import type { MessageEvent } from "../messages.ts";
+import type { BotEvent } from "../messages.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
-import { milkyMessage } from "./milky-message.ts";
+import { encodeMilkyReply, milkyMessage } from "./milky-message.ts";
+import { milkyNotice } from "./milky-notice.ts";
 
 export interface MilkyTransportOptions {
   readonly signal: AbortSignal;
-  readonly dispatch: (event: MessageEvent) => Promise<void>;
-  readonly onSent?: (event: MessageEvent, message: unknown) => void;
+  readonly dispatch: (event: BotEvent) => Promise<void>;
+  readonly onSent?: (event: BotEvent, message: unknown) => void;
 }
 
 export interface MilkySession {
@@ -19,6 +20,10 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function hasMessageSequence(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 export async function openMilkySession(settings: MilkySettings, options: MilkyTransportOptions): Promise<MilkySession | undefined> {
@@ -51,22 +56,34 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.self_id !== account) return "foreign";
     if (body.event_type === "bot_offline") return "offline";
 
-    function confirmSent(result: Record<string, unknown> | undefined, params: Record<string, unknown>) {
-      const sequence = result?.message_seq;
-      if (message && typeof sequence === "number" && Number.isSafeInteger(sequence) && sequence >= 0) {
-        onSent?.(message, params.message);
+    function confirmSent(event: BotEvent | undefined, result: Record<string, unknown> | undefined, content: unknown) {
+      if (event && hasMessageSequence(result?.message_seq)) {
+        onSent?.(event, content);
       }
       return result;
     }
 
     const message = milkyMessage(body, account, async (action, params) => {
-      return confirmSent(await call(action, params), params);
+      return confirmSent(message, await call(action, params), params.message);
     }, scheduleRecall, async (action, params) => {
       const result = await call.confirmed(action, params);
       if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
-      if (result.status === "confirmed") return confirmSent(result.data, params);
+      if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     });
-    if (message) void dispatch(message).catch(() => console.warn("[Milky] 处理事件失败。"));
+    const notice = message ? undefined : milkyNotice(body, account, call, async (target, reply) => {
+      const content = encodeMilkyReply(reply);
+      if (!content) return false;
+      const action = "group_id" in target ? "send_group_message" : "send_private_message";
+      const result = await call.confirmed(action, { ...target, message: content });
+      if (result.status === "rejected") return false;
+      if (result.status === "unknown" || !hasMessageSequence(result.data.message_seq)) {
+        throw new Error("Milky 通知回复未确认。");
+      }
+      confirmSent(notice, result.data, content);
+      return true;
+    });
+    const event = message ?? notice;
+    if (event) void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };
 }

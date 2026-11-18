@@ -145,7 +145,7 @@ function encodeSegments(reply: MessageReply, remainingMediaBytes: number) {
   return { message, remainingMediaBytes };
 }
 
-function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: ReplyOptions["at"]): OutgoingSegment[] | undefined {
+export function encodeMilkyReply(reply: MessageReply, quoteId?: number, mention?: ReplyOptions["at"]): OutgoingSegment[] | undefined {
   const encoded = encodeSegments(reply, maxPublicFileBytes);
   if (!encoded) return;
   const { message } = encoded;
@@ -357,7 +357,7 @@ export function milkyMessage(
     }),
     async reply(reply, quote = false, options = {}) {
       const mention = isGroup ? options.at === true ? userId : options.at : undefined;
-      const message = encodeReply(reply, quote ? messageId : undefined, mention);
+      const message = encodeMilkyReply(reply, quote ? messageId : undefined, mention);
       if (!message) return false;
       try {
         const sequence = (await call(action, { ...target, message }))?.message_seq;
