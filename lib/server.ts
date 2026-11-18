@@ -11,6 +11,7 @@ export interface ServerSettings {
   readonly hostname: string;
   readonly http?: Listener;
   readonly oneBot?: Listener;
+  readonly panelToken?: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -61,13 +62,17 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
   const legacyAuth = authHeaders(config.auth);
   const httpAuth = withToken(legacyAuth, env.LOTUS_HTTP_TOKEN, "LOTUS_HTTP_TOKEN");
   const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN, "LOTUS_ONEBOT_TOKEN");
+  const panelToken = env.LOTUS_PANEL_TOKEN;
+  withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
   const wsPort = [...wsAuth.keys()].length > 0 ? oneBotOverride ?? configured ?? 25360 : undefined;
-  const httpPort = configured ?? wsPort ?? (env.LOTUS_HTTP_TOKEN !== undefined ? 2536 : undefined);
+  const httpPort = configured ?? wsPort ??
+    (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined ? 2536 : undefined);
 
   return {
     hostname: env.LOTUS_LISTEN_HOST ?? "127.0.0.1",
     http: httpPort === undefined ? undefined : { port: httpPort, auth: httpAuth },
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
+    panelToken,
   };
 }
 
@@ -86,12 +91,11 @@ export function httpStatus(required: Headers) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
     }
-    const response = Response.json({
-      status: "ok",
-      name: "Lotus-Yunzai",
-      bun: Bun.version,
-      uptime: Math.floor(process.uptime()),
-    }, { headers: { "Cache-Control": "no-store" } });
+    const response = Response.json(runtimeStatus(), { headers: { "Cache-Control": "no-store" } });
     return request.method === "HEAD" ? new Response(null, { headers: response.headers }) : response;
   };
+}
+
+export function runtimeStatus() {
+  return { status: "ok", name: "Lotus-Yunzai", bun: Bun.version, uptime: Math.floor(process.uptime()) };
 }

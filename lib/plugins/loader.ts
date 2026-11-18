@@ -87,13 +87,9 @@ async function legacyEntries(directory: string): Promise<string[]> {
   return scripts.sort();
 }
 
-async function allowedScript(root: string, path: string): Promise<boolean> {
+async function retiredScript(path: string): Promise<string | undefined> {
   const hash = createHash("sha256").update(await readFile(path)).digest("hex");
-  const retired = retiredScripts.get(hash);
-  if (retired) {
-    console.warn(`[插件] 拒绝加载 ${relative(root, path)}（${retired}）：图库管理已归并到 atlas。`);
-  }
-  return retired === undefined;
+  return retiredScripts.get(hash);
 }
 
 async function gitRepositories(directory: string): Promise<string[]> {
@@ -136,19 +132,37 @@ interface PluginServices {
   readonly signal: AbortSignal;
 }
 
+export interface PluginLoadRecord {
+  readonly name: string;
+  readonly status: "loaded" | "rejected" | "failed" | "skipped";
+  readonly reason?: string;
+}
+
 export async function loadPlugins(
   root: string,
   commands: CommandRegistry,
   legacy: LegacyPlugins,
   services: PluginServices,
-): Promise<void> {
+): Promise<readonly PluginLoadRecord[]> {
+  const report: PluginLoadRecord[] = [];
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; moduleName?: string }[] = [];
+  const reject = (name: string, reason: string, label = name) => {
+    console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
+    report.push({ name, status: "rejected", reason });
+  };
+  const allowedScript = async (path: string) => {
+    const retired = await retiredScript(path);
+    if (!retired) return true;
+    const name = relative(root, path);
+    reject(name, "图库管理已归并到 atlas。", `${name}（${retired}）`);
+    return false;
+  };
   for (const candidate of await listCandidates(root)) {
     const label = relative(root, candidate.path);
     try {
       if (candidate.kind === "script") {
-        if (await allowedScript(root, candidate.path)) {
+        if (await allowedScript(candidate.path)) {
           ready.push({ label, entry: candidate.path });
         }
         continue;
@@ -169,7 +183,7 @@ export async function loadPlugins(
       const games = Array.isArray(meta.games) ? meta.games.filter((game) => typeof game === "string") : [];
       const reason = rejectionReason(names, games);
       if (reason) {
-        console.warn(`[插件] 拒绝加载 ${label}（${declaredName || repositories[0] || directory}）：${reason}`);
+        reject(label, reason, `${label}（${declaredName || repositories[0] || directory}）`);
         continue;
       }
       if (meta.entry !== undefined && (typeof meta.entry !== "string" || !declaredName)) {
@@ -178,35 +192,35 @@ export async function loadPlugins(
 
       const builtInDirectory = builtInDirectories.get(name);
       if (builtInDirectory !== undefined && directory !== builtInDirectory) {
-        console.warn(`[插件] 拒绝加载 ${label}：${name} 的内置目录为 plugins/${builtInDirectory}。`);
+        reject(label, `${name} 的内置目录为 plugins/${builtInDirectory}。`);
         continue;
       }
       if (commands.hasModule(name)) {
-        console.warn(`[插件] 拒绝加载 ${label}：模块 ${name} 已注册。`);
+        reject(label, `模块 ${name} 已注册。`);
         continue;
       }
       const identities = [`name:${name}`, ...repositories.map((key) => `repo:${key}`)];
       const duplicate = identities.map((identity) => seen.get(identity)).find((path) => path !== undefined);
       if (duplicate) {
-        console.warn(`[插件] 拒绝加载 ${label}：与 ${duplicate} 重复。`);
+        reject(label, `与 ${duplicate} 重复。`);
         continue;
       }
       if (typeof meta.entry === "string") {
         const entry = await findEntry(candidate.path, meta.entry);
-        if (!await allowedScript(root, entry)) continue;
+        if (!await allowedScript(entry)) continue;
         ready.push({ label, entry, moduleName: name });
       } else {
         const entries = [];
         for (const file of await legacyEntries(candidate.path)) {
           const entry = await findEntry(candidate.path, file);
-          if (await allowedScript(root, entry)) entries.push({ label: relative(root, entry), entry });
+          if (await allowedScript(entry)) entries.push({ label: relative(root, entry), entry });
         }
         if (!entries.length) continue;
         ready.push(...entries);
       }
       for (const identity of identities) seen.set(identity, label);
     } catch {
-      console.warn(`[插件] 拒绝加载 ${label}：无法读取插件元数据，或入口路径无效。`);
+      reject(label, "无法读取插件元数据，或入口路径无效。");
     }
   }
 
@@ -245,13 +259,17 @@ export async function loadPlugins(
         if (result !== "loaded") {
           const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
           console.warn(`[插件] 跳过 ${label}：${reason}`);
+          report.push({ name: label, status: "skipped", reason });
           continue;
         }
       }
       console.log(`[插件] 已加载 ${label}。`);
+      report.push({ name: label, status: "loaded" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[插件] 加载 ${label} 失败：${message}`);
+      report.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
     }
   }
+  return report;
 }

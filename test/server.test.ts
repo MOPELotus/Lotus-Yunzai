@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startOneBot } from "../lib/adapters/onebot.ts";
@@ -10,6 +10,14 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-server-"));
   try {
     await copyHost(root);
+    const broken = join(root, "plugins", "fixture-broken.js");
+    await writeFile(broken, 'throw new Error("fixture-private-value");');
+    const old = join(root, "plugins", "xhh-tl");
+    await mkdir(old);
+    await writeFile(join(old, "index.js"), 'throw new Error("拒载入口不应执行");');
+    const original = join(root, "plugins", "xhh");
+    await mkdir(original);
+    await writeFile(join(original, "index.js"), 'throw new Error("拒载入口不应执行");');
 
     const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const wsPort = reservation.port;
@@ -25,6 +33,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
         LOTUS_ONEBOT_PORT: String(wsPort),
         LOTUS_HTTP_TOKEN: "http-fixture",
         LOTUS_ONEBOT_TOKEN: "onebot-fixture",
+        LOTUS_PANEL_TOKEN: "panel-fixture",
       },
     });
     const reader = host.stdout.getReader();
@@ -48,6 +57,28 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect((await fetch(statusUrl, { headers: auth("http-fixture") })).status).toBe(200);
       expect((await fetch(`http://127.0.0.1:${wsPort}/status`)).status).toBe(404);
       expect((await fetch(new URL("/OneBotv11", statusUrl))).status).toBe(404);
+      const panelUrl = new URL("/panel/api/plugins", statusUrl);
+      const panelStatus = new URL("/panel/api/status", statusUrl);
+      expect((await fetch(panelUrl)).status).toBe(401);
+      expect((await fetch(panelUrl, { headers: auth("http-fixture") })).status).toBe(401);
+      expect((await fetch(panelUrl, { headers: auth("onebot-fixture") })).status).toBe(401);
+      expect((await fetch(statusUrl, { headers: auth("panel-fixture") })).status).toBe(401);
+      const report = await fetch(panelUrl, { headers: auth("panel-fixture") });
+      expect(report.headers.get("Cache-Control")).toBe("no-store");
+      expect(await report.json()).toMatchObject({ plugins: expect.arrayContaining([
+        { name: "system", status: "loaded" },
+        { name: "fixture-broken.js", status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" },
+        { name: "xhh-tl", status: "rejected", reason: expect.stringContaining("鸣潮") },
+        { name: "xhh", status: "rejected", reason: expect.stringContaining("media") },
+      ]) });
+      expect(await (await fetch(panelStatus, { headers: auth("panel-fixture") })).json())
+        .toMatchObject({ status: "ok", name: "Lotus-Yunzai" });
+      expect((await fetch(panelUrl, { headers: auth("panel-fixture"), method: "POST" })).status).toBe(405);
+      const head = await fetch(panelUrl, { headers: auth("panel-fixture"), method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe("");
+      expect((await fetch(`http://127.0.0.1:${wsPort}${panelUrl.pathname}`, { headers: auth("panel-fixture") })).status)
+        .toBe(404);
       expect((await fetch(wsUrl, { headers: auth("http-fixture") })).status).toBe(401);
       expect((await fetch(wsUrl, {
         headers: { ...auth("onebot-fixture"), "X-Client-Role": "Universal" },

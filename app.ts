@@ -6,6 +6,7 @@ import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
+import { panelApi } from "./lib/panel.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
@@ -76,26 +77,28 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
-    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
+    const plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
     }));
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
-      const { hostname, http, oneBot } = network;
+      const { hostname, http, oneBot, panelToken } = network;
       const statusRoute = http && httpStatus(http.auth);
+      const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins);
+      const fetch = statusRoute && ((request: Request) => panel?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
-          hostname, ...oneBot, groups, isMaster: permissions.isMaster, http: shared ? statusRoute : undefined,
+          hostname, ...oneBot, groups, isMaster: permissions.isMaster, http: shared ? fetch : undefined,
         });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
         if (shared) console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
-      if (http && !shared && statusRoute) {
-        const server = Bun.serve({ hostname, port: http.port, fetch: statusRoute });
+      if (http && !shared && fetch) {
+        const server = Bun.serve({ hostname, port: http.port, fetch });
         servers.push(server);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }

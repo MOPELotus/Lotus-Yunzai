@@ -309,6 +309,7 @@ failsMsg: 协议拒绝
     expect(await status.json()).toMatchObject({ status: "ok", name: "Lotus-Yunzai", bun: Bun.version });
     expect((await fetch(http, { headers: authorizedHeaders, method: "POST" })).status).toBe(405);
     expect((await fetch(http, { headers: authorizedHeaders, method: "HEAD" })).status).toBe(200);
+    expect((await fetch(new URL("/panel/api/status", http), { headers: authorizedHeaders })).status).toBe(404);
 
     // Bun accepts HTTP headers in the client constructor.
     const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
