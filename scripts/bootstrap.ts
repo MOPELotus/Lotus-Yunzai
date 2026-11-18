@@ -24,8 +24,20 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
   }
 }
 
-const installation = Bun.spawn([process.execPath, "install", "--frozen-lockfile"], options);
-const installCode = await installation.exited;
+const installArgs = [process.execPath, "install", "--frozen-lockfile"];
+let installCode = await Bun.spawn(installArgs, options).exited;
+const prepared = installCode === 0 ? 0 : await Bun.spawn([...installArgs, "--ignore-scripts"], options).exited;
+if (prepared === 0) {
+  try {
+    const { recoverSkiaBinary } = await import("./skia-binary.ts");
+    if (await recoverSkiaBinary(root)) {
+      console.log("[初始化] 已重新下载并校验 Skia 原生库。");
+      if (installCode !== 0) installCode = await Bun.spawn(installArgs, options).exited;
+    }
+  } catch {
+    console.error("Skia 原生库重试下载未完成或校验失败，请检查发布资源是否可访问。");
+  }
+}
 if (installCode !== 0) process.exit(installCode);
 
 try {
