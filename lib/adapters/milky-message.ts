@@ -3,6 +3,7 @@ import type { InboundSegment, MessageEvent, MessageReply, ReplyOptions } from ".
 import { maxPublicFileBytes } from "../public-files.ts";
 
 type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
+type ScheduleRecall = (action: string, params: Record<string, unknown>, seconds: number) => void;
 
 type OutgoingSegment =
   | { type: "text"; data: { text: string } }
@@ -218,7 +219,7 @@ function senderMetadata(data: Record<string, unknown>, groupId: number | undefin
   return { sender, member: { is_admin: role === "admin", is_owner: role === "owner" } };
 }
 
-export function milkyMessage(value: unknown, selfId: number, call: MilkyCall): MessageEvent | undefined {
+export function milkyMessage(value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "message_receive" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
   const { message_scene: scene, sender_id: userId, peer_id: peerId, message_seq: messageId, segments } = value.data;
@@ -259,12 +260,17 @@ export function milkyMessage(value: unknown, selfId: number, call: MilkyCall): M
       return result === undefined ? 0 : count;
     },
     async reply(reply, quote = false, options = {}) {
-      if (options.recallMsg !== undefined && options.recallMsg !== 0) return false;
       const mention = isGroup ? options.at === true ? userId : options.at : undefined;
       const message = encodeReply(reply, quote ? messageId : undefined, mention);
       if (!message) return false;
       try {
-        return isSequence((await call(action, { ...target, message }))?.message_seq);
+        const sequence = (await call(action, { ...target, message }))?.message_seq;
+        if (!isSequence(sequence)) return false;
+        const seconds = options.recallMsg;
+        if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
+          scheduleRecall?.(isGroup ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
+        }
+        return true;
       } catch {
         return false;
       }

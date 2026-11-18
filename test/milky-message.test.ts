@@ -108,7 +108,6 @@ test("Milky 拒绝混合不支持的回复，且要求发送结果有安全消�
   expect(await event?.reply([segment.at(2 ** 53), "文本"])).toBe(false);
   expect(await event?.reply(["内容", segment.reply(" 22")])).toBe(false);
   expect(await event?.reply("内容", false, { at: "bad" })).toBe(false);
-  expect(await event?.reply("内容", false, { recallMsg: 10 })).toBe(false);
   expect(await event?.reply([])).toBe(false);
   expect(calls).toEqual([]);
   expect(await event?.reply("未确认")).toBe(false);
@@ -117,6 +116,17 @@ test("Milky 拒绝混合不支持的回复，且要求发送结果有安全消�
   const offline = milkyMessage(incoming(), selfId, async () => undefined);
   expect(await offline?.reply("离线")).toBe(false);
   expect(calls).toHaveLength(1);
+});
+
+test("Milky 只安排撤回已确认的原会话回复", async () => {
+  const recalls: unknown[] = [];
+  const group = incoming({ message_scene: "group", peer_id: groupId });
+  const event = milkyMessage(group, selfId, fixture().call, (...args) => { recalls.push(args); });
+  expect(await event?.reply("内容", true, { recallMsg: 0.5 })).toBe(true);
+  expect(await event?.reply("内容", false, { recallMsg: 121 })).toBe(true);
+  const unknown = milkyMessage(group, selfId, async () => undefined, (...args) => { recalls.push(args); });
+  expect(await unknown?.reply("内容", false, { recallMsg: 5 })).toBe(false);
+  expect(recalls).toEqual([["recall_group_message", { group_id: groupId, message_seq: 505 }, 0.5]]);
 });
 
 test("Milky 图片保留可用的临时链接和显示数据，不公开无效地址", () => {

@@ -14,6 +14,10 @@ const timestamp = 1_700_000_000;
 const httpToken = "milky-fixture-host-http";
 const milkyToken = "milky-fixture-gateway";
 const command = "#Milky夹具";
+const recallCommand = "#撤回夹具";
+const groupReceiptId = 5001;
+const privateReceiptId = 5002;
+const quotedMessageId = 88;
 const temporaryImage = "https://images.example.invalid/milky/fixture.png?nonce=sample";
 const fixturePng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
@@ -22,6 +26,7 @@ interface GatewayCall {
   path: string;
   headers: Headers;
   body: unknown;
+  receivedAt: number;
 }
 
 function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
@@ -57,6 +62,11 @@ function mockGateway() {
   const releaseRelogin = Promise.withResolvers<void>();
   const likeArrived = Promise.withResolvers<GatewayCall>();
   const releaseLike = Promise.withResolvers<void>();
+  const releaseRecallSend = Promise.withResolvers<void>();
+  const recalls = {
+    group: Promise.withResolvers<GatewayCall>(),
+    private: Promise.withResolvers<GatewayCall>(),
+  };
   let loginAttempts = 0;
   let friendQueries = 0;
   const replies = {
@@ -65,8 +75,11 @@ function mockGateway() {
     nonFriend: Promise.withResolvers<GatewayCall>(),
     duplicateLike: Promise.withResolvers<GatewayCall>(),
     liked: Promise.withResolvers<GatewayCall>(),
+    timedGroup: Promise.withResolvers<GatewayCall>(),
+    timedPrivate: Promise.withResolvers<GatewayCall>(),
   };
-  const groupReplies = [replies.group, replies.nonFriend, replies.duplicateLike, replies.liked];
+  const privateReplies = [replies.private, replies.timedPrivate];
+  const groupReplies = [replies.group, replies.nonFriend, replies.duplicateLike, replies.liked, replies.timedGroup];
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -76,6 +89,7 @@ function mockGateway() {
         path: new URL(request.url).pathname,
         headers: request.headers,
         body: await request.json(),
+        receivedAt: performance.now(),
       };
       calls.push(call);
       if (call.method !== "POST" || call.headers.get("Authorization") !== `Bearer ${milkyToken}`) {
@@ -93,9 +107,14 @@ function mockGateway() {
             await releaseRelogin.promise;
           }
           return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "Milky 夹具" } });
-        case `${prefix}/api/send_private_message`:
-          replies.private.resolve(call);
+        case `${prefix}/api/send_private_message`: {
+          const next = privateReplies.shift();
+          next?.resolve(call);
+          if (next === replies.timedPrivate) {
+            return Response.json({ status: "ok", retcode: 0, data: { message_seq: privateReceiptId, time: timestamp } });
+          }
           break;
+        }
         case `${prefix}/api/get_friend_info`: {
           const user_id = ++friendQueries === 1 ? senderId + 1 : senderId;
           return Response.json({ status: "ok", retcode: 0, data: { friend: { user_id, nickname: "好友夹具" } } });
@@ -104,16 +123,31 @@ function mockGateway() {
           likeArrived.resolve(call);
           await releaseLike.promise;
           return Response.json({ status: "ok", retcode: 0, data: {} });
-        case `${prefix}/api/send_group_message`:
-          groupReplies.shift()?.resolve(call);
+        case `${prefix}/api/send_group_message`: {
+          const next = groupReplies.shift();
+          next?.resolve(call);
+          if (next === replies.timedGroup) {
+            await releaseRecallSend.promise;
+            return Response.json({ status: "ok", retcode: 0, data: { message_seq: groupReceiptId, time: timestamp } });
+          }
           break;
+        }
+        case `${prefix}/api/recall_group_message`:
+          recalls.group.resolve(call);
+          return Response.json({ status: "failed", retcode: -404, message: "撤回被拒绝" });
+        case `${prefix}/api/recall_private_message`:
+          recalls.private.resolve(call);
+          return Response.json({ status: "ok", retcode: 0, data: {} });
         default:
           return new Response(null, { status: 404 });
       }
       return Response.json({ status: "ok", retcode: 0, data: { message_seq: 100, time: timestamp } });
     },
   });
-  return { server, calls, loginArrived, releaseLogin, reloginArrived, releaseRelogin, likeArrived, releaseLike, replies };
+  return {
+    server, calls, loginArrived, releaseLogin, reloginArrived, releaseRelogin, likeArrived, releaseLike,
+    replies, releaseRecallSend, recalls,
+  };
 }
 
 function auth(token: string) {
@@ -147,6 +181,10 @@ function message(scene: "friend" | "group", selfId = botId, text = command, sequ
       time: timestamp,
       segments: [
         { type: "text", data: { text } },
+        ...(text === recallCommand ? [{
+          type: "reply",
+          data: { message_seq: quotedMessageId, sender_id: senderId, time: timestamp, segments: [] },
+        }] : []),
         ...(scene === "group" && text === command ? [{
           type: "image",
           data: { resource_id: "fixture-image", temp_url: temporaryImage, width: 1, height: 1, summary: "", sub_type: "normal" },
@@ -184,7 +222,7 @@ async function waitForBind(url: URL) {
   }
 }
 
-test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片和资料卡点赞", async () => {
+test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片、点赞和定时撤回", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-webhook-"));
   const gateway = mockGateway();
   try {
@@ -211,7 +249,13 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片和资
     await writeFile(join(root, "plugins", "milky-webhook-fixture.js"), `
       export default class extends plugin {
         constructor() {
-          super({ event: "message", rule: [{ reg: "^${command}$", fnc: "echo" }] });
+          super({ event: "message", rule: [
+            { reg: "^${command}$", fnc: "echo" },
+            { reg: "^${recallCommand}$", fnc: "recall" },
+          ] });
+        }
+        recall(e) {
+          return e.reply("撤回夹具回复", false, { recallMsg: 0.05 });
         }
         echo(e) {
           if (!e.isGroup) return e.reply("好友 " + e.user_id + " 机器人 " + e.self_id);
@@ -302,6 +346,29 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片和资
       expect(likeCalls.filter(({ path }) => path === friendPath).map(({ body }) => body)).toEqual([
         { user_id: senderId, no_cache: true }, { user_id: senderId, no_cache: true },
       ]);
+
+      const beforeRecalls = gateway.calls.length;
+      const replyText = [{ type: "text", data: { text: "撤回夹具回复" } }];
+      expect((await webhook(endpoint, message("group", botId, recallCommand, 90), milkyToken)).status).toBe(200);
+      const groupSend = await deadline(gateway.replies.timedGroup.promise, "Milky 未发送预定撤回的群回复。");
+      expect(groupSend.body).toEqual({ group_id: groupId, message: replyText });
+      await Bun.sleep(100);
+      expect(gateway.calls.slice(beforeRecalls).map(({ path }) => path)).toEqual([groupPath]);
+      const startedRecallTimer = performance.now();
+      gateway.releaseRecallSend.resolve();
+      const groupRecall = await deadline(gateway.recalls.group.promise, "Milky 未请求撤回确认送达的群回复。");
+      expect(groupRecall.body).toEqual({ group_id: groupId, message_seq: groupReceiptId });
+      expect(groupRecall.receivedAt - startedRecallTimer).toBeGreaterThanOrEqual(45);
+
+      expect((await webhook(endpoint, message("friend", botId, recallCommand, 91), milkyToken)).status).toBe(200);
+      const privateSend = await deadline(gateway.replies.timedPrivate.promise, "Milky 未发送预定撤回的好友回复。");
+      expect(privateSend.body).toEqual({ user_id: senderId, message: replyText });
+      const privateRecall = await deadline(gateway.recalls.private.promise, "Milky 未请求撤回确认送达的好友回复。");
+      expect(privateRecall.body).toEqual({ user_id: senderId, message_seq: privateReceiptId });
+      await Bun.sleep(150);
+      expect(gateway.calls.slice(beforeRecalls).map(({ path }) => path)).toEqual([
+        groupPath, `${prefix}/api/recall_group_message`, `${prefix}/api/send_private_message`, `${prefix}/api/recall_private_message`,
+      ]);
       const offline = { time: timestamp, self_id: botId, event_type: "bot_offline", data: { reason: "fixture" } };
       expect((await webhook(endpoint, offline, milkyToken)).status).toBe(200);
       await deadline(gateway.reloginArrived.promise, "离线事件后未重新查询 Milky 登录。");
@@ -312,6 +379,7 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片和资
       gateway.releaseLogin.resolve();
       gateway.releaseRelogin.resolve();
       gateway.releaseLike.resolve();
+      gateway.releaseRecallSend.resolve();
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;
     }

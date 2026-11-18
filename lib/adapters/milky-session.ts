@@ -28,6 +28,22 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const account = login?.uin;
   if (signal.aborted || !positiveId(account)) return;
 
+  const recalls = new Set<ReturnType<typeof setTimeout>>();
+  signal.addEventListener("abort", () => {
+    for (const timer of recalls) clearTimeout(timer);
+    recalls.clear();
+  }, { once: true });
+
+  function scheduleRecall(action: string, params: Record<string, unknown>, seconds: number) {
+    if (signal.aborted) return;
+    const timer = setTimeout(async () => {
+      recalls.delete(timer);
+      if (!await call(action, params) && !signal.aborted) console.warn("[Milky] 消息撤回未获确认。");
+    }, seconds * 1_000);
+    timer.unref();
+    recalls.add(timer);
+  }
+
   return { receive(body) {
     if (signal.aborted) return "offline";
     if (!record(body) || !positiveId(body.self_id) || typeof body.event_type !== "string" ||
@@ -42,7 +58,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         onSent?.(message, params.message);
       }
       return result;
-    });
+    }, scheduleRecall);
     if (message) void dispatch(message).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };
