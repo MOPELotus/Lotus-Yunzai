@@ -4,16 +4,28 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import type { PluginLoadRecord } from "./plugins/loader.ts";
 import { runtimeStatus } from "./server.ts";
 
-export function panelApi(token: string, plugins: readonly PluginLoadRecord[]) {
+type Endpoint = (request: Request) => Response | Promise<Response>;
+
+export function panelApi(
+  token: string,
+  plugins: readonly PluginLoadRecord[],
+  route?: (path: string) => Endpoint | undefined,
+) {
   const hash = (value: string) => createHash("sha256").update(value).digest();
   const required = hash(`Bearer ${token}`);
   const headers = { "Cache-Control": "no-store" };
 
-  return (request: Request): Response | undefined => {
+  return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
-    if (path !== "/panel/api/status" && path !== "/panel/api/plugins") return;
+    const custom = route?.(path);
+    if (!custom && path !== "/panel/api/status" && path !== "/panel/api/plugins") return;
     if (!timingSafeEqual(required, hash(request.headers.get("Authorization") ?? ""))) {
       return new Response(null, { status: 401, headers: { ...headers, "WWW-Authenticate": "Bearer" } });
+    }
+    if (custom) {
+      const response = await custom(request);
+      response.headers.set("Cache-Control", "no-store");
+      return response;
     }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { ...headers, Allow: "GET, HEAD" } });
@@ -24,6 +36,29 @@ export function panelApi(token: string, plugins: readonly PluginLoadRecord[]) {
     }
     return Response.json(data, { headers });
   };
+}
+
+export async function readPanelJson(request: Request): Promise<unknown> {
+  if (request.headers.get("Content-Type")?.split(";", 1)[0]?.trim() !== "application/json" || !request.body) {
+    throw new Error("请求须为 JSON。");
+  }
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let bytes = 0;
+  let body = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 65_536) throw new Error("请求内容过大。");
+      body += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(body + decoder.decode()) as unknown;
+  } finally {
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 const assetName = /^assets\/[\w.-]+\.(?:js|css|svg|woff2)$/u;

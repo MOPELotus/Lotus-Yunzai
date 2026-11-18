@@ -283,7 +283,7 @@ failsMsg: 协议拒绝
     await writeFile(join(profiles, "51.yaml"), "account: { cookie: other-user, stoken: other-secret }");
     const backend = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
-      env: { PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles },
+      env: { PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles, LOTUS_PANEL_TOKEN: "group-settings-fixture" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -309,7 +309,7 @@ failsMsg: 协议拒绝
     expect(await status.json()).toMatchObject({ status: "ok", name: "Lotus-Yunzai", bun: Bun.version });
     expect((await fetch(http, { headers: authorizedHeaders, method: "POST" })).status).toBe(405);
     expect((await fetch(http, { headers: authorizedHeaders, method: "HEAD" })).status).toBe(200);
-    expect((await fetch(new URL("/panel/api/status", http), { headers: authorizedHeaders })).status).toBe(404);
+    expect((await fetch(new URL("/panel/api/status", http), { headers: authorizedHeaders })).status).toBe(401);
 
     // Bun accepts HTTP headers in the client constructor.
     const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
@@ -588,6 +588,30 @@ failsMsg: 协议拒绝
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
     });
+
+    const settingsUrl = new URL("/panel/api/settings/group/likes", http);
+    const settingsHeaders = { Authorization: "Bearer group-settings-fixture" };
+    expect((await fetch(settingsUrl)).status).toBe(401);
+    const original = await (await fetch(settingsUrl, { headers: settingsHeaders })).json() as {
+      revision: string; settings: { count: number; successMsg: string };
+    };
+    expect(original.settings).toMatchObject({ count: 3, successMsg: "确认 {{thumbUpNum}}" });
+    const saveSettings = (revision: string, patch: object) => fetch(settingsUrl, {
+      method: "PUT", headers: { ...settingsHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ revision, patch }),
+    });
+    expect((await saveSettings(original.revision, { count: 20 })).status).toBe(400);
+    const changed = await saveSettings(original.revision, { count: 4 });
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({ settings: { count: 4, successMsg: "确认 {{thumbUpNum}}" } });
+    expect((await saveSettings(original.revision, { count: 5 })).status).toBe(409);
+    const nextLike = nextFrame();
+    client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#赞我" }));
+    const updatedLike = await nextLike;
+    expect(updatedLike).toMatchObject({ action: "send_like", params: { user_id: 42, times: 4 } });
+    const afterChange = nextFrame();
+    client.send(JSON.stringify({ echo: updatedLike.echo, status: "ok", retcode: 0 }));
+    expect(await afterChange).toMatchObject({ action: "send_msg", params: { user_id: 42, message: "确认 4" } });
 
     client.close();
     backend.kill();

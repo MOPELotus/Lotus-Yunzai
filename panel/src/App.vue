@@ -2,6 +2,7 @@
 import { ElButton, ElInput } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import { CredentialsError, pluginStatuses, readPanel, type PanelSnapshot, type PluginStatus } from "./api.ts";
+import LikeSettings from "./LikeSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -10,12 +11,36 @@ const error = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
+const view = ref<"overview" | "likes">("overview");
+const settingsDirty = ref(false);
+const discardSettings = ref(false);
 const clock = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
 
 let token = "";
 let activeRequest: AbortController | undefined;
+
+const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
+  plugin.name === "group" && plugin.status === "loaded") ?? false);
+
+function setView(next: "overview" | "likes", discard = false) {
+  if (view.value === next) return;
+  if (settingsDirty.value && !discard) {
+    discardSettings.value = true;
+    return;
+  }
+  settingsDirty.value = false;
+  discardSettings.value = false;
+  view.value = next;
+  const heading = next === "overview" ? "overview-title" : "like-settings-title";
+  void nextTick(() => document.getElementById(heading)?.focus());
+}
+
+function expireSession() {
+  reset();
+  error.value = "面板令牌已失效，请重新登录。";
+}
 
 const visiblePlugins = computed(() => {
   const keyword = query.value.trim().toLowerCase();
@@ -45,6 +70,9 @@ function reset() {
   updatedAt.value = "";
   query.value = "";
   selectedStatus.value = "";
+  view.value = "overview";
+  settingsDirty.value = false;
+  discardSettings.value = false;
   void nextTick(() => document.getElementById("panel-token")?.focus());
 }
 
@@ -120,67 +148,82 @@ onBeforeUnmount(() => {
   </main>
 
   <main v-else class="dashboard">
-    <section aria-labelledby="overview-title" :aria-busy="busy">
-      <div class="section-heading">
-        <div>
-          <h1 id="overview-title" tabindex="-1">运行概览</h1>
-          <p class="subtitle">{{ snapshot.runtime.name }}</p>
+    <nav v-if="hasGroup" class="panel-nav" aria-label="面板页面">
+      <ElButton :type="view === 'overview' ? 'primary' : 'default'"
+        :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">运行概览</ElButton>
+      <ElButton :type="view === 'likes' ? 'primary' : 'default'"
+        :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
+    </nav>
+    <div v-if="discardSettings" class="panel-discard" role="alert">
+      <span>群点赞的改动还未保存。</span>
+      <ElButton @click="discardSettings = false">继续编辑</ElButton>
+      <ElButton type="danger" @click="setView('overview', true)">放弃改动</ElButton>
+    </div>
+    <LikeSettings v-if="view === 'likes'" :token="token" @unauthorized="expireSession"
+      @dirty-change="settingsDirty = $event" />
+    <template v-else>
+      <section aria-labelledby="overview-title" :aria-busy="busy">
+        <div class="section-heading">
+          <div>
+            <h1 id="overview-title" tabindex="-1">运行概览</h1>
+            <p class="subtitle">{{ snapshot.runtime.name }}</p>
+          </div>
+          <ElButton :loading="busy" @click="synchronize(token, false)">刷新数据</ElButton>
         </div>
-        <ElButton :loading="busy" @click="synchronize(token, false)">刷新数据</ElButton>
-      </div>
 
-      <p v-if="error" class="error refresh-error" role="alert">{{ error }} 当前仍显示上次读取的数据。</p>
+        <p v-if="error" class="error refresh-error" role="alert">{{ error }} 当前仍显示上次读取的数据。</p>
 
-      <dl class="metrics">
-        <div>
-          <dt>运行状态</dt>
-          <dd class="runtime-status" :class="{ online: snapshot.runtime.status === 'ok' }">
-            <span aria-hidden="true"></span>
-            {{ snapshot.runtime.status === "ok" ? "运行中" : snapshot.runtime.status }}
-          </dd>
+        <dl class="metrics">
+          <div>
+            <dt>运行状态</dt>
+            <dd class="runtime-status" :class="{ online: snapshot.runtime.status === 'ok' }">
+              <span aria-hidden="true"></span>
+              {{ snapshot.runtime.status === "ok" ? "运行中" : snapshot.runtime.status }}
+            </dd>
+          </div>
+          <div>
+            <dt>运行时长</dt>
+            <dd>{{ duration(snapshot.runtime.uptime) }}</dd>
+          </div>
+          <div>
+            <dt>Bun 版本</dt>
+            <dd class="technical">{{ snapshot.runtime.bun }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="plugins" aria-labelledby="plugins-title" :aria-busy="busy">
+        <div class="plugins-heading">
+          <h2 id="plugins-title">插件清单</h2>
+          <p class="updated" role="status">更新于 {{ updatedAt }}</p>
         </div>
-        <div>
-          <dt>运行时长</dt>
-          <dd>{{ duration(snapshot.runtime.uptime) }}</dd>
+
+        <div v-if="snapshot.plugins.length" class="filters">
+          <label for="plugin-search" class="visually-hidden">搜索插件</label>
+          <ElInput id="plugin-search" v-model="query" placeholder="搜索插件" />
+          <label for="plugin-status" class="visually-hidden">按状态筛选</label>
+          <select id="plugin-status" v-model="selectedStatus">
+            <option value="">全部状态</option>
+            <option v-for="(label, status) in pluginStatuses" :key="status" :value="status">{{ label }}</option>
+          </select>
         </div>
-        <div>
-          <dt>Bun 版本</dt>
-          <dd class="technical">{{ snapshot.runtime.bun }}</dd>
+
+        <div v-if="visiblePlugins.length" class="plugin-results">
+          <table aria-labelledby="plugins-title">
+            <thead>
+              <tr><th scope="col">插件</th><th scope="col">状态</th><th scope="col">说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="plugin in visiblePlugins" :key="`${plugin.status}:${plugin.name}`">
+                <th scope="row">{{ plugin.name }}</th>
+                <td><span class="badge" :class="`badge-${plugin.status}`">{{ pluginStatuses[plugin.status] }}</span></td>
+                <td class="reason">{{ plugin.reason ?? "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </dl>
-    </section>
-
-    <section class="plugins" aria-labelledby="plugins-title" :aria-busy="busy">
-      <div class="plugins-heading">
-        <h2 id="plugins-title">插件清单</h2>
-        <p class="updated" role="status">更新于 {{ updatedAt }}</p>
-      </div>
-
-      <div v-if="snapshot.plugins.length" class="filters">
-        <label for="plugin-search" class="visually-hidden">搜索插件</label>
-        <ElInput id="plugin-search" v-model="query" placeholder="搜索插件" />
-        <label for="plugin-status" class="visually-hidden">按状态筛选</label>
-        <select id="plugin-status" v-model="selectedStatus">
-          <option value="">全部状态</option>
-          <option v-for="(label, status) in pluginStatuses" :key="status" :value="status">{{ label }}</option>
-        </select>
-      </div>
-
-      <div v-if="visiblePlugins.length" class="plugin-results">
-        <table aria-labelledby="plugins-title">
-          <thead>
-            <tr><th scope="col">插件</th><th scope="col">状态</th><th scope="col">说明</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="plugin in visiblePlugins" :key="`${plugin.status}:${plugin.name}`">
-              <th scope="row">{{ plugin.name }}</th>
-              <td><span class="badge" :class="`badge-${plugin.status}`">{{ pluginStatuses[plugin.status] }}</span></td>
-              <td class="reason">{{ plugin.reason ?? "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p v-else class="empty" role="status">{{ snapshot.plugins.length ? "没有符合条件的插件。" : "当前没有插件记录。" }}</p>
-    </section>
+        <p v-else class="empty" role="status">{{ snapshot.plugins.length ? "没有符合条件的插件。" : "当前没有插件记录。" }}</p>
+      </section>
+    </template>
   </main>
 </template>

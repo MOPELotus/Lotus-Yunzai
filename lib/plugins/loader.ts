@@ -78,7 +78,7 @@ async function legacyEntries(directory: string): Promise<string[]> {
   if (entries.some((entry) => entry.name === "index.js")) return ["index.js"];
 
   const scripts = entries.filter((entry) => entry.isFile() && !entry.name.startsWith(".") &&
-    entry.name.endsWith(".js")).map((entry) => entry.name);
+    entry.name.endsWith(".js") && entry.name !== "guoba.support.js").map((entry) => entry.name);
   for (const entry of await entriesAt(join(directory, "apps"))) {
     if (entry.isFile() && !entry.name.startsWith(".") && entry.name.endsWith(".js")) {
       scripts.push(join("apps", entry.name));
@@ -138,18 +138,24 @@ export interface PluginLoadRecord {
   readonly reason?: string;
 }
 
+export interface PluginLoadReport {
+  readonly records: readonly PluginLoadRecord[];
+  readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
+}
+
 export async function loadPlugins(
   root: string,
   commands: CommandRegistry,
   legacy: LegacyPlugins,
   services: PluginServices,
-): Promise<readonly PluginLoadRecord[]> {
-  const report: PluginLoadRecord[] = [];
+): Promise<PluginLoadReport> {
+  const records: PluginLoadRecord[] = [];
+  const directories = new Map<string, { path: string; packageName: string }>();
   const seen = new Map<string, string>();
-  const ready: { label: string; entry: string; moduleName?: string }[] = [];
+  const ready: { label: string; entry: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
     console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
-    report.push({ name, status: "rejected", reason });
+    records.push({ name, status: "rejected", reason });
   };
   const allowedScript = async (path: string) => {
     const retired = await retiredScript(path);
@@ -208,12 +214,14 @@ export async function loadPlugins(
       if (typeof meta.entry === "string") {
         const entry = await findEntry(candidate.path, meta.entry);
         if (!await allowedScript(entry)) continue;
-        ready.push({ label, entry, moduleName: name });
+        ready.push({ label, entry, moduleName: name, directory: candidate.path, packageName: name });
       } else {
         const entries = [];
         for (const file of await legacyEntries(candidate.path)) {
           const entry = await findEntry(candidate.path, file);
-          if (await allowedScript(entry)) entries.push({ label: relative(root, entry), entry });
+          if (await allowedScript(entry)) {
+            entries.push({ label: relative(root, entry), entry, directory: candidate.path, packageName: name });
+          }
         }
         if (!entries.length) continue;
         ready.push(...entries);
@@ -224,7 +232,7 @@ export async function loadPlugins(
     }
   }
 
-  for (const { label, entry, moduleName } of ready) {
+  for (const { label, entry, moduleName, directory, packageName } of ready) {
     try {
       const published = await import(pathToFileURL(entry).href);
       if (moduleName) {
@@ -259,17 +267,18 @@ export async function loadPlugins(
         if (result !== "loaded") {
           const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
           console.warn(`[插件] 跳过 ${label}：${reason}`);
-          report.push({ name: label, status: "skipped", reason });
+          records.push({ name: label, status: "skipped", reason });
           continue;
         }
       }
       console.log(`[插件] 已加载 ${label}。`);
-      report.push({ name: label, status: "loaded" });
+      records.push({ name: label, status: "loaded" });
+      if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[插件] 加载 ${label} 失败：${message}`);
-      report.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
+      records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
     }
   }
-  return report;
+  return { records, directories };
 }
