@@ -93,3 +93,15 @@ test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isTerminalManagedUpdateProgress("switching")).toBe(true);
   expect(isManagedUpdateProgress("arbitrary command output")).toBe(false);
 });
+
+test("托管安装仅传目录短名和原会话，不能混用更新参数", () => {
+  const { requested: _, ...base } = request;
+  const install = { ...base, install: "群工具" };
+  expect(parseManagedUpdateRequest({ ...install, url: "https://example.invalid/repo.git" })).toEqual(install);
+  expect(parseManagedUpdateRequest({ ...install, target: { type: "terminal" } })?.install).toBe("群工具");
+  for (const mixed of [
+    { install: "插件" }, { install: "https://example.invalid/a" }, { install: "../test" }, { install: "a\n" },
+    { requested: "system" }, { all: true }, { all: false }, { quiet: true }, { force: true },
+    { target: { type: "scheduled", botIds: [], terminal: true } },
+  ]) expect(parseManagedUpdateRequest({ ...install, ...mixed })).toBeUndefined();
+});

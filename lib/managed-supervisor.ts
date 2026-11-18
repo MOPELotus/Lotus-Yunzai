@@ -1,6 +1,8 @@
 import { readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readInstallCatalog } from "./install-catalog.ts";
+import { preparePluginInstall, type ReadyInstall } from "./install-preflight.ts";
 import { createLocalGit, gitHead } from "./local-git.ts";
 import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { spawnManagedWorker } from "./managed-worker.ts";
@@ -69,19 +71,27 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   async function updateFromWorker(
     worker: Worker, request: ManagedUpdateRequest, report: (status: ManagedUpdateProgress) => void, signal: AbortSignal,
   ) {
-    let ready: ReadyUpdate | ReadyBatchUpdate | undefined;
+    let ready: ReadyUpdate | ReadyBatchUpdate | ReadyInstall | undefined;
     let stage: Awaited<ReturnType<typeof stageUpdate>> | undefined;
+    const log = request.install ? "[插件安装]" : "[更新]";
     try {
       report("checking");
       const directories = new Map(request.directories.map(({ name, path, packageName }) => [name, { path, packageName }]));
-      const result = request.all
+      const approved = request.install ? (await readInstallCatalog(rootUrl)).resolve(request.install) : undefined;
+      if (request.install && !approved) {
+        report("unavailable");
+        return;
+      }
+      const result = approved
+        ? await preparePluginInstall(rootUrl, directories, approved, dirname(root), signal)
+        : request.all
         ? await prepareAllUpdates(rootUrl, directories, signal, request.force)
         : await prepareUpdate(rootUrl, directories, request.requested, signal, request.force);
       if (result.status !== "ready") {
         if ("target" in result && typeof result.target === "string" && result.status !== "current" && !signal.aborted) {
           console.warn(`[更新] ${sanitizeRuntimeLog(result.target, 120)} 未通过全量更新检查（${result.status}）。`);
         }
-        if (!signal.aborted) report(result.status);
+        if (!signal.aborted) report(result.status === "exists" ? "current" : result.status);
         return;
       }
       ready = result;
@@ -89,7 +99,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       report("building");
       stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal);
       if (stopped || signal.aborted || current !== worker) return;
-      const revision = ready.scope === "all" ? ready.host.candidate : ready.candidate;
+      const revision = ready.scope === "all" ? ready.host.candidate : ready.scope === "install" ? stage.revision : ready.candidate;
       const repositories = ready.scope === "all"
         ? Number(ready.host.current !== ready.host.candidate || ready.host.force === true) + ready.plugins.size : undefined;
       let expectedPlugins: readonly string[] | undefined;
@@ -98,6 +108,8 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         expectedPlugins = [...directories.keys()].filter((name) => installed.has(name));
       } else if (ready.scope === "plugin") {
         expectedPlugins = [ready.name];
+      } else if (ready.scope === "install") {
+        expectedPlugins = [...directories.keys(), ready.plugin.name];
       }
       if (stopped || signal.aborted || current !== worker) return;
       report("switching");
@@ -108,10 +120,17 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
           ...(target.terminal ? [{ type: "terminal" as const }] : []),
         ] : [target];
       let archived: string | undefined;
+      const installed = ready.scope === "install" ? ready.plugin : undefined;
       transition = switchWorker(stage, undefined, async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
         const at = Date.now();
         const saved = await Promise.allSettled(targets.map((target) => {
+          if (installed && approved && target.type !== "masters") {
+            const destination = { kind: "install", at, target, name: approved.name } as const;
+            return receipts.save(outcome === "updated"
+              ? { ...destination, result: "installed", revision: installed.revision }
+              : { ...destination, result: "rolled-back" });
+          }
           const destination = { kind: "update", at, target } as const;
           return receipts.save(outcome === "updated"
             ? { ...destination, result: "updated", revision, repositories,
@@ -119,7 +138,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
             : { ...destination, result: "rolled-back" });
         }));
         if (saved.some((item) => item.status === "rejected")) {
-          console.warn("[更新] 部分会话的更新回执未能保存。");
+          console.warn(`${log} 部分会话的操作回执未能保存。`);
         }
       }, expectedPlugins).finally(() => { transition = undefined; });
       const outcome = await transition;
@@ -133,15 +152,15 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     } catch (error) {
       if (!stopped && !signal.aborted) {
         if (current === worker) {
-          if (error instanceof Error) console.warn(`[更新] ${sanitizeRuntimeLog(error.message, 240)}`);
+          if (error instanceof Error) console.warn(`${log} ${sanitizeRuntimeLog(error.message, 240)}`);
           report("failed");
         } else {
-          console.error("[更新] 无法完成托管宿主切换，请核对恢复记录。");
+          console.error(`${log} 无法完成托管宿主切换，请核对恢复记录。`);
         }
       }
     } finally {
-      await stage?.release().catch(() => console.warn("[更新] 无法清理候选目录。"));
-      await ready?.release().catch(() => console.warn("[更新] 无法清理临时候选引用。"));
+      await stage?.release().catch(() => console.warn(`${log} 无法清理候选目录。`));
+      await ready?.release().catch(() => console.warn(`${log} 无法清理临时候选来源。`));
     }
   }
 

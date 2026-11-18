@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
@@ -17,6 +18,8 @@ import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createManagedHandoff } from "./lib/managed-handoff.ts";
+import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
+import { createInstallCommand, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
 import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
@@ -52,6 +55,7 @@ const terminalOutput = console.log.bind(console);
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
+const installFeatureNames = ["安装插件", "system", systemModuleName];
 
 if (import.meta.main) {
   const handoff = createManagedHandoff();
@@ -102,6 +106,38 @@ if (import.meta.main) {
       requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target,
       directories: updateDirectories(),
     }, report);
+  });
+  const installCommand = createInstallCommand({
+    async list() {
+      const catalog = await readInstallCatalog(root);
+      const occupied = new Set(await readdir(new URL("plugins/", root)));
+      return catalog.list.flatMap(({ name, approved }) => {
+        const target = approved ? catalog.resolve(name) : undefined;
+        return target && !occupied.has(target.directory) && !installRejection(target.url, target.directory, target.name) ? [name] : [];
+      });
+    },
+    async install(event, name, report) {
+      const target = sessionTarget(event);
+      if (!target || !plugins) return false;
+      const catalog = await readInstallCatalog(root);
+      const approved = catalog.resolve(name);
+      const legacy = catalog.list.find((entry) => parseInstallName(entry.name) === name);
+      const rejection = approved ? installRejection(approved.url, approved.directory, approved.name) :
+        legacy && installRejection(legacy.url, legacy.name);
+      if (rejection) {
+        await event.reply(rejection);
+        return true;
+      }
+      if (!approved) {
+        report("unavailable");
+        return true;
+      }
+      return handoff.update({ install: name, quiet: false, target, directories: updateDirectories() }, (status) => {
+        if (status === "current") report("exists");
+        else if (status !== "dirty" && status !== "ahead" && status !== "diverged") report(status);
+        else report("failed");
+      });
+    },
   });
 
   function updateDirectories() {
@@ -172,7 +208,7 @@ if (import.meta.main) {
     }
   }
 
-  async function deliverProcessReceipt(botId?: number, update = false) {
+  async function deliverProcessReceipt(botId?: number, update: boolean | "install" = false) {
     try {
       const receipt = await processReceipts.take(botId, update);
       if (!receipt) return;
@@ -186,6 +222,9 @@ if (import.meta.main) {
           reply = `更新成功，提交 ${receipt.revision.slice(0, 12)}`;
         }
         if (receipt.result === "updated" && receipt.preserved) reply += "。原工作区已保留，位置见宿主日志。";
+      } else if (receipt.kind === "install") {
+        reply = receipt.result === "rolled-back" ? `安装 ${receipt.name} 失败，已恢复旧版本。` :
+          `安装 ${receipt.name} 成功，提交 ${receipt.revision.slice(0, 12)}。`;
       } else {
         reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
       }
@@ -197,7 +236,9 @@ if (import.meta.main) {
 
   function queueProcessReceipt(botId?: number) {
     if (stopping) return;
-    const delivery = Promise.all([deliverProcessReceipt(botId), deliverProcessReceipt(botId, true)]).then(() => undefined);
+    const delivery = Promise.all([
+      deliverProcessReceipt(botId), deliverProcessReceipt(botId, true), deliverProcessReceipt(botId, "install"),
+    ]).then(() => undefined);
     pending.add(delivery);
     void delivery.then(() => pending.delete(delivery));
   }
@@ -370,6 +411,11 @@ if (import.meta.main) {
       return;
     }
     if (await legacy.dispatch(command, allowed)) return;
+
+    if (isInstallCommand(command.msg)) {
+      if (allowed(installFeatureNames)) await installCommand(command);
+      return;
+    }
 
     if (command.isMaster && command.recallReply && /^#?撤回$/u.test(command.msg) &&
         allowed(["回复撤回", "system", "@lotus-yunzai/system"])) {

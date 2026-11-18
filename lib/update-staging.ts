@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { builtInDirectories } from "./builtin-modules.ts";
+import { readInstallCatalog } from "./install-catalog.ts";
+import type { ReadyInstall } from "./install-preflight.ts";
 import { createLocalGit, gitHead, isGitCheckout, type LocalGit } from "./local-git.ts";
 import { loadedPluginPath, type PluginDirectories } from "./plugins/loaded-directories.ts";
 import { activateUpdate } from "./update-activation.ts";
-import { buildUpdateCheckout, initializeUpdateSubmodules } from "./update-build.ts";
+import { buildExternalPluginCheckout, buildUpdateCheckout, initializeUpdateSubmodules } from "./update-build.ts";
 import { isUpdateWorktreeDirty, updateBindingFingerprint } from "./update-candidate-git.ts";
 import { checkoutUpdateRevision } from "./update-checkout.ts";
 import { verifyUpdateHealth } from "./update-health.ts";
@@ -199,7 +201,8 @@ async function probeStagedUpdate(directory: string, revision: string, additional
 }
 
 export async function stageUpdate(
-  root: URL, directories: PluginDirectories, ready: ReadyUpdate | ReadyBatchUpdate, stagingParent = tmpdir(), signal?: AbortSignal,
+  root: URL, directories: PluginDirectories, ready: ReadyUpdate | ReadyBatchUpdate | ReadyInstall,
+  stagingParent = tmpdir(), signal?: AbortSignal,
 ) {
   let staging: string | undefined;
   let phase = "校验当前工作区";
@@ -210,6 +213,10 @@ export async function stageUpdate(
     const hostTarget = ready.scope === "all" ? ready.host : ready.scope === "host" ? ready : undefined;
     const hostHead = await readActiveRevision(host, signal, hostTarget);
     if (hostTarget && (hostTarget.directory !== host || hostTarget.current !== hostHead)) {
+      throw new Error("宿主提交已变更。");
+    }
+    const installation = ready.scope === "install" ? ready : undefined;
+    if (installation && (installation.host.directory !== host || installation.host.current !== hostHead)) {
       throw new Error("宿主提交已变更。");
     }
     const targets = new Map<string, ReadyUpdate>(
@@ -276,9 +283,26 @@ export async function stageUpdate(
     if (unmanaged.some((path) => trackedCandidate.has(basename(path)))) {
       throw new Error("候选占用活动插件目录。");
     }
+    if (installation) {
+      const { name, source, revision } = installation.plugin;
+      const destination = join(pluginRoot, name);
+      if (builtIns.has(name) || directories.has(name) || trackedActive.has(name) || trackedCandidate.has(name) ||
+          unmanaged.includes(`plugins/${name}`) || relative(pluginRoot, destination) !== name) {
+        throw new Error("插件安装目录已被占用。");
+      }
+      await checkoutUpdateRevision(source, revision, destination, signal);
+      copies.push({ source, head: revision, destination, stagedHead: revision });
+    }
 
     phase = "运行候选初始化和类型检查";
-    await buildUpdateCheckout(directory, cache, signal);
+    await buildUpdateCheckout(directory, cache, signal, async () => {
+      for (const { source, destination } of copies) {
+        await buildExternalPluginCheckout(destination, cache, source === installation?.plugin.source, signal);
+      }
+      for (const source of localCopies) {
+        await buildExternalPluginCheckout(join(pluginRoot, basename(source)), cache, false, signal);
+      }
+    });
 
     async function checkRevisions(checkSignal?: AbortSignal) {
       if (await readActiveRevision(host, checkSignal, hostTarget) !== hostHead ||
@@ -317,7 +341,7 @@ export async function stageUpdate(
         activating = true;
         try {
           const state = (await Promise.all([
-            ...copies.map(({ source }) => pluginStatePaths(source, true)),
+            ...copies.filter(({ source }) => source !== installation?.plugin.source).map(({ source }) => pluginStatePaths(source, true)),
             ...localCopies.map((source) => pluginStatePaths(source, false)),
           ])).flat();
           await probeStagedUpdate(directory, stagedHead, state);
@@ -327,6 +351,14 @@ export async function stageUpdate(
             if (activePaths.length !== unmanaged.length || activePaths.some((path, index) => path !== unmanaged[index]) ||
                 unmanaged.some((path) => !paths.includes(path))) {
               throw new Error("活动插件目录在检查期间已变更。");
+            }
+            if (installation) {
+              const saved = installation.approval;
+              const approved = (await readInstallCatalog(root)).resolve(saved.name);
+              if (!approved || approved.directory !== saved.directory || approved.url !== saved.url ||
+                  approved.branch !== saved.branch || approved.revision !== saved.revision) {
+                throw new Error("插件安装配置在检查期间已变更。");
+              }
             }
             const forced = [...(hostTarget?.force ? [host] : []), ...copies.filter(({ target }) => target?.force).map(({ source }) => source)];
             await Promise.all(forced.map((source) => verifyArchiveState(host, source, paths)));

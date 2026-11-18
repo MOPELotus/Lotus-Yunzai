@@ -45,7 +45,7 @@ type Candidate = Pick<ReadyUpdate, "current" | "candidate" | "binding" | "releas
 
 const builtIns = new Set(builtInDirectories.values());
 
-async function readTree(git: LocalGit, directory: string, revision: string) {
+export async function readTree(git: LocalGit, directory: string, revision: string) {
   const output = await git(directory, ["ls-tree", "-r", "-t", "-z", "--full-tree", revision]);
   if (output === undefined) return;
   const entries = new Map<string, TreeEntry>();
@@ -93,7 +93,7 @@ function candidateEntries(files: Map<string, TreeEntry>, declaredEntry?: string)
     /^(?:apps\/)?[^./][^/]*\.js$/u.test(path) && path !== "guoba.support.js" && isRegularFile(files.get(path)));
 }
 
-async function pluginCandidateMetadata(
+export async function pluginCandidateMetadata(
   git: LocalGit, name: string, directory: string, files: Map<string, TreeEntry>, signal?: AbortSignal,
 ) {
   const manifest = files.get("package.json");
@@ -139,7 +139,7 @@ async function inspectCandidate(
   };
 }
 
-async function installedIdentities(host: string, name: string, plugin: { path: string; packageName: string }) {
+export async function installedIdentities(host: string, name: string, plugin: { path: string; packageName: string }) {
   const git = createLocalGit();
   if (!git) throw new Error("无法检查插件仓库来源。");
   const path = await loadedPluginPath(host, { ...plugin, name });
@@ -189,7 +189,7 @@ export async function prepareUpdate(
   }
 }
 
-async function trackedPluginNames(directory: string, revision: string) {
+export async function trackedPluginNames(directory: string, revision: string) {
   const git = createLocalGit();
   const listing = await git?.(directory, ["ls-tree", "-z", "--name-only", `${revision}:plugins`]);
   if (listing !== undefined) return new Set(listing.split("\0").filter(Boolean));

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
@@ -481,3 +481,118 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
 
 test.skipIf(!Bun.which("git"))("update_time 在软关机期间静默更新并向各机器人主人回执", () => exerciseScheduledUpdate("interval", false), 35_000);
 test.skipIf(!Bun.which("git"))("update_cron 启动失败后恢复旧提交和原关机时间并向各机器人主人回执", () => exerciseScheduledUpdate("cron", true), 35_000);
+
+async function exerciseInstall(fail: boolean) {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-managed-install-"));
+  try {
+    const { active, old } = await fixtureRepository(temporary, false);
+    const writer = join(temporary, "package-writer");
+    const remote = join(temporary, "package.git");
+    const wrapper = join(temporary, "path");
+    const source = "https://example.invalid/fixtures/install.git";
+    const name = "隔离插件";
+    const directory = "installed-fixture";
+    const installed = join(active, "plugins", directory);
+    const occupied = join(active, "plugins/occupied");
+    await Promise.all([mkdir(writer), mkdir(wrapper), mkdir(join(active, "plugins/rejected"))]);
+    await Promise.all([
+      writeFile(join(active, "plugins/rejected/notes.txt"), "kept directory"),
+      writeFile(join(active, "plugins/loose.js"), "// kept loose script"),
+      symlink("missing-target", occupied),
+      writeFile(join(writer, "package.json"), JSON.stringify({
+        name: "@fixture/installed", type: "module", lotusYunzai: { entry: "./index.js" },
+      })),
+      writeFile(join(writer, "index.js"), (fail
+        ? 'if (Bun.env.FIXTURE_MANAGED_FAILURE === "1") throw new Error("fixture install refused live load");\n'
+        : "") + 'export default { commands: { "#隔离安装验收": () => "隔离插件已加载" } };\n'),
+    ]);
+    git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", remote);
+    git(writer, "init", "--quiet", "--initial-branch=main");
+    git(writer, "add", ".");
+    git(writer, "commit", "--quiet", "-m", "Fixture approved plugin");
+    const revision = git(writer, "rev-parse", "HEAD");
+    git(writer, "remote", "add", "origin", remote);
+    git(writer, "push", "--quiet", "origin", "main");
+
+    // Route only the fixture fetch to a local Git transport. The installed origin remains HTTPS.
+    const quote = (argument: string) => "'" + argument.replaceAll("'", "'\"'\"'") + "'";
+    const binary = quote(Bun.which("git")!);
+    await writeFile(join(wrapper, "git"), `#!/bin/sh
+for argument do
+  if [ "$argument" = fetch ]; then fetching=1; fi
+  if [ "$fetching" = 1 ] && [ "$argument" = origin ]; then
+    GIT_ALLOW_PROTOCOL=file exec ${binary} -c ${quote(`url.file://${remote}.insteadOf=${source}`)} "$@"
+  fi
+done
+exec ${binary} "$@"
+`, { mode: 0o700 });
+    await writeFile(join(active, "config/install.yaml"), JSON.stringify({
+      plugins: {
+        [name]: { directory, url: source, branch: "main", revision },
+        "已占用": { directory: "occupied", url: "https://example.invalid/fixtures/occupied.git", branch: "main", revision },
+      },
+    }));
+
+    const supervisor = bootSupervisor(active, { PATH: wrapper + ":" + process.env.PATH });
+    try {
+      const initial = await supervisor.open(await deadline(supervisor.nextEndpoint(), "安装测试宿主启动超时。"), 99);
+      initial.command("#安装插件-plugin", 42);
+      expectText(await initial.next(), { user_id: 42 }, /^暂无权限/u);
+      initial.command("#安装插件-plugin", 51);
+      const listing = await initial.next();
+      expectText(listing, { user_id: 51 }, /可安装插件列表：[\s\S]*隔离插件/u);
+      expect(listing.params.message).not.toContain("已占用");
+      initial.command("#安装yenai-Plugin", 51);
+      expectText(await initial.next(), { user_id: 51 }, /已归并，请使用 group 和 system/u);
+      initial.command("#安装已占用", 51);
+      expectText(await initial.next(), { user_id: 51 }, /^开始安装/u);
+      expectText(await initial.next(), { user_id: 51 }, /已安装/u);
+      const target = { group_id: 88 };
+      initial.command(`#安装${name}-Plugin`, 51, target.group_id);
+      expectText(await initial.next(), target, /^开始安装/u);
+      const [endpoint] = await Promise.all([
+        deadline(supervisor.nextEndpoint(), "安装后托管宿主启动超时。", 16_000),
+        deadline(initial.closed, "安装时旧连接没有关闭。", 16_000),
+      ]);
+      const other = await supervisor.open(endpoint, 100);
+      await expectVersion(other, old);
+      const original = await supervisor.open(endpoint, 99);
+      const receipt = await original.next();
+      expectText(receipt, target, fail ? /^安装 隔离插件 失败，已恢复旧版本/u : /^安装 隔离插件 成功/u);
+      expect(await readFile(join(active, "plugins/rejected/notes.txt"), "utf8")).toBe("kept directory");
+      expect(await readFile(join(active, "plugins/loose.js"), "utf8")).toBe("// kept loose script");
+      expect((await lstat(occupied)).isSymbolicLink()).toBe(true);
+      await expectVersion(original, old);
+      if (fail) {
+        await expect(lstat(installed)).rejects.toMatchObject({ code: "ENOENT" });
+      } else {
+        expect(receipt.params.message).toContain(revision.slice(0, 12));
+        expect(git(installed, "rev-parse", "HEAD")).toBe(revision);
+        expect(git(installed, "config", "branch.main.merge")).toBe("refs/heads/main");
+        expect(git(installed, "remote", "get-url", "origin")).toBe(source);
+        original.command("#隔离安装验收", 42);
+        expectText(await original.next(), { user_id: 42 }, /隔离插件已加载/u);
+        await appendFile(join(writer, "index.js"), "// later upstream revision\n");
+        git(writer, "add", "index.js");
+        git(writer, "commit", "--quiet", "-m", "Fixture later update");
+        git(writer, "push", "--quiet", "origin", "main");
+        const updated = git(writer, "rev-parse", "HEAD");
+        original.command(`#更新${directory}`, 51);
+        expectText(await original.next(), { user_id: 51 }, /^开始更新/u);
+        const online = await supervisor.open(await deadline(supervisor.nextEndpoint(), "插件更新后启动超时。", 16_000), 99);
+        expectText(await online.next(), { user_id: 51 }, /^更新成功/u);
+        expect(git(installed, "rev-parse", "HEAD")).toBe(updated);
+        await expectVersion(online, old);
+      }
+      expect(other.frames).toEqual([]);
+      await supervisor.stop();
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(!Bun.which("git"))("托管安装检查目录占用，向原会话回执并保留后续插件更新", () => exerciseInstall(false), 35_000);
+test.skipIf(!Bun.which("git"))("托管安装在实际环境未加载时回滚，保留旧插件和原会话回执", () => exerciseInstall(true), 35_000);

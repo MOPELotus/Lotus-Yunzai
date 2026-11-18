@@ -1,7 +1,9 @@
 import { basename, dirname, isAbsolute, join, normalize } from "node:path";
+import { isInstallName } from "./install-command.ts";
 
 export interface ManagedUpdateRequest {
   readonly requested?: string;
+  readonly install?: string;
   readonly all?: boolean;
   readonly force?: boolean;
   readonly quiet: boolean;
@@ -60,13 +62,15 @@ function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined
 
 export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest | undefined {
   if (!record(value)) return;
-  const { requested, all, force, quiet, target, directories } = value;
+  const { requested, install, all, force, quiet, target, directories } = value;
   if ((all !== undefined && typeof all !== "boolean") || (force !== undefined && typeof force !== "boolean") ||
       (requested !== undefined && (all === true || !isManagedUpdateName(requested))) || typeof quiet !== "boolean" ||
       !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit) return;
   const recipient = parseTarget(target);
   if (!recipient) return;
   if (recipient.type === "scheduled" && (all !== true || quiet !== true || force === true)) return;
+  if (install !== undefined && (!isInstallName(install) || install === "插件" || requested !== undefined ||
+      all !== undefined || force !== undefined || quiet || recipient.type === "scheduled")) return;
 
   const plugins: ManagedUpdateRequest["directories"][number][] = [];
   const names = new Set<string>();
@@ -82,7 +86,8 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
   }
 
   return {
-    ...(requested === undefined ? {} : { requested }), ...(all === undefined ? {} : { all }),
+    ...(requested === undefined ? {} : { requested }), ...(install === undefined ? {} : { install }),
+    ...(all === undefined ? {} : { all }),
     ...(force === undefined ? {} : { force }),
     quiet, target: recipient, directories: plugins,
   };

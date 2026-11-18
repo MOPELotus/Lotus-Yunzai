@@ -32,6 +32,47 @@ test("更新结果可单独领取，同一机器人原有重启回执得以保�
   expect(await receipts.take(99)).toEqual(restart);
 });
 
+test("安装、更新与进程回执分槽存放，安装回执只由原账号或终端领取一次", async () => {
+  const { directory, receipts, root } = await fixture();
+  const at = Date.now();
+  const target = { type: "private", botId: 99, id: 42 } as const;
+  const restart = { kind: "restart", at, target } as const;
+  const update = { kind: "update", result: "rolled-back", at, target } as const;
+  const installed = { kind: "install", result: "installed", name: "图鉴-2.0", revision: "a".repeat(40), at, target } as const;
+  const rolledBack = { kind: "install", result: "rolled-back", name: "工具", at, target: { type: "terminal" } } as const;
+  await Promise.all([receipts.save(restart), receipts.save(update), receipts.save(installed), receipts.save(rolledBack)]);
+  expect((await readdir(directory)).sort()).toEqual(["99.install.json", "99.json", "99.update.json", "terminal.install.json"]);
+
+  const next = createProcessReceipts(root);
+  expect(await next.take(100, "install")).toBeUndefined();
+  expect(await next.take()).toBeUndefined();
+  expect(await next.take(99, true)).toEqual(update);
+  await next.discard(99);
+  expect(await next.take(99)).toBeUndefined();
+  const claims = await Promise.all([next.take(99, "install"), receipts.take(99, "install")]);
+  expect(claims.filter(Boolean)).toEqual([installed]);
+  expect(await next.take(undefined, "install")).toEqual(rolledBack);
+  expect(await next.take(undefined, "install")).toBeUndefined();
+});
+
+test("安装回执拒绝不安全名称、错误修订号、主人组和错槽数据", async () => {
+  const { directory, receipts } = await fixture();
+  const at = Date.now();
+  const target = { type: "private", botId: 99, id: 42 } as const;
+  const receipt = { kind: "install", result: "installed", name: "工具", revision: "a".repeat(40), at, target } as const;
+  for (const name of ["../工具", "a..b", "a/b", "工具\n", " x", "a".repeat(65)]) {
+    await expect(receipts.save({ ...receipt, name })).rejects.toThrow("进程回执无效");
+  }
+  await expect(receipts.save({ ...receipt, revision: "abc123" })).rejects.toThrow("进程回执无效");
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "99.install.json"), JSON.stringify({ ...receipt, target: { type: "masters", botId: 99 } }));
+  await writeFile(join(directory, "99.update.json"), JSON.stringify(receipt));
+  expect(await receipts.take(99, "install")).toBeUndefined();
+  expect(await receipts.take(99, true)).toBeUndefined();
+  expect(await readdir(directory)).toEqual([]);
+});
+
 test("回执跨实例保存，终端与不同机器人的目标独立且只领取一次", async () => {
   const { directory, receipts, root } = await fixture();
   const at = Date.now() - 7 * 24 * 60 * 60 * 1_000;

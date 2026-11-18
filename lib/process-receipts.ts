@@ -2,19 +2,31 @@ import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInstallName } from "./install-command.ts";
 import { isGitRevision } from "./local-git.ts";
 
-export type ProcessReceipt = {
-  readonly at: number;
-  readonly target:
-    | { readonly type: "terminal" }
-    | { readonly type: "masters"; readonly botId: number }
-    | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
-} & (
+type ReceiptTarget =
+  | { readonly type: "terminal" }
+  | { readonly type: "masters"; readonly botId: number }
+  | { readonly type: "group" | "private"; readonly botId: number; readonly id: number };
+
+type ProcessOrUpdate = { readonly target: ReceiptTarget } & (
   | { readonly kind: "stop" | "restart" }
   | { readonly kind: "update"; readonly result: "updated"; readonly revision: string; readonly repositories?: number; readonly preserved?: true }
   | { readonly kind: "update"; readonly result: "rolled-back" }
 );
+
+type InstallReceipt = {
+  readonly kind: "install";
+  readonly target: Exclude<ReceiptTarget, { type: "masters" }>;
+  readonly name: string;
+} & (
+  | { readonly result: "installed"; readonly revision: string }
+  | { readonly result: "rolled-back" }
+);
+
+export type ProcessReceipt = { readonly at: number } & (ProcessOrUpdate | InstallReceipt);
+type ReceiptSlot = boolean | "install";
 
 const maxAge = 30 * 24 * 60 * 60 * 1_000;
 const maxClockSkew = 5 * 60 * 1_000;
@@ -39,6 +51,15 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
   const session = receiptTarget(target);
   if (!session) return;
   if (kind === "stop" || kind === "restart") return { kind, at, target: session };
+  if (kind === "install") {
+    const { name, result, revision } = value;
+    if (session.type === "masters" || !isInstallName(name)) return;
+    if (result === "rolled-back") return { kind, at, target: session, name, result };
+    if (result === "installed" && typeof revision === "string" && isGitRevision(revision)) {
+      return { kind, at, target: session, name, result, revision };
+    }
+    return;
+  }
   if (kind !== "update") return;
   if (value.result === "rolled-back") return { kind, at, target: session, result: value.result };
   if (value.result === "updated" && typeof value.revision === "string" && isGitRevision(value.revision)) {
@@ -63,6 +84,10 @@ function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"
 
 function targetBotId(receipt: ProcessReceipt): number | undefined {
   return receipt.target.type === "terminal" ? undefined : receipt.target.botId;
+}
+
+function receiptSlot(kind: ProcessReceipt["kind"]): ReceiptSlot {
+  return kind === "install" ? kind : kind === "update";
 }
 
 async function readReceipt(file: string): Promise<ProcessReceipt | undefined> {
@@ -97,8 +122,8 @@ async function readReceipt(file: string): Promise<ProcessReceipt | undefined> {
 export function createProcessReceipts(root: URL) {
   const directory = fileURLToPath(new URL("data/process-receipts/", root));
 
-  function receiptPath(botId?: number, update = false): string {
-    const suffix = update ? ".update.json" : ".json";
+  function receiptPath(botId?: number, slot: ReceiptSlot = false): string {
+    const suffix = slot === "install" ? ".install.json" : slot ? ".update.json" : ".json";
     if (botId === undefined) return join(directory, `terminal${suffix}`);
     if (positiveInteger(botId)) return join(directory, `${botId}${suffix}`);
     throw new Error("进程回执的机器人账号无效。");
@@ -108,7 +133,7 @@ export function createProcessReceipts(root: URL) {
     async save(receipt: ProcessReceipt): Promise<void> {
       const value = receiptFrom(receipt);
       if (!value) throw new Error("进程回执无效。");
-      const file = receiptPath(targetBotId(value), value.kind === "update");
+      const file = receiptPath(targetBotId(value), receiptSlot(value.kind));
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const staged = join(directory, `.write-${crypto.randomUUID()}`);
       try {
@@ -126,8 +151,8 @@ export function createProcessReceipts(root: URL) {
       }
     },
 
-    async take(botId?: number, update = false): Promise<ProcessReceipt | undefined> {
-      const file = receiptPath(botId, update);
+    async take(botId?: number, slot: ReceiptSlot = false): Promise<ProcessReceipt | undefined> {
+      const file = receiptPath(botId, slot);
       const claimed = join(directory, `.claim-${crypto.randomUUID()}`);
       try {
         await rename(file, claimed);
@@ -138,7 +163,7 @@ export function createProcessReceipts(root: URL) {
 
       try {
         const receipt = await readReceipt(claimed);
-        if (!receipt || targetBotId(receipt) !== botId || (receipt.kind === "update") !== update) return;
+        if (!receipt || targetBotId(receipt) !== botId || receiptSlot(receipt.kind) !== slot) return;
         const age = Date.now() - receipt.at;
         if (age >= -maxClockSkew && age <= maxAge) return receipt;
       } finally {
