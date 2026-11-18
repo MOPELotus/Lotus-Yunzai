@@ -545,6 +545,7 @@ if (import.meta.main) {
       if (oneBot) {
         const server = startOneBot(dispatch, {
           hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
           accepting: () => !stopping && handoff.accepting,
           onBind: queueStartupMessages,
           onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),

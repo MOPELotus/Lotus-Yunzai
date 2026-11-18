@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 interface Frame {
   action: string;
@@ -45,6 +45,7 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
         },
       };
     `);
+    disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "trss-fixture" },

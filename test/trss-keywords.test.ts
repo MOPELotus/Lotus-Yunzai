@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 interface Frame {
   action: string;
@@ -25,6 +25,7 @@ test("旧词条多版本、私聊编辑权限和列表合并转发经过 OneBot 
     const global = JSON.stringify({ 旧词: [[text("旧全局内容")]] });
     await writeFile(groupFile, JSON.stringify({ 旧词: [[text("旧群内容")]] }));
     await writeFile(globalFile, global);
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "keyword-fixture" },

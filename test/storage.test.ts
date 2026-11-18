@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const valkeyServer = Bun.which("valkey-server");
 
@@ -12,6 +12,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
   await mkdir(config, { recursive: true });
   await writeFile(join(config, "other.yaml"), 'master: ["99:51"]\n');
   await writeFile(join(config, "bot.yaml"), "online_msg_exp: 0\n");
+  disableMemberPrewarm(root);
   const host = Bun.spawn([process.execPath, "app.ts"], {
     cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     env: {

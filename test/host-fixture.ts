@@ -1,5 +1,15 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { cp, mkdir, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+
+export function disableMemberPrewarm(root: string) {
+  const primary = join(root, "config", "bot.yaml");
+  const config = existsSync(primary) ? primary : join(root, "config", "config", "bot.yaml");
+  mkdirSync(dirname(config), { recursive: true });
+  if (!existsSync(config) || !/^cache_group_member\s*:/mu.test(readFileSync(config, "utf8"))) {
+    appendFileSync(config, "\ncache_group_member: false\n");
+  }
+}
 
 export async function copyHost(root: string) {
   await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });

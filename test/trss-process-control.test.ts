@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "process-control-onebot-fixture";
 const probe = "#测试进程号";
@@ -153,6 +153,7 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
       `),
     ]);
 
+    disableMemberPrewarm(root);
     const open = async (endpoint: string, botId?: number) => {
       const client = gateway(endpoint, botId);
       clients.push(client);
@@ -227,6 +228,7 @@ test.skipIf(process.platform !== "linux")("授权 stdin 重启保留 PID 和终�
       `),
     ]);
 
+    disableMemberPrewarm(root);
     host = boot(root);
     const pidLine = /^fixture-terminal-pid (\d+)\n/mu;
     expect(Number((await host.output(pidLine))[1])).toBe(host.child.pid);

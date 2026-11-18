@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 interface Frame {
   readonly action: string;
@@ -100,6 +100,7 @@ autoQuit: 2
 masterQQ: [52]
 master: ["99:51", "100:53"]
 `);
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "auto-quit-fixture" },

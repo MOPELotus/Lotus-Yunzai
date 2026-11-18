@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "runtime-diagnostics-fixture";
 const accountTitle = "账号在线时长";
@@ -105,6 +105,7 @@ test("OneBot 运行诊断按机器人隔离主人视图并记录成功插件的�
       `),
       fixturePlugin(root, "diagnostics-failed", 'throw new Error("诊断夹具加载失败");'),
     ]);
+    disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },

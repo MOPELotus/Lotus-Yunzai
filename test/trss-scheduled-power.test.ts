@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const oneBotToken = "scheduled-power-onebot-fixture";
 const httpToken = "scheduled-power-http-fixture";
@@ -73,6 +73,7 @@ test("五段字符串定时关机和六段数组定时开机只通知当前在�
       `),
     ]);
 
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "--preload", "./fixture-clock.js", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: {

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "log-command-fixture";
 const startupMarker = "fixture-plugin-startup-marker";
@@ -72,6 +72,7 @@ test("日志指令只向授权终端和已绑定机器人的私聊主人发送�
         export default class extends plugin {}
       `),
     ]);
+    disableMemberPrewarm(root);
     const processHost = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },

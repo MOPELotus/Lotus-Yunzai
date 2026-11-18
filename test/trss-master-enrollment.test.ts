@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 interface Frame {
   action: string;
@@ -51,6 +51,7 @@ test("主人授权只在同一已绑定机器人私聊生效，立即更新现�
       "# 保留运维注释", 'master: ["99:51", "100:61"]', "masterQQ: [51, 61]", "disablePrivate: true",
       "disableMsg: 请使用账户入口", "foreign: { enabled: false }", "",
     ].join("\n"));
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "enrollment-fixture" },

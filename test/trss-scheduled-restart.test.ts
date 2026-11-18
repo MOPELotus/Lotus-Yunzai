@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "scheduled-restart-fixture";
 
@@ -88,6 +88,7 @@ async function withHost(botConfig: string, preload: string | undefined, run: (fi
       `),
       ...(preload === undefined ? [] : [writeFile(join(root, "fixture-clock.js"), preload)]),
     ]);
+    disableMemberPrewarm(root);
     const args = preload === undefined ? ["app.ts"] : ["--preload", "./fixture-clock.js", "app.ts"];
     const host = Bun.spawn([process.execPath, ...args], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",

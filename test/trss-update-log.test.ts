@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "update-log-fixture";
 const plugin = "history-fixture-plugin";
@@ -121,6 +121,7 @@ test("普通群用户可查询宿主和已加载插件的脱敏 Git 更新日志
       git(directory, "commit", "--quiet", "-m", subject);
     }
 
+    disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 type Incoming = string | { type: string; data: Record<string, string | number> }[];
 interface Frame {
@@ -115,6 +115,7 @@ async function withHost(run: (open: (botId?: number) => Promise<Gateway>) => Pro
         custom(e) { return e.group_id === 78 && e.reply("旧插件已处理撤回"); }
       }
     `);
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "recall-reply-fixture" },

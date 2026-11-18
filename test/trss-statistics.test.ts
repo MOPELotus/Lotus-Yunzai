@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 interface Frame {
   readonly action: string;
@@ -104,6 +104,7 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
 
   async function runHost(segmentOption: string, run: (connect: (botId: number) => Promise<ReturnType<typeof gateway>>) => Promise<void>) {
     await writeFile(join(root, "config/config/bot.yaml"), `msg_type_count: ${segmentOption}\nonline_msg_exp: 0\n`);
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: {

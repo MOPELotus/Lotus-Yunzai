@@ -1,4 +1,5 @@
 import type { GroupMembership, GroupRequestType, RecallResult } from "../messages.ts";
+import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -119,6 +120,24 @@ export class OneBotCalls {
     } catch {
       return undefined;
     }
+  }
+
+  async listMemberDisplay(send: Send, groupId: number): Promise<readonly MemberRosterEntry[]> {
+    if (!isPositiveInteger(groupId)) throw new RangeError("群号无效。");
+    const members = await this.#request(send, "get_group_member_list", { group_id: groupId });
+    if (!Array.isArray(members) || members.length > 10_000) throw new Error("QQ 协议端返回无效的群成员列表。");
+    const seen = new Set<number>();
+    return Array.from(members, (member: unknown) => {
+      if (!isRecord(member) || !isPositiveInteger(member.user_id) ||
+          ("group_id" in member && member.group_id !== groupId) || seen.has(member.user_id)) {
+        throw new Error("QQ 协议端返回无效的群成员列表。");
+      }
+      const id = member.user_id;
+      seen.add(id);
+      const card = memberDisplayName(member.card);
+      const nickname = memberDisplayName(member.nickname);
+      return { id, ...(card === undefined ? {} : { card }), ...(nickname === undefined ? {} : { nickname }) };
+    });
   }
 
   async getGroupRole(send: Send, groupId: number, userId: number, verifyIds = false): Promise<GroupMembership["botRole"] | undefined> {

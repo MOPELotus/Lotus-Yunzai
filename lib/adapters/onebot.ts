@@ -2,6 +2,7 @@ import { segment, type BotEvent, type FriendPoke, type FriendRequest, type Group
 import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
+import { OneBotMemberDisplay } from "./onebot-member-display.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 
@@ -27,6 +28,9 @@ interface ConnectionData {
   readonly mutes: OneBotMutes;
   botId?: number;
   detach?: () => void;
+  display?: OneBotMemberDisplay;
+  skipInitialRoster?: Set<number>;
+  joinRoster?: Map<number, symbol>;
 }
 
 function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string): boolean {
@@ -114,7 +118,7 @@ async function dispatchGroupNotice(
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
-  connectedBotId?: number,
+  connection: ConnectionData,
 ): Promise<void> {
   const { notice_type, user_id, group_id, self_id, operator_id, time } = event;
   if (notice_type !== "group_increase" && notice_type !== "group_decrease") return;
@@ -122,9 +126,33 @@ async function dispatchGroupNotice(
 
   const sub_type = notice_type === "group_increase" ? "increase" : "decrease";
   const action = stringField(event.sub_type);
-  const member = isRecord(event.member) ? event.member : undefined;
-  const selfJoined = sub_type === "increase" && user_id === self_id && self_id === connectedBotId && isId(time);
-  await dispatch({
+  const source = isRecord(event.member) ? event.member : undefined;
+  const display = self_id === connection.botId && connection.display?.closed === false ? connection.display : undefined;
+  const cached = display?.peek(group_id, user_id);
+  const nickname = stringField(event.nickname);
+  const member = source || cached ? {
+    card: stringField(source?.card) ?? cached?.card,
+    nickname: stringField(source?.nickname) ?? (display ? nickname ?? cached?.nickname : undefined),
+  } : undefined;
+  const selfJoined = sub_type === "increase" && user_id === self_id && self_id === connection.botId;
+  const joins = display ? connection.joinRoster : undefined;
+  const join = selfJoined && joins ? Symbol() : undefined;
+  if (display) {
+    if (user_id === self_id) {
+      connection.skipInitialRoster?.add(group_id);
+      if (join) joins?.set(group_id, join);
+      else {
+        joins?.delete(group_id);
+        display.forget(group_id);
+      }
+    } else if (sub_type === "decrease") {
+      display.remove(group_id, user_id);
+    } else {
+      display.remember(group_id, user_id, { card: stringField(source?.card), nickname: stringField(source?.nickname) ?? nickname });
+    }
+  }
+  let left = false;
+  const notice: GroupNotice = {
     post_type: "notice",
     notice_type: "group",
     sub_type,
@@ -137,10 +165,15 @@ async function dispatchGroupNotice(
     operator_id: isId(operator_id) ? operator_id : undefined,
     group_name: stringField(event.group_name),
     getGroupName: () => calls.getGroupName(send, group_id),
-    inspectAutoQuit: selfJoined ? (maxMembers) => calls.inspectAutoQuit(send, group_id, self_id, time, maxMembers) : undefined,
-    leaveGroup: selfJoined ? () => calls.leaveGroup(send, group_id) : undefined,
-    nickname: stringField(event.nickname),
-    member: member && { card: stringField(member.card), nickname: stringField(member.nickname) },
+    inspectAutoQuit: selfJoined && isId(time) ? (maxMembers) => calls.inspectAutoQuit(send, group_id, self_id, time, maxMembers) : undefined,
+    leaveGroup: selfJoined && isId(time) ? async () => {
+      const accepted = await calls.leaveGroup(send, group_id);
+      left ||= accepted;
+      if (accepted && join && joins?.get(group_id) === join) display?.forget(group_id);
+      return accepted;
+    } : undefined,
+    nickname: nickname ?? (display ? member?.nickname : undefined),
+    member,
     dismiss: typeof event.dismiss === "boolean" ? event.dismiss : undefined,
     isGroup: true,
     isPrivate: false,
@@ -150,7 +183,13 @@ async function dispatchGroupNotice(
       if (message === undefined) return false;
       return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
     },
-  });
+  };
+  try {
+    await dispatch(notice);
+    if (join && joins?.get(group_id) === join && !left) void display?.warm(group_id);
+  } finally {
+    if (join && joins?.get(group_id) === join) joins?.delete(group_id);
+  }
 }
 
 async function dispatchFriendPoke(
@@ -183,6 +222,7 @@ async function dispatchMessage(
   isMaster: (bot: number, user: number) => boolean,
   mutes?: OneBotMutes,
   connectedBotId?: number,
+  display?: OneBotMemberDisplay,
 ): Promise<void> {
   const userId = event.user_id;
   if (event.post_type !== "message" || !isId(userId) || userId === event.self_id) return;
@@ -200,6 +240,10 @@ async function dispatchMessage(
   const incoming = decodeOneBotMessage(event.message, selfId);
   if (incoming === undefined) return;
   const { text, ...messageFields } = incoming;
+  const sender = isRecord(event.sender) ? event.sender : undefined;
+  if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {
+    display?.remember(target.group_id, userId, { card: stringField(sender.card), nickname: stringField(sender.nickname) });
+  }
 
   const messageType = event.message_type;
   const botMute = mutes && selfId !== undefined && "group_id" in target
@@ -208,7 +252,6 @@ async function dispatchMessage(
   const owner = selfId !== undefined && isMaster(selfId, userId);
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
-  const sender = isRecord(event.sender) ? event.sender : undefined;
   await dispatch({
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -279,12 +322,14 @@ export function startOneBot(
     isMaster: (bot: number, user: number) => boolean;
     masterIds: (bot: number) => readonly number[];
     groups: OneBotGroups;
+    prewarmGroupMembers?: boolean;
     accepting?: () => boolean;
     onBind?: (botId: number) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
   },
 ) {
+  const memberDisplays = new Map<number, OneBotMemberDisplay>();
   function sender(socket: Bun.ServerWebSocket<ConnectionData>, source: MessageIdentity): Send {
     return (frame) => {
       const sent = sendFrame(socket, JSON.stringify(frame));
@@ -295,11 +340,34 @@ export function startOneBot(
 
   function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {
     socket.data.botId = botId;
+    const send = sender(socket, { self_id: botId });
     socket.data.detach = options.groups.connect(botId, {
       calls: socket.data.calls,
-      send: sender(socket, { self_id: botId }),
+      send,
     });
     options.onBind?.(botId);
+    memberDisplays.get(botId)?.close();
+    const display = new OneBotMemberDisplay((groupId) => socket.data.calls.listMemberDisplay(send, groupId));
+    memberDisplays.set(botId, display);
+    socket.data.display = display;
+    if (options.prewarmGroupMembers) {
+      socket.data.joinRoster = new Map();
+      const skipped = new Set<number>();
+      socket.data.skipInitialRoster = skipped;
+      void (async () => {
+        try {
+          const groups = await socket.data.calls.listGroups(send);
+          for (const groupId of new Set(groups.map(({ id }) => id))) {
+            if (display.closed) break;
+            if (!skipped.has(groupId)) await display.warm(groupId);
+          }
+        } catch {
+          // Roster prewarming is optional and does not affect the connection.
+        } finally {
+          socket.data.skipInitialRoster = undefined;
+        }
+      })();
+    }
   }
 
   return Bun.serve<ConnectionData>({
@@ -355,7 +423,10 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
-            if (message.notice_type === "offline_file" && isId(message.self_id) &&
+            if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
+                isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
+              socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
+            } else if (message.notice_type === "offline_file" && isId(message.self_id) &&
                 !message.group_id && isRecord(message.file)) {
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
@@ -364,12 +435,12 @@ export function startOneBot(
             } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
               await dispatchFriendPoke(dispatch, send, message, options.isMaster);
             } else {
-              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, botId);
+              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, socket.data);
             }
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options);
           } else {
-            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes, botId);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes, botId, socket.data.display);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");
@@ -377,6 +448,9 @@ export function startOneBot(
       },
       close(socket) {
         socket.data.detach?.();
+        const { botId, display } = socket.data;
+        display?.close();
+        if (botId !== undefined && memberDisplays.get(botId) === display) memberDisplays.delete(botId);
         socket.data.calls.close();
       },
     },

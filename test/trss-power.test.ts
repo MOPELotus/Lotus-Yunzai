@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const oneBotToken = "power-onebot-fixture";
 const httpToken = "power-http-fixture";
@@ -133,6 +133,7 @@ test("主人关机和开机在多个 OneBot 账号间暂停和恢复全局派发
         };
       `),
     ]);
+    disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: {

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "managed-update-onebot-fixture";
 const liveFailure = "fixture candidate exited only under the supervisor environment";
@@ -215,6 +215,7 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
     await writeFile(join(active, "config/config/bot.yaml"), schedule === "interval"
       ? "update_time: 0.025\n" : 'update_cron: "0 * * * * *"\n');
   }
+  disableMemberPrewarm(active);
   if (audit) {
     await Promise.all([mkdir(join(active, "data")), mkdir(join(active, "logs"))]);
     await Promise.all([

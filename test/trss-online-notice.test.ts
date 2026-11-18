@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createProcessReceipts } from "../lib/process-receipts.ts";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const valkeyServer = Bun.which("valkey-server");
 const token = "online-notice-fixture";
@@ -108,6 +108,7 @@ test.skipIf(!valkeyServer)("TRSS 上线通知按绑定机器人和 Valkey 冷却
   const key = (bot: number) => `Yz:loginMsg:${bot}`;
 
   async function withHost(run: (open: (botId?: number) => Promise<Gateway>) => Promise<void>) {
+    disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_VALKEY_URL: url },
