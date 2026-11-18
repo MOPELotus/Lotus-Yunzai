@@ -262,6 +262,11 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           ];
         },
         "#消息段": (args, { message, raw_message }) => JSON.stringify({ args, message, raw_message }),
+        "#群审核能力": async (args, context) => {
+          if (!context.reviewGroupRequest) return "无审核能力";
+          const approved = await context.reviewGroupRequest("test-event", "invite", false, args);
+          return approved ? "审核已确认" : "审核被拒绝";
+        },
       } };
       export const apps = {
         recall: class extends plugin {
@@ -270,6 +275,14 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           }
           send() {
             return this.reply("测试撤回", true, { at: true, recallMsg: 0.05 });
+          }
+        },
+        request: class extends plugin {
+          constructor() { super({ event: "request.group.invite", priority: 1 }); }
+          async accept(e) {
+            if (e.group_id !== 90) return false;
+            await e.notifyMasters("群 " + e.group_id + " 邀请，发起人 " + e.user_id + "，附言 " + e.comment);
+            return "return";
           }
         },
       };
@@ -474,6 +487,32 @@ failsMsg: 协议拒绝
         client.addEventListener("message", ({ data }) => ok(JSON.parse(data)), { once: true });
       });
     }
+
+    const invited = {
+      post_type: "request", request_type: "group", sub_type: "invite", self_id: 99,
+      group_id: 90, user_id: 62, comment: "测试邀请", flag: "test-event",
+    };
+    const notified = nextFrame();
+    client.send(JSON.stringify({ ...invited, flag: 1 }));
+    client.send(JSON.stringify(invited));
+    const invitation = await notified;
+    expect(invitation).toMatchObject({ action: "send_msg", params: {
+      message_type: "private", user_id: 51, message: "群 90 邀请，发起人 62，附言 测试邀请",
+    } });
+    client.send(JSON.stringify({ echo: invitation.echo, status: "ok", retcode: 0 }));
+    expect(await send("#群审核能力 测试", { user_id: 51 })).toMatchObject({ group_id: 77, message: "无审核能力" });
+    expect(await send("#群审核能力 测试", { message_type: "private" })).toMatchObject({ user_id: 42, message: "无审核能力" });
+    const review = nextFrame();
+    client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", user_id: 51, message: "#群审核能力 测试" }));
+    const decision = await review;
+    expect(decision).toMatchObject({ action: "set_group_add_request", params: {
+      flag: "test-event", sub_type: "invite", approve: false, reason: "测试",
+    } });
+    const denial = nextFrame();
+    client.send(JSON.stringify({ echo: decision.echo, status: "failed", retcode: 1403 }));
+    expect(await denial).toMatchObject({ action: "send_msg", params: {
+      message_type: "private", user_id: 51, message: "审核被拒绝",
+    } });
 
     const joinEvent = {
       post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: 99,

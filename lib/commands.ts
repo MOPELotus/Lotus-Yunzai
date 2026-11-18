@@ -1,7 +1,7 @@
 import type { MessageEvent, MessageReply } from "./messages.ts";
 
 export type CommandContext = Readonly<Pick<
-  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend"
+  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" | "reviewGroupRequest"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">>>;
 
 export type CommandHandler = (argument: string, context: CommandContext) => MessageReply | Promise<MessageReply>;
@@ -88,10 +88,11 @@ export class CommandRegistry {
     const name = separator === -1 ? input : input.slice(0, separator);
     const argument = separator === -1 ? "" : input.slice(separator).trimStart();
 
-    const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend,
+    const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
       message: segments, raw_message } = context;
     return this.#handlers.get(name)?.(argument, {
       message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message: segments, raw_message,
+      reviewGroupRequest,
       member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
     });
   }

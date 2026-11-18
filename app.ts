@@ -5,7 +5,7 @@ import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { CommandRegistry } from "./lib/commands.ts";
-import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
+import type { BotEvent, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
@@ -45,7 +45,7 @@ if (import.meta.main) {
     shutdown.resolve();
   }
 
-  async function dispatch(event: MessageEvent | GroupNotice) {
+  async function dispatch(event: BotEvent) {
     if (stopping) return;
     const handling = event.post_type === "message" ? dispatchMessage(event) : legacy.dispatch(event);
     pending.add(handling);
@@ -102,7 +102,8 @@ if (import.meta.main) {
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
-          hostname, ...oneBot, groups, isMaster: permissions.isMaster, http: shared ? fetch : undefined,
+          hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          http: shared ? fetch : undefined,
         });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);

@@ -238,7 +238,7 @@ test("群发送按在线 OneBot 账号派发，回执区分未发送与连接中
   const groups = new OneBotGroups();
   const messageSeen = Promise.withResolvers<void>();
   const server = startOneBot(async () => messageSeen.resolve(), {
-    hostname: "127.0.0.1", port: 0, isMaster: () => false, groups,
+    hostname: "127.0.0.1", port: 0, isMaster: () => false, masterIds: () => [], groups,
     auth: new Headers({ Authorization: "Bearer group-test" }),
   });
   const url = new URL("/OneBotv11", server.url);

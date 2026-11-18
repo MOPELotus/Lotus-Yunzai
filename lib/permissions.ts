@@ -21,6 +21,9 @@ export async function readMasterPermissions(root: URL) {
     isMaster(bot: number, user: number) {
       return owners.get(String(bot))?.has(String(user)) ?? false;
     },
+    masterIds(bot: number): readonly number[] {
+      return [...owners.get(String(bot)) ?? []].map(Number).filter(Number.isSafeInteger);
+    },
   };
 }
 

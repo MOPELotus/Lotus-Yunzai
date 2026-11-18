@@ -15,6 +15,7 @@ export interface MessageEvent {
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
+  readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
@@ -51,6 +52,27 @@ export interface GroupNotice {
   readonly isMaster: boolean;
   readonly reply: MessageEvent["reply"];
 }
+
+export type GroupRequestType = "add" | "invite";
+
+export interface GroupRequest {
+  readonly post_type: "request";
+  readonly request_type: "group";
+  readonly sub_type: GroupRequestType;
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly group_id: number;
+  readonly flag: string;
+  readonly comment?: string;
+  readonly isGroup: true;
+  readonly isPrivate: false;
+  readonly isMaster: boolean;
+  readonly approve: (approve?: boolean, reason?: string) => Promise<boolean>;
+  readonly notifyMasters: (message: string) => Promise<number>;
+  readonly reply: MessageEvent["reply"];
+}
+
+export type BotEvent = MessageEvent | GroupNotice | GroupRequest;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

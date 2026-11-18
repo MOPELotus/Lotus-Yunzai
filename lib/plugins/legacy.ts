@@ -1,11 +1,11 @@
-import { segment, type GroupNotice, type MessageEvent } from "../messages.ts";
+import { segment, type BotEvent, type MessageEvent } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
-type PluginEvent = MessageEvent | GroupNotice;
+type PluginEvent = BotEvent;
 type PluginClass = new (event?: PluginEvent) => PluginInstance;
 interface Rule {
   readonly reg: RegExp;
@@ -38,7 +38,8 @@ function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
 }
 
 function matches(pattern: string, event: PluginEvent): boolean {
-  const subtype = event.post_type === "message" ? event.message_type : event.notice_type;
+  const subtype = event.post_type === "message" ? event.message_type
+    : event.post_type === "notice" ? event.notice_type : event.request_type;
   const parts = [event.post_type, subtype, event.sub_type];
   return pattern.split(".").every((value, index) =>
     parts[index] !== undefined && (value === "*" || value === parts[index]));

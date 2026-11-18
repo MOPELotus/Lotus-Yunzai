@@ -1,8 +1,15 @@
+import type { GroupRequestType } from "../messages.ts";
+
 type ResponseValue = Record<string, unknown> | undefined;
 type Send = (message: string) => boolean;
 
 export class OneBotNotSentError extends Error {
   readonly delivery = "not-sent";
+}
+class OneBotRejectedError extends Error {}
+
+export function isGroupRequestFlag(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 4096;
 }
 
 export class OneBotCalls {
@@ -20,7 +27,8 @@ export class OneBotCalls {
       if (!send(JSON.stringify({ action, params, echo }))) throw new OneBotNotSentError("QQ 协议连接已关闭。");
       const result = await promise;
       if (!result) throw new Error("未收到 QQ 协议端确认。");
-      if (result.status !== "ok" || result.retcode !== 0) throw new Error("QQ 协议端未接受请求。");
+      if (result.status === "failed") throw new OneBotRejectedError("QQ 协议端未接受请求。");
+      if (result.status !== "ok" || result.retcode !== 0) throw new Error("QQ 协议端返回了未确认的请求结果。");
       return result.data;
     } finally {
       clearTimeout(timer);
@@ -49,6 +57,18 @@ export class OneBotCalls {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {
+    if (!isGroupRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
+        typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;
+    try {
+      await this.#request(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+      return true;
+    } catch (error) {
+      if (error instanceof OneBotRejectedError) return false;
+      throw error;
     }
   }
 

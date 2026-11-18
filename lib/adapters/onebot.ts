@@ -1,6 +1,6 @@
-import { segment, type GroupNotice, type MessageEvent } from "../messages.ts";
+import { segment, type BotEvent, type GroupNotice, type GroupRequest, type MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
-import { OneBotCalls } from "./onebot-calls.ts";
+import { isGroupRequestFlag, OneBotCalls } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
@@ -24,6 +24,39 @@ interface ConnectionData {
 
 function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string): boolean {
   return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
+}
+
+async function dispatchGroupRequest(
+  dispatch: (event: GroupRequest) => Promise<void>,
+  send: (message: string) => boolean,
+  event: Record<string, unknown>,
+  calls: OneBotCalls,
+  permissions: { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
+): Promise<void> {
+  const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
+  if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") ||
+      !isId(self_id) || !isId(user_id) || !isId(group_id) || !isGroupRequestFlag(flag)) return;
+
+  await dispatch({
+    post_type: "request", request_type, sub_type, self_id, user_id, group_id, flag,
+    comment: stringField(event.comment),
+    isGroup: true,
+    isPrivate: false,
+    isMaster: permissions.isMaster(self_id, user_id),
+    approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
+    async notifyMasters(message) {
+      if (typeof message !== "string" || !message) return 0;
+      const recipients = permissions.masterIds(self_id).filter((id) => id !== self_id);
+      const delivered = await Promise.all(recipients.map((user_id) =>
+        calls.replyWithConfirmation(send, { message_type: "private", user_id, message, auto_escape: true })));
+      return delivered.filter(Boolean).length;
+    },
+    reply(reply) {
+      const message = encodeOneBotReply(reply);
+      if (message === undefined) return false;
+      return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
+    },
+  });
 }
 
 async function dispatchGroupNotice(
@@ -91,6 +124,7 @@ async function dispatchMessage(
   const { text, ...messageFields } = incoming;
 
   const messageType = event.message_type;
+  const owner = selfId !== undefined && isMaster(selfId, userId);
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
   const sender = isRecord(event.sender) ? event.sender : undefined;
@@ -112,10 +146,13 @@ async function dispatchMessage(
     } : undefined,
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
-    isMaster: selfId !== undefined && isMaster(selfId, userId),
+    isMaster: owner,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
+    reviewGroupRequest: messageType === "private" && owner
+      ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
+      : undefined,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
       const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))
@@ -134,12 +171,13 @@ async function dispatchMessage(
 }
 
 export function startOneBot(
-  dispatch: (event: MessageEvent | GroupNotice) => Promise<void>,
+  dispatch: (event: BotEvent) => Promise<void>,
   options: {
     hostname: string;
     port: number;
     auth: Headers;
     isMaster: (bot: number, user: number) => boolean;
+    masterIds: (bot: number) => readonly number[];
     groups: OneBotGroups;
     http?: (request: Request) => Response | Promise<Response>;
   },
@@ -200,6 +238,8 @@ export function startOneBot(
           const send = (output: string) => sendFrame(socket, output);
           if (message.post_type === "notice") {
             await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster);
+          } else if (message.post_type === "request") {
+            await dispatchGroupRequest(dispatch, send, message, calls, options);
           } else {
             await dispatchMessage(dispatch, send, message, calls, options.isMaster);
           }
