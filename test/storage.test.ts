@@ -1,11 +1,100 @@
 import { expect, test } from "bun:test";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { copyHost } from "./host-fixture.ts";
 
 const valkeyServer = Bun.which("valkey-server");
+
+async function verifyNoticePush(root: string, storageUrl: string) {
+  const config = join(root, "config", "config");
+  await mkdir(config, { recursive: true });
+  await writeFile(join(config, "other.yaml"), 'master: ["99:51"]\n');
+  const host = Bun.spawn([process.execPath, "app.ts"], {
+    cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    env: {
+      PATH: process.env.PATH, LOTUS_VALKEY_URL: storageUrl,
+      LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "notice-fixture",
+    },
+  });
+  let socket: WebSocket | undefined;
+  const timeout = setTimeout(() => host.kill("SIGKILL"), 4_000);
+  const reader = host.stdout.getReader();
+  try {
+    let startup = "";
+    const decoder = new TextDecoder();
+    let endpoint: string | undefined;
+    while (!endpoint) {
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error(`OneBot 未启动：${await new Response(host.stderr).text()}`);
+      startup += decoder.decode(chunk.value, { stream: true });
+      endpoint = /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(startup)?.[0];
+    }
+    const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
+    const client = new BunWebSocket(endpoint, {
+      headers: { Authorization: "Bearer notice-fixture", "X-Client-Role": "Universal", "X-Self-ID": "99" },
+    });
+    socket = client;
+    await new Promise<void>((resolve, reject) => {
+      client.addEventListener("open", () => resolve(), { once: true });
+      client.addEventListener("error", reject, { once: true });
+    });
+
+    function nextFrame(): Promise<{ action: string; echo: string; params: Record<string, unknown> }> {
+      return new Promise((resolve, reject) => {
+        const events = new AbortController();
+        client.addEventListener("message", ({ data }) => {
+          events.abort();
+          resolve(JSON.parse(data));
+        }, { signal: events.signal });
+        client.addEventListener("close", () => {
+          events.abort();
+          reject(new Error("等待公告消息时连接关闭"));
+        }, { signal: events.signal });
+      });
+    }
+
+    function command(message: string, user_id = 51) {
+      const next = nextFrame();
+      client.send(JSON.stringify({ post_type: "message", message_type: "private", sub_type: "friend",
+        self_id: 99, user_id, message }));
+      return next;
+    }
+
+    function confirm(echo: string, data: unknown) {
+      const next = nextFrame();
+      client.send(JSON.stringify({ echo, status: "ok", retcode: 0, data }));
+      return next;
+    }
+
+    expect(await command("#推送公告", 42)).toMatchObject({ action: "send_msg", params: {
+      user_id: 42, message: "仅机器人主人可管理公告。",
+    } });
+    const discovery = await command("#推送公告");
+    expect(discovery.action).toBe("get_group_list");
+    const membership = [{ group_id: 77, group_name: "目标群" }, { group_id: 78, group_name: "群外" }];
+    const delivery = await confirm(discovery.echo, membership);
+    expect(delivery).toMatchObject({ action: "send_msg", params: {
+      group_id: 77, auto_escape: true, message: "【公告通知】\n旧公告 [CQ:at,qq=all]\n2026-11-19 00:00",
+    } });
+    const summary = await confirm(delivery.echo, { message_id: -601 });
+    expect(summary.params).toMatchObject({ user_id: 51, message: expect.stringContaining("确认送达 1") });
+    const receipt = await command("#公告推送回执 00001ABC");
+    expect(receipt.params).toMatchObject({ user_id: 51, message: expect.stringContaining("群 77 · 机器人 99 · 确认送达 · 消息 -601") });
+    const second = await command("#推送公告");
+    expect(second.action).toBe("get_group_list");
+    const duplicate = await confirm(second.echo, membership);
+    expect(duplicate.params).toMatchObject({ user_id: 51, message: expect.stringContaining("已跳过 1 个已有投递记录的群") });
+  } finally {
+    clearTimeout(timeout);
+    socket?.close();
+    reader.releaseLock();
+    if (host.exitCode === null) host.kill();
+    await host.exited;
+  }
+}
+
 test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期、事务与宿主启动", async () => {
   const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   const { port } = listener;
@@ -99,6 +188,9 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
     } finally {
       clearTimeout(hostTimeout);
     }
+
+    await legacy.sAdd("notice:whitelist", "77");
+    await verifyNoticePush(root, url);
 
     await Promise.all([closeStorage(), closeStorage()]);
     expect(() => storage("atlas")).toThrow("存储未配置");
