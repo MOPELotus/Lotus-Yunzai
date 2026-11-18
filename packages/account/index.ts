@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { link, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,7 +9,7 @@ export type Game = typeof games[number];
 export const MAX_PROFILE_ID = 255;
 
 export class ProfileError extends Error {
-  constructor(readonly code: "missing" | "invalid" | "login-required" | "role-missing", message: string) {
+  constructor(readonly code: "missing" | "invalid" | "login-required" | "role-missing" | "changed", message: string) {
     super(message);
     this.name = "ProfileError";
   }
@@ -112,13 +113,37 @@ function decodeProfile(buffer: Buffer, qq: string, id: number) {
   return readIdentity(Bun.YAML.parse(buffer.toString("utf8")), qq, id);
 }
 
+export interface RefreshedCredentials {
+  readonly cookie: string;
+  readonly ltoken: string;
+  readonly stokenCookie?: string;
+}
+
+const writes = new Map<string, Promise<void>>();
+
+function revisionOf(snapshot: Buffer): string {
+  return createHash("sha256").update(snapshot).digest("hex");
+}
+
+async function serializeWrite<T>(path: string, action: () => Promise<T>): Promise<T> {
+  const operation = (writes.get(path) ?? Promise.resolve()).then(action);
+  const done = operation.then(() => undefined, () => undefined);
+  writes.set(path, done);
+  try {
+    return await operation;
+  } finally {
+    if (writes.get(path) === done) writes.delete(path);
+  }
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
 
   async function read(qq: string, id: number) {
     const path = join(root, profileFilename(qq, id));
     try {
-      return decodeProfile(await readFileSnapshot(path), qq, id);
+      const snapshot = await readFileSnapshot(path);
+      return { ...decodeProfile(snapshot, qq, id), revision: revisionOf(snapshot) };
     } catch (error) {
       if (error instanceof ProfileError) throw error;
       if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
@@ -153,8 +178,51 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }
     },
     async accountContext(qq: string, id = 1) {
-      const { account, device } = await readLoggedIn(qq, id);
-      return { qq, profileId: id, account, device };
+      const { account, device, revision } = await readLoggedIn(qq, id);
+      return { qq, profileId: id, account, device, revision };
+    },
+    async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
+      const name = profileFilename(qq, id);
+      if (!credentials.cookie.trim() || !credentials.ltoken.trim() ||
+          [credentials.cookie, credentials.ltoken, credentials.stokenCookie ?? ""].some((value) => /[\r\n\0]/u.test(value))) {
+        throw new ProfileError("invalid", "刷新响应的凭据格式无效。");
+      }
+
+      const directory = await realpath(root);
+      const path = join(directory, name);
+      return serializeWrite(path, async () => {
+        const verify = async () => {
+          const content = await readFileSnapshot(path);
+          if (revisionOf(content) !== revision) {
+            throw new ProfileError("changed", "档案已变更，请重新发起请求。");
+          }
+          return content;
+        };
+        const current: unknown = Bun.YAML.parse((await verify()).toString("utf8"));
+        if (!readIdentity(current, qq, id).summary.loggedIn) {
+          throw new ProfileError("login-required", "档案尚未登录。");
+        }
+        const data = record(current);
+        const account = {
+          ...record(data.account), cookie: credentials.cookie, ltoken: credentials.ltoken,
+          ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
+        };
+        const updated = { ...data, account };
+        const yaml = Bun.YAML.stringify(updated);
+        if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
+
+        const temporary = await mkdtemp(join(directory, ".profile-write-"));
+        try {
+          const staged = join(temporary, name);
+          await writeFile(staged, yaml, { mode: 0o600 });
+          await verify();
+          await rename(staged, path);
+        } finally {
+          await rm(temporary, { recursive: true, force: true });
+        }
+        const latest = readIdentity(updated, qq, id);
+        return { qq, profileId: id, account: latest.account, device: latest.device, revision: revisionOf(Buffer.from(yaml)) };
+      });
     },
     async requestContext(qq: string, id: number, game: Game, uid?: string) {
       if (!games.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
@@ -165,7 +233,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           ?? roles.find((item) => item.chosen) ?? roles[0];
       if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
 
-      return { qq, profileId: id, game, role, account: profile.account, device: profile.device };
+      return {
+        qq, profileId: id, game, role, account: profile.account, device: profile.device, revision: profile.revision,
+      };
     },
   };
 }

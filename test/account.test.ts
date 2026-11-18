@@ -135,3 +135,66 @@ test("档案导入预检无写入，并行导入与重跑保留目标冲突", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("角色查询仅对 Cookie 过期刷新本档案一次，换绑后的凭据不会被迟到结果覆盖", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-refresh-"));
+  try {
+    const file = join(root, "42.yaml");
+    const original = `
+user: { qq: "42" }
+profile: { id: 1, name: 测试 }
+account: { cookie: expired, stoken: retained, ltoken: old }
+device: { id: fixture-device }
+schedule: { mode: fixed }
+`;
+    await writeFile(file, original);
+    const profiles = createProfileStore(root);
+    const context = await profiles.accountContext("42");
+    const seen: Array<string | null> = [];
+    let exchanges = 0;
+    const client = createHoyoClient(async (_url, init) => {
+      const cookie = new Headers(init.headers).get("Cookie");
+      seen.push(cookie);
+      return cookie === "renewed"
+        ? Response.json({ retcode: 0, data: { list: [] } })
+        : Response.json({ retcode: -100 });
+    }, {
+      profiles,
+      async exchange(snapshot) {
+        expect(snapshot.account.stoken).toBe("retained");
+        expect(snapshot.device.id).toBe("fixture-device");
+        exchanges++;
+        await Bun.sleep(10);
+        return { cookie: "renewed", ltoken: "updated" };
+      },
+    });
+    expect(await Promise.all([client.listRoles(context, "gs"), client.listRoles(context, "gs")]))
+      .toEqual([[], []]);
+    expect(exchanges).toBe(1);
+    expect(seen).toEqual(["expired", "expired", "renewed", "renewed"]);
+    expect((await profiles.accountContext("42")).account).toMatchObject({
+      cookie: "renewed", ltoken: "updated", stoken: "retained",
+    });
+    expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ schedule: { mode: "fixed" } });
+
+    const updated = await profiles.accountContext("42");
+    const racing = createHoyoClient(async () => Response.json({ retcode: -100 }), {
+      profiles,
+      async exchange() {
+        await writeFile(file, original.replace("expired", "rebound").replace("retained", "new-login"));
+        return { cookie: "stale-result", ltoken: "stale-token" };
+      },
+    });
+    await expect(racing.listRoles(updated, "gs")).rejects.toMatchObject({ code: "refresh" });
+    expect((await profiles.accountContext("42")).account).toMatchObject({ cookie: "rebound", stoken: "new-login" });
+
+    const ordinaryError = createHoyoClient(async () => Response.json({ retcode: 10041 }), {
+      profiles,
+      async exchange() { throw new Error("协议风控不能触发刷新"); },
+    });
+    await expect(ordinaryError.listRoles(await profiles.accountContext("42"), "gs"))
+      .rejects.toMatchObject({ code: "api", retcode: 10041 });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
