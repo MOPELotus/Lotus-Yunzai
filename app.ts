@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
+import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { MessageEvent } from "./lib/messages.ts";
@@ -67,6 +68,7 @@ if (import.meta.main) {
       globalThis.redis = await connectStorage(valkeyUrl);
       console.log("[存储] Valkey 已连接。");
     }
+    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined));
     await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy);
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {

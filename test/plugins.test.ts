@@ -180,9 +180,15 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     await writeFile(join(root, "config", "config", "other.yaml"), 'master:\n  - "99:51"\n');
     await writeFile(join(root, "config", "config", "server.yaml"),
       "port: 0\nauth:\n  Authorization: Bearer test-token\n  X-Server-Key: integration\n");
+    const profiles = join(root, "profiles");
+    await mkdir(profiles);
+    await writeFile(join(profiles, "42.yaml"), "account: { cookie: fixture-private, stoken: fixture-secret }");
+    await writeFile(join(profiles, "42-2.yaml"), "profile: { id: 2 }");
+    await writeFile(join(profiles, "42-3.yaml"), "invalid: [");
+    await writeFile(join(profiles, "51.yaml"), "account: { cookie: other-user, stoken: other-secret }");
     const backend = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
-      env: { PATH: process.env.PATH },
+      env: { PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -299,6 +305,12 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     });
     expect(await send("#管理", { message_type: "private", user_id: 51, self_id: 98, isMaster: true }))
       .toMatchObject({ user_id: 51, message: "暂无权限执行此指令。" });
+    expect(await send("#登录列表")).toMatchObject({
+      group_id: 77, message: "登录列表\n档案 1 · 已登录\n档案 2 · 未登录\n档案 3 · 无法读取",
+    });
+    expect(await send("#登录列表 51")).toMatchObject({ group_id: 77, message: "用法：#登录列表" });
+    expect(await send("#登录列表", { user_id: 51, message_type: "private", sub_type: "friend" }))
+      .toMatchObject({ user_id: 51, message: "登录列表\n档案 1 · 已登录" });
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
     });
