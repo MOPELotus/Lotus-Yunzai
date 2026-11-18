@@ -12,7 +12,7 @@ interface TreeEntry {
   readonly revision: string;
 }
 
-interface ReadyUpdate {
+export interface ReadyUpdate {
   readonly status: "ready";
   readonly scope: "host" | "plugin";
   readonly name: string;

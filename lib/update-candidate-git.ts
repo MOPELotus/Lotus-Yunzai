@@ -35,7 +35,7 @@ async function readUpstream(git: LocalGit, directory: string): Promise<Upstream 
   return { branch, remote, merge, url };
 }
 
-async function isDirty(git: LocalGit, directory: string): Promise<boolean | undefined> {
+export async function isUpdateWorktreeDirty(git: LocalGit, directory: string): Promise<boolean | undefined> {
   const settings = await git(directory, ["config", "--name-only", "--null", "--get-regexp", "^filter\\..*\\.(clean|process|required)$"], true);
   if (settings === undefined) return;
   const filters = new Set(settings.split("\0").flatMap((key) => {
@@ -99,7 +99,7 @@ export async function fetchUpdateCandidate(directory: string): Promise<UpdateCan
     const checkout = await realpath(directory);
     if (checkout !== resolve(directory) || !await isGitCheckout(git, checkout)) return unavailable;
     const [upstream, current, dirty] = await Promise.all([
-      readUpstream(git, checkout), gitHead(git, checkout), isDirty(git, checkout),
+      readUpstream(git, checkout), gitHead(git, checkout), isUpdateWorktreeDirty(git, checkout),
     ]);
     if (dirty === true) return dirtyResult;
     if (!upstream || !current || dirty === undefined) return unavailable;
@@ -113,7 +113,7 @@ export async function fetchUpdateCandidate(directory: string): Promise<UpdateCan
       if (!inspect || !await isGitCheckout(inspect, checkout)) return unavailable;
       const [output, latest, latestUpstream, latestDirty] = await Promise.all([
         inspect(checkout, ["rev-parse", "--verify", `${ref}^{commit}`]), gitHead(inspect, checkout),
-        readUpstream(inspect, checkout), isDirty(inspect, checkout),
+        readUpstream(inspect, checkout), isUpdateWorktreeDirty(inspect, checkout),
       ]);
       if (latestDirty === true) return dirtyResult;
       if (latestDirty === undefined || latest !== current || latestUpstream?.branch !== upstream.branch ||
