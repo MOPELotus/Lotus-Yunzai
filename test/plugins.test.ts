@@ -199,6 +199,31 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         say() { return this.reply("私聊可用"); }
       }
     `);
+    await writeFile(join(plugins, "group-notice.js"), `
+      export const apps = {
+        join: class extends plugin {
+          constructor() { super({ event: "notice.group.increase", priority: 1 }); }
+          async accept(e) {
+            const sent = await this.reply([segment.image("https://example.invalid/join.jpg")]);
+            if (!sent) this.reply(JSON.stringify({
+              type: e.notice_type, change: e.sub_type, action: e.increase_type,
+              bot: e.self_id, user: e.user_id, inviter: e.inviter_id, member: e.member,
+            }));
+            return "return";
+          }
+        },
+        leave: class extends plugin {
+          constructor() {
+            super({ event: "notice.group.decrease", rule: [{ fnc: "onLeave" }] });
+          }
+          onLeave(e) { return this.reply(e.decrease_type + " " + e.operator_id); }
+        },
+        catchall: class extends plugin {
+          constructor() { super({ event: "notice.group.increase", rule: [{ fnc: "unexpected" }] }); }
+          unexpected() { return this.reply("意外匹配进群规则"); }
+        },
+      };
+    `);
     await mkdir(join(plugins, "context"), { recursive: true });
     await writeFile(join(plugins, "context", "package.json"), JSON.stringify({
       name: "fixture-context", lotusYunzai: { entry: "./index.ts" },
@@ -401,6 +426,32 @@ failsMsg: 协议拒绝
         client.addEventListener("message", ({ data }) => ok(JSON.parse(data)), { once: true });
       });
     }
+
+    const joinEvent = {
+      post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: 99,
+      user_id: 43, group_id: 77, operator_id: 51, member: { nickname: "莲" },
+    };
+    const welcomeFrame = nextFrame();
+    client.send(JSON.stringify({ ...joinEvent, group_id: 0 }));
+    client.send(JSON.stringify(joinEvent));
+    const welcome = await welcomeFrame;
+    expect(welcome).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
+      { type: "image", data: { file: "https://example.invalid/join.jpg" } },
+    ] } });
+    const fallbackFrame = nextFrame();
+    client.send(JSON.stringify({ echo: welcome.echo, status: "failed", retcode: 100 }));
+    const fallback = await fallbackFrame;
+    expect(fallback).toMatchObject({ action: "send_msg", params: { group_id: 77, message: JSON.stringify({
+      type: "group", change: "increase", action: "invite", bot: 99, user: 43, inviter: 51,
+      member: { nickname: "莲" },
+    }) } });
+    client.send(JSON.stringify({ echo: fallback.echo, status: "ok", retcode: 0 }));
+
+    const leaveFrame = nextFrame();
+    client.send(JSON.stringify({ ...joinEvent, notice_type: "group_decrease", sub_type: "kick" }));
+    const leave = await leaveFrame;
+    expect(leave).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "kick 51" } });
+    client.send(JSON.stringify({ echo: leave.echo, status: "ok", retcode: 0 }));
 
     const sendForRecall = nextFrame();
     client.send(JSON.stringify({ ...event, user_id: 51, message: "#回复撤回", message_id: 600 }));

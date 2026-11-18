@@ -1,4 +1,4 @@
-import { segment, type MessageEvent } from "../messages.ts";
+import { segment, type GroupNotice, type MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { OneBotCalls } from "./onebot-calls.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
@@ -9,6 +9,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+async function dispatchGroupNotice(
+  dispatch: (event: GroupNotice) => Promise<void>,
+  send: (message: string) => boolean,
+  event: Record<string, unknown>,
+  calls: OneBotCalls,
+  isMaster: (bot: number, user: number) => boolean,
+): Promise<void> {
+  const { notice_type, user_id, group_id, self_id, operator_id } = event;
+  if (notice_type !== "group_increase" && notice_type !== "group_decrease") return;
+  if (!isId(user_id) || !isId(group_id) || !isId(self_id)) return;
+
+  const sub_type = notice_type === "group_increase" ? "increase" : "decrease";
+  const action = stringField(event.sub_type);
+  const member = isRecord(event.member) ? event.member : undefined;
+  await dispatch({
+    post_type: "notice",
+    notice_type: "group",
+    sub_type,
+    action_sub_type: action,
+    increase_type: sub_type === "increase" ? action : undefined,
+    decrease_type: sub_type === "decrease" ? action : undefined,
+    inviter_id: sub_type === "increase" && action === "invite" && isId(operator_id) ? operator_id : undefined,
+    user_id, group_id, self_id,
+    operator_id: isId(operator_id) ? operator_id : undefined,
+    group_name: stringField(event.group_name),
+    nickname: stringField(event.nickname),
+    member: member && { card: stringField(member.card), nickname: stringField(member.nickname) },
+    dismiss: typeof event.dismiss === "boolean" ? event.dismiss : undefined,
+    isGroup: true,
+    isPrivate: false,
+    isMaster: isId(operator_id) && isMaster(self_id, operator_id),
+    reply(reply) {
+      const message = encodeOneBotReply(reply);
+      if (message === undefined) return false;
+      return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
+    },
+  });
 }
 
 async function dispatchMessage(
@@ -79,7 +122,7 @@ async function dispatchMessage(
 }
 
 export function startOneBot(
-  dispatch: (event: MessageEvent) => Promise<void>,
+  dispatch: (event: MessageEvent | GroupNotice) => Promise<void>,
   options: {
     hostname: string;
     port: number;
@@ -118,10 +161,14 @@ export function startOneBot(
         if (!isRecord(message) || socket.data.receive(message)) return;
 
         try {
-          await dispatchMessage(dispatch, (output) =>
-            socket.readyState === WebSocket.OPEN && socket.send(output) !== 0, message, socket.data, options.isMaster);
+          const send = (output: string) => socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
+          if (message.post_type === "notice") {
+            await dispatchGroupNotice(dispatch, send, message, socket.data, options.isMaster);
+          } else {
+            await dispatchMessage(dispatch, send, message, socket.data, options.isMaster);
+          }
         } catch {
-          console.error("处理 OneBot 消息失败。");
+          console.error("处理 OneBot 事件失败。");
         }
       },
       close(socket) {

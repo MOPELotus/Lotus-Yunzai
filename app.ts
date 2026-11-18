@@ -4,7 +4,7 @@ import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
-import type { MessageEvent } from "./lib/messages.ts";
+import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
@@ -36,9 +36,9 @@ if (import.meta.main) {
     shutdown.resolve();
   }
 
-  async function dispatch(event: MessageEvent) {
+  async function dispatch(event: MessageEvent | GroupNotice) {
     if (stopping) return;
-    const handling = dispatchMessage(event);
+    const handling = event.post_type === "message" ? dispatchMessage(event) : legacy.dispatch(event);
     pending.add(handling);
     try {
       await handling;

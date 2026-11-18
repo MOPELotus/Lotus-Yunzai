@@ -29,6 +29,28 @@ export interface ReplyOptions {
   readonly recallMsg?: number;
 }
 
+export interface GroupNotice {
+  readonly post_type: "notice";
+  readonly notice_type: "group";
+  readonly sub_type: "increase" | "decrease";
+  readonly action_sub_type?: string;
+  readonly increase_type?: string;
+  readonly decrease_type?: string;
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly group_id: number;
+  readonly operator_id?: number;
+  readonly inviter_id?: number;
+  readonly group_name?: string;
+  readonly nickname?: string;
+  readonly member?: { readonly card?: string; readonly nickname?: string };
+  readonly dismiss?: boolean;
+  readonly isGroup: true;
+  readonly isPrivate: false;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
+
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;
 }

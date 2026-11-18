@@ -1,11 +1,12 @@
-import { segment, type MessageEvent } from "../messages.ts";
+import { segment, type GroupNotice, type MessageEvent } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
-type PluginClass = new (event?: MessageEvent) => PluginInstance;
+type PluginEvent = MessageEvent | GroupNotice;
+type PluginClass = new (event?: PluginEvent) => PluginInstance;
 interface Rule {
   readonly reg: RegExp;
   readonly fnc: string;
@@ -26,24 +27,26 @@ interface App {
 function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
   return rules.map((value) => {
     const rule = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
-    if ((typeof rule.reg !== "string" && !(rule.reg instanceof RegExp)) ||
+    if ((rule.reg !== undefined && typeof rule.reg !== "string" && !(rule.reg instanceof RegExp)) ||
         typeof rule.fnc !== "string" || typeof app[rule.fnc] !== "function" ||
         (rule.event !== undefined && typeof rule.event !== "string") ||
         (rule.permission !== undefined && typeof rule.permission !== "string")) {
       throw new Error(`插件 ${app.name} 有无效的消息规则。`);
     }
-    return { reg: new RegExp(rule.reg), fnc: rule.fnc, event: rule.event, permission: rule.permission };
+    return { reg: new RegExp(rule.reg ?? ""), fnc: rule.fnc, event: rule.event, permission: rule.permission };
   });
 }
 
-function matches(pattern: string, event: MessageEvent): boolean {
-  const parts = [event.post_type, event.message_type, event.sub_type];
+function matches(pattern: string, event: PluginEvent): boolean {
+  const subtype = event.post_type === "message" ? event.message_type : event.notice_type;
+  const parts = [event.post_type, subtype, event.sub_type];
   return pattern.split(".").every((value, index) =>
     parts[index] !== undefined && (value === "*" || value === parts[index]));
 }
 
-function canRun(permission: string | undefined, event: MessageEvent): boolean {
+function canRun(permission: string | undefined, event: PluginEvent): boolean {
   if (!permission || permission === "all" || event.isMaster) return true;
+  if (event.post_type !== "message") return false;
   if (permission === "owner") return event.member?.is_owner === true;
   if (permission === "admin") return event.member?.is_owner === true || event.member?.is_admin === true;
   return false;
@@ -182,14 +185,23 @@ export class LegacyPlugins {
     }
   }
 
-  async dispatch(event: MessageEvent): Promise<void> {
-    for (const app of this.#apps) {
-      if (!matches(app.event, event)) continue;
+  async dispatch(event: PluginEvent): Promise<void> {
+    const matching = this.#apps.filter((app) => matches(app.event, event));
+    for (const app of matching) {
+      if (typeof app.initializer.accept !== "function") continue;
+      const result = await app.scope.run(() => {
+        const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
+        return typeof instance.accept === "function" ? instance.accept(event) : undefined;
+      });
+      if (result === "return") return;
+      if (result) break;
+    }
 
+    for (const app of matching) {
       for (const rule of app.rules) {
         if (rule.event && !matches(rule.event, event)) continue;
         rule.reg.lastIndex = 0;
-        if (!rule.reg.test(event.msg)) continue;
+        if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
         if (!canRun(rule.permission, event)) {
           event.reply("暂无权限执行此指令。");
           return;
