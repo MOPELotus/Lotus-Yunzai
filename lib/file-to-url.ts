@@ -126,12 +126,12 @@ export function createFileToUrl(
 
 export type FileToUrl = ReturnType<typeof createFileToUrl>;
 
-export function listenerFileBase(hostname: string, port: number | undefined): URL | undefined {
+export function listenerFileBase(hostname: string, port: number | undefined, protocol: "http" | "https" = "http"): URL | undefined {
   if (!port) return;
   const host = hostname === "0.0.0.0" ? "127.0.0.1"
     : hostname === "::" || hostname === "[::]" ? "[::1]"
     : hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname;
-  const origin = `http://${host}:${port}/`;
+  const origin = `${protocol}://${host}:${port}/`;
   const url = URL.parse(origin);
   if (url && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash) return url;
 }

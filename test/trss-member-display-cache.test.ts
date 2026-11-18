@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { startOneBot } from "../lib/adapters/onebot.ts";
+import { OneBotGroups } from "../lib/adapters/onebot-groups.ts";
 import { copyHost } from "./host-fixture.ts";
 
 interface Frame {
@@ -258,6 +260,56 @@ test("cache_group_member 显式关闭时跳过预热，仍能使用群事件时�
     await depart(gateway, joinedGroup, 42, null, null);
   });
 }, 10_000);
+
+test("同账号跨监听口重连取消旧缓存预热，旧连接仍能处理 OneBot 消息", async () => {
+  const groups = new OneBotGroups();
+  function listener() {
+    return startOneBot(async (event) => {
+      if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "decrease") {
+        await event.reply(JSON.stringify({
+          user: event.user_id, card: event.member?.card ?? null, nickname: event.member?.nickname ?? null,
+        }));
+      }
+    }, {
+      hostname: "127.0.0.1", port: 0, groups, prewarmGroupMembers: true,
+      auth: new Headers({ Authorization: `Bearer ${token}` }), isMaster: () => false, masterIds: () => [],
+    });
+  }
+  const servers = [listener(), listener()];
+  const gateways: Gateway[] = [];
+  async function connectTo(server: ReturnType<typeof listener>) {
+    const endpoint = new URL("/OneBotv11", server.url);
+    endpoint.protocol = "ws:";
+    const gateway = await connect(endpoint.href, 99);
+    gateways.push(gateway);
+    return gateway;
+  }
+
+  try {
+    const old = await connectTo(servers[0]!);
+    old.receipt(await old.take("get_group_list", {}), [{ group_id: groupId }, { group_id: joinedGroup }]);
+    const stale = await old.take("get_group_member_list", { group_id: groupId });
+
+    const current = await connectTo(servers[1]!);
+    current.receipt(await current.take("get_group_list", {}), [{ group_id: groupId }]);
+    current.receipt(await current.take("get_group_member_list", { group_id: groupId }), [
+      { group_id: groupId, user_id: 42, nickname: "新连接昵称" },
+    ]);
+    old.receipt(stale, [{ group_id: groupId, user_id: 42, nickname: "旧连接昵称" }]);
+    await depart(current, groupId, 42, null, "新连接昵称");
+    await depart(old, groupId, 42, null, null);
+    old.assertNoPendingFrames();
+    old.close();
+    await deadline(old.closed, "旧网关未关闭。");
+
+    const outbound = groups.listGroups(99);
+    current.receipt(await current.take("get_group_list", {}), []);
+    expect(await outbound).toEqual([]);
+  } finally {
+    for (const gateway of gateways) gateway.close();
+    await Promise.all(servers.map((server) => server.stop(true)));
+  }
+});
 
 test("开启显示缓存时自动退群仍核验实时名单，成功退出后清空显示名", async () => {
   await withHost(undefined, async (connectGateway) => {

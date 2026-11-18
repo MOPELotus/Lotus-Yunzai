@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
@@ -538,8 +538,7 @@ if (import.meta.main) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
-      const { hostname, http, oneBot, panelToken } = network;
-      const statusRoute = http && httpStatus(http.auth, runtimeVersion);
+      const { hostname, http, oneBot, https, panelToken } = network;
       const fallback = createServerRedirect(network.redirect);
       const likes = panelGroupSettings(plugins.directories);
       const guoba = panelGuobaRoutes(plugins.directories);
@@ -547,32 +546,55 @@ if (import.meta.main) {
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      const fetch = statusRoute && (async (request: Request) => stopping || !handoff.accepting
-        ? new Response(null, { status: 503 })
-        : publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
-          fallback?.(request) ?? statusRoute(request));
-      const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
-      if (oneBot) {
+      function httpHandler(auth: Headers) {
+        const statusRoute = httpStatus(auth, runtimeVersion);
+        return async (request: Request) => stopping || !handoff.accepting
+          ? new Response(null, { status: 503 })
+          : publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+            fallback?.(request) ?? statusRoute(request);
+      }
+      function listenOneBot(port: number, auth: Headers, fetch?: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
         const server = startOneBot(dispatch, {
-          hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          hostname, port, auth, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
           prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
           accepting: () => !stopping && handoff.accepting,
           onBind: queueStartupMessages,
           onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
-          http: shared ? fetch : undefined,
+          http: fetch,
+          tls,
         });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
-        if (shared) {
-          fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
-          console.log(`HTTP 正在监听 ${server.url.origin}/status`);
-        }
+        return server;
       }
-      if (http && !shared && fetch) {
-        const server = Bun.serve({ hostname, port: http.port, fetch });
+      function listenHttp(port: number, fetch: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
+        const server = Bun.serve({ hostname, port, fetch, tls });
         servers.push(server);
+        return server;
+      }
+      const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
+      const socketServer = oneBot && listenOneBot(oneBot.port, oneBot.auth, shared ? httpHandler(http.auth) : undefined);
+      if (http) {
+        const server = shared && socketServer ? socketServer : listenHttp(http.port, httpHandler(http.auth));
         fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
+      }
+      if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
+      if (https && !probingUpdate) {
+        try {
+          const [key, cert] = await Promise.all([readFile(https.key), readFile(https.cert)]);
+          if (!stopping) {
+            const tls = { key, cert };
+            const fetch = httpHandler(https.auth);
+            const server = https.oneBotAuth
+              ? listenOneBot(https.port, https.oneBotAuth, fetch, tls)
+              : listenHttp(https.port, fetch, tls);
+            fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
+            console.log(`HTTPS 正在监听 ${server.url.origin}/status`);
+          }
+        } catch {
+          if (!stopping) console.warn("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");
+        }
       }
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
       plugins.startWatching();

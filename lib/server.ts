@@ -8,10 +8,19 @@ interface Listener {
   readonly auth: Headers;
 }
 
+interface HttpsListener extends Listener {
+  readonly key: string;
+  readonly cert: string;
+  readonly publicUrl?: URL;
+  readonly oneBotAuth?: Headers;
+}
+
 export interface ServerSettings {
   readonly hostname: string;
   readonly http?: Listener;
   readonly oneBot?: Listener;
+  readonly https?: HttpsListener;
+  readonly httpsError?: boolean;
   readonly panelToken?: string;
   readonly publicUrl?: URL;
   readonly redirect?: string;
@@ -71,6 +80,33 @@ function withToken(base: Headers, token: string | undefined, source: string): He
   return headers;
 }
 
+function tlsPath(value: unknown): string | undefined {
+  if (value === null || value === undefined) return;
+  if (typeof value !== "string" || value.includes("\0")) throw new Error();
+  return value || undefined;
+}
+
+function httpsSettings(value: unknown, auth: Headers, oneBotAuth?: Headers): Pick<ServerSettings, "https" | "httpsError"> {
+  if (value === undefined || value === null || value === false) return {};
+  if (!record(value)) return { httpsError: true };
+  try {
+    const key = tlsPath(value.key);
+    const cert = tlsPath(value.cert);
+    const configuredPort = port(value.port ?? undefined, "server.https.port");
+    const publicUrl = publicHttpUrl(value.url);
+    if (!key && !cert && configuredPort === undefined && !publicUrl) return {};
+    if (!key || !cert) return { httpsError: true };
+    return {
+      https: {
+        port: configuredPort ?? 0, key, cert, publicUrl, auth: new Headers(auth),
+        oneBotAuth: oneBotAuth && new Headers(oneBotAuth),
+      },
+    };
+  } catch {
+    return { httpsError: true };
+  }
+}
+
 export async function readServerSettings(root: URL, env: ServerEnvironment): Promise<ServerSettings> {
   const config = await readLocalConfig(root, "server");
   const configured = port(env.LOTUS_HTTP_PORT ?? config.port, "LOTUS_HTTP_PORT 或 server.port");
@@ -91,6 +127,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
     panelToken,
     publicUrl: publicHttpUrl(config.url),
     redirect: readServerRedirect(config.redirect),
+    ...httpsSettings(config.https, httpAuth, wsPort === undefined ? undefined : wsAuth),
   };
 }
 

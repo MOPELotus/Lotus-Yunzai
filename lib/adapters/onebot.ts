@@ -318,6 +318,7 @@ export function startOneBot(
   options: {
     hostname: string;
     port: number;
+    tls?: Bun.TLSOptions;
     auth: Headers;
     isMaster: (bot: number, user: number) => boolean;
     masterIds: (bot: number) => readonly number[];
@@ -329,7 +330,6 @@ export function startOneBot(
     http?: (request: Request) => Response | Promise<Response>;
   },
 ) {
-  const memberDisplays = new Map<number, OneBotMemberDisplay>();
   function sender(socket: Bun.ServerWebSocket<ConnectionData>, source: MessageIdentity): Send {
     return (frame) => {
       const sent = sendFrame(socket, JSON.stringify(frame));
@@ -341,15 +341,14 @@ export function startOneBot(
   function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {
     socket.data.botId = botId;
     const send = sender(socket, { self_id: botId });
+    const display = new OneBotMemberDisplay((groupId) => socket.data.calls.listMemberDisplay(send, groupId));
+    socket.data.display = display;
     socket.data.detach = options.groups.connect(botId, {
       calls: socket.data.calls,
       send,
+      retireMemberDisplay: () => display.close(),
     });
     options.onBind?.(botId);
-    memberDisplays.get(botId)?.close();
-    const display = new OneBotMemberDisplay((groupId) => socket.data.calls.listMemberDisplay(send, groupId));
-    memberDisplays.set(botId, display);
-    socket.data.display = display;
     if (options.prewarmGroupMembers) {
       socket.data.joinRoster = new Map();
       const skipped = new Set<number>();
@@ -373,6 +372,7 @@ export function startOneBot(
   return Bun.serve<ConnectionData>({
     hostname: options.hostname,
     port: options.port,
+    tls: options.tls,
     fetch(request, server) {
       const path = new URL(request.url).pathname;
       if (path !== "/OneBotv11" && path !== "/OneBotv11/") {
@@ -448,9 +448,7 @@ export function startOneBot(
       },
       close(socket) {
         socket.data.detach?.();
-        const { botId, display } = socket.data;
-        display?.close();
-        if (botId !== undefined && memberDisplays.get(botId) === display) memberDisplays.delete(botId);
+        socket.data.display?.close();
         socket.data.calls.close();
       },
     },

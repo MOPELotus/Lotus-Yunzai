@@ -17,6 +17,7 @@ export interface GroupTransport {
 interface Connection {
   readonly calls: OneBotCalls;
   readonly send: Send;
+  readonly retireMemberDisplay?: () => void;
 }
 
 interface ConnectedAccount {
@@ -34,7 +35,9 @@ export class OneBotGroups implements GroupTransport {
 
   connect(botId: number, connection: Connection): () => void {
     const account = { connection, startedAt: this.#now() };
+    const previous = this.#connected.get(botId);
     this.#connected.set(botId, account);
+    previous?.connection.retireMemberDisplay?.();
     return () => {
       if (this.#connected.get(botId) === account) this.#connected.delete(botId);
     };
