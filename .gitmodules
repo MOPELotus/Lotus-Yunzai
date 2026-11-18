@@ -4,3 +4,6 @@
 [submodule "plugins/atlas"]
 	path = plugins/atlas
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Atlas.git
+[submodule "plugins/meme"]
+	path = plugins/meme
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Meme.git

@@ -15,6 +15,7 @@ export const systemModuleName = "@lotus-yunzai/system";
 const builtInDirectories = new Map([
   [systemModuleName, "system"],
   ["@lotus-yunzai/atlas", "atlas"],
+  ["@lotus-yunzai/meme", "meme"],
 ]);
 
 const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);

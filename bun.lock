@@ -32,6 +32,10 @@
     "plugins/atlas": {
       "name": "@lotus-yunzai/atlas",
     },
+    "plugins/meme": {
+      "name": "@lotus-yunzai/meme",
+      "version": "1.18.0",
+    },
     "plugins/system": {
       "name": "@lotus-yunzai/system",
     },
@@ -42,6 +46,8 @@
     "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
 
     "@lotus-yunzai/hoyo-client": ["@lotus-yunzai/hoyo-client@workspace:packages/hoyo-client"],
+
+    "@lotus-yunzai/meme": ["@lotus-yunzai/meme@workspace:plugins/meme"],
 
     "@lotus-yunzai/storage": ["@lotus-yunzai/storage@workspace:packages/storage"],
 
