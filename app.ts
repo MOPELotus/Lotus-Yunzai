@@ -29,7 +29,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
-import { createPluginLoadingReporter, parsePluginLoadMilliseconds } from "./lib/plugin-load-progress.ts";
+import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
@@ -59,6 +59,7 @@ const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 
 if (import.meta.main) {
+  const probingUpdate = process.env[pluginProbeTokenEnvironment] !== undefined;
   const reportLoading = createPluginLoadingReporter();
   const handoff = createManagedHandoff();
   const legacy = new LegacyPlugins(() => handoff.accepting);
@@ -498,7 +499,7 @@ if (import.meta.main) {
           plugins: plugins?.timings ?? [],
         };
       },
-    }), { loadTimeout, reportLoading });
+    }), { loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate });
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
@@ -533,6 +534,7 @@ if (import.meta.main) {
         console.log(`HTTP 正在监听 ${server.url.origin}/status`);
       }
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
+      plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
         const reply = dispatchPower.setPaused(paused);

@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { addAbortListener } from "node:events";
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
@@ -7,6 +9,7 @@ import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
+import { watchLegacyFiles } from "./file-watch.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
@@ -64,18 +67,39 @@ async function listCandidates(root: string): Promise<Candidate[]> {
     left.path.localeCompare(right.path, "en"));
 }
 
-async function legacyEntries(directory: string): Promise<string[]> {
-  const entries = await entriesAt(directory);
-  if (entries.some((entry) => entry.name === "index.js")) return ["index.js"];
+function flatScript(name: string): boolean {
+  return !name.startsWith(".") && name.endsWith(".js") && name !== "guoba.support.js";
+}
 
-  const scripts = entries.filter((entry) => entry.isFile() && !entry.name.startsWith(".") &&
-    entry.name.endsWith(".js") && entry.name !== "guoba.support.js").map((entry) => entry.name);
+async function legacyEntries(directory: string) {
+  const entries = await entriesAt(directory);
+  if (entries.some((entry) => entry.name === "index.js")) return { scripts: ["index.js"], flat: new Set<string>() };
+
+  const flat = new Set(entries.filter((entry) => entry.isFile() && flatScript(entry.name)).map((entry) => entry.name));
+  const scripts = [...flat];
   for (const entry of await entriesAt(join(directory, "apps"))) {
     if (entry.isFile() && !entry.name.startsWith(".") && entry.name.endsWith(".js")) {
       scripts.push(join("apps", entry.name));
     }
   }
-  return scripts.sort();
+  return { scripts: scripts.sort(), flat };
+}
+
+function scriptHash(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function readFlatScript(path: string): Promise<Buffer | undefined> {
+  try {
+    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+    try {
+      if ((await file.stat()).isFile()) return await file.readFile();
+    } finally {
+      await file.close();
+    }
+  } catch (error) {
+    if (!isMissing(error) && record(error).code !== "ELOOP") throw error;
+  }
 }
 
 async function gitRepositories(directory: string): Promise<string[]> {
@@ -139,6 +163,7 @@ export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
   readonly timings: readonly PluginLoadTiming[];
+  startWatching(): void;
   dispose(): Promise<void>;
 }
 
@@ -155,11 +180,19 @@ export async function loadPlugins(
   commands: CommandRegistry,
   legacy: LegacyPlugins,
   services: PluginServices,
-  options: { readonly loadTimeout?: number; readonly reportLoading?: (wait: number) => void } = {},
+  options: { readonly loadTimeout?: number; readonly reportLoading?: (wait: number) => void; readonly fileWatch?: boolean } = {},
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
+  const loadedEntries = new Map<string, { path: string; packageName: string }>();
+  const watched = new Map<string, {
+    packageName: string;
+    physicalPath: string;
+    identities: ReadonlySet<string>;
+    attempted: Map<string, string>;
+    active: Map<string, string>;
+  }>();
   const cleanups: { name: string; cleanup: () => unknown }[] = [];
   const interruptedCleanups: Promise<void>[] = [];
   const seen = new Map<string, string>();
@@ -168,8 +201,8 @@ export async function loadPlugins(
     console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
     records.push({ name, status: "rejected", reason });
   };
-  const allowedScript = async (path: string) => {
-    const retired = retiredPluginScript(await readFile(path));
+  const allowedScript = (path: string, bytes: Uint8Array) => {
+    const retired = retiredPluginScript(bytes);
     if (!retired) return true;
     const name = relative(root, path);
     reject(name, "图库管理已归并到 atlas。", `${name}（${retired}）`);
@@ -180,7 +213,7 @@ export async function loadPlugins(
     const label = relative(root, candidate.path);
     try {
       if (candidate.kind === "script") {
-        if (await allowedScript(candidate.path)) {
+        if (allowedScript(candidate.path, await readFile(candidate.path))) {
           ready.push({ label, entry: candidate.path });
         }
         continue;
@@ -206,18 +239,26 @@ export async function loadPlugins(
       }
       if (declaredEntry !== undefined) {
         const entry = await findEntry(candidate.path, declaredEntry);
-        if (!await allowedScript(entry)) continue;
+        if (!allowedScript(entry, await readFile(entry))) continue;
         ready.push({ label, entry, moduleName: name, directory: candidate.path, packageName: name });
       } else {
         const entries = [];
-        for (const file of await legacyEntries(candidate.path)) {
+        const { scripts, flat } = await legacyEntries(candidate.path);
+        const attempted = new Map<string, string>();
+        for (const file of scripts) {
           const entry = await findEntry(candidate.path, file);
-          if (await allowedScript(entry)) {
-            entries.push({ label: relative(root, entry), entry, directory: candidate.path, packageName: name });
+          const bytes = await readFile(entry);
+          if (options.fileWatch && flat.has(file)) attempted.set(file, scriptHash(bytes));
+          if (allowedScript(entry, bytes)) {
+            entries.push({ label: relative(root, join(candidate.path, file)), entry, directory: candidate.path, packageName: name });
           }
         }
         if (!entries.length) continue;
         ready.push(...entries);
+        if (attempted.size) watched.set(candidate.path, {
+          packageName: name, physicalPath: await realpath(candidate.path),
+          identities: new Set(identities), attempted, active: new Map(),
+        });
       }
       for (const identity of identities) seen.set(identity, label);
     } catch {
@@ -226,6 +267,29 @@ export async function loadPlugins(
   }
 
   const loadTimeout = options.loadTimeout ?? defaultPluginLoadMs;
+  function recordLoaded(label: string, started: number, path?: string, packageName?: string) {
+    records.push({ name: label, status: "loaded" });
+    timings.push({ name: label, milliseconds: performance.now() - started });
+    if (path && packageName) {
+      const metadata = { path, packageName };
+      loadedEntries.set(label, metadata);
+      directories.set(basename(path), metadata);
+    }
+  }
+
+  function clearEntry(label: string) {
+    const metadata = loadedEntries.get(label);
+    loadedEntries.delete(label);
+    if (metadata && ![...loadedEntries.values()].some(({ path }) => path === metadata.path)) {
+      directories.delete(basename(metadata.path));
+    }
+    for (let index = records.length - 1; index >= 0; index--) {
+      if (records[index]?.name === label) records.splice(index, 1);
+    }
+    const timing = timings.findIndex(({ name }) => name === label);
+    if (timing !== -1) timings.splice(timing, 1);
+  }
+
   for (const { label, entry, moduleName, directory, packageName } of ready) {
     if (services.signal.aborted) break;
     const deadline = new AbortController();
@@ -298,9 +362,12 @@ export async function loadPlugins(
         continue;
       }
       console.log(`[插件] 已加载 ${label}。`);
-      records.push({ name: label, status: "loaded" });
-      timings.push({ name: label, milliseconds: performance.now() - started });
-      if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
+      recordLoaded(label, started, directory, packageName);
+      const watch = directory && watched.get(directory);
+      const fingerprint = watch && watch.attempted.get(basename(entry));
+      if (watch && fingerprint && entry === join(watch.physicalPath, basename(entry))) {
+        watch.active.set(basename(entry), fingerprint);
+      }
       if (cleanup) cleanups.push({ name: label, cleanup });
     } catch (error) {
       if (services.signal.aborted) break;
@@ -318,11 +385,112 @@ export async function loadPlugins(
     }
   }
   if (!services.signal.aborted) options.reportLoading?.(0);
+
+  async function reconcile(directory: string, signal: AbortSignal) {
+    const watch = watched.get(directory);
+    if (!watch || signal.aborted) return;
+    const info = await lstat(directory).catch((error: unknown) => {
+      if (!isMissing(error)) throw error;
+    });
+    const physical = info?.isDirectory() && await realpath(directory) === watch.physicalPath;
+    const entries = physical ? await entriesAt(directory) : [];
+    const files = new Set(entries.filter(({ name }) => flatScript(name)).map(({ name }) => name));
+    for (const file of watch.attempted.keys()) {
+      if (signal.aborted) return;
+      if (files.has(file)) continue;
+      const label = relative(root, join(directory, file));
+      await legacy.remove(label);
+      watch.attempted.delete(file);
+      if (watch.active.delete(file)) console.log(`[插件] 已卸载 ${label}。`);
+      clearEntry(label);
+    }
+    if (!physical || entries.some(({ name }) => name === "index.js")) return;
+
+    const stillApproved = async () => {
+      if (!(await lstat(directory)).isDirectory() || await realpath(directory) !== watch.physicalPath ||
+          (await entriesAt(directory)).some(({ name }) => name === "index.js")) return false;
+      const metadata = inspectPluginMetadata(basename(directory), await readOptional(join(directory, "package.json")),
+        await gitRepositories(directory));
+      const identities = new Set(metadata.identities);
+      return !metadata.rejection && metadata.entry === undefined && metadata.name === watch.packageName &&
+        identities.size === watch.identities.size && metadata.identities.every((id) => watch.identities.has(id));
+    };
+    if (!await stillApproved()) return;
+
+    for (const file of [...files].sort()) {
+      if (signal.aborted) return;
+      const entry = join(directory, file);
+      const bytes = await readFlatScript(entry);
+      if (!bytes) continue;
+      const hash = scriptHash(bytes);
+      if (watch.attempted.get(file) === hash) continue;
+      watch.attempted.set(file, hash);
+      if (watch.active.get(file) === hash) continue;
+      const label = relative(root, entry);
+      const retired = retiredPluginScript(bytes);
+      if (retired) {
+        console.warn(`[插件] 拒绝热更新 ${label}（${retired}）：图库管理已归并到 atlas。`);
+        continue;
+      }
+      if (entry.includes("?")) {
+        console.warn(`[插件] 热更新 ${label} 失败：Bun 无法区分入口路径中的问号和导入参数。`);
+        continue;
+      }
+      const deadline = new AbortController();
+      const loading = AbortSignal.any([signal, deadline.signal]);
+      const timer = setTimeout(() => deadline.abort(), loadTimeout);
+      const start = performance.now();
+      const aborted = Promise.withResolvers<never>();
+      const cancel = addAbortListener(loading, () => aborted.reject(loading.reason));
+      const unchanged = async () => {
+        if (!await stillApproved()) return false;
+        const latest = await readFlatScript(entry);
+        return latest !== undefined && scriptHash(latest) === hash;
+      };
+      const replacement = (async () => {
+        if (!await unchanged() || loading.aborted) return;
+        // Bun keeps the query for absolute paths. Converting to file: would reuse the old module.
+        const published = await import(`${entry}?lotus-reload=${crypto.randomUUID()}`);
+        loading.throwIfAborted();
+        const result = await legacy.replace(published, label, watch.packageName, loading, unchanged);
+        if (result === "loaded") {
+          clearEntry(label);
+          recordLoaded(label, start, directory, watch.packageName);
+          watch.active.set(file, hash);
+          console.log(`[插件] 已热更新 ${label}。`);
+        } else if (!loading.aborted) {
+          console.warn(`[插件] 热更新 ${label} 失败：入口没有可启用的 V3 插件。`);
+        }
+      })();
+      try {
+        await Promise.race([replacement, aborted.promise]);
+      } catch (error) {
+        if (!signal.aborted) {
+          const message = deadline.signal.aborted ? "加载超时。" : (error instanceof Error ? error.message : String(error));
+          console.warn(`[插件] 热更新 ${label} 失败：${message}`);
+        }
+      } finally {
+        cancel[Symbol.dispose]();
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  let watcher: ReturnType<typeof watchLegacyFiles> | undefined;
   let disposal: Promise<void> | undefined;
   return {
     records, directories, timings,
+    startWatching() {
+      if (!watcher && watched.size && !services.signal.aborted && !disposal) {
+        watcher = watchLegacyFiles(root, [...watched.keys()], reconcile, {
+          signal: services.signal,
+          relevantFile: (name) => name === "package.json" || name === ".git" || flatScript(name),
+        });
+      }
+    },
     dispose() {
       return disposal ??= (async () => {
+        await watcher?.stop();
         await Promise.all(interruptedCleanups);
         for (const { name, cleanup } of cleanups.splice(0).reverse()) await disposeModule(name, cleanup);
       })();
