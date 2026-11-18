@@ -1,4 +1,5 @@
 import type { MessageEvent } from "../messages.ts";
+import { encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -81,12 +82,8 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: false,
     reply(reply, quote = false) {
-      if (typeof reply !== "string") return false;
-
-      const message = quote && messageId !== undefined ? [
-        { type: "reply", data: { id: String(messageId) } },
-        { type: "text", data: { text: reply } },
-      ] : reply;
+      const message = encodeOneBotReply(reply, quote ? messageId : undefined);
+      if (message === undefined) return false;
       return send(JSON.stringify({
         action: "send_msg",
         params: { message_type: messageType, ...target, message, auto_escape: true },

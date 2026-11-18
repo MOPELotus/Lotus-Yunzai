@@ -1,4 +1,4 @@
-import type { MessageEvent } from "../messages.ts";
+import { segment, type MessageEvent } from "../messages.ts";
 import Plugin from "./plugin.js";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
@@ -47,7 +47,7 @@ export class LegacyPlugins {
   readonly #apps: App[] = [];
 
   constructor() {
-    Object.assign(globalThis, { plugin: Plugin });
+    Object.assign(globalThis, { plugin: Plugin, segment });
   }
 
   register(exports: Record<string, unknown>): boolean {

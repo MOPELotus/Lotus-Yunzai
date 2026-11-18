@@ -88,10 +88,29 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
             super({ event: "message.group", priority: 10, rule: [
               { reg: /^#优先$/, fnc: "skip" },
               { reg: "^#管理$", fnc: "admin", permission: "admin" },
+              { reg: "^#媒体$", fnc: "media" },
+              { reg: "^#引用$", fnc: "quote" },
+              { reg: "^#非法段$", fnc: "invalidSegment" },
             ] });
           }
           skip() { return false; }
           admin(e) { return this.reply("管理群 " + e.group_id, true); }
+          media(e) {
+            const image = Buffer.from([0, 1, 2, 3]).subarray(1, 3);
+            return e.reply([
+              segment.at(e.user_id),
+              " [CQ:at,qq=all]",
+              segment.image(image),
+              { type: "face", data: { id: 14 } },
+              segment.record("https://example.invalid/a.ogg"),
+              segment.video("/tmp/folder with space/clip.mp4"),
+            ], true);
+          }
+          quote() { return this.reply([segment.reply(456), segment.text("已引用")], true); }
+          invalidSegment() {
+            const sent = this.reply(["不应发送", { type: "image", data: {} }]);
+            return this.reply(sent ? "异常发送" : "已拒绝无效消息");
+          }
         }
       };
     `);
@@ -175,6 +194,26 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         { type: "text", data: { text: "管理群 77" } },
       ],
     });
+    expect(await send("#媒体")).toMatchObject({
+      group_id: 77,
+      message: [
+        { type: "reply", data: { id: "123" } },
+        { type: "at", data: { qq: "42" } },
+        { type: "text", data: { text: " [CQ:at,qq=all]" } },
+        { type: "image", data: { file: "base64://AQI=" } },
+        { type: "face", data: { id: "14" } },
+        { type: "record", data: { file: "https://example.invalid/a.ogg" } },
+        { type: "video", data: { file: "file:///tmp/folder%20with%20space/clip.mp4" } },
+      ],
+    });
+    expect(await send("#引用")).toMatchObject({
+      group_id: 77,
+      message: [
+        { type: "reply", data: { id: "456" } },
+        { type: "text", data: { text: "已引用" } },
+      ],
+    });
+    expect(await send("#非法段")).toMatchObject({ group_id: 77, message: "已拒绝无效消息" });
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: "私聊可用",
     });

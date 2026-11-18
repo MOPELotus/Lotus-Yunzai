@@ -14,5 +14,32 @@ export interface MessageEvent {
   readonly isMaster: boolean;
   readonly raw_message: string;
   readonly message: string | readonly unknown[];
-  readonly reply: (text: string, quote?: boolean) => boolean;
+  readonly reply: (message: MessageReply, quote?: boolean) => boolean;
 }
+
+type MediaFile = string | Uint8Array;
+type SegmentValue = string | number | boolean;
+
+export type MessageSegment =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "at"; readonly qq: string | number }
+  | { readonly type: "face" | "reply"; readonly id: string | number }
+  | { readonly type: "image" | "record" | "video"; readonly file: MediaFile };
+
+export interface ProtocolSegment {
+  readonly type: MessageSegment["type"];
+  readonly data: Readonly<Record<string, SegmentValue | Uint8Array>>;
+}
+
+type ReplyPart = string | MessageSegment | ProtocolSegment;
+export type MessageReply = ReplyPart | readonly ReplyPart[];
+
+export const segment = {
+  text: (text: string) => ({ type: "text", text } as const),
+  at: (qq: string | number) => ({ type: "at", qq } as const),
+  face: (id: string | number) => ({ type: "face", id } as const),
+  reply: (id: string | number) => ({ type: "reply", id } as const),
+  image: (file: MediaFile) => ({ type: "image", file } as const),
+  record: (file: MediaFile) => ({ type: "record", file } as const),
+  video: (file: MediaFile) => ({ type: "video", file } as const),
+};
