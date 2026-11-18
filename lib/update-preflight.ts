@@ -106,8 +106,6 @@ async function allowedPluginCandidate(
 }
 
 export async function prepareUpdate(root: URL, directories: PluginDirectories, requested?: string): Promise<UpdatePreflight> {
-  const git = createLocalGit();
-  if (!git) return { status: "unavailable" };
   let release: (() => Promise<void>) | undefined;
   let ready = false;
   try {
@@ -122,6 +120,8 @@ export async function prepareUpdate(root: URL, directories: PluginDirectories, r
     if (!("release" in result)) return { status: result.status };
     release = result.release;
     if (result.status !== "ready") return { status: result.status };
+    const git = createLocalGit();
+    if (!git) return { status: "unavailable" };
     const { current, candidate } = result;
     const files = await readTree(git, directory, candidate);
     const diff = await git(directory, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",

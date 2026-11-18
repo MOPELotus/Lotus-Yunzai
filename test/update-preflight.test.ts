@@ -53,6 +53,41 @@ async function createRemote(temporary: string, name: string, files: Record<strin
   return { remote, writer };
 }
 
+test.skipIf(noGit)("网络拉取耗时超过本地 Git 查询预算仍可读到候选差异", () => withTemporary(async (temporary) => {
+  const remote = await createRemote(temporary, "slow-host", { "tracked.txt": "baseline\n" });
+  const checkout = join(temporary, "host");
+  git(temporary, "clone", "--quiet", "--no-local", remote.remote, checkout);
+  await writeFile(join(remote.writer, "tracked.txt"), "candidate\n");
+  const candidate = publish(remote.writer, "Fixture candidate");
+  git(remote.remote, "update-server-info");
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/info/refs") await Bun.sleep(1_700);
+      if (!/^\/(?:info\/refs|HEAD|objects\/[a-z0-9/.-]+)$/u.test(path) || path.split("/").includes("..")) {
+        return new Response(null, { status: 404 });
+      }
+      const file = Bun.file(join(remote.remote, path.slice(1)));
+      return await file.exists() ? new Response(file, { headers: { "Content-Type": "application/octet-stream" } })
+        : new Response(null, { status: 404 });
+    },
+  });
+  try {
+    git(checkout, "remote", "set-url", "origin", server.url.origin);
+    const ready = requireReady(await prepareUpdate(pathToFileURL(`${checkout}/`), new Map()));
+    try {
+      expect(ready.candidate).toBe(candidate);
+      expect(ready.changedPaths).toEqual(["tracked.txt"]);
+    } finally {
+      await ready.release();
+    }
+  } finally {
+    await server.stop(true);
+  }
+}), 10_000);
+
 function publish(writer: string, summary: string) {
   git(writer, "add", "--all");
   git(writer, "commit", "--quiet", "-m", summary);
