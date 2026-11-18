@@ -2,6 +2,7 @@
 import { ElButton, ElInput } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import { CredentialsError, pluginStatuses, readPanel, type PanelSnapshot, type PluginStatus } from "./api.ts";
+import GuobaSettings from "./GuobaSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
 
 const draft = ref("");
@@ -11,9 +12,10 @@ const error = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-const view = ref<"overview" | "likes">("overview");
+type PanelView = "overview" | "likes" | "guoba";
+const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
-const discardSettings = ref(false);
+const discardTo = ref<PanelView>();
 const clock = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
@@ -24,22 +26,27 @@ let activeRequest: AbortController | undefined;
 const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "group" && plugin.status === "loaded") ?? false);
 
-function setView(next: "overview" | "likes", discard = false) {
+function setView(next: PanelView, discard = false) {
   if (view.value === next) return;
   if (settingsDirty.value && !discard) {
-    discardSettings.value = true;
+    discardTo.value = next;
     return;
   }
   settingsDirty.value = false;
-  discardSettings.value = false;
+  discardTo.value = undefined;
   view.value = next;
-  const heading = next === "overview" ? "overview-title" : "like-settings-title";
+  const heading = { overview: "overview-title", likes: "like-settings-title", guoba: "guoba-title" }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
 }
 
 function expireSession() {
   reset();
   error.value = "面板令牌已失效，请重新登录。";
+}
+
+function updateDirty(dirty: boolean) {
+  settingsDirty.value = dirty;
+  if (!dirty) discardTo.value = undefined;
 }
 
 const visiblePlugins = computed(() => {
@@ -72,7 +79,7 @@ function reset() {
   selectedStatus.value = "";
   view.value = "overview";
   settingsDirty.value = false;
-  discardSettings.value = false;
+  discardTo.value = undefined;
   void nextTick(() => document.getElementById("panel-token")?.focus());
 }
 
@@ -148,19 +155,23 @@ onBeforeUnmount(() => {
   </main>
 
   <main v-else class="dashboard">
-    <nav v-if="hasGroup" class="panel-nav" aria-label="面板页面">
+    <nav class="panel-nav" aria-label="面板页面">
       <ElButton :type="view === 'overview' ? 'primary' : 'default'"
         :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">运行概览</ElButton>
-      <ElButton :type="view === 'likes' ? 'primary' : 'default'"
+      <ElButton v-if="hasGroup" :type="view === 'likes' ? 'primary' : 'default'"
         :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
+      <ElButton :type="view === 'guoba' ? 'primary' : 'default'"
+        :aria-current="view === 'guoba' ? 'page' : undefined" @click="setView('guoba')">旧锅巴配置</ElButton>
     </nav>
-    <div v-if="discardSettings" class="panel-discard" role="alert">
-      <span>群点赞的改动还未保存。</span>
-      <ElButton @click="discardSettings = false">继续编辑</ElButton>
-      <ElButton type="danger" @click="setView('overview', true)">放弃改动</ElButton>
+    <div v-if="discardTo" class="panel-discard" role="alert">
+      <span>当前配置还有未保存的改动。</span>
+      <ElButton @click="discardTo = undefined">继续编辑</ElButton>
+      <ElButton type="danger" @click="setView(discardTo!, true)">放弃改动</ElButton>
     </div>
     <LikeSettings v-if="view === 'likes'" :token="token" @unauthorized="expireSession"
-      @dirty-change="settingsDirty = $event" />
+      @dirty-change="updateDirty" />
+    <GuobaSettings v-else-if="view === 'guoba'" :token="token" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
     <template v-else>
       <section aria-labelledby="overview-title" :aria-busy="busy">
         <div class="section-heading">

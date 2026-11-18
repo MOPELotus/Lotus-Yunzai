@@ -38,6 +38,7 @@ interface GuobaSaveResult {
 
 export interface GuobaForm {
   readonly schemas: readonly GuobaField[];
+  readonly writable: boolean;
   read(): Promise<GuobaValues>;
   save(data: unknown): Promise<GuobaSaveResult>;
 }
@@ -253,6 +254,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
 
     return {
       schemas,
+      writable: typeof setConfigData === "function",
       async read() {
         try {
           const data = await readData();

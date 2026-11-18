@@ -21,7 +21,9 @@ export function panelGuobaRoutes(directories: PluginLoadReport["directories"]) {
     try {
       const support = await loadGuobaForm(directory);
       if (!support) return new Response(null, { status: 404 });
-      if (request.method === "GET") return Response.json({ schemas: support.schemas, ...await support.read() });
+      if (request.method === "GET") {
+        return Response.json({ schemas: support.schemas, writable: support.writable, ...await support.read() });
+      }
 
       let data: unknown;
       try {
