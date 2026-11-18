@@ -1,18 +1,9 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-async function copyHost(root: string) {
-  await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-  await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
-  await symlink(join(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir");
-  const system = join(root, "plugins", "system");
-  await mkdir(system, { recursive: true });
-  for (const file of ["package.json", "index.ts"]) {
-    await cp(new URL(`../plugins/system/${file}`, import.meta.url), join(system, file));
-  }
-}
+import { copyHost } from "./host-fixture.ts";
 
 test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插件和重复插件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugins-"));

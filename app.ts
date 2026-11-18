@@ -1,10 +1,15 @@
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
+
+declare global {
+  var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
+}
 
 const commands = new CommandRegistry();
 
@@ -50,6 +55,11 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
+    const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
+    if (valkeyUrl !== undefined) {
+      globalThis.redis = await connectStorage(valkeyUrl);
+      console.log("[存储] Valkey 已连接。");
+    }
     await loadPlugins(fileURLToPath(new URL("./plugins", import.meta.url)), commands, legacy);
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
@@ -97,9 +107,14 @@ if (import.meta.main) {
       await server?.stop(true);
       await Promise.allSettled(pending);
     } finally {
-      await legacy.dispose();
-      process.off("SIGINT", interrupt);
-      process.off("SIGTERM", terminate);
+      try {
+        await legacy.dispose();
+      } finally {
+        process.off("SIGINT", interrupt);
+        process.off("SIGTERM", terminate);
+        globalThis.redis = undefined;
+        await closeStorage();
+      }
     }
   }
 }

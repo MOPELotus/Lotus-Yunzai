@@ -18,6 +18,7 @@
     "typescript": "6.0.3"
   },
   "dependencies": {
+    "@lotus-yunzai/storage": "workspace:*",
     "node-schedule": "2.1.2"
   }
 }

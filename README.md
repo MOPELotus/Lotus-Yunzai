@@ -26,6 +26,12 @@ printf '#状态\n' | bun app.ts
 
 `LOTUS_ONEBOT_PORT` 可修改监听端口，默认是 `25360`。宿主只监听本机地址。连接后，在群聊或私聊中发送纯文本 `#状态`。协议字段见 [OneBot 11 反向 WebSocket 规范](https://github.com/botuniverse/onebot-11/blob/master/communication/ws-reverse.md)。
 
+## Valkey 存储
+
+需要持久化的部署可设置 `LOTUS_VALKEY_URL`，例如 `redis://127.0.0.1:6379/0`。连接带认证的实例时，建议从本机环境加载地址，避免把凭据写进仓库。宿主在加载插件前连接配置的服务，关闭时等插件清理完成再断开。未配置地址时，终端和 OneBot 的基础指令仍可运行。
+
+新模块从 `@lotus-yunzai/storage` 导入 `storage("模块名")`，可读取、写入和删除字符串，设置秒级 TTL，或用 `write()` 在一次事务内提交多笔写入。键使用 `lotus-yunzai:<模块名>:` 前缀。启用了 Valkey 时，依赖全局 `redis` 的旧插件可访问原有键空间及 Redis 事务接口。
+
 ## 插件
 
 宿主启动时检查仓库根目录下的 `plugins/`。识别到已归并的旧插件、已登记的鸣潮插件或重复安装时，会在导入入口前写出拒载原因。可从包名、仓库来源及 `lotusYunzai.games` 识别插件。跨游戏插件应在 `games` 中声明所有提供的游戏功能。
