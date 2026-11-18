@@ -279,6 +279,7 @@ export function startOneBot(
     isMaster: (bot: number, user: number) => boolean;
     masterIds: (bot: number) => readonly number[];
     groups: OneBotGroups;
+    onBind?: (botId: number) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
   },
@@ -297,6 +298,7 @@ export function startOneBot(
       calls: socket.data.calls,
       send: sender(socket, { self_id: botId }),
     });
+    options.onBind?.(botId);
   }
 
   return Bun.serve<ConnectionData>({

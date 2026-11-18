@@ -8,7 +8,7 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
-import { createDispatchPower } from "./lib/dispatch-power.ts";
+import { createDispatchPower, formatElapsed } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
@@ -29,6 +29,8 @@ import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plug
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess } from "./lib/private-access.ts";
+import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
+import { canRestartHost, restartHost } from "./lib/process-restart.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
@@ -41,6 +43,7 @@ declare global {
 const commands = new CommandRegistry();
 const terminalOutput = console.log.bind(console);
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
+const processFeatureNames = ["进程管理", "system", systemModuleName];
 
 if (import.meta.main) {
   const legacy = new LegacyPlugins();
@@ -56,6 +59,8 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
+  const processReceipts = createProcessReceipts(root);
+  let processAction: ProcessReceipt | undefined;
   let privateAccess: Awaited<ReturnType<typeof readPrivateAccess>>;
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
@@ -80,6 +85,69 @@ if (import.meta.main) {
     legacy.stopContexts();
     consoleInput?.close();
     shutdown.resolve();
+  }
+
+  async function sendProcessMessage(target: ProcessReceipt["target"], message: string): Promise<boolean> {
+    try {
+      if (target.type === "terminal") {
+        terminalOutput(message);
+        return true;
+      }
+      if (target.type === "private") return await groups.sendPrivate(target.botId, target.id, message);
+      await groups.sendGroup(target.botId, target.id, message);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function deliverProcessReceipt(botId?: number) {
+    try {
+      const receipt = await processReceipts.take(botId);
+      if (!receipt) return;
+      const elapsed = formatElapsed(Date.now() - receipt.at);
+      const reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+      if (!await sendProcessMessage(receipt.target, reply)) console.warn("[进程管理] 未确认进程操作回执。");
+    } catch {
+      console.warn("[进程管理] 无法读取进程操作回执。");
+    }
+  }
+
+  function queueProcessReceipt(botId?: number) {
+    if (stopping) return;
+    const delivery = deliverProcessReceipt(botId);
+    pending.add(delivery);
+    void delivery.then(() => pending.delete(delivery));
+  }
+
+  async function controlProcess(event: MessageEvent, kind: ProcessReceipt["kind"]) {
+    if (!event.isMaster) {
+      await event.reply("暂无权限，只有主人才能操作");
+      return;
+    }
+    const type = event.message_type;
+    let target: ProcessReceipt["target"];
+    if (type === "terminal") {
+      target = { type };
+    } else {
+      const id = type === "group" ? event.group_id : event.user_id;
+      const botId = event.self_id;
+      if (event.boundAccount !== true || !botId || !id) return;
+      target = { type, botId, id };
+    }
+    if (processAction) return;
+    if (kind === "restart" && !canRestartHost()) {
+      await event.reply("当前运行环境不支持进程内重启。");
+      return;
+    }
+
+    processAction = { kind, at: Date.now(), target };
+    const elapsed = formatElapsed(process.uptime() * 1000);
+    const operation = kind === "restart" ? "重启" : "停止";
+    if (!await sendProcessMessage(target, `开始${operation}，本次运行时长${elapsed}`)) {
+      console.warn("[进程管理] 未确认进程操作开始通知。");
+    }
+    stop(0);
   }
 
   async function dispatch(event: BotEvent) {
@@ -169,9 +237,13 @@ if (import.meta.main) {
       }
       return;
     }
-    if (allowNew && event.msg === "#关机" && allowed(["进程管理", "system", systemModuleName])) {
+    if (allowNew && event.msg === "#关机" && allowed(processFeatureNames)) {
       if (event.isMaster) await dispatchPower.handle(event);
       else await event.reply("暂无权限，只有主人才能操作");
+      return;
+    }
+    if (allowNew && /^#(?:重启|停机|停止)$/u.test(event.msg) && allowed(processFeatureNames)) {
+      await controlProcess(event, event.msg === "#重启" ? "restart" : "stop");
       return;
     }
     if (matchesMasterEnrollment(event.msg)) {
@@ -286,6 +358,7 @@ if (import.meta.main) {
       if (oneBot) {
         const server = startOneBot(dispatch, {
           hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          onBind: queueProcessReceipt,
           onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
           http: shared ? fetch : undefined,
         });
@@ -310,6 +383,7 @@ if (import.meta.main) {
         }
       });
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
+      queueProcessReceipt();
 
       consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const message of consoleInput) {
@@ -363,6 +437,25 @@ if (import.meta.main) {
             await runtimeLog?.close();
           }
         }
+      }
+    }
+  }
+  if (processAction && process.exitCode === 0) {
+    const { kind, target } = processAction;
+    let saved = false;
+    try {
+      await processReceipts.save(processAction);
+      saved = true;
+    } catch {
+      console.warn("[进程管理] 无法保存进程操作回执。");
+    }
+    if (kind === "restart") {
+      try {
+        restartHost();
+      } catch {
+        if (saved) await processReceipts.discard(target.type === "terminal" ? undefined : target.botId).catch(() => {});
+        console.error("[进程管理] 无法重新启动宿主。");
+        process.exitCode = 1;
       }
     }
   }

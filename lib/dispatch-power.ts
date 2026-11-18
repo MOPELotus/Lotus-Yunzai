@@ -3,7 +3,7 @@ import type { MessageEvent } from "./messages.ts";
 const pause = "#关机";
 const resume = "#开机";
 
-function formatElapsed(milliseconds: number): string {
+export function formatElapsed(milliseconds: number): string {
   const elapsed = Math.max(0, Math.floor(milliseconds));
   const seconds = Math.floor(elapsed / 1000);
   const minutes = Math.floor(seconds / 60);
