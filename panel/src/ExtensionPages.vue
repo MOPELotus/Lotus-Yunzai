@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
-import type { GuobaPage, GuobaPages } from "../../lib/panel-guoba-pages.ts";
-
-type ExtensionPage = Pick<GuobaPage, "id" | "plugin" | "title" | "icon" | "priority">;
-type Issue = GuobaPages["issues"][number];
+interface ExtensionPage {
+  id: string;
+  plugin: string;
+  title: string;
+  icon?: string;
+  priority: number;
+}
+interface Issue {
+  plugin: string;
+  kind: "invalid" | "duplicate-id";
+  descriptor?: string;
+  id?: string;
+}
 interface Catalog {
   pages: ExtensionPage[];
   issues: Issue[];
 }
 
 const issueLabels = {
-  "unsupported-js": "暂不支持 JavaScript 描述符",
-  invalid: "页面描述或资源无效",
+  invalid: "页面注册失败或资源无效",
   "duplicate-id": "页面 ID 重复",
 } as const satisfies Record<Issue["kind"], string>;
 

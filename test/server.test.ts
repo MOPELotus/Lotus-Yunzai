@@ -47,6 +47,21 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
     }));
     await writeFile(join(pages, "dashboard.js"), 'document.body.dataset.loaded = "true";');
     await writeFile(join(pages, "hidden.js"), 'throw new Error("未声明");');
+    const dynamic = join(root, "plugins", "dynamic");
+    await mkdir(join(dynamic, "webadapter"), { recursive: true });
+    await writeFile(join(dynamic, "index.js"), "export default class extends plugin {}");
+    await writeFile(join(dynamic, "webadapter", "index.js"), `
+      export function init(ctx) {
+        ctx.registerPage({ id: "api-demo", title: "带接口的扩展", src: "view.html" });
+        ctx.registerApi("get", "/reports/:id", (req, res) => {
+          res.json({ id: req.params.id, range: req.query.range });
+        });
+        ctx.registerApi("put", "/reports/:id", (req, res) => {
+          res.status(201).json({ id: req.params.id, saved: req.body });
+        });
+      }
+    `);
+    await writeFile(join(dynamic, "webadapter", "view.html"), '<!doctype html><html><head><title>报告</title></head><body>报告</body></html>');
 
     const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const wsPort = reservation.port;
@@ -147,7 +162,10 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       const extensionList = new URL("/panel/api/extensions", statusUrl);
       expect((await fetch(extensionList)).status).toBe(401);
       expect(await (await fetch(extensionList, { headers: auth("panel-fixture") })).json()).toEqual({
-        pages: [{ id: "dashboard", plugin: "compatible", title: "示例扩展", priority: 100 }], issues: [],
+        pages: [
+          { id: "dashboard", plugin: "compatible", title: "示例扩展", priority: 100 },
+          { id: "api-demo", plugin: "dynamic", title: "带接口的扩展", priority: 100 },
+        ], issues: [],
       });
       const open = new URL("/panel/api/extensions/dashboard/open", statusUrl);
       expect((await fetch(open, { method: "POST" })).status).toBe(401);
@@ -161,6 +179,46 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(await (await fetch(new URL("dashboard.js", frame))).text()).toContain("dataset.loaded");
       expect((await fetch(new URL("hidden.js", frame))).status).toBe(404);
       expect((await fetch(new URL(frame.pathname.replace("/dashboard/", "/other/"), frame))).status).toBe(404);
+
+      const dynamicOpen = new URL("/panel/api/extensions/api-demo/open", statusUrl);
+      const dynamicTicket = await (await fetch(dynamicOpen, { method: "POST", headers: auth("panel-fixture") })).json() as { url: string };
+      const dynamicFrame = new URL(dynamicTicket.url, statusUrl);
+      const access = dynamicFrame.searchParams.get("token")!;
+      expect(access).not.toBe("panel-fixture");
+      const dynamicPage = await fetch(dynamicFrame);
+      expect(dynamicPage.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
+      const source = await dynamicPage.text();
+      const bridge = /<script src="([^"]+)"/u.exec(source)?.[1];
+      expect(bridge).toBeDefined();
+      expect(await (await fetch(new URL(bridge!, statusUrl))).text()).toContain("window.__GUOBA__");
+
+      const reportPath = `${dynamicFrame.searchParams.get("__apiBase")}/reports/weekly?range=7`;
+      const selectedReport = new URL(reportPath, statusUrl);
+      expect((await fetch(selectedReport, { headers: { "guoba-access-token": access } })).status).toBe(403);
+      expect((await fetch(selectedReport, { headers: { Origin: "null" } })).status).toBe(401);
+      const assetTicket = dynamicFrame.pathname.split("/")[4]!;
+      expect((await fetch(selectedReport, { headers: { Origin: "null", "guoba-access-token": assetTicket } })).status)
+        .toBe(401);
+      expect((await fetch(new URL(reportPath.replace("/api-demo/", "/dashboard/"), statusUrl), {
+        headers: { Origin: "null", "guoba-access-token": access },
+      })).status).toBe(401);
+      const allowed = await fetch(selectedReport, { headers: { Origin: "null", "guoba-access-token": access } });
+      expect(allowed.headers.get("Access-Control-Allow-Origin")).toBe("null");
+      expect(await allowed.json()).toEqual({ id: "weekly", range: "7" });
+      const preflight = {
+        Origin: "null", "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "content-type, guoba-access-token",
+      };
+      expect((await fetch(selectedReport, { method: "OPTIONS", headers: preflight })).status).toBe(204);
+      expect((await fetch(selectedReport, {
+        method: "OPTIONS", headers: { ...preflight, "Access-Control-Request-Headers": "authorization" },
+      })).status).toBe(403);
+      const saved = await fetch(selectedReport, {
+        method: "PUT", headers: { Origin: "null", "guoba-access-token": access, "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false, count: 0 }),
+      });
+      expect(saved.status).toBe(201);
+      expect(await saved.json()).toEqual({ id: "weekly", saved: { enabled: false, count: 0 } });
       expect((await fetch(wsUrl, { headers: auth("http-fixture") })).status).toBe(401);
       expect((await fetch(wsUrl, {
         headers: { ...auth("onebot-fixture"), "X-Client-Role": "Universal" },
