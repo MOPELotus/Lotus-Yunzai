@@ -19,6 +19,27 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
     const original = join(root, "plugins", "xhh");
     await mkdir(original);
     await writeFile(join(original, "index.js"), 'throw new Error("拒载入口不应执行");');
+    await writeFile(join(old, "guoba.support.js"), 'throw new Error("不能从拒载插件导入配置");');
+    const compatible = join(root, "plugins", "compatible");
+    await mkdir(compatible);
+    await writeFile(join(compatible, "index.js"), "export default class extends plugin {}");
+    await writeFile(join(compatible, "guoba.support.js"), `
+      let enabled = false;
+      export function supportGuoba() {
+        return { configInfo: {
+          schemas: [
+            { field: "enabled", label: "启用", component: "Switch" },
+            { field: "secret", label: "令牌", component: "InputPassword" },
+          ],
+          getConfigData: () => ({ enabled, secret: "fixture-hidden" }),
+          setConfigData(data, { Result }) {
+            if (data.secret !== "fixture-hidden") return Result.error("未保留秘密");
+            enabled = data.enabled;
+            return Result.ok({ private: data.secret });
+          },
+        } };
+      }
+    `);
 
     const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const wsPort = reservation.port;
@@ -100,6 +121,21 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(await (await fetch(script, { method: "HEAD" })).text()).toBe("");
       expect((await fetch(new URL("assets/outside.js", home))).status).toBe(404);
       expect((await fetch(new URL("/panel/api/missing", statusUrl))).status).toBe(404);
+      const guoba = new URL("/panel/api/guoba", statusUrl);
+      const form = new URL("/panel/api/guoba/compatible", statusUrl);
+      expect((await fetch(form)).status).toBe(401);
+      expect(await (await fetch(guoba, { headers: auth("panel-fixture") })).json()).toEqual({ plugins: ["compatible"] });
+      expect((await fetch(new URL("/panel/api/guoba/xhh-tl", statusUrl), { headers: auth("panel-fixture") })).status).toBe(404);
+      const beforeForm = await (await fetch(form, { headers: auth("panel-fixture") })).json();
+      expect(beforeForm).toMatchObject({ values: { enabled: false }, configuredPasswords: ["secret"] });
+      expect(JSON.stringify(beforeForm)).not.toContain("fixture-hidden");
+      const savedForm = await fetch(form, {
+        method: "PUT", headers: { ...auth("panel-fixture"), "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(savedForm.status).toBe(200);
+      expect(await savedForm.text()).not.toContain("fixture-hidden");
+      expect(await (await fetch(form, { headers: auth("panel-fixture") })).json()).toMatchObject({ values: { enabled: true } });
       expect((await fetch(wsUrl, { headers: auth("http-fixture") })).status).toBe(401);
       expect((await fetch(wsUrl, {
         headers: { ...auth("onebot-fixture"), "X-Client-Role": "Universal" },

@@ -8,6 +8,7 @@ import { CommandRegistry } from "./lib/commands.ts";
 import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
+import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
@@ -88,8 +89,9 @@ if (import.meta.main) {
       const { hostname, http, oneBot, panelToken } = network;
       const statusRoute = http && httpStatus(http.auth);
       const likes = panelGroupSettings(plugins.directories);
+      const guoba = panelGuobaRoutes(plugins.directories);
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
-        (path) => path === "/panel/api/settings/group/likes" ? likes : undefined);
+        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path));
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       const fetch = statusRoute && (async (request: Request) =>
         await panel?.(request) ?? await assets?.(request) ?? statusRoute(request));

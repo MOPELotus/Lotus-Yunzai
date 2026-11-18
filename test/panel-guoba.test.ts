@@ -1,0 +1,156 @@
+import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadGuobaForm } from "../lib/panel-guoba.ts";
+
+test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改密码", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-form-"));
+  try {
+    await writeFile(join(directory, "guoba.support.js"), `
+      const lastSaved = new URL("saved.json", import.meta.url);
+      let config = {
+        settings: { count: 0, enabled: false, note: null, password: "fixture-private-password" },
+        "settings.count": 5,
+        permissions: { scopes: { "checkin.refresh": { policy: "master_only" } } },
+        hidden: "fixture-private-extra"
+      };
+      export function supportGuoba() {
+        return { configInfo: {
+          schemas: [
+            { component: "Divider", label: "设置" },
+            { component: "Input", field: "settings.note", label: "备注", bottomHelpMessage: "可留空" },
+            { component: "InputNumber", field: "settings.count", label: "数量",
+              componentProps: { min: 0, max: 10, step: 1, onClick: "ignored" } },
+            { component: "Switch", field: "settings.enabled", label: "启用" },
+            { component: "InputPassword", field: "settings.password", label: "凭据",
+              defaultValue: "fixture-private-default", componentProps: { value: "fixture-private-prop" } },
+            { component: "Select", field: 'permissions.scopes["checkin.refresh"].policy', label: "策略",
+              componentProps: { options: [
+                { label: "仅主人", value: "master_only" },
+                { label: "继承", value: "inherit" },
+                { label: "允许", value: "allow" }
+              ] } },
+            { component: "CustomControl", field: "hidden", label: "未适配字段" }
+          ],
+          getConfigData() { return config; },
+          async setConfigData(data, { Result }) {
+            if (data["settings.note"] === "error-result") return Result.error("fixture-private-rejection", 422);
+            if (data["settings.note"] === "throw") throw new Error("fixture-private-write");
+            await Bun.write(lastSaved, JSON.stringify(data));
+            config = data;
+            return Result.ok("fixture-private-result", "fixture-private-message");
+          }
+        } };
+      }
+    `);
+
+    const form = await loadGuobaForm(directory);
+    expect(form).toBeDefined();
+    if (!form) throw new Error("表单未加载。");
+    const policy = 'permissions.scopes["checkin.refresh"].policy';
+    expect(form.schemas.map(({ component }) => component)).toEqual([
+      "Divider", "Input", "InputNumber", "Switch", "InputPassword", "Select",
+    ]);
+    expect(form.schemas[2]?.componentProps).toEqual({ min: 0, max: 10, step: 1 });
+    expect(form.schemas[5]?.componentProps?.options).toEqual([
+      { label: "仅主人", value: "master_only" }, { label: "继承", value: "inherit" }, { label: "允许", value: "allow" },
+    ]);
+    expect(await form.read()).toEqual({
+      values: { "settings.note": null, "settings.count": 5, "settings.enabled": false, [policy]: "master_only" },
+      configuredPasswords: ["settings.password"],
+    });
+    expect(JSON.stringify(form.schemas)).not.toContain("fixture-private");
+    expect(JSON.stringify(await form.read())).not.toContain("fixture-private");
+
+    for (const data of [
+      { "settings.unlisted": 1 },
+      { settings: { unlisted: 1 }, "settings.count": 2 },
+      JSON.parse('{"settings":{"constructor":{"prototype":{"bad":true}}}}'),
+      { settings: { count: {} } },
+      { "settings.count": -1 },
+      { "settings.count": "11" },
+      { "settings.count": "many" },
+      { "settings.password": false },
+      { [policy]: "unknown" },
+      { [policy]: ["allow"] },
+      { hidden: "不能更新" },
+    ]) {
+      expect(await form.save(data)).toMatchObject({ ok: false, status: 400 });
+    }
+    expect(await Bun.file(join(directory, "saved.json")).exists()).toBe(false);
+
+    expect(await form.save({
+      settings: { count: 99, enabled: false, note: null, password: "" },
+      "settings.count": 0,
+      permissions: { scopes: { "checkin.refresh": { policy: "allow" } } },
+      [policy]: "inherit",
+    })).toEqual({ ok: true, status: 200, message: "配置已保存。" });
+    expect(JSON.parse(await readFile(join(directory, "saved.json"), "utf8"))).toEqual({
+      "settings.count": 0, "settings.note": null, "settings.enabled": false,
+      [policy]: "inherit", "settings.password": "fixture-private-password",
+    });
+
+    const fromSecondLoad = await loadGuobaForm(directory);
+    if (!fromSecondLoad) throw new Error("表单未加载。");
+    const saves = await Promise.all([
+      form.save({ settings: { password: "new-fixture-password", count: 1 } }),
+      fromSecondLoad.save({ settings: { count: 2 } }),
+    ]);
+    expect(saves.every((item) => item.ok)).toBe(true);
+    expect(JSON.parse(await readFile(join(directory, "saved.json"), "utf8"))).toEqual({
+      "settings.count": 2, "settings.password": "new-fixture-password", "settings.note": null,
+      "settings.enabled": false, [policy]: "inherit",
+    });
+    expect(await form.save({ "settings.password": null })).toMatchObject({ ok: true });
+    expect((await form.read()).configuredPasswords).toEqual([]);
+    expect(JSON.parse(await readFile(join(directory, "saved.json"), "utf8"))).toEqual({
+      "settings.password": null, "settings.count": 2, "settings.note": null, "settings.enabled": false,
+      [policy]: "inherit",
+    });
+    expect(await form.save({ "settings.note": "error-result" })).toEqual({
+      ok: false, status: 422, message: "插件拒绝保存锅巴配置。",
+    });
+    expect(await form.save({ "settings.note": "throw" })).toEqual({
+      ok: false, status: 500, message: "无法保存锅巴配置。",
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("锅巴适配拒绝目录外文件并屏蔽导入和读取异常", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-boundary-"));
+  try {
+    const linked = join(directory, "linked");
+    const external = join(directory, "external.js");
+    await mkdir(linked);
+    expect(await loadGuobaForm(linked)).toBeUndefined();
+    await writeFile(external, `await Bun.write(new URL("executed", import.meta.url), "bad");`);
+    await symlink(external, join(linked, "guoba.support.js"));
+    await expect(loadGuobaForm(linked)).rejects.toThrow("无法加载锅巴表单。");
+    expect(await Bun.file(join(directory, "executed")).exists()).toBe(false);
+
+    const broken = join(directory, "broken");
+    await mkdir(broken);
+    await writeFile(join(broken, "guoba.support.js"), 'throw new Error("fixture-private-import");');
+    await expect(loadGuobaForm(broken)).rejects.toThrow(/^无法加载锅巴表单。$/u);
+
+    const reader = join(directory, "reader");
+    await mkdir(reader);
+    await writeFile(join(reader, "guoba.support.js"), `
+      export const supportGuoba = () => ({
+        configInfo: {
+          schemas: [{ component: "Input", field: "note", label: "备注" }],
+          getConfigData() { throw new Error("fixture-private-read"); }
+        }
+      });
+    `);
+    const form = await loadGuobaForm(reader);
+    if (!form) throw new Error("表单未加载。");
+    await expect(form.read()).rejects.toThrow(/^无法读取锅巴配置。$/u);
+    expect(await form.save({ note: "无写入入口" })).toMatchObject({ ok: false, status: 405 });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
