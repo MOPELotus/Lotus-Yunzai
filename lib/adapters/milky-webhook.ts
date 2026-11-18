@@ -53,7 +53,8 @@ export function createMilkyWebhook(settings: MilkySettings, options: MilkyTransp
   async function handle(request: Request, listenerAuth: Headers): Promise<Response | undefined> {
     if (publicPostPath(new URL(request.url).pathname) !== settings.webhookPath || request.headers.has("Upgrade")) return;
     if (request.method !== "POST") return status(405, { Allow: "POST" });
-    if (!authorized(request, auth ?? listenerAuth)) return status(401);
+    const required = auth ?? listenerAuth;
+    if (required.keys().next().done || !authorized(request, required)) return status(401);
     const bound = account;
     if (!running || signal.aborted || !bound) return status(503);
     const parsed = await readWebhookJson(request);
