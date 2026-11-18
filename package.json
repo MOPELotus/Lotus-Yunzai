@@ -6,7 +6,11 @@
   "workspaces": [
     "panel",
     "packages/*",
-    "plugins/*"
+    "plugins/atlas",
+    "plugins/group",
+    "plugins/meme",
+    "plugins/notice",
+    "plugins/system"
   ],
   "scripts": {
     "bootstrap": "bun scripts/bootstrap.ts",
