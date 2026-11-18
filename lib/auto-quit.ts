@@ -10,7 +10,7 @@ function configuredNumber(value: unknown): number | undefined {
   return isPositiveInteger(parsed) ? parsed : undefined;
 }
 
-export async function readAutoQuit(root: URL, masterIds: (bot: number) => readonly number[]) {
+export async function readAutoQuit(root: URL, masterIds: (bot: number) => readonly number[], legacyMasterIds?: () => readonly number[]) {
   const { autoQuit, masterQQ } = await readLocalConfig(root, "other");
   const threshold = configuredNumber(autoQuit);
   const legacyMasters = new Set((Array.isArray(masterQQ) ? masterQQ : [masterQQ])
@@ -43,7 +43,8 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
       if (!Array.isArray(memberIds) || memberIds.length > threshold) return false;
       const members = new Set(memberIds);
       if (members.size !== memberIds.length || !members.has(self_id) || ![...members].every(isPositiveInteger) ||
-          memberIds.some((id) => legacyMasters.has(id)) || masterIds(self_id).some((id) => members.has(id))) return false;
+          (legacyMasterIds ? legacyMasterIds().some((id) => members.has(id)) : memberIds.some((id) => legacyMasters.has(id))) ||
+          masterIds(self_id).some((id) => members.has(id))) return false;
 
       if (signal?.aborted || latest.get(key) !== time) return false;
       try {

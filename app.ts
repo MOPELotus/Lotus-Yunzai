@@ -10,6 +10,7 @@ import { CommandRegistry } from "./lib/commands.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
+import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -44,6 +45,7 @@ if (import.meta.main) {
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
+  let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
 
   function stop(code: number) {
     if (stopping) return;
@@ -124,8 +126,12 @@ if (import.meta.main) {
 
   async function dispatchMessage(incoming: MessageEvent) {
     const { event, allowNew } = groupDispatch.prepare(incoming);
-    if (await privateAccess.blocked(event)) return;
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    if (matchesMasterEnrollment(event.msg)) {
+      if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
+      return;
+    }
+    if (await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed) || !allowNew) return;
 
     const command = normalizeGameCommand(event);
@@ -163,7 +169,11 @@ if (import.meta.main) {
     autoFriend = friendRequests;
     groupDispatch = routing;
     reviewInvitation = invitations;
-    autoQuit = await readAutoQuit(root, permissions.masterIds);
+    autoQuit = await readAutoQuit(root, permissions.masterIds, permissions.legacyMasterIds);
+    masterEnrollment = createMasterEnrollment({
+      isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+      isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
+    });
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);

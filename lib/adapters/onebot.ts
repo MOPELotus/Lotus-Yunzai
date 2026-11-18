@@ -209,6 +209,7 @@ async function dispatchMessage(
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
     isMaster: owner,
+    boundAccount: selfId !== undefined && selfId === connectedBotId,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),

@@ -25,7 +25,8 @@
     "@lotus-yunzai/storage": "workspace:*",
     "@pixel.js/shotium": "0.12.4",
     "art-template": "4.13.2",
-    "node-schedule": "2.1.2"
+    "node-schedule": "2.1.2",
+    "yaml": "2.9.1"
   },
   "trustedDependencies": [
     "skia-canvas"

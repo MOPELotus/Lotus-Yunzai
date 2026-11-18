@@ -1,8 +1,9 @@
 import { readLocalConfig } from "./config.ts";
+import { persistMaster } from "./master-config.ts";
 
-export async function readMasterPermissions(root: URL) {
+function readOwnerSnapshot(config: Record<string, unknown>) {
   const owners = new Map<string, Set<string>>();
-  const { master } = await readLocalConfig(root, "other");
+  const { master, masterQQ } = config;
   const entries = Array.isArray(master) ? master : master == null ? [] : [master];
   for (const entry of entries) {
     const match = typeof entry === "string" ? /^(stdin|[1-9]\d*):(stdin|[1-9]\d*)$/u.exec(entry.trim()) : null;
@@ -16,13 +17,37 @@ export async function readMasterPermissions(root: URL) {
     owners.set(bot, users);
   }
 
+  const legacy = Array.isArray(masterQQ) ? masterQQ : [masterQQ];
+  const globalMasters = legacy.flatMap((value) => {
+    const id = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
+    return typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? [id] : [];
+  });
+  return { owners, globalMasters };
+}
+
+export async function readMasterPermissions(root: URL) {
+  let snapshot = readOwnerSnapshot(await readLocalConfig(root, "other"));
   return {
-    terminal: owners.get("stdin")?.has("stdin") ?? false,
+    get terminal() {
+      return snapshot.owners.get("stdin")?.has("stdin") ?? false;
+    },
     isMaster(bot: number, user: number) {
-      return owners.get(String(bot))?.has(String(user)) ?? false;
+      return snapshot.owners.get(String(bot))?.has(String(user)) ?? false;
     },
     masterIds(bot: number): readonly number[] {
-      return [...owners.get(String(bot)) ?? []].map(Number).filter(Number.isSafeInteger);
+      return [...snapshot.owners.get(String(bot)) ?? []].map(Number).filter(Number.isSafeInteger);
+    },
+    legacyMasterIds(): readonly number[] {
+      return snapshot.globalMasters;
+    },
+    async grant(bot: number, user: number, approver: number | "stdin"): Promise<boolean> {
+      try {
+        const config = await persistMaster(root, bot, user, approver);
+        snapshot = readOwnerSnapshot(config);
+        return true;
+      } catch {
+        return false;
+      }
     },
   };
 }

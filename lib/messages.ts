@@ -21,6 +21,7 @@ export interface MessageEvent {
   readonly isGroup: boolean;
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
+  readonly boundAccount?: boolean;
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
