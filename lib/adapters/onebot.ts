@@ -51,6 +51,7 @@ async function dispatchGroupNotice(
     user_id, group_id, self_id,
     operator_id: isId(operator_id) ? operator_id : undefined,
     group_name: stringField(event.group_name),
+    getGroupName: () => calls.getGroupName(send, group_id),
     nickname: stringField(event.nickname),
     member: member && { card: stringField(member.card), nickname: stringField(member.nickname) },
     dismiss: typeof event.dismiss === "boolean" ? event.dismiss : undefined,

@@ -42,6 +42,7 @@ export interface GroupNotice {
   readonly operator_id?: number;
   readonly inviter_id?: number;
   readonly group_name?: string;
+  readonly getGroupName?: () => Promise<string | undefined>;
   readonly nickname?: string;
   readonly member?: { readonly card?: string; readonly nickname?: string };
   readonly dismiss?: boolean;

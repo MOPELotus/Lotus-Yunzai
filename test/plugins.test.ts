@@ -210,10 +210,11 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           constructor() { super({ event: "notice.group.increase", priority: 1 }); }
           async accept(e) {
             if (e.group_id !== 77) return false;
+            const group = await e.getGroupName();
             const sent = await this.reply([segment.image("https://example.invalid/join.jpg")]);
             if (!sent) this.reply(JSON.stringify({
               type: e.notice_type, change: e.sub_type, action: e.increase_type,
-              bot: e.self_id, user: e.user_id, inviter: e.inviter_id, member: e.member,
+              bot: e.self_id, user: e.user_id, inviter: e.inviter_id, member: e.member, group,
             }));
             return "return";
           }
@@ -448,9 +449,13 @@ failsMsg: 协议拒绝
       post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: 99,
       user_id: 43, group_id: 77, operator_id: 51, member: { nickname: "莲" },
     };
-    const welcomeFrame = nextFrame();
+    const lookupFrame = nextFrame();
     client.send(JSON.stringify({ ...joinEvent, group_id: 0 }));
     client.send(JSON.stringify(joinEvent));
+    const lookup = await lookupFrame;
+    expect(lookup).toMatchObject({ action: "get_group_info", params: { group_id: 77 } });
+    const welcomeFrame = nextFrame();
+    client.send(JSON.stringify({ echo: lookup.echo, status: "ok", retcode: 0, data: { group_name: "测试群" } }));
     const welcome = await welcomeFrame;
     expect(welcome).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
       { type: "image", data: { file: "https://example.invalid/join.jpg" } },
@@ -460,7 +465,7 @@ failsMsg: 协议拒绝
     const fallback = await fallbackFrame;
     expect(fallback).toMatchObject({ action: "send_msg", params: { group_id: 77, message: JSON.stringify({
       type: "group", change: "increase", action: "invite", bot: 99, user: 43, inviter: 51,
-      member: { nickname: "莲" },
+      member: { nickname: "莲" }, group: "测试群",
     }) } });
     client.send(JSON.stringify({ echo: fallback.echo, status: "ok", retcode: 0 }));
 
