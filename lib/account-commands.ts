@@ -32,12 +32,34 @@ export function accountCommands(
     };
   }
 
-  const refreshCommands: Record<string, CommandHandler> = { "#刷新cookie": refresh() };
+  function clear(id: number): CommandHandler {
+    return async (argument, context) => {
+      if (argument) return "用法：#清除登录 或 #清除登录2";
+      if (context.user_id === undefined) return "请从 QQ 会话发送清除登录指令。";
+
+      try {
+        await profiles.clearLogin(String(context.user_id), id);
+        return `档案 ${id} 的登录信息已清除，设备和角色设置已保留。`;
+      } catch {
+        return `无法清除档案 ${id} 的登录信息，请检查档案是否存在。`;
+      }
+    };
+  }
+
+  const accountActions: Record<string, CommandHandler> = { "#刷新cookie": refresh() };
   const aliases: Record<string, string> = {};
   for (let id = 0; id <= MAX_PROFILE_ID; id++) {
     const suffix = id === 0 ? "" : String(id);
     const command = `#刷新cookie${suffix}`;
-    if (id > 0) refreshCommands[command] = refresh(id);
+    if (id > 0) accountActions[command] = refresh(id);
+    const clearCommand = `#清除登录${suffix}`;
+    accountActions[clearCommand] = clear(id || 1);
+    for (const verb of ["清除", "删除"]) {
+      for (const noun of ["登录", "扫码登录", "cookie", "Cookie"]) {
+        const alias = `#${verb}${noun}${suffix}`;
+        if (alias !== clearCommand) aliases[alias] = clearCommand;
+      }
+    }
     for (const alias of ["c", "ck", "Cookie"]) aliases[`#刷新${alias}${suffix}`] = command;
   }
 
@@ -45,7 +67,7 @@ export function accountCommands(
     name: "@lotus-yunzai/account",
     aliases,
     commands: {
-      ...refreshCommands,
+      ...accountActions,
       async "#登录列表"(argument: string, context: CommandContext) {
         if (argument) return "用法：#登录列表";
         if (context.user_id === undefined) return "请从 QQ 会话发送 #登录列表。";

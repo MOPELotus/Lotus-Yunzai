@@ -157,6 +157,44 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     return profile;
   }
 
+  async function updateAccount(
+    qq: string,
+    id: number,
+    name: string,
+    change: (account: Record<string, unknown>, current: ReturnType<typeof readIdentity>) => Record<string, unknown>,
+    expected?: string,
+  ) {
+    const directory = await realpath(root);
+    const path = join(directory, name);
+    return serializeWrite(path, async () => {
+      const snapshot = await readFileSnapshot(path);
+      const revision = revisionOf(snapshot);
+      if (expected !== undefined && expected !== revision) {
+        throw new ProfileError("changed", "档案已变更，请重新发起请求。");
+      }
+      const current: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
+      const state = readIdentity(current, qq, id);
+      const data = record(current);
+      const updated = { ...data, account: change(record(data.account), state) };
+      const yaml = Bun.YAML.stringify(updated);
+      if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
+
+      const temporary = await mkdtemp(join(directory, ".profile-write-"));
+      try {
+        const staged = join(temporary, name);
+        await writeFile(staged, yaml, { mode: 0o600 });
+        if (revisionOf(await readFileSnapshot(path)) !== revision) {
+          throw new ProfileError("changed", "档案已变更，请重新发起请求。");
+        }
+        await rename(staged, path);
+      } finally {
+        await rm(temporary, { recursive: true, force: true });
+      }
+      const latest = readIdentity(updated, qq, id);
+      return { qq, profileId: id, account: latest.account, device: latest.device, revision: revisionOf(Buffer.from(yaml)) };
+    });
+  }
+
   return {
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
@@ -188,41 +226,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         throw new ProfileError("invalid", "刷新响应的凭据格式无效。");
       }
 
-      const directory = await realpath(root);
-      const path = join(directory, name);
-      return serializeWrite(path, async () => {
-        const verify = async () => {
-          const content = await readFileSnapshot(path);
-          if (revisionOf(content) !== revision) {
-            throw new ProfileError("changed", "档案已变更，请重新发起请求。");
-          }
-          return content;
-        };
-        const current: unknown = Bun.YAML.parse((await verify()).toString("utf8"));
-        if (!readIdentity(current, qq, id).summary.loggedIn) {
-          throw new ProfileError("login-required", "档案尚未登录。");
-        }
-        const data = record(current);
-        const account = {
-          ...record(data.account), cookie: credentials.cookie, ltoken: credentials.ltoken,
+      return updateAccount(qq, id, name, (account, current) => {
+        if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        return {
+          ...account, cookie: credentials.cookie, ltoken: credentials.ltoken,
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
         };
-        const updated = { ...data, account };
-        const yaml = Bun.YAML.stringify(updated);
-        if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
-
-        const temporary = await mkdtemp(join(directory, ".profile-write-"));
-        try {
-          const staged = join(temporary, name);
-          await writeFile(staged, yaml, { mode: 0o600 });
-          await verify();
-          await rename(staged, path);
-        } finally {
-          await rm(temporary, { recursive: true, force: true });
-        }
-        const latest = readIdentity(updated, qq, id);
-        return { qq, profileId: id, account: latest.account, device: latest.device, revision: revisionOf(Buffer.from(yaml)) };
-      });
+      }, revision);
+    },
+    async clearLogin(qq: string, id = 1): Promise<void> {
+      const name = profileFilename(qq, id);
+      await updateAccount(qq, id, name, (account) => ({
+        ...account, ltuid: "", stuid: "", stoken: "", ltoken: "", mid: "", cookie: "",
+        stoken_cookie: "", updated_at: "", roles_updated_at: "", role_sync_error: "",
+      }));
     },
     async requestContext(qq: string, id: number, game: Game, uid?: string) {
       if (!games.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");

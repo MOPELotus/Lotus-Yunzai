@@ -280,7 +280,8 @@ permissions:
     checkin.refresh: { policy: master_only }
 `);
     await writeFile(join(root, "42.yaml"), "account: { cookie: old, stuid: '71', stoken: login-1 }\n");
-    await writeFile(join(root, "42-2.yaml"), "profile: { id: 2 }\naccount: { cookie: old, stuid: '72', stoken: login-2 }\n");
+    await writeFile(join(root, "42-2.yaml"),
+      "profile: { id: 2 }\naccount: { cookie: old, stuid: '72', stoken: login-2, current_uid: { gs: '82' } }\ndevice: { id: my-device }\nschedule: { mode: fixed }\n");
     const seen: Array<string | null> = [];
     const registry = new CommandRegistry();
     registry.registerModule(accountCommands(root, await readAccountRefreshPermission(pathToFileURL(root + "/")), (profiles) =>
@@ -299,6 +300,18 @@ permissions:
     expect(seen).toEqual(["login-2", "login-2"]);
     expect(await registry.dispatch("#刷新Cookie", owner)).toBe("Cookie 刷新\n档案 1 · 刷新成功\n档案 2 · 刷新成功");
     expect(seen).toEqual(["login-2", "login-2", "login-1", "login-1", "login-2", "login-2"]);
+    const profiles = createProfileStore(root);
+    const old = await profiles.accountContext("42", 2);
+    expect(await registry.dispatch("#删除扫码登录2", user)).toContain("档案 2 的登录信息已清除");
+    expect((await profiles.summary("42", 1)).loggedIn).toBe(true);
+    expect((await profiles.summary("42", 2)).loggedIn).toBe(false);
+    expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).toMatchObject({
+      account: { cookie: "", stoken: "", current_uid: { gs: "82" } },
+      device: { id: "my-device" },
+      schedule: { mode: "fixed" },
+    });
+    await expect(profiles.saveRefreshedCredentials("42", 2, old.revision, { cookie: "late", ltoken: "late" }))
+      .rejects.toMatchObject({ code: "changed" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
