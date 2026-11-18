@@ -1,0 +1,6 @@
+/internal/
+/config/
+/data/
+node_modules/
+.env
+.env.*
