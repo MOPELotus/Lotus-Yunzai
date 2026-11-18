@@ -1,4 +1,4 @@
-import { normalizeGameRoles, type Game, type GameRole, type ProfileAccountContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 
 export { createCredentialExchange };
@@ -28,7 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const expired = new Set([-100, 10001, 10101, 10102, 10103]);
 
 interface CookieRecovery {
-  readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials">;
+  readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">;
   readonly exchange: (profile: ProfileAccountContext) => Promise<RefreshedCredentials>;
 }
 
@@ -59,8 +59,8 @@ export function createHoyoClient(
     return operation;
   }
 
-  async function list(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
-    if (!Object.hasOwn(gameBiz, game)) {
+  async function list(context: ProfileAccountContext, game?: Game, signal?: AbortSignal): Promise<unknown[]> {
+    if (game !== undefined && !Object.hasOwn(gameBiz, game)) {
       throw new HoyoRequestError("invalid-input", "游戏类型无效。");
     }
     const cookie = context.account.cookie;
@@ -69,8 +69,7 @@ export function createHoyoClient(
     }
 
     const endpoint = new URL("https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie");
-    const biz = gameBiz[game];
-    endpoint.searchParams.set("game_biz", biz);
+    if (game !== undefined) endpoint.searchParams.set("game_biz", gameBiz[game]);
     const deadline = AbortSignal.timeout(15_000);
 
     let response: Response;
@@ -105,29 +104,67 @@ export function createHoyoClient(
       throw new HoyoRequestError("response", "米游社角色列表格式有误。");
     }
 
-    const matching = payload.data.list.filter((item) => isRecord(item) && item.game_biz === biz);
-    return normalizeGameRoles(matching);
+    return payload.data.list;
+  }
+
+  function rolesFor(data: readonly unknown[], game: Game): GameRole[] {
+    return normalizeGameRoles(data.filter((item) => isRecord(item) && item.game_biz === gameBiz[game]));
+  }
+
+  async function retrieve(context: ProfileAccountContext, game?: Game, signal?: AbortSignal) {
+    try {
+      return { context, data: await list(context, game, signal) };
+    } catch (error) {
+      if (!recovery || signal?.aborted || !(error instanceof HoyoRequestError) ||
+          error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
+    }
+
+    let refreshed: ProfileAccountContext;
+    try {
+      refreshed = await recover(context);
+    } catch {
+      throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
+    }
+    return { context: refreshed, data: await list(refreshed, game, signal) };
+  }
+
+  async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
+    if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
+    const roles = {
+      gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz"),
+    };
+    // An unsupported game is omitted, but malformed entries for supported games must not clear saved roles.
+    for (const item of data) {
+      if (!isRecord(item) || !item.game_biz ||
+          (profileGames.some((game) => gameBiz[game] === item.game_biz) && !normalizeGameRoles([item]).length)) {
+        throw new HoyoRequestError("response", "米游社角色资料不完整。");
+      }
+    }
+    await recovery.profiles.saveRoles(context.qq, context.profileId, context.revision, roles);
+    return roles;
   }
 
   return {
     refreshCredentials: recover,
-    async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
+    async refreshProfile(context: ProfileAccountContext) {
+      const refreshed = await recover(context);
       try {
-        return await list(context, game, signal);
-      } catch (error) {
-        if (!recovery || signal?.aborted || !(error instanceof HoyoRequestError) ||
-            error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
-      }
-
-      let refreshed: ProfileAccountContext;
-      try {
-        refreshed = await recover(context);
+        await saveRoles(refreshed, await list(refreshed));
+        return { rolesSynced: true };
       } catch {
-        throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
+        return { rolesSynced: false };
       }
-      return list(refreshed, game, signal);
+    },
+    async syncRoles(context: ProfileAccountContext, allowRefresh = true) {
+      if (!allowRefresh) return saveRoles(context, await list(context));
+      const result = await retrieve(context);
+      return saveRoles(result.context, result.data);
+    },
+    async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
+      return rolesFor((await retrieve(context, game, signal)).data, game);
     },
   };
+
 }
 
 export function createProfileHoyoClient(

@@ -283,9 +283,21 @@ permissions:
     await writeFile(join(root, "42-2.yaml"),
       "profile: { id: 2 }\naccount: { cookie: old, stuid: '72', stoken: login-2, current_uid: { gs: '82' } }\ndevice: { id: my-device }\nschedule: { mode: fixed }\n");
     const seen: Array<string | null> = [];
+    let malformedRoles = false;
     const registry = new CommandRegistry();
     registry.registerModule(accountCommands(root, await readAccountRefreshPermission(pathToFileURL(root + "/")), (profiles) =>
-      createProfileHoyoClient(profiles, async (url) => {
+      createProfileHoyoClient(profiles, async (url, init) => {
+        if (url.pathname.endsWith("getUserGameRolesByCookie")) {
+          expect(url.searchParams.has("game_biz")).toBe(false);
+          const account = new Headers(init.headers).get("cookie")?.includes("account_id=72;");
+          return Response.json({ retcode: 0, data: { list: malformedRoles
+            ? [{ game_biz: "hk4e_cn" }]
+            : [
+              { game_biz: "hk4e_cn", game_uid: account ? "82" : "81", region: "cn_gf01", region_name: "天空岛", level: 60 },
+              { game_biz: "hk4e_cn", game_uid: account ? "92" : "91", is_chosen: true },
+              { game_biz: "hkrpg_cn", game_uid: account ? "182" : "181" },
+            ] } });
+        }
         seen.push(url.searchParams.get("stoken"));
         return Response.json({ retcode: 0, data: url.pathname.endsWith("getLTokenBySToken")
           ? { ltoken: "lt" }
@@ -301,6 +313,14 @@ permissions:
     expect(await registry.dispatch("#刷新Cookie", owner)).toBe("Cookie 刷新\n档案 1 · 刷新成功\n档案 2 · 刷新成功");
     expect(seen).toEqual(["login-2", "login-2", "login-1", "login-1", "login-2", "login-2"]);
     const profiles = createProfileStore(root);
+    expect(await registry.dispatch("#同步UID2", owner)).toContain("原神 2，星铁 1，绝区零 0");
+    expect((await profiles.requestContext("42", 2, "gs")).role).toMatchObject({ uid: "82", regionName: "天空岛", level: 60 });
+    expect((await profiles.requestContext("42", 1, "sr")).role.uid).toBe("181");
+
+    malformedRoles = true;
+    expect(await registry.dispatch("#刷新自动签到2", owner)).toContain("刷新成功，角色同步失败");
+    expect((await profiles.requestContext("42", 2, "gs")).role.uid).toBe("82");
+
     const old = await profiles.accountContext("42", 2);
     expect(await registry.dispatch("#删除扫码登录2", user)).toContain("档案 2 的登录信息已清除");
     expect((await profiles.summary("42", 1)).loggedIn).toBe(true);

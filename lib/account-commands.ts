@@ -22,13 +22,28 @@ export function accountCommands(
       const lines = ["Cookie 刷新"];
       for (const id of ids) {
         try {
-          await client.refreshCredentials(await profiles.accountContext(qq, id));
-          lines.push(`档案 ${id} · 刷新成功`);
+          const { rolesSynced } = await client.refreshProfile(await profiles.accountContext(qq, id));
+          lines.push(`档案 ${id} · 刷新成功${rolesSynced ? "" : "，角色同步失败"}`);
         } catch {
           lines.push(`档案 ${id} · 刷新失败，请确认登录状态后重试`);
         }
       }
       return lines.join("\n");
+    };
+  }
+
+  function sync(id: number): CommandHandler {
+    return async (argument, context) => {
+      if (argument) return "用法：#同步角色 或 #同步角色2";
+      if (context.user_id === undefined) return "请从 QQ 会话发送同步角色指令。";
+
+      try {
+        const profile = await profiles.accountContext(String(context.user_id), id);
+        const roles = await client.syncRoles(profile, canRefresh(context));
+        return `档案 ${id} 角色已同步。原神 ${roles.gs.length}，星铁 ${roles.sr.length}，绝区零 ${roles.zzz.length}。`;
+      } catch {
+        return `无法同步档案 ${id} 的角色，请确认登录状态后重试。`;
+      }
     };
   }
 
@@ -47,11 +62,15 @@ export function accountCommands(
   }
 
   const accountActions: Record<string, CommandHandler> = { "#刷新cookie": refresh() };
-  const aliases: Record<string, string> = {};
+  const aliases: Record<string, string> = { "#账号列表": "#登录列表" };
   for (let id = 0; id <= MAX_PROFILE_ID; id++) {
     const suffix = id === 0 ? "" : String(id);
     const command = `#刷新cookie${suffix}`;
     if (id > 0) accountActions[command] = refresh(id);
+    aliases[`#刷新自动签到${suffix}`] = command;
+    const syncCommand = `#同步角色${suffix}`;
+    accountActions[syncCommand] = sync(id || 1);
+    for (const alias of ["UID", "uid"]) aliases[`#同步${alias}${suffix}`] = syncCommand;
     const clearCommand = `#清除登录${suffix}`;
     accountActions[clearCommand] = clear(id || 1);
     for (const verb of ["清除", "删除"]) {

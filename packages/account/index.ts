@@ -4,8 +4,8 @@ import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } 
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const games = ["gs", "sr", "zzz"] as const;
-export type Game = typeof games[number];
+export const profileGames = ["gs", "sr", "zzz"] as const;
+export type Game = typeof profileGames[number];
 export const MAX_PROFILE_ID = 255;
 
 export class ProfileError extends Error {
@@ -43,6 +43,8 @@ export interface GameRole {
   readonly gameBiz: string;
   readonly chosen: boolean;
   readonly nickname: string;
+  readonly regionName?: string;
+  readonly level?: string | number;
 }
 
 export function normalizeGameRoles(value: unknown): GameRole[] {
@@ -55,6 +57,8 @@ export function normalizeGameRoles(value: unknown): GameRole[] {
       roles.set(uid, {
         uid, region: text(raw.region), gameBiz: text(raw.game_biz),
         chosen: raw.is_chosen === true, nickname: text(raw.nickname),
+        ...(text(raw.region_name) ? { regionName: text(raw.region_name) } : {}),
+        ...(text(raw.level) ? { level: raw.level as string | number } : {}),
       });
     }
   }
@@ -234,6 +238,26 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         };
       }, revision);
     },
+    async saveRoles(qq: string, id: number, revision: string, roles: Readonly<Record<Game, readonly GameRole[]>>) {
+      const name = profileFilename(qq, id);
+      return updateAccount(qq, id, name, (account, current) => {
+        if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        const catalog = { ...current.roles };
+        const selected = { ...current.selected };
+        for (const game of profileGames) {
+          const list = roles[game];
+          catalog[game] = list.map((role) => ({
+            uid: role.uid, game_uid: role.uid, game_biz: role.gameBiz, region: role.region,
+            region_name: role.regionName ?? role.region, nickname: role.nickname, level: role.level ?? "",
+            is_chosen: role.chosen,
+          }));
+          selected[game] = list.find((role) => role.uid === accountId(selected[game]))?.uid
+            ?? list.find((role) => role.chosen)?.uid ?? list[0]?.uid ?? "";
+        }
+        return { ...account, game_roles: catalog, current_uid: selected,
+          roles_updated_at: new Date().toISOString(), role_sync_error: "" };
+      }, revision);
+    },
     async clearLogin(qq: string, id = 1): Promise<void> {
       const name = profileFilename(qq, id);
       await updateAccount(qq, id, name, (account) => ({
@@ -242,7 +266,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }));
     },
     async requestContext(qq: string, id: number, game: Game, uid?: string) {
-      if (!games.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
       const profile = await readLoggedIn(qq, id);
       const roles = normalizeGameRoles(profile.roles[game]);
       const role = uid !== undefined ? roles.find((item) => item.uid === uid)
