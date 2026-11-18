@@ -191,9 +191,13 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
           throw new Error("入口必须通过默认导出提供 commands。");
         }
         commands.registerModule({ name: moduleName, commands: handlers as CommandModule["commands"] });
-      } else if (!legacy.register(published)) {
-        console.warn(`[插件] 跳过 ${label}：未导出可用的 V3 插件类。`);
-        continue;
+      } else {
+        const result = await legacy.register(published);
+        if (result !== "loaded") {
+          const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
+          console.warn(`[插件] 跳过 ${label}：${reason}`);
+          continue;
+        }
       }
       console.log(`[插件] 已加载 ${label}。`);
     } catch (error) {

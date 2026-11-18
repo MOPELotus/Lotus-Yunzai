@@ -95,6 +95,13 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
               { reg: "^$", fnc: "imageOnly" },
             ] });
           }
+          init() {
+            const timer = setInterval(() => {}, 60_000);
+            this.addCleanup(() => {
+              clearInterval(timer);
+              console.warn("OneBot 插件已清理");
+            });
+          }
           skip() { return false; }
           admin(e) { return this.reply("管理群 " + e.group_id, true); }
           media(e) {
@@ -256,10 +263,97 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     const stderr = await new Response(backend.stderr).text();
     expect(stderr).toContain("拒绝加载 miao-plugin");
     expect(stderr).not.toContain("被拒载的旧入口已执行");
+    expect(stderr).toContain("OneBot 插件已清理");
   } finally {
     socket?.close();
     host?.kill();
     await host?.exited;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 初始化失败和跳过会清理资源，正常退出按初始化的反序清理", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-init-"));
+  try {
+    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
+    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    const plugins = join(root, "plugins");
+    await mkdir(plugins, { recursive: true });
+
+    await writeFile(join(plugins, "a-rollback.js"), `
+      export const apps = {
+        first: class extends plugin {
+          constructor() {
+            super({ rule: [{ reg: "^#回滚$", fnc: "handle" }] });
+          }
+          async init() {
+            await Promise.resolve();
+            this.addCleanup(() => console.log("trace:rollback-first"));
+          }
+          handle() { return this.reply("不应执行回滚规则"); }
+        },
+        broken: class extends plugin {
+          init() {
+            this.addCleanup(() => console.log("trace:rollback-broken"));
+            this.addCleanup(() => { throw new Error("清理失败样例"); });
+            throw new Error("初始化失败样例");
+          }
+        }
+      };
+    `);
+    await writeFile(join(plugins, "b-skip.js"), `
+      export default class extends plugin {
+        constructor() { super({ rule: [{ reg: "^#跳过$", fnc: "handle" }] }); }
+        init() {
+          this.addCleanup(() => console.log("trace:skip"));
+          return "return";
+        }
+        handle() { return this.reply("不应执行跳过规则"); }
+      };
+    `);
+    await writeFile(join(plugins, "c-active.js"), `
+      export default class extends plugin {
+        constructor() { super({ rule: [{ reg: "^#初始化$", fnc: "handle" }] }); }
+        init() {
+          this.addCleanup(() => console.log("trace:active-first"));
+          const timer = setInterval(() => {}, 60_000);
+          this.addCleanup(() => {
+            clearInterval(timer);
+            console.log("trace:active-second");
+          });
+          console.log("trace:init");
+        }
+        handle() { return this.reply("trace:dispatch"); }
+      };
+    `);
+    const host = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root,
+      env: { PATH: process.env.PATH },
+      stdin: new Blob(["#回滚\n#跳过\n#初始化\n"]),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    let result;
+    try {
+      result = await Promise.all([
+        new Response(host.stdout).text(),
+        new Response(host.stderr).text(),
+        host.exited,
+      ]);
+    } finally {
+      if (host.exitCode === null) host.kill("SIGKILL");
+    }
+    const [stdout, stderr, exit] = result;
+    expect(exit).toBe(0);
+    expect(stderr).toContain("初始化失败样例");
+    expect(stderr).toContain("清理失败样例");
+    expect(stderr).toContain("插件初始化请求跳过");
+    expect(stdout).not.toContain("不应执行");
+    expect(stdout.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+      "trace:rollback-broken", "trace:rollback-first", "trace:skip",
+      "trace:init", "trace:dispatch", "trace:active-second", "trace:active-first",
+    ]);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
