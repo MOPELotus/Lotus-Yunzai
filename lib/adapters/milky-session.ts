@@ -128,7 +128,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)
           : Promise.resolve(false) : undefined,
     };
-    const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply);
+    const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
+      const result = await call.confirmed("quit_group", { group_id });
+      if (result.status === "unknown") throw new Error("Milky 退群回执未确认。");
+      return result.status === "confirmed";
+    });
     if (event) void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
     return "accepted";
   } };

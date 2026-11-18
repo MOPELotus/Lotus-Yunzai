@@ -1,4 +1,5 @@
 import type { FriendPoke, GroupNotice, MessageReply } from "../messages.ts";
+import { inspectMilkyAutoQuit } from "./milky-auto-quit.ts";
 
 type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
 type SendReply = (target: { group_id: number } | { user_id: number }, reply: MessageReply) => Promise<boolean>;
@@ -11,7 +12,9 @@ function isId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-export function milkyNotice(value: unknown, selfId: number, call: MilkyCall, sendReply: SendReply): GroupNotice | FriendPoke | undefined {
+export function milkyNotice(
+  value: unknown, selfId: number, call: MilkyCall, sendReply: SendReply, leaveGroup?: (groupId: number) => Promise<boolean>,
+): GroupNotice | FriendPoke | undefined {
   if (!isId(selfId) || !isRecord(value) || value.self_id !== selfId || !isRecord(value.data)) return;
   const { event_type: type, time, data } = value;
   const { user_id, group_id } = data;
@@ -29,6 +32,7 @@ export function milkyNotice(value: unknown, selfId: number, call: MilkyCall, sen
 
   if ((type !== "group_member_increase" && type !== "group_member_decrease") || !isId(group_id)) return;
   const increase = type === "group_member_increase";
+  const ownJoin = increase && user_id === selfId && isId(time) && leaveGroup !== undefined;
   const operator_id = isId(data.operator_id) ? data.operator_id : undefined;
   const inviter_id = increase && isId(data.invitor_id) ? data.invitor_id : undefined;
   let action: string | undefined;
@@ -45,6 +49,8 @@ export function milkyNotice(value: unknown, selfId: number, call: MilkyCall, sen
     action_sub_type: action, increase_type: increase ? action : undefined, decrease_type: increase ? undefined : action,
     dismiss: !increase && typeof data.dismiss === "boolean" ? data.dismiss : undefined,
     isGroup: true, isPrivate: false, isMaster: false,
+    inspectAutoQuit: ownJoin ? (maxMembers) => inspectMilkyAutoQuit(call, group_id, selfId, time, maxMembers) : undefined,
+    leaveGroup: ownJoin ? () => leaveGroup(group_id) : undefined,
     async getGroupName() {
       try {
         const group = (await call("get_group_info", { group_id, no_cache: true }))?.group;
