@@ -55,7 +55,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
       });
     }
 
-    function command(message: string, user_id = 51) {
+    function command(message: string | object[], user_id = 51) {
       const next = nextFrame();
       client.send(JSON.stringify({ post_type: "message", message_type: "private", sub_type: "friend",
         self_id: 99, user_id, message }));
@@ -102,13 +102,25 @@ async function verifyNoticePush(root: string, storageUrl: string) {
       user_id: 51, message: expect.stringContaining("撤回已确认"),
     });
 
-    expect((await command("#发布公告 停机回执测试")).params).toMatchObject({
+    const image = { type: "image", data: { file: "https://example.invalid/notice.png" } };
+    expect((await command([
+      { type: "text", data: { text: "#发布公告 停机回执测试" } }, image,
+      { type: "text", data: { text: "图后文字" } },
+    ])).params).toMatchObject({
       user_id: 51, message: expect.stringContaining("公告已发布"),
     });
     const beforeShutdown = await command("#推送公告");
     expect(beforeShutdown.action).toBe("get_group_list");
     const outstanding = await confirm(beforeShutdown.echo, membership);
-    expect(outstanding).toMatchObject({ action: "send_msg", params: { group_id: 77 } });
+    expect(outstanding).toMatchObject({ action: "send_msg", params: { group_id: 77, auto_escape: true,
+      message: [
+        { type: "text", data: { text: "【公告通知】\n" } },
+        { type: "text", data: { text: "停机回执测试" } },
+        image,
+        { type: "text", data: { text: "图后文字" } },
+        { type: "text", data: { text: expect.stringMatching(/^\n\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u) } },
+      ],
+    } });
     host.kill();
     const status = new URL("/status", endpoint.replace(/^ws/u, "http"));
     let stopping = false;
