@@ -10,7 +10,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
-import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
+import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
@@ -27,6 +27,7 @@ if (import.meta.main) {
   const pending = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  let plugins: PluginLoadReport | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -79,7 +80,7 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
-    const plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
+    plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
     }));
     if (!stopping) {
@@ -150,10 +151,14 @@ if (import.meta.main) {
       try {
         await legacy.dispose();
       } finally {
-        process.off("SIGINT", interrupt);
-        process.off("SIGTERM", terminate);
-        globalThis.redis = undefined;
-        await Promise.all([closeStorage(), stopStaticRenderer()]);
+        try {
+          await plugins?.dispose();
+        } finally {
+          process.off("SIGINT", interrupt);
+          process.off("SIGTERM", terminate);
+          globalThis.redis = undefined;
+          await Promise.all([closeStorage(), stopStaticRenderer()]);
+        }
       }
     }
   }

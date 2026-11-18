@@ -29,7 +29,22 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     await writeFile(join(hello, "index.ts"), `
       export function createModule({ groups, signal }) {
         signal.addEventListener("abort", () => console.log("模块收到退出信号"), { once: true });
-        return { commands: { "#问候": (name) => groups.onlineBots().length === 0 ? "你好，" + name : "意外在线" } };
+        return {
+          commands: { "#问候": (name) => groups.onlineBots().length === 0 ? "你好，" + name : "意外在线" },
+          async dispose() {
+            await Bun.sleep(10);
+            console.log(signal.aborted ? "模块完成清理" : "模块清理顺序错误");
+          },
+        };
+      }
+    `);
+    const invalid = await install("h-failed", "broken-cleanup", {}, true);
+    await writeFile(join(invalid, "index.ts"), `
+      export function createModule() {
+        return {
+          commands: { "#问候": () => "不应覆盖指令" },
+          dispose() { console.log("失败模块完成清理"); },
+        };
       }
     `);
     await install("b-duplicate", "hello-fork", { repository: "https://gitee.com/example/hello" });
@@ -74,7 +89,8 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     expect(exit).toBe(0);
     expect(stdout).toContain("你好，Lotus");
     expect(stdout).toContain("请输入内容\n收到 Lotus\n");
-    expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n");
+    expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n模块完成清理\n");
+    expect(stdout).toContain("失败模块完成清理");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
     expect(stdout).toContain("#状态 查看宿主运行状态");
     expect(stdout).not.toContain("拒载入口已执行");

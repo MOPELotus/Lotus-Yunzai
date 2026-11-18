@@ -141,6 +141,15 @@ export interface PluginLoadRecord {
 export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
+  dispose(): Promise<void>;
+}
+
+async function disposeModule(name: string, cleanup: () => unknown): Promise<void> {
+  try {
+    await cleanup();
+  } catch {
+    console.warn(`[插件] 清理 ${name} 失败。`);
+  }
 }
 
 export async function loadPlugins(
@@ -151,6 +160,7 @@ export async function loadPlugins(
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
+  const cleanups: { name: string; cleanup: () => unknown }[] = [];
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
@@ -233,6 +243,7 @@ export async function loadPlugins(
   }
 
   for (const { label, entry, moduleName, directory, packageName } of ready) {
+    let cleanup: (() => unknown) | undefined;
     try {
       const published = await import(pathToFileURL(entry).href);
       if (moduleName) {
@@ -241,7 +252,11 @@ export async function loadPlugins(
           throw new Error("createModule 须为模块工厂函数。");
         }
         const module = create ? await create(services) : published.default;
-        const { commands: handlers, aliases } = record(module);
+        const { commands: handlers, aliases, dispose } = record(module);
+        if (dispose !== undefined) {
+          if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
+          cleanup = () => dispose.call(module);
+        }
         if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
           throw new Error("入口必须通过默认导出提供 commands。");
         }
@@ -274,11 +289,21 @@ export async function loadPlugins(
       console.log(`[插件] 已加载 ${label}。`);
       records.push({ name: label, status: "loaded" });
       if (directory && packageName) directories.set(basename(directory), { path: directory, packageName });
+      if (cleanup) cleanups.push({ name: label, cleanup });
     } catch (error) {
+      if (cleanup) await disposeModule(label, cleanup);
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[插件] 加载 ${label} 失败：${message}`);
       records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
     }
   }
-  return { records, directories };
+  let disposal: Promise<void> | undefined;
+  return {
+    records, directories,
+    dispose() {
+      return disposal ??= (async () => {
+        for (const { name, cleanup } of cleanups.splice(0).reverse()) await disposeModule(name, cleanup);
+      })();
+    },
+  };
 }
