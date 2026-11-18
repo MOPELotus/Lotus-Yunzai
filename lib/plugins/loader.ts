@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,7 +6,7 @@ import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import type { LegacyPlugins } from "./legacy.ts";
-import { rejectionReason, repositoryKey } from "./policy.ts";
+import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
 interface Candidate {
   readonly path: string;
@@ -15,11 +14,6 @@ interface Candidate {
 }
 
 export { systemModuleName };
-
-const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);
-const retiredScripts = new Map([
-  ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98", "咕咕牛图库管理器"],
-]);
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -82,11 +76,6 @@ async function legacyEntries(directory: string): Promise<string[]> {
   return scripts.sort();
 }
 
-async function retiredScript(path: string): Promise<string | undefined> {
-  const hash = createHash("sha256").update(await readFile(path)).digest("hex");
-  return retiredScripts.get(hash);
-}
-
 async function gitRepositories(directory: string): Promise<string[]> {
   try {
     await stat(join(directory, ".git"));
@@ -116,7 +105,7 @@ async function findEntry(directory: string, value: string): Promise<string> {
   const path = await realpath(resolve(root, value));
   const local = relative(root, path);
   if (!local || local === ".." || local.startsWith(`..${sep}`) || isAbsolute(local) ||
-      !scriptExtensions.has(extname(path)) || !(await stat(path)).isFile()) {
+      !pluginScriptExtensions.has(extname(path)) || !(await stat(path)).isFile()) {
     throw new Error("插件入口须是包内的 JS 或 TS 文件。");
   }
   return path;
@@ -176,7 +165,7 @@ export async function loadPlugins(
     records.push({ name, status: "rejected", reason });
   };
   const allowedScript = async (path: string) => {
-    const retired = await retiredScript(path);
+    const retired = retiredPluginScript(await readFile(path));
     if (!retired) return true;
     const name = relative(root, path);
     reject(name, "图库管理已归并到 atlas。", `${name}（${retired}）`);
@@ -194,43 +183,24 @@ export async function loadPlugins(
 
       const directory = basename(candidate.path);
       const source = await readOptional(join(candidate.path, "package.json"));
-      const manifest = record(source === undefined ? undefined : JSON.parse(source.replace(/^\uFEFF/u, "")));
-      const meta = record(manifest.lotusYunzai);
-      const declaredName = typeof manifest.name === "string" ? manifest.name.trim().toLowerCase() : "";
-      const name = declaredName || directory.toLowerCase();
-      const repository = typeof manifest.repository === "string" ? manifest.repository : record(manifest.repository).url;
-      const urls = await gitRepositories(candidate.path);
-      if (typeof repository === "string") urls.push(repository);
-      const repositories = urls.map(repositoryKey).filter((key) => key !== undefined);
-      const names = [directory.toLowerCase(), name, name.split("/").at(-1) ?? "",
-        ...repositories, ...repositories.map((key) => key.split("/")[1] ?? "")];
-      const games = Array.isArray(meta.games) ? meta.games.filter((game) => typeof game === "string") : [];
-      const reason = rejectionReason(names, games);
-      if (reason) {
-        reject(label, reason, `${label}（${declaredName || repositories[0] || directory}）`);
-        continue;
-      }
-      if (meta.entry !== undefined && (typeof meta.entry !== "string" || !declaredName)) {
-        throw new Error("清单模块须声明包名和入口路径。");
-      }
-
-      const builtInDirectory = builtInDirectories.get(name);
-      if (builtInDirectory !== undefined && directory !== builtInDirectory) {
-        reject(label, `${name} 的内置目录为 plugins/${builtInDirectory}。`);
+      const { name, identities, entry: declaredEntry, rejection, rejectionIdentity } = inspectPluginMetadata(
+        directory, source, await gitRepositories(candidate.path),
+      );
+      if (rejection) {
+        reject(label, rejection, rejectionIdentity ? `${label}（${rejectionIdentity}）` : label);
         continue;
       }
       if (commands.hasModule(name)) {
         reject(label, `模块 ${name} 已注册。`);
         continue;
       }
-      const identities = [`name:${name}`, ...repositories.map((key) => `repo:${key}`)];
       const duplicate = identities.map((identity) => seen.get(identity)).find((path) => path !== undefined);
       if (duplicate) {
         reject(label, `与 ${duplicate} 重复。`);
         continue;
       }
-      if (typeof meta.entry === "string") {
-        const entry = await findEntry(candidate.path, meta.entry);
+      if (declaredEntry !== undefined) {
+        const entry = await findEntry(candidate.path, declaredEntry);
         if (!await allowedScript(entry)) continue;
         ready.push({ label, entry, moduleName: name, directory: candidate.path, packageName: name });
       } else {
