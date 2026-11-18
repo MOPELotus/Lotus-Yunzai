@@ -1,4 +1,4 @@
-import type { GroupRequestType } from "../messages.ts";
+import type { GroupMembership, GroupRequestType } from "../messages.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 type Send = (message: string) => boolean;
@@ -10,6 +10,14 @@ class OneBotRejectedError extends Error {}
 
 export function isRequestFlag(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 4096;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 export class OneBotCalls {
@@ -63,17 +71,17 @@ export class OneBotCalls {
   async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {
     if (!isRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
         typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;
-    return this.#reviewRequest(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+    return this.#confirmAction(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
   }
 
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {
     if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512) {
       return false;
     }
-    return this.#reviewRequest(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
+    return this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
   }
 
-  async #reviewRequest(send: Send, action: string, params: object): Promise<boolean> {
+  async #confirmAction(send: Send, action: string, params: object): Promise<boolean> {
     try {
       await this.#request(send, action, params);
       return true;
@@ -109,12 +117,51 @@ export class OneBotCalls {
 
   async getGroupRole(send: Send, groupId: number, userId: number): Promise<"member" | "admin" | "owner" | undefined> {
     try {
-      const result = await this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true });
-      const role = typeof result === "object" && result !== null && "role" in result ? result.role : undefined;
+      const result = await this.#getGroupMember(send, groupId, userId);
+      const role = isRecord(result) ? result.role : undefined;
       if (role === "member" || role === "admin" || role === "owner") return role;
     } catch {
       return undefined;
     }
+  }
+
+  #getGroupMember(send: Send, groupId: number, userId: number): Promise<unknown> {
+    return this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true });
+  }
+
+  async #getGroupSize(send: Send, groupId: number): Promise<number | undefined> {
+    const result = await this.#request(send, "get_group_info", { group_id: groupId, no_cache: true });
+    if (isRecord(result) && result.group_id === groupId && isPositiveInteger(result.member_count)) return result.member_count;
+  }
+
+  async inspectAutoQuit(send: Send, groupId: number, userId: number, joinedAt: number,
+    maxMembers: number): Promise<GroupMembership | undefined> {
+    try {
+      const count = await this.#getGroupSize(send, groupId);
+      if (count === undefined || count > maxMembers) return;
+      const members = await this.#request(send, "get_group_member_list", { group_id: groupId });
+      if (!Array.isArray(members) || members.length !== count) return;
+      const memberIds = new Set<number>();
+      let listedRole: unknown;
+      for (const member of members) {
+        if (!isRecord(member) || member.group_id !== groupId || !isPositiveInteger(member.user_id) || memberIds.has(member.user_id)) return;
+        memberIds.add(member.user_id);
+        if (member.user_id === userId) listedRole = member.role;
+      }
+      if (!memberIds.has(userId)) return;
+      const bot = await this.#getGroupMember(send, groupId, userId);
+      if (!isRecord(bot) || bot.group_id !== groupId || bot.user_id !== userId || bot.role !== listedRole) return;
+      if (bot.role !== "admin" && bot.role !== "member") return;
+      if (isPositiveInteger(bot.join_time) && bot.join_time > joinedAt) return;
+      if (await this.#getGroupSize(send, groupId) !== count) return;
+      return { memberIds: [...memberIds], botRole: bot.role };
+    } catch {
+      return undefined;
+    }
+  }
+
+  leaveGroup(send: Send, groupId: number): Promise<boolean> {
+    return this.#confirmAction(send, "set_group_leave", { group_id: groupId, is_dismiss: false });
   }
 
   async sendGroup(send: Send, groupId: number, message: unknown): Promise<number> {

@@ -4,6 +4,7 @@ import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
@@ -42,6 +43,7 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
+  let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
 
   function stop(code: number) {
     if (stopping) return;
@@ -85,7 +87,12 @@ if (import.meta.main) {
       if (!reviewed && !consumed && allowed(["autoFriend"])) await autoFriend(event, lifecycle.signal);
       return;
     }
-    await legacy.dispatch(event, allowed);
+    const consumed = await legacy.dispatch(event, allowed);
+    if (!consumed && event.post_type === "notice" && event.notice_type === "group" &&
+        event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"]) &&
+        await autoQuit(event, lifecycle.signal)) {
+      console.log(`[自动退群] 已退出群 ${event.group_id}。`);
+    }
   }
 
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
@@ -147,6 +154,7 @@ if (import.meta.main) {
     autoFriend = friendRequests;
     groupDispatch = routing;
     reviewInvitation = invitations;
+    autoQuit = await readAutoQuit(root, permissions.masterIds);
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);

@@ -88,18 +88,21 @@ async function dispatchGroupNotice(
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
+  connectedBotId?: number,
 ): Promise<void> {
-  const { notice_type, user_id, group_id, self_id, operator_id } = event;
+  const { notice_type, user_id, group_id, self_id, operator_id, time } = event;
   if (notice_type !== "group_increase" && notice_type !== "group_decrease") return;
   if (!isId(user_id) || !isId(group_id) || !isId(self_id)) return;
 
   const sub_type = notice_type === "group_increase" ? "increase" : "decrease";
   const action = stringField(event.sub_type);
   const member = isRecord(event.member) ? event.member : undefined;
+  const selfJoined = sub_type === "increase" && user_id === self_id && self_id === connectedBotId && isId(time);
   await dispatch({
     post_type: "notice",
     notice_type: "group",
     sub_type,
+    time: isId(time) ? time : undefined,
     action_sub_type: action,
     increase_type: sub_type === "increase" ? action : undefined,
     decrease_type: sub_type === "decrease" ? action : undefined,
@@ -108,6 +111,8 @@ async function dispatchGroupNotice(
     operator_id: isId(operator_id) ? operator_id : undefined,
     group_name: stringField(event.group_name),
     getGroupName: () => calls.getGroupName(send, group_id),
+    inspectAutoQuit: selfJoined ? (maxMembers) => calls.inspectAutoQuit(send, group_id, self_id, time, maxMembers) : undefined,
+    leaveGroup: selfJoined ? () => calls.leaveGroup(send, group_id) : undefined,
     nickname: stringField(event.nickname),
     member: member && { card: stringField(member.card), nickname: stringField(member.nickname) },
     dismiss: typeof event.dismiss === "boolean" ? event.dismiss : undefined,
@@ -298,7 +303,7 @@ export function startOneBot(
             } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
               await dispatchFriendPoke(dispatch, send, message, options.isMaster);
             } else {
-              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster);
+              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, botId);
             }
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options);

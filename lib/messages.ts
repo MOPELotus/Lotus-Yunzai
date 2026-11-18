@@ -46,6 +46,7 @@ export interface GroupNotice {
   readonly post_type: "notice";
   readonly notice_type: "group";
   readonly sub_type: "increase" | "decrease";
+  readonly time?: number;
   readonly action_sub_type?: string;
   readonly increase_type?: string;
   readonly decrease_type?: string;
@@ -56,6 +57,8 @@ export interface GroupNotice {
   readonly inviter_id?: number;
   readonly group_name?: string;
   readonly getGroupName?: () => Promise<string | undefined>;
+  readonly inspectAutoQuit?: (maxMembers: number) => Promise<GroupMembership | undefined>;
+  readonly leaveGroup?: () => Promise<boolean>;
   readonly nickname?: string;
   readonly member?: { readonly card?: string; readonly nickname?: string };
   readonly dismiss?: boolean;
@@ -63,6 +66,11 @@ export interface GroupNotice {
   readonly isPrivate: false;
   readonly isMaster: boolean;
   readonly reply: MessageEvent["reply"];
+}
+
+export interface GroupMembership {
+  readonly memberIds: readonly number[];
+  readonly botRole: "member" | "admin" | "owner";
 }
 
 export type GroupRequestType = "add" | "invite";
