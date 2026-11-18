@@ -210,9 +210,20 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
         if (aliases !== undefined && (aliases === null || typeof aliases !== "object" || Array.isArray(aliases))) {
           throw new Error("aliases 须为指令别名与本模块指令名的映射。");
         }
-        commands.registerModule({
+        const unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
         });
+        try {
+          if (published.apps !== undefined) {
+            if (published.apps === null || typeof published.apps !== "object") {
+              throw new Error("apps 须导出 V3 插件类。");
+            }
+            await legacy.register(published, label);
+          }
+        } catch (error) {
+          unregister();
+          throw error;
+        }
       } else {
         const result = await legacy.register(published, label);
         if (result !== "loaded") {

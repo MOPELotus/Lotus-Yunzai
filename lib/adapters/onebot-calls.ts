@@ -3,8 +3,11 @@ type Send = (message: string) => boolean;
 
 export class OneBotCalls {
   readonly #requests = new Map<string, (response: ResponseValue) => void>();
+  readonly #recalls = new Set<ReturnType<typeof setTimeout>>();
+  #closed = false;
 
   async #request(send: Send, action: string, params: object): Promise<unknown> {
+    if (this.#closed) throw new Error("QQ 协议连接已关闭。");
     const echo = crypto.randomUUID();
     const { promise, resolve } = Promise.withResolvers<ResponseValue>();
     const timer = setTimeout(() => resolve(undefined), 5_000);
@@ -36,6 +39,31 @@ export class OneBotCalls {
       typeof friend === "object" && friend !== null && "user_id" in friend && String(friend.user_id) === String(userId));
   }
 
+  async replyWithRecall(send: Send, params: object, seconds: number, original?: number): Promise<boolean> {
+    let result: unknown;
+    try {
+      result = await this.#request(send, "send_msg", params);
+    } catch {
+      return false;
+    }
+    const id = typeof result === "object" && result !== null && "message_id" in result
+      ? result.message_id : undefined;
+    if (this.#closed || typeof id !== "number" || !Number.isSafeInteger(id)) return true;
+
+    const timer = setTimeout(() => {
+      this.#recalls.delete(timer);
+      const messages = new Set(original === undefined ? [id] : [id, original]);
+      for (const message_id of messages) {
+        void this.#request(send, "delete_msg", { message_id }).catch(() => {
+          if (!this.#closed) console.warn("OneBot 消息撤回未获确认。");
+        });
+      }
+    }, seconds * 1_000);
+    timer.unref();
+    this.#recalls.add(timer);
+    return true;
+  }
+
   receive(message: Record<string, unknown>): boolean {
     if (typeof message.echo !== "string" || typeof message.status !== "string") return false;
     this.#requests.get(message.echo)?.(message);
@@ -43,6 +71,9 @@ export class OneBotCalls {
   }
 
   close(): void {
+    this.#closed = true;
+    for (const timer of this.#recalls) clearTimeout(timer);
+    this.#recalls.clear();
     for (const finish of this.#requests.values()) finish(undefined);
     this.#requests.clear();
   }

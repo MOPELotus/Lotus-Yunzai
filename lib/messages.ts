@@ -20,7 +20,12 @@ export interface MessageEvent {
   readonly at?: string | number;
   readonly reply_id?: string | number;
   readonly img?: readonly string[];
-  readonly reply: (message: MessageReply, quote?: boolean) => boolean;
+  readonly reply: (message: MessageReply, quote?: boolean, options?: ReplyOptions) => boolean | Promise<boolean>;
+}
+
+export interface ReplyOptions {
+  readonly at?: boolean | string | number;
+  readonly recallMsg?: number;
 }
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {

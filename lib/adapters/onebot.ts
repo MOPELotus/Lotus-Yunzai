@@ -1,4 +1,4 @@
-import type { MessageEvent } from "../messages.ts";
+import { segment, type MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { OneBotCalls } from "./onebot-calls.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
@@ -61,13 +61,19 @@ async function dispatchMessage(
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
-    reply(reply, quote = false) {
-      const message = encodeOneBotReply(reply, quote ? messageId : undefined);
+    reply(reply, quote = false, options = {}) {
+      const mention = options.at === true ? userId : options.at;
+      const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))
+        ? [segment.at(mention), "\n", ...(Array.isArray(reply) ? reply : [reply])] : reply;
+      const message = encodeOneBotReply(body, quote ? messageId : undefined);
       if (message === undefined) return false;
-      return send(JSON.stringify({
-        action: "send_msg",
-        params: { message_type: messageType, ...target, message, auto_escape: true },
-      }));
+
+      const params = { message_type: messageType, ...target, message, auto_escape: true };
+      const seconds = options.recallMsg;
+      if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
+        return calls.replyWithRecall(send, params, seconds, messageId);
+      }
+      return send(JSON.stringify({ action: "send_msg", params }));
     },
   });
 }

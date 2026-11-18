@@ -188,6 +188,16 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           ];
         },
       } };
+      export const apps = {
+        recall: class extends plugin {
+          constructor() {
+            super({ event: "message.group", rule: [{ reg: "^#回复撤回$", fnc: "send", permission: "master" }] });
+          }
+          send() {
+            return this.reply("测试撤回", true, { at: true, recallMsg: 0.05 });
+          }
+        },
+      };
     `);
     await writeFile(join(plugins, "miao-plugin", "index.js"), `
       throw new Error("被拒载的旧入口已执行");
@@ -357,6 +367,32 @@ failsMsg: 协议拒绝
         client.addEventListener("message", ({ data }) => ok(JSON.parse(data)), { once: true });
       });
     }
+
+    const sendForRecall = nextFrame();
+    client.send(JSON.stringify({ ...event, user_id: 51, message: "#回复撤回", message_id: 600 }));
+    const pendingRecall = await sendForRecall;
+    expect(pendingRecall).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
+      { type: "reply", data: { id: "600" } },
+      { type: "at", data: { qq: "51" } },
+      { type: "text", data: { text: "\n" } },
+      { type: "text", data: { text: "测试撤回" } },
+    ] } });
+    const deletions = new Promise<Array<Record<string, unknown>>>((resolve) => {
+      const frames: Array<Record<string, unknown>> = [];
+      function collect({ data }: MessageEvent) {
+        const frame = JSON.parse(data);
+        if (frame.action !== "delete_msg") return;
+        frames.push(frame);
+        client.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0 }));
+        if (frames.length === 2) {
+          client.removeEventListener("message", collect);
+          resolve(frames);
+        }
+      }
+      client.addEventListener("message", collect);
+    });
+    client.send(JSON.stringify({ echo: pendingRecall.echo, status: "ok", retcode: 0, data: { message_id: 601 } }));
+    expect((await deletions).map((frame) => frame.params)).toEqual([{ message_id: 601 }, { message_id: 600 }]);
 
     const friendRequest = nextFrame();
     client.send(JSON.stringify({ ...event, message: "赞我" }));
