@@ -1,0 +1,9 @@
+{
+  "name": "@lotus-yunzai/skia",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "dependencies": {
+    "skia-canvas": "3.0.8"
+  }
+}

@@ -20,5 +20,8 @@
   "dependencies": {
     "@lotus-yunzai/storage": "workspace:*",
     "node-schedule": "2.1.2"
-  }
+  },
+  "trustedDependencies": [
+    "skia-canvas"
+  ]
 }

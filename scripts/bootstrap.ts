@@ -25,4 +25,13 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
 }
 
 const installation = Bun.spawn([process.execPath, "install", "--frozen-lockfile"], options);
-process.exitCode = await installation.exited;
+const installCode = await installation.exited;
+if (installCode !== 0) process.exit(installCode);
+
+try {
+  await import("../packages/skia/index.ts");
+  console.log("[初始化] Skia 原生库已加载。");
+} catch {
+  console.error("Skia 原生库加载失败，请检查安装日志及系统运行库。");
+  process.exitCode = 1;
+}
