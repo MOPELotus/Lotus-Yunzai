@@ -35,3 +35,14 @@ try {
   console.error("Skia 原生库加载失败，请检查安装日志及系统运行库。");
   process.exitCode = 1;
 }
+
+if (!process.exitCode) {
+  try {
+    const { verifyStaticRenderer } = await import("../lib/renderer/shotium.ts");
+    await verifyStaticRenderer();
+    console.log("[初始化] Shotium 原生库已加载。");
+  } catch {
+    console.error("Shotium 原生库加载失败，请检查支持的平台及系统运行库。");
+    process.exitCode = 1;
+  }
+}

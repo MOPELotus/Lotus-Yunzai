@@ -6,6 +6,7 @@ import { CommandRegistry } from "./lib/commands.ts";
 import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
+import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 
 declare global {
@@ -123,7 +124,7 @@ if (import.meta.main) {
         process.off("SIGINT", interrupt);
         process.off("SIGTERM", terminate);
         globalThis.redis = undefined;
-        await closeStorage();
+        await Promise.all([closeStorage(), stopStaticRenderer()]);
       }
     }
   }
