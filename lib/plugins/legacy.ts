@@ -1,6 +1,7 @@
 import { segment, type MessageEvent } from "../messages.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
 import Plugin, { PluginCleanup } from "./plugin.js";
+import { LegacyTasks } from "./tasks.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
 type PluginClass = new (event?: MessageEvent) => PluginInstance;
@@ -82,6 +83,7 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
 export class LegacyPlugins {
   readonly #apps: App[] = [];
   readonly #initializers: App[] = [];
+  readonly #tasks = new LegacyTasks();
 
   constructor() {
     Object.assign(globalThis, { plugin: Plugin, segment });
@@ -108,11 +110,7 @@ export class LegacyPlugins {
           throw error;
         }
         initializers.push({ initializer, scope });
-        const { task, rule, event, priority } = initializer;
-        const hasTask = Array.isArray(task) ? task.length > 0 : Boolean(task);
-        if (hasTask) {
-          throw new Error(`插件 ${initializer.name} 需要尚未接入的定时任务接口。`);
-        }
+        const { rule, event, priority } = initializer;
         if (!Array.isArray(rule) || typeof event !== "string" ||
             typeof priority !== "number" || !Number.isFinite(priority)) {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
@@ -130,7 +128,9 @@ export class LegacyPlugins {
           active.push(app);
         }
       }
+      for (const { initializer, scope } of active) this.#tasks.register(scope, initializer);
     } catch (error) {
+      await this.#tasks.cancel(new Set(initializers.map(({ scope }) => scope)));
       for (const { initializer, scope } of initializers.reverse()) await dispose(initializer, scope);
       throw error;
     }
@@ -141,8 +141,13 @@ export class LegacyPlugins {
     return active.length > 0 ? "loaded" : staged.length > 0 ? "skipped" : "empty";
   }
 
+  stopTasks(): Promise<void> {
+    return this.#tasks.stop();
+  }
+
   async dispose(): Promise<void> {
     this.#apps.length = 0;
+    await this.stopTasks();
     for (const { initializer, scope } of this.#initializers.splice(0).reverse()) {
       await dispose(initializer, scope);
     }

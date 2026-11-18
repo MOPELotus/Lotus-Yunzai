@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+async function copyHost(root: string) {
+  await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
+  await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+  await symlink(join(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir");
+}
 
 test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插件和重复插件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugins-"));
@@ -22,8 +28,7 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
   }
 
   try {
-    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    await copyHost(root);
     await install("a-hello", "hello", { repository: "https://github.com/example/hello.git" }, true);
     await install("b-duplicate", "hello-fork", { repository: "https://gitee.com/example/hello" });
     const renamed = await install("c-renamed", "locally-renamed", {});
@@ -72,8 +77,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
   let host: ReturnType<typeof Bun.spawn> | undefined;
   let socket: WebSocket | undefined;
   try {
-    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    await copyHost(root);
     const plugins = join(root, "plugins");
     await mkdir(join(plugins, "legacy"), { recursive: true });
     await mkdir(join(plugins, "example"), { recursive: true });
@@ -275,8 +279,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
 test("V3 初始化失败和跳过会清理资源，正常退出按初始化的反序清理", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-init-"));
   try {
-    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    await copyHost(root);
     const plugins = join(root, "plugins");
     await mkdir(plugins, { recursive: true });
 
@@ -361,8 +364,7 @@ test("V3 初始化失败和跳过会清理资源，正常退出按初始化的�
 test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-handler-"));
   try {
-    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    await copyHost(root);
     const plugins = join(root, "plugins");
     await mkdir(plugins, { recursive: true });
     await writeFile(join(plugins, "a-failed.js"), `
@@ -443,3 +445,80 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("V3 定时任务去重，调度失败回滚，退出等待正在运行的任务", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-task-"));
+  try {
+    await copyHost(root);
+    const plugins = join(root, "plugins");
+    await mkdir(plugins, { recursive: true });
+    await writeFile(join(plugins, "a-invalid.js"), `
+      export default class extends plugin {
+        constructor() {
+          super({ task: [
+            { name: "回滚样例", cron: "* * * * * *", fnc: () => console.log("不应运行") },
+            { name: "无效样例", cron: "70 * * * * *", fnc: () => {} },
+          ] });
+        }
+        init() { this.addCleanup(() => console.log("trace:rollback")); }
+      };
+    `);
+    await writeFile(join(plugins, "b-tasks.js"), `
+      import Handler from "../lib/plugins/handler.js";
+      export default class extends plugin {
+        constructor() {
+          super({ name: "任务样例", task: [
+            { name: "秒任务", cron: "* * * * * *", fnc: "tick", log: false },
+            { name: "秒任务", cron: " *  * * * * * ", fnc: () => console.log("不应重复") },
+            { name: "分任务", cron: "* * * * *", fnc: () => {} },
+          ] });
+        }
+        init() {
+          Handler.add({ key: "fixture.schedule", fn: () => "可调用" });
+          this.addCleanup(() => console.log("trace:cleanup"));
+        }
+        async tick() {
+          console.log("trace:start:" + this.name);
+          await Bun.sleep(1700);
+          console.log("trace:end:" + await Handler.call("fixture.schedule"));
+        }
+      };
+    `);
+
+    const host = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root,
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_TOKEN: "test-token", LOTUS_ONEBOT_PORT: "0" },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const timeout = setTimeout(() => host.kill("SIGKILL"), 5_000);
+    const errors = new Response(host.stderr).text();
+    const decoder = new TextDecoder();
+    let stdout = "";
+    let signalled = false;
+    try {
+      for await (const chunk of host.stdout) {
+        stdout += decoder.decode(chunk, { stream: true });
+        if (!signalled && stdout.includes("trace:start:任务样例")) {
+          signalled = true;
+          setTimeout(() => { if (host.exitCode === null) host.kill("SIGTERM"); }, 1100);
+        }
+      }
+      expect(await host.exited).toBe(143);
+      const stderr = await errors;
+      expect(stderr).toContain("任务 无效样例 的 cron 无效");
+      expect(stderr).toContain("跳过重复任务 秒任务");
+      expect(stdout).not.toContain("不应");
+      expect(stdout.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+        "trace:rollback", "trace:start:任务样例", "trace:end:可调用", "trace:cleanup",
+      ]);
+    } finally {
+      clearTimeout(timeout);
+      if (host.exitCode === null) host.kill("SIGKILL");
+      await host.exited;
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 7_000);

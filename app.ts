@@ -26,6 +26,7 @@ if (import.meta.main) {
     if (stopping) return;
     stopping = true;
     process.exitCode = code;
+    void legacy.stopTasks();
     consoleInput?.close();
     shutdown.resolve();
   }
