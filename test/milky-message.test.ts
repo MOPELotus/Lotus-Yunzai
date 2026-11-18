@@ -14,6 +14,23 @@ const incoming = (data: Record<string, unknown> = {}) => ({
   data: { message_scene: "friend", sender_id: senderId, peer_id: senderId, message_seq: seq, segments: [text("#状态")], ...data },
 });
 
+test("Milky 点赞只向当前会话发送者提交一次并等待成功回执", async () => {
+  const group = incoming({ message_scene: "group", peer_id: groupId });
+  const friend = fixture({ friend: { user_id: senderId } });
+  expect(await milkyMessage(group, selfId, friend.call)?.isFriend?.()).toBe(true);
+  expect(friend.calls).toEqual([{ action: "get_friend_info", params: { user_id: senderId, no_cache: true } }]);
+  const other = fixture({ friend: { user_id: selfId } });
+  expect(await milkyMessage(group, selfId, other.call)?.isFriend?.()).toBe(false);
+
+  const confirmed = fixture({});
+  const event = milkyMessage(incoming(), selfId, confirmed.call);
+  expect(await event?.isFriend?.()).toBe(true);
+  expect(await event?.likeSelf?.(11)).toBe(0);
+  expect(await event?.likeSelf?.(3)).toBe(3);
+  expect(confirmed.calls).toEqual([{ action: "send_profile_like", params: { user_id: senderId, count: 3 } }]);
+  expect(await milkyMessage(group, selfId, async () => undefined)?.likeSelf?.(3)).toBe(0);
+});
+
 function fixture(result: Record<string, unknown> | undefined = { message_seq: 505 }) {
   const calls: { action: string; params: Record<string, unknown> }[] = [];
   return {

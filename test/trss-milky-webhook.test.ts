@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pluginProbeTokenEnvironment } from "../lib/plugin-load-progress.ts";
@@ -55,11 +55,18 @@ function mockGateway() {
   const releaseLogin = Promise.withResolvers<void>();
   const reloginArrived = Promise.withResolvers<void>();
   const releaseRelogin = Promise.withResolvers<void>();
+  const likeArrived = Promise.withResolvers<GatewayCall>();
+  const releaseLike = Promise.withResolvers<void>();
   let loginAttempts = 0;
+  let friendQueries = 0;
   const replies = {
     private: Promise.withResolvers<GatewayCall>(),
     group: Promise.withResolvers<GatewayCall>(),
+    nonFriend: Promise.withResolvers<GatewayCall>(),
+    duplicateLike: Promise.withResolvers<GatewayCall>(),
+    liked: Promise.withResolvers<GatewayCall>(),
   };
+  const groupReplies = [replies.group, replies.nonFriend, replies.duplicateLike, replies.liked];
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -89,8 +96,16 @@ function mockGateway() {
         case `${prefix}/api/send_private_message`:
           replies.private.resolve(call);
           break;
+        case `${prefix}/api/get_friend_info`: {
+          const user_id = ++friendQueries === 1 ? senderId + 1 : senderId;
+          return Response.json({ status: "ok", retcode: 0, data: { friend: { user_id, nickname: "好友夹具" } } });
+        }
+        case `${prefix}/api/send_profile_like`:
+          likeArrived.resolve(call);
+          await releaseLike.promise;
+          return Response.json({ status: "ok", retcode: 0, data: {} });
         case `${prefix}/api/send_group_message`:
-          replies.group.resolve(call);
+          groupReplies.shift()?.resolve(call);
           break;
         default:
           return new Response(null, { status: 404 });
@@ -98,7 +113,7 @@ function mockGateway() {
       return Response.json({ status: "ok", retcode: 0, data: { message_seq: 100, time: timestamp } });
     },
   });
-  return { server, calls, loginArrived, releaseLogin, reloginArrived, releaseRelogin, replies };
+  return { server, calls, loginArrived, releaseLogin, reloginArrived, releaseRelogin, likeArrived, releaseLike, replies };
 }
 
 function auth(token: string) {
@@ -119,7 +134,7 @@ function webhook(
   });
 }
 
-function message(scene: "friend" | "group", selfId = botId) {
+function message(scene: "friend" | "group", selfId = botId, text = command, sequence = scene === "friend" ? 11 : 12) {
   return {
     time: timestamp,
     self_id: selfId,
@@ -127,12 +142,12 @@ function message(scene: "friend" | "group", selfId = botId) {
     data: {
       message_scene: scene,
       peer_id: scene === "friend" ? senderId : groupId,
-      message_seq: scene === "friend" ? 11 : 12,
+      message_seq: sequence,
       sender_id: senderId,
       time: timestamp,
       segments: [
-        { type: "text", data: { text: command } },
-        ...(scene === "group" ? [{
+        { type: "text", data: { text } },
+        ...(scene === "group" && text === command ? [{
           type: "image",
           data: { resource_id: "fixture-image", temp_url: temporaryImage, width: 1, height: 1, summary: "", sub_type: "normal" },
         }] : []),
@@ -169,12 +184,18 @@ async function waitForBind(url: URL) {
   }
 }
 
-test("Milky Webhook 独立鉴权并按已绑定账号分发好友和群消息", async () => {
+test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片和资料卡点赞", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-webhook-"));
   const gateway = mockGateway();
   try {
     await copyHost(root);
+    await cp(new URL("../plugins/group", import.meta.url), join(root, "plugins", "group"), {
+      recursive: true, filter: (path) => !path.endsWith("/.git"),
+    });
     await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config", "group.yaml"), [
+      "strangeThumbUp: false", "count: 3", "noFriendMsg: 仅好友可用", 'successMsg: "确认 {{thumbUpNum}}"',
+    ].join("\n") + "\n");
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true",
       "host: 127.0.0.1",
@@ -255,6 +276,32 @@ test("Milky Webhook 独立鉴权并按已绑定账号分发好友和群消息", 
       expect(gateway.calls.map(({ path }) => path)).toEqual([
         loginPath, loginPath, `${prefix}/api/send_private_message`, `${prefix}/api/send_group_message`,
       ]);
+
+      const beforeLikes = gateway.calls.length;
+      const friendPath = `${prefix}/api/get_friend_info`;
+      const likePath = `${prefix}/api/send_profile_like`;
+      const groupPath = `${prefix}/api/send_group_message`;
+      expect((await webhook(endpoint, message("group", botId, "#赞我", 20), milkyToken)).status).toBe(200);
+      const deniedLike = await deadline(gateway.replies.nonFriend.promise, "Milky 未回报非好友点赞拒绝。");
+      expect(deniedLike.body).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: "仅好友可用" } }] });
+      expect(gateway.calls.slice(beforeLikes).map(({ path }) => path)).toEqual([friendPath, groupPath]);
+
+      expect((await webhook(endpoint, message("group", botId, "#赞我", 21), milkyToken)).status).toBe(200);
+      const like = await deadline(gateway.likeArrived.promise, "Milky 未收到群模块点赞调用。");
+      expect(like.body).toEqual({ user_id: senderId, count: 3 });
+      expect((await webhook(endpoint, message("group", botId, "#点赞", 22), milkyToken)).status).toBe(200);
+      const duplicateLike = await deadline(gateway.replies.duplicateLike.promise, "Milky 未回报正在处理点赞。");
+      expect(duplicateLike.body).toEqual({
+        group_id: groupId, message: [{ type: "text", data: { text: "正在处理你的点赞请求。" } }],
+      });
+      gateway.releaseLike.resolve();
+      const confirmedLike = await deadline(gateway.replies.liked.promise, "Milky 未回报点赞成功。");
+      expect(confirmedLike.body).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: "确认 3" } }] });
+      const likeCalls = gateway.calls.slice(beforeLikes);
+      expect(likeCalls.map(({ path }) => path)).toEqual([friendPath, groupPath, friendPath, likePath, groupPath, groupPath]);
+      expect(likeCalls.filter(({ path }) => path === friendPath).map(({ body }) => body)).toEqual([
+        { user_id: senderId, no_cache: true }, { user_id: senderId, no_cache: true },
+      ]);
       const offline = { time: timestamp, self_id: botId, event_type: "bot_offline", data: { reason: "fixture" } };
       expect((await webhook(endpoint, offline, milkyToken)).status).toBe(200);
       await deadline(gateway.reloginArrived.promise, "离线事件后未重新查询 Milky 登录。");
@@ -264,6 +311,7 @@ test("Milky Webhook 独立鉴权并按已绑定账号分发好友和群消息", 
     } finally {
       gateway.releaseLogin.resolve();
       gateway.releaseRelogin.resolve();
+      gateway.releaseLike.resolve();
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;
     }

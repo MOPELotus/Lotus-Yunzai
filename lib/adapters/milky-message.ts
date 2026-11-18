@@ -188,6 +188,36 @@ function decodeSegments(value: unknown, selfId: number) {
   return { message, text: text.join(""), raw: raw.join(""), atBot, at, replyId, img: img.length ? img : undefined };
 }
 
+function matchingProfile(value: unknown, userId: number, groupId?: number) {
+  if (isRecord(value) && value.user_id === userId && (groupId === undefined || value.group_id === groupId)) return value;
+}
+
+function memberRole(value: unknown) {
+  if (value === "owner" || value === "admin" || value === "member") return value;
+}
+
+function displayName(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length <= 256 && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)) return value;
+}
+
+function senderMetadata(data: Record<string, unknown>, groupId: number | undefined, userId: number) {
+  const profile = matchingProfile(groupId === undefined ? data.friend : data.group_member, userId, groupId);
+  const sender: Record<string, unknown> = { user_id: userId };
+  const nickname = displayName(profile?.nickname);
+  if (nickname !== undefined) sender.nickname = nickname;
+  if (groupId === undefined) {
+    const remark = displayName(profile?.remark);
+    if (remark !== undefined) sender.remark = remark;
+    return { sender };
+  }
+  const card = displayName(profile?.card);
+  if (card !== undefined) sender.card = card;
+  const role = memberRole(profile?.role);
+  if (!role) return { sender };
+  sender.role = role;
+  return { sender, member: { is_admin: role === "admin", is_owner: role === "owner" } };
+}
+
 export function milkyMessage(value: unknown, selfId: number, call: MilkyCall): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "message_receive" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
@@ -205,11 +235,29 @@ export function milkyMessage(value: unknown, selfId: number, call: MilkyCall): M
     message_type: isGroup ? "group" : "private",
     sub_type: isGroup ? "normal" : "friend",
     self_id: selfId, user_id: userId, group_id: isGroup ? peerId : undefined, message_id: messageId,
-    sender: { user_id: userId },
+    ...senderMetadata(value.data, isGroup ? peerId : undefined, userId),
     msg: incoming.text.trim(), raw_message: incoming.raw, message: incoming.message,
     atBot: incoming.atBot, at: incoming.at, reply_id: incoming.replyId, img: incoming.img,
     isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,
-    isFriend: isGroup ? undefined : () => Promise.resolve(true),
+    async getGroupRole(groupId) {
+      if (!isId(groupId)) return;
+      try {
+        const result = await call("get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true });
+        return memberRole(matchingProfile(result?.member, userId, groupId)?.role);
+      } catch {
+        return undefined;
+      }
+    },
+    async isFriend() {
+      if (!isGroup) return true;
+      const result = await call("get_friend_info", { user_id: userId, no_cache: true });
+      return isRecord(result?.friend) && result.friend.user_id === userId;
+    },
+    async likeSelf(count) {
+      if (!Number.isInteger(count) || count < 1 || count > 10) return 0;
+      const result = await call("send_profile_like", { user_id: userId, count });
+      return result === undefined ? 0 : count;
+    },
     async reply(reply, quote = false, options = {}) {
       if (options.recallMsg !== undefined && options.recallMsg !== 0) return false;
       const mention = isGroup ? options.at === true ? userId : options.at : undefined;
