@@ -42,7 +42,7 @@ if (import.meta.main) {
   }
 
   async function dispatchMessage(event: MessageEvent) {
-    const reply = await commands.dispatch(event.msg);
+    const reply = await commands.dispatch(event.msg, event);
     if (reply !== undefined) {
       event.reply(reply);
       return;

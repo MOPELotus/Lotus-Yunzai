@@ -156,6 +156,21 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         say() { return this.reply("私聊可用"); }
       }
     `);
+    await mkdir(join(plugins, "context"), { recursive: true });
+    await writeFile(join(plugins, "context", "package.json"), JSON.stringify({
+      name: "fixture-context", lotusYunzai: { entry: "./index.ts" },
+    }));
+    await writeFile(join(plugins, "context", "index.ts"), `
+      export default { commands: {
+        "#会话": (args, context) => {
+          const { message_type, user_id, group_id, self_id, isMaster, member } = context;
+          return [
+            { type: "text", text: JSON.stringify({ args, message_type, user_id, group_id, self_id, isMaster, member }) },
+            { type: "at", qq: user_id },
+          ];
+        },
+      } };
+    `);
     await writeFile(join(plugins, "miao-plugin", "index.js"), `
       throw new Error("被拒载的旧入口已执行");
     `);
@@ -253,6 +268,17 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       .toMatchObject({ group_id: 77, message: "收到图片" });
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: "私聊可用",
+    });
+    const context = await send("#会话 999 无关编号", { sender: { role: "admin" } });
+    expect(context).toMatchObject({
+      group_id: 77,
+      message: [
+        { type: "text", data: { text: JSON.stringify({
+          args: "999 无关编号", message_type: "group", user_id: 42, group_id: 77, self_id: 99,
+          isMaster: false, member: { is_admin: true, is_owner: false },
+        }) } },
+        { type: "at", data: { qq: "42" } },
+      ],
     });
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),

@@ -1,4 +1,10 @@
-export type CommandHandler = (argument: string) => string | Promise<string>;
+import type { MessageEvent, MessageReply } from "./messages.ts";
+
+export type CommandContext = Readonly<Pick<
+  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member"
+>>;
+
+export type CommandHandler = (argument: string, context: CommandContext) => MessageReply | Promise<MessageReply>;
 
 export interface CommandModule {
   readonly name: string;
@@ -60,12 +66,19 @@ export class CommandRegistry {
     }
   }
 
-  async dispatch(message: string): Promise<string | undefined> {
+  async dispatch(
+    message: string,
+    context: CommandContext = { message_type: "terminal", isMaster: false },
+  ): Promise<MessageReply | undefined> {
     const input = message.trim();
     const separator = input.search(/\s/u);
     const name = separator === -1 ? input : input.slice(0, separator);
     const argument = separator === -1 ? "" : input.slice(separator).trimStart();
 
-    return this.#handlers.get(name)?.(argument);
+    const { message_type, self_id, user_id, group_id, isMaster, member } = context;
+    return this.#handlers.get(name)?.(argument, {
+      message_type, self_id, user_id, group_id, isMaster,
+      member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
+    });
   }
 }
