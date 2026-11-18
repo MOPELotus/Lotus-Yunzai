@@ -10,10 +10,15 @@ type OutgoingSegment =
   | { type: "mention"; data: { user_id: number } }
   | { type: "mention_all"; data: Record<string, never> }
   | { type: "reply"; data: { message_seq: number } }
-  | { type: "image"; data: { uri: string; sub_type: "normal" } };
+  | { type: "face"; data: { face_id: string; is_large?: boolean } }
+  | { type: "image"; data: { uri: string; sub_type: "normal" } }
+  | { type: "record"; data: { uri: string } }
+  | { type: "video"; data: { uri: string; thumb_uri?: string } };
+
+type MediaType = "image" | "record" | "video";
 
 const inlinePrefix = "base64://";
-const maxImageLinkLength = 4_096;
+const maxMediaLinkLength = 4_096;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,26 +46,32 @@ function mentionSegment(value: unknown): OutgoingSegment | undefined {
   if (isId(userId)) return { type: "mention", data: { user_id: userId } };
 }
 
-function imageLink(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > maxImageLinkLength || /[\\\s\u0000-\u001f\u007f-\u009f]/u.test(value)) return;
+function faceId(value: unknown): string | undefined {
+  const id = typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : value;
+  if (isSequence(id)) return String(id);
+}
+
+function mediaLink(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > maxMediaLinkLength || /[\\\s\u0000-\u001f\u007f-\u009f]/u.test(value)) return;
   const authority = /^https?:\/\/([^/?#]+)/iu.exec(value)?.[1];
   if (!authority || authority.includes("@")) return;
   const url = URL.parse(value);
   if (url?.hostname && !url.username && !url.password) return value;
 }
 
-function inlineImageBytes(uri: string): number {
+function inlineMediaBytes(uri?: string): number {
+  if (!uri?.startsWith(inlinePrefix)) return 0;
   const padding = uri.endsWith("==") ? 2 : Number(uri.endsWith("="));
   return (uri.length - inlinePrefix.length) * 3 / 4 - padding;
 }
 
-function imageUri(value: unknown, remaining: number): string | undefined {
+function mediaUri(value: unknown, remaining: number): string | undefined {
   if (value instanceof Uint8Array) {
     if (value.byteLength === 0 || value.byteLength > remaining) return;
     const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
     return inlinePrefix + bytes.toString("base64");
   }
-  if (typeof value !== "string" || !value.startsWith(inlinePrefix)) return imageLink(value);
+  if (typeof value !== "string" || !value.startsWith(inlinePrefix)) return mediaLink(value);
 
   const length = value.length - inlinePrefix.length;
   if (length === 0 || length > Math.ceil(remaining / 3) * 4 || length % 4 === 1) return;
@@ -68,11 +79,22 @@ function imageUri(value: unknown, remaining: number): string | undefined {
   if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(data) || (data.includes("=") && length % 4 !== 0)) return;
   const canonical = data.padEnd(Math.ceil(length / 4) * 4, "=");
   const uri = inlinePrefix + canonical;
-  if (inlineImageBytes(uri) > remaining || Buffer.from(data, "base64").toString("base64") !== canonical) return;
+  if (inlineMediaBytes(uri) > remaining || Buffer.from(data, "base64").toString("base64") !== canonical) return;
   return uri;
 }
 
-function encodeSegment(value: unknown, remainingImageBytes: number): OutgoingSegment | undefined {
+function encodeMedia(type: MediaType, fields: Record<string, unknown>, remaining: number): OutgoingSegment | undefined {
+  const uri = mediaUri(fields.file ?? fields.url, remaining);
+  if (!uri) return;
+  if (type === "image") return { type, data: { uri, sub_type: "normal" } };
+  if (type === "record") return { type, data: { uri } };
+  const thumb = fields.thumb_uri ?? fields.thumb;
+  if (thumb === undefined) return { type, data: { uri } };
+  const thumbUri = mediaUri(thumb, remaining - inlineMediaBytes(uri));
+  if (thumbUri) return { type, data: { uri, thumb_uri: thumbUri } };
+}
+
+function encodeSegment(value: unknown, remainingMediaBytes: number): OutgoingSegment | undefined {
   if (typeof value === "string") return textSegment(value);
   if (!isRecord(value)) return;
   const fields = "data" in value ? value.data : value;
@@ -86,21 +108,30 @@ function encodeSegment(value: unknown, remainingImageBytes: number): OutgoingSeg
       if (isSequence(sequence)) return { type: "reply", data: { message_seq: sequence } };
       return;
     }
-    case "image": {
-      const uri = imageUri(fields.file ?? fields.url, remainingImageBytes);
-      if (uri) return { type: "image", data: { uri, sub_type: "normal" } };
+    case "face": {
+      const id = faceId(fields.id);
+      const large = fields.is_large;
+      if (!id || (large !== undefined && typeof large !== "boolean")) return;
+      return { type: "face", data: { face_id: id, ...(large === undefined ? {} : { is_large: large }) } };
     }
+    case "image":
+    case "record":
+    case "video":
+      return encodeMedia(value.type, fields, remainingMediaBytes);
+    case "audio":
+      return encodeMedia("record", fields, remainingMediaBytes);
   }
 }
 
 function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: ReplyOptions["at"]): OutgoingSegment[] | undefined {
   const message: OutgoingSegment[] = [];
-  let remainingImageBytes = maxPublicFileBytes;
+  let remainingMediaBytes = maxPublicFileBytes;
   for (const part of Array.isArray(reply) ? reply : [reply]) {
-    const encoded = encodeSegment(part, remainingImageBytes);
+    const encoded = encodeSegment(part, remainingMediaBytes);
     if (!encoded) return;
-    if (encoded.type === "image" && encoded.data.uri.startsWith(inlinePrefix)) {
-      remainingImageBytes -= inlineImageBytes(encoded.data.uri);
+    if (encoded.type === "image" || encoded.type === "record" || encoded.type === "video") {
+      remainingMediaBytes -= inlineMediaBytes(encoded.data.uri);
+      if (encoded.type === "video") remainingMediaBytes -= inlineMediaBytes(encoded.data.thumb_uri);
     }
     message.push(encoded);
   }
@@ -116,12 +147,37 @@ function encodeReply(reply: MessageReply, quoteId: number | undefined, mention: 
   return message;
 }
 
-function imageMetadata(value: unknown): string | undefined {
-  if (typeof value === "string" && value.length <= maxImageLinkLength && !/[\u0000-\u001f\u007f-\u009f]/u.test(value)) return value;
+function mediaText(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length <= maxMediaLinkLength && !/[\u0000-\u001f\u007f-\u009f]/u.test(value)) return value;
 }
 
-function imageDimension(value: unknown): number | undefined {
-  if (isId(value) && value <= 2_147_483_647) return value;
+function mediaInt(value: unknown, minimum: number): number | undefined {
+  if (isSequence(value) && value >= minimum && value <= 2_147_483_647) return value;
+}
+
+function decodeMedia(type: MediaType, data: Record<string, unknown>, url?: string): InboundSegment {
+  const media: { type: MediaType; [key: string]: unknown } = { type };
+  if (url) {
+    media.url = url;
+    media.file = url;
+  }
+  const resourceId = mediaText(data.resource_id);
+  if (resourceId !== undefined) media.resource_id = resourceId;
+  if (type !== "record") {
+    const width = mediaInt(data.width, 1);
+    const height = mediaInt(data.height, 1);
+    if (width !== undefined) media.width = width;
+    if (height !== undefined) media.height = height;
+  }
+  if (type === "image") {
+    const summary = mediaText(data.summary);
+    if (summary !== undefined) media.summary = summary;
+    if (data.sub_type === "normal" || data.sub_type === "sticker") media.sub_type = data.sub_type;
+  } else {
+    const duration = mediaInt(data.duration, 0);
+    if (duration !== undefined) media.duration = duration;
+  }
+  return media;
 }
 
 function decodeSegments(value: unknown, selfId: number) {
@@ -163,20 +219,24 @@ function decodeSegments(value: unknown, selfId: number) {
         message.push({ type, id: replyId });
         raw.push("[reply]");
         break;
-      case "image": {
-        const url = imageLink(data.temp_url);
-        const resourceId = imageMetadata(data.resource_id);
-        const summary = imageMetadata(data.summary);
-        const width = imageDimension(data.width);
-        const height = imageDimension(data.height);
-        const subtype = data.sub_type === "normal" || data.sub_type === "sticker" ? data.sub_type : undefined;
-        message.push({
-          type, ...(url === undefined ? {} : { url, file: url }), ...(resourceId === undefined ? {} : { resource_id: resourceId }),
-          ...(summary === undefined ? {} : { summary }), ...(width === undefined ? {} : { width }),
-          ...(height === undefined ? {} : { height }), ...(subtype === undefined ? {} : { sub_type: subtype }),
-        });
-        if (url) img.push(url);
-        raw.push("[image]");
+      case "face":
+      case "face_incoming": {
+        const id = faceId(data.face_id);
+        if (!id) return;
+        const large = data.is_large;
+        message.push({ type: "face", id, ...(typeof large === "boolean" ? { is_large: large } : {}) });
+        raw.push("[face]");
+        break;
+      }
+      case "image":
+      case "audio":
+      case "record":
+      case "video": {
+        const kind = type === "audio" ? "record" : type;
+        const url = mediaLink(data.temp_url);
+        message.push(decodeMedia(kind, data, url));
+        if (kind === "image" && url) img.push(url);
+        raw.push(`[${kind}]`);
         break;
       }
       default:

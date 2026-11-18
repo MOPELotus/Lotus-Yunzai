@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { milkyMessage } from "../lib/adapters/milky-message.ts";
-import { segment } from "../lib/messages.ts";
+import { segment, type MessageSegment, type ProtocolSegment } from "../lib/messages.ts";
 import { maxPublicFileBytes } from "../lib/public-files.ts";
 
 const selfId = 1001;
@@ -104,7 +104,7 @@ test("Milky 拒绝混合不支持的回复，且要求发送结果有安全消�
   const { calls, call } = fixture({});
   const event = milkyMessage(incoming({ message_scene: "group", peer_id: groupId }), selfId, call);
   expect(await event?.reply(["内容", segment.image("image.png")])).toBe(false);
-  expect(await event?.reply([segment.face(1), "文本"])).toBe(false);
+  expect(await event?.reply([segment.face("not-an-id"), "文本"])).toBe(false);
   expect(await event?.reply([segment.at(2 ** 53), "文本"])).toBe(false);
   expect(await event?.reply(["内容", segment.reply(" 22")])).toBe(false);
   expect(await event?.reply("内容", false, { at: "bad" })).toBe(false);
@@ -183,6 +183,77 @@ test("Milky 图片拒绝本地路径、凭据、畸形编码和超出共享字�
   ]) expect(await event?.reply(["内容", segment.image(file)])).toBe(false);
   const oversizedUri = "base64://" + "A".repeat(Math.ceil(maxPublicFileBytes / 3) * 4 + 4);
   expect(await event?.reply(segment.image(oversizedUri))).toBe(false);
-  expect(await event?.reply([segment.image(new Uint8Array(maxPublicFileBytes - 1)), segment.image("base64://AQI=")])).toBe(false);
+  const nearlyFull = new Uint8Array(maxPublicFileBytes - 1);
+  expect(await event?.reply([segment.image(nearlyFull), segment.record("base64://AQI=")])).toBe(false);
+  expect(await event?.reply({
+    type: "video", data: { file: nearlyFull, thumb_uri: "base64://AQI=" },
+  })).toBe(false);
+  expect(calls).toEqual([]);
+});
+
+test("Milky 接收表情、语音和视频，保留安全的临时链接和媒体信息", () => {
+  const { calls, call } = fixture();
+  const voice = "https://media.example.invalid/voice?temporary=1";
+  const video = "http://media.example.invalid/video.mp4";
+  const event = milkyMessage(incoming({ segments: [
+    text("媒体 "),
+    { type: "face", data: { face_id: "00014", is_large: true } },
+    { type: "face_incoming", data: { face_id: 0 } },
+    { type: "record", data: { resource_id: "voice-1", temp_url: voice, duration: 5 } },
+    { type: "video", data: { resource_id: "video-1", temp_url: video, duration: 8, width: 640, height: 480 } },
+    { type: "audio", data: { temp_url: "https://name:secret@media.example.invalid/voice", duration: 2 ** 31 } },
+    { type: "video", data: { temp_url: "file:///tmp/private.mp4", width: -1, duration: 0 } },
+  ] }), selfId, call);
+  expect(event).toMatchObject({ msg: "媒体", raw_message: "媒体 [face][face][record][video][record][video]" });
+  expect(event?.img).toBeUndefined();
+  expect(event?.message).toEqual([
+    { type: "text", text: "媒体 " },
+    { type: "face", id: "14", is_large: true },
+    { type: "face", id: "0" },
+    { type: "record", resource_id: "voice-1", url: voice, file: voice, duration: 5 },
+    { type: "video", resource_id: "video-1", url: video, file: video, duration: 8, width: 640, height: 480 },
+    { type: "record" },
+    { type: "video", duration: 0 },
+  ]);
+  expect(calls).toEqual([]);
+  expect(milkyMessage(incoming({ segments: [{ type: "face", data: { face_id: "1e2" } }] }), selfId, call))
+    .toBeUndefined();
+});
+
+test("Milky 回复发送规范表情编号、语音地址和独立视频缩略图", async () => {
+  const { calls, call } = fixture();
+  const voice = "https://media.example.invalid/voice";
+  const video = "https://media.example.invalid/video";
+  const videoBytes = Buffer.from([99, 3, 4, 99]).subarray(1, 3);
+  const event = milkyMessage(incoming(), selfId, call);
+  expect(await event?.reply([
+    segment.face("00014"),
+    { type: "face", data: { id: 0, is_large: false } },
+    segment.record(voice),
+    segment.video(videoBytes),
+    { type: "video", data: { file: video, thumb_uri: "base64://BQ" } },
+  ])).toBe(true);
+  expect(calls).toEqual([{ action: "send_private_message", params: {
+    user_id: senderId,
+    message: [
+      { type: "face", data: { face_id: "14" } },
+      { type: "face", data: { face_id: "0", is_large: false } },
+      { type: "record", data: { uri: voice } },
+      { type: "video", data: { uri: "base64://AwQ=" } },
+      { type: "video", data: { uri: video, thumb_uri: "base64://BQ==" } },
+    ],
+  } }]);
+});
+
+test("Milky 拒绝带非法表情编号、语音、视频或缩略图的整条回复", async () => {
+  const { calls, call } = fixture();
+  const event = milkyMessage(incoming(), selfId, call);
+  const invalid: readonly (MessageSegment | ProtocolSegment)[] = [
+    segment.face(2 ** 53), segment.face("+12"),
+    segment.record("/tmp/voice.mp3"), segment.video("https://user:token@media.example.invalid/video"),
+    { type: "face", data: { id: 12, is_large: "true" } },
+    { type: "video", data: { file: "https://media.example.invalid/video", thumb_uri: "file:///tmp/image.png" } },
+  ];
+  for (const part of invalid) expect(await event?.reply(["内容", part])).toBe(false);
   expect(calls).toEqual([]);
 });

@@ -19,6 +19,8 @@ const groupReceiptId = 5001;
 const privateReceiptId = 5002;
 const quotedMessageId = 88;
 const temporaryImage = "https://images.example.invalid/milky/fixture.png?nonce=sample";
+const temporaryRecord = "https://media.example.invalid/milky/fixture.amr?nonce=sample";
+const temporaryVideo = "https://media.example.invalid/milky/fixture.mp4?nonce=sample";
 const fixturePng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
 interface GatewayCall {
@@ -185,10 +187,18 @@ function message(scene: "friend" | "group", selfId = botId, text = command, sequ
           type: "reply",
           data: { message_seq: quotedMessageId, sender_id: senderId, time: timestamp, segments: [] },
         }] : []),
-        ...(scene === "group" && text === command ? [{
-          type: "image",
-          data: { resource_id: "fixture-image", temp_url: temporaryImage, width: 1, height: 1, summary: "", sub_type: "normal" },
-        }] : []),
+        ...(scene === "group" && text === command ? [
+          {
+            type: "image",
+            data: { resource_id: "fixture-image", temp_url: temporaryImage, width: 1, height: 1, summary: "", sub_type: "normal" },
+          },
+          { type: "face", data: { face_id: "14", is_large: true } },
+          { type: "record", data: { resource_id: "fixture-record", temp_url: temporaryRecord, duration: 2 } },
+          {
+            type: "video",
+            data: { resource_id: "fixture-video", temp_url: temporaryVideo, width: 320, height: 240, duration: 3 },
+          },
+        ] : []),
       ],
       ...(scene === "friend" ? {
         friend: {
@@ -222,7 +232,7 @@ async function waitForBind(url: URL) {
   }
 }
 
-test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片、点赞和定时撤回", async () => {
+test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、点赞和定时撤回", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-webhook-"));
   const gateway = mockGateway();
   try {
@@ -260,10 +270,19 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片、点
         echo(e) {
           if (!e.isGroup) return e.reply("好友 " + e.user_id + " 机器人 " + e.self_id);
           const fixture = new Uint8Array(Buffer.from(${JSON.stringify(fixturePng)}, "base64"));
+          const face = e.message.find((part) => part.type === "face");
+          const record = e.message.find((part) => part.type === "record");
+          const video = e.message.find((part) => part.type === "video");
+          const bytes = new Uint8Array([18, 0, 1, 255, 19]).subarray(1, 4);
           return e.reply([
             "群 " + e.group_id + " 成员 " + e.user_id + " 机器人 " + e.self_id,
             ...(e.img ?? []).map((url) => segment.image(url)),
             segment.image(fixture),
+            face,
+            "语音 " + record.duration + " 秒，视频 " + video.width + "x" + video.height + " " + video.duration + " 秒",
+            segment.record(record.file),
+            segment.video(video.url),
+            segment.record(bytes),
           ]);
         }
       }
@@ -315,6 +334,11 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、图片、点
           { type: "text", data: { text: `群 ${groupId} 成员 ${senderId} 机器人 ${botId}` } },
           { type: "image", data: { uri: temporaryImage, sub_type: "normal" } },
           { type: "image", data: { uri: `base64://${fixturePng}`, sub_type: "normal" } },
+          { type: "face", data: { face_id: "14", is_large: true } },
+          { type: "text", data: { text: "语音 2 秒，视频 320x240 3 秒" } },
+          { type: "record", data: { uri: temporaryRecord } },
+          { type: "video", data: { uri: temporaryVideo } },
+          { type: "record", data: { uri: "base64://AAH/" } },
         ],
       });
       expect(gateway.calls.map(({ path }) => path)).toEqual([
