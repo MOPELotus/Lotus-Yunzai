@@ -1,34 +1,17 @@
 import { readWebhookJson } from "../http-json.ts";
-import type { MessageEvent } from "../messages.ts";
 import { authorized, publicPostPath } from "../server.ts";
-import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
-import { milkyMessage } from "./milky-message.ts";
-
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function positiveId(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
+import { openMilkySession, type MilkySession, type MilkyTransportOptions } from "./milky-session.ts";
 
 function status(code: number, headers?: HeadersInit) {
   return new Response(null, { status: code, headers });
 }
 
-export function createMilkyWebhook(
-  settings: MilkySettings,
-  options: {
-    readonly signal: AbortSignal;
-    readonly dispatch: (event: MessageEvent) => Promise<void>;
-    readonly onSent?: (event: MessageEvent, message: unknown) => void;
-  },
-) {
-  const { signal, dispatch, onSent } = options;
+export function createMilkyWebhook(settings: MilkySettings, options: MilkyTransportOptions) {
+  const { signal } = options;
   const auth = settings.accessToken ? new Headers({ Authorization: `Bearer ${settings.accessToken}` }) : undefined;
-  const call = createMilkyApi(settings, signal);
-  let account: { readonly id: number } | undefined;
+  let account: MilkySession | undefined;
+  let connection: AbortController | undefined;
   let running = false;
   let connecting: Promise<void> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -44,9 +27,10 @@ export function createMilkyWebhook(
 
   function connect() {
     if (!running || signal.aborted || connecting) return;
-    connecting = call("get_login_info", {}).then((login) => {
+    connection = new AbortController();
+    connecting = openMilkySession(settings, { ...options, signal: connection.signal }).then((session) => {
       if (!running || signal.aborted) return;
-      if (positiveId(login?.uin)) account = { id: login.uin };
+      if (session) account = session;
       else reconnect();
     }).catch(reconnect).finally(() => { connecting = undefined; });
   }
@@ -60,6 +44,7 @@ export function createMilkyWebhook(
   function deactivate() {
     running = false;
     account = undefined;
+    connection?.abort();
     clearTimeout(retry);
   }
 
@@ -74,25 +59,14 @@ export function createMilkyWebhook(
     const parsed = await readWebhookJson(request);
     if (!running || signal.aborted || account !== bound) return status(503);
     if ("status" in parsed) return status(parsed.status);
-    const body = parsed.body;
-    if (!record(body) || !positiveId(body.self_id) || typeof body.event_type !== "string" ||
-        !body.event_type || !record(body.data)) return status(400);
-    if (body.self_id !== bound.id) return status(403);
-    if (body.event_type === "bot_offline") {
+    const result = bound.receive(parsed.body);
+    if (result === "invalid") return status(400);
+    if (result === "foreign") return status(403);
+    if (result === "offline") {
       account = undefined;
+      connection?.abort();
       reconnect();
-      return status(200);
     }
-    const message = milkyMessage(body, bound.id, async (action, params) => {
-      if (!running || signal.aborted || account !== bound) return;
-      const result = await call(action, params);
-      const sequence = result?.message_seq;
-      if (message && typeof sequence === "number" && Number.isSafeInteger(sequence) && sequence >= 0) {
-        onSent?.(message, params.message);
-      }
-      return result;
-    });
-    if (message) void dispatch(message).catch(() => console.warn("[Milky] 处理 Webhook 事件失败。"));
     return status(200);
   }
 

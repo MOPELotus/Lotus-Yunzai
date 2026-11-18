@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
+import type { MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
 import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
+import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -524,15 +526,16 @@ if (import.meta.main) {
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
     const { hostname, oneBot, https, panelToken } = network;
-    const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, {
+    const milkyOptions: MilkyTransportOptions = {
       signal: lifecycle.signal,
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
-    }) : undefined;
-    if (milkyWebhook && milky) {
-      legacy.httpRoutes.reserve(milky.webhookPath);
-      stopMilky = milkyWebhook.stop;
-    }
+    };
+    const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, milkyOptions) : undefined;
+    const milkyWs = milky?.connection === "ws" ? createMilkyWs(milky, milkyOptions) : undefined;
+    const milkyTransport = milkyWebhook ?? milkyWs;
+    if (milky?.connection === "webhook") legacy.httpRoutes.reserve(milky.webhookPath);
+    stopMilky = milkyTransport?.stop;
     const http = network.http ?? (milkyWebhook && !https ? { port: 2536, auth: new Headers() } : undefined);
     // Plugins may create file links during initialization. Keep the bound listeners guarded until routes are ready.
     let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
@@ -623,7 +626,7 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
-      milkyWebhook?.start();
+      milkyTransport?.start();
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
@@ -673,7 +676,7 @@ if (import.meta.main) {
         });
         await Promise.race([handling, waiting.promise]);
       }
-      if (servers.length) await shutdown.promise;
+      if (servers.length || milkyTransport) await shutdown.promise;
     }
   } catch (error) {
     if (!stopping) throw error;
