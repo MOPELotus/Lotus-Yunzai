@@ -4,7 +4,8 @@ import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
 import { milkyGroupRequest } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
-import { encodeMilkyReply, milkyMessage } from "./milky-message.ts";
+import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
+import { encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 
 export interface MilkyTransportOptions {
@@ -43,6 +44,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
+  function deliver(event: BotEvent) {
+    void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
+  }
+  const files = createMilkyFileDelivery(signal, (event) => deliver({ ...event, adapter: "milky" }));
   signal.addEventListener("abort", () => {
     for (const timer of recalls) clearTimeout(timer);
     recalls.clear();
@@ -81,6 +86,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return result;
     }
 
+    if (body.event_type === "friend_file_upload") {
+      const upload = milkyFriendFileUpload(body, account, async (action, params) => {
+        return confirmSent(upload, await call(action, params), params.message);
+      });
+      if (upload) files.upload(upload);
+      return "accepted";
+    }
+
     const message = milkyMessage(body, account, async (action, params) => {
       return confirmSent(message, await call(action, params), params.message);
     }, scheduleRecall, async (action, params) => {
@@ -88,6 +101,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     });
+    if (message && !files.receive(message)) return "accepted";
     async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply) {
       const content = encodeMilkyReply(reply);
       if (!content) return false;
@@ -133,7 +147,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 退群回执未确认。");
       return result.status === "confirmed";
     });
-    if (event) void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
+    if (event) deliver(event);
     return "accepted";
   } };
 }

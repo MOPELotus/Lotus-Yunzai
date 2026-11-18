@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { milkyMessage } from "../lib/adapters/milky-message.ts";
+import { getMilkyFileCorrelation, milkyFriendFileUpload, milkyMessage } from "../lib/adapters/milky-message.ts";
 import { readPrivateAccess } from "../lib/private-access.ts";
 
 const selfId = 1001;
@@ -20,6 +20,13 @@ function envelope(scene: "friend" | "group", ...segments: unknown[]) {
   return {
     self_id: selfId, event_type: "message_receive",
     data: { message_scene: scene, sender_id: senderId, peer_id: scene === "group" ? groupId : senderId, message_seq: 1, segments },
+  };
+}
+
+function upload(data: Record<string, unknown> = {}) {
+  return {
+    self_id: selfId, event_type: "friend_file_upload",
+    data: { ...file({ file_hash: hash }).data, user_id: senderId, is_self: false, ...data },
   };
 }
 
@@ -105,4 +112,52 @@ test("Milky 私聊文件放行使用真实扩展名和全部文件段", async ()
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Milky 好友上传通知可查询附件和普通回复，只在内部保留关联哈希", async () => {
+  const url = "https://files.example.invalid/f";
+  const { call, calls } = fixture({ download_url: url, message_seq: 17 });
+  const event = milkyFriendFileUpload(upload({ message_seq: 99 }), selfId, call);
+  if (!event?.file) throw new Error("缺少好友上传文件。");
+  expect(event).toMatchObject({
+    self_id: selfId, user_id: senderId, isMaster: false, boundAccount: false,
+    message_type: "private", sub_type: "friend", msg: "", raw_message: "[file]",
+  });
+  expect(event.message).toEqual([event.file]);
+  expect(event.file).toMatchObject({ type: "file", file: fileId, name: "记录归档.json", size: 301 });
+  expect(event).not.toHaveProperty("message_id");
+  expect(event).not.toHaveProperty("reply_id");
+  expect(JSON.stringify(event)).not.toContain(hash);
+  expect(getMilkyFileCorrelation(event.file)).toBe(hash);
+  expect(getMilkyFileCorrelation({ ...event.file })).toBeUndefined();
+  const ordinary = milkyMessage(envelope("friend", file({ file_hash: hash })), selfId, call);
+  if (!ordinary?.file) throw new Error("缺少好友文件消息。");
+  expect(getMilkyFileCorrelation(ordinary.file)).toBe(getMilkyFileCorrelation(event.file));
+  expect(await event.reply("收到", true)).toBe(false);
+  expect(await event.reply([{ type: "reply", id: 99 }, "收到"])).toBe(false);
+  expect(calls).toEqual([]);
+  const download = event.file.getDownloadUrl;
+  if (typeof download !== "function") throw new Error("缺少好友文件下载能力。");
+  expect(await download()).toBe(url);
+  expect(await event.reply("收到")).toBe(true);
+  expect(calls).toEqual([
+    { action: "get_private_file_download_url", params: { user_id: senderId, file_id: fileId, file_hash: hash } },
+    { action: "send_private_message", params: { user_id: senderId, message: [{ type: "text", data: { text: "收到" } }] } },
+  ]);
+});
+
+test("Milky 好友上传需要登录账号、入站方向和有效附件", async () => {
+  const { call, calls } = fixture({ message_seq: "17" });
+  for (const event of [
+    { ...upload(), self_id: selfId + 1 }, { ...upload(), event_type: "group_file_upload" },
+    upload({ user_id: selfId }), upload({ user_id: 0 }), upload({ user_id: String(senderId) }),
+    upload({ is_self: true }), upload({ is_self: undefined }), upload({ is_self: "false" }),
+    upload({ file_name: undefined }), upload({ file_size: -1 }),
+  ]) expect(milkyFriendFileUpload(event, selfId, call)).toBeUndefined();
+  const event = milkyFriendFileUpload(upload({ file_hash: undefined }), selfId, call);
+  if (!event?.file) throw new Error("缺少好友上传文件。");
+  expect(getMilkyFileCorrelation(event.file)).toBeUndefined();
+  expect(event.file).not.toHaveProperty("getDownloadUrl");
+  expect(calls).toEqual([]);
+  expect(await event.reply("收到")).toBe(false);
 });

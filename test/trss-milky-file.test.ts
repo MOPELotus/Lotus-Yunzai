@@ -22,7 +22,7 @@ function deadline<T>(promise: Promise<T>, message: string): Promise<T> {
 }
 
 function mockGateway() {
-  const calls: { action: string; body: unknown }[] = [];
+  const calls: { action: string; body: unknown; receivedAt: number }[] = [];
   let ready = Promise.withResolvers<void>();
   let handled = 0;
   const server = Bun.serve({
@@ -33,7 +33,7 @@ function mockGateway() {
         return new Response(null, { status: 401 });
       }
       const action = new URL(request.url).pathname.slice("/api/".length);
-      calls.push({ action, body: await request.json() });
+      calls.push({ action, body: await request.json(), receivedAt: performance.now() });
       ready.resolve();
 
       function success(data: object) {
@@ -55,7 +55,8 @@ function mockGateway() {
       if (handled === calls.length) await deadline(ready.promise, `未收到 Milky ${action} 动作。`);
       const call = calls[handled++]!;
       if (handled === calls.length) ready = Promise.withResolvers<void>();
-      expect(call).toEqual({ action, body });
+      expect({ action: call.action, body: call.body }).toEqual({ action, body });
+      return call;
     },
     expectDrained() { expect(calls).toHaveLength(handled); },
   };
@@ -115,7 +116,7 @@ async function send(endpoint: URL, message_seq: number, segments: object[], send
   })).status).toBe(200);
 }
 
-test("Milky 文件消息走旧插件文件入口，下载查询随原会话且保留私聊文件限制", async () => {
+test("Milky 文件消息与上传通知走旧插件入口，保留原会话和私聊文件限制", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-file-"));
   const mock = mockGateway();
   try {
@@ -139,7 +140,7 @@ test("Milky 文件消息走旧插件文件入口，下载查询随原会话且�
           const url = name.endsWith(".JSON") ? await getDownloadUrl?.() : undefined;
           return e.reply(JSON.stringify({
             type, file, name, size, firstFile, hashExposed, hasDownload: typeof getDownloadUrl === "function",
-            url: url ?? null,
+            url: url ?? null, messageId: e.message_id ?? null,
           }));
         }
       }
@@ -154,29 +155,32 @@ test("Milky 文件消息走旧插件文件入口，下载查询随原会话且�
       await mock.next("get_login_info", {});
       await waitForBind(endpoint);
       async function metadata(
-        source: ReturnType<typeof file>, hasDownload: boolean, url: string | null, group?: number,
+        source: ReturnType<typeof file>, hasDownload: boolean, url: string | null, messageId: number | null, group?: number,
       ) {
         const { file_id, file_name, file_size } = source.data;
         const message = [text(JSON.stringify({
           type: "file", file: file_id, name: file_name, size: file_size,
-          firstFile: true, hashExposed: false, hasDownload, url,
+          firstFile: true, hashExposed: false, hasDownload, url, messageId,
         }))];
         if (group === undefined) await mock.next("send_private_message", { user_id: friendId, message });
         else await mock.next("send_group_message", { group_id: group, message });
+      }
+      async function upload(source: ReturnType<typeof file>, userId = friendId) {
+        expect((await webhook(endpoint, "friend_file_upload", { ...source.data, user_id: userId, is_self: false })).status).toBe(200);
       }
 
       const json = file("private-json", "抽卡记录.JSON", 36, fileHash);
       await send(endpoint, 1, [json]);
       await mock.next("get_private_file_download_url", { user_id: friendId, file_id: json.data.file_id, file_hash: fileHash });
-      await metadata(json, true, privateUrl);
+      await metadata(json, true, privateUrl, 1);
 
-      expect((await webhook(endpoint, "friend_file_upload", { ...json.data, user_id: friendId, is_self: false })).status).toBe(200);
+      await upload(json);
       const sheet = file("private-sheet", "表格.xlsx", 48, fileHash);
       await send(endpoint, 2, [sheet]);
-      await metadata(sheet, true, null);
+      await metadata(sheet, true, null, 2);
       const notes = file("private-notes", "日志.txt", 0);
       await send(endpoint, 3, [notes]);
-      await metadata(notes, false, null);
+      await metadata(notes, false, null, 3);
 
       const executable = file("private-executable", "记录.json.exe", 90, fileHash);
       await send(endpoint, 4, [executable], 43);
@@ -187,11 +191,34 @@ test("Milky 文件消息走旧插件文件入口，下载查询随原会话且�
       const groupFile = file("group-json", "群记录.JSON", 100, fileHash);
       await send(endpoint, 6, [groupFile], friendId, groupId);
       await mock.next("get_group_file_download_url", { group_id: groupId, file_id: groupFile.data.file_id });
-      await metadata(groupFile, true, groupUrl, groupId);
+      await metadata(groupFile, true, groupUrl, 6, groupId);
       const secondGroupFile = file("group-notes", "群日志.txt", 20);
       await send(endpoint, 7, [secondGroupFile], friendId, groupId);
-      await metadata(secondGroupFile, true, null, groupId);
+      await metadata(secondGroupFile, true, null, 7, groupId);
       await send(endpoint, 7, [secondGroupFile], friendId, groupId);
+
+      const preferredMessage = file("preferred-message", "聊天包优先.xlsx", 56, fileHash);
+      await upload(preferredMessage);
+      await send(endpoint, 8, [preferredMessage]);
+      await metadata(preferredMessage, true, null, 8);
+
+      const uploadOnly = file("upload-only", "只有通知.JSON", 72, fileHash);
+      const notifiedAt = performance.now();
+      await upload(uploadOnly);
+      const fallbackLookup = await mock.next("get_private_file_download_url", {
+        user_id: friendId, file_id: uploadOnly.data.file_id, file_hash: fileHash,
+      });
+      expect(fallbackLookup.receivedAt - notifiedAt).toBeGreaterThanOrEqual(950);
+      await metadata(uploadOnly, true, privateUrl, null);
+      await send(endpoint, 9, [uploadOnly]);
+      await send(endpoint, 10, [text("文件补充说明"), uploadOnly]);
+      await mock.next("get_private_file_download_url", {
+        user_id: friendId, file_id: uploadOnly.data.file_id, file_hash: fileHash,
+      });
+      await metadata(uploadOnly, true, privateUrl, 10);
+
+      await upload(executable, 45);
+      await mock.next("send_private_message", { user_id: 45, message: [text(blockedTip)] });
       await Bun.sleep(80);
       mock.expectDrained();
     } finally {

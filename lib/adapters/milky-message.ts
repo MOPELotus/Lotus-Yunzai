@@ -27,6 +27,11 @@ interface ForwardNode {
 const inlinePrefix = "base64://";
 const maxMediaLinkLength = 4_096;
 const maxForwardNodes = 100;
+const fileCorrelations = new WeakMap<InboundSegment, string>();
+
+export function getMilkyFileCorrelation(segment: InboundSegment): string | undefined {
+  return fileCorrelations.get(segment);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -227,7 +232,7 @@ function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCa
       action: "get_private_file_download_url", params: { user_id: target.user_id, file_id: file, file_hash: hash },
     };
   if (!query) return segment;
-  return {
+  const downloadable = {
     ...segment,
     async getDownloadUrl() {
       try {
@@ -237,6 +242,8 @@ function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCa
       }
     },
   };
+  if (hash && "user_id" in target) fileCorrelations.set(downloadable, hash);
+  return downloadable;
 }
 
 function decodeSegments(value: unknown, selfId: number, target: Target, call: MilkyCall) {
@@ -345,6 +352,48 @@ function senderMetadata(data: Record<string, unknown>, groupId: number | undefin
   return { sender, member: { is_admin: role === "admin", is_owner: role === "owner" } };
 }
 
+function replyToMilky(target: Target, call: MilkyCall, {
+  messageId, groupSender, scheduleRecall,
+}: { messageId?: number; groupSender?: number; scheduleRecall?: ScheduleRecall } = {}): MessageEvent["reply"] {
+  const group = "group_id" in target;
+  const action = group ? "send_group_message" : "send_private_message";
+  return async (reply, quote = false, options = {}) => {
+    if (quote && messageId === undefined) return false;
+    const mention = group ? options.at === true ? groupSender : options.at : undefined;
+    const message = encodeMilkyReply(reply, quote ? messageId : undefined, mention);
+    if (!message || (messageId === undefined && message.some(({ type }) => type === "reply"))) return false;
+    try {
+      const sequence = (await call(action, { ...target, message }))?.message_seq;
+      if (!isSequence(sequence)) return false;
+      const seconds = options.recallMsg;
+      if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
+        scheduleRecall?.(group ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+export function milkyFriendFileUpload(value: unknown, selfId: number, call: MilkyCall): MessageEvent | undefined {
+  if (!isId(selfId) || !isRecord(value) || value.event_type !== "friend_file_upload" || value.self_id !== selfId ||
+      !isRecord(value.data)) return;
+  const { user_id: userId, is_self: ownUpload } = value.data;
+  if (!isId(userId) || userId === selfId || ownUpload !== false) return;
+  const target = { user_id: userId };
+  const file = decodeFile(value.data, target, call);
+  if (!file) return;
+  return {
+    post_type: "message", message_type: "private", sub_type: "friend",
+    self_id: selfId, user_id: userId, sender: { user_id: userId },
+    msg: "", raw_message: "[file]", message: [file], file,
+    isGroup: false, isPrivate: true, isMaster: false, boundAccount: false,
+    async isFriend() { return true; },
+    reply: replyToMilky(target, call),
+  };
+}
+
 export function milkyMessage(
   value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall, forwardCall?: MilkyCall,
 ): MessageEvent | undefined {
@@ -395,21 +444,6 @@ export function milkyMessage(
       if (!isSequence(result?.message_seq)) throw new Error("Milky 合并转发结果未确认。");
       return true;
     }),
-    async reply(reply, quote = false, options = {}) {
-      const mention = isGroup ? options.at === true ? userId : options.at : undefined;
-      const message = encodeMilkyReply(reply, quote ? messageId : undefined, mention);
-      if (!message) return false;
-      try {
-        const sequence = (await call(action, { ...target, message }))?.message_seq;
-        if (!isSequence(sequence)) return false;
-        const seconds = options.recallMsg;
-        if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
-          scheduleRecall?.(isGroup ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
-        }
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    reply: replyToMilky(target, call, { messageId, groupSender: isGroup ? userId : undefined, scheduleRecall }),
   };
 }
