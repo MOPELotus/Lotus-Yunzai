@@ -7,6 +7,7 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
+import { createDispatchPower } from "./lib/dispatch-power.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
@@ -47,6 +48,7 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const dispatchPower = createDispatchPower();
   let plugins: PluginLoadReport | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
@@ -83,6 +85,7 @@ if (import.meta.main) {
       recordCount("receive", event, event.post_type === "message" ? event.message : undefined);
     }
     if (!groupDispatch.admit(event)) return;
+    if (dispatchPower.paused && event.post_type !== "message") return;
     const handling = handleEvent(event);
     pending.add(handling);
     try {
@@ -157,6 +160,17 @@ if (import.meta.main) {
   async function dispatchMessage(incoming: MessageEvent) {
     const { event, allowNew } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    if (dispatchPower.paused) {
+      if (allowNew && event.msg === "#开机" && allowed(["开机", "system", systemModuleName])) {
+        await dispatchPower.handle(event);
+      }
+      return;
+    }
+    if (allowNew && event.msg === "#关机" && allowed(["进程管理", "system", systemModuleName])) {
+      if (event.isMaster) await dispatchPower.handle(event);
+      else await event.reply("暂无权限，只有主人才能操作");
+      return;
+    }
     if (matchesMasterEnrollment(event.msg)) {
       if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
