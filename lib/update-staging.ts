@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 import { builtInDirectories } from "./builtin-modules.ts";
 import { createLocalGit, gitHead, isGitCheckout } from "./local-git.ts";
 import { loadedPluginPath, type PluginDirectories } from "./plugins/loaded-directories.ts";
+import { activateUpdate } from "./update-activation.ts";
 import { buildUpdateCheckout, initializeUpdateSubmodules } from "./update-build.ts";
 import { isUpdateWorktreeDirty } from "./update-candidate-git.ts";
 import { checkoutUpdateRevision } from "./update-checkout.ts";
+import { verifyUpdateHealth } from "./update-health.ts";
 import type { ReadyUpdate } from "./update-preflight.ts";
+import { restoreUpdateTracking } from "./update-tracking.ts";
 
 const builtIns = new Set(builtInDirectories.values());
 
@@ -65,6 +68,23 @@ async function trackedPluginNames(directory: string): Promise<Set<string>> {
   const rootEntries = await git?.(directory, ["ls-tree", "-z", "--name-only", "HEAD", "--", "plugins"]);
   if (rootEntries === "") return new Set();
   throw new Error("无法检查宿主跟踪的插件目录。");
+}
+
+async function probeStagedUpdate(directory: string, revision: string) {
+  const paths = ["config", "data", "logs"].map((name) => join(directory, name));
+  for (const path of paths) {
+    try {
+      await lstat(path);
+      throw new Error("候选目录已包含运行状态。");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
+    }
+  }
+  try {
+    await verifyUpdateHealth(directory, revision);
+  } finally {
+    await Promise.all(paths.map((path) => rm(path, { force: true, recursive: true })));
+  }
 }
 
 export async function stageUpdate(root: URL, directories: PluginDirectories, ready: ReadyUpdate, stagingParent = tmpdir()) {
@@ -126,21 +146,53 @@ export async function stageUpdate(root: URL, directories: PluginDirectories, rea
     phase = "运行候选初始化和类型检查";
     await buildUpdateCheckout(directory, cache);
 
-    phase = "核验候选提交和活动工作区";
-    if (await readActiveRevision(host) !== hostHead || await readActiveRevision(directory) !== stagedHead) {
-      throw new Error("宿主检查期间已变更。");
+    async function checkRevisions() {
+      if (await readActiveRevision(host) !== hostHead || await readActiveRevision(directory) !== stagedHead) {
+        throw new Error("宿主检查期间已变更。");
+      }
+      for (const plugin of copies) {
+        if (await readActiveRevision(plugin.source) !== plugin.head ||
+            await readActiveRevision(plugin.destination) !== plugin.stagedHead) throw new Error("插件检查期间已变更。");
+      }
     }
+
+    phase = "核验候选提交和活动工作区";
+    await checkRevisions();
     await verifyStagedPins(directory);
     for (const plugin of copies) {
-      if (await readActiveRevision(plugin.source) !== plugin.head ||
-          await readActiveRevision(plugin.destination) !== plugin.stagedHead) throw new Error("插件检查期间已变更。");
       await verifyStagedPins(plugin.destination);
+    }
+
+    phase = "恢复候选更新跟踪";
+    await restoreUpdateTracking(host, directory, hostHead, stagedHead);
+    for (const plugin of copies) {
+      await restoreUpdateTracking(plugin.source, plugin.destination, plugin.head, plugin.stagedHead);
     }
 
     const owned = staging;
     let cleanup: Promise<void> | undefined;
-    return { directory, release: () => cleanup ??= rm(owned, { recursive: true, force: true })
-      .catch((error: unknown) => { cleanup = undefined; throw error; }) };
+    let activating = false;
+    return {
+      directory, revision: stagedHead,
+      async activate(verify: (active: string) => Promise<void>, additionalStatePaths?: readonly string[]) {
+        if (activating || cleanup) throw new Error("候选正在使用或已释放。");
+        activating = true;
+        try {
+          await probeStagedUpdate(directory, stagedHead);
+          return await activateUpdate(host, directory, verify, additionalStatePaths, async () => {
+            await checkRevisions();
+            await ready.release();
+          });
+        } finally {
+          activating = false;
+        }
+      },
+      async release() {
+        if (activating) throw new Error("候选正在切换。");
+        return cleanup ??= rm(owned, { recursive: true, force: true })
+          .catch((error: unknown) => { cleanup = undefined; throw error; });
+      },
+    };
   } catch {
     if (staging) await rm(staging, { recursive: true, force: true }).catch(() => {});
     throw new Error(`更新候选构建失败（${phase}）。`);

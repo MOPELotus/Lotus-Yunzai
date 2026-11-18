@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { prepareUpdate } from "../lib/update-preflight.ts";
 import { stageUpdate } from "../lib/update-staging.ts";
+import { verifyUpdateHealth } from "../lib/update-health.ts";
 
 const noGit = !Bun.which("git");
 const runtimePaths = [
@@ -120,6 +121,54 @@ function requireReady(result: Awaited<ReturnType<typeof prepareUpdate>>) {
   if (result.status !== "ready") throw new Error(`预检未得到可用候选，实际为 ${result.status}。`);
   return result;
 }
+
+test.skipIf(noGit)("已构建候选探测后可切换，失败可重试且旧仓不残留临时引用", () => fixture(async (temporary) => {
+  const repo = await makeRepository(temporary, "deployment", {
+    ".gitignore": "/data/\n/logs/\n/panel/dist/\n",
+    "package.json": JSON.stringify({ name: "deployment-fixture", scripts: { typecheck: "bun -e 'void 0'" } }),
+    "scripts/bootstrap.ts": `await Bun.write("panel/dist/fixture.txt", "built " + await Bun.file("revision.txt").text());`,
+    "revision.txt": "old",
+    "app.ts": `
+      const git = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+      const revision = git.stdout.toString().trim();
+      await Bun.write("logs/probe.txt", revision);
+      const server = Bun.serve({
+        hostname: "127.0.0.1", port: 0,
+        fetch(request) {
+          if (request.headers.get("Authorization") !== "Bearer " + Bun.env.LOTUS_HTTP_TOKEN) return new Response(null, {status: 401});
+          return Response.json({status: "ok", revision});
+        },
+      });
+      console.log("HTTP 正在监听 " + server.url.origin + "/status");
+      process.once("SIGTERM", () => { void server.stop(true); });
+    `,
+  });
+  repo.publish("Fixture deployed baseline");
+  const active = join(temporary, "active");
+  repo.checkout(active);
+  const root = pathToFileURL(`${active}/`);
+  await writeFiles(active, { "data/fixture.txt": "live state", "logs/fixture.txt": "live logs" });
+  await writeFile(join(repo.writer, "revision.txt"), "next");
+  repo.publish("Fixture deployable candidate");
+  const ready = requireReady(await prepareUpdate(root, new Map()));
+  const stage = await stageUpdate(root, new Map(), ready, temporary);
+  try {
+    await expect(stage.activate(async (current) => {
+      await verifyUpdateHealth(current, ready.candidate);
+      throw new Error("fixture health rejected");
+    })).rejects.toThrow("fixture health rejected");
+    expect(await readFile(join(active, "revision.txt"), "utf8")).toBe("old");
+    const result = await stage.activate((current) => verifyUpdateHealth(current, ready.candidate));
+    expect(await readFile(join(active, "revision.txt"), "utf8")).toBe("next");
+    expect(await readFile(join(active, "data/fixture.txt"), "utf8")).toBe("live state");
+    expect(await readFile(join(active, "panel/dist/fixture.txt"), "utf8")).toBe("built next");
+    expect(git(active, "symbolic-ref", "--short", "HEAD")).toBe("main");
+    expect(git(result.previous, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
+  } finally {
+    await stage.release();
+    await ready.release();
+  }
+}), 15_000);
 
 async function assertRuntimeIsolation(active: string, staged?: string) {
   for (const file of runtimePaths) {

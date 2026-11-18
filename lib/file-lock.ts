@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { lstat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-export async function lockFile(file: string, subject: string): Promise<Database> {
+export async function lockFile(file: string, subject: string, waitMs = 2_000): Promise<Database> {
   try {
     if (!(await lstat(file)).isFile()) throw new Error(`${subject}锁须为普通文件。`);
   } catch (error) {
@@ -11,7 +11,7 @@ export async function lockFile(file: string, subject: string): Promise<Database>
 
   // The sidecar path stays stable and SQLite releases the OS lock on process exit.
   const database = new Database(file);
-  const deadline = performance.now() + 2_000;
+  const deadline = performance.now() + waitMs;
   try {
     database.exec("PRAGMA busy_timeout = 0");
     for (;;) {
