@@ -27,11 +27,14 @@ export function createMilkyWebhook(settings: MilkySettings, options: MilkyTransp
 
   function connect() {
     if (!running || signal.aborted || connecting) return;
-    connection = new AbortController();
-    connecting = openMilkySession(settings, { ...options, signal: connection.signal }).then((session) => {
+    const current = new AbortController();
+    connection = current;
+    connecting = openMilkySession(settings, { ...options, signal: current.signal }).then((session) => {
       if (!running || signal.aborted) return;
-      if (session) account = session;
-      else reconnect();
+      if (session) {
+        account = session;
+        options.onOnline?.(session.botId, current.signal);
+      } else reconnect();
     }).catch(reconnect).finally(() => { connecting = undefined; });
   }
 

@@ -87,6 +87,7 @@ if (import.meta.main) {
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
+  let milkyOnline: { id: number; startedAt: number; signal: AbortSignal } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -532,6 +533,7 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
+      onOnline: (id, signal) => { milkyOnline = { id, startedAt: performance.now(), signal }; },
       isMaster: permissions.isMaster,
       groupReviews: milky && createMilkyGroupReviews(),
     };
@@ -608,8 +610,14 @@ if (import.meta.main) {
       runtimeDiagnostics(context: CommandContext) {
         if (!context.isMaster) return { accounts: [], plugins: [] };
         const accounts = groups.onlineAccounts();
+        const online = milkyOnline;
+        const terminal = context.message_type === "terminal";
+        const milkyAccount = terminal && online && !online.signal.aborted ? {
+          id: online.id, adapter: "milky" as const,
+          seconds: Math.max(0, Math.floor((performance.now() - online.startedAt) / 1_000)),
+        } : undefined;
         return {
-          accounts: context.message_type === "terminal" ? accounts : accounts.filter(({ id }) => id === context.self_id),
+          accounts: milkyAccount ? [...accounts, milkyAccount] : terminal ? accounts : accounts.filter(({ id }) => id === context.self_id),
           plugins: plugins?.timings ?? [],
         };
       },

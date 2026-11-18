@@ -13,11 +13,13 @@ export interface MilkyTransportOptions {
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (event: BotEvent, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
+  readonly onOnline?: (botId: number, signal: AbortSignal) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
 
 export interface MilkySession {
+  readonly botId: number;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
 
@@ -72,7 +74,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return result.status === "confirmed";
   }
 
-  return { receive(body) {
+  return { botId: account, receive(body) {
     if (signal.aborted) return "offline";
     if (!record(body) || !positiveId(body.self_id) || typeof body.event_type !== "string" ||
         !body.event_type || !record(body.data)) return "invalid";
