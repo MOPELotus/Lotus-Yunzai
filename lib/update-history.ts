@@ -1,8 +1,8 @@
 import { realpath } from "node:fs/promises";
-import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { builtInDirectories } from "./builtin-modules.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
+import { findLoadedPlugin, loadedPluginPath, type PluginDirectories } from "./plugins/loaded-directories.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 
 export interface UpdateHistory {
@@ -11,20 +11,7 @@ export interface UpdateHistory {
   readonly pinnedMismatch?: boolean;
 }
 
-type Directories = ReadonlyMap<string, { path: string; packageName: string }>;
 const builtIns = new Set(builtInDirectories.values());
-
-function resolveModule(directories: Directories, requested: string) {
-  const exact = directories.get(requested);
-  if (exact) return { name: requested, ...exact };
-  const packageMatch = [...directories].find(([, plugin]) => plugin.packageName === requested.toLowerCase());
-  if (packageMatch) return { name: packageMatch[0], ...packageMatch[1] };
-  for (const suffix of ["-Plugin", "-plugin"]) {
-    const name = requested + suffix;
-    const candidate = directories.get(name);
-    if (candidate) return { name, ...candidate };
-  }
-}
 
 async function pinnedRevision(git: LocalGit, host: string, name: string): Promise<string | undefined> {
   if (!await isGitCheckout(git, host)) return;
@@ -51,9 +38,9 @@ async function logLines(git: LocalGit, directory: string, revision: string | und
   return lines;
 }
 
-export async function readUpdateHistory(root: URL, directories: Directories, requested?: string): Promise<UpdateHistory | undefined> {
+export async function readUpdateHistory(root: URL, directories: PluginDirectories, requested?: string): Promise<UpdateHistory | undefined> {
   const query = requested?.trim();
-  const plugin = query ? resolveModule(directories, query) : undefined;
+  const plugin = query ? findLoadedPlugin(directories, query) : undefined;
   if (query && !plugin) return;
   const git = createLocalGit();
   if (!git) return;
@@ -66,9 +53,8 @@ export async function readUpdateHistory(root: URL, directories: Directories, req
     }
 
     const { name } = plugin;
-    if (name === "." || name === ".." || basename(name) !== name || /[\\\u0000-\u001f]/u.test(name)) return;
-    const directory = join(host, "plugins", name);
-    if (await realpath(plugin.path) !== directory || !await isGitCheckout(git, directory)) return;
+    const directory = await loadedPluginPath(host, plugin);
+    if (!directory || !await isGitCheckout(git, directory)) return;
     const actual = await gitHead(git, directory);
     if (!builtIns.has(name)) {
       const lines = await logLines(git, directory, actual);
