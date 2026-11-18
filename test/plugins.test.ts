@@ -357,3 +357,89 @@ test("V3 初始化失败和跳过会清理资源，正常退出按初始化的�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-handler-"));
+  try {
+    await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
+    await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+    const plugins = join(root, "plugins");
+    await mkdir(plugins, { recursive: true });
+    await writeFile(join(plugins, "a-failed.js"), `
+      import Handler from "../lib/plugins/handler.js";
+      export const apps = {
+        first: class extends plugin {
+          constructor() {
+            super({ handler: [{ key: "fixture.failed-class", fn: "provide" }] });
+          }
+          init() { Handler.add({ ns: "init", key: "fixture.failed-init", fn: () => "残留" }); }
+          provide() { return "残留"; }
+        },
+        second: class extends plugin {
+          init() { throw new Error("Handler 初始化回滚样例"); }
+        }
+      };
+    `);
+    await writeFile(join(plugins, "b-registered.js"), `
+      import Handler from "../lib/plugins/handler.js";
+      export const apps = {
+        second: class extends plugin {
+          constructor() {
+            super({ priority: 20, handler: {
+              answer: { key: "fixture.answer", fn: "answer" },
+              reserved: { key: "mys.req.err", fn: "answer" }
+            } });
+          }
+          async init() {
+            await Promise.resolve();
+            Handler.add({ ns: "init", event: "fixture.answer", fn: () => "最后", priority: 30 });
+            Handler.add({ ns: "init", event: " mys.req.err ", fn: () => "不应接管" });
+          }
+          answer(e, args) { return this.name + ":" + e.msg + ":" + args; }
+        },
+        first: class extends plugin {
+          constructor() {
+            super({ priority: 100, handler: [{ key: "fixture.answer", fn: "offer", priority: 10 }] });
+          }
+          offer(e, args, next) { console.log("第一项交给下一项"); next(); }
+        }
+      };
+    `);
+    await writeFile(join(plugins, "c-caller.js"), `
+      import Handler from "../lib/plugins/handler.js";
+      export default class extends plugin {
+        constructor() {
+          super({ name: "调用方", rule: [{ reg: "^#调用$", fnc: "run" }] });
+        }
+        async run(e) {
+          Handler.del("init");
+          this.reply(await Handler.call("fixture.answer", e, "参数"));
+          this.reply(await Handler.callAll("fixture.answer", e, "参数"));
+          return this.reply(JSON.stringify([
+            Handler.has("fixture.failed-init"), Handler.has("fixture.failed-class"),
+            Handler.has("mys.req.err"), Handler.has(" mys.req.err ")
+          ]));
+        }
+      };
+    `);
+    const host = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root,
+      env: { PATH: process.env.PATH },
+      stdin: new Blob(["#调用\n"]),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
+    ]);
+    expect(exit).toBe(0);
+    expect(stdout.trim().split("\n").slice(-5)).toEqual([
+      "第一项交给下一项", "未命名插件:#调用:参数",
+      "第一项交给下一项", "最后", "[false,false,false,false]",
+    ]);
+    expect(stderr).toContain("Handler 初始化回滚样例");
+    expect(stderr).toContain("mys.req.err 由内置服务保留");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

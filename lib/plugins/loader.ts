@@ -192,7 +192,7 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
         }
         commands.registerModule({ name: moduleName, commands: handlers as CommandModule["commands"] });
       } else {
-        const result = await legacy.register(published);
+        const result = await legacy.register(published, label);
         if (result !== "loaded") {
           const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
           console.warn(`[插件] 跳过 ${label}：${reason}`);

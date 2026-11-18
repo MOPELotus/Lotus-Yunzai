@@ -1,4 +1,5 @@
 import { segment, type MessageEvent } from "../messages.ts";
+import { HandlerScope, type HandlerCallback } from "./handler.ts";
 import Plugin, { PluginCleanup } from "./plugin.js";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
@@ -13,6 +14,7 @@ interface Rule {
 interface App {
   readonly create: PluginClass;
   readonly initializer: PluginInstance;
+  readonly scope: HandlerScope;
   readonly rules: readonly Rule[];
   readonly priority: number;
   readonly event: string;
@@ -44,10 +46,33 @@ function canRun(permission: string | undefined, event: MessageEvent): boolean {
   return false;
 }
 
-async function dispose(app: PluginInstance): Promise<void> {
+function registerHandlers(app: App, label: string): void {
+  const { initializer, scope } = app;
+  const configured = initializer.handler;
+  if (configured === undefined || configured === null) return;
+  if (typeof configured !== "object") throw new Error(`插件 ${initializer.name} 的 Handler 格式无效。`);
+
+  const ns = typeof initializer.namespace === "string" && initializer.namespace ? initializer.namespace : label;
+  for (const value of Object.values(configured)) {
+    if (typeof value !== "object" || value === null) {
+      throw new Error(`插件 ${initializer.name} 的 Handler 格式无效。`);
+    }
+    const { key, fn, priority } = value as Record<string, unknown>;
+    const method = typeof fn === "string" ? initializer[fn] : undefined;
+    if (typeof key !== "string" || !key.trim() || typeof method !== "function" ||
+        (priority !== undefined && (typeof priority !== "number" || !Number.isFinite(priority)))) {
+      throw new Error(`插件 ${initializer.name} 的 Handler 键、方法或优先级无效。`);
+    }
+    scope.add({ key, ns, fn: method as HandlerCallback,
+      self: initializer, priority: priority ?? app.priority });
+  }
+}
+
+async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> {
+  scope.dispose();
   for (const cleanup of app[PluginCleanup].splice(0).reverse()) {
     try {
-      await cleanup();
+      await scope.run(cleanup);
     } catch (error) {
       console.warn(`[插件] 清理 ${app.name} 失败：`, error);
     }
@@ -56,17 +81,17 @@ async function dispose(app: PluginInstance): Promise<void> {
 
 export class LegacyPlugins {
   readonly #apps: App[] = [];
-  readonly #initializers: PluginInstance[] = [];
+  readonly #initializers: App[] = [];
 
   constructor() {
     Object.assign(globalThis, { plugin: Plugin, segment });
   }
 
-  async register(exports: Record<string, unknown>): Promise<"loaded" | "skipped" | "empty"> {
+  async register(exports: Record<string, unknown>, label: string): Promise<"loaded" | "skipped" | "empty"> {
     const published = exports.apps ?? exports;
     if (typeof published !== "object" || published === null) return "empty";
 
-    const initializers: PluginInstance[] = [];
+    const initializers: { initializer: PluginInstance; scope: HandlerScope }[] = [];
     const staged: App[] = [];
     const active: App[] = [];
     try {
@@ -74,34 +99,43 @@ export class LegacyPlugins {
         if (typeof value !== "function" || !(value.prototype instanceof Plugin)) continue;
 
         const create = value as PluginClass;
-        const initializer = new create();
-        initializers.push(initializer);
-        const { task, handler, rule, event, priority } = initializer;
+        const scope = new HandlerScope();
+        let initializer: PluginInstance;
+        try {
+          initializer = scope.run(() => new create());
+        } catch (error) {
+          scope.dispose();
+          throw error;
+        }
+        initializers.push({ initializer, scope });
+        const { task, rule, event, priority } = initializer;
         const hasTask = Array.isArray(task) ? task.length > 0 : Boolean(task);
-        if (handler || hasTask) {
-          throw new Error(`插件 ${initializer.name} 需要尚未接入的 Handler 或定时任务接口。`);
+        if (hasTask) {
+          throw new Error(`插件 ${initializer.name} 需要尚未接入的定时任务接口。`);
         }
         if (!Array.isArray(rule) || typeof event !== "string" ||
             typeof priority !== "number" || !Number.isFinite(priority)) {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
-        staged.push({ create, initializer, rules: rulesFor(initializer, rule), priority, event });
+        staged.push({ create, initializer, scope, rules: rulesFor(initializer, rule), priority, event });
       }
 
       for (const app of staged) {
-        const initializer = app.initializer;
-        if (typeof initializer.init === "function" && await initializer.init() === "return") {
-          await dispose(initializer);
+        const { initializer, scope } = app;
+        const init = initializer.init;
+        if (typeof init === "function" && await scope.run(() => init.call(initializer)) === "return") {
+          await dispose(initializer, scope);
         } else {
+          registerHandlers(app, label);
           active.push(app);
         }
       }
     } catch (error) {
-      for (const initializer of initializers.reverse()) await dispose(initializer);
+      for (const { initializer, scope } of initializers.reverse()) await dispose(initializer, scope);
       throw error;
     }
 
-    this.#initializers.push(...active.map(({ initializer }) => initializer));
+    this.#initializers.push(...active);
     this.#apps.push(...active);
     this.#apps.sort((left, right) => left.priority - right.priority);
     return active.length > 0 ? "loaded" : staged.length > 0 ? "skipped" : "empty";
@@ -109,7 +143,9 @@ export class LegacyPlugins {
 
   async dispose(): Promise<void> {
     this.#apps.length = 0;
-    for (const initializer of this.#initializers.splice(0).reverse()) await dispose(initializer);
+    for (const { initializer, scope } of this.#initializers.splice(0).reverse()) {
+      await dispose(initializer, scope);
+    }
   }
 
   async dispatch(event: MessageEvent): Promise<void> {
@@ -125,9 +161,12 @@ export class LegacyPlugins {
           return;
         }
 
-        const instance = Object.assign(new app.create(event), { e: event });
-        const handle = instance[rule.fnc];
-        if (typeof handle === "function" && await handle.call(instance, event) !== false) return;
+        const result = await app.scope.run(() => {
+          const instance = Object.assign(new app.create(event), { e: event });
+          const handle = instance[rule.fnc];
+          return typeof handle === "function" ? handle.call(instance, event) : false;
+        });
+        if (result !== false) return;
       }
     }
   }
