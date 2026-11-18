@@ -29,12 +29,17 @@
         "redis": "4.7.1",
       },
     },
+    "plugins/atlas": {
+      "name": "@lotus-yunzai/atlas",
+    },
     "plugins/system": {
       "name": "@lotus-yunzai/system",
     },
   },
   "packages": {
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
+
+    "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
 
     "@lotus-yunzai/hoyo-client": ["@lotus-yunzai/hoyo-client@workspace:packages/hoyo-client"],
 

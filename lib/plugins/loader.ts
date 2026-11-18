@@ -12,6 +12,10 @@ interface Candidate {
 }
 
 export const systemModuleName = "@lotus-yunzai/system";
+const builtInDirectories = new Map([
+  [systemModuleName, "system"],
+  ["@lotus-yunzai/atlas", "atlas"],
+]);
 
 const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
@@ -59,9 +63,10 @@ async function listCandidates(root: string): Promise<Candidate[]> {
       candidates.push({ path, kind: "script" });
     }
   }
-  const system = join(root, "system");
+  const builtInPaths = new Set([...builtInDirectories.values()].map((directory) => join(root, directory)));
   return candidates.sort((left, right) =>
-    Number(right.path === system) - Number(left.path === system) || left.path.localeCompare(right.path, "en"));
+    Number(builtInPaths.has(right.path)) - Number(builtInPaths.has(left.path)) ||
+    left.path.localeCompare(right.path, "en"));
 }
 
 async function legacyEntries(directory: string): Promise<string[]> {
@@ -157,8 +162,9 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
         throw new Error("清单模块须声明包名和入口路径。");
       }
 
-      if (name === systemModuleName && directory !== "system") {
-        console.warn(`[插件] 拒绝加载 ${label}：${name} 的内置目录为 plugins/system。`);
+      const builtInDirectory = builtInDirectories.get(name);
+      if (builtInDirectory !== undefined && directory !== builtInDirectory) {
+        console.warn(`[插件] 拒绝加载 ${label}：${name} 的内置目录为 plugins/${builtInDirectory}。`);
         continue;
       }
       if (commands.hasModule(name)) {
