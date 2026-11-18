@@ -31,6 +31,7 @@ if (import.meta.main) {
     stopping = true;
     process.exitCode = code;
     void legacy.stopTasks();
+    legacy.stopContexts();
     consoleInput?.close();
     shutdown.resolve();
   }
@@ -47,6 +48,8 @@ if (import.meta.main) {
   }
 
   async function dispatchMessage(event: MessageEvent) {
+    if (await legacy.dispatchContext(event)) return;
+
     const reply = await commands.dispatch(event.msg, event);
     if (reply !== undefined) {
       event.reply(reply);

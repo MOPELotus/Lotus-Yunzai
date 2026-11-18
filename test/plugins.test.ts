@@ -93,6 +93,8 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
               { reg: "^#引用$", fnc: "quote" },
               { reg: "^#非法段$", fnc: "invalidSegment" },
               { reg: "^#检查来信$", fnc: "incoming" },
+              { reg: "^#分步$", fnc: "startStep" },
+              { reg: "^#跨群$", fnc: "startGroupStep" },
               { reg: "^$", fnc: "imageOnly" },
             ] });
           }
@@ -120,6 +122,22 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
           invalidSegment() {
             const sent = this.reply(["不应发送", { type: "image", data: {} }]);
             return this.reply(sent ? "异常发送" : "已拒绝无效消息");
+          }
+          startStep() {
+            this.setContext("finishStep");
+            return this.reply("下一条");
+          }
+          finishStep(origin) {
+            this.finish("finishStep");
+            return this.reply(origin.msg + " → " + this.e.msg);
+          }
+          startGroupStep() {
+            this.setContext("finishGroupStep", true);
+            return this.reply("等群内回复");
+          }
+          finishGroupStep(origin) {
+            this.finish("finishGroupStep", true);
+            return this.reply(origin.user_id + " → " + this.e.user_id);
           }
           incoming(e) {
             return this.reply(JSON.stringify({
@@ -320,6 +338,20 @@ failsMsg: 协议拒绝
     expect(await send("#登录列表 51")).toMatchObject({ group_id: 77, message: "用法：#登录列表" });
     expect(await send("#登录列表", { user_id: 51, message_type: "private", sub_type: "friend" }))
       .toMatchObject({ user_id: 51, message: "登录列表\n档案 1 · 已登录" });
+    expect(await send("#分步")).toMatchObject({ group_id: 77, message: "下一条" });
+    expect(await send("#状态", { group_id: 78 })).toMatchObject({
+      group_id: 78, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    expect(await send("#状态", { user_id: 43 })).toMatchObject({
+      group_id: 77, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    expect(await send("#状态")).toMatchObject({ group_id: 77, message: "#分步 → #状态" });
+    expect(await send("#状态")).toMatchObject({
+      group_id: 77, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
+    });
+    expect(await send("#跨群")).toMatchObject({ group_id: 77, message: "等群内回复" });
+    expect(await send("#状态", { user_id: 43 })).toMatchObject({ group_id: 77, message: "42 → 43" });
+
     function nextFrame(): Promise<Record<string, unknown>> {
       return new Promise((ok) => {
         client.addEventListener("message", ({ data }) => ok(JSON.parse(data)), { once: true });

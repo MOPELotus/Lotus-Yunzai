@@ -1,6 +1,7 @@
 import { segment, type MessageEvent } from "../messages.ts";
+import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
-import Plugin, { PluginCleanup } from "./plugin.js";
+import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
@@ -16,6 +17,7 @@ interface App {
   readonly create: PluginClass;
   readonly initializer: PluginInstance;
   readonly scope: HandlerScope;
+  readonly contexts: PluginContexts;
   readonly rules: readonly Rule[];
   readonly priority: number;
   readonly event: string;
@@ -115,7 +117,7 @@ export class LegacyPlugins {
             typeof priority !== "number" || !Number.isFinite(priority)) {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
-        staged.push({ create, initializer, scope, rules: rulesFor(initializer, rule), priority, event });
+        staged.push({ create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule), priority, event });
       }
 
       for (const app of staged) {
@@ -141,11 +143,37 @@ export class LegacyPlugins {
     return active.length > 0 ? "loaded" : staged.length > 0 ? "skipped" : "empty";
   }
 
+  stopContexts(): void {
+    for (const app of this.#apps) app.contexts.close();
+  }
+
+  async dispatchContext(event: MessageEvent): Promise<boolean> {
+    for (const app of this.#apps) {
+      if (!app.contexts.active || !matches(app.event, event)) continue;
+      const contexts = { ...app.contexts.get(event, false), ...app.contexts.get(event, true) };
+      if (!Object.keys(contexts).length) continue;
+
+      const result = await app.scope.run(async () => {
+        let result: unknown;
+        for (const [method, origin] of Object.entries(contexts)) {
+          const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
+          const handler = instance[method];
+          if (typeof handler === "function") result = await handler.call(instance, origin);
+          if (result) break;
+        }
+        return result;
+      });
+      if (result !== "continue") return true;
+    }
+    return false;
+  }
+
   stopTasks(): Promise<void> {
     return this.#tasks.stop();
   }
 
   async dispose(): Promise<void> {
+    this.stopContexts();
     this.#apps.length = 0;
     await this.stopTasks();
     for (const { initializer, scope } of this.#initializers.splice(0).reverse()) {
@@ -167,7 +195,7 @@ export class LegacyPlugins {
         }
 
         const result = await app.scope.run(() => {
-          const instance = Object.assign(new app.create(event), { e: event });
+          const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
           const handle = instance[rule.fnc];
           return typeof handle === "function" ? handle.call(instance, event) : false;
         });
