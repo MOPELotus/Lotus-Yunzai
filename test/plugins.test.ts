@@ -25,7 +25,12 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
 
   try {
     await copyHost(root);
-    await install("a-hello", "hello", { repository: "https://github.com/example/hello.git" }, true);
+    const hello = await install("a-hello", "hello", { repository: "https://github.com/example/hello.git" }, true);
+    await writeFile(join(hello, "index.ts"), `
+      export function createModule({ groups }) {
+        return { commands: { "#问候": (name) => groups.onlineBots().length === 0 ? "你好，" + name : "意外在线" } };
+      }
+    `);
     await install("b-duplicate", "hello-fork", { repository: "https://gitee.com/example/hello" });
     const renamed = await install("c-renamed", "locally-renamed", {});
     const git = Bun.which("git")!;

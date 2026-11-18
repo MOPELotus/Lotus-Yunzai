@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
+import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { GroupNotice, MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
@@ -19,6 +20,7 @@ const commands = new CommandRegistry();
 
 if (import.meta.main) {
   const legacy = new LegacyPlugins();
+  const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   let stopping = false;
@@ -72,7 +74,7 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
-    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy);
+    await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({ groups: groups.transport() }));
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
@@ -82,7 +84,7 @@ if (import.meta.main) {
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
-          hostname, ...oneBot, isMaster: permissions.isMaster, http: shared ? statusRoute : undefined,
+          hostname, ...oneBot, groups, isMaster: permissions.isMaster, http: shared ? statusRoute : undefined,
         });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);

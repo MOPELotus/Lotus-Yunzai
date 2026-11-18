@@ -1,6 +1,7 @@
 import { segment, type GroupNotice, type MessageEvent } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { OneBotCalls } from "./onebot-calls.ts";
+import type { OneBotGroups } from "./onebot-groups.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -13,6 +14,16 @@ function isId(value: unknown): value is number {
 
 function stringField(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+interface ConnectionData {
+  readonly calls: OneBotCalls;
+  botId?: number;
+  detach?: () => void;
+}
+
+function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string): boolean {
+  return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
 }
 
 async function dispatchGroupNotice(
@@ -128,10 +139,19 @@ export function startOneBot(
     port: number;
     auth: Headers;
     isMaster: (bot: number, user: number) => boolean;
+    groups: OneBotGroups;
     http?: (request: Request) => Response;
   },
 ) {
-  return Bun.serve<OneBotCalls>({
+  function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {
+    socket.data.botId = botId;
+    socket.data.detach = options.groups.connect(botId, {
+      calls: socket.data.calls,
+      send: (output) => sendFrame(socket, output),
+    });
+  }
+
+  return Bun.serve<ConnectionData>({
     hostname: options.hostname,
     port: options.port,
     fetch(request, server) {
@@ -145,11 +165,17 @@ export function startOneBot(
       if (request.headers.get("X-Client-Role")?.toLowerCase() !== "universal") {
         return new Response("需要 OneBot 11 Universal 连接。", { status: 400 });
       }
-      if (!server.upgrade(request, { data: new OneBotCalls() })) {
+      const header = request.headers.get("X-Self-ID");
+      const id = header !== null && /^[1-9]\d*$/u.test(header) ? Number(header) : undefined;
+      const data = { calls: new OneBotCalls(), botId: isId(id) ? id : undefined };
+      if (!server.upgrade(request, { data })) {
         return new Response(null, { status: 426 });
       }
     },
     websocket: {
+      open(socket) {
+        if (socket.data.botId !== undefined) bind(socket, socket.data.botId);
+      },
       async message(socket, input) {
         if (typeof input !== "string") return;
         let message: unknown;
@@ -158,21 +184,31 @@ export function startOneBot(
         } catch {
           return;
         }
-        if (!isRecord(message) || socket.data.receive(message)) return;
+        const { calls, botId } = socket.data;
+        if (!isRecord(message) || calls.receive(message)) return;
+        if (botId !== undefined && isId(message.self_id) && message.self_id !== botId) return;
+        if (message.post_type === "meta_event") {
+          if (botId === undefined && isId(message.self_id) &&
+              (message.meta_event_type === "lifecycle" || message.meta_event_type === "heartbeat")) {
+            bind(socket, message.self_id);
+          }
+          return;
+        }
 
         try {
-          const send = (output: string) => socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
+          const send = (output: string) => sendFrame(socket, output);
           if (message.post_type === "notice") {
-            await dispatchGroupNotice(dispatch, send, message, socket.data, options.isMaster);
+            await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster);
           } else {
-            await dispatchMessage(dispatch, send, message, socket.data, options.isMaster);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");
         }
       },
       close(socket) {
-        socket.data.close();
+        socket.data.detach?.();
+        socket.data.calls.close();
       },
     },
   });

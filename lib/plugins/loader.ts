@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { CommandModule, CommandRegistry } from "../commands.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { rejectionReason, repositoryKey } from "./policy.ts";
@@ -130,7 +131,16 @@ async function findEntry(directory: string, value: string): Promise<string> {
   return path;
 }
 
-export async function loadPlugins(root: string, commands: CommandRegistry, legacy: LegacyPlugins): Promise<void> {
+interface PluginServices {
+  readonly groups: GroupTransport;
+}
+
+export async function loadPlugins(
+  root: string,
+  commands: CommandRegistry,
+  legacy: LegacyPlugins,
+  services: PluginServices,
+): Promise<void> {
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; moduleName?: string }[] = [];
   for (const candidate of await listCandidates(root)) {
@@ -203,7 +213,12 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
     try {
       const published = await import(pathToFileURL(entry).href);
       if (moduleName) {
-        const { commands: handlers, aliases } = record(published.default);
+        const create = published.createModule;
+        if (create !== undefined && typeof create !== "function") {
+          throw new Error("createModule 须为模块工厂函数。");
+        }
+        const module = create ? await create(services) : published.default;
+        const { commands: handlers, aliases } = record(module);
         if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
           throw new Error("入口必须通过默认导出提供 commands。");
         }
