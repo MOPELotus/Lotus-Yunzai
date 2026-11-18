@@ -1,6 +1,6 @@
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "../messages.ts";
 import { authorized } from "../server.ts";
-import { isRequestFlag, OneBotCalls } from "./onebot-calls.ts";
+import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
@@ -33,9 +33,30 @@ function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string):
   return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
 }
 
+interface MessageIdentity {
+  self_id?: number;
+  user_id?: number;
+  group_id?: number;
+}
+
+function sentMessage(frame: OneBotAction, source: MessageIdentity, record: (identity: MessageIdentity, message?: unknown) => void) {
+  if (!isRecord(frame.params)) return;
+  const { group_id, user_id, message, messages } = frame.params;
+  const group = isId(group_id) ? group_id : undefined;
+  const identity = {
+    self_id: source.self_id,
+    group_id: group,
+    user_id: group !== undefined
+      ? (group === source.group_id ? source.user_id : undefined)
+      : (isId(user_id) ? user_id : undefined),
+  };
+  if (frame.action === "send_msg") record(identity, message);
+  else if (frame.action === "send_group_forward_msg" || frame.action === "send_private_forward_msg") record(identity, messages);
+}
+
 async function dispatchRequest(
   dispatch: (event: FriendRequest | GroupRequest) => Promise<void>,
-  send: (message: string) => boolean,
+  send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
   permissions: { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
@@ -89,7 +110,7 @@ async function dispatchRequest(
 
 async function dispatchGroupNotice(
   dispatch: (event: GroupNotice) => Promise<void>,
-  send: (message: string) => boolean,
+  send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
@@ -134,7 +155,7 @@ async function dispatchGroupNotice(
 
 async function dispatchFriendPoke(
   dispatch: (event: FriendPoke) => Promise<void>,
-  send: (message: string) => boolean,
+  send: Send,
   event: Record<string, unknown>,
   isMaster: (bot: number, user: number) => boolean,
 ): Promise<void> {
@@ -147,16 +168,16 @@ async function dispatchFriendPoke(
     isGroup: false, isPrivate: true, isMaster: isMaster(self_id, user_id),
     reply(reply) {
       const message = encodeOneBotReply(reply);
-      return message !== undefined && send(JSON.stringify({
+      return message !== undefined && send({
         action: "send_msg", params: { message_type: "private", user_id, message, auto_escape: true },
-      }));
+      });
     },
   });
 }
 
 async function dispatchMessage(
   dispatch: (event: MessageEvent) => Promise<void>,
-  send: (message: string) => boolean,
+  send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
@@ -244,7 +265,7 @@ async function dispatchMessage(
       if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
         return calls.replyWithRecall(send, params, seconds, messageId);
       }
-      return send(JSON.stringify({ action: "send_msg", params }));
+      return send({ action: "send_msg", params });
     },
   });
 }
@@ -258,14 +279,23 @@ export function startOneBot(
     isMaster: (bot: number, user: number) => boolean;
     masterIds: (bot: number) => readonly number[];
     groups: OneBotGroups;
+    onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
   },
 ) {
+  function sender(socket: Bun.ServerWebSocket<ConnectionData>, source: MessageIdentity): Send {
+    return (frame) => {
+      const sent = sendFrame(socket, JSON.stringify(frame));
+      if (sent && options.onSent) sentMessage(frame, source, options.onSent);
+      return sent;
+    };
+  }
+
   function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {
     socket.data.botId = botId;
     socket.data.detach = options.groups.connect(botId, {
       calls: socket.data.calls,
-      send: (output) => sendFrame(socket, output),
+      send: sender(socket, { self_id: botId }),
     });
   }
 
@@ -314,7 +344,11 @@ export function startOneBot(
         }
 
         try {
-          const send = (output: string) => sendFrame(socket, output);
+          const send = sender(socket, {
+            self_id: isId(message.self_id) ? message.self_id : botId,
+            user_id: isId(message.user_id) ? message.user_id : undefined,
+            group_id: isId(message.group_id) ? message.group_id : undefined,
+          });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
             if (message.notice_type === "offline_file" && isId(message.self_id) &&

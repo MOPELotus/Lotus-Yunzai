@@ -1,7 +1,13 @@
 import type { GroupMembership, GroupRequestType, RecallResult } from "../messages.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
-type Send = (message: string) => boolean;
+export interface OneBotAction {
+  readonly action: string;
+  readonly params: object;
+  readonly echo?: string;
+}
+
+export type Send = (frame: OneBotAction) => boolean;
 
 export class OneBotNotSentError extends Error {
   readonly delivery = "not-sent";
@@ -32,7 +38,7 @@ export class OneBotCalls {
     const timer = setTimeout(() => resolve(undefined), 5_000);
     this.#requests.set(echo, resolve);
     try {
-      if (!send(JSON.stringify({ action, params, echo }))) throw new OneBotNotSentError("QQ 协议连接已关闭。");
+      if (!send({ action, params, echo })) throw new OneBotNotSentError("QQ 协议连接已关闭。");
       const result = await promise;
       if (!result) throw new Error("未收到 QQ 协议端确认。");
       if (result.status === "failed") throw new OneBotRejectedError("QQ 协议端未接受请求。");

@@ -1,5 +1,5 @@
 import type { MessageReply } from "../messages.ts";
-import { OneBotNotSentError, type OneBotCalls } from "./onebot-calls.ts";
+import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import { encodeOneBotReply } from "./onebot-message.ts";
 
 export interface GroupTarget {
@@ -16,7 +16,7 @@ export interface GroupTransport {
 
 interface Connection {
   readonly calls: OneBotCalls;
-  readonly send: (message: string) => boolean;
+  readonly send: Send;
 }
 
 export class OneBotGroups implements GroupTransport {

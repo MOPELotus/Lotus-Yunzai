@@ -3,7 +3,7 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
-import type { CommandModule, CommandRegistry } from "../commands.ts";
+import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { rejectionReason, repositoryKey } from "./policy.ts";
 
@@ -130,6 +130,7 @@ async function findEntry(directory: string, value: string): Promise<string> {
 interface PluginServices {
   readonly groups: GroupTransport;
   readonly signal: AbortSignal;
+  readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
 }
 
 export interface PluginLoadRecord {

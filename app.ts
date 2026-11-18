@@ -7,12 +7,15 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry } from "./lib/commands.ts";
+import { readLocalConfig } from "./lib/config.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
+import { createMessageCounts } from "./lib/message-counts.ts";
+import { createMessageStatistics } from "./lib/message-statistics.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -36,6 +39,7 @@ if (import.meta.main) {
   const legacy = new LegacyPlugins();
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
+  const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
   let plugins: PluginLoadReport | undefined;
@@ -50,6 +54,7 @@ if (import.meta.main) {
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
   let keywords: ReturnType<typeof createKeywords>;
+  let counts: ReturnType<typeof createMessageCounts>;
 
   function stop(code: number) {
     if (stopping) return;
@@ -63,7 +68,11 @@ if (import.meta.main) {
   }
 
   async function dispatch(event: BotEvent) {
-    if (stopping || !groupDispatch.admit(event)) return;
+    if (stopping) return;
+    if (event.post_type !== "message" || event.message_type !== "terminal") {
+      recordCount("receive", event, event.post_type === "message" ? event.message : undefined);
+    }
+    if (!groupDispatch.admit(event)) return;
     const handling = handleEvent(event);
     pending.add(handling);
     try {
@@ -71,6 +80,13 @@ if (import.meta.main) {
     } finally {
       pending.delete(handling);
     }
+  }
+
+  function recordCount(direction: "receive" | "send", identity: { self_id?: number; user_id?: number; group_id?: number }, message?: unknown) {
+    if (!counts.available()) return;
+    const write = counts.record(direction, identity, message).catch(() => {});
+    pendingCounts.add(write);
+    void write.then(() => pendingCounts.delete(write));
   }
 
   async function handleEvent(event: BotEvent) {
@@ -165,13 +181,14 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
-    const [network, permissions, canRefresh, access, friendRequests, routing, invitations] = await Promise.all([
+    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
       readFriendRequests(root),
       readGroupDispatch(root),
       readGroupInvitations(root),
+      readLocalConfig(root, "bot"),
     ]);
     privateAccess = access;
     autoFriend = friendRequests;
@@ -193,6 +210,8 @@ if (import.meta.main) {
       isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
     });
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
+    const segmentCounts = botConfig.msg_type_count;
+    counts = createMessageCounts(() => globalThis.redis, segmentCounts === true || segmentCounts === 1 || segmentCounts === "1");
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);
       console.log("[存储] Valkey 已连接。");
@@ -200,6 +219,7 @@ if (import.meta.main) {
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal,
+      messageStatistics: createMessageStatistics(counts),
     }));
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
@@ -220,6 +240,7 @@ if (import.meta.main) {
       if (oneBot) {
         const server = startOneBot(dispatch, {
           hostname, ...oneBot, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
+          onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
           http: shared ? fetch : undefined,
         });
         servers.push(server);
@@ -277,6 +298,7 @@ if (import.meta.main) {
         } finally {
           process.off("SIGINT", interrupt);
           process.off("SIGTERM", terminate);
+          await Promise.allSettled(pendingCounts);
           globalThis.redis = undefined;
           await Promise.all([closeStorage(), stopStaticRenderer()]);
         }
