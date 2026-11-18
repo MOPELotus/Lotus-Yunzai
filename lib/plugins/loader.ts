@@ -11,6 +11,8 @@ interface Candidate {
   readonly kind: "package" | "script";
 }
 
+export const systemModuleName = "@lotus-yunzai/system";
+
 const scriptExtensions = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
   ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98", "咕咕牛图库管理器"],
@@ -57,7 +59,9 @@ async function listCandidates(root: string): Promise<Candidate[]> {
       candidates.push({ path, kind: "script" });
     }
   }
-  return candidates.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  const system = join(root, "system");
+  return candidates.sort((left, right) =>
+    Number(right.path === system) - Number(left.path === system) || left.path.localeCompare(right.path, "en"));
 }
 
 async function legacyEntries(directory: string): Promise<string[]> {
@@ -153,6 +157,10 @@ export async function loadPlugins(root: string, commands: CommandRegistry, legac
         throw new Error("清单模块须声明包名和入口路径。");
       }
 
+      if (name === systemModuleName && directory !== "system") {
+        console.warn(`[插件] 拒绝加载 ${label}：${name} 的内置目录为 plugins/system。`);
+        continue;
+      }
       if (commands.hasModule(name)) {
         console.warn(`[插件] 拒绝加载 ${label}：模块 ${name} 已注册。`);
         continue;

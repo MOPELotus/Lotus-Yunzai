@@ -4,15 +4,9 @@ import { startOneBot } from "./lib/adapters/onebot.ts";
 import { CommandRegistry } from "./lib/commands.ts";
 import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
-import { loadPlugins } from "./lib/plugins/loader.ts";
+import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 
 const commands = new CommandRegistry();
-commands.registerModule({
-  name: "host",
-  commands: {
-    "#状态": () => `Lotus-Yunzai 正在运行（Bun ${Bun.version}）`,
-  },
-});
 
 if (import.meta.main) {
   const legacy = new LegacyPlugins();
@@ -58,6 +52,9 @@ if (import.meta.main) {
   try {
     await loadPlugins(fileURLToPath(new URL("./plugins", import.meta.url)), commands, legacy);
     if (!stopping) {
+      if (!commands.hasModule(systemModuleName)) {
+        throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
+      }
       const token = Bun.env.LOTUS_ONEBOT_TOKEN;
       if (token !== undefined) {
         const portSetting = Bun.env.LOTUS_ONEBOT_PORT ?? "25360";

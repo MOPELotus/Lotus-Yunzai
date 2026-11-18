@@ -1,0 +1,3 @@
+[submodule "plugins/system"]
+	path = plugins/system
+	url = https://github.com/MOPELotus/Lotus-Yunzai-System.git

@@ -7,6 +7,11 @@ async function copyHost(root: string) {
   await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
   await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
   await symlink(join(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir");
+  const system = join(root, "plugins", "system");
+  await mkdir(system, { recursive: true });
+  for (const file of ["package.json", "index.ts"]) {
+    await cp(new URL(`../plugins/system/${file}`, import.meta.url), join(system, file));
+  }
 }
 
 test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插件和重复插件", async () => {
@@ -45,12 +50,12 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     await install("e-legacy", "@example/yenai-plugin", {});
     await install("f-escape", "escaped-entry", { lotusYunzai: { entry: "../a-hello/index.ts" } });
 
-    await install("g-host", "host", {});
+    await install("g-system", "@lotus-yunzai/system", {});
 
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
-      stdin: new Blob(["#问候 Lotus\n#状态\n"]),
+      stdin: new Blob(["#问候 Lotus\n#状态\n#帮助\n"]),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -60,13 +65,14 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     expect(exit).toBe(0);
     expect(stdout).toContain("你好，Lotus");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
+    expect(stdout).toContain("#状态 查看宿主运行状态");
     expect(stdout).not.toContain("拒载入口已执行");
     expect(stderr).toContain("拒绝加载 b-duplicate：与 a-hello 重复");
     expect(stderr).toContain("拒绝加载 c-renamed");
     expect(stderr).toContain("拒绝加载 d-mixed（mixed-games）：包含鸣潮功能");
     expect(stderr).toContain("拒绝加载 e-legacy");
     expect(stderr).toContain("拒绝加载 f-escape");
-    expect(stderr).toContain("拒绝加载 g-host：模块 host 已注册");
+    expect(stderr).toContain("拒绝加载 g-system：@lotus-yunzai/system 的内置目录为 plugins/system");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

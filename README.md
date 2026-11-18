@@ -4,14 +4,14 @@ Lotus-Yunzai 是用 Bun 和 TypeScript 开发的云崽机器人宿主。当前�
 
 ## 安装与启动
 
-安装 Bun 1.4.4，然后在仓库根目录运行：
+安装 Git 和 Bun 1.4.4。通过 Git 克隆本仓后，在仓库根目录运行：
 
 ```sh
 bun scripts/bootstrap.ts
 bun app.ts
 ```
 
-输入 `#状态` 并按回车查看状态。按 `Ctrl+D` 退出，也可以用管道输入指令：
+初始化脚本会检出主仓固定的子模块版本，再根据锁文件安装依赖。输入 `#状态` 查看运行状态，输入 `#帮助` 查看系统指令。按 `Ctrl+D` 退出，也可以用管道输入指令：
 
 ```sh
 printf '#状态\n' | bun app.ts
