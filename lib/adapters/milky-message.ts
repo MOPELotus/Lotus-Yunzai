@@ -4,6 +4,7 @@ import { maxPublicFileBytes } from "../public-files.ts";
 
 type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
 type ScheduleRecall = (action: string, params: Record<string, unknown>, seconds: number) => void;
+type Target = { group_id: number } | { user_id: number };
 
 type OutgoingSegment =
   | { type: "text"; data: { text: string } }
@@ -206,7 +207,39 @@ function decodeMedia(type: MediaType, data: Record<string, unknown>, url?: strin
   return media;
 }
 
-function decodeSegments(value: unknown, selfId: number) {
+function opaqueFileField(value: unknown): string | undefined {
+  const field = mediaText(value);
+  if (field && field.isWellFormed() && !/\s/u.test(field)) return field;
+}
+
+function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCall): InboundSegment | undefined {
+  const file = opaqueFileField(data.file_id);
+  const name = mediaText(data.file_name);
+  const size = data.file_size;
+  if (!file || !name?.trim() || !name.isWellFormed() || name === "." || name === ".." ||
+      /[/\\\u2028\u2029]/u.test(name) || !isSequence(size)) return;
+
+  const segment = { type: "file", file, name, size };
+  const hash = opaqueFileField(data.file_hash);
+  const query = "group_id" in target
+    ? { action: "get_group_file_download_url", params: { group_id: target.group_id, file_id: file } }
+    : hash === undefined ? undefined : {
+      action: "get_private_file_download_url", params: { user_id: target.user_id, file_id: file, file_hash: hash },
+    };
+  if (!query) return segment;
+  return {
+    ...segment,
+    async getDownloadUrl() {
+      try {
+        return mediaLink((await call(query.action, query.params))?.download_url);
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
+function decodeSegments(value: unknown, selfId: number, target: Target, call: MilkyCall) {
   if (!Array.isArray(value) || value.length === 0) return;
   const message: InboundSegment[] = [];
   const text: string[] = [];
@@ -265,6 +298,13 @@ function decodeSegments(value: unknown, selfId: number) {
         raw.push(`[${kind}]`);
         break;
       }
+      case "file": {
+        const file = decodeFile(data, target, call);
+        if (!file) return;
+        message.push(file);
+        raw.push("[file]");
+        break;
+      }
       default:
         if (!/^[a-z][a-z0-9_]{0,63}$/u.test(type)) return;
         message.push({ type, data });
@@ -313,11 +353,10 @@ export function milkyMessage(
   const { message_scene: scene, sender_id: userId, peer_id: peerId, message_seq: messageId, segments } = value.data;
   if ((scene !== "group" && scene !== "friend") || !isId(userId) || userId === selfId || !isId(peerId) ||
       (scene === "friend" && peerId !== userId) || !isSequence(messageId)) return;
-  const incoming = decodeSegments(segments, selfId);
-  if (!incoming) return;
-
   const isGroup = scene === "group";
   const target = isGroup ? { group_id: peerId } : { user_id: peerId };
+  const incoming = decodeSegments(segments, selfId, target, call);
+  if (!incoming) return;
   const action = isGroup ? "send_group_message" : "send_private_message";
   return {
     post_type: "message",
@@ -327,6 +366,7 @@ export function milkyMessage(
     ...senderMetadata(value.data, isGroup ? peerId : undefined, userId),
     msg: incoming.text.trim(), raw_message: incoming.raw, message: incoming.message,
     atBot: incoming.atBot, at: incoming.at, reply_id: incoming.replyId, img: incoming.img,
+    file: incoming.message.find(({ type }) => type === "file"),
     isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,
     async getGroupRole(groupId) {
       if (!isId(groupId)) return;

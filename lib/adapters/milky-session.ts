@@ -122,7 +122,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
     const scopedMessage = message && {
-      ...message, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
+      ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
         !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
           ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)

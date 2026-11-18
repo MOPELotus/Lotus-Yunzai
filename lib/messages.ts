@@ -1,5 +1,6 @@
 export interface MessageEvent {
   readonly msg: string;
+  readonly adapter?: "milky";
   readonly post_type: "message";
   readonly message_type: "group" | "private" | "terminal";
   readonly sub_type?: string;

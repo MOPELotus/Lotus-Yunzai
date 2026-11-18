@@ -113,7 +113,10 @@ export async function readGroupDispatch(root: URL) {
     if (cooldown(config.groupCD) && groupCooldowns.active(group, now)) return false;
     if (user && cooldown(config.singleCD) && memberCooldowns.active(`${group}:${user}`, now)) return false;
 
-    const duplicate = `${id(event.self_id) ?? ""}:${user ?? ""}:${event.raw_message}`;
+    const bot = id(event.self_id) ?? "";
+    const duplicate = event.adapter === "milky" && event.file && event.message_id !== undefined
+      ? `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`
+      : `${bot}:${user ?? ""}:${event.raw_message}`;
     if (duplicates.active(duplicate, now)) return false;
     duplicates.set(duplicate, now, 1_000);
     return true;
