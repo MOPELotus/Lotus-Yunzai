@@ -14,6 +14,9 @@
         "typescript": "6.0.3",
       },
     },
+    "packages/account": {
+      "name": "@lotus-yunzai/account",
+    },
     "packages/storage": {
       "name": "@lotus-yunzai/storage",
       "dependencies": {
@@ -25,6 +28,8 @@
     },
   },
   "packages": {
+    "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
+
     "@lotus-yunzai/storage": ["@lotus-yunzai/storage@workspace:packages/storage"],
 
     "@lotus-yunzai/system": ["@lotus-yunzai/system@workspace:plugins/system"],
