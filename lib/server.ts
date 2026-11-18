@@ -1,3 +1,5 @@
+import { readLocalConfig } from "./config.ts";
+
 type ServerEnvironment = Readonly<Record<string, string | undefined>>;
 
 interface Listener {
@@ -53,20 +55,7 @@ function withToken(base: Headers, token: string | undefined, source: string): He
 }
 
 export async function readServerSettings(root: URL, env: ServerEnvironment): Promise<ServerSettings> {
-  const file = Bun.file(new URL("config/server.yaml", root));
-  let config: Record<string, unknown> = {};
-  if (await file.exists()) {
-    try {
-      const value = Bun.YAML.parse(await file.text());
-      if (value !== null && value !== undefined) {
-        if (!record(value)) throw new Error();
-        config = value;
-      }
-    } catch {
-      throw new Error("无法读取 config/server.yaml。");
-    }
-  }
-
+  const config = await readLocalConfig(root, "server");
   const configured = port(env.LOTUS_HTTP_PORT ?? config.port, "LOTUS_HTTP_PORT 或 server.port");
   const oneBotOverride = port(env.LOTUS_ONEBOT_PORT, "LOTUS_ONEBOT_PORT");
   const legacyAuth = authHeaders(config.auth);

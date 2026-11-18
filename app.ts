@@ -7,6 +7,7 @@ import type { MessageEvent } from "./lib/messages.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
+import { readMasterPermissions } from "./lib/permissions.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 
 declare global {
@@ -58,7 +59,9 @@ if (import.meta.main) {
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", terminate);
   try {
-    const network = await readServerSettings(root, Bun.env);
+    const [network, permissions] = await Promise.all([
+      readServerSettings(root, Bun.env), readMasterPermissions(root),
+    ]);
     const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
     if (valkeyUrl !== undefined) {
       globalThis.redis = await connectStorage(valkeyUrl);
@@ -73,7 +76,9 @@ if (import.meta.main) {
       const statusRoute = http && httpStatus(http.auth);
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
-        const server = startOneBot(dispatch, { hostname, ...oneBot, http: shared ? statusRoute : undefined });
+        const server = startOneBot(dispatch, {
+          hostname, ...oneBot, isMaster: permissions.isMaster, http: shared ? statusRoute : undefined,
+        });
         servers.push(server);
         console.log(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
         if (shared) console.log(`HTTP 正在监听 ${server.url.origin}/status`);
@@ -97,7 +102,7 @@ if (import.meta.main) {
             message_type: "terminal",
             isGroup: false,
             isPrivate: false,
-            isMaster: false,
+            isMaster: permissions.terminal,
             reply(text) {
               if (typeof text !== "string") return false;
 

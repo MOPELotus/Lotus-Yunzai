@@ -176,7 +176,9 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     `);
 
     await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config", "server.yaml"),
+    await mkdir(join(root, "config", "config"), { recursive: true });
+    await writeFile(join(root, "config", "config", "other.yaml"), 'master:\n  - "99:51"\n');
+    await writeFile(join(root, "config", "config", "server.yaml"),
       "port: 0\nauth:\n  Authorization: Bearer test-token\n  X-Server-Key: integration\n");
     const backend = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
@@ -292,6 +294,11 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         { type: "at", data: { qq: "42" } },
       ],
     });
+    expect(await send("#管理", { message_type: "private", user_id: 51 })).toMatchObject({
+      user_id: 51, message: "收到 #管理 51",
+    });
+    expect(await send("#管理", { message_type: "private", user_id: 51, self_id: 98, isMaster: true }))
+      .toMatchObject({ user_id: 51, message: "暂无权限执行此指令。" });
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
     });

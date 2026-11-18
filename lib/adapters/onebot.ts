@@ -14,6 +14,7 @@ async function dispatchMessage(
   dispatch: (event: MessageEvent) => Promise<void>,
   send: (message: string) => boolean,
   input: string,
+  isMaster: (bot: number, user: number) => boolean,
 ): Promise<void> {
   let event: unknown;
   try {
@@ -63,7 +64,7 @@ async function dispatchMessage(
     } : undefined,
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
-    isMaster: false,
+    isMaster: selfId !== undefined && isMaster(selfId, event.user_id),
     reply(reply, quote = false) {
       const message = encodeOneBotReply(reply, quote ? messageId : undefined);
       if (message === undefined) return false;
@@ -81,6 +82,7 @@ export function startOneBot(
     hostname: string;
     port: number;
     auth: Headers;
+    isMaster: (bot: number, user: number) => boolean;
     http?: (request: Request) => Response;
   },
 ) {
@@ -109,7 +111,7 @@ export function startOneBot(
         }
         try {
           await dispatchMessage(dispatch, (message) =>
-            socket.readyState === WebSocket.OPEN && socket.send(message) !== 0, input);
+            socket.readyState === WebSocket.OPEN && socket.send(message) !== 0, input, options.isMaster);
         } catch {
           console.error("处理 OneBot 消息失败。");
         }
