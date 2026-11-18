@@ -77,10 +77,44 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
   return segments;
 }
 
+function unescapeCQ(value: string, parameter = false): string {
+  const text = value.replaceAll("&#91;", "[").replaceAll("&#93;", "]");
+  return (parameter ? text.replaceAll("&#44;", ",") : text).replaceAll("&amp;", "&");
+}
+
+function cqParameters(input: string): Record<string, string> | undefined {
+  const fields = new Map<string, string>();
+  for (const part of input.split(",")) {
+    const separator = part.indexOf("=");
+    const name = part.slice(0, separator);
+    if (separator < 1 || !/^[A-Za-z0-9_-]+$/u.test(name) || fields.has(name)) return;
+    fields.set(name, unescapeCQ(part.slice(separator + 1), true));
+  }
+  return Object.fromEntries(fields);
+}
+
+function parseCQ(input: string): (string | OutboundSegment)[] {
+  const parts: (string | OutboundSegment)[] = [];
+  let offset = 0;
+  for (const match of input.matchAll(/\[CQ:([A-Za-z0-9_-]+)(?:,([^\[\]]*))?\]/gu)) {
+    const [source, type, parameters] = match;
+    const data = parameters === undefined ? {} : cqParameters(parameters);
+    if (!type || !data) continue;
+    const key = required.get(type);
+    if (key && (type === "text" || type === "at" || type === "reply") && !Object.hasOwn(data, key)) continue;
+
+    if (match.index > offset) parts.push(unescapeCQ(input.slice(offset, match.index)));
+    parts.push({ type, data });
+    offset = match.index + source.length;
+  }
+  if (offset < input.length || parts.length === 0) parts.push(unescapeCQ(input.slice(offset)));
+  return parts;
+}
+
 export function decodeOneBotMessage(value: unknown, selfId?: number) {
   if (typeof value !== "string" && !Array.isArray(value)) return;
 
-  const input: readonly unknown[] = typeof value === "string" ? [value] : value;
+  const input: readonly unknown[] = typeof value === "string" ? parseCQ(value) : value;
   const message: InboundSegment[] = [];
   const text: string[] = [];
   const img: string[] = [];

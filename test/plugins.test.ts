@@ -377,6 +377,17 @@ failsMsg: 协议拒绝
       atBot: true, at: 42, replyId: "456", images: ["https://example.invalid/input.jpg"],
       types: ["reply", "at", "text", "text", "image", "at"], text: " #检查",
     });
+    const cqMessage = "[CQ:reply,id=456][CQ:at,qq=99] #检查[CQ:image,file=old.jpg,url=https://example.invalid/?name=a&#44;b&amp;q=x=y]来信 [CQ:at,qq=42]";
+    expect(JSON.parse(String((await send(cqMessage)).message))).toEqual({
+      msg: "#检查来信", raw: cqMessage, atBot: true, at: "42", replyId: "456",
+      images: ["https://example.invalid/?name=a,b&q=x=y"],
+      types: ["reply", "at", "text", "image", "text", "at"], text: " #检查",
+    });
+    const escapedCQ = "#会话 &#91;CQ:at,qq=99&#93; &amp;#91; [CQ:at,invalid] [CQ:at] &#44;";
+    const escaped = await send(escapedCQ);
+    expect(escaped.message).toMatchObject([{ type: "text", data: { text: expect.stringContaining(
+      '"args":"[CQ:at,qq=99] &#91; [CQ:at,invalid] [CQ:at] &#44;"',
+    ) } }, { type: "at", data: { qq: "42" } }]);
     expect(await send([{ type: "image", data: { url: "https://example.invalid/input.jpg" } }]))
       .toMatchObject({ group_id: 77, message: "收到图片" });
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({

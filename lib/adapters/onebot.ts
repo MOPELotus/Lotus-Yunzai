@@ -95,7 +95,7 @@ async function dispatchMessage(
   const sender = isRecord(event.sender) ? event.sender : undefined;
   await dispatch({
     msg: text.trim(),
-    raw_message: typeof event.raw_message === "string" ? event.raw_message : text,
+    raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
     ...messageFields,
     post_type: "message",
     message_type: messageType,
