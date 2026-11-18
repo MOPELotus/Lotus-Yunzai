@@ -101,6 +101,24 @@ async function verifyNoticePush(root: string, storageUrl: string) {
     expect((await command("#公告推送回执 00001ABC")).params).toMatchObject({
       user_id: 51, message: expect.stringContaining("撤回已确认"),
     });
+
+    expect((await command("#发布公告 停机回执测试")).params).toMatchObject({
+      user_id: 51, message: expect.stringContaining("公告已发布"),
+    });
+    const beforeShutdown = await command("#推送公告");
+    expect(beforeShutdown.action).toBe("get_group_list");
+    const outstanding = await confirm(beforeShutdown.echo, membership);
+    expect(outstanding).toMatchObject({ action: "send_msg", params: { group_id: 77 } });
+    host.kill();
+    const status = new URL("/status", endpoint.replace(/^ws/u, "http"));
+    let stopping = false;
+    for (let attempt = 0; attempt < 30 && !stopping; attempt++) {
+      stopping = (await fetch(status)).status === 503;
+      if (!stopping) await Bun.sleep(10);
+    }
+    expect(stopping).toBe(true);
+    client.send(JSON.stringify({ echo: outstanding.echo, status: "ok", retcode: 0, data: { message_id: -602 } }));
+    expect(await host.exited).toBe(143);
   } finally {
     clearTimeout(timeout);
     socket?.close();
@@ -206,6 +224,10 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
 
     await legacy.sAdd("notice:whitelist", "77");
     await verifyNoticePush(root, url);
+    const currentNotice = await legacy.get("notice:current");
+    expect(currentNotice).not.toBe("00001ABC");
+    const duringShutdown = await legacy.hGet(`notice:delivery:${currentNotice}`, "77");
+    expect(JSON.parse(duringShutdown ?? "null")).toMatchObject({ groupId: 77, state: "confirmed", messageId: -602 });
 
     await Promise.all([closeStorage(), closeStorage()]);
     expect(() => storage("atlas")).toThrow("存储未配置");

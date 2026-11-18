@@ -94,8 +94,9 @@ if (import.meta.main) {
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path));
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      const fetch = statusRoute && (async (request: Request) =>
-        await panel?.(request) ?? await assets?.(request) ?? statusRoute(request));
+      const fetch = statusRoute && (async (request: Request) => stopping
+        ? new Response(null, { status: 503 })
+        : await panel?.(request) ?? await assets?.(request) ?? statusRoute(request));
       const shared = http !== undefined && oneBot !== undefined && http.port === oneBot.port;
       if (oneBot) {
         const server = startOneBot(dispatch, {
@@ -145,14 +146,14 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.all(servers.map((server) => server.stop(true)));
       await Promise.allSettled(pending);
+      await plugins?.dispose();
     } finally {
       try {
-        await legacy.dispose();
+        await Promise.all(servers.map((server) => server.stop(true)));
       } finally {
         try {
-          await plugins?.dispose();
+          await legacy.dispose();
         } finally {
           process.off("SIGINT", interrupt);
           process.off("SIGTERM", terminate);
