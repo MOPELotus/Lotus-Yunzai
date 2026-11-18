@@ -153,3 +153,30 @@ test.skipIf(!executable)("配置的 bundle URI 不会从另一来源导入 Git �
   expect(refs(checkout)).toBe(original);
   expect(git(checkout, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split("\n")).not.toContain(unrelated);
 }));
+
+test.skipIf(!executable)("取消远端 Git 请求后不保留候选引用", () => fixture(async ({ checkout }) => {
+  const requested = Promise.withResolvers<void>();
+  const releaseResponse = Promise.withResolvers<void>();
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    async fetch() {
+      requested.resolve();
+      await releaseResponse.promise;
+      return new Response("fixture ended", { status: 503 });
+    },
+  });
+  const controller = new AbortController();
+  try {
+    git(checkout, "remote", "set-url", "origin", server.url.origin);
+    const candidate = fetchUpdateCandidate(checkout, controller.signal);
+    const pending = candidate.then(() => null, (error: unknown) => error);
+    await Promise.race([requested.promise, pending.then(() => { throw new Error("未请求远端。"); })]);
+    controller.abort();
+    expect(await pending).toMatchObject({ name: "AbortError" });
+    expect(git(checkout, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
+  } finally {
+    controller.abort();
+    releaseResponse.resolve();
+    await server.stop(true);
+  }
+}), 5_000);

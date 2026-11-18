@@ -2,6 +2,7 @@ import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runUpdateProcess } from "./update-build.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
 
 async function sourceConfig(git: LocalGit, source: string, key: string): Promise<string | undefined> {
@@ -64,24 +65,25 @@ async function destinationDirectory(source: string, destination: string): Promis
   return target;
 }
 
-async function run(binary: string, cwd: string, args: string[]): Promise<void> {
+async function run(binary: string, cwd: string, args: string[], signal?: AbortSignal): Promise<void> {
   try {
-    const task = Bun.spawn([binary, "--no-pager", "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`, ...args], {
-      cwd, stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 45_000, killSignal: "SIGKILL",
-      env: {
-        PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
-        GIT_ALLOW_PROTOCOL: "file", GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1",
-        GIT_OPTIONAL_LOCKS: "0",
-      },
-    });
-    if (await task.exited === 0) return;
+    const command = [binary, "--no-pager", "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`, ...args];
+    if (await runUpdateProcess(cwd, {
+      PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
+      GIT_ALLOW_PROTOCOL: "file", GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+    }, command, 45_000, signal)) return;
   } catch {
+    signal?.throwIfAborted();
     // Report only which operation failed; Git may print local or remote credentials.
   }
   throw new Error(`无法完成候选 Git ${args[0]} 操作。`);
 }
 
-export async function checkoutUpdateRevision(source: string, revision: string, destination: string): Promise<void> {
+export async function checkoutUpdateRevision(
+  source: string, revision: string, destination: string, signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
   const git = createLocalGit();
   const binary = Bun.which("git");
   if (!git || !binary || !isGitRevision(revision) || revision.trim() !== revision) {
@@ -89,20 +91,27 @@ export async function checkoutUpdateRevision(source: string, revision: string, d
   }
 
   const directory = await realpath(source);
-  if (!await isGitCheckout(git, directory)) throw new Error("候选来源须为真实 Git 工作区。");
-  if ((await git(directory, ["cat-file", "-t", revision]))?.trim() !== "commit") {
+  const valid = await isGitCheckout(git, directory);
+  signal?.throwIfAborted();
+  if (!valid) throw new Error("候选来源须为真实 Git 工作区。");
+  const type = await git(directory, ["cat-file", "-t", revision]);
+  signal?.throwIfAborted();
+  if (type?.trim() !== "commit") {
     throw new Error("候选提交在本地 Git 中不可用。");
   }
   const origin = await sourceOrigin(git, directory);
+  signal?.throwIfAborted();
   const target = await destinationDirectory(directory, destination);
-  await run(binary, target, ["init", "--quiet", "--template=", `--object-format=${revision.length === 64 ? "sha256" : "sha1"}`]);
+  await run(binary, target, ["init", "--quiet", "--template=", `--object-format=${revision.length === 64 ? "sha256" : "sha1"}`], signal);
   await run(binary, target, ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-auto-gc",
-    "--no-recurse-submodules", "--upload-pack=git-upload-pack", "--", pathToFileURL(directory).href, revision]);
-  await run(binary, target, ["checkout", "--quiet", "--detach", revision, "--"]);
+    "--no-recurse-submodules", "--upload-pack=git-upload-pack", "--", pathToFileURL(directory).href, revision], signal);
+  await run(binary, target, ["checkout", "--quiet", "--detach", revision, "--"], signal);
   const verify = createLocalGit();
-  if (!verify || await gitHead(verify, target) !== revision ||
-      await verify(target, ["symbolic-ref", "--quiet", "HEAD"], true) !== "") {
+  const expectsDetached = verify && await gitHead(verify, target) === revision &&
+    await verify(target, ["symbolic-ref", "--quiet", "HEAD"], true) === "";
+  signal?.throwIfAborted();
+  if (!expectsDetached) {
     throw new Error("候选检出未到达指定的 detached 提交。");
   }
-  if (origin) await run(binary, target, ["remote", "add", "--", "origin", origin]);
+  if (origin) await run(binary, target, ["remote", "add", "--", "origin", origin], signal);
 }

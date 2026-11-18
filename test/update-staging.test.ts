@@ -278,3 +278,36 @@ test.skipIf(noGit)("暂存外部插件候选时固定宿主和其他已加载插
     await ready.release();
   }
 }), 20_000);
+
+test.skipIf(noGit)("取消运行中的构建会清理暂存目录与候选引用", () => fixture(async (temporary) => {
+  const { repo, baseline, active, stagingParent, root } = await fixtureHost(temporary);
+  const entered = join(temporary, "build-entered");
+  const continued = join(temporary, "build-continued");
+  await writeFile(join(repo.writer, "scripts/bootstrap.ts"), `
+    await Bun.write(${JSON.stringify(entered)}, "initializing");
+    await Bun.sleep(2_000);
+    await Bun.write(${JSON.stringify(continued)}, "continued");
+  `);
+  repo.publish("Fixture slow candidate");
+  const directories = new Map();
+  const ready = requireReady(await prepareUpdate(root, directories));
+  const controller = new AbortController();
+  try {
+    const staged = stageUpdate(root, directories, ready, stagingParent, controller.signal);
+    const result = staged.then(() => null, (error: unknown) => error);
+    while (!await Bun.file(entered).exists()) {
+      const finished = await Promise.race([result.then(() => true), Bun.sleep(20).then(() => false)]);
+      if (finished) throw new Error("候选构建未进入初始化。");
+    }
+    controller.abort();
+    expect(await result).toMatchObject({ name: "AbortError" });
+    expect(await Bun.file(continued).exists()).toBe(false);
+    expect(await readdir(stagingParent)).toEqual([]);
+    expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+    expect(git(active, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
+    await assertRuntimeIsolation(active);
+  } finally {
+    controller.abort();
+    await ready.release();
+  }
+}), 10_000);

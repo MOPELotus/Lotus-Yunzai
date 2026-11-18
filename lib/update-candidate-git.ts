@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { resolve } from "node:path";
+import { runUpdateProcess } from "./update-build.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
 
 export type UpdateCandidateResult =
@@ -49,26 +50,26 @@ export async function isUpdateWorktreeDirty(git: LocalGit, directory: string): P
   return status === undefined ? undefined : status.length > 0;
 }
 
-async function fetchUpstream(directory: string, upstream: Upstream, ref: string): Promise<boolean> {
+async function fetchUpstream(
+  directory: string, upstream: Upstream, ref: string, signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted();
   const git = Bun.which("git");
   if (!git) return false;
   try {
-    const task = Bun.spawn([git, "--no-pager", "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`,
+    return await runUpdateProcess(directory, {
+      PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
+      GIT_ALLOW_PROTOCOL: "file:git:http:https:ssh", GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK,
+      GIT_SSH_COMMAND: "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=yes",
+    }, [git, "--no-pager", "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`,
       "-c", "credential.helper=", "-c", "core.askPass=", "-c", "http.followRedirects=false",
       "-c", "fetch.writeCommitGraph=false", "-c", "fetch.bundleURI=", "-c", "transfer.bundleURI=false",
       "fetch", "--atomic", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--no-recurse-submodules",
       "--no-write-fetch-head", "--no-auto-gc", "--refmap=", "--upload-pack=git-upload-pack", "--",
-      upstream.remote, `${upstream.merge}:${ref}`], {
-      cwd: directory, stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 45_000, killSignal: "SIGKILL",
-      env: {
-        PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
-        GIT_ALLOW_PROTOCOL: "file:git:http:https:ssh", GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
-        GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK,
-        GIT_SSH_COMMAND: "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=yes",
-      },
-    });
-    return await task.exited === 0;
+      upstream.remote, `${upstream.merge}:${ref}`], 45_000, signal);
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }
@@ -89,7 +90,8 @@ function releaseRef(directory: string, ref: string): () => Promise<void> {
   };
 }
 
-export async function fetchUpdateCandidate(directory: string): Promise<UpdateCandidateResult> {
+export async function fetchUpdateCandidate(directory: string, signal?: AbortSignal): Promise<UpdateCandidateResult> {
+  signal?.throwIfAborted();
   const unavailable = { status: "unavailable" } as const;
   const dirtyResult = { status: "dirty" } as const;
   const git = createLocalGit();
@@ -97,10 +99,13 @@ export async function fetchUpdateCandidate(directory: string): Promise<UpdateCan
 
   try {
     const checkout = await realpath(directory);
-    if (checkout !== resolve(directory) || !await isGitCheckout(git, checkout)) return unavailable;
+    const valid = checkout === resolve(directory) && await isGitCheckout(git, checkout);
+    signal?.throwIfAborted();
+    if (!valid) return unavailable;
     const [upstream, current, dirty] = await Promise.all([
       readUpstream(git, checkout), gitHead(git, checkout), isUpdateWorktreeDirty(git, checkout),
     ]);
+    signal?.throwIfAborted();
     if (dirty === true) return dirtyResult;
     if (!upstream || !current || dirty === undefined) return unavailable;
 
@@ -108,13 +113,16 @@ export async function fetchUpdateCandidate(directory: string): Promise<UpdateCan
     const release = releaseRef(checkout, ref);
     let handoff = false;
     try {
-      if (!await fetchUpstream(checkout, upstream, ref)) return unavailable;
+      if (!await fetchUpstream(checkout, upstream, ref, signal)) return unavailable;
       const inspect = createLocalGit();
-      if (!inspect || !await isGitCheckout(inspect, checkout)) return unavailable;
+      const valid = inspect && await isGitCheckout(inspect, checkout);
+      signal?.throwIfAborted();
+      if (!inspect || !valid) return unavailable;
       const [output, latest, latestUpstream, latestDirty] = await Promise.all([
         inspect(checkout, ["rev-parse", "--verify", `${ref}^{commit}`]), gitHead(inspect, checkout),
         readUpstream(inspect, checkout), isUpdateWorktreeDirty(inspect, checkout),
       ]);
+      signal?.throwIfAborted();
       if (latestDirty === true) return dirtyResult;
       if (latestDirty === undefined || latest !== current || latestUpstream?.branch !== upstream.branch ||
           latestUpstream.remote !== upstream.remote || latestUpstream.merge !== upstream.merge ||
@@ -125,16 +133,19 @@ export async function fetchUpdateCandidate(directory: string): Promise<UpdateCan
       let status: "ready" | "current" | "ahead" | "diverged" = "current";
       if (candidate !== current) {
         const output = await inspect(checkout, ["merge-base", current, candidate], true);
+        signal?.throwIfAborted();
         if (output === undefined) return unavailable;
         const base = output.trim();
         status = base === current ? "ready" : base === candidate ? "ahead" : "diverged";
       }
+      signal?.throwIfAborted();
       handoff = true;
       return { status, current, candidate, release };
     } finally {
       if (!handoff) await release();
     }
   } catch {
+    signal?.throwIfAborted();
     return unavailable;
   }
 }

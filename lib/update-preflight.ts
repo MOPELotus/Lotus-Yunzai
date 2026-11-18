@@ -80,6 +80,7 @@ function candidateEntries(files: Map<string, TreeEntry>, declaredEntry?: string)
 
 async function allowedPluginCandidate(
   git: LocalGit, host: string, directories: PluginDirectories, name: string, directory: string, files: Map<string, TreeEntry>,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const manifest = files.get("package.json");
   if (manifest && !isRegularFile(manifest)) return false;
@@ -89,6 +90,7 @@ async function allowedPluginCandidate(
   if (metadata.rejection) return false;
   const identities = new Set(metadata.identities);
   for (const [otherName, other] of directories) {
+    signal?.throwIfAborted();
     if (otherName === name) continue;
     if (metadata.name === other.packageName) return false;
     const path = await loadedPluginPath(host, { ...other, name: otherName });
@@ -97,6 +99,7 @@ async function allowedPluginCandidate(
   const entries = candidateEntries(files, metadata.entry);
   if (!entries.length) return false;
   for (const path of entries) {
+    signal?.throwIfAborted();
     const file = files.get(path);
     if (!isRegularFile(file)) return false;
     const script = await git(directory, ["cat-file", "blob", file.revision]);
@@ -105,7 +108,10 @@ async function allowedPluginCandidate(
   return true;
 }
 
-export async function prepareUpdate(root: URL, directories: PluginDirectories, requested?: string): Promise<UpdatePreflight> {
+export async function prepareUpdate(
+  root: URL, directories: PluginDirectories, requested?: string, signal?: AbortSignal,
+): Promise<UpdatePreflight> {
+  signal?.throwIfAborted();
   let release: (() => Promise<void>) | undefined;
   let ready = false;
   try {
@@ -113,28 +119,34 @@ export async function prepareUpdate(root: URL, directories: PluginDirectories, r
     const query = requested?.trim();
     const plugin = query ? findLoadedPlugin(directories, query) : undefined;
     const path = plugin && await loadedPluginPath(host, plugin);
+    signal?.throwIfAborted();
     if (query && (!plugin || !path)) return { status: "unavailable" };
     const external = plugin && !builtIns.has(plugin.name) ? plugin : undefined;
     const directory = external && path ? path : host;
-    const result = await fetchUpdateCandidate(directory);
+    const result = await fetchUpdateCandidate(directory, signal);
+    if ("release" in result) release = result.release;
+    signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status };
-    release = result.release;
     if (result.status !== "ready") return { status: result.status };
     const git = createLocalGit();
     if (!git) return { status: "unavailable" };
     const { current, candidate } = result;
     const files = await readTree(git, directory, candidate);
+    signal?.throwIfAborted();
     const diff = await git(directory, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
       "--ignore-submodules=none", current, candidate, "--"]);
+    signal?.throwIfAborted();
     if (!files || diff === undefined) return { status: "unavailable" };
-    if (external && !await allowedPluginCandidate(git, host, directories, external.name, directory, files)) {
-      return { status: "rejected" };
-    }
+    const accepted = !external ||
+      await allowedPluginCandidate(git, host, directories, external.name, directory, files, signal);
+    signal?.throwIfAborted();
+    if (!accepted) return { status: "rejected" };
     const gitlinks = [...files].flatMap(([path, entry]) => entry.mode === "160000" ? [{ path, revision: entry.revision }] : []);
     ready = true;
     return { status: "ready", scope: external ? "plugin" : "host", name: external?.name ?? "Lotus-Yunzai",
-      directory, current, candidate, changedPaths: diff.split("\0").filter(Boolean), gitlinks, release };
+      directory, current, candidate, changedPaths: diff.split("\0").filter(Boolean), gitlinks, release: result.release };
   } catch {
+    signal?.throwIfAborted();
     return { status: "unavailable" };
   } finally {
     if (!ready) await release?.().catch(() => {});
