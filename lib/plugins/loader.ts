@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
+import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ExecuteService } from "../../plugins/execute/index.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
@@ -228,6 +229,11 @@ export async function loadPlugins(
         register(policy: GroupLeaveBlacklist): () => void;
       };
     };
+    readonly guidesSchedule?: {
+      register(policy: CalendarSchedule): () => void;
+      registerTask: CalendarScheduleOptions["register"];
+      targets: CalendarScheduleOptions["targets"];
+    };
     readonly atlasUpdate?: {
       readonly config: unknown;
       register(schedule: AtlasSchedule): () => Promise<void>;
@@ -388,8 +394,10 @@ export async function loadPlugins(
         const builtIn = directory && relative(root, directory) === builtInDirectories.get(moduleName);
         const group = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupServices : undefined;
         const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
+        const guidesSchedule = builtIn && moduleName === "@lotus-yunzai/guides" ? options.guidesSchedule : undefined;
         const module = create ? await create(Object.freeze({ ...services, ...group, signal,
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
+          ...(guidesSchedule && { guidesSchedule }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule } = record(module);
         if (dispose !== undefined) {

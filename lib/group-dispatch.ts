@@ -23,6 +23,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
+  ["AutoCalendar", ["[guides] 定时日历"]],
   ["椰奶状态", ["[system] 状态"]],
   ["状态统计", ["[system] 状态", "[system] 消息统计"]],
   ["meme-plugin", ["[meme] 表情合成"]],
@@ -117,10 +118,10 @@ export async function readGroupDispatch(root: URL) {
     return text.replace(/^[＃井]\s*/u, "#").replace(/^[＊※]\s*/u, "*");
   }
 
-  function groupConfig(event: BotEvent, groupId?: number): Record<string, unknown> {
+  function groupConfig(event: { self_id?: number; group_id?: number }, groupId?: number): Record<string, unknown> {
     if (!groups) return {};
     const bot = id(event.self_id);
-    const group = id(groupId ?? ("group_id" in event ? event.group_id : undefined));
+    const group = id(groupId ?? event.group_id);
     return {
       ...defaults,
       ...record(groups.default),
@@ -135,7 +136,11 @@ export async function readGroupDispatch(root: URL) {
     const user = id(event.user_id);
     const group = "group_id" in event ? id(event.group_id) : undefined;
     return !(whiteUser.size && (!user || !whiteUser.has(user))) &&
-      !(group && (blackGroup.has(group) || (whiteGroup.size && !whiteGroup.has(group)) || isBotMuted(event)));
+      !(group && (!passesGroupList(group) || isBotMuted(event)));
+  }
+
+  function passesGroupList(group: string) {
+    return !blackGroup.has(group) && (whiteGroup.size === 0 || whiteGroup.has(group));
   }
 
   function admit(event: BotEvent): boolean {
@@ -193,7 +198,15 @@ export async function readGroupDispatch(root: URL) {
 
   function allows(event: BotEvent, names: readonly string[]): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
-    const config = groupConfig(event);
+    return featuresAllowed(groupConfig(event), names);
+  }
+
+  function allowsScheduledGroup(botId: number, groupId: number, names: readonly string[]): boolean {
+    const group = id(groupId);
+    return group !== undefined && passesGroupList(group) && featuresAllowed(groupConfig({ self_id: botId }, groupId), names);
+  }
+
+  function featuresAllowed(config: Record<string, unknown>, names: readonly string[]): boolean {
     const disabled = featureSelectors(strings(config.disable));
     const enabled = featureSelectors(strings(config.enable));
     const features = featureSelectors(names);
@@ -218,5 +231,5 @@ export async function readGroupDispatch(root: URL) {
     if (user) blackUser.add(user);
   }
 
-  return { admit, prepare, allows, allowsGroupModeration, blockUser, keywordSettings };
+  return { admit, prepare, allows, allowsGroupModeration, allowsScheduledGroup, blockUser, keywordSettings };
 }

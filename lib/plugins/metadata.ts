@@ -24,6 +24,8 @@ const retiredScripts = new Map([
     { name: "原神世界BOSS", reason: "世界 BOSS 战绩和排行已归并到 genshin。", module: "@lotus-yunzai/genshin" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
     { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
+  ["a82020972ef0b317cc617136757f268feb61fdc397df58e2b331deb0507f6b9d",
+    { name: "定时日历", reason: "定时日历已归并到 guides。", module: "@lotus-yunzai/guides" }],
 ]);
 
 interface PluginMetadata {

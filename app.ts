@@ -98,6 +98,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
+import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -109,6 +110,7 @@ const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai/group"];
 const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
 const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
+const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
@@ -145,6 +147,7 @@ if (import.meta.main) {
   lifecycle.signal.addEventListener("abort", stopWatchingHandoff, { once: true });
   const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
   const pendingModuleTasks = new Set<() => void>();
+  let moduleTasksActive = false;
   function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
     const owner = new HandlerScope();
     let startup: Promise<void> | undefined;
@@ -164,7 +167,8 @@ if (import.meta.main) {
         void finished.finally(() => pending.delete(finished));
       }
     };
-    pendingModuleTasks.add(start);
+    if (moduleTasksActive && handoff.accepting && !lifecycle.signal.aborted) start();
+    else if (!lifecycle.signal.aborted) pendingModuleTasks.add(start);
     return async () => {
       pendingModuleTasks.delete(start);
       await Promise.all([moduleTasks.cancel(new Set([owner])), startup]);
@@ -217,6 +221,7 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
+  let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
@@ -457,6 +462,30 @@ if (import.meta.main) {
     return sessions;
   }
 
+  async function scheduledCalendarTargets(groupIds: readonly number[], signal: AbortSignal): Promise<CalendarScheduleTarget[]> {
+    const live = () => !signal.aborted && !lifecycle.signal.aborted && !stopping && handoff.accepting;
+    const targets: CalendarScheduleTarget[] = [];
+    const sessions = subscriptionTransport();
+    for (const groupId of groupIds) {
+      for (const session of sessions) {
+        if (!live()) return targets;
+        if (!groupDispatch.allowsScheduledGroup(session.botId, groupId, calendarScheduleNames)) continue;
+        if (!await session.isGroupMember(groupId, session.botId).catch(() => false)) continue;
+        if (!live()) return targets;
+        targets.push({
+          groupId,
+          async send(message, active) {
+            if (active.aborted || !live() || !await session.isGroupMember(groupId, session.botId).catch(() => false) ||
+                active.aborted || !live()) return "rejected";
+            return session.sendGroup(groupId, message);
+          },
+        });
+        break;
+      }
+    }
+    return targets;
+  }
+
   function processOwnerTargets(botIds?: readonly number[]): OwnerTarget[] {
     const oneBot = new Set(groups.onlineBots());
     const milky = onlineMilkyBotId();
@@ -519,7 +548,7 @@ if (import.meta.main) {
     }
   }
 
-  function moderationSignal(module: AbortSignal, transport: AbortSignal) {
+  function nativeOperationSignal(module: AbortSignal, transport: AbortSignal) {
     return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, module, transport]);
   }
 
@@ -539,7 +568,7 @@ if (import.meta.main) {
         !groupDispatch.allows(event, notice ? leaveBlacklistNoticeNames : leaveBlacklistRequestNames)) return false;
     const transport = groupModerationSession(event);
     if (!transport) return false;
-    const active = moderationSignal(registration.signal, transport.signal);
+    const active = nativeOperationSignal(registration.signal, transport.signal);
     const { self_id: botId, group_id: groupId, user_id: userId } = event;
     if (event.post_type === "notice") {
       return registration.policy.handle({
@@ -640,7 +669,7 @@ if (import.meta.main) {
       const transport = event[delegationSession]?.signal;
       const { self_id, user_id } = event;
       if (!transport || self_id === undefined || user_id === undefined || !masterPermissions.isMaster(self_id, user_id)) return;
-      const active = moderationSignal(leaveBlacklist.signal, transport);
+      const active = nativeOperationSignal(leaveBlacklist.signal, transport);
       const reply = await leaveBlacklist.policy.manage(event.msg, { groupId: event.group_id, signal: active }, active);
       if (reply !== undefined && !active.aborted) await event.reply(reply);
       return;
@@ -724,6 +753,7 @@ if (import.meta.main) {
       }
       return;
     }
+    if (allowed(calendarScheduleNames) && await handleCalendarSchedule(event, allowNew)) return;
     if (allowNew && commands.hasModule("@lotus-yunzai/execute")) {
       const delegation = commandDelegation.authorize(event);
       if (delegation) {
@@ -825,6 +855,30 @@ if (import.meta.main) {
       return;
     }
     if (useKeywords && await keywords.dispatch(event)) handled?.();
+  }
+
+  async function handleCalendarSchedule(event: MessageEvent, allowCommand: boolean): Promise<boolean> {
+    const registration = calendarSchedule;
+    if (!registration) return false;
+    const explicit = registration.policy.matchesCommand(event.msg);
+    if (event.isDelegated || (explicit && !allowCommand)) return explicit;
+    const transport = event[delegationSession]?.signal;
+    const { self_id, user_id, group_id, message_type } = event;
+    const terminal = message_type === "terminal" && masterPermissions.terminal;
+    const owner = transport && self_id !== undefined && user_id !== undefined && masterPermissions.isMaster(self_id, user_id);
+    if (!terminal && !owner) {
+      if (explicit) {
+        const reply = await registration.policy.handle(event.msg);
+        if (reply !== undefined) await event.reply(reply);
+      }
+      return explicit;
+    }
+    const active = nativeOperationSignal(registration.signal, transport ?? lifecycle.signal);
+    if (active.aborted) return explicit;
+    const key = terminal ? "terminal" : JSON.stringify([event.adapter ?? "onebot", self_id, user_id, message_type, group_id]);
+    const reply = await registration.policy.handle(event.msg, { key, signal: active });
+    if (reply !== undefined && !active.aborted) await event.reply(reply);
+    return explicit || reply !== undefined;
   }
 
   const interrupt = () => stop(130);
@@ -1247,6 +1301,19 @@ if (import.meta.main) {
           },
         },
       },
+      guidesSchedule: probingUpdate ? undefined : {
+        register(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          calendarSchedule = registration;
+          return () => {
+            session.abort();
+            if (calendarSchedule === registration) calendarSchedule = undefined;
+          };
+        },
+        registerTask: (cron, type, run) => registerModuleTask(`[guides] 定时日历 ${type}`, cron, run),
+        targets: scheduledCalendarTargets,
+      },
       atlasUpdate: probingUpdate ? undefined : {
         config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {
           console.warn("[atlas] 无法读取旧图鉴更新配置。");
@@ -1283,6 +1350,7 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories);
+      moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();
       pendingModuleTasks.clear();
       milkyTransport?.start();

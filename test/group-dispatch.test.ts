@@ -97,6 +97,20 @@ test("群配置按四层覆盖，按准确功能名启停并且禁用优先", as
   expect(policy.allows(request, ["特定"])).toBe(true);
 });
 
+test("定时日历的目标遵守全局群名单及同机器人旧功能开关", async () => {
+  const policy = await fixture({
+    "other.yaml": "whiteGroup: [20, 21, 23]\nblackGroup: [23]\nwhiteUser: [30]\n",
+    "group.yaml": '20: { enable: [AutoCalendar] }\n"10:20": { disable: [AutoCalendar] }\n',
+  });
+  const feature = ["[guides] 定时日历"];
+  expect(policy.allowsScheduledGroup(9, 20, feature)).toBe(true);
+  expect(policy.allowsScheduledGroup(10, 20, feature)).toBe(false);
+  expect(policy.allowsScheduledGroup(10, 21, feature)).toBe(true);
+  expect(policy.allowsScheduledGroup(10, 22, feature)).toBe(false);
+  expect(policy.allowsScheduledGroup(10, 23, feature)).toBe(false);
+  expect(policy.allows(message({ self_id: 9 }), ["普通活动日历"])).toBe(false);
+});
+
 test("群别名和 @ 允许新命令，活动上下文的无 @ 消息仍能通过 admit", async () => {
   const policy = await fixture({
     "config/group.yaml": `default: {onlyReplyAt: 1, groupCD: 10000, singleCD: 0}
