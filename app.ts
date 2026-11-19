@@ -106,6 +106,7 @@ if (import.meta.main) {
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
+  let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"] } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
@@ -694,6 +695,18 @@ if (import.meta.main) {
     if (milky?.connection === "webhook") legacy.httpRoutes.reserve(milky.webhookPath);
     stopMilky = milkyTransport?.stop;
     const http = network.http ?? (milkyWebhook && !https ? { port: 2536, auth: new Headers() } : undefined);
+    if (network.manualCaptchaUrl && !probingUpdate) {
+      if (!http && !https) {
+        console.warn("[人工验证] 请先配置公共 HTTP 或 HTTPS 监听。");
+      } else {
+        try {
+          const { createManualCaptchaRelay } = await import("./lib/captcha/manual-relay.ts");
+          manualCaptcha = createManualCaptchaRelay({ publicUrl: network.manualCaptchaUrl });
+        } catch {
+          console.warn("[人工验证] 公开地址无效或 GT-Manual 未初始化，验证页暂不可用。");
+        }
+      }
+    }
     // Plugins may create file links during initialization. Keep the bound listeners guarded until routes are ready.
     let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
     const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
@@ -792,7 +805,8 @@ if (import.meta.main) {
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
-        publicFiles.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ??
+        await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
@@ -851,6 +865,7 @@ if (import.meta.main) {
     if (!stopping) throw error;
   } finally {
     stopping = true;
+    manualCaptcha?.close();
     publicFiles.close();
     lifecycle.abort();
     handoff.cancelUpdate();

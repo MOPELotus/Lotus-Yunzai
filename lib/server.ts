@@ -23,6 +23,7 @@ export interface ServerSettings {
   readonly httpsError?: boolean;
   readonly panelToken?: string;
   readonly publicUrl?: URL;
+  readonly manualCaptchaUrl?: string;
   readonly redirect?: string;
 }
 
@@ -116,6 +117,8 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
   const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN, "LOTUS_ONEBOT_TOKEN");
   const panelToken = env.LOTUS_PANEL_TOKEN;
   withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
+  const captcha = config.captcha;
+  const manualCaptchaUrl = env.LOTUS_CAPTCHA_PUBLIC_URL ?? (record(captcha) && typeof captcha.url === "string" ? captcha.url : undefined);
   const wsPort = [...wsAuth.keys()].length > 0 ? oneBotOverride ?? configured ?? 25360 : undefined;
   const httpPort = configured ?? wsPort ??
     (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined ? 2536 : undefined);
@@ -126,6 +129,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
     panelToken,
     publicUrl: publicHttpUrl(config.url),
+    manualCaptchaUrl: manualCaptchaUrl?.trim() || undefined,
     redirect: readServerRedirect(config.redirect),
     ...httpsSettings(config.https, httpAuth, wsPort === undefined ? undefined : wsAuth),
   };
