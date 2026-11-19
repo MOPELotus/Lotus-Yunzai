@@ -16,3 +16,9 @@
 [submodule "vendor/gt-manual"]
 	path = vendor/gt-manual
 	url = https://github.com/MOPELotus/GT-Manual.git
+[submodule "plugins/guides"]
+	path = plugins/guides
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Guides.git
+[submodule "plugins/media"]
+	path = plugins/media
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Media.git

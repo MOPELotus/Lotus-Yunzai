@@ -9,6 +9,8 @@
     "plugins/atlas",
     "plugins/genshin",
     "plugins/group",
+    "plugins/guides",
+    "plugins/media",
     "plugins/meme",
     "plugins/notice",
     "plugins/starrail",
