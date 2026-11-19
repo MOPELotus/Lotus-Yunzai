@@ -23,6 +23,7 @@ import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
+import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzShiyu } from "./zzz-shiyu.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
@@ -35,6 +36,7 @@ export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
+export type { ZzzDeadlyRoom, ZzzDeadlySnapshot } from "./zzz-deadly.ts";
 export type { ZzzShiyuDate, ZzzShiyuPortrait, ZzzShiyuSnapshot, ZzzShiyuTeam } from "./zzz-shiyu.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
@@ -446,6 +448,9 @@ export function createHoyoClient(
     },
     fetchZzzShiyu(source: ProfileRequestContext, options: Parameters<typeof readZzzShiyu>[2]) {
       return readForProfile(source, options, readZzzShiyu, isGameRecordCookieExpired);
+    },
+    fetchZzzDeadly(source: ProfileRequestContext, options: Parameters<typeof readZzzDeadly>[2]) {
+      return readForProfile(source, options, readZzzDeadly, isGameRecordCookieExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);

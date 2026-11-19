@@ -33,15 +33,17 @@ const zzzCardPaths = {
   "zzz-avatar": "avatar/basic",
   "zzz-buddy": "buddy/info",
   "zzz-hadal": "hadal_info_v2",
+  "zzz-deadly": "hadal_mem_detail_v2",
 } as const;
 const genshinPanelPaths = {
   "genshin-panel-list": "character/list",
   "genshin-panel-detail": "character/detail",
 } as const;
 type RecordOptions = { readonly signal?: AbortSignal } & (
-  { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" | Exclude<keyof typeof zzzCardPaths, "zzz-hadal"> } |
+  { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" |
+    Exclude<keyof typeof zzzCardPaths, "zzz-hadal" | "zzz-deadly"> } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
-  { readonly kind: "zzz-hadal"; readonly scheduleType: 1 | 2 }
+  { readonly kind: "zzz-hadal" | "zzz-deadly"; readonly scheduleType: 1 | 2 }
 );
 type Json = Record<string, unknown>;
 
@@ -150,8 +152,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
     throw new HoyoRequestError("invalid-input", "原神面板角色编号无效。");
   }
-  if (options.kind === "zzz-hadal" && options.scheduleType !== 1 && options.scheduleType !== 2) {
-    throw new HoyoRequestError("invalid-input", "式舆防卫战期次无效。");
+  const zzzPeriod = options.kind === "zzz-hadal" || options.kind === "zzz-deadly";
+  if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
+    throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
   }
   const path = forNote ? route.path : forStarRail ? "/game_record/app/hkrpg/api/avatar/info"
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
@@ -164,9 +167,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   } else {
     if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
     if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
-    endpoint.searchParams.set("role_id", uid);
-    endpoint.searchParams.set("server", region);
-    if (options.kind === "zzz-hadal") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
+    endpoint.searchParams.set(kind === "zzz-deadly" ? "uid" : "role_id", uid);
+    endpoint.searchParams.set(kind === "zzz-deadly" ? "region" : "server", region);
+    if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
   }
   const headers = requestHeaders(source, endpoint.search.slice(1), body);
 
@@ -197,7 +200,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || options.kind === "zzz-hadal") {
+  if (forStarRail || forGenshinPanel || zzzPeriod) {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);
