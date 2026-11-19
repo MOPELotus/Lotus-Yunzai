@@ -4,7 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupMute, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -315,6 +315,7 @@ async function dispatchMessage(
   isMaster: (bot: number, user: number) => boolean,
   connection?: ConnectionData,
   noticeAttachment?: IncomingChatFile,
+  groupActions?: GroupActionPolicy,
 ): Promise<void> {
   const { mutes, botId: connectedBotId, display, attachmentSession } = connection ?? {};
   const userId = event.user_id;
@@ -397,6 +398,14 @@ async function dispatchMessage(
         () => calls.isFriend(send, mentioned),
         count => calls.likeSelf(send, mentioned, count, likeSession))
       : undefined,
+    groupMute: likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous" ? bindMessageGroupMute({
+      bot: selfId, actor: userId, signal: likeSession,
+      accepting: groupActions?.canModerateGroups,
+      isMaster: () => isMaster(selfId, userId),
+      isProtected: id => (groupActions?.isProtectedMaster ?? isMaster)(selfId, id),
+      role: id => calls.getGroupRole(send, target.group_id, id, true, likeSession),
+      mute: (id, seconds) => calls.setGroupMute(send, target.group_id, id, seconds, likeSession),
+    }) : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId
@@ -481,7 +490,7 @@ async function dispatchMessage(
 
 export function startOneBot(
   dispatch: (event: BotEvent) => Promise<void>,
-  options: {
+  options: GroupActionPolicy & {
     hostname: string;
     port: number;
     tls?: Bun.TLSOptions;
@@ -637,7 +646,7 @@ export function startOneBot(
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options, socket.data);
           } else {
-            await dispatchMessage(dispatch, send, message, calls, options.isMaster, socket.data);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster, socket.data, undefined, options);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");

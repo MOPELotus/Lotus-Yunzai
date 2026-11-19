@@ -1278,7 +1278,13 @@ if (import.meta.main) {
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[gacha] 抽卡记录");
     const { hostname, oneBot, https, panelToken } = network;
+    const groupActions = {
+      canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
+      isProtectedMaster: (bot: number, user: number) =>
+        permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
+    };
     const milkyOptions: MilkyTransportOptions = {
+      ...groupActions,
       signal: lifecycle.signal,
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
@@ -1321,6 +1327,7 @@ if (import.meta.main) {
     }
     function listenOneBot(port: number, auth: Headers, fetch?: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
       const server = startOneBot(dispatch, {
+        ...groupActions,
         hostname, port, auth, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
         prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
         accepting: acceptingPublic,

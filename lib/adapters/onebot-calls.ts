@@ -138,9 +138,9 @@ export class OneBotCalls {
     return this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
   }
 
-  async #confirmAction(send: Send, action: string, params: object): Promise<boolean> {
+  async #confirmAction(send: Send, action: string, params: object, signal?: AbortSignal): Promise<boolean> {
     try {
-      await this.#request(send, action, params);
+      await this.#request(send, action, params, signal);
       return true;
     } catch (error) {
       if (error instanceof OneBotRejectedError) return false;
@@ -202,9 +202,9 @@ export class OneBotCalls {
     });
   }
 
-  async getGroupRole(send: Send, groupId: number, userId: number, verifyIds = false): Promise<GroupMembership["botRole"] | undefined> {
+  async getGroupRole(send: Send, groupId: number, userId: number, verifyIds = false, signal?: AbortSignal): Promise<GroupMembership["botRole"] | undefined> {
     try {
-      const result = await this.#getGroupMember(send, groupId, userId);
+      const result = await this.#getGroupMember(send, groupId, userId, signal);
       if (!isRecord(result) || (verifyIds && (result.group_id !== groupId || result.user_id !== userId))) return;
       const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") return role;
@@ -250,6 +250,15 @@ export class OneBotCalls {
 
   leaveGroup(send: Send, groupId: number): Promise<boolean> {
     return this.#confirmAction(send, "set_group_leave", { group_id: groupId, is_dismiss: false });
+  }
+
+  async setGroupMute(send: Send, groupId: number, userId: number, duration: number, signal: AbortSignal) {
+    try {
+      const applied = await this.#confirmAction(send, "set_group_ban", { group_id: groupId, user_id: userId, duration }, signal);
+      return applied ? "confirmed" as const : "rejected" as const;
+    } catch (error) {
+      return error instanceof OneBotNotSentError ? "rejected" as const : "unknown" as const;
+    }
   }
 
   async sendGroup(send: Send, groupId: number, message: unknown): Promise<number> {

@@ -2,7 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupMute, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -18,7 +18,7 @@ import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from 
 
 type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
 
-export interface MilkyTransportOptions {
+export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
@@ -310,6 +310,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         () => checkinNotify.isFriend(mentioned),
         count => likeProfile(mentioned, count))
         : undefined,
+      groupMute: positiveId(groupId) && positiveId(cardOwner) ? bindMessageGroupMute({
+        bot: account, actor: cardOwner, signal,
+        accepting: options.canModerateGroups,
+        isMaster: () => isMaster(cardOwner),
+        isProtected: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
+        role: id => delegation.memberRole(groupId, id),
+        async mute(user_id, duration) {
+          return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, signal)).status;
+        },
+      }) : undefined,
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
         ? () => bindCard(() => isMaster(cardOwner)) : undefined,
