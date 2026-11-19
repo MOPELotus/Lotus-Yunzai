@@ -1,4 +1,5 @@
 import type { StarRailGachaPool } from "@lotus-yunzai/hoyo-client";
+import { officialStarRailGachaSource, officialStarRailGachaTime } from "./gacha-time.ts";
 
 const legacyPoolTypes = Object.freeze({
   GachaType_AvatarUp: 11,
@@ -46,16 +47,20 @@ function count(value: unknown): number {
   return number;
 }
 
-function timestamp(row: Record<string, unknown>): string {
+function timestamp(row: Record<string, unknown>, official: boolean): string {
   const explicit = text(row.time) || text(row.legacy_time);
   if (explicit) return explicit;
+  if (official) {
+    const time = officialStarRailGachaTime(row.id);
+    return Number.isFinite(time) ? new Date(time).toISOString() : fallbackTime;
+  }
   const seconds = text(row.id).slice(0, 10);
   return /^\d{10}$/u.test(seconds)
     ? new Date(Number(seconds) * 1000).toISOString().slice(0, 19).replace("T", " ")
     : fallbackTime;
 }
 
-function displayPool(value: unknown, uid: string, type: LegacyPool, remainingLimit: number) {
+function displayPool(value: unknown, uid: string, type: LegacyPool, remainingLimit: number, official: boolean) {
   const history = object(value ?? {}, "星铁抽卡显示卡池格式无效。");
   const rawRows = history.fiveStars ?? [];
   if (!Array.isArray(rawRows)) throw new TypeError("星铁五星显示列表格式无效。");
@@ -90,9 +95,9 @@ function displayPool(value: unknown, uid: string, type: LegacyPool, remainingLim
     }
   }
 
-  addFillers(pity, timestamp(rows[0] ?? {}));
+  addFillers(pity, timestamp(rows[0] ?? {}, official));
   for (const [index, row] of rows.entries()) {
-    const time = timestamp(row);
+    const time = timestamp(row, official);
     const item = object(row.item ?? {}, "星铁五星显示物品格式无效。");
     records.push({
       id: identity(row) || reserve("lotus-five"), uid,
@@ -102,7 +107,7 @@ function displayPool(value: unknown, uid: string, type: LegacyPool, remainingLim
     });
     addFillers(counts[index]! - 1, time);
   }
-  addFillers(total - records.length, timestamp(rows.at(-1) ?? {}));
+  addFillers(total - records.length, timestamp(rows.at(-1) ?? {}, official));
   return records;
 }
 
@@ -112,11 +117,12 @@ export function buildStarRailLegacyRecords(uid: string, history: unknown) {
   if (log.uid != null && text(log.uid) !== uid) throw new Error("星铁抽卡显示资料与当前角色不一致。");
 
   const pools = object(log.pools ?? {}, "星铁抽卡显示卡池清单格式无效。");
+  const official = log.source === officialStarRailGachaSource;
   const display = {} as Record<LegacyPool, readonly StarRailLegacyGachaRecord[]>;
   let remainingLimit = maxDisplayRecords;
   for (const pool of Object.keys(legacyPoolTypes) as Pool[]) {
     const type = legacyPoolTypes[pool];
-    const records = displayPool(pools[pool], uid, type, remainingLimit);
+    const records = displayPool(pools[pool], uid, type, remainingLimit, official);
     display[type] = records;
     remainingLimit -= records.length;
   }

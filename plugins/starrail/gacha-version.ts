@@ -1,4 +1,5 @@
 import type { StarRailGachaDetailOptions } from "./gacha-detail.ts";
+import { officialStarRailGachaSource, officialStarRailGachaTime } from "./gacha-time.ts";
 
 const pools = {
   GachaType_AvatarUp: { legacy: "11", itemType: "char" },
@@ -93,7 +94,6 @@ export interface StarRailGachaVersionOptions {
 }
 
 const formatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
-const miniappLaunch = Date.UTC(2023, 3, 25, 22);
 
 function timestamp(value: string): number {
   // Calendar-day-only values cannot prove which half contained a boundary-day pull.
@@ -111,12 +111,6 @@ function day(time: number): string {
 function text(value: unknown): string {
   if (typeof value === "string") return value.trim();
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? String(value) : "";
-}
-
-function officialIdTime(id: unknown): number {
-  if (typeof id !== "string" || !/^\d{18,20}$/u.test(id)) return NaN;
-  const time = Number(id.slice(0, 10)) * 1000;
-  return time >= miniappLaunch ? time : NaN;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -237,7 +231,7 @@ export function buildStarRailGachaVersion({
   const log = object(history ?? {});
   if (log.uid != null && text(log.uid) !== uid) throw new Error("星铁抽卡统计资料与当前角色不一致。");
   const historyPools = object(log.pools ?? {});
-  const isMiniapp = log.source === "mihoyo_star_rail_gacha_miniapp";
+  const isMiniapp = log.source === officialStarRailGachaSource;
   const periods = periodsFrom(schedule);
   const itemMap: Record<string, Item> = Object.create(null);
   const all = bucket();
@@ -270,7 +264,7 @@ export function buildStarRailGachaVersion({
       const isWeapon = sourceItem.item_type === "ItemType_Equipment" || sourceItem.item_type === "ItemType_Weapon";
       const itemType = sourceItem.item_type === "ItemType_Avatar" ? "char" : isWeapon ? "weapon" : pools[pool].itemType;
       const time = text(row.time) || text(row.legacy_time);
-      const occurred = !time && isMiniapp ? officialIdTime(row.id) : timestamp(time);
+      const occurred = !time && isMiniapp ? officialStarRailGachaTime(row.id) : timestamp(time);
       // The old schedule declares priority for the rare overlapping window.
       const period = periods.find(({ start, end }) => occurred >= start && occurred <= end);
       const metadata = itemType && resolveItem?.({

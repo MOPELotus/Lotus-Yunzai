@@ -68,6 +68,17 @@ test("旧显示会保留已知的垫抽间距，匿名五星和占位取得不�
   expect(buildStarRailLegacyRecords(uid, snapshot)[11]).toEqual(rows);
 });
 
+test("小程序五星编号的 UTC 时间带时区，旧显式日期仍优先", () => {
+  const source = "mihoyo_star_rail_gacha_miniapp";
+  const officialId = `${Date.parse("2024-02-10T16:30:00Z") / 1000}00000123`;
+  const rows = buildStarRailLegacyRecords(uid, { source, pools: { GachaType_AvatarUp: { fiveStars: [
+    { id: officialId },
+    { id: numericId, legacy_time: explicit },
+    { id: "1704067200" },
+  ] } } })[11];
+  expect(rows.map(({ time }) => time)).toEqual(["2024-02-10T16:30:00.000Z", explicit, "1970-01-01 00:00:00"]);
+});
+
 test("空旧档返回六个空池，错误角色、损坏列表和超大合成快照中止转换", () => {
   const empty = buildStarRailLegacyRecords(uid, null);
   expect(empty).toEqual({ 1: [], 2: [], 11: [], 12: [], 21: [], 22: [] });
