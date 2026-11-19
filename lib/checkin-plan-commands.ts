@@ -2,8 +2,10 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CheckinScheduleEntry, CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleRuntime } from "./checkin-schedule-runtime.ts";
+import { CheckinScheduleSettingsError, persistCheckinScheduleSettings, type CheckinScheduleSettingsChange } from "./checkin-schedule-settings.ts";
 import type { CommandContext, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
+import { accountScopePermission } from "./permissions.ts";
 
 async function statusMessage(title: string, lead: string, lines: readonly string[], signal: AbortSignal) {
   if (signal.aborted) return "";
@@ -16,6 +18,48 @@ async function statusMessage(title: string, lead: string, lines: readonly string
     // Return the same plan details as text if the old card cannot be drawn.
   }
   return signal.aborted ? "" : [title, lead, ...lines].join("\n");
+}
+
+export function checkinScheduleSettingCommands(root: URL,
+  runtime: Pick<ReturnType<typeof createCheckinScheduleRuntime>, "updateConfig">, signal: AbortSignal): CommandModule {
+  let writing = Promise.resolve();
+  async function save(context: CommandContext, change: CheckinScheduleSettingsChange) {
+    if (signal.aborted) return "";
+    const next = writing.then(async () => {
+      const config = await persistCheckinScheduleSettings(root, change, {
+        signal, canWrite: document => accountScopePermission(document, "scheduler.manage")(context),
+      });
+      if (!signal.aborted) runtime.updateConfig(config);
+      return config;
+    });
+    writing = next.then(() => {}, () => {});
+    try {
+      const saved = await next;
+      const detail = change.type === "plan-cron" ? "已更新明日签到计划生成时间。"
+        : change.mode === "random" ? "全局签到已切换到随机模式。" : "全局签到已切换到固定模式。";
+      return statusMessage("调度配置", `荷花插件调度 · 已保存\n${detail}`, [
+        `模式：${saved.mode ?? "fixed"}`, `固定时间：${saved.fixed_time ?? "04:30"}`,
+        `计划生成：${saved.plan_generate_cron ?? "0 0 0 * * ? *"}`, `到期扫描：${saved.run_due_cron ?? "0 * * * * *"}`,
+      ], signal);
+    } catch (error) {
+      if (signal.aborted) return "";
+      return error instanceof CheckinScheduleSettingsError ? error.message : "暂时无法保存全局签到调度。";
+    }
+  }
+  return {
+    name: "@lotus-yunzai/checkin-schedule-settings",
+    commands: {
+      "#签到随机模式"(argument, context) {
+        return argument ? "请直接发送 #签到随机模式。" : save(context, { type: "mode", mode: "random" });
+      },
+      "#签到固定模式"(argument, context) {
+        return save(context, { type: "mode", mode: "fixed", ...(argument && { time: argument }) });
+      },
+      "#签到计划生成"(argument, context) {
+        return argument ? save(context, { type: "plan-cron", time: argument }) : "请发送 #签到计划生成 H:MM。";
+      },
+    },
+  };
 }
 
 function checkinPlanCard(plan: CheckinSchedulePlan, title: string, subtitle: string, signal: AbortSignal, extra: readonly string[] = []) {

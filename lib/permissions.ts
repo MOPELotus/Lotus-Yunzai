@@ -66,9 +66,11 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-export async function readAccountScopePermission(root: URL,
-  permission: "checkin.refresh" | "checkin.register" | "checkin.group_register" | "scheduler.generate" | "scheduler.run_due") {
-  const permissions = configRecord((await readLocalConfig(root, "global")).permissions);
+type AccountScope = "checkin.refresh" | "checkin.register" | "checkin.group_register" |
+  "scheduler.generate" | "scheduler.run_due" | "scheduler.manage";
+
+export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope) {
+  const permissions = configRecord(document.permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
   const userAllow = configuredIds(users.allow);
@@ -84,6 +86,10 @@ export async function readAccountScopePermission(root: URL,
     if (scope === "master_only") return context.isMaster;
     return scope === "allow" || userAllow.has(user) || groupAllow.has(group) || permissions.default_policy !== "deny";
   };
+}
+
+export async function readAccountScopePermission(root: URL, permission: AccountScope) {
+  return accountScopePermission(await readLocalConfig(root, "global"), permission);
 }
 
 export function readAccountRefreshPermission(root: URL) {

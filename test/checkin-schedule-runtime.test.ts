@@ -78,3 +78,151 @@ test("主人手动生成计划可在关闭自动签到时确认通知，自动�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+async function until(check: () => Promise<boolean>) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await check()) return;
+    await Bun.sleep(5);
+  }
+  expect(await check()).toBe(true);
+}
+
+test("固定生成时刻不被启动、补偿或补登提前，热换只替换明日生成任务", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-hot-cron-"));
+  const store = createCheckinScheduleStore(directory);
+  const signal = new AbortController();
+  const known = new Set(Object.keys(scheduledJobs));
+  const active = { qq: "10001", profileId: 2, enabled: true };
+  let clock = Date.parse("2026-11-19T08:01:29+08:00");
+  const { tomorrow } = checkinScheduleClock(clock);
+  const initial = { fixed_time: "04:15", plan_generate_cron: "30 1 8 * * ? *",
+    run_due_cron: "0 0 4 * * ? *", random: { notify_before: false } };
+  let enumerated = 0;
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, config: initial, now: () => clock,
+    listProfiles: async () => { enumerated++; return [active]; },
+    runProfile: async () => { throw new Error("unexpected due"); },
+  });
+  const job = (label: string) => Object.entries(scheduledJobs)
+    .find(([name]) => !known.has(name) && name.includes(label))?.[1]!;
+  try {
+    runtime.start();
+    const previous = job("明日计划");
+    const due = job("到期任务");
+    const catchUp = job("计划补偿");
+    expect(checkinScheduleClock(new Date(String(previous.nextInvocation()))).time).toBe("08:01");
+    catchUp.invoke();
+    await runtime.addRegisteredProfile(active);
+    expect(enumerated).toBe(0);
+    expect(await store.read(tomorrow)).toBeUndefined();
+
+    const update = { ...initial, fixed_time: "04:45", plan_generate_cron: "0 2 8 * * ? *" };
+    runtime.updateConfig(update);
+    const current = job("明日计划");
+    expect(current).not.toBe(previous);
+    expect(job("到期任务")).toBe(due);
+    expect(job("计划补偿")).toBe(catchUp);
+    expect(checkinScheduleClock(new Date(String(current.nextInvocation()))).time).toBe("08:02");
+    clock = Date.parse("2026-11-19T08:01:30+08:00");
+    previous.invoke();
+    catchUp.invoke();
+    await runtime.addRegisteredProfile(active);
+    expect(enumerated).toBe(0);
+
+    clock = Date.parse("2026-11-19T08:02:00+08:00");
+    catchUp.invoke();
+    await until(async () => (await store.read(tomorrow))?.entries[0]?.time === "04:45");
+    const previousPlan = await store.read(tomorrow);
+    runtime.updateConfig({ ...update, fixed_time: "05:05" });
+    expect(job("明日计划")).toBe(current);
+    catchUp.invoke();
+    await Bun.sleep(20);
+    expect(await store.read(tomorrow)).toEqual(previousPlan);
+    current.invoke();
+    await until(async () => (await store.read(tomorrow))?.entries[0]?.time === "05:05");
+    expect((await store.read(tomorrow))?.generatedAt).toBe(previousPlan?.generatedAt);
+  } finally {
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("今日运行期间保留已捕获的配置，后续对账使用新配置且保留已完成槽位", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-hot-tick-"));
+  const store = createCheckinScheduleStore(directory);
+  const signal = new AbortController();
+  const clock = Date.parse("2026-11-19T08:00:00+08:00");
+  const { date } = checkinScheduleClock(clock);
+  const one = { qq: "10001", profileId: 2, enabled: true };
+  const two = { qq: "10002", profileId: 2, enabled: true };
+  const gate = Promise.withResolvers<void>();
+  let calls = 0;
+  const ran: string[] = [];
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, config: { fixed_time: "04:15" }, now: () => clock,
+    listProfiles: async () => {
+      if (calls++ > 0) return [one, two];
+      await gate.promise;
+      return [one];
+    },
+    runProfile: async entry => { ran.push(`${entry.qq}/${entry.time}`); return { status: "complete", ok: true, stage: "checkin" }; },
+  });
+  try {
+    const first = runtime.runDue();
+    expect(calls).toBe(1);
+    const next = { fixed_time: "04:45" };
+    runtime.updateConfig(next);
+    next.fixed_time = "04:55";
+    expect(await store.read(date)).toBeUndefined();
+    gate.resolve();
+    expect(await first).toMatchObject({ completed: 1 });
+    expect(await runtime.runDue()).toMatchObject({ completed: 1 });
+    expect(ran).toEqual(["10001/04:15", "10002/04:45"]);
+    expect((await store.read(date))?.entries).toMatchObject([
+      { qq: "10001", done: true, time: "04:15" }, { qq: "10002", done: true, time: "04:45" },
+    ]);
+  } finally {
+    gate.resolve();
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("复杂 cron 仍交给中国时区 Job，自动补偿不猜测应触发的日期", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-hot-arbitrary-"));
+  const store = createCheckinScheduleStore(directory);
+  const signal = new AbortController();
+  const clock = Date.parse("2026-11-19T08:00:00+08:00");
+  const { tomorrow } = checkinScheduleClock(clock);
+  const known = new Set(Object.keys(scheduledJobs));
+  const active = { qq: "10001", profileId: 2, enabled: true };
+  let calls = 0;
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, config: { plan_generate_cron: "0 17 9 * * 1,3", run_due_cron: "15 9 * * *" },
+    now: () => clock, listProfiles: async () => { calls++; return [active]; },
+    runProfile: async () => { throw new Error("unexpected due"); },
+  });
+  const job = (label: string) => Object.entries(scheduledJobs)
+    .find(([name]) => !known.has(name) && name.includes(label))?.[1]!;
+  try {
+    runtime.start();
+    const planned = job("明日计划");
+    const next = checkinScheduleClock(new Date(String(planned.nextInvocation())));
+    expect(next.time).toBe("09:17");
+    expect([1, 3]).toContain(new Date(`${next.date}T00:00Z`).getUTCDay());
+    job("计划补偿").invoke();
+    await runtime.addRegisteredProfile(active);
+    expect(calls).toBe(0);
+    expect(await store.read(tomorrow)).toBeUndefined();
+
+    planned.invoke();
+    await until(async () => (await store.read(tomorrow))?.entries[0]?.qq === "10001");
+    expect(calls).toBe(1);
+  } finally {
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

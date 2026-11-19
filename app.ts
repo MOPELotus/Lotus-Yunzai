@@ -8,7 +8,7 @@ import { accountCommands } from "./lib/account-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
-import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-commands.ts";
+import { checkinPlanCommands, checkinPlanNotice, checkinScheduleSettingCommands } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
@@ -759,6 +759,7 @@ if (import.meta.main) {
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal,
           { canGenerate, canRunDue }), "[Lotus-Plugin] Scheduler");
+        commands.registerModule(checkinScheduleSettingCommands(root, runtime, lifecycle.signal), "[Lotus-Plugin] Scheduler");
       } else {
         console.warn("[签到计划] 全局 scheduler 配置无效。");
       }
