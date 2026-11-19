@@ -647,6 +647,11 @@ if (import.meta.main) {
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
+      if (args[0] === "登录列表") {
+        const themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || fileURLToPath(new URL("./data/atlas/theme/", root));
+        if (!await Bun.file(`${themeDirectory}/bg/bg-hydro.webp`).exists()) throw new Error("登录列表原版背景不可用。");
+        return renderStatusCard(...args, { themeDirectory });
+      }
       return renderStatusCard(...args);
     }));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");

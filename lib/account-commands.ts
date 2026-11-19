@@ -1,10 +1,18 @@
-import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileGames } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
 
 type RenderRefreshCard = (title: string, lead: string, contents: readonly string[], at: Date) =>
   Promise<{ readonly png: Uint8Array }>;
+
+const roleLabels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
+const checkinItems = [
+  ["原神", "genshin", 2], ["崩坏2", "honkai2", 3], ["崩坏3", "honkai3rd", 1],
+  ["未定事件簿", "tears_of_themis", 4], ["大别野", "", 5], ["星铁", "honkai_sr", 6],
+  ["绝区零", "zzz", 8], ["因缘精灵", "hna", 9], ["星布谷地", "", 10],
+] as const;
+const switchState = (enabled: boolean) => enabled ? "开启" : "关闭";
 
 export function accountCommands(
   directory: string | undefined,
@@ -83,6 +91,65 @@ export function accountCommands(
     };
   }
 
+  function describe(id: number): CommandHandler {
+    return async (argument, context) => {
+      if (argument) return "用法：#配置 或 #配置2";
+      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
+        return "请从 QQ 会话发送配置查询指令。";
+      }
+      const qq = String(context.user_id);
+      const profile = await profiles.describe(qq, id).catch(() => undefined);
+      if (!profile?.loggedIn) return `[荷花插件]请先扫码登录 profile ${id}。`;
+      const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
+        : profile.schedule.mode === "random" ? "随机" : "跟随全局";
+      const device = profile.deviceBound ? profile.device.name || "已绑定" : profile.device.generated
+        ? [`自动设备 · ${profile.device.name || "Lotus"}`, !profile.device.hasFingerprint && "FP 待获取"].filter(Boolean).join(" · ")
+        : "未绑定";
+      const settings: { label: string; value: string }[] = checkinItems.map(([label, game, forum]) => ({
+        label, value: `游戏 ${game ? switchState(profile.gameCheckin[game] === true) : "无"} · 社区 ${switchState(profile.communityCheckin.includes(forum))}`,
+      }));
+      if (profile.international.enabled) settings.push({
+        label: "国际服", value: `${profile.international.language} · ${profile.international.hasCookie ? "已保存" : "未保存"}`,
+      });
+      if (profile.cloud.length) settings.push({
+        label: "云游戏", value: profile.cloud.map(({ game, hasToken }) =>
+          `${game === "genshin" ? "云原神" : "云绝区零"}${hasToken ? "" : "（缺凭据）"}`).join(" / "),
+      });
+      const roleGroups = profileGames.map((game) => ({
+        label: roleLabels[game],
+        rows: profile.roles[game].map((role) => ({
+          uid: role.uid, name: role.nickname || role.regionName, level: role.level, active: role.uid === profile.activeRoles[game],
+        })),
+      }));
+      const account = [
+        { label: "通行证", value: profile.passport },
+        { label: "Cookie", value: profile.hasCookie ? "已保存" : "未保存" },
+        { label: "SToken", value: profile.hasStoken ? "已保存" : "未保存" },
+        { label: "设备信息", value: device },
+      ];
+      const title = profile.nickname || `QQ ${qq}`;
+      const subtitle = `profile ${id} · ${profile.name || "default"}`;
+      const summary = `签到模式：${mode} · 通知：${switchState(profile.notifications)}。敏感字段已脱敏显示。`;
+      const warnings = [
+        ...(profile.rolesPending ? ["角色暂未同步，可发送 #同步角色 后重试。"] : []),
+        ...(!profile.device.hasFingerprint ? ["社区任务需要配对的设备 ID 与 FP，也可绑定真机。"] : []),
+      ];
+      try {
+        const { renderProfileCard } = await import("@lotus-yunzai/skia/profile");
+        const { png } = await renderProfileCard({
+          title, subtitle, summary, account, roleGroups, settings, warnings,
+          generatedAt: new Date().toLocaleString("sv-SE", { hour12: false }),
+        }, { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined });
+        if (png.byteLength) return segment.image(png);
+      } catch {
+        // Settings stay readable if the original resources are absent.
+      }
+      return [title, subtitle, summary, ...account.map(({ label, value }) => `${label} · ${value}`),
+        ...roleGroups.map(({ label, rows }) => `${label} · ${rows.map(({ uid, active }) => `${uid}${active ? "（当前）" : ""}`).join("、") || "未同步"}`),
+        ...settings.map(({ label, value }) => `${label} · ${value}`), ...warnings].join("\n");
+    };
+  }
+
   const accountActions: Record<string, CommandHandler> = { "#刷新cookie": refresh() };
   const aliases: Record<string, string> = { "#账号列表": "#登录列表" };
   for (let id = 0; id <= MAX_PROFILE_ID; id++) {
@@ -102,6 +169,14 @@ export function accountCommands(
       }
     }
     for (const alias of ["c", "ck", "Cookie"]) aliases[`#刷新${alias}${suffix}`] = command;
+    const cardCommand = `#配置${suffix}`;
+    accountActions[cardCommand] = describe(id || 1);
+    for (const prefix of ["", "Lotus", "荷花"]) {
+      for (const label of ["配置", "资料", "资料卡", "我的配置"]) {
+        const alias = `#${prefix}${label}${suffix}`;
+        if (alias !== cardCommand) aliases[alias] = cardCommand;
+      }
+    }
   }
 
   return {
@@ -115,19 +190,31 @@ export function accountCommands(
 
         const qq = String(context.user_id);
         const ids = await profiles.listIds(qq);
-        if (!ids.length) return "当前 QQ 尚未创建档案。";
-
+        const items: string[] = [];
         const lines = ["登录列表"];
         for (const id of ids) {
           try {
-            const profile = await profiles.summary(qq, id);
-            lines.push(`档案 ${id} · ${profile.loggedIn ? "已登录" : "未登录"}`);
+            const profile = await profiles.describe(qq, id);
+            const status = profile.loggedIn ? "已登录" : profile.legacyCookie ? "旧 Cookie（仅查询）" : "未登录";
+            const selected = `原${profile.activeRoles.gs || "-"} / 铁${profile.activeRoles.sr || "-"} / 绝${profile.activeRoles.zzz || "-"}`;
+            items.push(`Profile ${id}：${status} · ${selected}`);
+            lines.push(`档案 ${id} · ${status}`);
           } catch (error) {
             if (!(error instanceof ProfileError)) throw error;
+            items.push(`Profile ${id}：无法读取`);
             lines.push(`档案 ${id} · 无法读取`);
           }
         }
-        return lines.join("\n");
+        if (renderRefreshCard) {
+          const lead = `QQ ${qq}\n${ids.length ? "当前 QQ 已创建的 profile 如下。" : "还没有创建 profile。"}`;
+          try {
+            const { png } = await renderRefreshCard("登录列表", lead, items, new Date());
+            if (png.byteLength) return segment.image(png);
+          } catch {
+            // Keep the same list available as text.
+          }
+        }
+        return ids.length ? lines.join("\n") : "当前 QQ 尚未创建档案。";
       },
     },
   };

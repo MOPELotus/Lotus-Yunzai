@@ -54,6 +54,14 @@ device:
     const summary = await profiles.summary(qq);
     expect(summary).toEqual({ id: 1, name: "主档案", enabled: true, loggedIn: true, deviceBound: true });
     expect(JSON.stringify(summary)).not.toContain("fixture-");
+    const view = await profiles.describe(qq);
+    expect(view).toMatchObject({
+      id: 1, hasCookie: true, hasStoken: true, passport: "已绑定",
+      device: { hasFingerprint: true }, activeRoles: { gs: "800001" },
+    });
+    for (const secret of ["fixture-cookie-one", "fixture-token-one", "fixture-device-one", "fixture-fp-one", "400001"]) {
+      expect(JSON.stringify(view)).not.toContain(secret);
+    }
     const [main, alternate] = await Promise.all([
       profiles.requestContext(qq, 1, "gs"), profiles.requestContext(qq, 2, "gs"),
     ]);

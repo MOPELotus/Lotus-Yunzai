@@ -271,16 +271,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
 
-  async function read(qq: string, id: number) {
+  async function readDocument(qq: string, id: number) {
     const path = join(root, profileFilename(qq, id));
     try {
       const snapshot = await readFileSnapshot(path);
-      return { ...decodeProfile(snapshot, qq, id), revision: revisionOf(snapshot) };
+      const data: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
+      return { document: record(data), state: readIdentity(data, qq, id), revision: revisionOf(snapshot) };
     } catch (error) {
       if (error instanceof ProfileError) throw error;
       if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
       throw new ProfileError("invalid", "无法读取档案。");
     }
+  }
+
+  async function read(qq: string, id: number) {
+    const { state, revision } = await readDocument(qq, id);
+    return { ...state, revision };
   }
 
   async function readLoggedIn(qq: string, id: number) {
@@ -393,6 +399,56 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     },
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
+    },
+    async describe(qq: string, id = 1) {
+      const { document, state } = await readDocument(qq, id);
+      const profile = record(document.profile);
+      const device = record(document.device);
+      const schedule = record(document.schedule);
+      const games = record(document.games);
+      const cn = record(games.cn);
+      const os = record(games.os);
+      const community = record(document.mihoyobbs);
+      const cloud = record(record(document.cloud_games).cn);
+      const aid = state.account.ltuid || state.account.stuid;
+      const dayTime = text(schedule.fixed_time);
+      const roles = {
+        gs: normalizeGameRoles(state.roles.gs), sr: normalizeGameRoles(state.roles.sr), zzz: normalizeGameRoles(state.roles.zzz),
+      };
+      const activeRoles = {
+        gs: accountId(state.selected.gs), sr: accountId(state.selected.sr), zzz: accountId(state.selected.zzz),
+      };
+      return {
+        ...state.summary,
+        nickname: text(record(document.user).nickname).slice(0, 80),
+        hasCookie: !!state.account.cookie,
+        hasStoken: !!(state.account.stoken || state.account.stokenCookie),
+        legacyCookie: !state.summary.loggedIn && hasLegacyGameCookie(state.account),
+        passport: aid ? (aid.length > 6 ? `${aid.slice(0, 2)}***${aid.slice(-2)}` : "已绑定") : "未绑定",
+        device: {
+          name: (state.device.name || state.device.model).slice(0, 80),
+          generated: device.generated === true || (device.bound !== true && Boolean(state.device.id)),
+          hasFingerprint: Boolean(state.device.id && state.device.fp),
+        },
+        schedule: { mode: text(schedule.mode), fixedTime: /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(dayTime) ? dayTime : "" },
+        notifications: record(profile.notify).enable !== false,
+        gameCheckin: Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"]
+          .map((game) => [game, record(cn[game]).checkin === true])),
+        communityCheckin: community.enable === true && Array.isArray(community.checkin_list)
+          ? community.checkin_list.map(Number).filter(Number.isSafeInteger) : [],
+        international: {
+          enabled: os.enable === true,
+          language: /^[a-z]{2}-[a-z]{2}$/iu.test(text(os.lang)) ? text(os.lang) : "zh-cn",
+          hasCookie: Boolean(text(os.cookie)),
+        },
+        cloud: ["genshin", "zzz"].flatMap((game) => {
+          const config = record(cloud[game]);
+          return config.enable === true ? [{ game, hasToken: Boolean(text(config.token)) }] : [];
+        }),
+        roles,
+        activeRoles,
+        rolesPending: Boolean(text(record(document.account).role_sync_error)),
+      };
     },
     async savedRole(qq: string, id: number, game: Game): Promise<GameRole> {
       if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
