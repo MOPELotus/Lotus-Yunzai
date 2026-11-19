@@ -66,21 +66,28 @@ test("同日并发更新在锁内合并，其他日期可独立写入", fixture(
     await release.promise;
     return { plan: plan([entry("42")]), result: "first" };
   });
+  void first.catch(locked.reject);
   await locked.promise;
   let secondEntered = false;
-  const second = secondStore.update(date, (current) => {
-    secondEntered = true;
-    expect(current?.entries.map((row) => row.qq)).toEqual(["42"]);
-    return { plan: { ...current!, entries: [...current!.entries, entry("43")] }, result: "second" };
-  });
+  let updates: Promise<string[]> | undefined;
   try {
     await secondStore.update(tomorrow, () => ({ plan: plan([entry("44")], tomorrow), result: undefined }));
-    expect(secondEntered).toBe(false);
     expect(await secondStore.read(date)).toBeUndefined();
+
+    const second = secondStore.update(date, (current) => {
+      secondEntered = true;
+      expect(current?.entries.map((row) => row.qq)).toEqual(["42"]);
+      return { plan: { ...current!, entries: [...current!.entries, entry("43")] }, result: "second" };
+    });
+    updates = Promise.all([first, second]);
+    void updates.catch(() => undefined);
+    await Bun.sleep(40);
+    expect(secondEntered).toBe(false);
   } finally {
     release.resolve();
+    if (!updates) await first;
   }
-  expect(await Promise.all([first, second])).toEqual(["first", "second"]);
+  expect(await updates).toEqual(["first", "second"]);
   expect(await secondStore.read(date)).toEqual(plan([entry("42"), entry("43")]));
   expect(await store.read(tomorrow)).toEqual(plan([entry("44")], tomorrow));
   expect((await lstat(join(directory, name))).mode & 0o777).toBe(0o600);
