@@ -721,9 +721,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!state.summary.loggedIn || !/^[1-9]\d{0,19}$/u.test(verifiedAccountId) || !cookie ||
           (realm !== "SG" && realm !== "US" && realm !== "EU")) return { status: "unverified" as const, revision };
       return {
-        status: "verified" as const, revision, cookie, accountId: verifiedAccountId, realm, language: text(os.lang) || "zh-cn",
+        status: "verified", revision, cookie, accountId: verifiedAccountId, realm, language: text(os.lang) || "zh-cn",
         blacklist: Array.isArray(genshin.black_list) ? genshin.black_list.map(accountId).filter(Boolean) : [],
-      };
+      } as const;
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
