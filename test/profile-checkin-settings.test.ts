@@ -53,7 +53,8 @@ test("个人游戏或全部游戏配置仅修改旧国服字段，保留黑名�
     const expected = {
       ...fixture, games: { ...fixture.games, cn: {
         ...fixture.games.cn, honkai2: { checkin: false, extra: "保留" },
-        honkai_sr: { checkin: false }, zzz: { checkin: false },
+        honkai_sr: { checkin: false }, zzz: { checkin: false }, honkai3rd: { checkin: false },
+        tears_of_themis: { checkin: false }, hna: { checkin: false },
       } },
     };
     expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual(expected);
@@ -62,6 +63,7 @@ test("个人游戏或全部游戏配置仅修改旧国服字段，保留黑名�
       ...expected, games: { ...expected.games, cn: {
         ...expected.games.cn, genshin: { checkin: true, black_list: ["100000001"] },
         honkai2: { checkin: true, extra: "保留" }, honkai_sr: { checkin: true }, zzz: { checkin: true },
+        honkai3rd: { checkin: true }, tears_of_themis: { checkin: true }, hna: { checkin: true },
       } },
     });
   });
