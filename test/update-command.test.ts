@@ -75,6 +75,19 @@ test("摩拉资源旧指令交给攻略模块，带空格的明确仓库目标�
   ]);
 });
 
+test("旧角色攻略更新指令交给攻略模块，带空格的明确仓库目标仍由宿主更新", async () => {
+  const { dispatch, calls } = fixture();
+  for (const text of [" #更新钟离攻略 ", "#更新钟离一图流"]) {
+    expect(isUpdateCommand(text)).toBe(false);
+    expect(hasValidUpdateTarget(text)).toBe(false);
+    await dispatch(text);
+  }
+  expect(calls).toEqual([]);
+  expect(hasValidUpdateTarget("#更新 钟离攻略")).toBe(true);
+  await dispatch("#更新 钟离攻略");
+  expect(calls.map(({ target }) => target)).toEqual(["钟离攻略"]);
+});
+
 test("全量更新传递 all 标志并拒绝插件后缀", async () => {
   const { dispatch, calls, replies } = fixture();
   for (const command of ["#全部更新", "#全部静更新", " #全部安静更新 "]) {
