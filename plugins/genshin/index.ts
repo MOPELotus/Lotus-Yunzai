@@ -17,7 +17,7 @@ const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
 const miniappCommand = /^#?(?:获取|更新)(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)([1-9]\d{0,2})?$/u;
 const poolCommand = /^#(?:原神)?(?:喵喵)?(全部)?(抽卡|抽奖|角色|武器|常驻|集录|up)池?(全部)?(记录|祈愿|分析|统计)([1-9]\d{0,2})?$/u;
 const versionCommand = /^#(?:原神)?(?:喵喵)?(版本(?:全部)?|全部)统计([1-9]\d{0,2})?$/u;
-const specialCommand = /^#(?:原神)?(?:喵喵)?((?:全部)?新手池?(?:全部)?|全部)(?:记录|祈愿|分析)([1-9]\d{0,2})?$/u;
+const specialCommand = /^#(?:原神)?(?:喵喵)?(?:(新手|全部新手)池?(?:全部)?(?:记录|祈愿|分析|统计)|全部(?:记录|祈愿|分析))([1-9]\d{0,2})?$/u;
 const helpCommand = /^#(?:原神)?(?:抽卡|记录)帮助$/u;
 const detailPools = new Map<string, GenshinGachaPool>([["武器", 302], ["常驻", 200], ["集录", 500]]);
 type VersionPool = NonNullable<GenshinGachaVersionOptions["type"]>;
@@ -39,7 +39,7 @@ const help = [
 function matchGachaQuery(message: string): { profileId: number; view: GachaView; all: boolean } | undefined {
   const special = specialCommand.exec(message);
   if (special) {
-    return { profileId: Number(special[2] ?? 1), view: { special: special[1] === "全部" ? "all" : "beginner" }, all: false };
+    return { profileId: Number(special[2] ?? 1), view: { special: special[1] ? "beginner" : "all" }, all: false };
   }
   const version = versionCommand.exec(message);
   if (version) {
