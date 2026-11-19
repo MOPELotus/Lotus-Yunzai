@@ -341,7 +341,7 @@ export async function loadPlugins(
           throw new Error("createModule 须为模块工厂函数。");
         }
         const module = create ? await create(Object.freeze({ ...services, signal })) : published.default;
-        const { commands: handlers, aliases, fallback, dispose, gachaUpdate } = record(module);
+        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -353,9 +353,13 @@ export async function loadPlugins(
         if (aliases !== undefined && (aliases === null || typeof aliases !== "object" || Array.isArray(aliases))) {
           throw new Error("aliases 须为指令别名与本模块指令名的映射。");
         }
+        if (fallbackFeatures !== undefined && typeof fallbackFeatures !== "function") {
+          throw new Error("fallbackFeatures 须为按指令返回功能名称的函数。");
+        }
         unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
           fallback: fallback as CommandModule["fallback"],
+          fallbackFeatures: fallbackFeatures as CommandModule["fallbackFeatures"],
         }, label);
         const game = gachaGames.get(moduleName);
         if (game && directory && relative(root, directory) === builtInDirectories.get(moduleName) &&

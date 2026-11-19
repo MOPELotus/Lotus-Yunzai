@@ -58,6 +58,7 @@ export interface CommandModule {
   readonly commands: Readonly<Record<string, CommandHandler>>;
   readonly aliases?: Readonly<Record<string, string>>;
   readonly fallback?: MessageFallback;
+  readonly fallbackFeatures?: (context: MessageFallbackContext) => readonly string[];
 }
 
 interface RegisteredCommand {
@@ -87,7 +88,8 @@ function legacyFeatureNames(module: string, command: string): readonly string[] 
 
 export class CommandRegistry {
   readonly #handlers = new Map<string, RegisteredCommand>();
-  readonly #fallbacks = new Map<string, { readonly handler: MessageFallback; readonly names: readonly string[] }>();
+  readonly #fallbacks = new Map<string, { readonly handler: MessageFallback; readonly names: readonly string[];
+    readonly features?: CommandModule["fallbackFeatures"] }>();
   readonly #modules = new Set<string>();
 
   register(name: string, handler: CommandHandler): void {
@@ -100,7 +102,7 @@ export class CommandRegistry {
   }
 
   registerModule(module: CommandModule, label = module.name): () => void {
-    const { name, fallback } = module;
+    const { name, fallback, fallbackFeatures } = module;
     if (this.hasModule(name)) {
       throw new Error(`模块已注册：${name}`);
     }
@@ -135,8 +137,10 @@ export class CommandRegistry {
     if (fallback) {
       const names = [name, label];
       if (name === "@lotus-yunzai/meme") names.push("meme-plugin", "清语表情", "清语表情:表情包生成");
-      if (["@lotus-yunzai/genshin", "@lotus-yunzai/starrail", "@lotus-yunzai/zzz"].includes(name)) names.push("[Lotus-Plugin] Gacha Log");
-      this.#fallbacks.set(name, { handler: fallback, names });
+      if (!fallbackFeatures && ["@lotus-yunzai/genshin", "@lotus-yunzai/starrail", "@lotus-yunzai/zzz"].includes(name)) {
+        names.push("[Lotus-Plugin] Gacha Log");
+      }
+      this.#fallbacks.set(name, { handler: fallback, names, features: fallbackFeatures });
     }
     this.#modules.add(name);
 
@@ -185,12 +189,14 @@ export class CommandRegistry {
     isBotMaster: MessageFallbackContext["isBotMaster"],
     normalizedMessage = event.msg,
   ): Promise<CommandReply | undefined> {
-    for (const { handler, names } of this.#fallbacks.values()) {
-      if (!allowed(names)) continue;
-      const reply = await handler(event.msg, {
+    for (const { handler, names, features } of this.#fallbacks.values()) {
+      if (!features && !allowed(names)) continue;
+      const context = {
         ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
         reply: event.reply, isBotMaster, normalizedMessage,
-      });
+      };
+      if (features && !allowed([...names, ...features(context)])) continue;
+      const reply = await handler(event.msg, context);
       if (reply !== undefined) return reply;
     }
   }
