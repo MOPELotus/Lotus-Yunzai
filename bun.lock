@@ -22,6 +22,9 @@
     "packages/account": {
       "name": "@lotus-yunzai/account",
     },
+    "packages/gacha": {
+      "name": "@lotus-yunzai/gacha",
+    },
     "packages/hoyo-client": {
       "name": "@lotus-yunzai/hoyo-client",
       "dependencies": {
@@ -64,6 +67,7 @@
       "name": "@lotus-yunzai/genshin",
       "dependencies": {
         "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/gacha": "workspace:*",
         "@lotus-yunzai/hoyo-client": "workspace:*",
         "@lotus-yunzai/skia": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
@@ -86,6 +90,7 @@
       "name": "@lotus-yunzai/starrail",
       "dependencies": {
         "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/gacha": "workspace:*",
         "@lotus-yunzai/hoyo-client": "workspace:*",
         "@lotus-yunzai/skia": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
@@ -140,6 +145,8 @@
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
 
     "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
+
+    "@lotus-yunzai/gacha": ["@lotus-yunzai/gacha@workspace:packages/gacha"],
 
     "@lotus-yunzai/genshin": ["@lotus-yunzai/genshin@workspace:plugins/genshin"],
 

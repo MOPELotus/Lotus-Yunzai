@@ -1,0 +1,6 @@
+{
+  "name": "@lotus-yunzai/gacha",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts"
+}
