@@ -1,6 +1,6 @@
 import {
   checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, reconcileCheckinSchedulePlan,
-  type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
+  type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
 } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
 import type { MessageReply } from "./messages.ts";
@@ -17,10 +17,17 @@ interface CheckinScheduledCompletion {
 
 export type CheckinScheduledOutcome = { readonly status: "busy" } | CheckinScheduledCompletion;
 
+export class CheckinCommunityWriteError extends Error {}
+
 export interface CheckinScheduledRunContext {
   readonly date: string;
   readonly signal: AbortSignal;
   readonly verifyDay: () => void;
+  readonly communityWrites?: {
+    readonly previous: NonNullable<CheckinScheduleEntry["communityWrites"]>;
+    readonly start: (forum: string) => Promise<void>;
+    readonly settle: (forum: string, status: Exclude<CheckinCommunityWriteStatus, "pending">) => Promise<void>;
+  };
 }
 
 interface SchedulerOptions {
@@ -81,6 +88,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
       const lock = await store.withExecutionLock(date, async () => {
         verifyDay();
         const profiles = await listProfiles(signal);
+        const enabledProfiles = new Set(profiles.filter(profile => profile.enabled).map(profile => `${profile.qq}/${profile.profileId ?? 1}`));
         const planned = await store.update(date, previous => {
           verifyDay();
           const observed = now();
@@ -92,7 +100,8 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
         });
         for (const pending of planned.entries) {
           verifyDay();
-          if (!due(pending, checkinScheduleClock(now()).minute)) continue;
+          if (!due(pending, checkinScheduleClock(now()).minute) ||
+              (pending.communityWrites && !enabledProfiles.has(`${pending.qq}/${pending.profileId}`))) continue;
           const claim = await store.update<CheckinScheduleEntry | undefined>(date, plan => {
             verifyDay();
             const at = checkinScheduleClock(now());
@@ -103,9 +112,31 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
           });
           if (!claim) continue;
           verifyDay();
+          const currentClaim = claim;
+          async function recordCommunityWrite(forum: string, status: CheckinCommunityWriteStatus) {
+            try {
+              await store.update(date, plan => {
+                verifyDay();
+                const entry = plan?.entries.find(item => sameProfile(item, currentClaim));
+                if (!plan || !entry || entry.runningAt !== currentClaim.runningAt || entry.done) {
+                  throw new Error("自动签到档案已失去执行资格。");
+                }
+                const previous = entry.communityWrites?.[forum];
+                if (previous !== (status === "pending" ? undefined : "pending")) throw new Error("社区签到提交记录已变化。");
+                const next = { ...entry, communityWrites: { ...entry.communityWrites, [forum]: status } };
+                return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
+              });
+            } catch {
+              throw new CheckinCommunityWriteError("无法确认社区签到提交记录已保存。");
+            }
+          }
           let outcome: CheckinScheduledOutcome;
           try {
-            outcome = await runProfile(claim, context);
+            outcome = await runProfile(claim, { ...context, communityWrites: {
+              previous: claim.communityWrites ?? {},
+              start: forum => recordCommunityWrite(forum, "pending"),
+              settle: recordCommunityWrite,
+            } });
           } catch {
             // The request may have been sent. Leave the claim for a later read-backed recovery.
             return result("interrupted");

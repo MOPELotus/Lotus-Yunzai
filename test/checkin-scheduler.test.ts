@@ -106,6 +106,39 @@ test("第二个实例遇到日期执行锁不会清除运行标记，繁忙档�
   });
 });
 
+test("社区签到提交前记录写入意图，重启保留已受理和未确认的分区", async () => {
+  await withStore(async (store, directory) => {
+    const setup = { store, config, now: () => dueAt, listProfiles: async () => [first] };
+    const interrupted = createCheckinScheduler({
+      ...setup,
+      async runProfile(_entry, { communityWrites }) {
+        expect(communityWrites?.previous).toEqual({});
+        await communityWrites?.start("2");
+        expect((await store.read(date))?.entries[0]?.communityWrites).toEqual({ 2: "pending" });
+        await communityWrites?.settle("2", "accepted");
+        await communityWrites?.start("6");
+        throw new Error("模拟发出第二次请求后中止");
+      },
+    });
+    expect(await interrupted.tick()).toMatchObject({ status: "interrupted", completed: 0 });
+    const restored = createCheckinScheduleStore(directory);
+    const resumed = createCheckinScheduler({
+      ...setup, store: restored,
+      async runProfile(entry, { communityWrites }) {
+        expect(entry.communityWrites).toEqual({ 2: "accepted", 6: "pending" });
+        expect(communityWrites?.previous).toEqual(entry.communityWrites);
+        await expect(communityWrites?.start("6")).rejects.toThrow("无法确认社区签到提交记录已保存");
+        return { ...successful, ok: false };
+      },
+    });
+    expect(await resumed.tick()).toMatchObject({ status: "complete", completed: 1 });
+    expect((await restored.read(date))?.entries[0]).toMatchObject({
+      done: true, ok: false, communityWrites: { 2: "accepted", 6: "pending" },
+    });
+    expect(await resumed.tick()).toMatchObject({ status: "complete", completed: 0 });
+  });
+});
+
 test("停机保留不可确认的运行标记，恢复时再用当前设置核对同日档案", async () => {
   await withStore(async store => {
     const stop = new AbortController();

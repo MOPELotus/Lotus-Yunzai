@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   addLateCheckinScheduleProfile, checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan,
   isCheckinScheduleDate, parseCheckinSchedulePlan, reconcileCheckinSchedulePlan,
-  type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
+  type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
 } from "../lib/checkin-schedule-plan.ts";
 
 const now = new Date("2026-11-19T00:10:00+08:00");
@@ -170,4 +170,43 @@ test("读取旧 v1 时补必要缺省值，重复记录选已完成或在途，�
     { ...before, entries: [{ ...running, runningAt: "" }] },
     { ...before, entries: [{ ...late, communityRetry: { ...retry, attempts: -1 } }] },
   ]) expect(() => parseCheckinSchedulePlan(invalid)).toThrow(TypeError);
+});
+
+test("v1 社区写入记录只接收已知分区与固定状态，旧计划保持兼容", () => {
+  const before = generateCheckinSchedulePlan({ now });
+  const writes = {
+    "1": "pending", "2": "accepted", "3": "already", "4": "rejected", "5": "blocked",
+    "6": "unconfirmed", "8": "pending", "9": "accepted", "10": "already",
+  } as const satisfies Readonly<Record<string, CheckinCommunityWriteStatus>>;
+  const old = entry("50");
+  const wrote = entry("51", { communityWrites: writes });
+  const plan = { ...before, entries: [old, wrote] };
+  expect(parseCheckinSchedulePlan(JSON.parse(JSON.stringify(plan)))).toEqual(plan);
+  expect(parseCheckinSchedulePlan({ ...before, entries: [entry("51", { notified: true }), wrote] }).entries).toEqual([wrote]);
+  expect(parseCheckinSchedulePlan({ ...before, entries: [entry("52", { communityWrites: {} })] }).entries[0]?.communityWrites)
+    .toEqual({});
+  for (const invalid of [
+    null, [], "pending", new Map([["2", "pending"]]), { "2": { status: "pending" } },
+    { "2": "上游错误" }, { "2": "PENDING" }, { "2": 1 }, { "2": undefined },
+    { "7": "accepted" }, { "02": "pending" }, { ...writes, "11": "pending" },
+    JSON.parse('{"__proto__":"pending"}'), { [Symbol("2")]: "pending" },
+  ]) {
+    expect(() => parseCheckinSchedulePlan({ ...before, entries: [{ ...wrote, communityWrites: invalid }] })).toThrow(TypeError);
+  }
+});
+
+test("清除在途标记后，社区写入记录保留原时段、通知状态和关闭档案的恢复证据", () => {
+  const active = entry("51", { time: "06:00", notified: true, communityWrites: { "2": "pending", "6": "accepted" } });
+  const disabled = entry("52", { time: "06:05", noticeAttemptedAt: stamp, communityWrites: { "1": "unconfirmed" } });
+  const removed = entry("53", { time: "06:10", communityWrites: { "8": "already" } });
+  const before = { ...generateCheckinSchedulePlan({ now, date: today }), entries: [active, disabled, removed] };
+  const config = { mode: "random", random: { window_start: "08:00", window_end: "10:00" } } as const;
+  const profiles = [profile("51"), profile("52", { enabled: false })];
+  const random = () => { throw new Error("恢复记录不应重新分配时段"); };
+  const after = reconcileCheckinSchedulePlan(parseCheckinSchedulePlan(before), { now, config, profiles, random });
+  expect(after.entries).toEqual([active, disabled, removed]);
+  expect(after.generatedAt).toBe(before.generatedAt);
+  expect(reconcileCheckinSchedulePlan(after, {
+    now, profiles: [profile("51", { schedule: { mode: "fixed", fixedTime: "05:00" } })],
+  }).entries).toEqual([active, disabled, removed]);
 });

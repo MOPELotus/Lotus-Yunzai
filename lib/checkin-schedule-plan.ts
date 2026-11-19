@@ -39,6 +39,10 @@ export interface CheckinScheduleCommunityRetry {
   readonly initialMessage?: string;
 }
 
+const communityWriteStatuses = ["pending", "accepted", "already", "rejected", "blocked", "unconfirmed"] as const;
+export type CheckinCommunityWriteStatus = typeof communityWriteStatuses[number];
+const communityWriteForums = new Set(["1", "2", "3", "4", "5", "6", "8", "9", "10"]);
+
 export interface CheckinScheduleEntry {
   readonly qq: string;
   readonly profileId: number;
@@ -56,6 +60,7 @@ export interface CheckinScheduleEntry {
   readonly stage?: string;
   readonly message?: string;
   readonly communityRetry?: CheckinScheduleCommunityRetry;
+  readonly communityWrites?: Readonly<Record<string, CheckinCommunityWriteStatus>>;
 }
 
 export interface CheckinSchedulePlan {
@@ -253,7 +258,7 @@ export function generateCheckinSchedulePlan({ date, profiles = [], config, now, 
 function entryPriority(entry: CheckinScheduleEntry) {
   if (entry.done) return 5;
   if (entry.runningAt) return 4;
-  if (entry.communityRetry) return 3;
+  if (entry.communityRetry || entry.communityWrites) return 3;
   if (entry.notified) return 2;
   return entry.noticeAttemptedAt ? 1 : 0;
 }
@@ -287,7 +292,7 @@ export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
     const current = previous.get(key);
     previous.delete(key);
     const slot = mode === "random" ? randomIndex++ : 0;
-    if (current && (current.done || current.runningAt || current.communityRetry ||
+    if (current && (current.done || current.runningAt || current.communityRetry || current.communityWrites ||
         (mode === "random" && (current.mode === "random" || current.mode === "late_random")))) {
       entries.push(current);
     } else if (mode === "fixed") {
@@ -300,7 +305,7 @@ export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
     }
   }
   for (const entry of previous.values()) {
-    if (entry.done || entry.runningAt || entry.communityRetry) entries.push(entry);
+    if (entry.done || entry.runningAt || entry.communityRetry || entry.communityWrites) entries.push(entry);
   }
   return { ...existing, mode: scheduler.mode, window: scheduler.random, entries: entries.sort(compareEntries) };
 }
@@ -343,6 +348,20 @@ function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | un
     ...(initialMessage !== undefined && { initialMessage }) };
 }
 
+function parseCommunityWrites(value: unknown): CheckinScheduleEntry["communityWrites"] {
+  if (value === undefined) return;
+  const writes = record(value);
+  if (!writes || (Object.getPrototypeOf(writes) !== Object.prototype && Object.getPrototypeOf(writes) !== null)) invalid();
+  const checked: Record<string, CheckinCommunityWriteStatus> = {};
+  for (const forum of Reflect.ownKeys(writes)) {
+    if (typeof forum !== "string" || !communityWriteForums.has(forum)) invalid();
+    const status = communityWriteStatuses.find(status => status === writes[forum]);
+    if (!status) invalid();
+    checked[forum] = status;
+  }
+  return checked;
+}
+
 function parseEntry(value: unknown): CheckinScheduleEntry {
   const entry = record(value);
   if (!entry) invalid();
@@ -357,10 +376,11 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
       (lateRegisteredAt !== undefined && !isTimestamp(lateRegisteredAt)) ||
       (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt))) invalid();
   const communityRetry = parseCommunityRetry(entry.communityRetry);
+  const communityWrites = parseCommunityWrites(entry.communityWrites);
   return { qq, profileId, name, time, mode, notified, ...(noticeAttemptedAt && { noticeAttemptedAt }), done, ...(late && { late }),
     ...(lateRegisteredAt && { lateRegisteredAt }), ...(runningAt && { runningAt }), ...(doneAt && { doneAt }),
     ...(ok !== undefined && { ok }), ...(stage !== undefined && { stage }), ...(message !== undefined && { message }),
-    ...(communityRetry && { communityRetry }) };
+    ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }) };
 }
 
 /** Validate the on-disk version 1 shape before its entries can be scheduled. */

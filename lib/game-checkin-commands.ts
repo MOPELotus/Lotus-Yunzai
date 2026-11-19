@@ -8,6 +8,7 @@ import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
+import { CheckinCommunityWriteError, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
 import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
@@ -133,6 +134,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly signal: AbortSignal;
     readonly notify?: (message: string) => unknown;
     readonly verifyDay?: () => void;
+    readonly communityWrites?: CheckinScheduledRunContext["communityWrites"];
   }): Promise<CheckinRun> {
     const { signal } = input;
     if (signal.aborted) return { status: "busy" };
@@ -189,46 +191,67 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       async function runCommunity() {
         const selected = rows.filter(row => row.community === "未执行");
         if (!selected.length) return;
-        let state: BbsMissionState;
-        try {
-          await verifyCurrent();
-          const snapshot = await client.fetchBbsMissionState(account, {
-            signal, recoverCookie: gameRows.length === 0,
-            onCredentialRefresh(current) {
-              account = current;
-              revision = current.revision;
-            },
-          });
-          await verifyCurrent();
-          state = snapshot;
-        } catch (error) {
-          await verifyCurrent();
-          for (const row of selected) {
-            row.community = "失败";
-            count("failed");
-          }
-          notes.push(bbsIssue(error));
-          return;
-        }
-
+        const journal = input.communityWrites;
+        let state: BbsMissionState | undefined;
         let accepted = false;
         for (const row of selected) {
           await verifyCurrent();
+          const previous = journal?.previous[row.forum];
+          if (previous === "already" || previous === "accepted") {
+            row.community = previous === "already" ? "已签到" : "已受理";
+            count(previous === "already" ? "community-already" : "community-accepted");
+            continue;
+          }
+          if (previous) {
+            const rejected = previous === "rejected" || previous === "blocked";
+            row.community = rejected ? "失败" : "未确认";
+            count(rejected ? "failed" : "unconfirmed");
+            notes.push(`${row.label}社区：${rejected ? "上次提交已失败。" : "上次提交结果未确认，请在官方客户端核对。"}`);
+            if (previous !== "rejected") break;
+            continue;
+          }
+          if (!state) {
+            try {
+              state = await client.fetchBbsMissionState(account, {
+                signal, recoverCookie: gameRows.length === 0,
+                onCredentialRefresh(current) {
+                  account = current;
+                  revision = current.revision;
+                },
+              });
+              await verifyCurrent();
+            } catch (error) {
+              await verifyCurrent();
+              for (const waiting of selected.filter(item => item.community === "未执行")) {
+                waiting.community = "失败";
+                count("failed");
+              }
+              notes.push(bbsIssue(error));
+              return;
+            }
+          }
+          await journal?.start(row.forum);
+          await verifyCurrent();
+          let result: "accepted" | "already";
           try {
-            const result = await client.submitBbsCheckin(account, row.forum, { signal });
-            await verifyCurrent();
-            row.community = result === "accepted" ? "已受理" : "已签到";
-            accepted ||= result === "accepted";
-            count(result === "accepted" ? "community-accepted" : "community-already");
+            result = await client.submitBbsCheckin(account, row.forum, { signal });
           } catch (error) {
             await verifyCurrent();
             const explicit = error instanceof BbsCheckinRequestError ||
               (error instanceof HoyoRequestError && (error.code === "api" || error.code === "invalid-input"));
+            const blocked = !(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api";
+            await journal?.settle(row.forum, explicit ? (blocked ? "blocked" : "rejected") : "unconfirmed");
             row.community = explicit ? "失败" : "未确认";
             count(explicit ? "failed" : "unconfirmed");
             notes.push(`${row.label}社区：${bbsIssue(error)}`);
-            if (!(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api") break;
+            if (blocked) break;
+            continue;
           }
+          await verifyCurrent();
+          await journal?.settle(row.forum, result);
+          row.community = result === "accepted" ? "已受理" : "已签到";
+          accepted ||= result === "accepted";
+          count(result === "accepted" ? "community-accepted" : "community-already");
         }
         for (const row of selected) {
           if (row.community === "未执行") row.community = "跳过";
@@ -241,7 +264,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             return;
           }
         }
-        return notes.length ? undefined : bbsPoints(state);
+        return state && !notes.length ? bbsPoints(state) : undefined;
       }
       if (gameRows.length) {
         try {
@@ -304,6 +327,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       return completedRun("checkin", ok, reply, revision);
     } catch (error) {
       if (signal.aborted) return { status: "busy" };
+      if (error instanceof CheckinCommunityWriteError) throw error;
       if (error instanceof ProfileError && error.code === "changed") return { status: "busy", reply: changed };
       if (error instanceof HoyoRequestError && error.code === "profile-changed") return { status: "busy", reply: error.message };
       input.verifyDay?.();
@@ -332,12 +356,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
 
   return {
     ...commands,
-    async runScheduled(qq: string, profileId: number, context: {
-      readonly signal: AbortSignal;
-      readonly verifyDay: () => void;
-    }): Promise<CheckinRun> {
+    async runScheduled(qq: string, profileId: number, context: CheckinScheduledRunContext): Promise<CheckinRun> {
       const signal = AbortSignal.any([lifecycleSignal, context.signal]);
-      return runProfile(qq, profileId, { signal, verifyDay: context.verifyDay, source: "scheduled" });
+      return runProfile(qq, profileId, { signal, verifyDay: context.verifyDay, source: "scheduled", communityWrites: context.communityWrites });
     },
   };
 }
