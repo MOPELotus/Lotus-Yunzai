@@ -23,6 +23,8 @@ test("伤害入口保留技能编号，可明确选择同 QQ 的档案", () => {
   expect(zzzPanelCommand("%安比伤害")).toEqual({ kind: "damage", profileId: 1, name: "安比", skill: undefined });
   expect(zzzPanelCommand("#zzz安东伤害3 档案2")).toEqual({ kind: "damage", profileId: 2, name: "安东", skill: 3 });
   expect(zzzPanelCommand("%安比伤害0")).toEqual({ kind: "damage", profileId: 1, name: "安比", skill: 0 });
+  expect(zzzPanelCommand("%11号伤害4")).toEqual({ kind: "damage", profileId: 1, name: "11号", skill: 4 });
+  expect(zzzPanelCommand("%柳伤害7 档案2")).toEqual({ kind: "damage", profileId: 2, name: "柳", skill: 7 });
   for (const invalid of ["安比伤害3", "%伤害3", "%安比伤害1 档案0", "%安比伤害3 2", "%安比伤害1 档案256"]) {
     expect(zzzPanelCommand(invalid)).toBeUndefined();
   }
@@ -136,4 +138,40 @@ test("星见雅的碎冰和紊乱选择原特殊属性，拒绝混入普通冰�
   expect(actual.skills[0]!.props?.倍率).toBe(3);
   expect(actual.selected.props?.倍率).toBe(1.5);
   expect(() => calculatePanelDamage({ ...miyabi, sub_element_type: 0 }, data, noGear)).toThrow(/规则/u);
+});
+
+test("月城柳的基础紊乱与两个极性紊乱保留不同序号和结果", () => {
+  const data: DamageData = {
+    ...numericFixture,
+    character: {
+      skill: {
+        ...Object.fromEntries(["APS5", "APX5", "CF", "EQ0", "EQ", "RL", "RZ"].map(name => [name, [1]])),
+        "E极性紊乱": [2], "R极性紊乱": [3],
+      },
+      buff: { T1: [0.2], T2: [0.3] },
+    },
+    anomaly: [{ ...numericFixture.anomaly[0]!, discover: { multiplier: 0.2, fixed_multiplier: 0.2 } }],
+  };
+  const yanagi = { ...avatar, id: 1221, name_mi18n: "柳", avatar_profession: 3 };
+  const bonus = calculatePanelDamage(yanagi, data, noGear, 7);
+  expect(bonus.skills.filter(row => row.skill.type === "紊乱").map(row => row.skill.name)).toEqual(
+    ["紊乱", "强化E极性紊乱", "终结技极性紊乱"],
+  );
+  expect(bonus.selected.skill.name).toBe("强化E极性紊乱");
+  const ultimate = calculatePanelDamage(yanagi, data, noGear, 10);
+  expect(ultimate.selected.skill.name).toBe("终结技极性紊乱");
+  expect(ultimate.selected.result.expectDMG).toBeGreaterThan(bonus.selected.result.expectDMG);
+});
+
+test("本的二影格挡附加防御伤害仍归入原来的技能序号", () => {
+  const ben = { ...avatar, id: 1121, name_mi18n: "本", element_type: 201, avatar_profession: 5 };
+  const data: DamageData = {
+    ...numericFixture,
+    character: { skill: Object.fromEntries(["AP3", "CF", "EQG1", "EQG2", "RL", "RZ"].map(name => [name, [1]])) },
+  };
+  const first = calculatePanelDamage(ben, data, noGear, 3);
+  const second = calculatePanelDamage({ ...ben, rank: 2 }, data, noGear, 3);
+  expect(second.skills.map(row => row.skill.type)).toEqual(first.skills.map(row => row.skill.type));
+  expect(second.selected.skill.type).toBe("EQG1");
+  expect(second.selected.result.expectDMG).toBeGreaterThan(first.selected.result.expectDMG);
 });
