@@ -6,6 +6,8 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
 import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
+import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
+import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { readQqMessageMedia } from "./lib/chat-files.ts";
@@ -23,7 +25,8 @@ import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts"
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
 import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
-import { redeemCodeCommands } from "./lib/redeem-code-commands.ts";
+import { isPreviewRedeemSetting, redeemCodeCommands } from "./lib/redeem-code-commands.ts";
+import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
 import type { MilkySession, MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
@@ -680,7 +683,7 @@ if (import.meta.main) {
         /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
-        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || zzzLinkEntry.test(event.msg) ||
+        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || zzzLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
           isPassportLoginInput(value) || isDeviceBindingInput(value) || isZzzGachaLinkMessage(value)))) return;
@@ -854,7 +857,12 @@ if (import.meta.main) {
         return;
       }
     }
-    const redeemReply = await commands.dispatchFallback(event,
+    const redeemSetting = isPreviewRedeemSetting(command.msg);
+    const redeemConnection = redeemSetting ? event[delegationSession]?.signal : undefined;
+    const redeemEvent = redeemSetting ? {
+      ...event, privateCredentialSignal: redeemConnection && nativeOperationSignal(redeemConnection),
+    } : event;
+    const redeemReply = await commands.dispatchFallback(redeemEvent,
       (names) => names[0] === "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (redeemReply !== undefined) {
       await sendCommandReply(event, redeemReply);
@@ -997,11 +1005,56 @@ if (import.meta.main) {
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       viewProfile));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
-    commands.registerModule(redeemCodeCommands({ historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)) }));
     commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
+    const previewOptions = { historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal };
+    const publicPreview = new RedeemCodeService(previewOptions);
+    if (probingUpdate) {
+      commands.registerModule(redeemCodeCommands(previewOptions, publicPreview));
+    } else {
+      const previewClient = createProfileHoyoClient(checkinProfiles);
+      const preview = createPreviewRedeemRunner({
+        journal: fileURLToPath(new URL("data/redeemCodes/auto.json", root)),
+        legacyJournal: fileURLToPath(new URL("plugins/Lotus-Plugin/data/redeemCodes/auto.json", root)),
+        lookup: game => publicPreview.query(game),
+        listProfiles: checkinProfiles.listPreviewRedeemProfiles,
+        async readRoles({ qq, profileId }, game, signal) {
+          const initial = await checkinProfiles.previewRedeemAccount(qq, profileId, game);
+          if (!initial || !previewRedeemIdentity(initial)) return;
+          const result = await previewClient.fetchBoundRoles(initial, game, signal);
+          const account = await checkinProfiles.previewRedeemAccount(qq, profileId, game);
+          if (!account || account.revision !== result.context.revision || account.selectedUid !== initial.selectedUid) return;
+          const accountId = previewRedeemIdentity(account);
+          if (!accountId) return;
+          const checkBinding = async () => {
+            const current = await checkinProfiles.previewRedeemAccount(qq, profileId, game);
+            return current?.revision === account.revision;
+          };
+          return {
+            accountId, roles: result.roles, selectedUid: account.selectedUid,
+            submit: (code, role, active) => submitPreviewCode(account, game, role, code, fetch, active, async () => {
+              if (!await checkBinding()) throw new Error("前瞻兑换档案已变更。");
+            }),
+            async notify(reply, active) {
+              const settings = await checkinProfiles.previewRedeemSettings(qq, profileId);
+              if (settings.revision !== account.revision) return;
+              await notifyCheckin({
+                userId: Number(qq), settings: settings.notify, reply, transports: subscriptionTransport(),
+                signal: active ?? previewSignal, verifySend: checkBinding,
+              });
+            },
+          };
+        },
+      });
+      commands.registerModule(redeemCodeCommands(previewOptions, publicPreview, {
+        profiles: checkinProfiles, signal: previewSignal, canRegister: canRegisterCheckin, hasHistory: preview.hasHistory,
+      }));
+      registerModuleTask("[前瞻兑换]", "0 */5 * * * *",
+        () => preview.scan(previewSignal, () => console.warn("[前瞻兑换] 某项任务未完成。")));
+    }
     const shopSettings = miyousheWebSettings(globalConfig.coin_shop);
     if (!probingUpdate && shopSettings.enabled) {
       const plans = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)));

@@ -89,10 +89,12 @@ export class MiyoliveProvider {
   constructor(options = {}) {
     this.fetch = options.fetch || globalThis.fetch
     this.now = options.now || Date.now
+    this.signal = options.signal
     this.directRequest = options.directRequest === false ? null : options.directRequest || (options.fetch ? null : requestOfficialJson)
   }
 
   async request(url, actId = "") {
+    this.signal?.throwIfAborted()
     const target = officialReadTarget(url)
     const deadline = Date.now() + 20000
     const headers = { "x-rpc-client_type": "2", "x-rpc-act_id": actId, Referer: "https://www.miyoushe.com/" }
@@ -100,9 +102,10 @@ export class MiyoliveProvider {
     try {
       let response
       for (const waitMs of [0, 800, 1800]) {
-        if (waitMs) await delay(waitMs)
+        if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
+        const timeout = AbortSignal.timeout(Math.min(10000, Math.max(1, deadline - Date.now())))
         response = await this.fetch(target.href, { method: "GET", credentials: "omit", redirect: "error",
-          headers, signal: AbortSignal.timeout(Math.min(10000, Math.max(1, deadline - Date.now()))) })
+          headers, signal: this.signal ? AbortSignal.any([this.signal, timeout]) : timeout })
         if (response.status !== 403 || waitMs === 1800 || deadline - Date.now() < 3000) break
         await response.body?.cancel().catch(() => {})
       }
@@ -115,19 +118,23 @@ export class MiyoliveProvider {
       }
       body = await response.json()
     } catch (error) {
+      this.signal?.throwIfAborted()
       const endpoint = `${target.hostname}${target.pathname}`
       const detail = error.cause?.code || error.code || error.message
       if (!this.directRequest || error.retryable === false) throw new Error(`${endpoint}：${detail}`, { cause: error })
       let lastError
       for (const waitMs of [0, 150, 350]) {
-        if (waitMs) await delay(waitMs)
+        if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
         const remainingMs = deadline - Date.now()
         if (remainingMs <= 0) break
         try {
-          body = await this.directRequest(target.href, { headers, timeoutMs: Math.min(10000, remainingMs) })
+          body = await this.directRequest(target.href, { headers, timeoutMs: Math.min(10000, remainingMs), signal: this.signal })
           lastError = null
           break
-        } catch (retryError) { lastError = retryError }
+        } catch (retryError) {
+          this.signal?.throwIfAborted()
+          lastError = retryError
+        }
       }
       if (!body) throw new Error(`${endpoint}：请求及直连重试均失败（${detail}；${lastError?.code || lastError?.message || "超时"}）`, { cause: lastError || error })
     }

@@ -19,10 +19,12 @@ export function officialReadTarget(url) {
 
 // Native HTTPS does not use Node's environment proxy dispatcher. Keep this
 // fallback scoped to our public official endpoints; never change global routing.
-export function requestOfficialJson(url, { headers = {}, timeoutMs = 10000 } = {}) {
+export function requestOfficialJson(url, { headers = {}, timeoutMs = 10000, signal = undefined } = {}) {
   const target = officialReadTarget(url)
+  const timeout = AbortSignal.timeout(timeoutMs)
+  const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout
   return new Promise((resolve, reject) => {
-    const request = https.request(target, { method: "GET", headers: { ...headers, "accept-encoding": "identity" }, signal: AbortSignal.timeout(timeoutMs) }, response => {
+    const request = https.request(target, { method: "GET", headers: { ...headers, "accept-encoding": "identity" }, signal: deadline }, response => {
       if (response.statusCode !== 200) {
         response.resume()
         reject(new Error(`官方接口 HTTP ${response.statusCode}`))

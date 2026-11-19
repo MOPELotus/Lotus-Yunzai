@@ -6,7 +6,8 @@
     ".": "./index.ts",
     "./miyoushe-exchange": "./miyoushe-exchange.ts",
     "./miyoushe-shop": "./miyoushe-shop.ts",
-    "./redeem-preview": "./redeem-preview/index.ts"
+    "./redeem-preview": "./redeem-preview/index.ts",
+    "./redeem-submit": "./redeem-submit.ts"
   },
   "dependencies": {
     "@lotus-yunzai/account": "workspace:*"

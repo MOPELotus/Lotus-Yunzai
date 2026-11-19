@@ -6,4 +6,5 @@ export interface RedeemPreviewOptions {
   readonly historyFile?: string | false;
   readonly now?: () => number;
   readonly fetch?: (url: string, options: RequestInit) => Promise<Response>;
+  readonly signal?: AbortSignal;
 }

@@ -69,6 +69,23 @@ function configuredCommunityForums(community: Record<string, unknown>): string[]
   return [...new Set(community.checkin_list.map(accountId).filter((id) => allowed.has(id)))];
 }
 
+function previewRedeemPreference(value: unknown) {
+  const raw = record(value);
+  const games = Array.isArray(raw.games) && raw.games.every(game => profileGames.includes(game))
+    ? [...new Set<Game>(raw.games)] : value === undefined ? [...profileGames] : [];
+  return { enabled: raw.enable === true && games.length > 0, games, allowNewJournal: raw.local_enrollment === true };
+}
+
+function profileNotifications(value: unknown) {
+  const notify = record(value);
+  return {
+    enabled: notify.enable !== false,
+    prefer: notify.prefer === "group" ? "group" as const : "private" as const,
+    fallbackGroups: Array.isArray(notify.fallback_groups) ? notify.fallback_groups.map(value => Number(accountId(value)))
+      .filter(id => Number.isSafeInteger(id) && id > 0) : [],
+  };
+}
+
 function normalizeProfileTime(time: string) {
   return /^(?:[01]?\d|2[0-3]):[0-5]\d$/u.test(time) ? time.padStart(5, "0") : undefined;
 }
@@ -697,6 +714,46 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }
       return targets.sort((left, right) => left.qq.localeCompare(right.qq) || left.profileId - right.profileId);
     },
+    async listPreviewRedeemProfiles(signal?: AbortSignal) {
+      const targets = [];
+      for (const { qq, profileId } of await listSlots()) {
+        signal?.throwIfAborted();
+        if (!/^[1-9][0-9]{0,18}$/u.test(qq)) continue;
+        const profile = await readDocument(qq, profileId).catch(() => undefined);
+        if (!profile?.state.summary.loggedIn) continue;
+        const settings = previewRedeemPreference(profile.document.auto_redeem);
+        if (settings.enabled) targets.push({ qq, profileId, games: settings.games, allowNewJournal: settings.allowNewJournal });
+      }
+      return targets.sort((left, right) => left.qq.localeCompare(right.qq) || left.profileId - right.profileId);
+    },
+    async previewRedeemSettings(qq: string, profileId: number) {
+      const { document, state, revision } = await readDocument(qq, profileId);
+      return { ...previewRedeemPreference(document.auto_redeem), revision, loggedIn: state.summary.loggedIn,
+        notify: profileNotifications(record(document.profile).notify) };
+    },
+    async previewRedeemAccount(qq: string, profileId: number, game: Game) {
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      const { document, state, revision } = await readDocument(qq, profileId);
+      const settings = previewRedeemPreference(document.auto_redeem);
+      if (!state.summary.loggedIn || !settings.enabled || !settings.games.includes(game)) return;
+      const raw = state.selected[game];
+      const selectedUid = accountId(raw);
+      if (raw !== undefined && raw !== null && raw !== "" && !selectedUid) return;
+      return { qq, profileId, revision, account: state.account, device: state.device, selectedUid };
+    },
+    async setPreviewRedeemSettings(qq: string, profileId: number, expectedRevision: string, enabled: boolean,
+      games?: readonly Game[], signal?: AbortSignal) {
+      if (typeof enabled !== "boolean" || (games && games.some(game => !profileGames.includes(game)))) invalidCheckinSettings();
+      return updateCheckinProfile(qq, profileId, expectedRevision, (document, state) => {
+        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        const previous = previewRedeemPreference(document.auto_redeem);
+        const selected = games ? [...new Set(games)] : previous.games;
+        if (enabled && !selected.length) throw new ProfileError("invalid", "请至少选择一款游戏。");
+        if (document.auto_redeem === undefined && !enabled) return document;
+        return { ...document, auto_redeem: { ...record(document.auto_redeem), enable: enabled, games: selected,
+          ...(enabled && document.auto_redeem === undefined && { local_enrollment: true }) } };
+      }, signal);
+    },
     async accountContext(qq: string, id = 1) {
       const { account, device, revision } = await readLoggedIn(qq, id);
       return { qq, profileId: id, account, device, revision };
@@ -715,19 +772,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { document, state, revision } = await readDocument(qq, id);
       const cn = record(record(document.games).cn);
       const community = record(document.mihoyobbs);
-      const notify = record(record(document.profile).notify);
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
       const games = configuredCnCheckins(cn);
       const communityForums = configuredCommunityForums(community);
       return {
         revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
         schedule: profileSchedule(document.schedule),
-        notify: {
-          enabled: notify.enable !== false,
-          prefer: notify.prefer === "group" ? "group" as const : "private" as const,
-          fallbackGroups: Array.isArray(notify.fallback_groups) ? notify.fallback_groups.map(value => Number(accountId(value)))
-            .filter(id => Number.isSafeInteger(id) && id > 0) : [],
-        },
+        notify: profileNotifications(record(document.profile).notify),
       };
     },
     async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {

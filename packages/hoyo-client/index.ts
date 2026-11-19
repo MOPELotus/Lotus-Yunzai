@@ -327,6 +327,17 @@ export function createHoyoClient(
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
     },
+    async fetchBoundRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal) {
+      const result = await retrieve(context, async (profile) => {
+        signal?.throwIfAborted();
+        await ensureCurrentProfile(profile);
+        const data = await list(profile, game, signal);
+        await ensureCurrentProfile(profile);
+        signal?.throwIfAborted();
+        return data;
+      }, signal);
+      return { context: result.context, roles: rolesFor(result.data, game) };
+    },
     async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
       const data = await list(context, undefined, signal);
       return {
