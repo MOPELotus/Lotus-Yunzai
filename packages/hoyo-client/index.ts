@@ -17,6 +17,7 @@ import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions 
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
+import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
@@ -393,6 +394,9 @@ export function createHoyoClient(
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
+    },
+    fetchStarRailPanel(source: ProfileRequestContext, options: StarRailPanelOptions = {}) {
+      return readForProfile(source, options, readStarRailPanel, isGameRecordCookieExpired);
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
       return readForProfile(source, options, readStarRailGacha);

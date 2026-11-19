@@ -33,7 +33,7 @@ const zzzCardPaths = {
   "zzz-avatar": "avatar/basic",
   "zzz-buddy": "buddy/info",
 } as const;
-type RecordKind = "daily-note" | "genshin-index" | keyof typeof zzzCardPaths;
+type RecordKind = "daily-note" | "genshin-index" | "starrail-avatar-info" | keyof typeof zzzCardPaths;
 type Json = Record<string, unknown>;
 
 function object(value: unknown): Json | undefined {
@@ -123,19 +123,22 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   verifyProfile?: () => Promise<void>) {
   const { game, role: { uid, gameBiz } } = source;
   const forNote = kind === "daily-note";
-  const forZzz = kind !== "daily-note" && kind !== "genshin-index";
-  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : "原神战绩";
+  const forStarRail = kind === "starrail-avatar-info";
+  const forZzz = Object.hasOwn(zzzCardPaths, kind);
+  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : forStarRail ? "星铁面板" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
     source.role.region.trim() || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
-  if ((!forNote && game !== (forZzz ? "zzz" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
+  if ((!forNote && game !== (forZzz ? "zzz" : forStarRail ? "sr" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
   }
-  const path = forNote ? route.path : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind]}` : "/game_record/app/genshin/api/index";
+  const path = forNote ? route.path : forStarRail ? "/game_record/app/hkrpg/api/avatar/info"
+    : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}` : "/game_record/app/genshin/api/index";
   const endpoint = new URL(path, origin);
   if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
+  if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
   endpoint.searchParams.set("role_id", uid);
   endpoint.searchParams.set("server", region);
   const headers = requestHeaders(source, endpoint.search.slice(1));
@@ -166,7 +169,15 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  const payload = await readGameRecordPayload(response, forNote ? 64 * 1024 : 2 * 1024 * 1024, deadline);
+  if (forStarRail) {
+    const aigis = response.headers.get("x-rpc-aigis")?.trim();
+    if (aigis && aigis !== "{}") {
+      await response.body?.cancel().catch(() => undefined);
+      await guard();
+      throw new GameRecordRequestError(subject, "risk", "api", response.status);
+    }
+  }
+  const payload = await readGameRecordPayload(response, forNote ? 64 * 1024 : forStarRail ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   const retcode = whole(payload?.retcode);
