@@ -491,8 +491,11 @@ if (import.meta.main) {
         return;
       }
     }
-    const milkyPrivateExemption = event.adapter === "milky" && event.message_type === "private" &&
-      (isRecallCommand(event) || (isLogCommand(event.msg) && canReadRuntimeLogs(event)));
+    const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
+    const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
+      isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
+    const milkyPrivateExemption = milkyDiagnostics || (milkyPrivate &&
+      (isRecallCommand(event) || (isLogCommand(event.msg) && canReadRuntimeLogs(event))));
     if (!milkyPrivateExemption && await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed)) return;
     const useKeywords = allowed(keywordFeatureNames);
@@ -511,7 +514,8 @@ if (import.meta.main) {
       if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
       return;
     }
-    const reply = await commands.dispatch(command.msg, command, allowed);
+    const context: CommandContext = milkyDiagnostics ? { ...command, runtimeDiagnosticsScope: "milky" } : command;
+    const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
       await event.reply(reply);
       return;
@@ -678,14 +682,21 @@ if (import.meta.main) {
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {
-        if (!context.isMaster) return { accounts: [], plugins: [] };
-        const accounts = groups.onlineAccounts();
         const online = milkyOnline;
         const terminal = context.message_type === "terminal";
-        const milkyAccount = terminal && online && !online.signal.aborted ? {
+        const milkyDiagnostics = context.runtimeDiagnosticsScope === "milky";
+        if (!context.isMaster && !milkyDiagnostics) return { accounts: [], plugins: [] };
+        const milkyAccount = (terminal || milkyDiagnostics) && online && !online.signal.aborted ? {
           id: online.id, adapter: "milky" as const,
           seconds: Math.max(0, Math.floor((performance.now() - online.startedAt) / 1_000)),
         } : undefined;
+        if (milkyDiagnostics) {
+          const { message_type, self_id, user_id } = context;
+          if (message_type !== "private" || !milkyAccount || self_id !== milkyAccount.id || user_id === undefined ||
+              !permissions.isMaster(self_id, user_id)) return;
+          return { accounts: [milkyAccount], plugins: plugins?.timings ?? [] };
+        }
+        const accounts = groups.onlineAccounts();
         return {
           accounts: milkyAccount ? [...accounts, milkyAccount] : terminal ? accounts : accounts.filter(({ id }) => id === context.self_id),
           plugins: plugins?.timings ?? [],

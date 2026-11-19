@@ -525,7 +525,7 @@ async function exerciseMilkyUpdate(fail: boolean) {
 
       command("#诊断", 51);
       const diagnostics = await mock.next({ user_id: 51 }, /^Lotus-Yunzai 运行诊断/u);
-      expect(diagnostics).not.toContain("账号在线时长");
+      expect(diagnostics).toMatch(/账号在线时长\n99　Milky　/u);
       command("#更新", 42);
       await mock.next({ user_id: 42 }, /^私聊限制夹具$/u);
       command("#更新", 52, 77);

@@ -7,7 +7,17 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 const milkyToken = "milky-diagnostics-fixture";
 const oneBotToken = "onebot-diagnostics-fixture";
 const milkyId = 99;
-const oneBotId = 77;
+const oneBotId = milkyId;
+const owner = 51;
+const blockedTip = "私聊诊断限制夹具";
+const time = 1_700_000_000;
+
+function accountRows(text: string) {
+  const section = /账号在线时长\r?\n([\s\S]*?)\r?\n\r?\n插件加载用时/u.exec(text)?.[1];
+  if (!section) throw new Error("诊断回复缺少账号在线时长。\n" + text);
+  expect(text).toMatch(/^system　\d+ ms$/mu);
+  return section.split(/\r?\n/u);
+}
 
 function deadline<T>(promise: Promise<T>, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -22,7 +32,14 @@ function gateway() {
   const heartbeat = Promise.withResolvers<Bun.ServerWebSocket>();
   const reconnecting = Promise.withResolvers<void>();
   const releaseReconnect = Promise.withResolvers<void>();
+  const messages: {
+    action: string;
+    body: { user_id?: number; group_id?: number; message: { type: "text"; data: { text: string } }[] };
+  }[] = [];
+  let available = Promise.withResolvers<void>();
   let logins = 0;
+  let messageSequence = 0;
+  let replySequence = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request, gatewayServer) {
@@ -41,6 +58,11 @@ function gateway() {
         if (gatewayServer.upgrade(request)) return;
         return new Response(null, { status: 426 });
       }
+      if (request.method === "POST" && (path === "/api/send_private_message" || path === "/api/send_group_message")) {
+        messages.push({ action: path.slice("/api/".length), body: await request.json() as (typeof messages)[number]["body"] });
+        available.resolve();
+        return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++replySequence, time } });
+      }
       return new Response(null, { status: 404 });
     },
     websocket: {
@@ -48,7 +70,32 @@ function gateway() {
       ping(ws) { heartbeat.resolve(ws); },
     },
   });
-  return { server, upgrading, releaseUpgrade, heartbeat, reconnecting, releaseReconnect };
+  return {
+    server, upgrading, releaseUpgrade, heartbeat, reconnecting, releaseReconnect,
+    async command(ws: Bun.ServerWebSocket, text: string, sender_id = owner, group_id?: number) {
+      ws.send(JSON.stringify({
+        time, self_id: milkyId, event_type: "message_receive",
+        data: {
+          time, message_seq: ++messageSequence, sender_id, peer_id: group_id ?? sender_id,
+          message_scene: group_id === undefined ? "friend" : "group",
+          segments: [{ type: "text", data: { text } }],
+        },
+      }));
+      if (!messages.length) await deadline(available.promise, `Milky 未回复 ${text}。`);
+      const reply = messages.shift()!;
+      if (!messages.length) available = Promise.withResolvers<void>();
+      const responseText = reply.body.message[0]?.data?.text;
+      if (typeof responseText !== "string") throw new Error("Milky 诊断夹具未收到文本。");
+      expect(reply).toEqual({
+        action: group_id === undefined ? "send_private_message" : "send_group_message",
+        body: {
+          ...(group_id === undefined ? { user_id: sender_id } : { group_id }),
+          message: [{ type: "text", data: { text: responseText } }],
+        },
+      });
+      return responseText;
+    },
+  };
 }
 
 async function bindOneBot(endpoint: string) {
@@ -59,17 +106,26 @@ async function bindOneBot(endpoint: string) {
     },
   });
   try {
-    const status = await deadline(new Promise<{ action: string; params: { message: string } }>((resolve, reject) => {
-      socket.addEventListener("message", ({ data }) => resolve(JSON.parse(data)), { once: true });
+    await deadline(new Promise<void>((resolve, reject) => {
       socket.addEventListener("error", () => reject(new Error("OneBot 诊断夹具连接失败。")), { once: true });
-      socket.addEventListener("open", () => socket.send(JSON.stringify({
-        post_type: "message", message_type: "private", sub_type: "friend", self_id: oneBotId, user_id: 42, message: "#状态",
-      })), { once: true });
-    }), "OneBot 诊断夹具未收到状态回复。");
-    expect(status).toMatchObject({
-      action: "send_msg", params: { message: expect.stringContaining("Lotus-Yunzai 正在运行") },
-    });
-    return socket;
+      socket.addEventListener("open", () => resolve(), { once: true });
+    }), "OneBot 诊断夹具未连接。");
+    let message_id = 0;
+    async function command(message: string) {
+      const reply = new Promise<{ action: string; params: { message: string } }>((resolve) => {
+        socket.addEventListener("message", ({ data }) => resolve(JSON.parse(data)), { once: true });
+      });
+      socket.send(JSON.stringify({
+        post_type: "message", message_type: "private", sub_type: "friend", self_id: oneBotId,
+        user_id: owner, message_id: ++message_id, message,
+      }));
+      const response = await deadline(reply, `OneBot 诊断夹具未回复 ${message}。`);
+      expect(response).toMatchObject({ action: "send_msg", params: { user_id: owner } });
+      expect(typeof response.params.message).toBe("string");
+      return response.params.message;
+    }
+    expect(await command("#状态")).toContain("Lotus-Yunzai 正在运行");
+    return { socket, command };
   } catch (error) {
     socket.close();
     throw error;
@@ -101,24 +157,25 @@ function terminal(host: Bun.Subprocess<"pipe", "pipe", "pipe">) {
       host.stdin.write("#诊断\n");
       host.stdin.flush();
       const text = await deadline(readThrough(/(?:^|\n)system　\d+ ms\r?\n/u), "终端诊断未输出。");
-      const section = /账号在线时长\r?\n([\s\S]*?)\r?\n\r?\n插件加载用时/u.exec(text)?.[1];
-      if (!section) throw new Error("授权终端诊断缺少账号在线时长。\n" + text);
-      return section.split(/\r?\n/u);
+      return accountRows(text);
     },
     close() { reader.releaseLock(); },
   };
 }
 
-test("授权终端诊断按实际事件连接展示 Milky 和 OneBot 账号", async () => {
+test("Milky 和 OneBot 主人的私聊诊断按协议隔离，终端可查看全部连接", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-diagnostics-"));
   const mock = gateway();
-  let oneBot: WebSocket | undefined;
+  let oneBot: Awaited<ReturnType<typeof bindOneBot>> | undefined;
   try {
     await copyHost(root);
     await mkdir(join(root, "config", "config"), { recursive: true });
-    await writeFile(join(root, "config", "config", "other.yaml"), 'master: ["stdin:stdin"]\n');
+    await writeFile(join(root, "config", "config", "other.yaml"), [
+      'master: ["stdin:stdin", "99:51", "100:52"]', "disablePrivate: true", `disableMsg: ${blockedTip}`,
+      "disableAdopt: ['^#诊断 ', '^#状态 ', '^#统计 ']",
+    ].join("\n") + "\n");
     await writeFile(join(root, "config", "milky.yaml"), [
-      "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
+      "enable: true", "host: 127.0.0.1", `port: ${mock.server.url.port}`,
       `access_token: ${milkyToken}`, "ws:", "  reconnect_interval: 0.05", "  heartbeat: 0.1",
     ].join("\n") + "\n");
     disableMemberPrewarm(root);
@@ -140,11 +197,28 @@ test("授权终端诊断按实际事件连接展示 Milky 和 OneBot 账号", as
       mock.releaseUpgrade.resolve();
       const ws = await deadline(mock.heartbeat.promise, "Milky 事件连接未进入心跳。");
       const online = await output.accounts();
+      const milkyRow = expect.stringMatching(new RegExp(`^${milkyId}　Milky　\\d+ 秒$`, "u"));
       expect(online).toHaveLength(2);
-      expect(online).toContainEqual(oneBotRow);
-      const milkyRow = online.find((row) => row.includes("Milky"));
-      expect(milkyRow).toMatch(new RegExp(`\\b${milkyId}\\b`, "u"));
-      expect(milkyRow).toMatch(/\d+ 秒/u);
+      expect(online).toEqual(expect.arrayContaining([oneBotRow, milkyRow]));
+      for (const query of ["#诊断", "#状态"]) {
+        expect(accountRows(await mock.command(ws, query))).toEqual([milkyRow]);
+        expect(accountRows(await oneBot.command(query))).toEqual([oneBotRow]);
+      }
+      expect(await mock.command(ws, "#诊断", 42)).toBe(blockedTip);
+      expect(await mock.command(ws, "#状态", 52)).toBe(blockedTip);
+      const groups = await mock.command(ws, "#诊断", owner, 77);
+      expect(groups).toContain("Lotus-Yunzai 运行诊断");
+      expect(groups).not.toContain("账号在线时长");
+      expect(groups).not.toContain("插件加载用时");
+      for (const query of ["#诊断 夹具", "#状态 夹具"]) {
+        const report = await mock.command(ws, query);
+        expect(report).toMatch(/^Lotus-Yunzai (?:运行诊断|正在运行)/u);
+        expect(report).not.toContain("账号在线时长");
+        expect(report).not.toContain("插件加载用时");
+      }
+      for (const query of ["#统计 机器人 99", "#状态 机器人 99"]) {
+        expect(await mock.command(ws, query)).toBe("仅当前机器人的主人可以指定统计对象。");
+      }
 
       ws.close(1012, "fixture disconnect");
       await deadline(mock.reconnecting.promise, "Milky 未重新请求登录。");
@@ -158,7 +232,7 @@ test("授权终端诊断按实际事件连接展示 Milky 和 OneBot 账号", as
     }
     expect(await stderr).not.toContain(milkyToken);
   } finally {
-    oneBot?.close();
+    oneBot?.socket.close();
     mock.server.stop(true);
     await rm(root, { recursive: true, force: true });
   }

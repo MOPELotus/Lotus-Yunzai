@@ -145,9 +145,9 @@ interface PluginServices {
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
   readonly runtimeVersion: RuntimeVersion;
   readonly runtimeDiagnostics: (context: CommandContext) => {
-    readonly accounts: readonly { readonly id: number; readonly seconds: number }[];
+    readonly accounts: readonly { readonly id: number; readonly seconds: number; readonly adapter?: "milky" }[];
     readonly plugins: readonly PluginLoadTiming[];
-  };
+  } | undefined;
 }
 
 export interface PluginLoadTiming {
