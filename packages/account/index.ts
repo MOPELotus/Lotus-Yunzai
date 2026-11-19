@@ -285,8 +285,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
 
-  async function readDocument(qq: string, id: number) {
-    const path = join(root, profileFilename(qq, id));
+  async function readDocument(qq: string, id: number, path = join(root, profileFilename(qq, id))) {
     try {
       const snapshot = await readFileSnapshot(path);
       const data: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
@@ -533,7 +532,24 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }));
       const communityForums = communityEnabled && Array.isArray(community.checkin_list)
         ? community.checkin_list.map(accountId).filter(Boolean) : [];
-      return { revision, displayName, games, communityForums };
+      return { revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums };
+    },
+    async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
+      const filename = profileFilename(qq, id);
+      if (typeof enabled !== "boolean") throw new ProfileError("invalid", "自动签到设置无效。");
+      const directory = await realpath(root).catch((error: unknown) => {
+        if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
+        throw error;
+      });
+      const path = join(directory, filename);
+      return serializeWrite(path, async () => {
+        const { document, state, revision } = await readDocument(qq, id, path);
+        if (revision !== expectedRevision) throw changedProfile();
+        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (state.summary.enabled === enabled) return { enabled, changed: false, revision };
+        const saved = await writeProfileDocument(path, { ...document, enabled }, revision);
+        return { enabled, changed: true, revision: saved };
+      });
     },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
       const name = profileFilename(qq, id);
