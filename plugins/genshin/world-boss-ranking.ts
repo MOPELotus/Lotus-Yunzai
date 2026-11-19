@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { GenshinWorldBossSnapshot } from "@lotus-yunzai/hoyo-client";
@@ -18,11 +19,16 @@ export interface GenshinWorldBossRankingRow extends BossCount {
   readonly uid: string;
 }
 
-interface Observation extends Identity {
+interface ObservationBase extends Identity {
   readonly version: 1;
-  readonly observedAt: number;
   readonly bosses: readonly BossCount[];
 }
+
+type Observation = ObservationBase & (
+  { readonly origin?: undefined; readonly observedAt: number } |
+  { readonly origin: "legacy"; readonly digest: string }
+);
+type ImportResult = "ready" | "imported" | "unchanged" | "conflict" | "protected";
 
 const subject = "原神世界 BOSS 排行摘要";
 const qqPattern = /^[1-9]\d{0,18}$/u;
@@ -45,6 +51,10 @@ function invalid(): never {
   throw new Error(`${subject}格式无效。`);
 }
 
+function verifyIdentity({ qq, uid, region }: Identity) {
+  if (!qqPattern.test(qq) || !uidPattern.test(uid) || region !== expectedRegion(uid)) invalid();
+}
+
 function checkedBoss(value: unknown): BossCount {
   const item = object(value);
   const name = item?.name;
@@ -60,18 +70,30 @@ function decode(value: unknown, qq: string, uid: string): Observation | undefine
   const data = object(value);
   const region = expectedRegion(uid);
   if (data?.version !== 1 || data.qq !== qq || data.uid !== uid || data.region !== region ||
-      !validTime(data.observedAt) || !Array.isArray(data.bosses) || data.bosses.length > maxBosses) invalid();
-  return { version: 1, qq, uid, region, observedAt: data.observedAt, bosses: data.bosses.map(checkedBoss) };
+      !Array.isArray(data.bosses) || data.bosses.length > maxBosses) invalid();
+  const bosses = data.bosses.map(checkedBoss);
+  const base = { version: 1 as const, qq, uid, region, bosses };
+  if (data.origin === "legacy") {
+    const digest = digestOf(bosses);
+    if (data.observedAt !== undefined || data.digest !== digest) invalid();
+    return { ...base, origin: "legacy", digest };
+  }
+  if (data.origin !== undefined || !validTime(data.observedAt)) invalid();
+  return { ...base, observedAt: data.observedAt };
 }
 
 function compareIds(a: string, b: string): number {
   return a.length - b.length || (a === b ? 0 : a < b ? -1 : 1);
 }
 
-function summarize(snapshot: GenshinWorldBossSnapshot): BossCount[] {
+function digestOf(bosses: readonly BossCount[]): string {
+  return createHash("sha256").update(JSON.stringify(bosses)).digest("hex");
+}
+
+function summarize(groups: readonly { readonly bosses: readonly BossCount[] }[]): BossCount[] {
   const bosses = new Map<string, BossCount>();
   let count = 0;
-  for (const group of snapshot.groups) {
+  for (const group of groups) {
     count += group.bosses.length;
     if (count > maxBosses) invalid();
     for (const row of group.bosses) {
@@ -81,6 +103,14 @@ function summarize(snapshot: GenshinWorldBossSnapshot): BossCount[] {
     }
   }
   return [...bosses.values()];
+}
+
+function newer(value: Observation, previous: Observation): boolean {
+  if (value.origin !== previous.origin) return value.origin !== "legacy";
+  if (value.origin !== "legacy" && previous.origin !== "legacy" && value.observedAt !== previous.observedAt) {
+    return value.observedAt > previous.observedAt;
+  }
+  return compareIds(value.qq, previous.qq) < 0;
 }
 
 async function entries(directory: string) {
@@ -97,15 +127,39 @@ export function createGenshinWorldBossRanking(directory: string, acquireLock: Ac
   return {
     async record(identity: Identity, snapshot: GenshinWorldBossSnapshot, observedAt: number, verifyProfile: () => Promise<void>): Promise<boolean> {
       const { qq, uid, region } = identity;
-      if (!qqPattern.test(qq) || !uidPattern.test(uid) || region !== expectedRegion(uid) || snapshot.uid !== uid ||
-          snapshot.region !== region || !validTime(observedAt)) invalid();
+      verifyIdentity(identity);
+      if (snapshot.uid !== uid || snapshot.region !== region || !validTime(observedAt)) invalid();
       if (snapshot.status === "unavailable") return false;
       if (snapshot.status !== "available") invalid();
-      const document: Observation = { version: 1, qq, uid, region, observedAt, bosses: summarize(snapshot) };
+      const document: Observation = { version: 1, qq, uid, region, observedAt, bosses: summarize(snapshot.groups) };
       return files.update(identity, verifyProfile, (saved) => {
         const previous = decode(saved, qq, uid);
-        if (previous && previous.observedAt >= observedAt) return { result: false };
+        if (previous && previous.origin !== "legacy" && previous.observedAt >= observedAt) return { result: false };
         return { document, result: true };
+      });
+    },
+
+    async importLegacy(identity: Identity, rows: readonly BossCount[], apply: boolean, verifyProfile: () => Promise<void>): Promise<ImportResult> {
+      verifyIdentity(identity);
+      const { qq, uid, region } = identity;
+      const bosses = summarize([{ bosses: rows }]);
+      const digest = digestOf(bosses);
+      const classify = (saved: unknown) => {
+        const previous = decode(saved, qq, uid);
+        if (!previous) return "ready";
+        if (previous.origin !== "legacy") return "protected";
+        return previous.digest === digest ? "unchanged" : "conflict";
+      };
+      if (!apply) {
+        await verifyProfile();
+        const result = classify(await files.read(qq, uid));
+        await verifyProfile();
+        return result;
+      }
+      const document: Observation = { version: 1, qq, uid, region, origin: "legacy", digest, bosses };
+      return files.update<ImportResult>(identity, verifyProfile, (saved) => {
+        const result = classify(saved);
+        return result === "ready" ? { document, result: "imported" } : { result };
       });
     },
 
@@ -120,10 +174,7 @@ export function createGenshinWorldBossRanking(directory: string, acquireLock: Ac
           const value = decode(await files.read(qq, uid), qq, uid);
           if (!value) continue;
           const previous = latest.get(uid);
-          if (!previous || value.observedAt > previous.observedAt ||
-              (value.observedAt === previous.observedAt && compareIds(qq, previous.qq) < 0)) {
-            latest.set(uid, value);
-          }
+          if (!previous || newer(value, previous)) latest.set(uid, value);
         }
       }
 
