@@ -60,6 +60,15 @@
         "skia-canvas": "3.0.8",
       },
     },
+    "plugins/genshin": {
+      "name": "@lotus-yunzai/genshin",
+      "dependencies": {
+        "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/hoyo-client": "workspace:*",
+        "@lotus-yunzai/skia": "workspace:*",
+        "@lotus-yunzai/storage": "workspace:*",
+      },
+    },
     "plugins/group": {
       "name": "@lotus-yunzai/group",
       "dependencies": {
@@ -129,6 +138,8 @@
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
 
     "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
+
+    "@lotus-yunzai/genshin": ["@lotus-yunzai/genshin@workspace:plugins/genshin"],
 
     "@lotus-yunzai/group": ["@lotus-yunzai/group@workspace:plugins/group"],
 

@@ -5,6 +5,7 @@ export const builtInDirectories: ReadonlyMap<string, string> = new Map([
   ["@lotus-yunzai/atlas", "atlas"],
   ["@lotus-yunzai/meme", "meme"],
   ["@lotus-yunzai/notice", "notice"],
+  ["@lotus-yunzai/genshin", "genshin"],
   ["@lotus-yunzai/starrail", "starrail"],
   ["@lotus-yunzai/zzz", "zzz"],
   ["@lotus-yunzai/group", "group"],

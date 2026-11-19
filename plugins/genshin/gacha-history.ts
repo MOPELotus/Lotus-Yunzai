@@ -1,6 +1,6 @@
-import { genshinGachaPools, type GenshinGachaPool, type readGenshinGacha } from "../../packages/hoyo-client/genshin-gacha.ts";
+import { genshinGachaPools, type GenshinGachaPool, type GenshinGachaSnapshot } from "@lotus-yunzai/hoyo-client";
 
-export type GenshinGachaSnapshot = Awaited<ReturnType<typeof readGenshinGacha>>;
+export type { GenshinGachaSnapshot };
 export type GenshinPreviousGacha = Readonly<Partial<Record<GenshinGachaPool, unknown>>>;
 
 export interface GenshinSavedGachaRow extends Readonly<Record<string, unknown>> {

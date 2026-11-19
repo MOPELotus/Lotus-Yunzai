@@ -7,9 +7,10 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { createCredentialExchange };
 export { HoyoRequestError };
-export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaRow } from "./genshin-gacha.ts";
+export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
+export type GenshinGachaSnapshot = Awaited<ReturnType<typeof readGenshinGacha>>;
 
 const gameBiz: Record<Game, string> = {
   gs: "hk4e_cn",
