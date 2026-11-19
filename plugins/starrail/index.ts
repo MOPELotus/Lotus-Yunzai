@@ -6,14 +6,18 @@ import { renderStarRailGachaDetail } from "./gacha-detail-card.ts";
 import { readStarRailGachaItems, starRailGachaThemeDirectory } from "./gacha-detail-source.ts";
 import { renderStarRailGachaFailure, renderStarRailGachaResult } from "./gacha-result-card.ts";
 import { readStarRailGachaSchedule, resolveStarRailDetailPool } from "./gacha-schedule.ts";
+import { buildStarRailGachaSpecial, type StarRailGachaSpecialOptions } from "./gacha-special.ts";
+import { renderStarRailGachaSpecial } from "./gacha-special-card.ts";
 import { createStarRailGachaHistoryStore } from "./gacha-store.ts";
 import { createStarRailGachaSync } from "./gacha-sync.ts";
 import { buildStarRailGachaVersion, type StarRailGachaVersionOptions } from "./gacha-version.ts";
 import { renderStarRailGachaVersion } from "./gacha-version-card.ts";
 
 const updateCommand = /^#星铁更新抽卡记录([1-9]\d{0,2})?$/u;
+const helpCommand = /^#星铁(?:抽卡|记录)帮助$/u;
 const poolCommand = /^#星铁(?:喵喵)?(全部)?(抽卡|抽奖|角色|光锥|武器|常驻|up)池?(全部)?(记录|祈愿|分析|统计)([1-9]\d{0,2})?$/u;
 const versionCommand = /^#星铁(?:喵喵)?(版本|全部)(全部)?统计([1-9]\d{0,2})?$/u;
+const specialCommand = /^#星铁(?:喵喵)?(?:(全部)?(角色联动|光锥联动|武器联动|新手)池?(全部)?(记录|祈愿|分析|统计)|全部(?:记录|祈愿|分析))([1-9]\d{0,2})?$/u;
 const detailPools = new Map<string, StarRailGachaDetailPool>([
   ["光锥", "GachaType_EquipmentUp"], ["武器", "GachaType_EquipmentUp"], ["常驻", "GachaType_Standard"],
 ]);
@@ -21,11 +25,33 @@ type VersionPool = NonNullable<StarRailGachaVersionOptions["type"]>;
 const versionPools = new Map<string, VersionPool>([
   ["角色", "char"], ["光锥", "weapon"], ["武器", "weapon"], ["常驻", "normal"], ["全部", "all"],
 ]);
+type SpecialPool = StarRailGachaSpecialOptions["pool"];
+const specialPools = new Map<string, SpecialPool>([
+  ["角色联动", "GachaType_CollabAvatarUp"], ["光锥联动", "GachaType_CollabEquipmentUp"],
+  ["武器联动", "GachaType_CollabEquipmentUp"], ["新手", "GachaType_Newbie"],
+]);
 const historyRoot = fileURLToPath(new URL("../../data/starRailGachaJson/", import.meta.url));
+const help = [
+  "星铁抽卡记录",
+  "#登录列表 可查看档案，#同步角色 可同步星铁角色。",
+  "*更新抽卡记录 可更新官方范围内的记录。",
+  "*抽卡记录、*光锥记录、*常驻记录、*新手记录、*角色联动记录、*光锥联动记录 可查看指定卡池。",
+  "*全部记录 可查看各池，*版本统计 可按活动卡池期次查看。",
+  "末尾加档案编号可选档案，如 *抽卡记录2。单池可加「全部」查看各页，如 *角色全部记录2。",
+].join("\n");
 
-type GachaView = { readonly detail: StarRailGachaDetailPool } | { readonly version: VersionPool };
+type GachaView = { readonly detail: StarRailGachaDetailPool } | { readonly version: VersionPool }
+  | { readonly special: SpecialPool; readonly statistics: boolean };
 
 function matchGachaQuery(message: string): { profileId: number; view: GachaView; all: boolean } | undefined {
+  const special = specialCommand.exec(message);
+  if (special) {
+    return {
+      profileId: Number(special[5] ?? 1),
+      view: { special: specialPools.get(special[2] ?? "") ?? "all", statistics: special[4] === "统计" },
+      all: !special[2] || !!(special[1] || special[3]),
+    };
+  }
   const version = versionCommand.exec(message);
   if (version && !(version[1] === "全部" && version[2])) {
     return { profileId: Number(version[3] ?? 1), view: { version: versionPools.get(version[1]!) ?? "up" }, all: !!version[2] };
@@ -55,6 +81,7 @@ export function createModule({ signal, lockFile }: {
   const active = new Set<string>();
 
   async function query(qq: string, { profileId, view, all }: NonNullable<ReturnType<typeof matchGachaQuery>>) {
+    if ("special" in view && view.statistics) return "联动池和新手池请使用对应的记录指令。";
     try {
       const { uid, nickname } = await profiles.savedRole(qq, profileId, "sr");
       const snapshot = await history.read(qq, uid);
@@ -63,7 +90,7 @@ export function createModule({ signal, lockFile }: {
       }
       const themeDirectory = starRailGachaThemeDirectory();
       const [resolveItem, schedule] = await Promise.all([
-        readStarRailGachaItems(themeDirectory), readStarRailGachaSchedule(themeDirectory),
+        readStarRailGachaItems(themeDirectory), "special" in view ? [] : readStarRailGachaSchedule(themeDirectory),
       ]);
       const options = {
         uid, history: snapshot, face: { name: nickname || "旅行者" }, now: new Date(), resolveItem,
@@ -73,6 +100,10 @@ export function createModule({ signal, lockFile }: {
         if ("detail" in view) {
           const model = buildStarRailGachaDetail({ ...options, pool: view.detail, resolvePool, page });
           return model && { kind: "detail" as const, model };
+        }
+        if ("special" in view) {
+          const model = buildStarRailGachaSpecial({ ...options, pool: view.special, page });
+          return model && { kind: "special" as const, model };
         }
         const model = buildStarRailGachaVersion({ ...options, type: view.version, schedule, page });
         return model && { kind: "version" as const, model };
@@ -86,17 +117,19 @@ export function createModule({ signal, lockFile }: {
           if (signal.aborted) return;
           const result = page === 1 ? first : buildPage(page);
           if (!result) throw new Error("星铁抽卡记录缺少分页。");
-          const { png } = result.kind === "detail" ? await renderStarRailGachaDetail(result.model, { themeDirectory })
-            : await renderStarRailGachaVersion(result.model, { themeDirectory });
+          const render = result.kind === "special" ? renderStarRailGachaSpecial(result.model, { themeDirectory })
+            : result.kind === "detail" ? renderStarRailGachaDetail(result.model, { themeDirectory })
+            : renderStarRailGachaVersion(result.model, { themeDirectory });
+          const { png } = await render;
           pages.push({ type: "image" as const, file: png });
         }
         if (signal.aborted) return;
         const role = await profiles.savedRole(qq, profileId, "sr").catch(() => undefined);
         if (role?.uid !== uid) return "星铁档案角色已变化，请重新查询。";
         if (pages.length === 1) return pages[0];
-        const title = first.kind === "detail"
-          ? `${first.model.poolName}池抽卡记录，共${first.model.gacha.stat.fiveNum}条五星`
-          : `${first.model.poolName}统计，共${first.model.pageInfo!.count}期卡池`;
+        const title = first.kind === "version" ? `${first.model.poolName}统计，共${first.model.pageInfo!.count}期卡池`
+          : first.kind === "detail" ? `${first.model.poolName}池抽卡记录，共${first.model.gacha.stat.fiveNum}条五星`
+          : `${first.model.poolName === "全部" ? "全部卡池" : `${first.model.poolName}池`}抽卡记录，共${first.model.fiveNum}条五星`;
         return { type: "forward" as const, nodes: [`UID:${uid} ${title}，分${pages.length}张图`, ...pages] };
       } catch {
         if (!signal.aborted) return "星铁抽卡记录已读取，原版详情图暂时无法生成。";
@@ -114,6 +147,7 @@ export function createModule({ signal, lockFile }: {
   return {
     commands: {},
     async fallback(_message: string, context: GachaContext) {
+      if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
       const view = matched ? undefined : matchGachaQuery(context.normalizedMessage);
       if (!matched && !view) return;

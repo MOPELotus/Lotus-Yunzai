@@ -281,7 +281,7 @@ function paintLuck(ctx: Context, luck: Luck, tips: readonly string[], y: number,
 
 function paintNotice(ctx: Context, y: number) {
   const assets = [
-    ["*抽卡帮助", gold], ["获取抽卡链接，", "rgba(255,255,255,.90)"],
+    ["*抽卡帮助", gold], ["查看用法，", "rgba(255,255,255,.90)"],
     ["*更新抽卡记录", gold], ["更新抽卡信息，", "rgba(255,255,255,.90)"],
     ["*抽卡统计", gold], ["*角色统计", gold], ["可查看按卡池分析结果", "rgba(255,255,255,.90)"],
   ] as const;
