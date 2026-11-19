@@ -239,11 +239,12 @@ export async function renderProfileCard(model: ProfileCardModel,
       layout.text(index + 1, 19, y + 23, 18, 14, "#3a2702", { center: true });
       layout.rect(42, y, panelWidth - 43, 64, "#f0ece4", 33);
       if (row.banner) layout.image(await images.get(row.banner), 42, y, panelWidth - 43, 64, 33);
-      if (row.image) {
+      const avatar = row.image ? await images.get(row.image) : undefined;
+      if (avatar) {
         layout.rect(46, y + 4, 56, 56, white, 30);
-        layout.image(await images.get(row.image), 48, y + 6, 52, 52, 30);
+        layout.image(avatar, 48, y + 6, 52, 52, 30);
       }
-      const indent = row.image ? 104 : 48;
+      const indent = avatar ? 104 : 48;
       layout.text(row.uid || row.name, 10 + indent, y + 9, panelWidth - indent - 22, row.uid ? 24 : 16, ink,
         { font: row.uid ? theme.number : theme.text, leading: 21 });
       if (row.uid) {

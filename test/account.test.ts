@@ -25,7 +25,7 @@ account:
   cookie: fixture-cookie-one
   stoken: fixture-token-one
   game_roles:
-    gs: [{ game_uid: "800001", region: cn_gf01 }, { uid: "800002", is_chosen: true }]
+    gs: [{ game_uid: "800001", region: cn_gf01, game_head_icon: "https://upload-bbs.mihoyo.com/legacy-role.png?temporary=discard" }, { uid: "800002", is_chosen: true, avatar_url: "https://unknown.invalid/role.png" }]
   current_uid: { gs: "800001" }
 device: { id: fixture-device-one, fp: fixture-fp-one, name: "Device FIXTURE-FP-ONE", model: "Fixture Model", bound: true }
 `);
@@ -59,6 +59,7 @@ device:
       id: 1, hasCookie: true, hasStoken: true, passport: "已绑定",
       device: { hasFingerprint: true, name: "Fixture Model" }, activeRoles: { gs: "800001" },
     });
+    expect(view.roles.gs.map(({ avatar }) => avatar)).toEqual(["https://upload-bbs.mihoyo.com/legacy-role.png", undefined]);
     for (const secret of ["fixture-cookie-one", "fixture-token-one", "fixture-device-one", "fixture-fp-one", "400001"]) {
       expect(JSON.stringify(view)).not.toContain(secret);
     }

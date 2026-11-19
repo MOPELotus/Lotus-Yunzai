@@ -4,7 +4,9 @@ import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DeviceBinding } from "./device-binding.ts";
+import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
+export { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 
 export const profileGames = ["gs", "sr", "zzz"] as const;
 export type Game = typeof profileGames[number];
@@ -47,6 +49,7 @@ export interface GameRole {
   readonly nickname: string;
   readonly regionName?: string;
   readonly level?: string | number;
+  readonly avatar?: string;
 }
 
 export function normalizeGameRoles(value: unknown): GameRole[] {
@@ -56,11 +59,13 @@ export function normalizeGameRoles(value: unknown): GameRole[] {
     const raw = record(item);
     const uid = accountId(raw.uid) || accountId(raw.game_uid) || accountId(item);
     if (uid && !roles.has(uid)) {
+      const avatar = normalizeProfileRoleArtworkUrl(raw.game_head_icon) ?? normalizeProfileRoleArtworkUrl(raw.avatar_url);
       roles.set(uid, {
         uid, region: text(raw.region), gameBiz: text(raw.game_biz),
         chosen: raw.is_chosen === true, nickname: text(raw.nickname),
         ...(text(raw.region_name) ? { regionName: text(raw.region_name) } : {}),
         ...(text(raw.level) ? { level: raw.level as string | number } : {}),
+        ...(avatar ? { avatar } : {}),
       });
     }
   }
@@ -194,11 +199,17 @@ function rolesForStorage(roles: GameRoles, previous: { roles: Record<string, unk
   const selected = { ...previous.selected };
   for (const game of profileGames) {
     const list = roles[game];
-    catalog[game] = list.map((role) => ({
-      uid: role.uid, game_uid: role.uid, game_biz: role.gameBiz, region: role.region,
-      region_name: role.regionName ?? role.region, nickname: role.nickname, level: role.level ?? "",
-      is_chosen: role.chosen,
-    }));
+    const earlier = new Map(normalizeGameRoles(previous.roles[game]).map((role) => [role.uid, role]));
+    catalog[game] = list.map((role) => {
+      const existing = earlier.get(role.uid);
+      const avatar = role.avatar ?? (existing?.region === role.region ? existing.avatar : undefined);
+      return {
+        uid: role.uid, game_uid: role.uid, game_biz: role.gameBiz, region: role.region,
+        region_name: role.regionName ?? role.region, nickname: role.nickname, level: role.level ?? "",
+        is_chosen: role.chosen,
+        ...(avatar ? { game_head_icon: avatar } : {}),
+      };
+    });
     selected[game] = list.find((role) => role.uid === accountId(selected[game]))?.uid
       ?? list.find((role) => role.chosen)?.uid ?? list[0]?.uid ?? "";
   }

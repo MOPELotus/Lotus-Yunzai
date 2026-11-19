@@ -119,6 +119,7 @@ export function accountCommands(
         label: roleLabels[game],
         rows: profile.roles[game].map((role) => ({
           uid: role.uid, name: role.nickname || role.regionName, level: role.level, active: role.uid === profile.activeRoles[game],
+          avatar: role.avatar,
         })),
       }));
       const account = [
@@ -136,8 +137,13 @@ export function accountCommands(
       ];
       try {
         const { renderProfileCard } = await import("@lotus-yunzai/skia/profile");
+        const { loadProfileRoleArtwork } = await import("./profile-role-artwork.ts");
+        const artwork = await loadProfileRoleArtwork(roleGroups.flatMap(({ rows }) => rows.map(({ avatar }) => avatar)));
         const { png } = await renderProfileCard({
-          title, subtitle, summary, account, roleGroups, settings, warnings,
+          title, subtitle, summary, account, settings, warnings,
+          roleGroups: roleGroups.map(({ label, rows }) => ({
+            label, rows: rows.map(({ avatar, ...row }) => ({ ...row, ...(avatar ? { image: artwork.get(avatar) } : {}) })),
+          })),
           generatedAt: new Date().toLocaleString("sv-SE", { hour12: false }),
         }, { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined });
         if (png.byteLength) return segment.image(png);
