@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./daily-note": "./daily-note-card.ts",
     "./genshin-gacha-special": "./genshin-gacha-special-card.ts",
     "./miao-gacha-detail": "./miao-gacha-detail-card.ts",
     "./miao-gacha-version": "./miao-gacha-version-card.ts",
