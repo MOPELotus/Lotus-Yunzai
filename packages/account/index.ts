@@ -65,6 +65,10 @@ function configuredCnCheckins(cn: Record<string, unknown>) {
 
 function configuredCommunityForums(community: Record<string, unknown>): string[] {
   if (community.enable !== true || record(community.tasks ?? community).checkin !== true) return [];
+  return selectedCommunityForums(community);
+}
+
+function selectedCommunityForums(community: Record<string, unknown>): string[] {
   if (community.checkin_list === undefined) return [...defaultCommunityForums];
   if (!Array.isArray(community.checkin_list)) return [];
   const allowed = new Set<string>(defaultCommunityForums);
@@ -117,6 +121,12 @@ interface WebCheckinPreferences {
   readonly notify: boolean;
   readonly community: boolean;
   readonly games: Readonly<Record<WebCheckinGame, boolean>>;
+  readonly forums: readonly number[];
+  readonly cloud: Readonly<Record<"genshin" | "zzz", boolean>>;
+}
+
+function cloudCredentialPresent(settings: Record<string, unknown>) {
+  return typeof settings.token === "string" && settings.token.trim().length > 0;
 }
 
 function invalidCheckinSettings(): never {
@@ -797,10 +807,16 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const cn = record(record(document.games).cn);
       const configured = configuredCnCheckins({ ...cn, enable: true });
       const community = record(document.mihoyobbs);
+      const cloud = record(record(document.cloud_games).cn);
+      const genshin = record(cloud.genshin);
+      const zzz = record(cloud.zzz);
       return {
         enabled: state.summary.enabled,
         notify: profileNotifications(record(document.profile).notify).enabled,
         community: community.enable === true && record(community.tasks ?? community).checkin === true,
+        forums: selectedCommunityForums(community).map(Number),
+        cloud: { genshin: genshin.enable === true, zzz: zzz.enable === true },
+        cloudBound: { genshin: cloudCredentialPresent(genshin), zzz: cloudCredentialPresent(zzz) },
         games: Object.fromEntries(webCheckinGames.map(key => [key, configured[key]?.enabled === true])) as Record<WebCheckinGame, boolean>,
         cnEnabled: cn.enable !== false,
         loggedIn: state.summary.loggedIn, revision,
@@ -809,6 +825,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async setWebCheckinSettings(qq: string, id: number, expectedRevision: string, patch: WebCheckinPreferences,
       signal?: AbortSignal, verify?: () => Promise<void>) {
       if (typeof patch.enabled !== "boolean" || typeof patch.notify !== "boolean" || typeof patch.community !== "boolean") invalidCheckinSettings();
+      if (!Array.isArray(patch.forums) || new Set(patch.forums).size !== patch.forums.length ||
+          patch.forums.some(id => typeof id !== "number" || !defaultCommunityForums.some(allowed => Number(allowed) === id)) ||
+          typeof patch.cloud?.genshin !== "boolean" || typeof patch.cloud?.zzz !== "boolean") invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         const raw = record(record(document.games).cn);
@@ -820,6 +839,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const community = record(document.mihoyobbs);
         const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
         if (patch.community !== communityEnabled) updated = applyCheckinSettings(updated, { type: "community", enabled: patch.community });
+        const previousForums = selectedCommunityForums(community).map(Number);
+        if (patch.forums.length !== previousForums.length || patch.forums.some(id => !previousForums.includes(id))) {
+          const keep = previousForums.filter(id => patch.forums.includes(id));
+          const added = patch.forums.filter(id => !previousForums.includes(id));
+          updated = { ...updated, mihoyobbs: { ...record(updated.mihoyobbs), checkin_list: [...keep, ...added] } };
+        }
+        const cloud = record(record(document.cloud_games).cn);
+        for (const game of ["genshin", "zzz"] as const) {
+          const previous = record(cloud[game]);
+          const enabled = patch.cloud[game];
+          if (enabled === (previous.enable === true)) continue;
+          if (enabled && !cloudCredentialPresent(previous)) {
+            throw new ProfileError("invalid", "请先在聊天中绑定对应云游戏账号。");
+          }
+          updated = updateCloudGame(updated, game, { enable: enabled });
+        }
         for (const [key, enabled] of Object.entries(patch.games)) {
           if (!webCheckinGames.some(game => game === key) || typeof enabled !== "boolean") invalidCheckinSettings();
           const entry = Object.entries(cnCheckinGame).find(([, name]) => name === key);

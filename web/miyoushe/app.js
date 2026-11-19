@@ -96,6 +96,15 @@ function renderPreviewSettings(data) {
 }
 
 const checkinSwitches = ["enabled", "notify", "community"];
+const checkinCloudGames = { genshin: "云原神", zzz: "云绝区零" };
+
+function checkedFlags(fieldset) {
+  return Object.fromEntries(Array.from(get(fieldset).querySelectorAll("input"), input => [input.value, input.checked]));
+}
+
+function sameFlags(patch, saved) {
+  return Object.entries(patch).every(([key, value]) => saved[key] === value);
+}
 
 function checkinPatch() {
   return {
@@ -103,28 +112,39 @@ function checkinPatch() {
     enabled: get("checkin-enabled").checked,
     notify: get("checkin-notify").checked,
     community: get("checkin-community").checked,
-    games: Object.fromEntries(Array.from(get("checkin-games").querySelectorAll("input"), input => [input.value, input.checked])),
+    games: checkedFlags("checkin-games"),
+    forums: Array.from(get("checkin-forums").querySelectorAll("input:checked"), input => Number(input.value)),
+    cloud: checkedFlags("checkin-cloud"),
   };
 }
 
 function checkinSettingsButtons() {
   const loaded = checkin.data;
   const pending = Boolean(checkin.active);
-  get("checkin-games").disabled = !loaded || pending;
-  get("checkin-switches").disabled = !loaded || pending;
+  for (const field of ["checkin-games", "checkin-switches", "checkin-forums", "checkin-cloud"]) {
+    get(field).disabled = !loaded || pending;
+  }
   get("checkin-enabled").disabled = !loaded || (loaded.canEnable === false && !loaded.enabled);
+  for (const game of Object.keys(checkinCloudGames)) {
+    get("checkin-cloud-" + game).disabled = !loaded || (!loaded.cloudBound[game] && !loaded.cloud[game]);
+  }
   const patch = checkinPatch();
   get("checkin-settings-save").disabled = !loaded || pending ||
-    (checkinSwitches.every(key => patch[key] === loaded[key]) && Object.entries(patch.games).every(([key, value]) => loaded.games[key] === value));
+    (checkinSwitches.every(key => patch[key] === loaded[key]) && sameFlags(patch.games, loaded.games) &&
+      sameFlags(patch.cloud, loaded.cloud) && patch.forums.length === loaded.forums.length && patch.forums.every(id => loaded.forums.includes(id)));
   get("checkin-settings-form").setAttribute("aria-busy", String(pending));
 }
 
 function renderCheckinSettings(data) {
   for (const key of checkinSwitches) get("checkin-" + key).checked = data[key];
   for (const input of get("checkin-games").querySelectorAll("input")) input.checked = data.games[input.value] === true;
+  for (const input of get("checkin-forums").querySelectorAll("input")) input.checked = data.forums.includes(Number(input.value));
+  for (const game of Object.keys(checkinCloudGames)) get("checkin-cloud-" + game).checked = data.cloud[game];
   const messages = [];
   if (data.cnEnabled === false) messages.push("当前档案的国服签到总开关已关闭，各游戏的选择仍会保留。");
   if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动签到的权限。");
+  const unbound = Object.entries(checkinCloudGames).filter(([game]) => !data.cloudBound[game]).map(([, label]) => label);
+  if (unbound.length) messages.push(`${unbound.join("、")}需先在聊天中绑定账户，才能执行钱包签到。`);
   return messages.join(" ");
 }
 

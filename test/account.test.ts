@@ -563,24 +563,31 @@ test("网页签到一次保存现有开关，保留主人排期、通知群及�
       games: { cn: { enable: false, genshin: { checkin: false, black_list: ["81"] }, hna: { checkin: true } },
         os: { enable: true, cookie: "test-os" } },
       mihoyobbs: { enable: false, tasks: { checkin: false, read: true, like: true }, checkin_list: [1, 6] },
+      cloud_games: { cn: { genshin: { enable: false, token: "test-cloud" }, zzz: { enable: true } }, extra: "保留" },
     };
     await writeFile(file, Bun.YAML.stringify(original));
     const profiles = createProfileStore(root);
     const current = await profiles.webCheckinSettings("42", 2);
-    expect(current).toMatchObject({ enabled: false, notify: true, community: false, cnEnabled: false, games: {
+    expect(current).toMatchObject({ enabled: false, notify: true, community: false, cnEnabled: false,
+      forums: [1, 6], cloud: { genshin: false, zzz: true }, cloudBound: { genshin: true, zzz: false }, games: {
       genshin: false, honkai_sr: true, zzz: true, honkai2: false, honkai3rd: false, tears_of_themis: false,
     } });
-    const patch = { enabled: true, notify: false, community: true, games: { ...current.games, genshin: true } };
+    const patch = { enabled: true, notify: false, community: true, games: { ...current.games, genshin: true },
+      forums: [6, 8], cloud: { genshin: true, zzz: false } };
     const saved = await profiles.setWebCheckinSettings("42", 2, current.revision, patch);
     expect(await profiles.webCheckinSettings("42", 2)).toMatchObject({ ...patch, revision: saved.revision, cnEnabled: false });
     expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({
       ...original, enabled: true,
       profile: { ...original.profile, notify: { ...original.profile.notify, enable: false } },
       games: { ...original.games, cn: { ...original.games.cn, genshin: { checkin: true, black_list: ["81"] } } },
-      mihoyobbs: { ...original.mihoyobbs, enable: true, tasks: { ...original.mihoyobbs.tasks, checkin: true } },
+      mihoyobbs: { ...original.mihoyobbs, enable: true, checkin_list: [6, 8], tasks: { ...original.mihoyobbs.tasks, checkin: true } },
+      cloud_games: { ...original.cloud_games, cn: { genshin: { enable: true, token: "test-cloud" }, zzz: { enable: false } } },
     });
     const unchanged = await readFile(file);
     await expect(profiles.setWebCheckinSettings("42", 2, current.revision, patch)).rejects.toMatchObject({ code: "changed" });
+    await expect(profiles.setWebCheckinSettings("42", 2, saved.revision, {
+      ...patch, forums: [2], cloud: { genshin: false, zzz: true },
+    })).rejects.toMatchObject({ code: "invalid" });
     expect(await readFile(file)).toEqual(unchanged);
     expect((await profiles.checkinSettings("42", 2)).games.genshin?.enabled).toBe(false);
   } finally {

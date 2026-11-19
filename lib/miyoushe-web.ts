@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
+import { bbsCheckinForums } from "@lotus-yunzai/hoyo-client";
 import { MiyousheExchangeError } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import type { CommandModule } from "./commands.ts";
 import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overview.ts";
@@ -43,6 +44,7 @@ export class MiyousheSettingsError extends Error {
 export class MiyoushePreviewSettingsError extends MiyousheSettingsError {}
 
 export const miyousheCheckinGames = ["genshin", "honkai_sr", "zzz", "honkai3rd", "honkai2", "tears_of_themis"] as const;
+const cloudCheckinGames = ["genshin", "zzz"] as const;
 export type MiyousheCheckinGame = typeof miyousheCheckinGames[number];
 export interface MiyousheCheckinSettingsPatch {
   readonly revision: string;
@@ -50,14 +52,26 @@ export interface MiyousheCheckinSettingsPatch {
   readonly notify: boolean;
   readonly community: boolean;
   readonly games: Readonly<Record<MiyousheCheckinGame, boolean>>;
+  readonly forums: readonly number[];
+  readonly cloud: Readonly<Record<typeof cloudCheckinGames[number], boolean>>;
 }
 export interface MiyousheCheckinSettings extends MiyousheCheckinSettingsPatch {
   readonly canEnable?: boolean;
   readonly cnEnabled?: boolean;
+  readonly cloudBound?: MiyousheCheckinSettingsPatch["cloud"];
 }
 
 function validRevision(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+
+function flagMap<Key extends string>(value: unknown, keys: readonly Key[]): value is Readonly<Record<Key, boolean>> {
+  return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === keys.length &&
+    keys.every(key => Object.hasOwn(value, key) && typeof (value as Record<string, unknown>)[key] === "boolean");
+}
+
+function supportedForum(forum: unknown): forum is number {
+  return typeof forum === "number" && Number.isSafeInteger(forum) && Object.hasOwn(bbsCheckinForums, forum);
 }
 
 function previewSettingsPatch(input: unknown): MiyoushePreviewSettingsPatch | undefined {
@@ -72,12 +86,12 @@ function previewSettingsPatch(input: unknown): MiyoushePreviewSettingsPatch | un
 
 function checkinSettingsPatch(input: unknown): MiyousheCheckinSettingsPatch | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return;
-  const { revision, enabled, notify, community, games } = input as Record<string, unknown>;
-  if (Object.keys(input).length !== 5 || !validRevision(revision) || typeof enabled !== "boolean" ||
-    typeof notify !== "boolean" || typeof community !== "boolean" || !games || typeof games !== "object" || Array.isArray(games) ||
-    Object.keys(games).length !== miyousheCheckinGames.length ||
-    miyousheCheckinGames.some(game => !Object.hasOwn(games, game) || typeof (games as Record<string, unknown>)[game] !== "boolean")) return;
-  return { revision, enabled, notify, community, games: games as MiyousheCheckinSettingsPatch["games"] };
+  const { revision, enabled, notify, community, games, forums, cloud } = input as Record<string, unknown>;
+  if (Object.keys(input).length !== 7 || !validRevision(revision) || typeof enabled !== "boolean" ||
+    typeof notify !== "boolean" || typeof community !== "boolean" || !flagMap(games, miyousheCheckinGames) ||
+    !flagMap(cloud, cloudCheckinGames) || !Array.isArray(forums) || forums.length > Object.keys(bbsCheckinForums).length ||
+    !forums.every(supportedForum) || new Set(forums).size !== forums.length) return;
+  return { revision, enabled, notify, community, games, forums, cloud };
 }
 
 interface ProfileSettings<Patch, Settings> {
@@ -310,6 +324,9 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         return await serveSettings(checkinSettings, checkinSettingsPatch, settings => ({
           enabled: settings.enabled, notify: settings.notify, community: settings.community, revision: settings.revision,
           games: Object.fromEntries(miyousheCheckinGames.map(game => [game, settings.games[game]])),
+          forums: [...new Set(settings.forums.filter(supportedForum))],
+          cloud: Object.fromEntries(cloudCheckinGames.map(game => [game, settings.cloud[game] === true])),
+          cloudBound: Object.fromEntries(cloudCheckinGames.map(game => [game, settings.cloudBound?.[game] === true])),
           canEnable: settings.canEnable !== false, cnEnabled: settings.cnEnabled !== false,
         }));
       }

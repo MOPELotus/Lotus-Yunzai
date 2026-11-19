@@ -8,13 +8,15 @@ const origin = new URL("https://miyoushe.example.org/");
 const currentRevision = "a".repeat(64);
 const nextRevision = "b".repeat(64);
 const games = { genshin: true, honkai_sr: true, zzz: false, honkai3rd: false, honkai2: false, tears_of_themis: false };
-const initial = { revision: currentRevision, enabled: false, notify: true, community: false, games } satisfies MiyousheCheckinSettings;
+const initial = { revision: currentRevision, enabled: false, notify: true, community: false, games,
+  forums: [2, 6, 8], cloud: { genshin: false, zzz: true } } satisfies MiyousheCheckinSettings;
 
 test("签到设置同档读写和权限，保留各独立开关并拒绝非受支持的字段", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-miyoushe-checkin-"));
   const active = new AbortController().signal;
   const data = new Map<number, MiyousheCheckinSettings>([
-    [1, { ...initial, canEnable: false, cnEnabled: false }], [2, { ...initial, canEnable: true }],
+    [1, { ...initial, canEnable: false, cnEnabled: false }],
+    [2, { ...initial, canEnable: true, cloudBound: { genshin: true, zzz: false } }],
   ]);
   let changeLogin = false;
   let writing = 0;
@@ -28,13 +30,18 @@ test("签到设置同档读写和权限，保留各独立开关并拒绝非受�
         expect(qq).toBe("42");
         await verifyLogin();
         return { ...data.get(profileId)!, unrelated: "secret fixture",
-          games: { ...data.get(profileId)!.games, hna: true } };
+          games: { ...data.get(profileId)!.games, hna: true },
+          cloud: { ...data.get(profileId)!.cloud, token: "fixture cloud token" },
+          forums: [...data.get(profileId)!.forums, 7] };
       },
       async save({ qq, profileId }, patch, _signal, verifyLogin) {
         expect(qq).toBe("42");
         const previous = data.get(profileId)!;
         if (!previous.enabled && patch.enabled && !previous.canEnable) throw new MiyousheSettingsError(403, "当前无权开启签到。");
         if (previous.revision !== patch.revision) throw new MiyousheSettingsError(409, "已变化。");
+        for (const game of ["genshin", "zzz"] as const) if (patch.cloud[game] && !previous.cloud[game] && !previous.cloudBound?.[game]) {
+          throw new MiyousheSettingsError(409, "请先在聊天中绑定。");
+        }
         if (patch.games.tears_of_themis) changeLogin = true;
         await verifyLogin();
         writing++;
@@ -68,24 +75,29 @@ test("签到设置同档读写和权限，保留各独立开关并拒绝非受�
     expect((await request(""))?.status).toBe(401);
     const one = await ticket(1), two = await ticket(2);
     expect(await (await request(two, undefined, { part: "overview" }))?.json()).toMatchObject({ checkinSettingsAvailable: true });
-    expect(await (await request(one))?.json()).toEqual({ ...initial, canEnable: false, cnEnabled: false });
+    expect(await (await request(one))?.json()).toEqual({ ...initial, canEnable: false, cnEnabled: false, cloudBound: { genshin: false, zzz: false } });
     expect((await request(two, undefined, { site: "same-site" }))?.status).toBe(403);
     expect((await request(two, undefined, { part: "checkin-settings?profile=1" }))?.status).toBe(404);
     expect((await request(one, { ...initial, enabled: true }))?.status).toBe(403);
+    expect((await request(one, { ...initial, cloud: { genshin: true, zzz: false } }))?.status).toBe(409);
     expect((await request(two, { ...initial, enabled: true }, { from: "https://other.example.org" }))?.status).toBe(403);
     for (const patch of [{ ...initial, time: "04:30" }, { ...initial, profileId: 1 }, { ...initial, cnEnabled: true },
       { ...initial, games: { ...games, hna: true } }, { ...initial, games: { ...games, honkai_sr: "false" } },
-      { ...initial, community: { like: true } }]) {
+      { ...initial, community: { like: true } }, { ...initial, forums: [7] }, { ...initial, forums: ["2"] },
+      { ...initial, forums: [2, 2] }, { ...initial, cloud: { genshin: false, zzz: "true" } },
+      { ...initial, cloud: { ...initial.cloud, token: "injection" } }, { ...initial, cloudBound: { genshin: true, zzz: true } }]) {
       expect((await request(two, patch))?.status).toBe(400);
     }
     expect(writing).toBe(0);
-    const saved = { ...initial, enabled: true, notify: false, community: true, games: { ...games, honkai2: true } };
+    const saved = { ...initial, enabled: true, notify: false, community: true, games: { ...games, honkai2: true },
+      forums: [1, 3, 4, 5, 9, 10], cloud: { genshin: true, zzz: false } };
     expect(await (await request(two, saved))?.json()).toMatchObject({ ...saved, revision: nextRevision });
     expect(data.get(1)).toMatchObject({ cnEnabled: false, enabled: false, community: false });
     expect((await request(two, saved))?.status).toBe(409);
     expect((await request(two, { ...saved, revision: nextRevision, games: { ...saved.games, tears_of_themis: true } }))?.status).toBe(401);
     expect((await request(two))?.status).toBe(401);
     expect(data.get(2)?.games.tears_of_themis).toBe(false);
+    expect(data.get(2)?.cloud).toEqual({ genshin: true, zzz: false });
     expect(writing).toBe(1);
   } finally {
     web.close();

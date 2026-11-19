@@ -1154,7 +1154,9 @@ if (import.meta.main) {
             try {
               saved = await checkinProfiles.setWebCheckinSettings(qq, profileId, patch.revision, patch, signal, verifyLogin);
             } catch (error) {
-              if (!(error instanceof ProfileError) || error.code !== "changed") throw error;
+              if (!(error instanceof ProfileError)) throw error;
+              if (error.code === "invalid") throw new MiyousheSettingsError(400, error.message);
+              if (error.code !== "changed") throw error;
               await verifyLogin();
               throw conflict();
             }
