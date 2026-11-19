@@ -102,8 +102,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const cloudDeviceId = crypto.randomUUID();
 
   async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"],
-    notes: readonly string[], { points, cloud }: { readonly points?: string; readonly cloud?: string } = {}) {
+    notes: readonly string[], { points, cloud, textOnly }: { readonly points?: string; readonly cloud?: string;
+      readonly textOnly?: boolean } = {}) {
     const extras = [points, cloud].filter(Boolean).join("\n");
+    const text = () => [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
+      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(extras ? [extras] : [])].join("\n");
+    if (textOnly) return text();
     try {
       const detail: CheckinReceiptCardModel["detail"] = notes.length
         ? { title: "失败", message: [notes.join("\n").slice(0, 180), cloud].filter(Boolean).join("\n") }
@@ -114,8 +118,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     } catch {
       // The result is still available via the same rows if the old render resources are missing.
     }
-    return [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
-      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(extras ? [extras] : [])].join("\n");
+    return text();
   }
 
   async function submit(source: CnGameCheckinSource, verifyCurrent: () => Promise<void>,
@@ -151,6 +154,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly source: CheckinAuditEntry["source"];
     readonly signal: AbortSignal;
     readonly notify?: (message: string) => unknown;
+    readonly verifySession?: () => Promise<void>;
+    readonly textOnly?: boolean;
     readonly verifyDay?: () => void;
     readonly communityWrites?: CheckinScheduledRunContext["communityWrites"];
     readonly communityRetryForums?: readonly string[];
@@ -174,6 +179,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     let settings: Settings;
     let knownRevision: string | undefined;
     try {
+      await input.verifySession?.();
+      signal.throwIfAborted();
       settings = await profiles.checkinSettings(qq, profileId);
       knownRevision = settings.revision;
       if (input.source !== "manual" && !settings.enabled) return { status: "busy" };
@@ -201,6 +208,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       async function verifyCurrent() {
         verifyDay();
+        await input.verifySession?.();
         const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
         verifyDay();
         if (current?.revision !== revision) throw new ProfileError("changed", changed);
@@ -344,7 +352,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         } catch {
           await verifyCurrent();
           await auditResult("refresh", false);
-          const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"]);
+          const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"],
+            { textOnly: input.textOnly });
           await verifyCurrent();
           return completedRun("refresh", false, reply, revision);
         }
@@ -495,7 +504,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const ok = !otherFailure && !retry;
       await auditResult("checkin", ok);
       await verifyCurrent();
-      const reply = await receipt(settings, profileId, rows, notes, { points, cloud });
+      const reply = await receipt(settings, profileId, rows, notes, { points, cloud, textOnly: input.textOnly });
       await verifyCurrent();
       return completedRun("checkin", ok, reply, revision, retry);
     } catch (error) {
@@ -529,6 +538,19 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
 
   return {
     ...commands,
+    async runWeb(qq: string, profileId: number, { signal, verifySession, notify }: {
+      readonly signal: AbortSignal; readonly verifySession: () => Promise<void>;
+      readonly notify?: (message: string) => unknown;
+    }) {
+      const result = await runProfile(qq, profileId, {
+        source: "manual", signal: AbortSignal.any([lifecycleSignal, signal]), verifySession, notify, textOnly: true,
+      });
+      return {
+        status: result.status === "busy" ? "busy" as const : result.ok ? "completed" as const : "failed" as const,
+        ...(typeof result.reply === "string" && { message: result.reply }),
+        ...(result.status === "complete" && { revision: result.revision }),
+      };
+    },
     async runScheduled(qq: string, profileId: number, context: CheckinScheduledRunContext): Promise<CheckinRun> {
       const signal = AbortSignal.any([lifecycleSignal, context.signal]);
       return runProfile(qq, profileId, {

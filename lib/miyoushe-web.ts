@@ -14,6 +14,9 @@ import { readPanelJson } from "./panel.ts";
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
 const command = /^#(米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
 const sessionName = "lotus_miyoushe";
+const checkinJobRetention = 10 * 60_000;
+const checkinJobLifetime = 12 * 60_000;
+const maxCheckinJobs = 256;
 
 export function isMiyousheWebCommand(message: string) { return command.test(message); }
 const headers = {
@@ -63,6 +66,20 @@ export interface MiyousheCheckinSettings extends MiyousheCheckinSettingsPatch {
   readonly cnEnabled?: boolean;
   readonly cloudBound?: MiyousheCheckinSettingsPatch["cloud"];
   readonly osBound?: boolean;
+}
+export interface MiyousheManualCheckinResult {
+  readonly status: "completed" | "failed" | "busy";
+  readonly message?: string;
+  readonly revision?: string;
+}
+
+interface ManualCheckinJob {
+  readonly session: string;
+  readonly cancel: AbortController;
+  status: "running" | MiyousheManualCheckinResult["status"];
+  revision: string;
+  updatedAt: number;
+  message?: string;
 }
 
 function validRevision(value: unknown): value is string {
@@ -117,6 +134,10 @@ interface Options {
     Promise<readonly { id: string; label: string }[]>;
   readonly previewSettings?: ProfileSettings<MiyoushePreviewSettingsPatch, MiyoushePreviewSettings>;
   readonly checkinSettings?: ProfileSettings<MiyousheCheckinSettingsPatch, MiyousheCheckinSettings>;
+  readonly manualCheckin?: {
+    readonly revision: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyLogin: VerifyLogin) => Promise<string>;
+    readonly run: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyLogin: VerifyLogin) => Promise<MiyousheManualCheckinResult>;
+  };
   readonly path?: string;
   readonly ticketMinutes?: number;
   readonly sessionHours?: number;
@@ -151,7 +172,8 @@ export function miyousheWebSettings(raw: unknown) {
 }
 
 export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
-  previewSettings, checkinSettings, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours, now = Date.now }: Options) {
+  previewSettings, checkinSettings, manualCheckin, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours,
+  now = Date.now }: Options) {
   const mount = normalizedPath(path) ?? "/miyoushe";
   const prefix = `${mount}/`;
   const ticketMinutes = typeof configuredTicketMinutes === "number" && Number.isSafeInteger(configuredTicketMinutes) &&
@@ -160,6 +182,23 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     Number.isSafeInteger(now() + configuredSessionHours * 3_600_000) ? configuredSessionHours : 8;
   const ticketMs = ticketMinutes * 60_000;
   const sessionMs = sessionHours * 3_600_000;
+  const jobs = new Map<string, ManualCheckinJob>();
+  const stopJobs = new AbortController();
+  const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
+
+  function pruneJobs() {
+    const stale = now() - checkinJobRetention;
+    for (const [key, job] of jobs) if (job.status !== "running" && job.updatedAt < stale) jobs.delete(key);
+  }
+
+  function publicJob(job: ManualCheckinJob, includeMessage: boolean) {
+    return { status: job.status, updatedAt: job.updatedAt, ...(includeMessage && job.message && { message: job.message }) };
+  }
+
+  function abortSessionJobs(token: string) {
+    const session = digest(token);
+    for (const job of jobs.values()) if (job.session === session && job.status === "running") job.cancel.abort();
+  }
   function browserCookie(session: string, age: number, secure: boolean) {
     return `${sessionName}=${session}; Path=${prefix}; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(age)}${secure ? "; Secure" : ""}`;
   }
@@ -242,6 +281,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     const trackingAction = /^api\/trackers\/([a-f0-9]{12})\/(pause|resume)$/u.exec(part);
     const previewRoute = previewSettings && part === "api/preview-settings";
     const checkinRoute = checkinSettings && part === "api/checkin-settings";
+    const manualCheckinRoute = manualCheckin && part === "api/checkin-run";
     const settingsRoute = previewRoute || checkinRoute;
     const editingPlans = plans && (planAction || trackingAction ||
       ((part === "api/plans" || part === "api/trackers") && method !== "GET"));
@@ -253,10 +293,10 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         ? new Response(method === "HEAD" ? null : asset, { headers: { ...headers, "Content-Type": `${contentType}; charset=utf-8` } })
         : error(404);
     }
-    if (part === "api/claim" || part === "api/logout" || editingPlans || (settingsRoute && method !== "GET")) {
+    if (part === "api/claim" || part === "api/logout" || editingPlans || ((settingsRoute || manualCheckinRoute) && method !== "GET")) {
       if (method !== "POST") return error(405);
       if (request.headers.get("Origin") !== base.origin) return error(403);
-    } else if (part === "api/overview" || settingsRoute || (catalog && (part === "api/catalog" || goodsId)) ||
+    } else if (part === "api/overview" || settingsRoute || manualCheckinRoute || (catalog && (part === "api/catalog" || goodsId)) ||
       (plans && ["api/plans", "api/trackers", "api/tracking-targets"].includes(part))) {
       if (method !== "GET") return error(405);
       const fetchSite = request.headers.get("Sec-Fetch-Site");
@@ -288,25 +328,77 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
           return true;
         }).immediate();
         if (!swapped) return error(401);
+        if (currentToken) abortSessionJobs(currentToken);
         return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie(fresh, sessionMs / 1000, secure) } });
       }
       if (part === "api/logout") {
-        if (currentToken) remove(currentToken, "web");
+        if (currentToken) {
+          remove(currentToken, "web");
+          abortSessionJobs(currentToken);
+        }
         return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie("", 0, secure) } });
       }
       if (!currentToken) return error(401);
       const row = lookup(currentToken, "web");
       if (!row) return error(401);
-      async function verifyLogin() {
+      async function verifySession(active: AbortSignal) {
+        if (active.aborted) throw new ProfileError("changed", "网页会话已失效。");
         const identity = await loginIdentity(row!.qq, row!.profileId).catch(() => undefined);
-        if (deadline.aborted || !lookup(currentToken!, "web")) throw new ProfileError("changed", "网页会话已失效。");
+        if (active.aborted || !lookup(currentToken!, "web")) throw new ProfileError("changed", "网页会话已失效。");
         if (identity !== row!.account) {
           remove(currentToken!, "web");
+          abortSessionJobs(currentToken!);
           throw new ProfileError("changed", "网页会话对应的档案已换绑。");
         }
       }
+      const verifyLogin = () => verifySession(deadline);
       await verifyLogin();
       const target = { qq: row.qq, profileId: row.profileId };
+      if (manualCheckinRoute && manualCheckin) {
+        const key = JSON.stringify([row.qq, row.profileId, row.account]);
+        const session = digest(currentToken);
+        pruneJobs();
+        if (method === "GET") {
+          const job = jobs.get(key);
+          if (!job || job.session !== session) return Response.json({ status: "idle" }, { headers });
+          if (job.status === "running") return Response.json(publicJob(job, false), { headers });
+          const revision = await manualCheckin.revision(target, deadline, verifyLogin);
+          await verifyLogin();
+          return Response.json(job.revision === revision ? publicJob(job, true) : { status: "idle" }, { headers });
+        }
+        const body = await readPanelJson(request).catch(() => undefined);
+        if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) return error(400);
+        const revision = await manualCheckin.revision(target, deadline, verifyLogin);
+        await verifyLogin();
+        if (jobs.get(key)?.status === "running") {
+          return Response.json({ message: "当前档案的签到正在执行。" }, { status: 409, headers });
+        }
+        if (!jobs.has(key) && jobs.size >= maxCheckinJobs) {
+          const completed = Array.from(jobs).find(([, job]) => job.status !== "running");
+          if (!completed) return error(503);
+          jobs.delete(completed[0]);
+        }
+        const cancel = new AbortController();
+        const job: ManualCheckinJob = { session, cancel, status: "running", updatedAt: now(), revision };
+        jobs.set(key, job);
+        const task = AbortSignal.any([jobsSignal, cancel.signal, AbortSignal.timeout(checkinJobLifetime)]);
+        const verifyJob = () => verifySession(task);
+        void Promise.resolve().then(async () => {
+          await verifyJob();
+          if (await manualCheckin.revision(target, task, verifyJob) !== revision) {
+            throw new ProfileError("changed", "档案设置已变化。");
+          }
+          const result = await manualCheckin.run(target, task, verifyJob);
+          await verifyJob();
+          job.status = result.status;
+          if (validRevision(result.revision)) job.revision = result.revision;
+          job.message = result.message?.slice(0, 4000);
+        }).catch(() => {
+          job.status = "failed";
+          job.message = "本次签到未完成，请核对米游社状态。";
+        }).finally(() => { job.updatedAt = now(); });
+        return Response.json(publicJob(job, false), { headers, status: 202 });
+      }
       async function serveSettings<Patch, Settings>(source: ProfileSettings<Patch, Settings>,
         decode: (input: unknown) => Patch | undefined, publicSettings: (data: Settings) => object) {
         let settings: Settings;
@@ -381,6 +473,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       await verifyLogin();
       return Response.json({ ...view, ...(part === "api/overview" && {
         previewSettingsAvailable: Boolean(previewSettings), checkinSettingsAvailable: Boolean(checkinSettings),
+        manualCheckinAvailable: Boolean(manualCheckin),
       }),
         expiresAt: row.expiresAt }, { headers });
     } catch (failure) {
@@ -393,5 +486,5 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     }
   }
 
-  return { commands, handle, close() { db?.close(); db = undefined; } };
+  return { commands, handle, close() { stopJobs.abort(); jobs.clear(); db?.close(); db = undefined; } };
 }

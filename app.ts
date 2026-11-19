@@ -1168,6 +1168,9 @@ if (import.meta.main) {
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
+      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = { historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal };
     const publicPreview = new RedeemCodeService(previewOptions);
@@ -1295,6 +1298,31 @@ if (import.meta.main) {
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
         catalog, plans: shopPlans, previewSettings,
+        manualCheckin: {
+          async revision({ qq, profileId }, signal, verifyLogin) {
+            await verifyLogin();
+            const { revision } = await checkinProfiles.checkinSettings(qq, profileId);
+            signal.throwIfAborted();
+            return revision;
+          },
+          run({ qq, profileId }, signal, verifyLogin) {
+            const active = AbortSignal.any([signal, handoffSession.signal]);
+            return gameCheckin.runWeb(qq, profileId, {
+              signal: active, verifySession: verifyLogin,
+              async notify(reply) {
+                const result = await notifyCheckin({
+                  userId: Number(qq), settings: { enabled: true, prefer: "private", fallbackGroups: [] },
+                  reply, transports: subscriptionTransport(), signal: active,
+                  async verifySend() {
+                    await verifyLogin();
+                    return !active.aborted;
+                  },
+                });
+                return result.status === "confirmed" || result.status === "unknown";
+              },
+            });
+          },
+        },
         checkinSettings: {
           async read({ qq, profileId }, signal, verifyLogin) {
             await verifyLogin();
@@ -1343,14 +1371,11 @@ if (import.meta.main) {
       });
       commands.registerModule(miyousheWeb.commands);
     }
-    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile, transport: hoyoTransport }));
     commands.registerModule(cloudProfileCommands({
       signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
       saveToken: checkinProfiles.saveCloudToken,
     }));
-    const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
-      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
     commands.registerModule(gameCheckin);
     commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal));
     if (!probingUpdate) {

@@ -23,6 +23,7 @@ const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: nu
 const preview = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
 const checkin = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
 const profileEditors = [checkin, preview];
+const manualCheckin = { active: null, timer: undefined, status: "loading" };
 const trackers = { generation: 0, targets: null, loading: false };
 const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
@@ -64,8 +65,66 @@ function showLogin(message, help = false, retry = false) {
     get(editor.key + "-settings-form").reset();
     editor.buttons();
   }
+  clearTimeout(manualCheckin.timer);
+  manualCheckin.active?.abort();
+  manualCheckin.active = null;
+  manualCheckin.status = "loading";
+  get("manual-checkin").hidden = true;
+  get("manual-checkin-start").disabled = true;
+  get("manual-checkin-status").textContent = "";
+  get("manual-checkin-result").textContent = "";
+  get("manual-checkin-result").hidden = true;
   resetShop();
   switchTab("overview");
+}
+
+function showManualCheckin(status, message = "") {
+  const statusText = {
+    loading: "正在读取执行状态…", running: "正在执行签到。如需人工验证，请留意机器人私聊。",
+    completed: "本次签到已完成。", failed: "本次签到未完成。", busy: "该账号已有签到在执行，请稍后再试。",
+    idle: "", unknown: "暂时无法确认执行状态，请刷新后重试。",
+  };
+  manualCheckin.status = Object.hasOwn(statusText, status) ? status : "unknown";
+  get("manual-checkin-status").textContent = statusText[manualCheckin.status];
+  get("manual-checkin-start").disabled = !["idle", "completed", "failed", "busy"].includes(manualCheckin.status);
+  const result = get("manual-checkin-result");
+  result.textContent = message;
+  result.hidden = !message;
+}
+
+async function updateManualCheckin(start = false) {
+  if (get("manual-checkin").hidden || manualCheckin.active) return;
+  clearTimeout(manualCheckin.timer);
+  const active = manualCheckin.active = new AbortController();
+  const deadline = AbortSignal.any([active.signal, AbortSignal.timeout(20_000)]);
+  if (start) showManualCheckin("loading");
+  try {
+    const response = await request("api/checkin-run", start ? {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: deadline,
+    } : { signal: deadline });
+    if (active.signal.aborted) return;
+    if (response.status === 401) {
+      showLogin(`登录已失效。${loginHelp}`, true);
+      return;
+    }
+    if (response.status === 409 && start) {
+      showManualCheckin("running");
+      if (tab === "overview") manualCheckin.timer = setTimeout(() => void updateManualCheckin(), 2000);
+      return;
+    }
+    if (!response.ok) {
+      showManualCheckin("unknown", start ? await planFailure(response) : "");
+      return;
+    }
+    const { status, message } = await response.json();
+    if (active.signal.aborted) return;
+    showManualCheckin(status, typeof message === "string" ? message : "");
+    if (status === "running" && tab === "overview") manualCheckin.timer = setTimeout(() => void updateManualCheckin(), 2000);
+  } catch {
+    if (!active.signal.aborted) showManualCheckin("unknown");
+  } finally {
+    if (manualCheckin.active === active) manualCheckin.active = null;
+  }
 }
 
 function previewPatch() {
@@ -275,6 +334,7 @@ function showOverview(data) {
 
 function switchTab(next) {
   tab = next;
+  if (tab !== "overview") clearTimeout(manualCheckin.timer);
   for (const name of ["overview", "shop", "trackers", "plans"]) {
     get(name + "-view").hidden = name !== tab;
     get("tab-" + name).setAttribute("aria-pressed", String(name === tab));
@@ -943,6 +1003,8 @@ async function refresh() {
     showOverview(data);
     showNotice("");
     if (!get("dashboard").hidden) {
+      get("manual-checkin").hidden = data.manualCheckinAvailable !== true;
+      if (tab === "overview") void updateManualCheckin();
       for (const editor of profileEditors) {
         get(editor.key + "-settings").hidden = data[editor.key + "SettingsAvailable"] !== true;
         if (tab === "overview") void updateProfileSettings(editor);
@@ -981,7 +1043,11 @@ get("login-retry").addEventListener("click", refresh);
 get("logout").addEventListener("click", logout);
 get("tab-overview").addEventListener("click", () => {
   switchTab("overview");
+  void updateManualCheckin();
   for (const editor of profileEditors) if (!editor.data) void updateProfileSettings(editor);
+});
+get("manual-checkin-start").addEventListener("click", () => {
+  if (!get("manual-checkin-start").disabled) void updateManualCheckin(true);
 });
 for (const editor of profileEditors) {
   const form = get(editor.key + "-settings-form");

@@ -221,6 +221,8 @@ h1, h2, h3, p { margin: 0; }
 .settings-options input { width: 17px; height: 17px; accent-color: var(--accent); }
 .profile-settings [role="status"]:empty { display: none; }
 .profile-settings button { justify-self: start; }
+#manual-checkin-status { margin-top: 10px; }
+#manual-checkin-result { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .overview-section p + p { margin-top: 8px; }
 .rows { list-style: none; margin: 0; padding: 0; }
 .rows:empty { display: none; }
