@@ -208,8 +208,9 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
   const ctx = new Canvas(1, 1).getContext("2d");
   let bottom = 12;
   const sections = model.groups.flatMap(({ name, items }) => items.map((item) => {
-    const title = singleLine(ctx, `${name} · ${item.gameName || item.game || ""} · UID ${item.uid || "未同步"}`,
-      width - 42, numberFont, 16, 12);
+    const game = item.gameName || item.game;
+    const heading = game ? `${name} · ${game} · UID ${item.uid || "未同步"}` : name;
+    const title = singleLine(ctx, heading, width - 42, numberFont, 16, 12);
     const headingY = bottom;
     bottom += title.size * 1.5 + 9;
     const rows = makeRows(item).map((row) => {

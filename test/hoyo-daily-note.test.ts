@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import type { ProfileRequestContext } from "../packages/account/index.ts";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createProfileStore, type ProfileRequestContext } from "../packages/account/index.ts";
 import type { HoyoTransport } from "../packages/hoyo-client/credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote } from "../packages/hoyo-client/daily-note.ts";
 import { HoyoRequestError } from "../packages/hoyo-client/errors.ts";
+import { createHoyoClient } from "../packages/hoyo-client/index.ts";
 
 const source = {
   qq: "42", profileId: 2, game: "gs", revision: "synthetic-revision",
@@ -89,7 +93,7 @@ test("归一化三款已知值，包括零、无恢复时间、备用开拓力�
 test("海外、区服不明确、游戏不匹配及不安全 Cookie 都不会调用传输", async () => {
   const noSend: HoyoTransport = async () => { throw new Error("unexpected transport"); };
   for (const [context, changes] of [
-    [source, { region: "" }], [source, { region: "os_usa" }], [source, { uid: "623456789" }],
+    [source, { uid: "423456789", region: "" }], [source, { region: "os_usa" }], [source, { uid: "623456789" }],
     [source, { uid: "523456789" }], [source, { gameBiz: "hkrpg_cn" }],
     [starRail, { uid: "1823456789", region: "prod_official_asia" }],
     [zzz, { uid: "1300000002" }],
@@ -99,6 +103,19 @@ test("海外、区服不明确、游戏不匹配及不安全 Cookie 都不会调
   }
   await expect(readDailyNote({ ...source, account: { ...source.account, cookie: "ltoken=test\r\n" } }, noSend))
     .rejects.toMatchObject({ code: "invalid-input" });
+});
+
+test("旧档只保存国服 UID 时按已知 UID 区间恢复区服", async () => {
+  for (const context of [source, starRail, zzz]) {
+    const data = context.game === "gs" ? gsResponse : context.game === "sr"
+      ? { current_stamina: 10, max_stamina: 240 } : { energy: { current: 10, max: 240 } };
+    const response = await readDailyNote({ ...context, role: { ...context.role, region: "", gameBiz: "" } },
+      async (endpoint) => {
+        expect(endpoint.searchParams.get("server")).toBe(context.role.region);
+        return Response.json({ retcode: 0, data });
+      });
+    expect(response.region).toBe(context.role.region);
+  }
 });
 
 test("登录失效、风控与限频分开处理且上游正文不会进入错误提示", async () => {
@@ -150,4 +167,63 @@ test("档案换绑、取消、错误响应身份及过大数据都会丢弃结�
   }
   await expect(readDailyNote(source, async () => new Response("a".repeat(65 * 1024))))
     .rejects.toMatchObject({ code: "response" });
+});
+
+test("一个档案只续期一次，某角色重试失败后其余角色用已续期的同档凭据", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-daily-note-client-"));
+  const path = join(directory, "42-2.yaml");
+  const profile = `profile: { id: 2 }
+user: { qq: 42 }
+account:
+  cookie: ltoken=old
+  stoken: fixture-stoken
+  game_roles:
+    gs: [{ uid: '123456789', region: cn_gf01 }, { uid: '223456789', region: cn_gf01 }]
+    sr: [{ uid: '523456789', region: prod_qd_cn }]
+device: { id: fixture-device }
+`;
+  try {
+    await writeFile(path, profile);
+    const profiles = createProfileStore(directory);
+    const sources = await profiles.requestContexts("42", 2);
+    const calls: string[][] = [];
+    let exchanges = 0;
+    const client = createHoyoClient(async (endpoint, options) => {
+      const uid = endpoint.searchParams.get("role_id")!;
+      const cookie = new Headers(options.headers).get("cookie")!;
+      calls.push([uid, cookie]);
+      if (cookie === "ltoken=old" || uid === "223456789") return Response.json({ retcode: -100 });
+      if (uid === "123456789") return Response.json({ retcode: 1034 });
+      return Response.json({ retcode: 0, data: { current_stamina: 0, max_stamina: 300 } });
+    }, {
+      profiles,
+      async exchange(context) {
+        exchanges++;
+        expect(context.account.stoken).toBe("fixture-stoken");
+        expect(context.device.id).toBe("fixture-device");
+        return { cookie: "ltoken=renewed", ltoken: "renewed" };
+      },
+    });
+    await expect(client.fetchDailyNotes([sources[0]!, { ...sources[1]!, profileId: 3 }])).rejects.toMatchObject({ code: "invalid-input" });
+    expect(calls).toEqual([]);
+    expect(await client.fetchDailyNotes(sources)).toMatchObject([
+      { status: "rejected", reason: { reason: "risk" } },
+      { status: "rejected", reason: { reason: "expired" } },
+      { status: "fulfilled", value: { game: "sr", uid: "523456789", stamina: { current: 0, max: 300 } } },
+    ]);
+    expect(calls).toEqual([
+      ["123456789", "ltoken=old"], ["123456789", "ltoken=renewed"],
+      ["223456789", "ltoken=renewed"], ["523456789", "ltoken=renewed"],
+    ]);
+    expect(exchanges).toBe(1);
+
+    const latest = await profiles.requestContexts("42", 2);
+    const rebound = createHoyoClient(async () => {
+      await writeFile(path, profile.replace("fixture-stoken", "new-stoken"));
+      return Response.json({ retcode: 0, data: gsResponse });
+    }, { profiles, async exchange() { throw new Error("unexpected refresh"); } });
+    await expect(rebound.fetchDailyNotes(latest)).rejects.toMatchObject({ code: "profile-changed" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

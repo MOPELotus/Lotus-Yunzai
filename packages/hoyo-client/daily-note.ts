@@ -263,9 +263,12 @@ function apiError(payload: Json | undefined, status: number, retcode: number | u
 export async function readDailyNote(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: DailyNoteOptions = {}, verifyProfile?: () => Promise<void>): Promise<DailyNoteSnapshot> {
   const { game, role: { uid, gameBiz } } = source;
-  const region = source.role.region.trim();
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
-  if (!route?.uid.test(uid) || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
+  const legacyRegion = game === "gs" && !/^[125]\d{8}$/u.test(uid)
+    ? undefined
+    : route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
+  const region = source.role.region.trim() || legacyRegion;
+  if (!route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", "体力查询仅支持档案中已确认的国服游戏角色和区服。");
   }

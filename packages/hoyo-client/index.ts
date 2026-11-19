@@ -1,5 +1,6 @@
 import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
+import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
@@ -10,6 +11,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 export { createCredentialExchange };
 export { HoyoRequestError };
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
+export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
@@ -182,18 +184,23 @@ export function createHoyoClient(
     }
   }
 
+  async function ensureCurrentProfile(profile: ProfileAccountContext) {
+    if (!recovery) return;
+    const changed = new HoyoRequestError("profile-changed", "游戏档案已变更，请重新发起请求。");
+    const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
+    if (latest.revision !== profile.revision) throw changed;
+  }
+
   async function readForProfile<Options extends { readonly signal?: AbortSignal }, Data extends object>(
     source: ProfileRequestContext,
     options: Options,
     reader: (source: ProfileRequestContext, transport: HoyoTransport, options: Options, guard?: () => Promise<void>) => Promise<Data>,
     isExpired?: (error: unknown) => boolean,
+    onAttempt?: (profile: ProfileAccountContext) => void,
   ) {
     const { context, data } = await retrieve(source, async (profile) => {
-      const guard = recovery && (async () => {
-        const changed = new HoyoRequestError("profile-changed", "游戏档案已变更，请重新发起请求。");
-        const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
-        if (latest.revision !== profile.revision) throw changed;
-      });
+      onAttempt?.(profile);
+      const guard = recovery && (() => ensureCurrentProfile(profile));
       return reader({ ...source, ...profile }, transport, options, guard);
     }, options.signal, isExpired);
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
@@ -233,6 +240,35 @@ export function createHoyoClient(
     },
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
+    },
+    async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions = {}) {
+      const first = sources[0];
+      const results: PromiseSettledResult<DailyNoteSnapshot>[] = [];
+      if (!first) return results;
+      if (sources.some(({ qq, profileId, revision }) => qq !== first.qq || profileId !== first.profileId || revision !== first.revision)) {
+        throw new HoyoRequestError("invalid-input", "体力查询的角色来自不同档案快照。");
+      }
+      let current: ProfileAccountContext = first;
+      let refreshAttempted = false;
+      function canRefresh(error: unknown) {
+        if (refreshAttempted || !isDailyNoteCookieExpired(error)) return false;
+        refreshAttempted = true;
+        return true;
+      }
+      for (const { game, role } of sources) {
+        options.signal?.throwIfAborted();
+        try {
+          const value = await readForProfile({ ...current, game, role }, options, readDailyNote,
+            canRefresh, (attempt) => { current = attempt; });
+          results.push({ status: "fulfilled", value });
+        } catch (reason) {
+          options.signal?.throwIfAborted();
+          await ensureCurrentProfile(current);
+          results.push({ status: "rejected", reason });
+        }
+      }
+      await ensureCurrentProfile(current);
+      return results;
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
       return readForProfile(source, options, readGenshinGacha, isGenshinAuthExpired);

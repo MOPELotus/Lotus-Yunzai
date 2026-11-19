@@ -17,6 +17,7 @@ import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
+import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
@@ -639,6 +640,7 @@ if (import.meta.main) {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       return renderStatusCard(...args);
     }));
+    commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[Lotus-Plugin] Gacha Log");
