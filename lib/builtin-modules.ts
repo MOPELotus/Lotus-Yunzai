@@ -9,4 +9,7 @@ export const builtInDirectories: ReadonlyMap<string, string> = new Map([
   ["@lotus-yunzai/starrail", "starrail"],
   ["@lotus-yunzai/zzz", "zzz"],
   ["@lotus-yunzai/group", "group"],
+  ["@lotus-yunzai/execute", "execute"],
+  ["@lotus-yunzai/guides", "guides"],
+  ["@lotus-yunzai/media", "media"],
 ]);

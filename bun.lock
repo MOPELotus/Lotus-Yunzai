@@ -71,6 +71,9 @@
         "skia-canvas": "3.0.8",
       },
     },
+    "plugins/execute": {
+      "name": "@lotus-yunzai/execute",
+    },
     "plugins/genshin": {
       "name": "@lotus-yunzai/genshin",
       "dependencies": {
@@ -177,6 +180,8 @@
     "@lotus-yunzai/account": ["@lotus-yunzai/account@workspace:packages/account"],
 
     "@lotus-yunzai/atlas": ["@lotus-yunzai/atlas@workspace:plugins/atlas"],
+
+    "@lotus-yunzai/execute": ["@lotus-yunzai/execute@workspace:plugins/execute"],
 
     "@lotus-yunzai/gacha": ["@lotus-yunzai/gacha@workspace:packages/gacha"],
 

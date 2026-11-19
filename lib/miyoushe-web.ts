@@ -13,6 +13,8 @@ const sessionMs = 8 * 60 * 60_000;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
 const command = /^#(?:米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
 const sessionName = "lotus_miyoushe";
+
+export function isMiyousheWebCommand(message: string) { return command.test(message); }
 const headers = {
   "Cache-Control": "no-store",
   "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",

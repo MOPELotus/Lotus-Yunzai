@@ -1,5 +1,6 @@
 import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
+import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 
 export interface MusicCard {
   readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
@@ -39,6 +40,10 @@ export interface MessageEvent {
   readonly privateCredentialSignal?: AbortSignal;
   readonly isOwnerEnrollmentSession?: () => boolean;
   readonly canManageProcess?: boolean;
+  readonly [delegationSession]?: DelegationSession;
+  readonly canDelegate?: boolean;
+  readonly delegationSignal?: AbortSignal;
+  readonly isDelegated?: boolean;
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;

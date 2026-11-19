@@ -31,3 +31,6 @@
 [submodule "plugins/zzz"]
 	path = plugins/zzz
 	url = https://github.com/MOPELotus/Lotus-Yunzai-ZZZ.git
+[submodule "plugins/execute"]
+	path = plugins/execute
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Execute.git

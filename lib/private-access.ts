@@ -46,6 +46,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
       : legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
         zzzLinkEntry.test(event.msg) || zzzLinkedViewEntry.test(event.msg) || custom?.test(text);
     if (allowed) return false;
+    if (event.isDelegated) return true;
 
     const { user_id: userId, self_id: selfId } = event;
     if (!tip || userId === undefined || userId === selfId) return true;

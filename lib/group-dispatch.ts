@@ -107,7 +107,7 @@ export async function readGroupDispatch(root: URL) {
 
     const group = "group_id" in event ? id(event.group_id) : undefined;
     if (group && (blackGroup.has(group) || (whiteGroup.size && !whiteGroup.has(group)) || isBotMuted(event))) return false;
-    if (!groups || event.post_type !== "message" || event.message_type !== "group" || !group) return true;
+    if (!groups || event.post_type !== "message" || event.message_type !== "group" || !group || event.isDelegated) return true;
 
     const config = groupConfig(event);
     const now = performance.now();
@@ -137,7 +137,7 @@ export async function readGroupDispatch(root: URL) {
     const allowNew = !needsAddress || !!event.atBot || !!alias;
 
     const group = id(event.group_id);
-    if (allowNew && group) {
+    if (allowNew && group && !event.isDelegated) {
       const now = performance.now();
       const groupCD = cooldown(config.groupCD);
       const singleCD = cooldown(config.singleCD);

@@ -335,7 +335,7 @@ export class LegacyPlugins {
     })();
   }
 
-  async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+  async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
     const event = incoming.post_type === "message" ? legacyMessage(incoming) : incoming;
     const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {
@@ -355,7 +355,8 @@ export class LegacyPlugins {
         rule.reg.lastIndex = 0;
         if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
         if (!canRun(rule.permission, event)) {
-          event.reply("暂无权限执行此指令。");
+          if (event.post_type === "message" && event.isDelegated) onDenied?.();
+          else event.reply("暂无权限执行此指令。");
           return true;
         }
 

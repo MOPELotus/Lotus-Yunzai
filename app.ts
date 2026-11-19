@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { bbsCheckinForums, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
-import { accountCommands } from "./lib/account-commands.ts";
+import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -70,7 +70,8 @@ import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receip
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
-import { createMiyousheWeb } from "./lib/miyoushe-web.ts";
+import { createMiyousheWeb, isMiyousheWebCommand } from "./lib/miyoushe-web.ts";
+import { createCommandDelegation } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
@@ -114,6 +115,17 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const commandDelegation = createCommandDelegation({
+    signal: lifecycle.signal,
+    mayDelegate: event => event.adapter === "milky"
+      ? isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id
+      : event.boundAccount === true && event.self_id !== undefined && event.user_id !== undefined &&
+        masterPermissions.isMaster(event.self_id, event.user_id),
+    isMaster: (botId, userId) => masterPermissions.isMaster(botId, userId),
+    async run(event, handled) {
+      if (!stopping && handoff.accepting && groupDispatch.admit(event)) await dispatchMessage(event, handled);
+    },
+  });
   const gachaBatch = createGachaBatch({
     listIds: createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined).listIds,
     signal: lifecycle.signal,
@@ -505,9 +517,17 @@ if (import.meta.main) {
     }
   }
 
-  async function dispatchMessage(incoming: MessageEvent) {
+  async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
+        /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
+        /^#(?:开机|关机|关机模式|重启|停机|停止)(?:\s|$)/u.test(event.msg) ||
+        isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
+        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || zzzLinkEntry.test(event.msg) ||
+        /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
+        [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
+          isPassportLoginInput(value) || isDeviceBindingInput(value) || isZzzGachaLinkMessage(value)))) return;
     if (dispatchPower.paused) {
       if (allowNew && event.msg === "#开机" && allowed(["开机", "system", systemModuleName])) {
         await dispatchPower.handle(event);
@@ -585,9 +605,32 @@ if (import.meta.main) {
       }
       return;
     }
-    if (await legacy.dispatchContext(event, allowed)) return;
+    if (allowNew && commands.hasModule("@lotus-yunzai/execute")) {
+      const delegation = commandDelegation.authorize(event);
+      if (delegation) {
+        try {
+          const reply = await commands.dispatchFallback(delegation.event,
+            names => names[0] === "@lotus-yunzai/execute" && allowed(names),
+            userId => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
+          if (reply !== undefined) {
+            await sendCommandReply(event, reply);
+            return;
+          }
+        } finally {
+          delegation.close();
+        }
+      }
+    }
+    if (!event.isDelegated && await legacy.dispatchContext(event, allowed)) {
+      handled?.();
+      return;
+    }
     const useKeywords = allowed(keywordFeatureNames);
-    if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
+    if (!event.isDelegated && useKeywords && await keywords.continue(event)) {
+      handled?.();
+      return;
+    }
+    if (!allowNew) return;
 
     const command = normalizeGameCommand(event);
     if (isUpdateLogCommand(command.msg)) {
@@ -620,7 +663,11 @@ if (import.meta.main) {
     if (sendMedia) Object.defineProperty(command, "deliverMedia", {
       value: (file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia),
     });
-    if (await legacy.dispatch(command, allowed)) return;
+    let denied = false;
+    if (await legacy.dispatch(command, allowed, () => { denied = true; })) {
+      if (!denied) handled?.();
+      return;
+    }
 
     if (isInstallCommand(command.msg)) {
       if (allowed(installFeatureNames)) await installCommand(command);
@@ -642,7 +689,7 @@ if (import.meta.main) {
       await sendCommandReply(event, fallback);
       return;
     }
-    if (useKeywords) await keywords.dispatch(event);
+    if (useKeywords && await keywords.dispatch(event)) handled?.();
   }
 
   const interrupt = () => stop(130);
@@ -921,7 +968,7 @@ if (import.meta.main) {
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
-      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport,
+      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {

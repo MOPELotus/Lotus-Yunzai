@@ -273,6 +273,7 @@ export function createKeywords(
     const name = event.msg.trim();
     const group = sender.group ?? await recent(sender.actor);
     if (name === finishCommand) {
+      if (event.isDelegated) return false;
       await event.reply("目前没有正在添加的词条。");
       return true;
     }
@@ -280,6 +281,7 @@ export function createKeywords(
     if (!command) return group !== undefined && !!name && trigger(event, group, name);
 
     const [, global, action, suffix] = command;
+    if (event.isDelegated && action === "添加") return false;
     const argument = suffix?.trim() ?? "";
     const scope = global ? "global" : group;
     if (scope === undefined) {

@@ -1,4 +1,5 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
+import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -143,6 +144,27 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return roster;
   }
 
+  const delegation: DelegationSession = {
+    signal,
+    async groups() {
+      const result = await call.confirmed("get_group_list", { no_cache: true });
+      const groups = result.status === "confirmed" ? result.data.groups : undefined;
+      if (signal.aborted || !Array.isArray(groups)) return [];
+      return groups.flatMap(group => record(group) && positiveId(group.group_id) ? [group.group_id] : []);
+    },
+    async members(groupId) { return (await listGroupMembers(groupId) ?? []).map(({ id }) => id); },
+    isFriend: checkinNotify.isFriend,
+    botMute: groupMute.forMessage,
+    async memberRole(group_id, user_id) {
+      if (signal.aborted) return;
+      const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true });
+      const member = result.status === "confirmed" ? result.data.member : undefined;
+      if (signal.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
+      if (member.role === "member" || member.role === "admin" || member.role === "owner") return member.role;
+    },
+    send: ({ groupId, userId }, reply) => sendConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, reply),
+  };
+
   return { botId: account, checkinNotify, async send(target, reply) {
     return await sendConfirmed(target, reply) === "confirmed";
   }, receive(body) {
@@ -212,6 +234,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const groupId = message?.isGroup ? message.group_id : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
+      [delegationSession]: delegation,
       ...(positiveId(groupId) && { listCheckinGroupMembers: () => listGroupMembers(groupId) }),
       privateCredentialSignal: message.isPrivate ? signal : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,

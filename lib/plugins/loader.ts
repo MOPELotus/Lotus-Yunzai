@@ -6,6 +6,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep } from "nod
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
+import type { ExecuteService } from "../../plugins/execute/index.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { FileToUrl } from "../file-to-url.ts";
@@ -148,6 +149,7 @@ async function findEntry(directory: string, value: string): Promise<string> {
 interface PluginServices {
   readonly groups: GroupTransport;
   readonly subscriptionTransport?: () => readonly BotNotifications[];
+  readonly execute?: ExecuteService;
   readonly fileToUrl: FileToUrl;
   readonly lockFile: typeof lockFile;
   readonly signal: AbortSignal;

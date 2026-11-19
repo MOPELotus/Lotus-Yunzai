@@ -13,6 +13,13 @@ const checkinItems = [
   ["绝区零", "zzz", 8], ["因缘精灵", "hna", 9], ["星布谷地", "", 10],
 ] as const;
 const switchState = (enabled: boolean) => enabled ? "开启" : "关闭";
+const refreshAliases = ["自动签到", "c", "ck", "Cookie"];
+const clearVerbs = ["清除", "删除"];
+const clearNouns = ["登录", "扫码登录", "cookie", "Cookie"];
+const loginMutation = new RegExp(`^(?:#刷新(?:cookie|${refreshAliases.join("|")})|` +
+  `#(?:${clearVerbs.join("|")})(?:${clearNouns.join("|")}))(?:[1-9]\\d{0,2})?(?:\\s|$)`, "u");
+
+export function isAccountLoginMutation(command: string) { return loginMutation.test(command); }
 
 export function accountCommands(
   directory: string | undefined,
@@ -162,19 +169,18 @@ export function accountCommands(
     const suffix = id === 0 ? "" : String(id);
     const command = `#刷新cookie${suffix}`;
     if (id > 0) accountActions[command] = refresh(id);
-    aliases[`#刷新自动签到${suffix}`] = command;
     const syncCommand = `#同步角色${suffix}`;
     accountActions[syncCommand] = sync(id || 1);
     for (const alias of ["UID", "uid"]) aliases[`#同步${alias}${suffix}`] = syncCommand;
     const clearCommand = `#清除登录${suffix}`;
     accountActions[clearCommand] = clear(id || 1);
-    for (const verb of ["清除", "删除"]) {
-      for (const noun of ["登录", "扫码登录", "cookie", "Cookie"]) {
+    for (const verb of clearVerbs) {
+      for (const noun of clearNouns) {
         const alias = `#${verb}${noun}${suffix}`;
         if (alias !== clearCommand) aliases[alias] = clearCommand;
       }
     }
-    for (const alias of ["c", "ck", "Cookie"]) aliases[`#刷新${alias}${suffix}`] = command;
+    for (const alias of refreshAliases) aliases[`#刷新${alias}${suffix}`] = command;
     const cardCommand = `#配置${suffix}`;
     accountActions[cardCommand] = describe(id || 1);
     for (const prefix of ["", "原神", "星铁", "绝区零", "zzz", "ZZZ"]) aliases[`#${prefix}设备信息${suffix}`] = cardCommand;

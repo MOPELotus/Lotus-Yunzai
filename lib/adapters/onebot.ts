@@ -1,5 +1,6 @@
 import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
+import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
@@ -378,6 +379,19 @@ async function dispatchMessage(
     uploadFile: boundAccount && attachmentSession && display?.closed === false
       ? (file) => display.closed || attachmentSession.signal.aborted ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)
       : undefined,
+    [delegationSession]: boundAccount && attachmentSession && display?.closed === false ? {
+      signal: attachmentSession.signal,
+      groups: async () => (await calls.listGroups(send)).map(group => group.id),
+      members: async (id) => (await calls.listMemberDisplay(send, id, true)).map(member => member.id),
+      isFriend: (id) => calls.isFriend(send, id),
+      memberRole: (groupId, id) => calls.getGroupRole(send, groupId, id, true),
+      botMute: async (groupId) => mutes?.forMessage(groupId, selfId, () => calls.getGroupRole(send, groupId, selfId, true)),
+      async send({ groupId, userId }, reply) {
+        const message = encodeOneBotReply(reply);
+        if (display.closed || attachmentSession.signal.aborted || message === undefined) return "rejected";
+        return calls.sendConfirmed(send, groupId === undefined ? { user_id: userId } : { group_id: groupId }, message);
+      },
+    } : undefined,
     [sendSessionMedia]: boundAccount && attachmentSession && display?.closed === false ? async (url, name, type) => {
       if (display.closed || attachmentSession.signal.aborted) return "rejected";
       if (type === "file") return calls.uploadFileUri(send, target, url, name);
