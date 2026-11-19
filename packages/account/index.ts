@@ -716,7 +716,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         },
       };
     },
-    async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis") {
+    async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
       const setting = record(os[game]);

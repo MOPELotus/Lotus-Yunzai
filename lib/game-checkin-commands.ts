@@ -391,7 +391,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           zzz: client.openHoYoLabZzzCheckin,
           tears_of_themis: client.openHoYoLabNxxCheckin,
         } as const;
-        for (const game of ["genshin", "honkai_sr", "zzz", "tears_of_themis"] as const) {
+        for (const game of ["genshin", "honkai_sr", "zzz", "tears_of_themis", "honkai3rd"] as const) {
           const overseas = await profiles.internationalCheckin(qq, profileId, game);
           await verifyCurrent();
           if (overseas.revision !== revision) throw new ProfileError("changed", changed);
@@ -416,8 +416,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             const options = { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId };
             const blocked = new Set(overseas.blacklist);
             const results: GameCheckinResult[] = [];
-            if (game === "genshin") {
-              const remote = await client.openHoYoLabGenshinCheckin(overseas, options);
+            if (game === "genshin" || game === "honkai3rd") {
+              const openCheckin = game === "genshin" ? client.openHoYoLabGenshinCheckin : client.openHoYoLabBh3Checkin;
+              const remote = await openCheckin(overseas, options);
               if (remote.roles.length && !remote.roles.some(role => blocked.has(role.uid))) {
                 results.push(await runGameCheckinSequence({
                   signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),

@@ -14,11 +14,11 @@ const cookiePaths = {
 } as const;
 const activityPaths = {
   cookie: ["/event/sol"],
-  ltoken: ["/event/luna/hkrpg/os", "/event/luna/zzz/os", "/event/luna/nxx/os"],
+  ltoken: ["/event/luna/hkrpg/os", "/event/luna/zzz/os", "/event/luna/nxx/os", "/event/mani"],
 } as const;
 const roleGames = {
   cookie: ["hk4e_global"],
-  ltoken: ["hkrpg_global", "nap_global", "nxx_global"],
+  ltoken: ["hkrpg_global", "nap_global", "nxx_global", "bh3_global"],
 } as const;
 type Credential = keyof typeof cookiePaths;
 type Json = Record<string, unknown>;
