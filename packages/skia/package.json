@@ -6,6 +6,7 @@
     ".": "./index.ts",
     "./daily-note": "./daily-note-card.ts",
     "./genshin-gacha-special": "./genshin-gacha-special-card.ts",
+    "./genshin-world-boss": "./genshin-world-boss-card.ts",
     "./miao-gacha-detail": "./miao-gacha-detail-card.ts",
     "./miao-gacha-version": "./miao-gacha-version-card.ts",
     "./passport-qr": "./passport-qr-card.ts",
