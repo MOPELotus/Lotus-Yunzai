@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -180,6 +180,101 @@ test.skipIf(noGit)("已构建候选探测后可切换，失败可重试且旧仓
     expect((await readdir(join(active, "plugins"))).sort()).toEqual(["loose.js", "occupied", "rejected"]);
     expect(git(active, "symbolic-ref", "--short", "HEAD")).toBe("main");
     expect(git(result.previous, "for-each-ref", "--format=%(refname)", "refs/lotus-yunzai/update")).toBe("");
+  } finally {
+    await stage.release();
+    await ready.release();
+  }
+}), 15_000);
+
+test.skipIf(noGit)("内置插件转换为子模块时迁移未跟踪的配置、数据与资源，冲突拒绝切换，失败恢复原文件", () => fixture(async (temporary) => {
+  const host = await makeRepository(temporary, "gitlink-host", {
+    "package.json": JSON.stringify({ name: "gitlink-host", scripts: { typecheck: "bun -e 'void 0'" } }),
+    "scripts/bootstrap.ts": `
+      const update = Bun.spawn(["git", "submodule", "update", "--init", "--recursive", "--checkout"]);
+      if (await update.exited) process.exit(1);
+    `,
+    "plugins/genshin/.gitignore": "/config/local.yaml\n/data/\n/resources/old-theme\n",
+    "plugins/genshin/config/default.yaml": "original defaults",
+    "plugins/genshin/resources/committed.txt": "original resources",
+    "app.ts": `
+      const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"]).stdout.toString().trim();
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+        if (request.headers.get("Authorization") !== "Bearer " + Bun.env.LOTUS_HTTP_TOKEN) return new Response(null, { status: 401 });
+        return Response.json({ status: "ok", revision });
+      } });
+      console.log("HTTP 正在监听 " + server.url.origin + "/status");
+      process.once("SIGTERM", () => { void server.stop(true); });
+    `,
+  });
+  const notice = await makeRepository(temporary, "gitlink-notice", { ".gitignore": "/data/\n", "index.ts": "// original notice" });
+  const originalNotice = notice.publish("Fixture original notice");
+  function addSubmodule(name: string) {
+    git(host.writer, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+      pathToFileURL(join(temporary, `gitlink-${name}.git`)).href, `plugins/${name}`);
+  }
+  addSubmodule("notice");
+  const baseline = host.publish("Fixture host with inline genshin");
+  const active = join(temporary, "active");
+  host.checkout(active);
+  git(active, "-c", "protocol.file.allow=always", "submodule", "update", "--init");
+  const state = {
+    "plugins/genshin/config/local.yaml": "private fixture config",
+    "plugins/genshin/data/archive.json": "{}\n",
+    "plugins/genshin/.env.local": "PRIVATE_FIXTURE=yes\n",
+    "plugins/genshin/resources/custom.txt": "private resource",
+    "plugins/notice/data/local.json": "notice state",
+  };
+  await writeFiles(active, { ...state, "plugins/genshin/config/collision.yaml": "data in old worktree" });
+  await symlink("/synthetic-resource-mount", join(active, "plugins/genshin/resources/old-theme"), "dir");
+  await writeFile(join(notice.writer, "index.ts"), "// new notice");
+  const newNotice = notice.publish("Fixture updated notice");
+  git(join(host.writer, "plugins/notice"), "fetch", "-q", "origin");
+  git(join(host.writer, "plugins/notice"), "checkout", "-q", newNotice);
+  const genshin = await makeRepository(temporary, "gitlink-genshin", {
+    "config/default.yaml": "new defaults",
+    "config/collision.yaml": "new shipped config",
+    "resources/committed.txt": "new resources",
+    "index.ts": "// new genshin",
+  });
+  const newGenshin = genshin.publish("Fixture genshin submodule");
+  git(host.writer, "rm", "-qr", "plugins/genshin");
+  addSubmodule("genshin");
+  const candidate = host.publish("Fixture host with pinned modules");
+  const root = pathToFileURL(`${active}/`);
+  const directories = new Map();
+  // Force exercises archive verification for state held by an existing child Git index.
+  const ready = requireReady(await prepareUpdate(root, directories, undefined, undefined, true));
+  const stage = await stageUpdate(root, directories, ready, temporary);
+  async function checkState(directory: string) {
+    for (const [path, contents] of Object.entries(state)) {
+      expect(await readFile(join(directory, path), "utf8")).toBe(contents);
+    }
+    expect(await readlink(join(directory, "plugins/genshin/resources/old-theme"))).toBe("/synthetic-resource-mount");
+  }
+  try {
+    expect(await Bun.file(join(stage.directory, "plugins/genshin/config/local.yaml")).exists()).toBe(false);
+    await expect(stage.activate(async () => {
+      throw new Error("conflicting candidate must stay staged");
+    })).rejects.toThrow("候选目录已包含运行状态");
+    expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+    expect(await readFile(join(active, "plugins/genshin/config/collision.yaml"), "utf8")).toBe("data in old worktree");
+    await unlink(join(active, "plugins/genshin/config/collision.yaml"));
+    await expect(stage.activate(async (directory) => {
+      await checkState(directory);
+      expect(git(join(directory, "plugins/genshin"), "rev-parse", "HEAD")).toBe(newGenshin);
+      throw new Error("fixture live failure");
+    })).rejects.toThrow("fixture live failure");
+    expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+    expect(git(join(active, "plugins/notice"), "rev-parse", "HEAD")).toBe(originalNotice);
+    await checkState(active);
+    const result = await stage.activate(async (directory) => {
+      await checkState(directory);
+      expect(git(directory, "rev-parse", "HEAD")).toBe(candidate);
+      expect(git(join(directory, "plugins/genshin"), "rev-parse", "HEAD")).toBe(newGenshin);
+      expect(git(join(directory, "plugins/notice"), "rev-parse", "HEAD")).toBe(newNotice);
+      expect(await readFile(join(directory, "plugins/genshin/config/default.yaml"), "utf8")).toBe("new defaults");
+    });
+    expect(await readFile(join(result.previous, "plugins/genshin/config/default.yaml"), "utf8")).toBe("original defaults");
   } finally {
     await stage.release();
     await ready.release();

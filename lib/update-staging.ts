@@ -16,6 +16,8 @@ import type { ReadyBatchUpdate, ReadyUpdate } from "./update-preflight.ts";
 import { restoreUpdateTracking } from "./update-tracking.ts";
 
 const builtIns = new Set(builtInDirectories.values());
+const pluginStateDirectories = ["config", "data", "logs"];
+const builtInStateDirectories = [...pluginStateDirectories, "assets", "resources"];
 
 function within(parent: string, path: string): boolean {
   const subpath = relative(parent, path);
@@ -70,8 +72,8 @@ async function verifyArchiveState(host: string, source: string, state: readonly 
   if (!affected.length) return;
   const git = createLocalGit();
   const [head, index] = await Promise.all([
-    git?.(source, ["ls-tree", "-r", "-z", "--name-only", "HEAD"]),
-    git?.(source, ["ls-files", "--cached", "-z"]),
+    git?.(source, ["ls-tree", "-r", "-z", "HEAD"]),
+    git?.(source, ["ls-files", "--stage", "-z"]),
   ]);
   if (head === undefined || index === undefined) throw new Error("无法检查强制更新来源所跟踪的持久状态。");
   const paths = new Set(affected);
@@ -79,11 +81,21 @@ async function verifyArchiveState(host: string, source: string, state: readonly 
   for (const path of paths) {
     for (let parent = dirname(path); parent !== "."; parent = dirname(parent)) parents.add(parent);
   }
-  for (const tracked of [...head.split("\0"), ...index.split("\0")]) {
-    if (parents.has(tracked)) throw new Error("持久状态与强制更新来源的 Git 路径重叠。");
+  const childRepositories = new Set<string>();
+  for (const entry of [...head.split("\0"), ...index.split("\0")]) {
+    const tracked = entry.slice(entry.indexOf("\t") + 1);
+    if (parents.has(tracked)) {
+      if (!entry.startsWith("160000 ")) throw new Error("持久状态与强制更新来源的 Git 路径重叠。");
+      childRepositories.add(join(source, tracked));
+      continue;
+    }
     for (let path = tracked; path !== "." && path; path = dirname(path)) {
       if (paths.has(path)) throw new Error("持久状态与强制更新来源的 Git 路径重叠。");
     }
+  }
+  for (const child of childRepositories) {
+    if (!git || !await isGitCheckout(git, child)) throw new Error("无法检查子模块跟踪的持久状态。");
+    await verifyArchiveState(host, child, state);
   }
 }
 
@@ -149,9 +161,12 @@ function dotenvFile(name: string): boolean {
   return name === ".env" || name.startsWith(".env.");
 }
 
-async function pluginStatePaths(source: string, tracked: boolean): Promise<string[]> {
+async function pluginStatePaths(
+  source: string, tracked: boolean, stateDirectories = pluginStateDirectories,
+): Promise<string[]> {
+  if (await realpath(source) !== source) throw new Error("插件持久状态目录经过链接。");
   const paths = (await readdir(source)).filter((name) => dotenvFile(name) ||
-    (tracked && (name === "config" || name === "data" || name === "logs")));
+    (tracked && stateDirectories.includes(name)));
   if (!tracked || !paths.length) return paths.map((path) => `plugins/${basename(source)}/${path}`);
   const git = createLocalGit();
   const output = await git?.(source, ["ls-files", "-z", "--cached", "--", ...paths]);
@@ -243,6 +258,7 @@ export async function stageUpdate(
     await mkdir(pluginRoot, { recursive: true });
     if (await realpath(pluginRoot) !== pluginRoot) throw new Error("候选插件目录无效。");
     const [trackedActive, trackedCandidate] = await Promise.all([trackedPluginNames(host), trackedPluginNames(directory)]);
+    const retainedBuiltIns = [...builtIns].filter((name) => trackedActive.has(name) && trackedCandidate.has(name));
     const copies: { source: string; head: string; destination: string; stagedHead: string; target?: ReadyUpdate }[] = [];
     const localCopies: string[] = [];
     for (const [name, plugin] of directories) {
@@ -336,19 +352,29 @@ export async function stageUpdate(
     const owned = staging;
     let cleanup: Promise<void> | undefined;
     let activating = false;
+    async function collectPluginState() {
+      const state = await Promise.all([
+        ...retainedBuiltIns.map((name) => pluginStatePaths(join(host, "plugins", name), true, builtInStateDirectories)),
+        ...copies.filter(({ source }) => source !== installation?.plugin.source).map(({ source }) => pluginStatePaths(source, true)),
+        ...localCopies.map((source) => pluginStatePaths(source, false)),
+      ]);
+      return state.flat().sort();
+    }
     return {
       directory, revision: stagedHead,
       async activate(verify: (active: string) => Promise<void>, additionalStatePaths?: readonly string[]) {
         if (activating || cleanup) throw new Error("候选正在使用或已释放。");
         activating = true;
         try {
-          const state = (await Promise.all([
-            ...copies.filter(({ source }) => source !== installation?.plugin.source).map(({ source }) => pluginStatePaths(source, true)),
-            ...localCopies.map((source) => pluginStatePaths(source, false)),
-          ])).flat();
+          const state = await collectPluginState();
           await probeStagedUpdate(directory, stagedHead, state, signal);
           return await activateUpdate(host, directory, verify, [...state, ...unmanaged, ...(additionalStatePaths ?? [])], async (paths) => {
             await checkRevisions();
+            const activeState = await collectPluginState();
+            if (activeState.length !== state.length || activeState.some((path, index) => path !== state[index]) ||
+                state.some((path) => !paths.includes(path))) {
+              throw new Error("插件持久状态路径在检查期间已变更。");
+            }
             const activePaths = await unmanagedPluginPaths(host, managed);
             if (activePaths.length !== unmanaged.length || activePaths.some((path, index) => path !== unmanaged[index]) ||
                 unmanaged.some((path) => !paths.includes(path))) {
