@@ -86,6 +86,9 @@ test("首次取得的资源需验 HTTPS 来源、大小和摘要，原子保存�
       sha256: createHash("sha256").update(archive).digest("hex"),
     };
     const controller = new AbortController();
+    const staging = join(directory, "data/image-previews");
+    await mkdir(staging, { recursive: true });
+    await writeFile(join(staging, ".release-body.sqlite"), "停止前遗留的临时文件");
     const received: string[] = [];
     const request = (async (input: URL, init: RequestInit) => {
       expect(init.redirect).toBe("manual");
@@ -98,7 +101,7 @@ test("首次取得的资源需验 HTTPS 来源、大小和摘要，原子保存�
     expect(await prepareImagePreviewRelease(root, controller.signal, request, { ...asset, unpackedLimit: 128 })).toEqual([]);
     expect(await prepareImagePreviewRelease(root, controller.signal, request, { ...asset, url: "https://example.invalid/file" })).toEqual([]);
     expect(await loadImagePreviews(root)).toEqual([]);
-    expect(await readdir(join(directory, "data/image-previews"))).toEqual([".release.sqlite"]);
+    expect(await readdir(staging)).toEqual([".release.sqlite"]);
     expect(await prepareImagePreviewRelease(root, controller.signal, request, asset)).toEqual(["原始资料"]);
     expect(received).toEqual(Array.from({ length: 3 }, () => ["github.com", "release-assets.githubusercontent.com"]).flat());
     controller.abort();
@@ -106,7 +109,7 @@ test("首次取得的资源需验 HTTPS 来源、大小和摘要，原子保存�
     const published: (readonly string[])[] = [];
     await startImagePreviews(root, new AbortController().signal, lines => published.push(lines));
     expect(published).toEqual([["原始资料"]]);
-    expect((await readdir(join(directory, "data/image-previews"))).sort()).toEqual([".release.sqlite", "release-lines.json"]);
+    expect((await readdir(staging)).sort()).toEqual([".release.sqlite", "release-lines.json"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

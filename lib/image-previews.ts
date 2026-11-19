@@ -1,12 +1,11 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { link, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { link, mkdir, rm, writeFile } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
 import { lockFile } from "./file-lock.ts";
 
@@ -140,16 +139,16 @@ export async function prepareImagePreviewRelease(
 ): Promise<readonly string[]> {
   const target = new URL(releaseTargetPath, root);
   let lock: Awaited<ReturnType<typeof lockFile>> | undefined;
-  let temporary: string | undefined;
+  let database: URL | undefined;
   try {
     signal.throwIfAborted();
     const directory = new URL("./", target);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     lock = await lockFile(fileURLToPath(new URL(".release.sqlite", directory)), "图片预览资源", 0);
+    database = new URL(".release-body.sqlite", directory);
+    await rm(database, { force: true });
     const existing = await cachedLines(target);
     if (existing.length) return existing;
-    temporary = await mkdtemp(fileURLToPath(new URL(".release-", directory)));
-    const database = pathToFileURL(join(temporary, "source.sqlite"));
     const response = await requestRelease(new URL(release.url), signal, request);
     if (!response.body) return [];
     const length = response.headers.get("content-length");
@@ -170,7 +169,7 @@ export async function prepareImagePreviewRelease(
     // Image delivery still uses its original metadata while optional material is unavailable.
     return [];
   } finally {
-    if (temporary) await rm(temporary, { force: true, recursive: true }).catch(() => undefined);
+    if (database) await rm(database, { force: true }).catch(() => undefined);
     lock?.close();
   }
 }
