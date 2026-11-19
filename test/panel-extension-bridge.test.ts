@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
+import { extensionBridge } from "../lib/panel-extension-bridge.ts";
 import { panelExtensionRoutes } from "../lib/panel-extension-routes.ts";
 
 function sandboxedWindow() {
@@ -57,4 +58,31 @@ test("无接口的锅巴扩展也能使用隔离的临时存储，不开放表�
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("扩展脚本执行前恢复原 hash，并限量同步同一帧的数据", () => {
+  const frame = sandboxedWindow();
+  const data = JSON.stringify([["theme", "cool"]]);
+  const location = new URL("https://fixture.test/panel/extensions/theme/page.html?token=fixture");
+  const hash = "#tab=foo%20bar";
+  location.hash = "#lotus-frame:" + encodeURIComponent(JSON.stringify({ nonce: "fixture", hash, data }));
+  const messages: unknown[] = [];
+  const window = Object.assign(frame, {
+    location,
+    history: { replaceState(_: unknown, __: string, url: string) { location.href = url; } },
+    parent: { postMessage(value: unknown, origin: string) { messages.push({ value, origin }); } },
+  });
+  runInNewContext(extensionBridge(), { window, URL, TextEncoder });
+  expect(location.hash).toBe(hash);
+  expect(location.searchParams.get("token")).toBe("fixture");
+  expect(frame.localStorage.getItem("theme")).toBe("cool");
+  frame.localStorage.setItem("theme", "warm");
+  expect(messages).toEqual([{
+    origin: "https://fixture.test",
+    value: { type: "lotus-frame-storage", nonce: "fixture", data: '[["theme","warm"]]' },
+  }]);
+  frame.localStorage.setItem("big", "一".repeat(1500));
+  expect(messages).toHaveLength(1);
+  frame.localStorage.clear();
+  expect(messages).toHaveLength(2);
 });

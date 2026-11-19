@@ -7,17 +7,43 @@ export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }
     try {
       void window.localStorage;
     } catch {
-      // Legacy pages can use these preferences for the lifetime of this document.
       const values = new Map();
+      let nonce;
+      const prefix = "#lotus-frame:";
+      if (window.location?.hash.startsWith(prefix)) {
+        try {
+          const initial = JSON.parse(decodeURIComponent(window.location.hash.slice(prefix.length)));
+          const url = new URL(window.location.href);
+          url.hash = initial.hash;
+          // Restore the plugin's fragment before its first script runs.
+          window.history.replaceState(null, "", url.href);
+          nonce = typeof initial.nonce === "string" ? initial.nonce : undefined;
+          const entries = JSON.parse(initial.data);
+          if (Array.isArray(entries) && entries.every((entry) =>
+            Array.isArray(entry) && entry.length === 2 && entry.every((value) => typeof value === "string")
+          )) {
+            for (const [key, value] of entries) values.set(key, value);
+          }
+        } catch {
+          // Legacy pages can still use the iframe's temporary storage.
+        }
+      }
+      const save = () => {
+        if (!nonce) return;
+        const data = JSON.stringify([...values]);
+        if (data.length <= 4096 && new TextEncoder().encode(data).byteLength <= 4096) {
+          window.parent.postMessage({ type: "lotus-frame-storage", nonce, data }, window.location.origin);
+        }
+      };
       Object.defineProperty(window, "localStorage", {
         configurable: true,
         value: {
           get length() { return values.size; },
           key(index) { return Array.from(values.keys())[index] ?? null; },
           getItem(key) { return values.get(String(key)) ?? null; },
-          setItem(key, value) { values.set(String(key), String(value)); },
-          removeItem(key) { values.delete(String(key)); },
-          clear() { values.clear(); },
+          setItem(key, value) { values.set(String(key), String(value)); save(); },
+          removeItem(key) { values.delete(String(key)); save(); },
+          clear() { values.clear(); save(); },
         },
       });
     }

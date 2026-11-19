@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
-import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 interface ExtensionPage {
   id: string;
   plugin: string;
@@ -24,16 +24,18 @@ const issueLabels = {
   "duplicate-id": "页面 ID 重复",
 } as const satisfies Record<Issue["kind"], string>;
 
-const props = defineProps<{ token: string }>();
+const props = defineProps<{ token: string; preferences: Map<string, string> }>();
 const emit = defineEmits<{ unauthorized: [] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/extensions`;
 const assetPrefix = `${import.meta.env.BASE_URL}extensions/`;
 const catalog = shallowRef<Catalog>();
 const selected = shallowRef<ExtensionPage>();
+const frame = shallowRef<HTMLIFrameElement>();
 const frameUrl = ref("");
 const busy = ref<"list" | "open">();
 const error = ref("");
 let active: AbortController | undefined;
+let frameStorage: { key: string; nonce: string } | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -65,6 +67,31 @@ function scopedUrl(value: unknown, pageId: string): string | undefined {
   }
 }
 
+function clearFrame() {
+  frameStorage = undefined;
+  frameUrl.value = "";
+}
+
+function openFrame(url: string, page: ExtensionPage) {
+  const key = JSON.stringify([page.plugin, page.id]);
+  const nonce = Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-");
+  const frameLocation = new URL(url, window.location.origin);
+  const state = { nonce, hash: frameLocation.hash, data: props.preferences.get(key) ?? "[]" };
+  frameLocation.hash = "#lotus-frame:" + encodeURIComponent(JSON.stringify(state));
+  frameStorage = { key, nonce };
+  frameUrl.value = frameLocation.pathname + frameLocation.search + frameLocation.hash;
+}
+
+function saveFrameStorage(event: MessageEvent<unknown>) {
+  if (!frameStorage || event.origin !== "null" || event.source !== frame.value?.contentWindow) return;
+  const value = event.data;
+  if (!isRecord(value) || value.type !== "lotus-frame-storage" || value.nonce !== frameStorage.nonce ||
+      typeof value.data !== "string" || value.data.length > 4096 ||
+      new TextEncoder().encode(value.data).byteLength > 4096) return;
+  if (value.data === "[]") props.preferences.delete(frameStorage.key);
+  else props.preferences.set(frameStorage.key, value.data);
+}
+
 async function load(page?: ExtensionPage, rescan = false) {
   if (active || !props.token) return;
   const controller = new AbortController();
@@ -74,7 +101,7 @@ async function load(page?: ExtensionPage, rescan = false) {
   error.value = "";
   if (page) {
     selected.value = page;
-    frameUrl.value = "";
+    clearFrame();
   }
   try {
     const path = page ? `${endpoint}/${encodeURIComponent(page.id)}/open` : rescan ? `${endpoint}/reload` : endpoint;
@@ -106,7 +133,7 @@ async function load(page?: ExtensionPage, rescan = false) {
         error.value = "宿主未返回可用的站内扩展页面地址。";
         return;
       }
-      frameUrl.value = url;
+      openFrame(url, page);
     } else {
       if (!isRecord(data) || !Array.isArray(data.pages) || !data.pages.every(isPage) ||
           !Array.isArray(data.issues) || !data.issues.every(isIssue)) {
@@ -115,7 +142,7 @@ async function load(page?: ExtensionPage, rescan = false) {
       }
       catalog.value = { pages: data.pages, issues: data.issues };
       const opened = rescan ? undefined : data.pages.find(({ id }) => id === selected.value?.id);
-      if (!opened || opened.plugin !== selected.value?.plugin) frameUrl.value = "";
+      if (!opened || opened.plugin !== selected.value?.plugin) clearFrame();
       selected.value = opened;
     }
   } catch {
@@ -135,12 +162,14 @@ watch(() => props.token, () => {
   busy.value = undefined;
   selected.value = undefined;
   catalog.value = undefined;
-  frameUrl.value = "";
+  clearFrame();
   error.value = "";
   void load();
 }, { immediate: true });
 
+onMounted(() => window.addEventListener("message", saveFrameStorage));
 onBeforeUnmount(() => {
+  window.removeEventListener("message", saveFrameStorage);
   active?.abort();
   active = undefined;
 });
@@ -176,7 +205,7 @@ onBeforeUnmount(() => {
           <h2 id="extension-current-title">{{ selected.title }}</h2>
           <ElButton :loading="busy === 'open'" :disabled="Boolean(busy)" @click="load(selected)">刷新页面</ElButton>
         </div>
-        <iframe v-if="frameUrl" :src="frameUrl" :title="selected.title" sandbox="allow-scripts allow-forms"
+        <iframe v-if="frameUrl" ref="frame" :src="frameUrl" :title="selected.title" sandbox="allow-scripts allow-forms"
           referrerpolicy="no-referrer" />
         <p v-else-if="busy === 'open'" class="extension-note" role="status">正在打开页面…</p>
       </div>

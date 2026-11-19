@@ -23,6 +23,7 @@ const clock = new Intl.DateTimeFormat("zh-CN", {
 
 let token = "";
 let activeRequest: AbortController | undefined;
+const extensionPreferences = new Map<string, string>();
 
 const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "group" && plugin.status === "loaded") ?? false);
@@ -73,6 +74,7 @@ function reset() {
   activeRequest?.abort();
   activeRequest = undefined;
   token = "";
+  extensionPreferences.clear();
   draft.value = "";
   snapshot.value = undefined;
   busy.value = false;
@@ -177,7 +179,8 @@ onBeforeUnmount(() => {
       @dirty-change="updateDirty" />
     <GuobaSettings v-else-if="view === 'guoba'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
-    <ExtensionPages v-else-if="view === 'extensions'" :token="token" @unauthorized="expireSession" />
+    <ExtensionPages v-else-if="view === 'extensions'" :token="token" :preferences="extensionPreferences"
+      @unauthorized="expireSession" />
     <template v-else>
       <section aria-labelledby="overview-title" :aria-busy="busy">
         <div class="section-heading">
