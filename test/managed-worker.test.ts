@@ -43,6 +43,7 @@ test("受管理宿主继承工作目录与环境，按令牌和提交握手后�
   assert.match(token, /^[0-9a-f-]{36}$/);
   assert.equal(process.env.LOTUS_MANAGED_HELD, "1");
   assert.equal(process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS, "1");
+  assert.equal(process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS, "1");
   assert.equal(process.env.LOTUS_MANAGED_PAUSED_AT, "123456");
   assert.equal(process.env.LOTUS_WORKER_FIXTURE, "kept");
   writeFileSync("cwd", process.cwd());
@@ -64,7 +65,8 @@ test("受管理宿主继承工作目录与环境，按令牌和提交握手后�
   const restarted = Promise.withResolvers<void>();
   const worker = spawnManagedWorker(root, {
     held: true, expectedRevision: revision, pausedAt: 123456,
-    env: { ...process.env, LOTUS_WORKER_FIXTURE: "kept", LOTUS_MANAGED_TOKEN: "override", LOTUS_MANAGED_ADAPTER_RECEIPTS: "0" },
+    env: { ...process.env, LOTUS_WORKER_FIXTURE: "kept", LOTUS_MANAGED_TOKEN: "override",
+      LOTUS_MANAGED_ADAPTER_RECEIPTS: "0", LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "0" },
     onRestart(pausedAt) {
       restarts++;
       if (pausedAt === 123456) restarted.resolve();
@@ -293,11 +295,12 @@ test("父进程只转发有效的活动宿主更新请求，串行报告进度�
   }
 }));
 
-test("新托管父进程启用并转发 Milky 聊天请求的协议身份", () => fixture(`
+test("新托管父进程转发 Milky 聊天和定时回执的协议身份", () => fixture(`
   import assert from "node:assert/strict";
   import { createManagedHandoff } from ${JSON.stringify(handoffModule)};
   const handoff = createManagedHandoff();
   assert.equal(process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS, undefined);
+  assert.equal(process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS, undefined);
   await handoff.ready("${revision}", new AbortController().signal);
   for (const type of ["group", "private"]) {
     const done = Promise.withResolvers();
@@ -306,12 +309,17 @@ test("新托管父进程启用并转发 Milky 聊天请求的协议身份", () =
     assert.equal(handoff.update(request, done.resolve), true);
     assert.equal(await done.promise, "current");
   }
+  const scheduled = Promise.withResolvers();
+  assert.equal(handoff.update({ all: true, quiet: true,
+    target: { type: "scheduled", botIds: [100], terminal: true, milkyBotIds: [99] }, directories: [] }, scheduled.resolve), true);
+  assert.equal(await scheduled.promise, "current");
   process.exit(0);
 `, async (root) => {
   const requests: unknown[] = [];
   const worker = spawnManagedWorker(root, {
     expectedRevision: revision,
-    env: { PATH: process.env.PATH, LOTUS_MANAGED_ADAPTER_RECEIPTS: "disabled-in-parent" },
+    env: { PATH: process.env.PATH, LOTUS_MANAGED_ADAPTER_RECEIPTS: "disabled-in-parent",
+      LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "disabled-in-parent" },
     onUpdate(request, report) {
       requests.push(request);
       report("current");
@@ -324,6 +332,7 @@ test("新托管父进程启用并转发 Milky 聊天请求的协议身份", () =
     expect(requests).toEqual([
       { quiet: false, target: { type: "group", adapter: "milky", botId: 99, id: 51 }, directories: [] },
       { quiet: false, install: "weather", target: { type: "private", adapter: "milky", botId: 99, id: 51 }, directories: [] },
+      { all: true, quiet: true, target: { type: "scheduled", botIds: [100], terminal: true, milkyBotIds: [99] }, directories: [] },
     ]);
   } finally {
     clearTimeout(deadline);

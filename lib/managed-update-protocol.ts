@@ -9,22 +9,31 @@ export interface ManagedUpdateRequest {
   readonly quiet: boolean;
   readonly target: { readonly type: "terminal" } |
     { readonly type: "group" | "private"; readonly botId: number; readonly id: number; readonly adapter?: "milky" } |
-    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean };
+    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean; readonly milkyBotIds?: readonly number[] };
   readonly directories: readonly { readonly name: string; readonly path: string; readonly packageName: string }[];
 }
 
 export type ManagedUpdateWireRequest = Omit<ManagedUpdateRequest, "target"> & {
   readonly target: { readonly type: "terminal" } |
     { readonly type: "group" | "private" | "milky-group" | "milky-private"; readonly botId: number; readonly id: number } |
-    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean };
+    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean } |
+    { readonly type: "scheduled-adapters"; readonly botIds: readonly number[]; readonly terminal: boolean; readonly milkyBotIds: readonly number[] };
 };
 
-export function encodeManagedUpdateRequest(request: ManagedUpdateRequest): ManagedUpdateWireRequest {
+export function encodeManagedUpdateRequest(request: ManagedUpdateRequest, scheduledAdapterReceipts = true): ManagedUpdateWireRequest {
   const { target } = request;
   if ((target.type === "group" || target.type === "private") && target.adapter === "milky") {
     // Older supervisors must reject an adapter-qualified target rather than treat it as OneBot.
     const { botId, id } = target;
     return { ...request, target: { type: target.type === "group" ? "milky-group" : "milky-private", botId, id } };
+  }
+  if (target.type === "scheduled") {
+    const { botIds, terminal, milkyBotIds } = target;
+    if (scheduledAdapterReceipts && milkyBotIds?.length) {
+      return { ...request, target: { type: "scheduled-adapters", botIds, terminal, milkyBotIds } };
+    }
+    // Older supervisors can still run the update and acknowledge it through existing OneBot/terminal targets.
+    return { ...request, target: { type: "scheduled", botIds, terminal } };
   }
   return request;
 }
@@ -72,15 +81,18 @@ function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined
     return { type: type === "milky-group" ? "group" : "private", botId, id, adapter: "milky" };
   }
   if (type === "terminal") return { type };
-  if (type === "scheduled") {
-    const { botIds, terminal } = value;
-    if (!Array.isArray(botIds) || botIds.length > managedUpdateScheduledBotLimit || typeof terminal !== "boolean") return;
+  if (type === "scheduled" || type === "scheduled-adapters") {
+    const { botIds, terminal, milkyBotIds } = value;
+    if (!Array.isArray(botIds) || typeof terminal !== "boolean" ||
+        (milkyBotIds !== undefined && !Array.isArray(milkyBotIds))) return;
+    const milkyIds = milkyBotIds ?? [];
+    if ((type === "scheduled-adapters" && !milkyIds.length) || botIds.length + milkyIds.length > managedUpdateScheduledBotLimit) return;
     const unique = new Set<number>();
-    for (const id of botIds) {
+    for (const id of [...botIds, ...milkyIds]) {
       if (!positiveId(id) || unique.has(id)) return;
       unique.add(id);
     }
-    return { type, botIds: [...unique], terminal };
+    return { type: "scheduled", botIds: [...botIds], terminal, ...(milkyIds.length ? { milkyBotIds: [...milkyIds] } : {}) };
   }
 }
 

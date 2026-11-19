@@ -469,8 +469,14 @@ function milkyUpdateGateway(token: string, botId: number) {
       close(socket) { if (socket.data === 0) firstClosed.resolve(); },
     },
   });
+  async function nextFrame() {
+    if (!frames.length) await deadline(available.promise, "未收到托管更新的 Milky 回复。", 10_000);
+    const frame = frames.shift()!;
+    if (!frames.length) available = Promise.withResolvers<void>();
+    return frame;
+  }
   return {
-    server, firstClosed, releaseReplacement, frames,
+    server, firstClosed, releaseReplacement, frames, nextFrame,
     async open(generation: number) {
       const socket = await deadline(sockets[generation]!.promise, "未收到本代托管宿主的 Milky 连接。", 16_000);
       return (text: string, userId: number, groupId?: number) => socket.send(JSON.stringify({
@@ -483,15 +489,20 @@ function milkyUpdateGateway(token: string, botId: number) {
       }));
     },
     async next(target: Target, pattern: RegExp) {
-      if (!frames.length) await deadline(available.promise, "未收到托管更新的 Milky 回复。", 10_000);
-      const frame = frames.shift()!;
-      if (!frames.length) available = Promise.withResolvers<void>();
+      const frame = await nextFrame();
       expect(frame.action).toBe("group_id" in target ? "send_group_message" : "send_private_message");
       expect(frame.params).toMatchObject(target);
       expect(frame.params.message).toMatch(pattern);
       return frame.params.message;
     },
   };
+}
+
+async function configureMilkyUpdate(active: string, port: string, accessToken: string) {
+  await writeFile(join(active, "config/milky.yaml"), [
+    "enable: true", "host: 127.0.0.1", `port: ${port}`,
+    `access_token: ${accessToken}`, "ws:", "  reconnect_interval: 0.05",
+  ].join("\n") + "\n");
 }
 
 async function exerciseMilkyUpdate(fail: boolean) {
@@ -504,10 +515,7 @@ async function exerciseMilkyUpdate(fail: boolean) {
       'master: ["99:51", "100:52"]', "disablePrivate: true", "disableMsg: 私聊限制夹具",
       "disableAdopt: ['^#诊断$', '^#版本$']",
     ].join("\n") + "\n");
-    await writeFile(join(active, "config/milky.yaml"), [
-      "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
-      `access_token: ${milkyToken}`, "ws:", "  reconnect_interval: 0.05",
-    ].join("\n") + "\n");
+    await configureMilkyUpdate(active, mock.server.url.port, milkyToken);
     const supervisor = bootSupervisor(active);
     try {
       const initial = await deadline(supervisor.nextEndpoint(), "Milky 更新测试宿主启动超时。");
@@ -625,6 +633,104 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
 
 test.skipIf(!Bun.which("git"))("update_time 在软关机期间静默更新并向各机器人主人回执", () => exerciseScheduledUpdate("interval", false), 35_000);
 test.skipIf(!Bun.which("git"))("update_cron 启动失败后恢复旧提交和原关机时间并向各机器人主人回执", () => exerciseScheduledUpdate("cron", true), 35_000);
+
+async function exerciseMilkyScheduledUpdate(fail: boolean) {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-milky-scheduled-update-"));
+  const milkyToken = "scheduled-update-milky-fixture";
+  const mock = milkyUpdateGateway(milkyToken, 99);
+  try {
+    const { active, old, candidate } = await fixtureRepository(temporary, fail, undefined, "interval");
+    await writeFile(join(active, "config/config/other.yaml"), 'master: ["99:51", "99:52"]\n');
+    await configureMilkyUpdate(active, mock.server.url.port, milkyToken);
+    const supervisor = bootSupervisor(active);
+    try {
+      await deadline(supervisor.nextEndpoint(), "Milky 定时更新测试宿主启动超时。");
+      const command = await mock.open(0);
+      command("#版本", 42);
+      expect(await mock.next({ user_id: 42 }, /^Lotus-Yunzai 版本/u)).toContain(old.slice(0, 12));
+
+      const [replacement] = await Promise.all([
+        deadline(supervisor.nextEndpoint(), "Milky 定时更新没有启动新的工作进程。", 16_000),
+        deadline(mock.firstClosed.promise, "Milky 定时更新时未关闭原事件连接。", 16_000),
+      ]);
+      const expected = fail ? old : candidate;
+      expect(git(active, "rev-parse", "HEAD")).toBe(expected);
+      expect(mock.frames).toEqual([]);
+
+      const sameOneBot = await supervisor.open(replacement, 99);
+      await expectVersion(sameOneBot, expected);
+      const receiptDirectory = join(active, "data/process-receipts");
+      const persisted = join(receiptDirectory, "milky-99.update.json");
+      expect(JSON.parse(await readFile(persisted, "utf8"))).toMatchObject({
+        kind: "update",
+        target: { type: "masters", botId: 99, adapter: "milky" },
+        ...(fail ? { result: "rolled-back" } : { result: "updated", revision: candidate }),
+      });
+      await expect(lstat(join(receiptDirectory, "99.update.json"))).rejects.toMatchObject({ code: "ENOENT" });
+
+      mock.releaseReplacement.resolve();
+      const updated = await mock.open(1);
+      const replies = [await mock.nextFrame(), await mock.nextFrame()];
+      expect(replies.map(({ params }) => params.user_id).sort()).toEqual([51, 52]);
+      for (const frame of replies) {
+        expect(frame.action).toBe("send_private_message");
+        expect(frame.params.message).toMatch(fail ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
+        if (!fail) expect(frame.params.message).toContain(candidate.slice(0, 12));
+      }
+      await expect(lstat(persisted)).rejects.toMatchObject({ code: "ENOENT" });
+      updated("#版本", 42);
+      expect(await mock.next({ user_id: 42 }, /^Lotus-Yunzai 版本/u)).toContain(expected.slice(0, 12));
+      expect(sameOneBot.frames).toEqual([]);
+      expect(mock.frames).toEqual([]);
+      await supervisor.stop();
+      if (fail) expect(await supervisor.stderr).toContain(liveFailure);
+    } finally {
+      mock.releaseReplacement.resolve();
+      await supervisor.close();
+    }
+  } finally {
+    mock.server.stop(true);
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(!Bun.which("git"))("Milky 定时更新只向原协议的主人持久化和投递成功回执",
+  () => exerciseMilkyScheduledUpdate(false), 35_000);
+test.skipIf(!Bun.which("git"))("Milky 定时更新回滚只向原协议的主人持久化和投递失败回执",
+  () => exerciseMilkyScheduledUpdate(true), 35_000);
+
+test.skipIf(!Bun.which("git"))("Milky 定时更新遇到未提交的修改时直接通知当前主人", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-milky-scheduled-preflight-"));
+  const milkyToken = "scheduled-preflight-milky-fixture";
+  const mock = milkyUpdateGateway(milkyToken, 99);
+  try {
+    const { active, old } = await fixtureRepository(temporary, false, undefined, "interval");
+    const source = join(active, "app.ts");
+    await appendFile(source, "\n// 保留定时预检夹具的未提交改动。\n");
+    const dirtySource = await readFile(source, "utf8");
+    await configureMilkyUpdate(active, mock.server.url.port, milkyToken);
+    const supervisor = bootSupervisor(active);
+    try {
+      await deadline(supervisor.nextEndpoint(), "Milky 定时预检测试宿主启动超时。");
+      const command = await mock.open(0);
+      await mock.next({ user_id: 51 }, /^定时更新未完成。工作区有未提交的修改，更新未执行。$/u);
+      command("#版本", 42);
+      expect(await mock.next({ user_id: 42 }, /^Lotus-Yunzai 版本/u)).toContain(old.slice(0, 12));
+      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+      expect(await readFile(source, "utf8")).toBe(dirtySource);
+      await expect(lstat(join(active, "data/process-receipts/milky-99.update.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(mock.frames).toEqual([]);
+      await supervisor.stop();
+    } finally {
+      mock.releaseReplacement.resolve();
+      await supervisor.close();
+    }
+  } finally {
+    mock.server.stop(true);
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 35_000);
 
 async function exerciseInstall(fail: boolean) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-managed-install-"));

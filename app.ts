@@ -175,14 +175,18 @@ if (import.meta.main) {
   async function requestScheduledUpdate() {
     if (stopping || !plugins) return;
     const signal = lifecycle.signal;
-    const botIds = masterPermissions.botIds().slice(0, managedUpdateScheduledBotLimit);
+    const targets = processOwnerTargets(masterPermissions.botIds().slice(0, managedUpdateScheduledBotLimit));
+    const botIds = targets.filter((target) => target.adapter === undefined).map((target) => target.botId);
+    const milkyBotIds = targets.filter((target) => target.adapter === "milky").map((target) => target.botId);
     const terminal = masterPermissions.terminal;
     const progress = Promise.withResolvers<ManagedUpdateProgress | undefined>();
     const abort = () => progress.resolve(undefined);
     signal.addEventListener("abort", abort, { once: true });
     try {
       if (!handoff.update({
-        all: true, quiet: true, target: { type: "scheduled", botIds, terminal }, directories: updateDirectories(),
+        all: true, quiet: true,
+        target: { type: "scheduled", botIds, terminal, ...(milkyBotIds.length ? { milkyBotIds } : {}) },
+        directories: updateDirectories(),
       }, (status) => { if (isTerminalManagedUpdateProgress(status)) progress.resolve(status); })) {
         progress.resolve("unavailable");
       }
@@ -191,9 +195,7 @@ if (import.meta.main) {
       const reply = `定时更新未完成。${describeUpdateProgress(result)}`;
       if (terminal) terminalOutput(reply);
       else console.warn(`[更新] ${reply}`);
-      const recipients = new Set(botIds);
-      await Promise.all(groups.onlineBots().filter((botId) => recipients.has(botId))
-        .map((botId) => sendProcessMessage({ type: "masters", botId }, reply)));
+      await Promise.all(targets.map((target) => sendProcessMessage(target, reply)));
     } finally {
       signal.removeEventListener("abort", abort);
     }

@@ -84,6 +84,37 @@ test("定时更新目标只保留唯一安全账号和布尔终端标记", () =>
   }
 });
 
+test("定时更新按适配器隔离接收人，并兼容旧监督进程的线格式", () => {
+  const scheduled = {
+    all: true, quiet: true, directories: [],
+    target: { type: "scheduled" as const, botIds: [99, 88], terminal: true, milkyBotIds: [71] },
+  };
+  const wire = encodeManagedUpdateRequest(scheduled);
+  expect(wire).toEqual({ ...scheduled, target: { ...scheduled.target, type: "scheduled-adapters" } });
+  expect(parseManagedUpdateRequest(wire)).toEqual(scheduled);
+  expect(parseManagedUpdateRequest(scheduled)).toEqual(scheduled);
+  const legacy = { ...scheduled, target: { type: "scheduled" as const, botIds: [99, 88], terminal: true } };
+  expect(encodeManagedUpdateRequest(scheduled, false)).toEqual(legacy);
+  expect(parseManagedUpdateRequest({ ...scheduled, target: { ...scheduled.target, milkyBotIds: [] } })).toEqual(legacy);
+  expect(encodeManagedUpdateRequest({ ...scheduled, target: { ...scheduled.target, milkyBotIds: [] } })).toEqual(legacy);
+  expect(encodeManagedUpdateRequest({ ...scheduled, target: { ...scheduled.target, botIds: [], terminal: false } }, false))
+    .toEqual({ ...scheduled, target: { type: "scheduled", botIds: [], terminal: false } });
+});
+
+test("定时更新跨协议账号唯一且总数受同一上限约束", () => {
+  const botIds = Array.from({ length: 127 }, (_, index) => 1 + index);
+  const request = {
+    all: true, quiet: true, directories: [],
+    target: { type: "scheduled-adapters", botIds, terminal: false, milkyBotIds: [128] },
+  };
+  expect(parseManagedUpdateRequest(request)?.target).toEqual({ ...request.target, type: "scheduled" });
+  for (const milkyBotIds of [[], [127], [128, 128], [128, 129], ["128"], [0], null, 128, undefined]) {
+    expect(parseManagedUpdateRequest({ ...request, target: { ...request.target, milkyBotIds } })).toBeUndefined();
+  }
+  expect(parseManagedUpdateRequest({ ...request, force: true })).toBeUndefined();
+  expect(parseManagedUpdateRequest({ ...request, quiet: false })).toBeUndefined();
+});
+
 test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isManagedUpdateRequestId(crypto.randomUUID())).toBe(true);
   expect(isManagedUpdateRequestId(crypto.randomUUID() + "\n")).toBe(false);

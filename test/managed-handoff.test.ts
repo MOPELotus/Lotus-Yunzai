@@ -10,6 +10,7 @@ async function worker(source: string, options: {
   token?: string;
   paused?: string;
   adapterReceipts?: string;
+  scheduledAdapterReceipts?: string;
   receive?: (message: Record<string, unknown>, child: Bun.Subprocess) => void;
 } = {}) {
   const messages: Record<string, unknown>[] = [];
@@ -21,11 +22,13 @@ async function worker(source: string, options: {
     assert.equal(process.env.LOTUS_MANAGED_HELD, undefined);
     assert.equal(process.env.LOTUS_MANAGED_PAUSED_AT, undefined);
     assert.equal(process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS, undefined);
+    assert.equal(process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS, undefined);
     ${source}
   `], {
     env: { PATH: process.env.PATH, LOTUS_MANAGED_TOKEN: options.token ?? token,
       LOTUS_MANAGED_HELD: options.held ? "1" : "0", LOTUS_MANAGED_PAUSED_AT: options.paused,
-      LOTUS_MANAGED_ADAPTER_RECEIPTS: options.adapterReceipts },
+      LOTUS_MANAGED_ADAPTER_RECEIPTS: options.adapterReceipts,
+      LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: options.scheduledAdapterReceipts },
     stdin: "ignore", stdout: "ignore", stderr: "pipe",
     ipc: options.disconnected ? undefined : (message: Record<string, unknown>, child) => {
       messages.push(message);
@@ -272,4 +275,38 @@ test("支持适配器回执的父进程收到独立的 Milky 群聊和私聊线�
     { quiet: false, requested: "weather", target: { type: "milky-group", botId: 99, id: 51 }, directories: [] },
     { quiet: false, install: "weather", target: { type: "milky-private", botId: 99, id: 51 }, directories: [] },
   ]);
+});
+
+test("定时更新在新版传递 Milky 账号，旧版和只支持手动回执的父进程仍执行", async () => {
+  const scheduled = { type: "scheduled", botIds: [99, 88], terminal: true, milkyBotIds: [51] };
+  const milkyOnly = { type: "scheduled", botIds: [], terminal: false, milkyBotIds: [51] };
+  const plain = { type: "scheduled", botIds: [42], terminal: false };
+  const manual = { type: "private", adapter: "milky", botId: 51, id: 7 };
+  const source = (acceptsManual: boolean) => `
+    await handoff.ready(undefined, new AbortController().signal);
+    for (const target of ${JSON.stringify([scheduled, milkyOnly, plain])}) {
+      const done = Promise.withResolvers();
+      assert.equal(handoff.update({ all: true, quiet: true, target, directories: [] }, done.resolve), true);
+      assert.equal(await done.promise, "current");
+    }
+    const done = Promise.withResolvers();
+    assert.equal(handoff.update({ quiet: false, target: ${JSON.stringify(manual)}, directories: [] }, done.resolve), ${acceptsManual});
+    if (${acceptsManual}) assert.equal(await done.promise, "current");
+  `;
+  for (const [adapterReceipts, scheduledAdapterReceipts] of [["1", "1"], ["1", undefined], [undefined, "1"], [undefined, undefined]]) {
+    const supportsScheduled = adapterReceipts === "1" && scheduledAdapterReceipts === "1";
+    const messages = await worker(source(adapterReceipts === "1"), {
+      adapterReceipts,
+      scheduledAdapterReceipts,
+      receive(message, child) {
+        if (message.type === "lotus-update") child.send({ type: "lotus-update-progress", token, requestId: message.requestId, status: "current" });
+      },
+    });
+    const targets = supportsScheduled ? [{ ...scheduled, type: "scheduled-adapters" }, { ...milkyOnly, type: "scheduled-adapters" }, plain]
+      : [{ type: "scheduled", botIds: [99, 88], terminal: true }, { type: "scheduled", botIds: [], terminal: false }, plain];
+    const requests = targets.map((target) => ({ all: true, quiet: true, target, directories: [] }));
+    expect(messages.slice(1).map(({ request }) => request)).toEqual(adapterReceipts === "1" ? [
+      ...requests, { quiet: false, target: { type: "milky-private", botId: 51, id: 7 }, directories: [] },
+    ] : requests);
+  }
 });

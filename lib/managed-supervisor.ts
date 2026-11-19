@@ -117,6 +117,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       const targets: readonly ProcessReceipt["target"][] = target.type === "scheduled"
         ? [
           ...target.botIds.map((botId) => ({ type: "masters" as const, botId })),
+          ...(target.milkyBotIds ?? []).map((botId) => ({ type: "masters" as const, botId, adapter: "milky" as const })),
           ...(target.terminal ? [{ type: "terminal" as const }] : []),
         ] : [target];
       let archived: string | undefined;

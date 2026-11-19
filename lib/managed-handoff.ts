@@ -32,10 +32,12 @@ export function createManagedHandoff(): ManagedHandoff {
   const held = process.env.LOTUS_MANAGED_HELD === "1";
   const paused = process.env.LOTUS_MANAGED_PAUSED_AT;
   const adapterReceipts = process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS === "1";
+  const scheduledAdapterReceipts = adapterReceipts && process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS === "1";
   delete process.env.LOTUS_MANAGED_TOKEN;
   delete process.env.LOTUS_MANAGED_HELD;
   delete process.env.LOTUS_MANAGED_PAUSED_AT;
   delete process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS;
+  delete process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS;
 
   if (!token || !uuid.test(token) || typeof process.send !== "function" || process.connected !== true) {
     return {
@@ -128,7 +130,7 @@ export function createManagedHandoff(): ManagedHandoff {
     if (!activated || !accepting || restarting || !connected()) return false;
     const parsed = parseManagedUpdateRequest(request);
     if (!parsed) return false;
-    const snapshot = encodeManagedUpdateRequest(parsed);
+    const snapshot = encodeManagedUpdateRequest(parsed, scheduledAdapterReceipts);
     if (!adapterReceipts && (snapshot.target.type === "milky-group" || snapshot.target.type === "milky-private")) return false;
     if (cancelUpdate) {
       onProgress("busy");
