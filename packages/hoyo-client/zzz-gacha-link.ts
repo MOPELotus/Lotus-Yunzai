@@ -112,7 +112,11 @@ export function resolveZzzGachaLinkRole({ uid, region: selectedRegion, gameBiz: 
 }
 
 export function isZzzGachaLinkMessage(value: string): boolean {
-  return typeof value === "string" && /^https?:\/\/[^/?#\s]+\/common\/gacha_record\/api\/getGachaLog(?:[/?#]|$)/iu.test(value.trim());
+  if (!/^https?:\/\/[^/?#\s]+\/common\/gacha_record\/api\/getGachaLog(?:[/?#]|$)/iu.test(value.trim())) return false;
+  const url = URL.parse(value.trim());
+  return !!url && (url.hostname === "public-operation-common.mihoyo.com" ||
+    url.hostname === "public-operation-common-sg.hoyoverse.com" ||
+    url.searchParams.getAll("game_biz").some((game) => game === "nap_cn" || game === "nap_global"));
 }
 
 export function parseZzzGachaLink(input: string, role: ZzzGachaLinkRole): ZzzGachaLink {

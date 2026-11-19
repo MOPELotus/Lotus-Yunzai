@@ -34,7 +34,8 @@ test("解析仅接收已选档案一致的官方链接，认证信息不出现�
   expect(parsed).toEqual(role);
   expect(resolveZzzGachaLinkRole({ uid: role.uid })).toEqual(role);
   expect(isZzzGachaLinkMessage(url())).toBe(true);
-  expect(isZzzGachaLinkMessage(`http://untrusted.invalid${path}?authkey=invalid`)).toBe(true);
+  expect(isZzzGachaLinkMessage(`http://untrusted.invalid${path}?authkey=invalid&game_biz=nap_global`)).toBe(true);
+  expect(isZzzGachaLinkMessage(`https://public-operation-hkrpg.mihoyo.com${path}?authkey=fixture&game_biz=hkrpg_cn`)).toBe(false);
   expect(isZzzGachaLinkMessage(`https://untrusted.invalid${path}-other?authkey=invalid`)).toBe(false);
   expect(isZzzGachaLinkMessage(`https://untrusted.invalid/?url=${path}`)).toBe(false);
   expect(Object.isFrozen(parsed)).toBe(true);

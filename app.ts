@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
+import { isZzzGachaLinkMessage } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
@@ -45,7 +46,7 @@ import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
-import { readPrivateAccess } from "./lib/private-access.ts";
+import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
@@ -502,6 +503,21 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
+    const tuningLink = isZzzGachaLinkMessage(event.msg);
+    const tuningLinkEntry = zzzLinkEntry.test(event.msg);
+    if (tuningLink || tuningLinkEntry || (event.isPrivate && event.msg.trim() === "取消")) {
+      // Give credential-bearing links only to the native handler, before V3 contexts and other fallbacks.
+      if (allowNew && (event.isPrivate || tuningLinkEntry)) {
+        const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/zzz" && allowed(names),
+          (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId),
+          tuningLinkEntry ? event.msg.replace(zzzLinkEntry, "#绝区零$1") : event.msg);
+        if (reply !== undefined) {
+          await sendCommandReply(event, reply);
+          return;
+        }
+      }
+      if (tuningLink || tuningLinkEntry) return;
+    }
     if (await privateAccess.blocked(event)) return;
     if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {
       if (event.attachment) {
