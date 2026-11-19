@@ -8,6 +8,8 @@ const retiredScripts = new Map([
     { name: "咕咕牛图库管理器", reason: "图库管理已归并到 atlas。" }],
   ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
     { name: "自动群名片", reason: "批量群名片已归并到 group。" }],
+  ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
+    { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。" }],
 ]);
 
 interface PluginMetadata {
