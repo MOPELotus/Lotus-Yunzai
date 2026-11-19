@@ -1,6 +1,7 @@
 import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";
 import { readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
+import { readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -21,6 +22,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { createCredentialExchange };
 export { CloudGenshinWalletError, normalizeCloudGenshinComboToken, readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
+export { CloudZzzWalletError, normalizeCloudZzzComboToken, readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 export { HoyoRequestError };
 export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
@@ -378,6 +380,9 @@ export function createHoyoClient(
     },
     readCloudGenshinWallet(token: string, options: Parameters<typeof readCloudGenshinWallet>[2]) {
       return readCloudGenshinWallet(token, transport, options);
+    },
+    readCloudZzzWallet(token: string, options: Parameters<typeof readCloudZzzWallet>[2]) {
+      return readCloudZzzWallet(token, transport, options);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);

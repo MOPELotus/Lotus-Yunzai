@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { BbsCheckinRequestError, CloudGenshinWalletError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
+import { BbsCheckinRequestError, CloudGenshinWalletError, CloudZzzWalletError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
   HoyoRequestError, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
@@ -106,7 +106,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     try {
       const detail: CheckinReceiptCardModel["detail"] = notes.length
         ? { title: "失败", message: [notes.join("\n").slice(0, 180), cloud].filter(Boolean).join("\n") }
-        : extras ? { title: points ? "米游币" : "云原神", message: extras } : undefined;
+        : extras ? { title: points ? "米游币" : cloud?.includes("云绝区零") ? "云游戏" : "云原神", message: extras } : undefined;
       const { png } = await renderReceipt({ displayName: settings.displayName, profileId, rows, detail },
         { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || undefined });
       if (png.byteLength && png.byteLength <= 16 * 1024 * 1024) return segment.image(png);
@@ -457,25 +457,36 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const points = await runCommunity();
       let cloud: string | undefined;
       if (!scoped) {
-        const wallet = await profiles.cloudGenshinCheckin(qq, profileId);
+        const { wallets, revision: walletRevision } = await profiles.cloudCheckin(qq, profileId);
         await verifyCurrent();
-        if (wallet.revision !== revision) throw new ProfileError("changed", changed);
-        if (wallet.enabled && !wallet.token) cloud = "请先在私聊绑定云原神凭据。";
-        if (wallet.enabled && wallet.token) {
+        if (walletRevision !== revision) throw new ProfileError("changed", changed);
+        const balances: string[] = [];
+        for (const { game, token } of wallets) {
+          const name = game === "genshin" ? "云原神" : "云绝区零";
+          if (!token) {
+            balances.push(`请先在私聊绑定${name}凭据。`);
+            continue;
+          }
           try {
-            const state = await client.readCloudGenshinWallet(wallet.token, {
-              signal, browserDeviceId: cloudDeviceId, verifyProfile: verifyCurrent,
-            });
+            const options = { signal, verifyProfile: verifyCurrent };
+            const state = game === "genshin"
+              ? await client.readCloudGenshinWallet(token, { ...options, browserDeviceId: cloudDeviceId })
+              : await client.readCloudZzzWallet(token, options);
             await verifyCurrent();
-            cloud = `云原神剩余免费时长：${state.freeTimeMinutes} 分钟`;
+            balances.push(`${name}剩余免费时长：${state.freeTimeMinutes} 分钟`);
           } catch (error) {
             await verifyCurrent();
             count("failed");
-            notes.push(error instanceof CloudGenshinWalletError && error.reason === "expired"
-              ? "云原神凭据已失效，请在官方客户端重新登录后绑定。"
-              : "暂时无法读取云原神剩余免费时长。");
+            if ((error instanceof CloudGenshinWalletError || error instanceof CloudZzzWalletError) && error.reason === "expired") {
+              notes.push(error.message);
+            } else if (error instanceof HoyoRequestError && error.code === "invalid-input") {
+              notes.push(`请在私聊重新绑定${name}凭据。`);
+            } else {
+              notes.push(`暂时无法读取${name}剩余免费时长。`);
+            }
           }
         }
+        cloud = balances.join("\n");
       }
       await verifyCurrent();
       const otherFailure = Boolean(counts.failed || counts["first-bind"] || counts.unconfirmed);

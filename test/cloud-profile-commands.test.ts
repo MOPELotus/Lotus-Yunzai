@@ -5,6 +5,7 @@ import { cloudProfileCommands, isCloudTokenInput } from "../lib/cloud-profile-co
 import type { MessageFallbackContext } from "../lib/commands.ts";
 
 const browserCombo = "ai=4;ci=1;oi=fixture-open;ct=fixture%2Bopaque==;si=fixture-sig;bi=hk4e_cn";
+const androidCombo = "ai=7;ci=1;oi=fixture-open;ct=fixture-nap;si=fixture-sig;bi=nap_cn";
 const genshin = `#绑定云原神token2 ${browserCombo}`;
 const zzz = "#绑定云绝区零token2 fixture-zzz-secret";
 
@@ -35,14 +36,14 @@ test("两种云凭据前缀由原生模块识别，只有原认证好友私聊�
   const run = (message: string, overrides?: Partial<MessageFallbackContext>) => native.fallback!(message, context(message, overrides));
   expect(await run(genshin, { message_type: "group", privateCredentialSignal: session.signal })).toBe("请勿在群聊或终端发送云游戏凭据。");
   expect(await run(zzz, { message_type: "terminal" })).toBe("请勿在群聊或终端发送云游戏凭据。");
-  expect(await run(zzz, { privateCredentialSignal: session.signal })).toBe("云绝区零暂不接收新凭据，请勿再发送 token。");
+  expect(await run(zzz, { privateCredentialSignal: session.signal })).toBe("请输入有效的云绝区零凭据。");
   expect(await run(genshin)).toBe("请从当前连接的机器人好友私聊绑定云原神凭据。");
   expect(await run("#未知指令", { raw_message: genshin })).toContain("#绑定云原神token");
   expect(await run(genshin.replace("token2", "token02"), { privateCredentialSignal: session.signal })).toBe("档案编号须在 1 到 255 之间。");
   expect(calls).toEqual([]);
 });
 
-test("只有核验钱包成功的云原神凭据可提交当前 QQ 与档案，回执不接收原指令", async () => {
+test("两种云游戏凭据仅交对应钱包核验并提交当前 QQ 与档案，回执不接收原指令", async () => {
   const session = new AbortController();
   const lifecycle = new AbortController();
   const steps: unknown[][] = [];
@@ -56,12 +57,19 @@ test("只有核验钱包成功的云原神凭据可提交当前 QQ 与档案，�
       expect(token).toBe(browserCombo);
       expect(options?.signal?.aborted).toBe(false);
       await options?.verifyProfile?.();
-      steps.push(["wallet"]);
+      steps.push(["wallet", "genshin"]);
+      return { freeTimeMinutes: 0 };
+    },
+    async readZzzWallet(token, _transport, options) {
+      expect(token).toBe(androidCombo);
+      expect(options?.signal?.aborted).toBe(false);
+      await options?.verifyProfile?.();
+      steps.push(["wallet", "zzz"]);
       return { freeTimeMinutes: 0 };
     },
     async saveToken(qq, slot, revision, game, token, signal) {
       expect(signal.aborted).toBe(false);
-      expect(token).toBe(browserCombo);
+      expect(token).toBe(game === "genshin" ? browserCombo : androidCombo);
       steps.push(["save", qq, slot, revision, game]);
     },
     async setEnabled() { throw new Error("only token write should happen"); },
@@ -73,11 +81,14 @@ test("只有核验钱包成功的云原神凭据可提交当前 QQ 与档案，�
       return "资料卡";
     },
   });
-  expect(await native.fallback!(genshin, context(genshin, { privateCredentialSignal: session.signal }))).toBe("资料卡");
-  expect(steps).toEqual([
-    ["profile", "42", 2], ["profile", "42", 2], ["profile", "42", 2], ["wallet"],
-    ["profile", "42", 2], ["save", "42", 2, "rev-2", "genshin"], ["card", 2, 42],
-  ]);
+  for (const [game, message] of [["genshin", genshin], ["zzz", `#绑定云绝区零token2 ${androidCombo}`]]) {
+    steps.length = 0;
+    expect(await native.fallback!(message!, context(message!, { privateCredentialSignal: session.signal }))).toBe("资料卡");
+    expect(steps).toEqual([
+      ["profile", "42", 2], ["profile", "42", 2], ["profile", "42", 2], ["wallet", game],
+      ["profile", "42", 2], ["save", "42", 2, "rev-2", game], ["card", 2, 42],
+    ]);
+  }
 });
 
 test("换绑、断线、失效及钱包错误均保留旧配置", async () => {

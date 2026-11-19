@@ -732,11 +732,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         blacklist: Array.isArray(setting.black_list) ? setting.black_list.map(accountId).filter(Boolean) : [],
       } as const;
     },
-    async cloudGenshinCheckin(qq: string, id: number) {
+    async cloudCheckin(qq: string, id: number) {
       const { document, revision } = await readDocument(qq, id);
-      const config = record(record(record(document.cloud_games).cn).genshin);
-      const enabled = config.enable === true;
-      return { enabled, revision, token: enabled && typeof config.token === "string" ? config.token : "" };
+      const settings = record(record(document.cloud_games).cn);
+      return { revision, wallets: (["genshin", "zzz"] as const).flatMap(game => {
+        const { enable, token } = record(settings[game]);
+        return enable === true ? [{ game, token: typeof token === "string" ? token : "" }] : [];
+      }) };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
@@ -798,11 +800,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return updateCloudGame(document, game, { enable: enabled });
       });
     },
-    async saveCloudGenshinToken(qq: string, id: number, expectedRevision: string, token: string, signal?: AbortSignal) {
-      if (typeof token !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(token)) invalidCheckinSettings();
+    async saveCloudToken(qq: string, id: number, expectedRevision: string, game: "genshin" | "zzz", token: string, signal?: AbortSignal) {
+      if ((game !== "genshin" && game !== "zzz") || typeof token !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(token)) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
-        return updateCloudGame(document, "genshin", { token, enable: true });
+        return updateCloudGame(document, game, { token, enable: true });
       }, signal);
     },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {

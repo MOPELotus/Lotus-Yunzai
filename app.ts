@@ -711,7 +711,7 @@ if (import.meta.main) {
     commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile }), "[Lotus-Plugin] Profile Settings");
     commands.registerModule(cloudProfileCommands({
       signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
-      saveToken: (qq, id, revision, _game, token, signal) => checkinProfiles.saveCloudGenshinToken(qq, id, revision, token, signal),
+      saveToken: checkinProfiles.saveCloudToken,
     }), "[Lotus-Plugin] Profile Settings");
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit });

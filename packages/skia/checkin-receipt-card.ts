@@ -14,7 +14,7 @@ export interface CheckinReceiptCardModel {
     readonly community: string;
   }[];
   readonly detail?: {
-    readonly title: "米游币" | "失败" | "云原神";
+    readonly title: "米游币" | "失败" | "云原神" | "云游戏";
     readonly message: string;
   };
   readonly generatedAt?: string;
