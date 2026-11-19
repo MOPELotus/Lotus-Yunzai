@@ -13,10 +13,12 @@ import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessa
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 
+type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
+
 export interface MilkyTransportOptions {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
-  readonly onSent?: (event: BotEvent, message: unknown) => void;
+  readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
@@ -48,12 +50,19 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const { signal, dispatch, onSent } = options;
   const call = createMilkyApi(settings, signal);
   const login = await call("get_login_info", {});
-  const account = login?.uin;
-  if (signal.aborted || !positiveId(account)) return;
+  if (signal.aborted || !positiveId(login?.uin)) return;
+  const account = login.uin;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
   const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
   const recallReply = createMilkyRecallReply(signal, call.confirmed, isMaster);
+
+  function confirmSent(recipient: MessageRecipient | undefined, result: Record<string, unknown> | undefined, content: unknown) {
+    if (recipient && hasMessageSequence(result?.message_seq)) {
+      onSent?.({ self_id: account, group_id: recipient.group_id, user_id: recipient.user_id }, content);
+    }
+    return result;
+  }
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
@@ -106,7 +115,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (!message) return "rejected";
     const result = await call.confirmed(group ? "send_group_message" : "send_private_message", { ...target, message });
     if (result.status !== "confirmed") return result.status;
-    return hasMessageSequence(result.data.message_seq) ? "confirmed" : "unknown";
+    if (!hasMessageSequence(result.data.message_seq)) return "unknown";
+    confirmSent(target, result.data, message);
+    return "confirmed";
   }
 
   const checkinNotify: CheckinNotifyTransport = {
@@ -128,10 +139,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const messages = encodeMilkyForward(nodes, account);
       if (signal.aborted || !messages || !positiveId(groupId ?? userId)) return "rejected";
       const params = groupId === undefined ? { user_id: userId } : { group_id: groupId };
-      const result = await call.confirmed(groupId === undefined ? "send_private_message" : "send_group_message",
-        { ...params, message: [{ type: "forward", data: { messages } }] });
+      const message = [{ type: "forward", data: { messages } }];
+      const result = await call.confirmed(groupId === undefined ? "send_private_message" : "send_group_message", { ...params, message });
       if (result.status !== "confirmed") return result.status;
-      return hasMessageSequence(result.data.message_seq) ? "confirmed" : "unknown";
+      if (!hasMessageSequence(result.data.message_seq)) return "unknown";
+      confirmSent(params, result.data, message);
+      return "confirmed";
     },
   };
 
@@ -185,13 +198,6 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.event_type === "bot_offline") return "offline";
     groupMute.observe(body);
 
-    function confirmSent(event: BotEvent | undefined, result: Record<string, unknown> | undefined, content: unknown) {
-      if (event && hasMessageSequence(result?.message_seq)) {
-        onSent?.(event, content);
-      }
-      return result;
-    }
-
     if (body.event_type === "friend_file_upload") {
       const upload = milkyFriendFileUpload(body, account, async (action, params) => {
         return confirmSent(upload, await call(action, params), params.message);
@@ -217,7 +223,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown" || !hasMessageSequence(result.data.message_seq)) {
         throw new Error("Milky 通知回复未确认。");
       }
-      confirmSent(event && { ...event, ...target }, result.data, content);
+      confirmSent(target, result.data, content);
       return true;
     }
 
