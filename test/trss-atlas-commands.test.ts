@@ -8,7 +8,7 @@ const token = "atlas-command-fixture";
 const excludedCommands = [
   "#未知样例图鉴", "#西风图鉴", "#101图鉴", "%锋镝图鉴",
   "#西风剑攻略", "*锋镝练度", "#我的深渊战绩",
-  "#图鉴西风", "荷花图鉴未知样例", "#图鉴西风剑攻略", "荷花图鉴更新", "#更新图鉴", "#Lotus图鉴重置",
+  "#图鉴西风", "荷花图鉴未知样例", "#图鉴西风剑攻略", "#Lotus图鉴重置",
 ];
 
 async function writeCatalog(directory: string) {
@@ -158,6 +158,9 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
         expect(await query(command)).toBe(status);
       }
       expect(await query("荷花图鉴 更新")).toBe("原神 · 武器 · 更新 · 四星 · 单手剑 · ID 104");
+      for (const command of ["荷花图鉴更新", "#更新图鉴", "#Lotus检查图鉴更新"]) {
+        expect(await query(command)).toBe("只有 bot 主人可以操作图鉴更新。");
+      }
 
       for (const command of excludedCommands) expect(await query(command)).toBe(`旁路 ${command}`);
       expect(frames).toEqual([]);
