@@ -561,7 +561,8 @@ test("网页签到一次保存现有开关，保留主人排期、通知群及�
       profile: { id: 2, notify: { enable: true, prefer: "group", fallback_groups: ["71"], extension: "保留" } },
       schedule: { mode: "fixed", fixed_time: "11:01" },
       games: { cn: { enable: false, genshin: { checkin: false, black_list: ["81"] }, hna: { checkin: true } },
-        os: { enable: true, cookie: "test-os" } },
+        os: { enable: true, cookie: "test-os", verified_account_id: "77", verified_realm: "EU", lang: "zh-tw",
+          honkai3rd: { checkin: false, black_list: ["91"] }, honkai2: { checkin: true } } },
       mihoyobbs: { enable: false, tasks: { checkin: false, read: true, like: true }, checkin_list: [1, 6] },
       cloud_games: { cn: { genshin: { enable: false, token: "test-cloud" }, zzz: { enable: true } }, extra: "保留" },
     };
@@ -571,15 +572,16 @@ test("网页签到一次保存现有开关，保留主人排期、通知群及�
     expect(current).toMatchObject({ enabled: false, notify: true, community: false, cnEnabled: false,
       forums: [1, 6], cloud: { genshin: false, zzz: true }, cloudBound: { genshin: true, zzz: false }, games: {
       genshin: false, honkai_sr: true, zzz: true, honkai2: false, honkai3rd: false, tears_of_themis: false,
-    } });
+    }, osEnabled: true, osBound: true, os: { genshin: false, honkai_sr: false, zzz: false, honkai3rd: false, tears_of_themis: false } });
     const patch = { enabled: true, notify: false, community: true, games: { ...current.games, genshin: true },
-      forums: [6, 8], cloud: { genshin: true, zzz: false } };
+      forums: [6, 8], cloud: { genshin: true, zzz: false }, osEnabled: false, os: { ...current.os, honkai3rd: true } };
     const saved = await profiles.setWebCheckinSettings("42", 2, current.revision, patch);
     expect(await profiles.webCheckinSettings("42", 2)).toMatchObject({ ...patch, revision: saved.revision, cnEnabled: false });
     expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({
       ...original, enabled: true,
       profile: { ...original.profile, notify: { ...original.profile.notify, enable: false } },
-      games: { ...original.games, cn: { ...original.games.cn, genshin: { checkin: true, black_list: ["81"] } } },
+      games: { cn: { ...original.games.cn, genshin: { checkin: true, black_list: ["81"] } },
+        os: { ...original.games.os, enable: false, honkai3rd: { checkin: true, black_list: ["91"] } } },
       mihoyobbs: { ...original.mihoyobbs, enable: true, checkin_list: [6, 8], tasks: { ...original.mihoyobbs.tasks, checkin: true } },
       cloud_games: { ...original.cloud_games, cn: { genshin: { enable: true, token: "test-cloud" }, zzz: { enable: false } } },
     });

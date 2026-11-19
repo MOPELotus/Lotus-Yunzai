@@ -98,8 +98,8 @@ function renderPreviewSettings(data) {
 const checkinSwitches = ["enabled", "notify", "community"];
 const checkinCloudGames = { genshin: "云原神", zzz: "云绝区零" };
 
-function checkedFlags(fieldset) {
-  return Object.fromEntries(Array.from(get(fieldset).querySelectorAll("input"), input => [input.value, input.checked]));
+function checkedFlags(fieldset, selector = "input") {
+  return Object.fromEntries(Array.from(get(fieldset).querySelectorAll(selector), input => [input.value, input.checked]));
 }
 
 function sameFlags(patch, saved) {
@@ -115,13 +115,15 @@ function checkinPatch() {
     games: checkedFlags("checkin-games"),
     forums: Array.from(get("checkin-forums").querySelectorAll("input:checked"), input => Number(input.value)),
     cloud: checkedFlags("checkin-cloud"),
+    osEnabled: get("checkin-os-enabled").checked,
+    os: checkedFlags("checkin-os", 'input[name="os"]'),
   };
 }
 
 function checkinSettingsButtons() {
   const loaded = checkin.data;
   const pending = Boolean(checkin.active);
-  for (const field of ["checkin-games", "checkin-switches", "checkin-forums", "checkin-cloud"]) {
+  for (const field of ["checkin-games", "checkin-switches", "checkin-forums", "checkin-cloud", "checkin-os"]) {
     get(field).disabled = !loaded || pending;
   }
   get("checkin-enabled").disabled = !loaded || (loaded.canEnable === false && !loaded.enabled);
@@ -131,7 +133,8 @@ function checkinSettingsButtons() {
   const patch = checkinPatch();
   get("checkin-settings-save").disabled = !loaded || pending ||
     (checkinSwitches.every(key => patch[key] === loaded[key]) && sameFlags(patch.games, loaded.games) &&
-      sameFlags(patch.cloud, loaded.cloud) && patch.forums.length === loaded.forums.length && patch.forums.every(id => loaded.forums.includes(id)));
+      sameFlags(patch.cloud, loaded.cloud) && patch.forums.length === loaded.forums.length && patch.forums.every(id => loaded.forums.includes(id)) &&
+      patch.osEnabled === loaded.osEnabled && sameFlags(patch.os, loaded.os));
   get("checkin-settings-form").setAttribute("aria-busy", String(pending));
 }
 
@@ -140,11 +143,14 @@ function renderCheckinSettings(data) {
   for (const input of get("checkin-games").querySelectorAll("input")) input.checked = data.games[input.value] === true;
   for (const input of get("checkin-forums").querySelectorAll("input")) input.checked = data.forums.includes(Number(input.value));
   for (const game of Object.keys(checkinCloudGames)) get("checkin-cloud-" + game).checked = data.cloud[game];
+  get("checkin-os-enabled").checked = data.osEnabled;
+  for (const input of get("checkin-os").querySelectorAll('input[name="os"]')) input.checked = data.os[input.value];
   const messages = [];
   if (data.cnEnabled === false) messages.push("当前档案的国服签到总开关已关闭，各游戏的选择仍会保留。");
   if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动签到的权限。");
   const unbound = Object.entries(checkinCloudGames).filter(([game]) => !data.cloudBound[game]).map(([, label]) => label);
   if (unbound.length) messages.push(`${unbound.join("、")}需先在聊天中绑定账户，才能执行钱包签到。`);
+  if (!data.osBound) messages.push("国际服签到需先在聊天中绑定 HoYoLAB 账号。");
   return messages.join(" ");
 }
 

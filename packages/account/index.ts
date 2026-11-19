@@ -51,6 +51,8 @@ type CnCheckinGame = keyof typeof cnCheckinGame;
 const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
 const webCheckinGames = cnCheckinKeys.filter(game => game !== "hna");
 type WebCheckinGame = typeof webCheckinGames[number];
+const internationalWebGames = ["genshin", "honkai_sr", "zzz", "honkai3rd", "tears_of_themis"] as const;
+type InternationalWebGame = typeof internationalWebGames[number];
 const defaultCommunityForums = ["1", "2", "3", "4", "5", "6", "8", "9", "10"] as const;
 
 function configuredCnCheckins(cn: Record<string, unknown>) {
@@ -123,6 +125,8 @@ interface WebCheckinPreferences {
   readonly games: Readonly<Record<WebCheckinGame, boolean>>;
   readonly forums: readonly number[];
   readonly cloud: Readonly<Record<"genshin" | "zzz", boolean>>;
+  readonly osEnabled: boolean;
+  readonly os: Readonly<Record<InternationalWebGame, boolean>>;
 }
 
 function cloudCredentialPresent(settings: Record<string, unknown>) {
@@ -804,7 +808,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     },
     async webCheckinSettings(qq: string, id: number) {
       const { document, state, revision } = await readDocument(qq, id);
-      const cn = record(record(document.games).cn);
+      const games = record(document.games);
+      const cn = record(games.cn);
+      const os = record(games.os);
       const configured = configuredCnCheckins({ ...cn, enable: true });
       const community = record(document.mihoyobbs);
       const cloud = record(record(document.cloud_games).cn);
@@ -817,6 +823,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         forums: selectedCommunityForums(community).map(Number),
         cloud: { genshin: genshin.enable === true, zzz: zzz.enable === true },
         cloudBound: { genshin: cloudCredentialPresent(genshin), zzz: cloudCredentialPresent(zzz) },
+        osEnabled: os.enable === true,
+        os: Object.fromEntries(internationalWebGames.map(key => [key, record(os[key]).checkin === true])) as Record<InternationalWebGame, boolean>,
+        osBound: /^[1-9][0-9]{0,19}$/u.test(text(os.verified_account_id)) &&
+          (os.verified_realm === "SG" || os.verified_realm === "US" || os.verified_realm === "EU") &&
+          ((typeof os.cookie === "string" && os.cookie.trim() !== "") ||
+           (typeof os.verified_activity_cookie === "string" && os.verified_activity_cookie.trim() !== "")),
         games: Object.fromEntries(webCheckinGames.map(key => [key, configured[key]?.enabled === true])) as Record<WebCheckinGame, boolean>,
         cnEnabled: cn.enable !== false,
         loggedIn: state.summary.loggedIn, revision,
@@ -828,6 +840,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!Array.isArray(patch.forums) || new Set(patch.forums).size !== patch.forums.length ||
           patch.forums.some(id => typeof id !== "number" || !defaultCommunityForums.some(allowed => Number(allowed) === id)) ||
           typeof patch.cloud?.genshin !== "boolean" || typeof patch.cloud?.zzz !== "boolean") invalidCheckinSettings();
+      if (typeof patch.osEnabled !== "boolean" || internationalWebGames.some(key => typeof patch.os?.[key] !== "boolean")) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         const raw = record(record(document.games).cn);
@@ -862,6 +875,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
             updated = applyCheckinSettings(updated, { type: "game", game: entry[0] as CnCheckinGame, enabled });
           }
         }
+        const previousOs = record(record(document.games).os);
+        const os = { ...previousOs };
+        if (patch.osEnabled !== (previousOs.enable === true)) os.enable = patch.osEnabled;
+        for (const game of internationalWebGames) {
+          const stored = record(previousOs[game]);
+          if (patch.os[game] !== (stored.checkin === true)) os[game] = { ...stored, checkin: patch.os[game] };
+        }
+        if (!isDeepStrictEqual(previousOs, os)) updated = { ...updated, games: { ...record(updated.games), os } };
         return updated;
       }, signal, verify);
     },

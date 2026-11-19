@@ -44,6 +44,7 @@ export class MiyousheSettingsError extends Error {
 export class MiyoushePreviewSettingsError extends MiyousheSettingsError {}
 
 export const miyousheCheckinGames = ["genshin", "honkai_sr", "zzz", "honkai3rd", "honkai2", "tears_of_themis"] as const;
+export const miyousheInternationalCheckinGames = ["genshin", "honkai_sr", "zzz", "honkai3rd", "tears_of_themis"] as const;
 const cloudCheckinGames = ["genshin", "zzz"] as const;
 export type MiyousheCheckinGame = typeof miyousheCheckinGames[number];
 export interface MiyousheCheckinSettingsPatch {
@@ -54,11 +55,14 @@ export interface MiyousheCheckinSettingsPatch {
   readonly games: Readonly<Record<MiyousheCheckinGame, boolean>>;
   readonly forums: readonly number[];
   readonly cloud: Readonly<Record<typeof cloudCheckinGames[number], boolean>>;
+  readonly osEnabled: boolean;
+  readonly os: Readonly<Record<typeof miyousheInternationalCheckinGames[number], boolean>>;
 }
 export interface MiyousheCheckinSettings extends MiyousheCheckinSettingsPatch {
   readonly canEnable?: boolean;
   readonly cnEnabled?: boolean;
   readonly cloudBound?: MiyousheCheckinSettingsPatch["cloud"];
+  readonly osBound?: boolean;
 }
 
 function validRevision(value: unknown): value is string {
@@ -86,12 +90,13 @@ function previewSettingsPatch(input: unknown): MiyoushePreviewSettingsPatch | un
 
 function checkinSettingsPatch(input: unknown): MiyousheCheckinSettingsPatch | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return;
-  const { revision, enabled, notify, community, games, forums, cloud } = input as Record<string, unknown>;
-  if (Object.keys(input).length !== 7 || !validRevision(revision) || typeof enabled !== "boolean" ||
+  const { revision, enabled, notify, community, games, forums, cloud, osEnabled, os } = input as Record<string, unknown>;
+  if (Object.keys(input).length !== 9 || !validRevision(revision) || typeof enabled !== "boolean" ||
     typeof notify !== "boolean" || typeof community !== "boolean" || !flagMap(games, miyousheCheckinGames) ||
     !flagMap(cloud, cloudCheckinGames) || !Array.isArray(forums) || forums.length > Object.keys(bbsCheckinForums).length ||
-    !forums.every(supportedForum) || new Set(forums).size !== forums.length) return;
-  return { revision, enabled, notify, community, games, forums, cloud };
+    !forums.every(supportedForum) || new Set(forums).size !== forums.length || typeof osEnabled !== "boolean" ||
+    !flagMap(os, miyousheInternationalCheckinGames)) return;
+  return { revision, enabled, notify, community, games, forums, cloud, osEnabled, os };
 }
 
 interface ProfileSettings<Patch, Settings> {
@@ -327,6 +332,9 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
           forums: [...new Set(settings.forums.filter(supportedForum))],
           cloud: Object.fromEntries(cloudCheckinGames.map(game => [game, settings.cloud[game] === true])),
           cloudBound: Object.fromEntries(cloudCheckinGames.map(game => [game, settings.cloudBound?.[game] === true])),
+          osEnabled: settings.osEnabled === true,
+          os: Object.fromEntries(miyousheInternationalCheckinGames.map(game => [game, settings.os[game] === true])),
+          osBound: settings.osBound === true,
           canEnable: settings.canEnable !== false, cnEnabled: settings.cnEnabled !== false,
         }));
       }
