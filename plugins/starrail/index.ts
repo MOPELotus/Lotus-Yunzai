@@ -5,6 +5,7 @@ import { buildStarRailGachaDetail, type StarRailGachaDetailPool } from "./gacha-
 import { renderStarRailGachaDetail } from "./gacha-detail-card.ts";
 import { readStarRailGachaItems, starRailGachaThemeDirectory } from "./gacha-detail-source.ts";
 import { renderStarRailGachaFailure, renderStarRailGachaResult } from "./gacha-result-card.ts";
+import { readStarRailGachaSchedule, resolveStarRailDetailPool } from "./gacha-schedule.ts";
 import { createStarRailGachaHistoryStore } from "./gacha-store.ts";
 import { createStarRailGachaSync } from "./gacha-sync.ts";
 
@@ -39,9 +40,12 @@ export function createModule({ signal, lockFile }: {
         return `[荷花插件]profile ${profileId} 暂无星铁抽卡记录，请先使用 *更新抽卡记录${profileId === 1 ? "" : profileId}。`;
       }
       const themeDirectory = starRailGachaThemeDirectory();
+      const [resolveItem, schedule] = await Promise.all([
+        readStarRailGachaItems(themeDirectory), readStarRailGachaSchedule(themeDirectory),
+      ]);
       const options = {
         uid, history: snapshot, pool, face: { name: nickname || "旅行者" }, now: new Date(),
-        resolveItem: await readStarRailGachaItems(themeDirectory),
+        resolveItem, resolvePool: resolveStarRailDetailPool(schedule),
       };
       const first = buildStarRailGachaDetail({ ...options, page: all ? 1 : undefined });
       if (!first) return `UID:${uid} 本地暂无该卡池抽卡记录。`;
