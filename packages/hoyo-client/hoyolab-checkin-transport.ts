@@ -13,8 +13,8 @@ const cookiePaths = {
   ltoken: "/binding/api/getUserGameRolesByLtoken",
 } as const;
 const activityPaths = {
-  cookie: "/event/sol",
-  ltoken: "/event/luna/hkrpg/os",
+  cookie: ["/event/sol"],
+  ltoken: ["/event/luna/hkrpg/os", "/event/luna/zzz/os"],
 } as const;
 type Credential = keyof typeof cookiePaths;
 type Json = Record<string, unknown>;
@@ -76,7 +76,7 @@ function checkAccount(data: Json, source: ReturnType<typeof validateSource>, sub
 
 function officialRoute(url: URL, writing: boolean, credential: Credential) {
   if (url.origin === roleOrigin) return !writing && url.pathname === cookiePaths[credential];
-  return url.origin === activityOrigin && url.pathname === `${activityPaths[credential]}/${writing ? "sign" : "info"}`;
+  return url.origin === activityOrigin && activityPaths[credential].some(base => url.pathname === `${base}/${writing ? "sign" : "info"}`);
 }
 
 export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport,
@@ -156,7 +156,7 @@ export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, trans
     deviceId: deviceId ?? crypto.randomUUID(),
     request,
     async roleList(gameBiz: string, subject: string): Promise<readonly unknown[]> {
-      if (gameBiz !== (credential === "ltoken" ? "hkrpg_global" : "hk4e_global")) {
+      if (credential === "ltoken" ? gameBiz !== "hkrpg_global" && gameBiz !== "nap_global" : gameBiz !== "hk4e_global") {
         throw new HoyoRequestError("invalid-input", "国际服角色目录不支持当前游戏。");
       }
       const url = new URL(cookiePaths[credential], roleOrigin);
