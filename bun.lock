@@ -96,7 +96,9 @@
     "plugins/guides": {
       "name": "@lotus-yunzai/guides",
       "dependencies": {
+        "@lotus-yunzai/skia": "workspace:*",
         "node-schedule": "2.1.2",
+        "skia-canvas": "3.0.8",
       },
     },
     "plugins/media": {
