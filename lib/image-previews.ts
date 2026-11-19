@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { link, mkdir, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -75,15 +75,32 @@ async function databaseLines(file: URL) {
   }
 }
 
-export async function loadImagePreviews(root: URL): Promise<readonly string[]> {
+async function legacyLines(root: URL, archived = false) {
+  const legacy = new URL("temp/Lotus-Plugin/poetry/", root);
+  const cache = new URL("lines.json", legacy);
+  const database = new URL("poetry.db", legacy);
+  async function readable(file: URL) {
+    if (!archived) return true;
+    const path = fileURLToPath(file);
+    try {
+      return (await lstat(path)).isFile() && await realpath(path) === path;
+    } catch {
+      return false;
+    }
+  }
+  const lines = await readable(cache) ? await cachedLines(cache) : [];
+  if (lines.length || !await readable(database)) return lines;
+  return databaseLines(database).catch(() => []);
+}
+
+export async function loadImagePreviews(root: URL, previous?: URL, signal?: AbortSignal): Promise<readonly string[]> {
   const target = new URL("data/image-previews/lines.json", root);
   const current = await cachedLines(target);
   if (current.length) return current;
-  const legacy = new URL("temp/Lotus-Plugin/poetry/", root);
-  const cache = await cachedLines(new URL("lines.json", legacy));
-  const lines = cache.length ? cache : await databaseLines(new URL("poetry.db", legacy)).catch(() => []);
+  let lines = await legacyLines(root);
+  if (!lines.length && previous) lines = await legacyLines(previous, true);
   if (!lines.length) return cachedLines(new URL(releaseTargetPath, root));
-  await saveLines(target, lines);
+  await saveLines(target, lines, signal);
   return lines;
 }
 
@@ -174,9 +191,10 @@ export async function prepareImagePreviewRelease(
   }
 }
 
-export async function startImagePreviews(root: URL, signal: AbortSignal, publish: (lines: readonly string[]) => void) {
+export async function startImagePreviews(root: URL, signal: AbortSignal, publish: (lines: readonly string[]) => void, previous?: URL) {
   try {
-    const lines = await loadImagePreviews(root);
+    signal.throwIfAborted();
+    const lines = await loadImagePreviews(root, previous, signal);
     if (signal.aborted) return;
     if (lines.length) {
       publish(lines);
@@ -184,7 +202,7 @@ export async function startImagePreviews(root: URL, signal: AbortSignal, publish
     }
     await delay(120_000, undefined, { ref: false, signal });
     // Reuse a local cache created while startup was settling.
-    const current = await loadImagePreviews(root);
+    const current = await loadImagePreviews(root, previous, signal);
     const output = current.length ? current : await prepareImagePreviewRelease(root, AbortSignal.any([signal, AbortSignal.timeout(600_000)]));
     if (output.length && !signal.aborted) publish(output);
   } catch {

@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
 import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
@@ -96,6 +97,7 @@ import { createRuntimeStatus } from "./lib/runtime-status.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
+import { previousUpdateDirectory } from "./lib/update-activation.ts";
 import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
@@ -216,12 +218,17 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
-  if (!probingUpdate) whenModuleTasksActive(() => {
-    const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
-    const running = startImagePreviews(root, active, setImagePreviews);
-    pending.add(running);
-    void running.then(() => pending.delete(running));
-  });
+  if (!probingUpdate) {
+    const previous = handoff.managed && !handoff.accepting
+      ? await previousUpdateDirectory(fileURLToPath(root)).catch(() => undefined)
+      : undefined;
+    whenModuleTasksActive(() => {
+      const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
+      const running = startImagePreviews(root, active, setImagePreviews, previous ? pathToFileURL(previous + sep) : undefined);
+      pending.add(running);
+      void running.then(() => pending.delete(running));
+    });
+  }
   const mediaDelivery = createMediaDelivery(fileURLToPath(new URL("data", root)), () => stopping ? undefined : fileBase);
   const processReceipts = createProcessReceipts(root);
   type ProcessAction = {

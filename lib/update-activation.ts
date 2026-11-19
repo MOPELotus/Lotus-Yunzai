@@ -216,6 +216,13 @@ export async function recoverUpdateActivation(active: string): Promise<boolean> 
 
 async function recover(root: string, path: string): Promise<boolean> {
   if (!await exists(path)) return false;
+  const entry = await readJournal(root, path);
+  if (!entry.committed) await rollback(root, entry);
+  await removeJournal(path);
+  return true;
+}
+
+async function readJournal(root: string, path: string): Promise<Activation> {
   const info = await lstat(path);
   if (!info.isFile() || info.size > 64 * 1024) throw new Error("版本切换记录无效。");
   const entry = await Bun.file(path).json() as Activation;
@@ -225,7 +232,18 @@ async function recover(root: string, path: string): Promise<boolean> {
       resolve(entry.candidate) !== entry.candidate ||
       within(root, entry.candidate) || within(entry.candidate, root)) throw new Error("版本切换记录无效。");
   statePaths(entry.state);
-  if (!entry.committed) await rollback(root, entry);
-  await removeJournal(path);
-  return true;
+  return entry;
+}
+
+// A held worker can identify the archive even when started by a supervisor
+// predating this helper. The caller must wait for activation before importing.
+export async function previousUpdateDirectory(active: string): Promise<string | undefined> {
+  const root = await canonicalLocation(active);
+  const path = journalPath(root);
+  if (!await exists(path)) return;
+  const entry = await readJournal(root, path);
+  if (entry.committed || await exists(entry.candidate)) return;
+  const previous = backupPath(root, entry.id);
+  const [old, current] = await Promise.all([lstat(previous), lstat(root)]);
+  if (old.isDirectory() && current.isDirectory() && old.dev === current.dev) return previous;
 }

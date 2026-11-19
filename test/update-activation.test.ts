@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { activateUpdate, recoverUpdateActivation } from "../lib/update-activation.ts";
+import { pathToFileURL } from "node:url";
+import { loadImagePreviews } from "../lib/image-previews.ts";
+import { activateUpdate, previousUpdateDirectory, recoverUpdateActivation } from "../lib/update-activation.ts";
 
 const pluginState = "plugins/fixture/state";
 const additionalState = [pluginState] as const;
@@ -111,6 +113,38 @@ test("候选启动失败恢复原安装并把候选送回暂存区", () => withD
   await expect(lstat(join(candidate, "config/settings.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(lstat(join(active, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
   await checkStartup(active, "previous");
+}));
+
+test("候选接管后可从当前切换归档导入旧缓存", () => withDirectories(true, async ({ active, candidate }) => {
+  const file = "temp/Lotus-Plugin/poetry/lines.json";
+  const old = { [file]: '{"lines":["  旧摘要  "]}\n' };
+  const target = "data/image-previews/lines.json";
+  await writeFiles(active, old);
+  expect(await previousUpdateDirectory(active)).toBeUndefined();
+  let previous: string | undefined;
+  const activated = await activateUpdate(active, candidate, async (directory) => {
+    previous = await previousUpdateDirectory(directory);
+    expect(previous).toBeDefined();
+    await expect(lstat(join(directory, target))).rejects.toMatchObject({ code: "ENOENT" });
+  }, additionalState);
+  expect(previous).toBe(activated.previous);
+  expect(await previousUpdateDirectory(active)).toBeUndefined();
+  const root = pathToFileURL(active + "/");
+  const archived = pathToFileURL(activated.previous + "/");
+  expect(await loadImagePreviews(root, archived)).toEqual(["旧摘要"]);
+  await assertFiles(activated.previous, old);
+  await assertFiles(active, { [target]: '{"lines":["旧摘要"]}' });
+  expect(await loadImagePreviews(root)).toEqual(["旧摘要"]);
+}));
+
+test("归档缓存路径经过链接时不读取链接目标", () => withDirectories(true, async ({ parent, active, candidate }) => {
+  const folder = "temp/Lotus-Plugin/poetry";
+  const outside = join(parent, "outside");
+  await writeFiles(outside, { "lines.json": '{"lines":["不属于归档"]}' });
+  await mkdir(join(active, dirname(folder)), { recursive: true });
+  await symlink(outside, join(active, folder), "dir");
+  const { previous } = await activateUpdate(active, candidate, async () => {}, additionalState);
+  expect(await loadImagePreviews(pathToFileURL(active + "/"), pathToFileURL(previous + "/"))).toEqual([]);
 }));
 
 test("候选包含受保护路径时拒绝切换并保留两份状态", () => withDirectories(true, async ({ active, candidate }) => {
