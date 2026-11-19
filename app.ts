@@ -5,6 +5,7 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
+import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -79,7 +80,7 @@ import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
 import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
-import { createCommandDelegation } from "./lib/command-delegation.ts";
+import { createCommandDelegation, delegationSession } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
@@ -1133,7 +1134,7 @@ if (import.meta.main) {
       },
     }), {
       loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
-      groupCardServices: probingUpdate ? undefined : {
+      groupServices: probingUpdate ? undefined : {
         ownGroupCardAccounts() {
           const accounts = groups.ownGroupCardAccounts();
           const milky = milkyOnline?.ownGroupCardAccount;
@@ -1142,6 +1143,14 @@ if (import.meta.main) {
         registerAutoGroupCardTask(cron, run) {
           return registerModuleTask("[group] 自动群名片", cron, run);
         },
+        autoRepeatSessionSignal(value) {
+          if (!value || typeof value !== "object") return;
+          const event = value as MessageEvent;
+          if (event.message_type !== "group" || event.isDelegated) return;
+          const signal = event[delegationSession]?.signal;
+          if (signal?.aborted === false) return signal;
+        },
+        readAutoRepeatImage: readQqMessageMedia,
       },
       atlasUpdate: probingUpdate ? undefined : {
         config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {

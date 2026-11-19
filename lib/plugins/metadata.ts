@@ -10,6 +10,8 @@ const retiredScripts = new Map([
     { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
   ["9d03582599fff6214732f963fceccde151a1307169c956e28c2f52327734180f",
     { name: "主动复读", reason: "主人主动复读已归并到 group。", module: "@lotus-yunzai/group" }],
+  ["150399f358647ea2f306b74595c33db2e2a789a4f763e48eb5804300f70e9359",
+    { name: "自动复读", reason: "群自动复读已归并到 group。", module: "@lotus-yunzai/group" }],
   ["1babeb445b80a5c10ba3442e3a97d1716762931677460259b3b274d1c49d7368",
     { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
   ["629da5e8260364f2da2c13da42be13772b065534372c63ddf3a497adc8e904c4",

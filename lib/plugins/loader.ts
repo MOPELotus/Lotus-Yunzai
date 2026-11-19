@@ -217,9 +217,11 @@ export async function loadPlugins(
     readonly reportLoading?: (wait: number) => void;
     readonly fileWatch?: boolean;
     readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
-    readonly groupCardServices?: {
+    readonly groupServices?: {
       ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+      autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
+      readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
     };
     readonly atlasUpdate?: {
       readonly config: unknown;
@@ -379,9 +381,9 @@ export async function loadPlugins(
           throw new Error("createModule 须为模块工厂函数。");
         }
         const builtIn = directory && relative(root, directory) === builtInDirectories.get(moduleName);
-        const groupCard = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupCardServices : undefined;
+        const group = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupServices : undefined;
         const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
-        const module = create ? await create(Object.freeze({ ...services, ...groupCard, signal,
+        const module = create ? await create(Object.freeze({ ...services, ...group, signal,
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule } = record(module);
