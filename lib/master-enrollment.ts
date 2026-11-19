@@ -5,13 +5,14 @@ interface Permissions {
   readonly isMaster: (bot: number, user: number) => boolean;
   readonly masterIds: (bot: number) => readonly number[];
   readonly isTerminalMaster: () => boolean;
-  readonly grant: (bot: number, user: number, approver: number | "stdin") => Promise<boolean>;
+  readonly grant: (bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean) => Promise<boolean>;
 }
 
 interface Application {
   readonly id: string;
   readonly bot: number;
   readonly user: number;
+  readonly adapter: "onebot" | "milky";
   readonly expires: number;
   signing?: { readonly approver: number; readonly digest: Buffer };
 }
@@ -41,13 +42,21 @@ function hash(code: string): Buffer {
   return createHash("sha256").update(code.toLowerCase()).digest();
 }
 
+function isLive(guard?: () => boolean): boolean {
+  try {
+    return guard?.() === true;
+  } catch {
+    return false;
+  }
+}
+
 export function createMasterEnrollment(permissions: Permissions, now: () => number = () => performance.now()) {
   const applications = new Map<string, Application>();
   const granting = new Set<string>();
 
-  async function grant(bot: number, user: number, approver: number | "stdin"): Promise<string> {
+  async function grant(bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean): Promise<string> {
     try {
-      if (await permissions.grant(bot, user, approver)) return "已设置为当前机器人的主人。";
+      if (await permissions.grant(bot, user, approver, isCurrent)) return "已设置为当前机器人的主人。";
     } catch {
       // A storage exception must not expose the enrollment or its credentials.
     }
@@ -67,7 +76,10 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
     }
 
     const { self_id: bot, user_id: user } = event;
-    if (event.message_type !== "private" || event.boundAccount !== true || !isId(bot) || !isId(user) || bot === user) {
+    const adapter = event.adapter ?? "onebot";
+    const isCurrent = adapter === "milky" ? event.isOwnerEnrollmentSession : undefined;
+    const bound = adapter === "milky" ? isLive(isCurrent) : event.boundAccount === true;
+    if (event.message_type !== "private" || !bound || !isId(bot) || !isId(user) || bot === user) {
       return "请在已绑定机器人的私聊中操作。";
     }
 
@@ -76,12 +88,13 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
       if (application.expires <= time) applications.delete(key);
     }
 
-    const key = `${bot}:${user}`;
+    const ownerKey = `${bot}:${user}`;
+    const key = `${adapter}:${ownerKey}`;
     if (command === issue) {
       if (!permissions.isMaster(bot, user)) return "仅当前机器人的主人可签发验证码。";
       const id = args[0]?.toLowerCase();
       if (args.length !== 1 || !id || !/^[a-f0-9]{8}$/u.test(id)) return "用法：#设置主人验证码 <申请编号>。";
-      const application = [...applications.values()].find((entry) => entry.bot === bot && entry.id === id);
+      const application = [...applications.values()].find((entry) => entry.adapter === adapter && entry.bot === bot && entry.id === id);
       if (!application) return invalid;
 
       const code = randomBytes(8).toString("hex");
@@ -92,7 +105,7 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
     if (args.length > 1) return "用法：#设置主人，或 #设置主人 <验证码>。";
     if (permissions.isMaster(bot, user)) return "你已经是当前机器人的主人。";
     if (!permissions.masterIds(bot).length) return "当前机器人尚未设置主人，请先在本机配置。";
-    if (granting.has(key)) return "主人设置正在处理。";
+    if (granting.has(ownerKey)) return "主人设置正在处理。";
 
     const application = applications.get(key);
     const code = args[0];
@@ -104,7 +117,7 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
         do {
           id = randomBytes(4).toString("hex");
         } while ([...applications.values()].some((entry) => entry.id === id && entry.bot === bot));
-        pending = { id, bot, user, expires: time + applicationTtlMs };
+        pending = { id, bot, user, adapter, expires: time + applicationTtlMs };
         applications.set(key, pending);
       }
       return `申请编号：${pending.id}。请让当前机器人的主人在此机器人私聊中发送 #设置主人验证码 <编号>。申请 5 分钟内有效。`;
@@ -114,12 +127,12 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
     if (!signing || !/^[a-f0-9]{16}$/iu.test(code) || !timingSafeEqual(signing.digest, hash(code))) return invalid;
     // Invalidate before awaiting disk, including when the grant fails or is revoked.
     applications.delete(key);
-    granting.add(key);
+    granting.add(ownerKey);
     try {
       if (!permissions.isMaster(bot, signing.approver)) return invalid;
-      return await grant(bot, user, signing.approver);
+      return await grant(bot, user, signing.approver, isCurrent);
     } finally {
-      granting.delete(key);
+      granting.delete(ownerKey);
     }
   }
 

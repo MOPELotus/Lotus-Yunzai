@@ -1,5 +1,5 @@
-import { constants } from "node:fs";
-import { mkdtemp, open, realpath, rename, rm } from "node:fs/promises";
+import { constants, renameSync } from "node:fs";
+import { mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -84,7 +84,9 @@ function unknownFields(values: Map<unknown, unknown>) {
   return new Map([...values].filter(([key]) => typeof key !== "string" || !ownerFields.has(key)));
 }
 
-export async function persistMaster(root: URL, bot: number, user: number, approver: number | "stdin"): Promise<Record<string, unknown>> {
+export async function persistMaster(
+  root: URL, bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean,
+): Promise<Record<string, unknown>> {
   if (!isId(bot) || !isId(user) || (approver !== "stdin" && !isId(approver))) {
     throw new Error("主人授权须指定有效的机器人与 QQ 账号。");
   }
@@ -109,6 +111,7 @@ export async function persistMaster(root: URL, bot: number, user: number, approv
     const alreadyMaster = masters.some((entry) => typeof entry === "string" && entry.trim() === owner);
     const alreadyLegacy = legacy.some((entry) => entry === user ||
       (typeof entry === "string" && /^\d+$/u.test(entry.trim()) && Number(entry) === user));
+    if (isCurrent && !isCurrent()) throw new Error("主人授权会话已失效，请重新申请。");
     if (alreadyMaster && alreadyLegacy) return config;
     if (!alreadyMaster) append(document, "master", masters, owner);
     if (!alreadyLegacy) append(document, "masterQQ", legacy, user);
@@ -144,7 +147,9 @@ export async function persistMaster(root: URL, bot: number, user: number, approv
           current.stat.gid !== latest.stat.gid || !current.bytes.equals(latest.bytes)) {
         throw new Error("主人配置已变更，请重新发起授权。");
       }
-      await rename(staged, file);
+      // Keep the final session check and config replacement in the same event-loop turn.
+      if (isCurrent && !isCurrent()) throw new Error("主人授权会话已失效，请重新申请。");
+      renameSync(staged, file);
       return next.config;
     } finally {
       await rm(directory, { recursive: true, force: true }).catch(() => undefined);

@@ -131,6 +131,40 @@ test("已有配置锁等待期间撤回审批权限时，重新读到授权变�
   }
 }));
 
+test("等待主人配置锁期间会话失效，不更新文件或在线权限", () => fixture(async (root, directory) => {
+  const original = 'master: ["10:20"]\nmasterQQ: [20]\n';
+  const file = await setup(directory, original);
+  const permissions = await readMasterPermissions(root);
+  const lock = new Database(join(dirname(file), lockName));
+  let current = true;
+  try {
+    lock.exec("BEGIN IMMEDIATE");
+    const pending = permissions.grant(10, 21, 20, () => current);
+    await Bun.sleep(40);
+    current = false;
+    lock.exec("ROLLBACK");
+    expect(await pending).toBe(false);
+    expect(permissions.isMaster(10, 21)).toBe(false);
+    expect(await readFile(file, "utf8")).toBe(original);
+  } finally {
+    lock.close();
+  }
+  current = true;
+  expect(await permissions.grant(10, 21, 20, () => current)).toBe(true);
+  expect(permissions.isMaster(10, 21)).toBe(true);
+}));
+
+test("替换配置前再次检查会话，已写入的主人也不能凭过期会话返回成功", () => fixture(async (root, directory) => {
+  const original = 'master: ["10:20", "10:21"]\nmasterQQ: [20, 21]\n';
+  const file = await setup(directory, original);
+  await expect(persistMaster(root, 10, 21, 20, () => false)).rejects.toThrow("会话已失效");
+  let checks = 0;
+  await expect(persistMaster(root, 10, 22, 20, () => ++checks === 1)).rejects.toThrow("会话已失效");
+  expect(checks).toBe(2);
+  expect(await readFile(file, "utf8")).toBe(original);
+  expect((await readdir(dirname(file))).sort()).toEqual([lockName, "other.yaml"]);
+}));
+
 test("持锁进程被终止后可继续写入同一个侧文件", () => fixture(async (root, directory) => {
   const file = await setup(directory, 'master: ["10:20"]\n');
   const sidecar = join(dirname(file), lockName);

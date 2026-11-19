@@ -44,9 +44,9 @@ export async function readMasterPermissions(root: URL) {
     legacyMasterIds(): readonly number[] {
       return snapshot.globalMasters;
     },
-    async grant(bot: number, user: number, approver: number | "stdin"): Promise<boolean> {
+    async grant(bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean): Promise<boolean> {
       try {
-        const config = await persistMaster(root, bot, user, approver);
+        const config = await persistMaster(root, bot, user, approver, isCurrent);
         snapshot = readOwnerSnapshot(config);
         return true;
       } catch {
