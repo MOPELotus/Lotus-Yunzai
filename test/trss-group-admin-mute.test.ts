@@ -254,6 +254,45 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     expect(oneBotCalls.filter(({ action }) => action === "set_group_add_request")).toHaveLength(1);
     expect(milkyCalls.filter(({ action }) => action === "reject_group_request")).toHaveLength(1);
     expect(milkyCalls.filter(({ action }) => action === "kick_group_member").at(-1)?.params).toEqual({ group_id: 79, user_id: 58 });
+
+    const now = Math.floor(Date.now() / 1000);
+    const ban = { post_type: "notice", notice_type: "group_ban", sub_type: "ban", self_id: oneBotId,
+      group_id: 79, user_id: 59, operator_id: 53, duration: 300, time: now };
+    client.send(JSON.stringify(ban));
+    await Bun.sleep(40);
+    expect(oneBotMuted().filter(({ user_id }) => user_id === 59)).toEqual([]);
+    send(oneBotMessage("#群管加白名单61"));
+    expect(JSON.stringify((await oneBotReply(17)).params.message)).toContain("加入群管白名单");
+    send(oneBotMessage("#开启白名单自动解禁"));
+    expect(JSON.stringify((await oneBotReply(18)).params.message)).toContain("没有设置白名单自动解禁的权限");
+    await webhook("message_receive", milkyMessage("#开启白名单自动解禁"));
+    expect(JSON.stringify((await milkyReply(11)).params.message)).toContain("已开启白名单自动解禁");
+    expect(await list()).toEqual({ blackQQ: [52, 57, 58], whiteQQ: [59, 61], noBan: true });
+
+    const freshBan = { ...ban, time: now + 1 };
+    client.send(JSON.stringify(freshBan));
+    client.send(JSON.stringify(freshBan));
+    expect(JSON.stringify((await oneBotReply(19)).params.message)).toContain("已解除白名单用户的禁言");
+    client.send(JSON.stringify({ ...freshBan, operator_id: 52 }));
+    client.send(JSON.stringify(freshBan));
+    client.send(JSON.stringify({ ...ban, group_id: 80, time: now + 2 }));
+    client.send(JSON.stringify({ ...ban, operator_id: 52, time: now + 3 }));
+    client.send(JSON.stringify({ ...ban, operator_id: oneBotId, time: now + 4 }));
+    client.send(JSON.stringify({ ...ban, user_id: 61, duration: 0, sub_type: "lift_ban", time: now + 6 }));
+    client.send(JSON.stringify({ ...ban, user_id: 61, time: now + 5 }));
+    client.send(JSON.stringify({ ...ban, user_id: 0, time: now + 7 }));
+    const milkyBan = { group_id: 79, user_id: 61, operator_id: 53, duration: 300 };
+    expect((await webhook("group_mute", milkyBan)).status).toBe(200);
+    expect(JSON.stringify((await milkyReply(12)).params.message)).toContain("已解除白名单用户的禁言");
+    expect((await webhook("group_mute", { ...milkyBan, operator_id: operator })).status).toBe(200);
+    await webhook("message_receive", milkyMessage("#关闭白名单解禁"));
+    expect(JSON.stringify((await milkyReply(13)).params.message)).toContain("已关闭白名单自动解禁");
+    expect(await list()).toEqual({ blackQQ: [52, 57, 58], whiteQQ: [59, 61], noBan: false });
+    expect(oneBotMuted().filter(({ user_id }) => user_id === 59 || user_id === 61)).toEqual([
+      { group_id: 79, user_id: 59, duration: 0 },
+    ]);
+    expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.user_id === 61)
+      .map(({ params }) => params)).toEqual([{ group_id: 79, user_id: 61, duration: 0 }]);
   } finally {
     socket?.close();
     host?.kill();

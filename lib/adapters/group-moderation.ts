@@ -1,4 +1,4 @@
-import type { GroupNotice, GroupRequest, MessageEvent } from "../messages.ts";
+import type { GroupNotice, GroupRequest, MessageEvent, MessageReply } from "../messages.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
@@ -10,6 +10,24 @@ export type GroupManageBlacklistAction = () => Promise<boolean>;
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
+  readonly onMemberMute?: (notice: MemberMuteNotice) => void;
+}
+
+export interface MemberMuteNotice {
+  readonly self_id: number;
+  readonly group_id: number;
+  readonly user_id: number;
+  readonly operator_id: number;
+  readonly time: number;
+  readonly duration: number;
+  readonly signal: AbortSignal;
+  canModerate(signal: AbortSignal): Promise<boolean>;
+  unmute(signal: AbortSignal): Promise<GroupModerationResult>;
+  reply(reply: MessageReply): Promise<boolean>;
+}
+
+export function isMemberMuteDuration(duration: unknown): duration is number {
+  return typeof duration === "number" && Number.isInteger(duration) && duration >= 0 && duration <= 2_147_483_647;
 }
 
 type Role = "member" | "admin" | "owner";
@@ -27,7 +45,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
-  groupManageBlacklist: GroupManageBlacklistAction;
+  groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -57,10 +75,16 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
         (target === "admin" && (authority.botRole !== "owner" || !authority.master))) return "protected" as const;
   }
 
+  async function canManage(param: "list" | "automatic") {
+    if (!active()) return false;
+    const authority = await authorize();
+    return typeof authority !== "string" && (param === "list" || authority.master) && active();
+  }
+
   return {
     async groupMute(userId, seconds) {
       if (!active()) return "unavailable";
-      if (!Number.isInteger(seconds) || seconds < 0 || seconds > 2_147_483_647) return "rejected";
+      if (!isMemberMuteDuration(seconds)) return "rejected";
       return await protectedTarget(userId, seconds > 0) ?? apply(() => mute(userId, seconds));
     },
     async groupWholeMute(enabled) {
@@ -75,9 +99,8 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (typeof block !== "boolean") return "rejected";
       return await protectedTarget(userId, true) ?? apply(() => kick(userId, block));
     },
-    async groupManageBlacklist() {
-      return active() && typeof await authorize() !== "string" && active();
-    },
+    groupManageBlacklist: () => canManage("list"),
+    groupManageWhitelistAutoUnmute: () => canManage("automatic"),
   };
 }
 

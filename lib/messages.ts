@@ -56,6 +56,7 @@ export interface MessageEvent {
   readonly groupWholeMute?: GroupWholeMuteAction;
   readonly groupKick?: GroupKickAction;
   readonly groupManageBlacklist?: GroupManageBlacklistAction;
+  readonly groupManageWhitelistAutoUnmute?: GroupManageBlacklistAction;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

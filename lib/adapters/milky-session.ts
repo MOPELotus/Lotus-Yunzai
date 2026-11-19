@@ -2,7 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -187,6 +187,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return roster;
   }
 
+  async function memberRole(group_id: number, user_id: number, active = signal) {
+    if (signal.aborted || active.aborted) return;
+    const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true }, active);
+    const member = result.status === "confirmed" ? result.data.member : undefined;
+    if (signal.aborted || active.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
+    if (member.role === "member" || member.role === "admin" || member.role === "owner") return member.role;
+  }
+
   const delegation: DelegationSession = {
     signal,
     async groups() {
@@ -198,13 +206,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     async members(groupId) { return (await listGroupMembers(groupId) ?? []).map(({ id }) => id); },
     isFriend: checkinNotify.isFriend,
     botMute: groupMute.forMessage,
-    async memberRole(group_id, user_id) {
-      if (signal.aborted) return;
-      const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true });
-      const member = result.status === "confirmed" ? result.data.member : undefined;
-      if (signal.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
-      if (member.role === "member" || member.role === "admin" || member.role === "owner") return member.role;
-    },
+    memberRole,
     send: ({ groupId, userId }, reply) => sendConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, reply),
   };
 
@@ -267,6 +269,22 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       }
       confirmSent(target, result.data, content);
       return true;
+    }
+
+    if (body.event_type === "group_mute" && options.onMemberMute) {
+      const { time } = body;
+      const { group_id, user_id, operator_id, duration } = body.data;
+      if (positiveId(group_id) && positiveId(user_id) && positiveId(operator_id) && positiveId(time) &&
+          isMemberMuteDuration(duration)) {
+        options.onMemberMute({ self_id: account, group_id, user_id, operator_id, time, duration, signal,
+          canModerate: active => canModerateGroupSubject(id => memberRole(group_id, id, active), account, user_id),
+          async unmute(active) {
+            return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration: 0 }, active)).status;
+          },
+          reply: reply => sendReply({ group_id }, reply),
+        });
+      }
+      return "accepted";
     }
 
     const friendRequest = body.event_type === "friend_request"

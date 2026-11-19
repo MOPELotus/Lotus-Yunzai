@@ -22,7 +22,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶小助手", ["[group] 群名片"]],
   ["椰奶点赞", ["[group] 资料卡点赞"]],
   ["椰奶群管-基础", ["[group] 群禁言", "[group] 群成员移出"]],
-  ["椰奶群管-黑白名单", ["[group] 群管黑名单"]],
+  ["椰奶群管-黑白名单", ["[group] 群管黑名单", "[group] 群管白名单"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
@@ -82,7 +82,16 @@ async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | u
   }
 }
 
-function isBotMuted(event: BotEvent): boolean {
+interface GroupRoutingScope {
+  readonly self_id?: number;
+  readonly user_id?: number;
+  readonly group_id?: number;
+  readonly post_type?: BotEvent["post_type"];
+  readonly message_type?: MessageEvent["message_type"];
+  readonly botMute?: MessageEvent["botMute"];
+}
+
+function isBotMuted(event: GroupRoutingScope): boolean {
   const mute = "botMute" in event ? record(event.botMute) : {};
   return (typeof mute.remainingSeconds === "number" && mute.remainingSeconds > 0) ||
     (mute.allMembers === true && mute.isAdmin !== true && mute.isOwner !== true);
@@ -136,7 +145,7 @@ export async function readGroupDispatch(root: URL) {
   }
 
   // Moderation relies on replaying the group policy even for a globally blocked applicant.
-  function allowsGroupModeration(event: BotEvent): boolean {
+  function allowsGroupModeration(event: GroupRoutingScope): boolean {
     const user = id(event.user_id);
     const group = "group_id" in event ? id(event.group_id) : undefined;
     return !(whiteUser.size && (!user || !whiteUser.has(user))) &&
@@ -200,7 +209,7 @@ export async function readGroupDispatch(root: URL) {
     return { event: normalized, allowNew };
   }
 
-  function allows(event: BotEvent, names: readonly string[]): boolean {
+  function allows(event: GroupRoutingScope, names: readonly string[]): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     return featuresAllowed(groupConfig(event), names);
   }

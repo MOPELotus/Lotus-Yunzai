@@ -34,7 +34,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
-import { groupModerationSession } from "./lib/adapters/group-moderation.ts";
+import { groupModerationSession, type MemberMuteNotice } from "./lib/adapters/group-moderation.ts";
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -121,6 +121,7 @@ const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai
 const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
 const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
 const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunzai/group"];
+const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -248,9 +249,13 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
-  let managedBlacklist: { policy: { blocked(userId: number): Promise<boolean> }; signal: AbortSignal } | undefined;
+  let managedBlacklist: {
+    policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
+    signal: AbortSignal;
+  } | undefined;
   const managedModerationResults = new Map<string, boolean>();
   const managedModerationPending = new Set<string>();
+  const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
@@ -640,6 +645,36 @@ if (import.meta.main) {
       return true;
     } finally {
       managedModerationPending.delete(key);
+    }
+  }
+
+  async function handleManagedWhitelist(notice: MemberMuteNotice): Promise<void> {
+    const registration = managedBlacklist;
+    if (!registration || stopping || !handoff.accepting || dispatchPower.paused ||
+        !groupDispatch.allowsGroupModeration(notice) || !groupDispatch.allows(notice, managedWhitelistNames)) return;
+    const { self_id: bot, group_id: group, user_id: user, operator_id: operator, time, duration } = notice;
+    const key = JSON.stringify([bot, group, user]);
+    const previous = lastMemberMutes.get(key);
+    if (previous && time < previous.time) return;
+    const revisions = previous?.time === time ? previous.revisions : new Set<string>();
+    const revision = JSON.stringify([operator, duration]);
+    if (revisions.has(revision)) return;
+    revisions.add(revision);
+    const current = { time, revisions };
+    lastMemberMutes.delete(key);
+    if (lastMemberMutes.size >= 4096) lastMemberMutes.delete(lastMemberMutes.keys().next().value!);
+    lastMemberMutes.set(key, current);
+    const protectedOperator = () => operator === bot || masterPermissions.isMaster(bot, operator) ||
+      masterPermissions.legacyMasterIds().includes(operator);
+    if (!duration || user === bot || protectedOperator()) return;
+    const signal = nativeOperationSignal(registration.signal, notice.signal);
+    const expiresAt = Math.min(time * 1000, Date.now()) + duration * 1000;
+    const active = () => !signal.aborted && lastMemberMutes.get(key) === current && Date.now() < expiresAt && !protectedOperator();
+    const listed = () => registration.policy.shouldAutoUnmute(user).catch(() => false);
+    if (!active() || !await listed() || !active() || !await notice.canModerate(signal) ||
+        !active() || !await listed() || !active()) return;
+    if (await notice.unmute(signal) === "confirmed" && !signal.aborted) {
+      await notice.reply("已解除白名单用户的禁言");
     }
   }
 
@@ -1338,6 +1373,11 @@ if (import.meta.main) {
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       isProtectedMaster: (bot: number, user: number) =>
         permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
+      onMemberMute(notice: MemberMuteNotice) {
+        const handling = handleManagedWhitelist(notice).catch(() => console.warn("[group] 白名单自动解禁未能完成。"));
+        pending.add(handling);
+        void handling.then(() => pending.delete(handling));
+      },
     };
     const milkyOptions: MilkyTransportOptions = {
       ...groupActions,

@@ -5,7 +5,7 @@ export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
-    "profileLikeImageSignal" | "groupMute" | "groupWholeMute" | "groupKick" | "groupManageBlacklist"
+    "profileLikeImageSignal" | "groupMute" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
   atlasMaintenance?: true;
@@ -88,7 +88,7 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupWholeMute, groupKick,
-    groupManageBlacklist, profileLikeImageSignal, isFriend, reviewGroupRequest,
+    groupManageBlacklist, groupManageWhitelistAutoUnmute, profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
@@ -101,6 +101,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupWholeMute ? { groupWholeMute } : {}),
     ...(message_type === "group" && !isDelegated && groupKick ? { groupKick } : {}),
     ...(message_type === "group" && !isDelegated && groupManageBlacklist ? { groupManageBlacklist } : {}),
+    ...(message_type === "group" && !isDelegated && groupManageWhitelistAutoUnmute ? { groupManageWhitelistAutoUnmute } : {}),
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),

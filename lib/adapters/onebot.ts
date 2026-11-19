@@ -4,7 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -631,6 +631,22 @@ export function startOneBot(
             if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
                 isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
               socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
+            } else if (message.notice_type === "group_ban" && options.onMemberMute) {
+              const { self_id, group_id, user_id, operator_id, time, duration, sub_type } = message;
+              if (!isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(operator_id) ||
+                  !isId(time) || !isMemberMuteDuration(duration) ||
+                  (sub_type !== "ban" && sub_type !== "lift_ban") || (sub_type === "ban") !== (duration > 0)) return;
+              const signal = groupActionSignal(socket.data, self_id);
+              if (!signal) return;
+              options.onMemberMute({ self_id, group_id, user_id, operator_id, time, duration, signal,
+                canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id, user_id),
+                unmute: active => calls.setGroupMute(send, group_id, user_id, 0, active),
+                async reply(reply) {
+                  const content = encodeOneBotReply(reply);
+                  return content !== undefined &&
+                    await calls.replyWithConfirmation(send, { message_type: "group", group_id, message: content, auto_escape: true });
+                },
+              });
             } else if (message.notice_type === "group_upload") {
               if (!attachmentSession || botId === undefined || message.self_id !== botId || !isId(message.user_id) ||
                   !isId(message.group_id) || !isRecord(message.file)) return;
