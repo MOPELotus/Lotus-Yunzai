@@ -13,3 +13,6 @@
 [submodule "plugins/group"]
 	path = plugins/group
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Group.git
+[submodule "vendor/gt-manual"]
+	path = vendor/gt-manual
+	url = https://github.com/MOPELotus/GT-Manual.git
