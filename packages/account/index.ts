@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const profileGames = ["gs", "sr", "zzz"] as const;
@@ -123,6 +123,24 @@ export interface RefreshedCredentials {
   readonly stokenCookie?: string;
 }
 
+type ProfileDevice = ReturnType<typeof readIdentity>["device"];
+type GameRoles = Readonly<Record<Game, readonly GameRole[]>>;
+
+export interface ProfileLoginSlot {
+  readonly qq: string;
+  readonly profileId: number;
+  readonly revision: string | null;
+  readonly device: Readonly<ProfileDevice>;
+}
+
+export interface ProfileLoginResult {
+  readonly stuid: string;
+  readonly stoken: string;
+  readonly mid?: string;
+  readonly credentials: RefreshedCredentials;
+  readonly roles?: GameRoles;
+}
+
 const writes = new Map<string, Promise<void>>();
 
 function revisionOf(snapshot: Buffer): string {
@@ -140,8 +158,93 @@ async function serializeWrite<T>(path: string, action: () => Promise<T>): Promis
   }
 }
 
+function changedProfile(): ProfileError {
+  return new ProfileError("changed", "档案已变更，请重新发起请求。");
+}
+
+async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal) {
+  const yaml = Bun.YAML.stringify(document);
+  if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
+  const temporary = await mkdtemp(join(dirname(path), ".profile-write-"));
+  try {
+    const staged = join(temporary, "profile.yaml");
+    await writeFile(staged, yaml, { mode: 0o600 });
+    if (expected === null) {
+      signal?.throwIfAborted();
+      await link(staged, path).catch((error: unknown) => {
+        if (record(error).code === "EEXIST") throw changedProfile();
+        throw error;
+      });
+    } else {
+      const current = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
+      if (revisionOf(current) !== expected) throw changedProfile();
+      signal?.throwIfAborted();
+      await rename(staged, path);
+    }
+    return revisionOf(Buffer.from(yaml));
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+function rolesForStorage(roles: GameRoles, previous: { roles: Record<string, unknown>; selected: Record<string, unknown> }) {
+  const catalog = { ...previous.roles };
+  const selected = { ...previous.selected };
+  for (const game of profileGames) {
+    const list = roles[game];
+    catalog[game] = list.map((role) => ({
+      uid: role.uid, game_uid: role.uid, game_biz: role.gameBiz, region: role.region,
+      region_name: role.regionName ?? role.region, nickname: role.nickname, level: role.level ?? "",
+      is_chosen: role.chosen,
+    }));
+    selected[game] = list.find((role) => role.uid === accountId(selected[game]))?.uid
+      ?? list.find((role) => role.chosen)?.uid ?? list[0]?.uid ?? "";
+  }
+  return { game_roles: catalog, current_uid: selected };
+}
+
+function cookieFields(value: string) {
+  return value.split(";").flatMap((field) => {
+    const index = field.indexOf("=");
+    return index > 0 ? [[field.slice(0, index).trim(), field.slice(index + 1).trim()] as const] : [];
+  });
+}
+
+const cookieIdFields = new Set(["stuid", "uid", "ltuid", "ltuid_v2", "account_id", "account_id_v2"]);
+const cookieMidFields = new Set(["mid", "stmid_v2", "ltmid_v2", "account_mid_v2"]);
+
+function loginFields(result: ProfileLoginResult) {
+  const { stuid, stoken, mid = "", credentials: { cookie, ltoken, stokenCookie } } = result;
+  const safeField = (value: string) => /^[!#-:<-~]+$/u.test(value);
+  if (!/^[1-9]\d{0,19}$/u.test(stuid) || !safeField(stoken) || !safeField(ltoken) ||
+      (mid && !safeField(mid)) || (stoken.startsWith("v2_") && !mid) ||
+      !cookie || !stokenCookie || [cookie, stokenCookie].some((value) => value.length > 16_384 || /[^\x20-\x7E]/u.test(value))) {
+    throw new ProfileError("invalid", "确认登录返回的档案凭据无效。");
+  }
+  const session = cookieFields(cookie);
+  const login = cookieFields(stokenCookie);
+  const fields = [...session, ...login];
+  const identities = fields.filter(([key]) => cookieIdFields.has(key));
+  if (!identities.length || identities.some(([, value]) => value !== stuid) ||
+      fields.some(([key, value]) => cookieMidFields.has(key) && value !== mid) ||
+      !session.some(([key, value]) => /^cookie_token(?:_v2)?$/u.test(key) && safeField(value)) ||
+      !session.some(([key, value]) => /^ltoken(?:_v2)?$/u.test(key) && value === ltoken) ||
+      !login.some(([key, value]) => key === "stoken" && value === stoken) ||
+      login.some(([key, value]) => key === "stoken" && value !== stoken)) {
+    throw new ProfileError("invalid", "确认登录返回的档案账号不一致。");
+  }
+  return { ltuid: stuid, stuid, stoken, ltoken, mid, cookie, stoken_cookie: stokenCookie };
+}
+
+function matchesStoredLogin(account: ReturnType<typeof readIdentity>["account"], stuid: string) {
+  const fields = [...cookieFields(account.cookie), ...cookieFields(account.stokenCookie)];
+  const ids = [account.stuid, account.ltuid, ...fields.filter(([key]) => cookieIdFields.has(key)).map(([, value]) => value)].filter(Boolean);
+  return ids.length > 0 && ids.every((value) => value === stuid);
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
+  const loginSlots = new WeakSet<ProfileLoginSlot>();
 
   async function read(qq: string, id: number) {
     const path = join(root, profileFilename(qq, id));
@@ -166,6 +269,24 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     return { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
   }
 
+  async function optionalSnapshot(path: string) {
+    return readFileSnapshot(path).catch((error: unknown) => {
+      if (record(error).code === "ENOENT") return null;
+      throw new ProfileError("invalid", "无法读取扫码登录档案。");
+    });
+  }
+
+  function slotPath(slot: ProfileLoginSlot) {
+    if (!loginSlots.has(slot)) throw changedProfile();
+    return profileFilename(slot.qq, slot.profileId);
+  }
+
+  async function slotSnapshot(path: string, slot: ProfileLoginSlot) {
+    const data = await optionalSnapshot(path);
+    if ((data && revisionOf(data)) !== slot.revision) throw changedProfile();
+    return data;
+  }
+
   async function updateAccount(
     qq: string,
     id: number,
@@ -178,33 +299,68 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     return serializeWrite(path, async () => {
       const snapshot = await readFileSnapshot(path);
       const revision = revisionOf(snapshot);
-      if (expected !== undefined && expected !== revision) {
-        throw new ProfileError("changed", "档案已变更，请重新发起请求。");
-      }
+      if (expected !== undefined && expected !== revision) throw changedProfile();
       const current: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
       const state = readIdentity(current, qq, id);
       const data = record(current);
       const updated = { ...data, account: change(record(data.account), state) };
-      const yaml = Bun.YAML.stringify(updated);
-      if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
-
-      const temporary = await mkdtemp(join(directory, ".profile-write-"));
-      try {
-        const staged = join(temporary, name);
-        await writeFile(staged, yaml, { mode: 0o600 });
-        if (revisionOf(await readFileSnapshot(path)) !== revision) {
-          throw new ProfileError("changed", "档案已变更，请重新发起请求。");
-        }
-        await rename(staged, path);
-      } finally {
-        await rm(temporary, { recursive: true, force: true });
-      }
       const latest = readIdentity(updated, qq, id);
-      return { qq, profileId: id, account: latest.account, device: latest.device, revision: revisionOf(Buffer.from(yaml)) };
+      const saved = await writeProfileDocument(path, updated, revision);
+      return { qq, profileId: id, account: latest.account, device: latest.device, revision: saved };
     });
   }
 
   return {
+    async openLoginSlot(qq: string, profileId = 1): Promise<ProfileLoginSlot> {
+      const filename = profileFilename(qq, profileId);
+      const snapshot = await optionalSnapshot(join(root, filename));
+      const existing = snapshot ? decodeProfile(snapshot, qq, profileId).device : undefined;
+      const device = existing?.id ? existing : {
+        id: randomUUID().replaceAll("-", "").toUpperCase(), fp: "", model: existing?.model || "Lotus",
+        name: existing?.name || "Lotus Device", androidVersion: existing?.androidVersion || "11", raw: existing?.raw ?? {},
+      };
+      const slot = Object.freeze({ qq, profileId, revision: snapshot ? revisionOf(snapshot) : null, device: Object.freeze(device) });
+      loginSlots.add(slot);
+      return slot;
+    },
+    async verifyLoginSlot(slot: ProfileLoginSlot) {
+      await slotSnapshot(join(root, slotPath(slot)), slot);
+    },
+    async saveLogin(slot: ProfileLoginSlot, result: ProfileLoginResult, signal?: AbortSignal) {
+      const filename = slotPath(slot);
+      const { qq, profileId, device } = slot;
+      const account = loginFields(result);
+      signal?.throwIfAborted();
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      const path = join(await realpath(root), filename);
+      return serializeWrite(path, async () => {
+        const snapshot = await slotSnapshot(path, slot);
+        const initial = { version: 1, enabled: false, user: { qq },
+          profile: { id: profileId, name: profileId === 1 ? "default" : `profile-${profileId}` } };
+        const original: unknown = snapshot ? Bun.YAML.parse(snapshot.toString("utf8")) : initial;
+        const document = record(original);
+        const previous = readIdentity(original, qq, profileId);
+        const sameAccount = matchesStoredLogin(previous.account, result.stuid);
+        const roles = sameAccount ? previous : { roles: {}, selected: {} };
+        const emptyRoles = { gs: [], sr: [], zzz: [] } as const;
+        const nextRoles = result.roles ? rolesForStorage(result.roles, roles)
+          : sameAccount ? { game_roles: previous.roles, current_uid: previous.selected } : rolesForStorage(emptyRoles, roles);
+        const now = new Date().toISOString();
+        const updated = {
+          ...document,
+          account: { ...record(document.account), ...account, ...nextRoles, updated_at: now,
+            roles_updated_at: result.roles ? now : sameAccount ? text(record(document.account).roles_updated_at) : "",
+            role_sync_error: result.roles ? "" : "登录成功，角色暂未同步。" },
+          device: previous.device.id ? document.device : {
+            ...record(document.device), bound: false, id: device.id, fp: "",
+            name: device.name, model: device.model, android_version: device.androidVersion,
+          },
+        };
+        await writeProfileDocument(path, updated, slot.revision, signal);
+        loginSlots.delete(slot);
+        return { rolesSynced: result.roles !== undefined };
+      });
+    },
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
     },
@@ -252,23 +408,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         };
       }, revision);
     },
-    async saveRoles(qq: string, id: number, revision: string, roles: Readonly<Record<Game, readonly GameRole[]>>) {
+    async saveRoles(qq: string, id: number, revision: string, roles: GameRoles) {
       const name = profileFilename(qq, id);
       return updateAccount(qq, id, name, (account, current) => {
         if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
-        const catalog = { ...current.roles };
-        const selected = { ...current.selected };
-        for (const game of profileGames) {
-          const list = roles[game];
-          catalog[game] = list.map((role) => ({
-            uid: role.uid, game_uid: role.uid, game_biz: role.gameBiz, region: role.region,
-            region_name: role.regionName ?? role.region, nickname: role.nickname, level: role.level ?? "",
-            is_chosen: role.chosen,
-          }));
-          selected[game] = list.find((role) => role.uid === accountId(selected[game]))?.uid
-            ?? list.find((role) => role.chosen)?.uid ?? list[0]?.uid ?? "";
-        }
-        return { ...account, game_roles: catalog, current_uid: selected,
+        return { ...account, ...rolesForStorage(roles, current),
           roles_updated_at: new Date().toISOString(), role_sync_error: "" };
       }, revision);
     },

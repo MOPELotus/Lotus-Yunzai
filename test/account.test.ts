@@ -150,6 +150,64 @@ test("档案导入预检无写入，并行导入与重跑保留目标冲突", as
   }
 });
 
+test("扫码登录按原档案做原子提交，同账号续用角色，换账号隔离旧 UID", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-login-slot-"));
+  const directory = join(root, "profiles");
+  const path = join(directory, "42-2.yaml");
+  const profiles = createProfileStore(directory);
+  const credentials = (aid: string) => ({
+    stuid: aid,
+    stoken: `fixture-stoken-${aid}`,
+    credentials: {
+      ltoken: `fixture-ltoken-${aid}`,
+      cookie: `ltoken=fixture-ltoken-${aid};ltuid=${aid};cookie_token=fixture-cookie;account_id=${aid};`,
+      stokenCookie: `stoken=fixture-stoken-${aid};stuid=${aid};`,
+    },
+  });
+  const roles = {
+    gs: [{ uid: "123456789", region: "cn_gf01", chosen: true, gameBiz: "hk4e_cn", nickname: "fixture-role" }],
+    sr: [], zzz: [],
+  };
+  try {
+    const first = await profiles.openLoginSlot("42", 2);
+    const competing = await profiles.openLoginSlot("42", 2);
+    expect(first.revision).toBeNull();
+    expect(first.device.id).toMatch(/^[A-F0-9]{32}$/u);
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(profiles.verifyLoginSlot({ ...first })).rejects.toMatchObject({ code: "changed" });
+    await expect(profiles.saveLogin(first, credentials("8001"), AbortSignal.abort("cancelled"))).rejects.toBe("cancelled");
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await profiles.saveLogin(first, { ...credentials("8001"), roles })).toEqual({ rolesSynced: true });
+    await expect(profiles.saveLogin(competing, credentials("8002"))).rejects.toMatchObject({ code: "changed" });
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await profiles.requestContext("42", 2, "gs")).toMatchObject({
+      role: { uid: "123456789" }, account: { stuid: "8001" }, device: { id: first.device.id },
+    });
+
+    const same = await profiles.openLoginSlot("42", 2);
+    expect(same.device.id).toBe(first.device.id);
+    expect(await profiles.saveLogin(same, credentials("8001"))).toEqual({ rolesSynced: false });
+    expect(await profiles.savedRole("42", 2, "gs")).toMatchObject({ uid: "123456789" });
+    const next = await profiles.openLoginSlot("42", 2);
+    const inconsistent = credentials("8002");
+    await expect(profiles.saveLogin(next, { ...inconsistent,
+      credentials: { ...inconsistent.credentials, cookie: credentials("8003").credentials.cookie },
+    })).rejects.toMatchObject({ code: "invalid" });
+    expect((await profiles.accountContext("42", 2)).account.stuid).toBe("8001");
+    expect(await profiles.saveLogin(next, credentials("8002"))).toEqual({ rolesSynced: false });
+    await expect(profiles.savedRole("42", 2, "gs")).rejects.toMatchObject({ code: "role-missing" });
+    expect((await profiles.accountContext("42", 2)).device.id).toBe(first.device.id);
+
+    const pending = await profiles.openLoginSlot("42", 2);
+    await profiles.clearLogin("42", 2);
+    await expect(profiles.verifyLoginSlot(pending)).rejects.toMatchObject({ code: "changed" });
+    await expect(profiles.saveLogin(pending, credentials("8003"))).rejects.toMatchObject({ code: "changed" });
+    expect((await profiles.summary("42", 2)).loggedIn).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("角色查询仅对 Cookie 过期刷新本档案一次，换绑后的凭据不会被迟到结果覆盖", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-refresh-"));
   try {
