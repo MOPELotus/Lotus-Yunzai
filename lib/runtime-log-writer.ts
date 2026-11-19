@@ -3,6 +3,7 @@ import { mkdir, open, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatWithOptions } from "node:util";
+import { archiveRuntimeLogs } from "./runtime-log-archive.ts";
 import { runtimeLogFilename, sanitizeRuntimeLog } from "./runtime-logs.ts";
 
 const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "off"];
@@ -34,7 +35,11 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
   const restorations: (() => void)[] = [];
   let queued = 0;
   let tail = Promise.resolve();
+  let archiveWork = Promise.resolve();
+  const archiveLifecycle = new AbortController();
+  let lastLogDate = "";
   let warned = false;
+  let archiveWarned = false;
   let closed = false;
 
   for (const method of Object.keys(consoleLevels) as (keyof typeof consoleLevels)[]) {
@@ -58,10 +63,18 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
       queued++;
       tail = tail.then(async () => {
         if (await realpath(directory) !== directory) throw new Error("日志目录已变更。");
+        const dailyFile = runtimeLogFilename("runtime", time);
         const writes = await Promise.allSettled([
-          append(join(directory, runtimeLogFilename("runtime", time)), line),
+          append(join(directory, dailyFile), line),
           ...(level === "error" ? [append(join(directory, runtimeLogFilename("error", time)), line)] : []),
         ]);
+        if (!closed && writes[0]?.status === "fulfilled" && dailyFile > lastLogDate) {
+          lastLogDate = dailyFile;
+          archiveWork = archiveWork.then(() => archiveRuntimeLogs(directory, dailyFile, archiveLifecycle.signal)).catch(() => {
+            if (!archiveWarned && !archiveLifecycle.signal.aborted) warn("[日志] 无法归档旧运行日志。");
+            archiveWarned = true;
+          });
+        }
         if (writes.some(({ status }) => status === "rejected")) throw new Error("本地日志写入失败。");
       }).catch(() => {
         if (!warned) warn("[日志] 无法写入本地日志。");
@@ -78,8 +91,10 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
     flush: () => tail,
     async close() {
       closed = true;
+      archiveLifecycle.abort();
       for (const restore of restorations) restore();
       await tail;
+      await archiveWork;
     },
   };
 }

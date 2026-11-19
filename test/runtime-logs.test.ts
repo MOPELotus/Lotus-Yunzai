@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { archiveRuntimeLogs } from "../lib/runtime-log-archive.ts";
 import { readRuntimeLogs, runtimeLogFilename, sanitizeRuntimeLog } from "../lib/runtime-logs.ts";
 
 const time = new Date(2026, 0, 3, 0, 7);
@@ -100,4 +102,38 @@ test("拒绝符号链接逃出日志目录或宿主目录", () => fixture(async 
   } finally {
     await rm(outside, { recursive: true, force: true });
   }
+}));
+
+test("旧运行日志跨日压缩并按日期保留 180 份，保留当前日志和固定错误日志", () => fixture(async (root, directory, logs) => {
+  const body = Buffer.from("上一天的中文日志\n".repeat(100));
+  const old = join(logs, "command.2026-01-02.log");
+  const today = join(logs, "command.2026-01-03.log");
+  const error = join(logs, "error.log");
+  const archives = Array.from({ length: 181 }, (_, index) =>
+    `command.${new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10)}.log.gz`);
+  for (const name of archives) await writeFile(join(logs, name), gzipSync(name));
+  await writeFile(old, body);
+  await writeFile(today, "本日内容\n");
+  await writeFile(error, "错误内容\n");
+  const external = join(directory, "private.log");
+  const symbolic = join(logs, "command.2026-01-01.log");
+  await writeFile(external, "目录以外的文件");
+  await symlink(external, symbolic);
+  await writeFile(join(logs, "command.2025-02-30.log.gz"), "自定义文件");
+
+  await archiveRuntimeLogs(logs, runtimeLogFilename("runtime", time));
+  expect(gunzipSync(await readFile(old + ".gz"))).toEqual(body);
+  expect((await lstat(old + ".gz")).mode & 0o777).toBe(0o600);
+  await expect(readFile(old)).rejects.toMatchObject({ code: "ENOENT" });
+  for (const name of archives.slice(0, 2)) await expect(readFile(join(logs, name))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readdir(logs)).toHaveLength(184);
+  expect((await lstat(symbolic)).isSymbolicLink()).toBe(true);
+  expect(await readFile(external, "utf8")).toBe("目录以外的文件");
+  expect(await readRuntimeLogs(root, "runtime", { limit: 10 }, time)).toEqual(["本日内容"]);
+  expect(await readRuntimeLogs(root, "error", { limit: 10 }, time)).toEqual(["错误内容"]);
+
+  await writeFile(old, "晚到记录");
+  await archiveRuntimeLogs(logs, runtimeLogFilename("runtime", time));
+  expect(await readFile(old, "utf8")).toBe("晚到记录");
+  expect(gunzipSync(await readFile(old + ".gz"))).toEqual(body);
 }));
