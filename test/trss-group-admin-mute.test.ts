@@ -514,6 +514,18 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.group_id === 84 && JSON.stringify(params.message).includes("已有活动夹具")), "普通群员未收到 Milky 新入群记录。");
     expect(JSON.stringify(newest.params.message)).toContain("最后发言时间");
     expect(JSON.stringify(newest.params.message)).not.toContain("从未发言夹具");
+
+    send(oneBotMessage("#查看2天未发言的人", operator, 84));
+    const oldEnough = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_group_forward_msg" &&
+      params.group_id === 84 && JSON.stringify(params.messages).includes("已有活动夹具")), "OneBot 未回复旧按时长查询。");
+    expect(JSON.stringify(oldEnough.params.messages)).toContain("从未发言夹具");
+    expect(JSON.stringify(oldEnough.params.messages)).toContain("最后发言时间");
+    await webhook("message_receive", { ...milkyTitle("#获取二天没发言的人"), peer_id: 84,
+      group_member: { group_id: 84, user_id: operator, role: "admin" } });
+    const timedMilky = await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
+      params.group_id === 84 && JSON.stringify(params.message).includes("从未发言夹具") &&
+      JSON.stringify(params.message).includes("已有活动夹具")), "Milky 未回复旧按时长查询。");
+    expect(JSON.stringify(timedMilky.params.message)).toContain("最后发言时间");
   } finally {
     socket?.close();
     host?.kill();
