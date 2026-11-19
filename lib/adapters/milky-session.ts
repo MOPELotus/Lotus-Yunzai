@@ -1,3 +1,4 @@
+import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -15,13 +16,14 @@ export interface MilkyTransportOptions {
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (event: BotEvent, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
-  readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"]) => void;
+  readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
 
 export interface MilkySession {
   readonly botId: number;
+  readonly checkinNotify: CheckinNotifyTransport;
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
@@ -93,16 +95,36 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return result.status === "confirmed";
   }
 
-  async function send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean> {
+  async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<CheckinNotifyDelivery> {
     const group = "group_id" in target;
-    if (!positiveId(group ? target.group_id : target.user_id)) return false;
+    if (signal.aborted || !positiveId(group ? target.group_id : target.user_id)) return "rejected";
     const message = encodeMilkyReply(reply);
-    if (!message) return false;
-    const result = await call(group ? "send_group_message" : "send_private_message", { ...target, message });
-    return hasMessageSequence(result?.message_seq);
+    if (!message) return "rejected";
+    const result = await call.confirmed(group ? "send_group_message" : "send_private_message", { ...target, message });
+    if (result.status !== "confirmed") return result.status;
+    return hasMessageSequence(result.data.message_seq) ? "confirmed" : "unknown";
   }
 
-  return { botId: account, send, receive(body) {
+  const checkinNotify: CheckinNotifyTransport = {
+    async isFriend(user_id) {
+      if (signal.aborted || !positiveId(user_id)) return false;
+      const result = await call.confirmed("get_friend_info", { user_id, no_cache: true });
+      return !signal.aborted && result.status === "confirmed" && record(result.data.friend) &&
+        result.data.friend.user_id === user_id;
+    },
+    async isGroupMember(group_id, user_id) {
+      if (signal.aborted || !positiveId(group_id) || !positiveId(user_id)) return false;
+      const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true });
+      return !signal.aborted && result.status === "confirmed" && record(result.data.member) &&
+        result.data.member.group_id === group_id && result.data.member.user_id === user_id;
+    },
+    sendPrivate: (user_id, reply) => sendConfirmed({ user_id }, reply),
+    sendGroup: (group_id, reply) => sendConfirmed({ group_id }, reply),
+  };
+
+  return { botId: account, checkinNotify, async send(target, reply) {
+    return await sendConfirmed(target, reply) === "confirmed";
+  }, receive(body) {
     if (signal.aborted) return "offline";
     if (!record(body) || !positiveId(body.self_id) || typeof body.event_type !== "string" ||
         !body.event_type || !record(body.data)) return "invalid";
