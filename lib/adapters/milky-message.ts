@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import type { InboundSegment, MessageEvent, MessageReply, ReplyOptions } from "../messages.ts";
+import type { InboundSegment, MessageEvent, MessageReply, QuotedMessage, ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 
 type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
@@ -406,6 +406,21 @@ export function milkyMessage(
   const target = isGroup ? { group_id: peerId } : { user_id: peerId };
   const incoming = decodeSegments(segments, selfId, target, call);
   if (!incoming) return;
+  const quotedSequence = segmentNumber(incoming.replyId);
+  let quoted: Promise<QuotedMessage | undefined> | undefined;
+  async function lookupQuote(sequence: number): Promise<QuotedMessage | undefined> {
+    try {
+      const result = await call("get_message", { message_scene: scene, peer_id: peerId, message_seq: sequence });
+      const message = result?.message;
+      if (!isRecord(message) || message.message_scene !== scene || message.peer_id !== peerId ||
+          message.message_seq !== sequence || !isId(message.sender_id)) return;
+      if (!isGroup && message.sender_id !== userId && message.sender_id !== selfId) return;
+      const decoded = decodeSegments(message.segments, selfId, target, call);
+      if (decoded) return { user_id: message.sender_id, message: decoded.message };
+    } catch {
+      return undefined;
+    }
+  }
   const action = isGroup ? "send_group_message" : "send_private_message";
   return {
     post_type: "message",
@@ -415,6 +430,7 @@ export function milkyMessage(
     ...senderMetadata(value.data, isGroup ? peerId : undefined, userId),
     msg: incoming.text.trim(), raw_message: incoming.raw, message: incoming.message,
     atBot: incoming.atBot, at: incoming.at, reply_id: incoming.replyId, img: incoming.img,
+    lookupReply: isSequence(quotedSequence) ? () => quoted ??= lookupQuote(quotedSequence) : undefined,
     file: incoming.message.find(({ type }) => type === "file"),
     isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,
     async getGroupRole(groupId) {

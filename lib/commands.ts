@@ -5,7 +5,7 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
 
-export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender">> & {
+export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply">> & {
   readonly isBotMaster: (userId: number) => boolean;
 };
 
@@ -182,7 +182,7 @@ export class CommandRegistry {
     for (const { handler, names } of this.#fallbacks.values()) {
       if (!allowed(names)) continue;
       const reply = await handler(event.msg, {
-        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, isBotMaster,
+        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply, isBotMaster,
       });
       if (reply !== undefined) return reply;
     }

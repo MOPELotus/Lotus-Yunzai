@@ -85,6 +85,31 @@ test("Milky 只接受同账号、可证实会话和安全整数的消息", () =>
   expect(privateEvent?.group_id).toBeUndefined();
 });
 
+test("Milky 只查询本会话的有效引用并核对返回的聊天身份", async () => {
+  const segments = [{ type: "reply", data: { message_seq: 0 } }, text("查看引用")];
+  const group = incoming({ message_scene: "group", peer_id: groupId, segments });
+  const quoted = {
+    message_scene: "group", peer_id: groupId, message_seq: 0, sender_id: 4004,
+    segments: [text("引用"), { type: "image", data: { temp_url: "https://example.invalid/old.png" } }],
+  };
+  const valid = fixture({ message: quoted });
+  const event = milkyMessage(group, selfId, valid.call);
+  expect(valid.calls).toEqual([]);
+  const [first, second] = await Promise.all([event?.lookupReply?.(), event?.lookupReply?.()]);
+  expect(first).toEqual(second);
+  expect(first).toMatchObject({ user_id: 4004, message: [{ type: "text", text: "引用" },
+    { type: "image", url: "https://example.invalid/old.png" }] });
+  expect(valid.calls).toEqual([{ action: "get_message", params: { message_scene: "group", peer_id: groupId, message_seq: 0 } }]);
+  for (const override of [{ peer_id: 5005 }, { message_scene: "friend" }, { message_seq: 1 }, { sender_id: 0 }]) {
+    const other = fixture({ message: { ...quoted, ...override } });
+    expect(await milkyMessage(group, selfId, other.call)?.lookupReply?.()).toBeUndefined();
+  }
+  const privateResult = fixture({ message: { ...quoted, message_scene: "friend", peer_id: senderId, sender_id: selfId } });
+  expect(await milkyMessage(incoming({ segments }), selfId, privateResult.call)?.lookupReply?.()).toMatchObject({ user_id: selfId });
+  expect(privateResult.calls[0]?.params).toEqual({ message_scene: "friend", peer_id: senderId, message_seq: 0 });
+  expect(milkyMessage(incoming(), selfId, privateResult.call)?.lookupReply).toBeUndefined();
+});
+
 test("Milky 回复按会话发出文本、提及和消息序号引用", async () => {
   const { calls, call } = fixture();
   const group = milkyMessage(incoming({ message_scene: "group", peer_id: groupId }), selfId, call);

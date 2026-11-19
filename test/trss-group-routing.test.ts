@@ -316,9 +316,14 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   await writeFile(join(plugin, "index.ts"), `
     export default {
       commands: { "#现代优先": () => "现代处理" },
-      fallback(message, { isMaster, isBotMaster, reply_id, message: segments }) {
+      async fallback(message, { isMaster, isBotMaster, reply_id, lookupReply, message: segments }) {
         if (message.startsWith("#")) return "回退误抢显式指令";
         if (message === "引用触发") return { type: "quoted", message: "带引用的结果" };
+        if (message === "查询引用") {
+          const [first, second] = await Promise.all([lookupReply?.(), lookupReply?.()]);
+          if (!first || first !== second) return "当前会话未找到引用";
+          return first.user_id + "/" + first.message.map(item => item.type).join(",");
+        }
         if (message !== "旧触发") return;
         return [isMaster, isBotMaster(51), isBotMaster(52), reply_id, segments.map(item => item.type).join(",")].join("/");
       },
@@ -356,6 +361,32 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   first.send(message, 81);
   first.send("#状态", 81);
   await first.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
+  const query: Inbound = [{ type: "reply", data: { id: "-101" } }, { type: "text", data: { text: "查询引用" } }];
+  const quoted = {
+    message_type: "group", self_id: 99, group_id: 77, message_id: -101, sender: { user_id: 51 },
+    message: [{ type: "text", data: { text: "旧消息" } }, { type: "image", data: { file: "old.png" } }],
+  };
+  for (const response of [quoted, { ...quoted, group_id: 78 }, { ...quoted, message_id: -102 }, { ...quoted, self_id: 100 }]) {
+    first.send(query, 77);
+    const action = await first.action();
+    expect(action).toMatchObject({ action: "get_msg", params: { message_id: -101 } });
+    first.sendFrame({ echo: action.echo, status: "ok", retcode: 0, data: response });
+    await first.reply(response === quoted ? "51/text,image" : "当前会话未找到引用", 77);
+  }
+  first.send("查询引用", 77);
+  await first.reply("当前会话未找到引用", 77);
+  const friendQuote = { self_id: 99, message_id: -101, message: quoted.message,
+    message_type: "private", sub_type: "friend", sender: { user_id: 42 } };
+  for (const response of [friendQuote, { ...friendQuote, sender: { user_id: 52 } }]) {
+    first.sendFrame({ post_type: "message", message_type: "private", sub_type: "friend",
+      user_id: 42, message_id: 800, message: query });
+    const action = await first.action();
+    expect(action).toMatchObject({ action: "get_msg", params: { message_id: -101 } });
+    first.sendFrame({ echo: action.echo, status: "ok", retcode: 0, data: response });
+    expect(await first.action()).toMatchObject({ action: "send_msg", params: {
+      user_id: 42, message: response === friendQuote ? "42/text,image" : "当前会话未找到引用",
+    } });
+  }
 }), 12_000);
 
 test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引用回复", async () => {

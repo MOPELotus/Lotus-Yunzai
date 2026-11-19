@@ -1,4 +1,4 @@
-import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "../messages.ts";
+import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -18,9 +18,27 @@ function stringField(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function recallId(value: unknown): number | undefined {
+function oneBotMessageId(value: unknown): number | undefined {
   const id = typeof value === "string" && /^-?\d+$/u.test(value) ? Number(value) : value;
   if (typeof id === "number" && Number.isInteger(id) && id !== 0 && id >= -2_147_483_648 && id <= 2_147_483_647) return id;
+}
+
+async function readOneBotQuote(
+  calls: OneBotCalls, send: Send, id: number, selfId: number, target: { group_id: number } | { user_id: number },
+): Promise<QuotedMessage | undefined> {
+  const quote = await calls.getMessage(send, id);
+  if (!quote || oneBotMessageId(quote.message_id) !== id || ("self_id" in quote && quote.self_id !== selfId)) return;
+  const sender = isRecord(quote.sender) ? quote.sender.user_id : undefined;
+  if (!isId(sender)) return;
+  if ("group_id" in target) {
+    if (quote.message_type !== "group" || quote.group_id !== target.group_id) return;
+  } else {
+    if (quote.message_type !== "private" || isId(quote.group_id) || ("sub_type" in quote && quote.sub_type !== "friend")) return;
+    if (("target_id" in quote && quote.target_id !== (sender === selfId ? target.user_id : selfId)) ||
+        (sender !== target.user_id && (sender !== selfId || quote.target_id !== target.user_id))) return;
+  }
+  const message = decodeOneBotMessage(quote.message, selfId)?.message;
+  if (message) return { user_id: sender, message };
 }
 
 interface ConnectionData {
@@ -252,6 +270,8 @@ async function dispatchMessage(
   const owner = selfId !== undefined && isMaster(selfId, userId);
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
+  const quotedId = oneBotMessageId(incoming.reply_id);
+  let quoted: Promise<QuotedMessage | undefined> | undefined;
   await dispatch({
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -293,9 +313,13 @@ async function dispatchMessage(
       ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
       : undefined,
     recallReply: owner && selfId === connectedBotId ? () => {
-      const ids = new Set([recallId(messageId), recallId(incoming.reply_id)].filter((id) => id !== undefined));
+      const ids = new Set([oneBotMessageId(messageId), quotedId].filter((id) => id !== undefined));
       return Promise.all([...ids].map((id) => calls.recallMessage(send, id)));
     } : undefined,
+    lookupReply: quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
+      (messageType === "group" || event.sub_type === "friend")
+      ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target)
+      : undefined,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
       const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))

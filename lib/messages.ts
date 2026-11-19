@@ -34,6 +34,7 @@ export interface MessageEvent {
   readonly groupRequestScope?: "milky";
   readonly canReviewGroupRequests?: boolean;
   readonly recallReply?: () => Promise<readonly RecallResult[] | undefined>;
+  readonly lookupReply?: () => Promise<QuotedMessage | undefined>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
@@ -44,6 +45,11 @@ export interface MessageEvent {
   readonly img?: readonly string[];
   readonly file?: InboundSegment;
   readonly reply: (message: MessageReply, quote?: boolean, options?: ReplyOptions) => boolean | Promise<boolean>;
+}
+
+export interface QuotedMessage {
+  readonly user_id: number;
+  readonly message: readonly InboundSegment[];
 }
 
 export type RecallResult = "confirmed" | "rejected" | "unknown";

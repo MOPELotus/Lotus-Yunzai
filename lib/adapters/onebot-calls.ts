@@ -66,6 +66,15 @@ export class OneBotCalls {
       typeof friend === "object" && friend !== null && "user_id" in friend && String(friend.user_id) === String(userId));
   }
 
+  async getMessage(send: Send, messageId: number) {
+    try {
+      const result = await this.#request(send, "get_msg", { message_id: messageId });
+      if (!this.#closed && isRecord(result)) return result;
+    } catch {
+      return undefined;
+    }
+  }
+
   async replyWithConfirmation(send: Send, params: object): Promise<boolean> {
     try {
       await this.#request(send, "send_msg", params);
