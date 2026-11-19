@@ -2,7 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, readGroupActivity, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -199,6 +199,20 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return roster;
   }
 
+  async function listGroupActivity(group_id: number, actor: number) {
+    async function readCount() {
+      const result = await call.confirmed("get_group_info", { group_id, no_cache: true });
+      const group = result.status === "confirmed" ? result.data.group : undefined;
+      if (record(group) && group.group_id === group_id && positiveId(group.member_count)) return group.member_count;
+    }
+    const count = await readCount();
+    if (count === undefined || count > maxGroupMembers || signal.aborted) return;
+    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true });
+    if (result.status !== "confirmed" || signal.aborted || await readCount() !== count || signal.aborted) return;
+    return readGroupActivity(result.data.members, { group: group_id, bot: account, actor,
+      master: () => isMaster(actor), count });
+  }
+
   async function memberRole(group_id: number, user_id: number, active = signal) {
     if (signal.aborted || active.aborted) return;
     const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true }, active);
@@ -342,6 +356,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      groupActivityRoster: positiveId(groupId) && positiveId(cardOwner) ? () => listGroupActivity(groupId, cardOwner) : undefined,
       likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,
       profileLikeImageSignal: signal,
       mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,

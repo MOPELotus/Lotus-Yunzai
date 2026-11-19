@@ -18,6 +18,35 @@ export interface MutedGroupMember {
   readonly until: number;
 }
 
+export interface GroupActivityMember {
+  readonly userId: number;
+  readonly name?: string;
+  readonly role: Role;
+  readonly joinTime: number;
+  readonly lastSentTime: number;
+}
+
+export function readGroupActivity(members: unknown, scope: {
+  readonly group: number; readonly bot: number; readonly actor: number; readonly master: () => boolean;
+  readonly count: number;
+}): readonly GroupActivityMember[] | undefined {
+  if (!Array.isArray(members) || scope.count < 1 || scope.count > 10_000 || members.length !== scope.count) return;
+  const roster = new Map<number, GroupActivityMember>();
+  for (const row of members as unknown[]) {
+    if (typeof row !== "object" || row === null || Array.isArray(row)) return;
+    const { group_id, user_id, join_time, last_sent_time, role, card, nickname } = row as Record<string, unknown>;
+    if (group_id !== scope.group || typeof user_id !== "number" || !Number.isSafeInteger(user_id) ||
+        user_id <= 0 || roster.has(user_id) || (role !== "member" && role !== "admin" && role !== "owner") ||
+        typeof join_time !== "number" || !Number.isSafeInteger(join_time) || join_time <= 0 || join_time > 8_640_000_000_000 ||
+        typeof last_sent_time !== "number" || !Number.isSafeInteger(last_sent_time) || last_sent_time < 0 ||
+        last_sent_time > 8_640_000_000_000) return;
+    const name = (typeof card === "string" && card.trim()) || (typeof nickname === "string" && nickname.trim()) || undefined;
+    roster.set(user_id, { userId: user_id, name, role, joinTime: join_time, lastSentTime: last_sent_time });
+  }
+  const actor = roster.get(scope.actor);
+  if (actor && roster.has(scope.bot) && (actor.role !== "member" || scope.master())) return [...roster.values()];
+}
+
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;

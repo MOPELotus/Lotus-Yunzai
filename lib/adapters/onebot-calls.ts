@@ -1,7 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
-import type { GroupModerationResult, MutedGroupMember } from "./group-moderation.ts";
+import { readGroupActivity, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -251,12 +251,24 @@ export class OneBotCalls {
     }
   }
 
+  async listGroupActivity(send: Send, group: number, bot: number, actor: number, master: () => boolean, signal: AbortSignal) {
+    try {
+      const count = await this.#getGroupSize(send, group, signal);
+      if (count === undefined || count > 10_000 || signal.aborted) return;
+      const members = await this.#request(send, "get_group_member_list", { group_id: group, no_cache: true }, signal);
+      if (signal.aborted || await this.#getGroupSize(send, group, signal) !== count || signal.aborted) return;
+      return readGroupActivity(members, { group, bot, actor, master, count });
+    } catch {
+      return undefined;
+    }
+  }
+
   #getGroupMember(send: Send, groupId: number, userId: number, signal?: AbortSignal): Promise<unknown> {
     return this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true }, signal);
   }
 
-  async #getGroupSize(send: Send, groupId: number): Promise<number | undefined> {
-    const result = await this.#request(send, "get_group_info", { group_id: groupId, no_cache: true });
+  async #getGroupSize(send: Send, groupId: number, signal?: AbortSignal): Promise<number | undefined> {
+    const result = await this.#request(send, "get_group_info", { group_id: groupId, no_cache: true }, signal);
     if (isRecord(result) && result.group_id === groupId && isPositiveInteger(result.member_count)) return result.member_count;
   }
 
