@@ -1,0 +1,226 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createMiyousheShopPlans, type MiyousheShopInspection } from "../lib/miyoushe-shop-plans.ts";
+
+const target = { qq: "42", profileId: 1 };
+const other = { qq: "42", profileId: 2 };
+const startTime = 1_792_000_000_000;
+const uid = "1000042";
+const region = "cn_gf01";
+const body = { confirmed: true, goodsId: "27", uid, region, immediate: true, expectedPrice: 300 };
+const planRole = { uid, region, gameBiz: "hk4e_cn" };
+const mockGood = { id: "27", name: "测试商品", price: 300, type: 2, status: "available", gameBiz: "hk4e_cn", opensAt: null } as const;
+
+async function fixture(run: (data: {
+  file: string; profileDirectory: string; profile: (qq: string, id: number, account?: string, fp?: string) => Promise<void>;
+}) => Promise<void>) {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-plans-"));
+  const file = join(root, "coinShop", "plans.json");
+  async function profile(qq: string, id: number, account = "123", fp = "fake-device-fingerprint") {
+    await writeFile(join(root, `${qq}${id === 1 ? "" : `-${id}`}.yaml`), Bun.YAML.stringify({
+      version: 1, user: { qq }, profile: { id }, account: {
+        stuid: account, ltuid: account, cookie: "fake-cookie-for-tests", stoken: "fake-token-for-tests", updated_at: "2026-01-01",
+      }, device: { id: "fake-device-id", fp },
+    }));
+  }
+  try {
+    await profile(target.qq, target.profileId);
+    await profile(other.qq, other.profileId);
+    await run({ file, profileDirectory: root, profile });
+  } finally { await rm(root, { recursive: true, force: true }); }
+}
+
+async function inspection(good: MiyousheShopInspection["good"] = mockGood) {
+  return { good, balance: 500, roles: [planRole] };
+}
+
+function gate() { return Promise.withResolvers<void>(); }
+
+test("预约需要明确确认，同一账号跨档案去重，同一意图在完成后重试仍复用记录", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let submits = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { submits++; return "succeeded" as const; } };
+    const first = createMiyousheShopPlans(options);
+    const second = createMiyousheShopPlans(options);
+    await expect(first.reserve(target, { ...body, confirmed: false })).rejects.toMatchObject({ status: 400 });
+    await expect(first.reserve(target, { ...body, uid: "99" })).rejects.toMatchObject({ status: 400 });
+    await expect(first.reserve(target, { ...body, expectedPrice: 200 })).rejects.toMatchObject({ status: 409 });
+    const confirmed = { ...body, intentId: crypto.randomUUID() };
+    const [one, two] = await Promise.all([first.reserve(target, confirmed), second.reserve(target, confirmed)]);
+    expect(one).toEqual(two);
+    await expect(second.reserve(other, confirmed)).rejects.toMatchObject({ status: 409 });
+    expect((await second.list(other)).plans).toEqual([]);
+    await expect(second.cancel(other, one.id)).rejects.toMatchObject({ status: 404 });
+    await Promise.all([first.scan(), second.scan()]);
+    expect(submits).toBe(1);
+    const retried = await createMiyousheShopPlans(options).reserve(target, confirmed);
+    expect(retried).toMatchObject({ id: one.id, status: "succeeded", attempts: 1 });
+    await expect(first.reserve(target, { ...confirmed, uid: "99" })).rejects.toMatchObject({ status: 409 });
+    expect(await stat(file).then(result => result.mode & 0o777)).toBe(0o600);
+    expect(await readFile(file, "utf8")).not.toMatch(/fake-(cookie|token|device)/u);
+    expect(Object.keys(retried)).not.toContain("accountId");
+    expect(Object.keys(retried)).not.toContain("intentId");
+  });
+});
+
+test("提交前落盘，活跃提交不会被其他进程误判，结果不明时只允许人工确认", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const posting = gate(), lostResponse = gate();
+    let submits = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit(_plan: unknown, _signal?: AbortSignal, verifyBinding?: () => Promise<void>): Promise<"succeeded"> {
+        await verifyBinding?.();
+        submits++;
+        posting.resolve();
+        await lostResponse.promise;
+        throw new Error("transport failure with fake-cookie-for-tests");
+      } };
+    const first = createMiyousheShopPlans(options);
+    const second = createMiyousheShopPlans(options);
+    const booked = await first.reserve(target, body);
+    const postingJob = first.scan();
+    try {
+      await posting.promise;
+      expect(JSON.parse(await readFile(file, "utf8")).plans[0].status).toBe("submitting");
+      expect((await second.list(target)).plans[0]?.status).toBe("submitting");
+      await expect(second.cancel(target, booked.id)).rejects.toMatchObject({ status: 409 });
+      await second.scan();
+      expect(submits).toBe(1);
+    } finally {
+      lostResponse.resolve();
+      await postingJob;
+    }
+    const restarted = createMiyousheShopPlans(options);
+    await restarted.scan();
+    expect((await restarted.list(target)).plans[0]).toMatchObject({ status: "unknown", attempts: 1 });
+    expect(await readFile(file, "utf8")).not.toContain("fake-cookie-for-tests");
+    expect(submits).toBe(1);
+    await expect(restarted.reserve(target, body)).rejects.toMatchObject({ status: 409 });
+    await expect(restarted.resolve(other, booked.id, false)).rejects.toMatchObject({ status: 404 });
+    await expect(restarted.resolve(target, booked.id, "false")).rejects.toMatchObject({ status: 400 });
+    expect(await restarted.resolve(target, booked.id, false)).toMatchObject({ status: "failed", finishedAt: startTime });
+    expect(await restarted.reserve(target, body)).toMatchObject({ status: "scheduled", attempts: 0 });
+  });
+});
+
+test("旧版本保留预约，重启恢复时待确认中断的提交并暂停对应追踪规则", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection() };
+    const plan = {
+      id: "123456789abc", ...target, accountId: "123", botId: "99", goodsId: "27", goodsName: "旧预约", gameBiz: "hk4e_cn",
+      type: 2, price: 300, role: { ...planRole, nickname: "旧昵称" }, addressId: "", addressLabel: "", immediate: true,
+      createdAt: startTime, opensAt: startTime, attempts: 1, message: "旧字段", status: "submitting",
+    };
+    const noSubmit = createMiyousheShopPlans(options);
+    await expect(noSubmit.reserve(target, body)).rejects.toMatchObject({ status: 503 });
+    await expect(noSubmit.cancel(target, plan.id)).rejects.toMatchObject({ status: 404 });
+    await writeFile(file, JSON.stringify({ version: 1, plans: [plan] }));
+    expect((await noSubmit.list(target)).plans[0]).toMatchObject({ id: plan.id, status: "unknown" });
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ version: 2, trackers: [] });
+    const trackingId = "abcdef123456";
+    const trackers = [{ id: trackingId, enabled: true, customOldField: ["keep"] }];
+    await writeFile(file, JSON.stringify({ version: 2, plans: [{ ...plan, trackingId },
+      { ...plan, id: "123456789abd", goodsId: "28", status: "preparing" }], trackers }));
+    await noSubmit.scan();
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    expect(saved.plans.map((item: { status: string }) => item.status)).toEqual(["unknown", "scheduled"]);
+    expect(saved.trackers).toMatchObject([{ enabled: false, customOldField: ["keep"] }]);
+    const recovered = (await noSubmit.list(target)).plans[0]!;
+    expect(recovered.role).toEqual(planRole);
+    expect(recovered).not.toHaveProperty("botId");
+    expect(await noSubmit.resolve(target, recovered.id, true)).toMatchObject({ status: "succeeded" });
+  });
+});
+
+test("进程在调用兑换执行器时被杀后，重启只恢复待确认记录", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const path = new URL("../lib/miyoushe-shop-plans.ts", import.meta.url).href;
+    const child = Bun.spawn([process.execPath, "-e", `
+      import { createMiyousheShopPlans } from ${JSON.stringify(path)};
+      const shop = createMiyousheShopPlans({
+        file: ${JSON.stringify(file)}, profileDirectory: ${JSON.stringify(profileDirectory)}, now: () => ${startTime},
+        async inspect() { return ${JSON.stringify(await inspection())}; },
+        async submit() { console.log("submitting"); await new Promise(() => setInterval(() => {}, 1000)); },
+      });
+      await shop.reserve(${JSON.stringify(target)}, ${JSON.stringify(body)});
+      await shop.scan();
+    `], { stdout: "pipe", stderr: "inherit" });
+    const output = child.stdout.getReader();
+    try {
+      const ready = await output.read();
+      expect(new TextDecoder().decode(ready.value).trim()).toBe("submitting");
+      expect(JSON.parse(await readFile(file, "utf8")).plans[0].status).toBe("submitting");
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+      output.releaseLock();
+    }
+    let repeated = false;
+    const restarted = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { repeated = true; return "succeeded"; } });
+    await restarted.scan();
+    expect((await restarted.list(target)).plans[0]).toMatchObject({ status: "unknown", attempts: 1 });
+    expect(repeated).toBe(false);
+  });
+});
+
+test("预约后的账号或设备换绑会阻止提交，预约中的换绑阻止落盘", async () => {
+  await fixture(async ({ file, profileDirectory, profile }) => {
+    let submits = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { submits++; return "succeeded" as const; } };
+    const service = createMiyousheShopPlans(options);
+    const initial = await service.reserve(target, body);
+    await profile(target.qq, target.profileId, "555");
+    await service.scan();
+    expect((await service.list(target)).plans.find(item => item.id === initial.id)).toMatchObject({ status: "failed", attempts: 0 });
+    const afterRebind = await service.reserve(target, body);
+    await profile(target.qq, target.profileId, "555", "fake-other-fp");
+    await service.scan();
+    expect((await service.list(target)).plans.find(item => item.id === afterRebind.id)).toMatchObject({ status: "failed", attempts: 0 });
+    const changedDuringRead = createMiyousheShopPlans({ ...options, async inspect(_target, _id, _signal, verify) {
+      await verify?.();
+      await profile(target.qq, target.profileId, "666");
+      await verify?.();
+      return inspection();
+    } });
+    await expect(changedDuringRead.reserve(target, body)).rejects.toMatchObject({ status: 409 });
+    expect((await service.list(target)).plans).toHaveLength(2);
+    expect(submits).toBe(0);
+  });
+});
+
+test("官方改期后更新预约，取消核验中的计划不会提交，错过预约时不补发", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let now = startTime, submits = 0, opensAt = now + 3_000;
+    const examining = gate(), cancellation = gate();
+    let inspectMain = false;
+    const service = createMiyousheShopPlans({ file, profileDirectory, now: () => now, async inspect() {
+      if (inspectMain) { examining.resolve(); await cancellation.promise; }
+      return inspection({ ...mockGood, status: "scheduled", opensAt });
+    }, async submit() { submits++; return "succeeded"; } });
+    const first = await service.reserve(target, { ...body, immediate: false });
+    opensAt += 20_000;
+    await service.scan();
+    expect((await service.list(target)).plans[0]).toMatchObject({ status: "scheduled", opensAt });
+    now = opensAt;
+    inspectMain = true;
+    const scan = service.scan();
+    await examining.promise;
+    try {
+      expect(await service.cancel(target, first.id)).toMatchObject({ status: "cancelled" });
+    } finally {
+      cancellation.resolve();
+      await scan;
+    }
+    opensAt += 2_000;
+    const missed = await service.reserve(target, { ...body, immediate: false });
+    now = opensAt + 30_001;
+    await service.scan();
+    expect((await service.list(target)).plans.find(item => item.id === missed.id)).toMatchObject({ status: "missed", attempts: 0 });
+    expect(submits).toBe(0);
+  });
+});

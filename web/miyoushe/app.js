@@ -19,6 +19,11 @@ let expiryTimer;
 let tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
+const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+const planStatus = {
+  scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
+  failed: "未成功", cancelled: "已取消", missed: "已错过", unknown: "结果待确认",
+};
 
 function add(tag, className, value) {
   const element = document.createElement(tag);
@@ -121,7 +126,7 @@ function showOverview(data) {
 
 function switchTab(next) {
   tab = next;
-  for (const name of ["overview", "shop"]) {
+  for (const name of ["overview", "shop", "plans"]) {
     get(name + "-view").hidden = name !== tab;
     get("tab-" + name).setAttribute("aria-pressed", String(name === tab));
   }
@@ -140,6 +145,14 @@ function resetShop() {
   get("shop-pagination").hidden = true;
   get("shop-detail").close();
   get("shop-detail-content").replaceChildren();
+  plans.scope++;
+  plans.data = null;
+  plans.loading = null;
+  plans.activeForm = null;
+  plans.actions.clear();
+  plans.intents.clear();
+  get("plans-note").textContent = "";
+  get("shop-plans").replaceChildren();
 }
 
 function shopTime(milliseconds) {
@@ -278,26 +291,26 @@ async function loadCatalog(page = shop.page, game = shop.game) {
   }
 }
 
-function detailContent({ good, roles, roleError }) {
+function detailContent({ good, roles, roleError, addresses }) {
   const blocks = [add("h3", "", good.name), statusBadge(good.status),
     add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true),
     add("h4", "", "兑换条件"), add("p", "detail-copy", good.requirements || "官方暂未提供额外兑换说明。")];
   if (good.type === 1) blocks.push(add("p", "muted", "实物商品需要米游社收货地址。"));
-  if (good.type !== 2) return blocks;
-  blocks.push(add("h4", "", "当前档案绑定的角色"));
-  if (roleError || !roles.length) {
-    blocks.push(add("p", "muted", roleError || "没有找到此商品对应的绑定角色。"));
-    return blocks;
+  if (good.type === 2) {
+    if (roleError || !roles.length) {
+      blocks.push(add("h4", "", "当前档案绑定的角色"), add("p", "muted", roleError || "没有找到此商品对应的绑定角色。"));
+    } else if (!plans.data?.canSubmit || (!plans.intents.has(good.id) && !["available", "scheduled"].includes(good.status))) {
+      blocks.push(add("h4", "", "当前档案绑定的角色"));
+      const list = add("ul", "rows", "");
+      for (const role of roles) {
+        const row = add("li", "role-row", "");
+        row.append(add("span", "", roleLabel(role)), add("span", "muted", "UID " + role.uid));
+        list.append(row);
+      }
+      blocks.push(list, add("p", "muted", "实际兑换条件请以米游社商品说明为准。"));
+    }
   }
-  const list = add("ul", "rows", "");
-  for (const role of roles) {
-    const row = add("li", "role-row", "");
-    const identity = [role.nickname || "角色", role.regionName || role.region, role.level ? "Lv." + role.level : ""]
-      .filter(Boolean).join(" · ");
-    row.append(add("span", "", identity), add("span", "muted", "UID " + role.uid));
-    list.append(row);
-  }
-  blocks.push(list, add("p", "muted", "实际兑换条件请以米游社商品说明为准。"));
+  blocks.push(reservationForm(good, roles, addresses));
   return blocks;
 }
 
@@ -306,10 +319,11 @@ async function openDetail(id) {
   const controller = new AbortController();
   shop.detailRequest = controller;
   const dialog = get("shop-detail"), content = get("shop-detail-content");
+  plans.activeForm = null;
   content.replaceChildren(add("p", "muted", "正在读取商品详情…"));
   if (!dialog.open) dialog.showModal();
   try {
-    const response = await shopRequest("api/goods/" + encodeURIComponent(id), controller);
+    const [response] = await Promise.all([shopRequest("api/goods/" + encodeURIComponent(id), controller), loadPlans()]);
     if (controller.signal.aborted) return;
     if (response.status === 401 || response.status === 403) {
       showLogin(loginHelp, true);
@@ -326,6 +340,267 @@ async function openDetail(id) {
   } finally {
     if (shop.detailRequest === controller) shop.detailRequest = null;
   }
+}
+
+function roleLabel(role) {
+  return [role.nickname || "角色", role.regionName || role.region, role.level ? "Lv." + role.level : ""]
+    .filter(Boolean).join(" · ");
+}
+
+function planNote(message, error = false) {
+  const notice = get("plans-note");
+  notice.textContent = message;
+  notice.classList.toggle("error", error);
+}
+
+function planRow(plan) {
+  const row = add("article", "plan-row", "");
+  const copy = add("div", "plan-copy", "");
+  const status = Object.hasOwn(planStatus, plan.status) ? plan.status : "unknown";
+  copy.append(add("span", "shop-badge " + status, planStatus[status]), add("h3", "", plan.goodsName),
+    add("p", "muted", "档案 " + plan.profileId + " · " + point(plan.price) + " 米游币 × 1 · " + shopTime(plan.opensAt)));
+  if (plan.role) copy.append(add("p", "muted", "游戏角色 UID " + plan.role.uid + " · " + plan.role.region));
+  if (plan.addressLabel) copy.append(add("p", "muted", "收货地址 " + plan.addressLabel));
+  if (plan.message) copy.append(add("p", "", plan.message));
+  row.append(copy);
+  if (!/^[a-f0-9]{12}$/u.test(plan.id)) return row;
+  const actions = add("div", "plan-actions", "");
+  function action(label, operation, body, prompt) {
+    const button = add("button", "secondary", label);
+    button.type = "button";
+    button.disabled = plans.actions.has(plan.id);
+    button.addEventListener("click", () => {
+      if (!plans.actions.has(plan.id) && window.confirm(prompt)) void changePlan(plan.id, operation, body);
+    });
+    actions.append(button);
+  }
+  if (plan.status === "scheduled" || plan.status === "preparing") {
+    action("取消预约", "cancel", {}, "取消「" + plan.goodsName + "」的预约？");
+  } else if (plan.status === "unknown") {
+    for (const [label, redeemed] of [["已在官方记录确认成功", true], ["已确认未兑换", false]]) {
+      action(label, "resolve", { redeemed }, "请先在米游社核对「" + plan.goodsName + "」的兑换记录。" +
+        (redeemed ? "确定标记为已兑换？" : "确定标记为未兑换？"));
+    }
+  }
+  if (actions.children.length) row.append(actions);
+  return row;
+}
+
+function renderPlans() {
+  if (!plans.data) return;
+  const rows = plans.data.plans.map(planRow);
+  get("shop-plans").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无兑换记录。")]));
+}
+
+function loadPlans() {
+  if (plans.loading) return plans.loading;
+  const scope = plans.scope;
+  const revision = plans.revision;
+  planNote("正在读取兑换记录…");
+  plans.loading = (async () => {
+    try {
+      const response = await request("api/plans");
+      if (scope !== plans.scope) return;
+      if (response.status === 401 || response.status === 403) {
+        showLogin(loginHelp, true);
+        return;
+      }
+      if (!response.ok) throw new Error("读取失败");
+      const data = await response.json();
+      if (scope !== plans.scope || revision !== plans.revision) return;
+      plans.data = data;
+      renderPlans();
+      const messages = [];
+      if (!data.canSubmit) messages.push("预约兑换服务暂未启用。");
+      if (plans.intents.size) messages.push("另有提交待确认，可返回商品详情重试原请求。");
+      planNote(messages.join(" "));
+    } catch {
+      if (scope !== plans.scope || revision !== plans.revision) return;
+      if (plans.data) plans.data = { ...plans.data, canSubmit: false };
+      planNote(plans.data ? "刷新失败，当前显示上次读取的兑换记录。" : "暂时无法读取兑换记录。", true);
+    } finally {
+      if (scope === plans.scope) plans.loading = null;
+    }
+  })();
+  return plans.loading;
+}
+
+async function postPlan(path, body) {
+  return request(path, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+async function planFailure(response) {
+  const data = await response.json().catch(() => null);
+  if (typeof data?.message === "string" && data.message.length <= 200) return data.message;
+  if (response.status === 409) return "当前兑换状态已变化，请刷新记录。";
+  if (response.status === 404) return "兑换记录不存在，请刷新记录。";
+  return "暂时无法完成操作，请稍后重试。";
+}
+
+async function changePlan(id, action, body) {
+  const scope = plans.scope;
+  plans.actions.add(id);
+  renderPlans();
+  try {
+    const response = await postPlan("api/plans/" + id + "/" + action, body);
+    if (scope !== plans.scope) return;
+    if (response.status === 401 || response.status === 403) {
+      showLogin(loginHelp, true);
+      return;
+    }
+    if (!response.ok) {
+      const problem = await planFailure(response);
+      if (scope === plans.scope) planNote(problem, true);
+      return;
+    }
+    const plan = await response.json();
+    if (scope !== plans.scope) return;
+    plans.revision++;
+    if (plans.data) {
+      plans.data = { ...plans.data, plans: plans.data.plans.map(row => row.id === plan.id ? plan : row) };
+      renderPlans();
+    }
+    planNote(action === "cancel" ? "已取消预约。" : "已记录核对结果。");
+  } catch {
+    if (scope === plans.scope) planNote("操作结果尚未确认，请刷新兑换记录。", true);
+  } finally {
+    if (scope === plans.scope) {
+      plans.actions.delete(id);
+      renderPlans();
+    }
+  }
+}
+
+function reservationForm(good, roles, addresses) {
+  const panel = add("form", "reservation-form", "");
+  if (!plans.data?.canSubmit) {
+    panel.append(add("p", "muted", plans.data ? "预约兑换服务暂未启用。" : "暂时无法确认预约服务状态。"));
+    return panel;
+  }
+  const saved = plans.intents.get(good.id);
+  const immediate = saved?.body.immediate ?? good.status === "available";
+  if (!saved && !immediate && good.status !== "scheduled") {
+    panel.append(add("p", "muted", "当前商品不可兑换。"));
+    return panel;
+  }
+  const targets = good.type === 2 ? roles : good.type === 1 && Array.isArray(addresses) ? addresses : [];
+  if (!saved && targets.length === 0) return panel;
+
+  const selector = add("select", "", "");
+  selector.id = "reservation-target";
+  selector.required = true;
+  const targetField = add("label", "reservation-target", good.type === 2 ? "接收奖励的游戏角色" : "收货地址");
+  selector.append(new Option("请选择兑换目标", ""), ...targets.map((target, index) =>
+    new Option(good.type === 2 ? "UID " + target.uid + " · " + roleLabel(target) : target.label, String(index))));
+  if (targets.length === 1) selector.value = "0";
+  targetField.htmlFor = selector.id;
+  targetField.append(selector);
+
+  const confirm = add("input", "", "");
+  confirm.type = "checkbox";
+  confirm.required = true;
+  confirm.id = "reservation-confirm";
+  const confirmation = add("label", "reservation-confirm", "");
+  confirmation.append(confirm, add("span", "", "使用当前档案的 " + point(saved?.body.expectedPrice ?? good.price) +
+    " 米游币兑换 1 件。" + (immediate ? "确认后立即尝试兑换。" : "官方开放后自动尝试兑换。")));
+  const message = add("p", "muted", "");
+  message.id = "reservation-message";
+  message.setAttribute("role", "status");
+  const submit = add("button", "reservation-submit", "");
+  submit.type = "submit";
+  submit.id = "reservation-submit";
+  const scope = plans.scope;
+
+  function update() {
+    const draft = plans.intents.get(good.id);
+    const submitting = draft?.submitting === true;
+    selector.disabled = Boolean(draft);
+    confirm.disabled = Boolean(draft);
+    submit.disabled = submitting || (!draft && (!confirm.checked || !selector.value));
+    submit.textContent = submitting ? "正在提交…" : draft ? "重试原请求" : immediate ? "确认立即兑换" : "创建兑换预约";
+    if (draft) message.textContent = draft.note || "";
+  }
+  plans.activeForm = { id: good.id, update, reject(problem) {
+    confirm.checked = false;
+    message.textContent = problem;
+    update();
+  } };
+  if (saved) {
+    const match = targets.findIndex(target => good.type === 2
+      ? target.uid === saved.body.uid && target.region === saved.body.region : target.id === saved.body.addressId);
+    selector.value = match < 0 ? "" : String(match);
+    confirm.checked = true;
+  }
+  for (const element of [selector, confirm]) element.addEventListener("change", update);
+  update();
+  panel.append(targetField, confirmation, message, submit);
+  panel.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (scope !== plans.scope || submit.disabled) return;
+    let draft = plans.intents.get(good.id);
+    if (!draft) {
+      const target = targets[Number(selector.value)];
+      if (!confirm.checked || !selector.value || !target) return;
+      if (!immediate && good.opensAt <= Date.now() + shop.nowOffset) {
+        message.textContent = "商品开放时间已到，请刷新商城后重新确认。";
+        return;
+      }
+      if (typeof crypto.randomUUID !== "function") {
+        message.textContent = "当前浏览器无法生成兑换确认，请通过 HTTPS 页面重试。";
+        return;
+      }
+      const destination = good.type === 2 ? { uid: target.uid, region: target.region } : { addressId: target.id };
+      draft = { body: { goodsId: good.id, expectedPrice: good.price, immediate, confirmed: true,
+        ...destination, intentId: crypto.randomUUID() } };
+      plans.intents.set(good.id, draft);
+    }
+    const currentForm = () => plans.activeForm?.id === good.id ? plans.activeForm : null;
+    draft.submitting = true;
+    draft.note = "正在确认兑换计划…";
+    update();
+    try {
+      const response = await postPlan("api/plans", draft.body);
+      if (scope !== plans.scope) return;
+      if (response.status === 401 || response.status === 403) {
+        showLogin(loginHelp, true);
+        return;
+      }
+      if (!response.ok) {
+        const problem = await planFailure(response);
+        if (scope !== plans.scope) return;
+        if (!draft.uncertain && [400, 404, 409].includes(response.status)) {
+          plans.intents.delete(good.id);
+          currentForm()?.reject(problem);
+          return;
+        }
+        draft.uncertain = true;
+        draft.note = problem + "若需重试，请重试原请求。";
+        return;
+      }
+      const plan = await response.json();
+      if (scope !== plans.scope) return;
+      plans.intents.delete(good.id);
+      plans.revision++;
+      if (plans.data) {
+        plans.data = { ...plans.data, plans: [plan, ...plans.data.plans.filter(row => row.id !== plan.id)] };
+      }
+      if (currentForm() && get("shop-detail").open) {
+        get("shop-detail").close();
+        switchTab("plans");
+      }
+      renderPlans();
+      planNote(plan.immediate ? "已创建兑换计划，处理结果见下方记录。" : "预约已创建，结果见下方记录。");
+    } catch {
+      draft.uncertain = true;
+      draft.note = "提交结果待确认。可以重试原请求或查看兑换记录。";
+    } finally {
+      draft.submitting = false;
+      if (scope === plans.scope) currentForm()?.update();
+    }
+  });
+  return panel;
 }
 
 async function request(path, options) {
@@ -382,7 +657,11 @@ async function logout() {
   }
 }
 
-get("refresh").addEventListener("click", () => void (tab === "shop" ? loadCatalog() : refresh()));
+get("refresh").addEventListener("click", () => {
+  if (tab === "shop") void loadCatalog();
+  else if (tab === "plans") void loadPlans();
+  else void refresh();
+});
 get("login-retry").addEventListener("click", refresh);
 get("logout").addEventListener("click", logout);
 get("tab-overview").addEventListener("click", () => switchTab("overview"));
@@ -390,13 +669,21 @@ get("tab-shop").addEventListener("click", () => {
   switchTab("shop");
   if (!shop.data && !shop.catalogRequest) void loadCatalog();
 });
+get("tab-plans").addEventListener("click", () => {
+  switchTab("plans");
+  void loadPlans();
+});
 get("shop-game").addEventListener("change", event => void loadCatalog(1, event.target.value));
 get("shop-status").addEventListener("change", renderGoods);
 get("shop-search").addEventListener("input", renderGoods);
 get("shop-previous").addEventListener("click", () => { if (shop.page > 1) void loadCatalog(shop.page - 1); });
 get("shop-next").addEventListener("click", () => { if (shop.page < shop.data?.totalPages) void loadCatalog(shop.page + 1); });
 get("shop-close").addEventListener("click", () => get("shop-detail").close());
-get("shop-detail").addEventListener("close", () => shop.detailRequest?.abort());
+get("shop-detail").addEventListener("close", () => {
+  if (get("shop-detail").open) return;
+  shop.detailRequest?.abort();
+  plans.activeForm = null;
+});
 setInterval(() => {
   if (!get("dashboard").hidden) get("clock").textContent = clock.format();
   if (tab === "shop") tickShop();

@@ -41,6 +41,7 @@
           <nav class="tabs" aria-label="页面">
             <button id="tab-overview" type="button" aria-pressed="true">米游社总览</button>
             <button id="tab-shop" type="button" aria-pressed="false">商品商城</button>
+            <button id="tab-plans" type="button" aria-pressed="false">兑换记录</button>
           </nav>
           <button id="refresh" class="secondary" type="button">刷新数据</button>
         </header>
@@ -79,6 +80,10 @@
             <span id="shop-page"></span>
             <button id="shop-next" type="button" class="secondary">下一页</button>
           </div>
+        </div>
+        <div id="plans-view" hidden>
+          <p id="plans-note" class="muted" role="status"></p>
+          <div id="shop-plans" aria-label="兑换记录"></div>
         </div>
       </section>
     </main>

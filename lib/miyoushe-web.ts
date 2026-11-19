@@ -3,9 +3,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { MiyousheExchangeError } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import type { CommandModule } from "./commands.ts";
 import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overview.ts";
 import { MiyousheShopError, type createMiyousheShopCatalog } from "./miyoushe-shop-catalog.ts";
+import { MiyousheShopPlanError, type createMiyousheShopPlans } from "./miyoushe-shop-plans.ts";
 import { readPanelJson } from "./panel.ts";
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
@@ -33,6 +35,9 @@ interface Options {
   readonly loginIdentity: (qq: string, profileId: number) => Promise<string>;
   readonly overview: (target: MiyousheOverviewTarget, signal?: AbortSignal, verifyLogin?: () => Promise<void>) => Promise<MiyousheOverview>;
   readonly catalog?: ReturnType<typeof createMiyousheShopCatalog>;
+  readonly plans?: ReturnType<typeof createMiyousheShopPlans>;
+  readonly shopAddresses?: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyBinding: () => Promise<void>) =>
+    Promise<readonly { id: string; label: string }[]>;
   readonly path?: string;
   readonly ticketMinutes?: number;
   readonly sessionHours?: number;
@@ -66,7 +71,7 @@ export function miyousheWebSettings(raw: unknown) {
   };
 }
 
-export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog,
+export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
   path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours, now = Date.now }: Options) {
   const mount = normalizedPath(path) ?? "/miyoushe";
   const prefix = `${mount}/`;
@@ -154,6 +159,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     if (pathname === mount) return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: prefix } }) : error(405);
     const part = pathname.slice(prefix.length);
     const goodsId = /^api\/goods\/([1-9]\d{0,19})$/u.exec(part)?.[1];
+    const planAction = /^api\/plans\/([a-f0-9]{12})\/(cancel|resolve)$/u.exec(part);
     if (part === "" || part === "style.css" || part === "app.js") {
       if (!isRead) return error(405);
       const asset = Bun.file(join(assetDirectory, part || "index.html"));
@@ -162,10 +168,10 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         ? new Response(method === "HEAD" ? null : asset, { headers: { ...headers, "Content-Type": `${contentType}; charset=utf-8` } })
         : error(404);
     }
-    if (part === "api/claim" || part === "api/logout") {
+    if (part === "api/claim" || part === "api/logout" || (plans && (planAction || (part === "api/plans" && method !== "GET")))) {
       if (method !== "POST") return error(405);
       if (request.headers.get("Origin") !== base.origin) return error(403);
-    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId))) {
+    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId)) || (plans && part === "api/plans")) {
       if (method !== "GET") return error(405);
       const fetchSite = request.headers.get("Sec-Fetch-Site");
       if (fetchSite && fetchSite !== "same-origin") return error(403);
@@ -215,14 +221,37 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       }
       await verifyLogin();
       const target = { qq: row.qq, profileId: row.profileId };
+      if (plans && part === "api/plans") {
+        const result = method === "GET" ? await plans.list(target, verifyLogin) : await plans.reserve(target,
+          await readPanelJson(request).catch(() => undefined), deadline, verifyLogin);
+        await verifyLogin();
+        return Response.json(result, { headers });
+      }
+      if (plans && planAction) {
+        const [, id, action] = planAction;
+        const body = action === "resolve" ? await readPanelJson(request).catch(() => undefined) : undefined;
+        const redeemed = body && typeof body === "object" && "redeemed" in body ? body.redeemed : undefined;
+        const result = action === "cancel" ? await plans.cancel(target, id!, verifyLogin)
+          : await plans.resolve(target, id!, redeemed, verifyLogin);
+        await verifyLogin();
+        return Response.json(result, { headers });
+      }
+      if (catalog && goodsId) {
+        const detail = await catalog.detail(target, goodsId, deadline, verifyLogin);
+        const addresses = detail.good.type === 1 && shopAddresses
+          ? await shopAddresses(target, deadline, verifyLogin).catch(() => undefined) : undefined;
+        await verifyLogin();
+        return Response.json({ ...detail, ...(addresses && { addresses }), expiresAt: row.expiresAt }, { headers });
+      }
       const view = catalog && part === "api/catalog" ? await catalog.list(target, searchParams, deadline, verifyLogin)
-        : catalog && goodsId ? await catalog.detail(target, goodsId, deadline, verifyLogin)
-          : await overview(target, deadline, verifyLogin);
+        : await overview(target, deadline, verifyLogin);
       await verifyLogin();
       return Response.json({ ...view, expiresAt: row.expiresAt }, { headers });
     } catch (failure) {
       if (failure instanceof ProfileError && failure.code === "changed") return error(401);
-      if (failure instanceof MiyousheShopError) return Response.json({ message: failure.message }, { status: failure.status, headers });
+      if (failure instanceof MiyousheShopError || failure instanceof MiyousheShopPlanError || failure instanceof MiyousheExchangeError) {
+        return Response.json({ message: failure.message }, { status: failure.status, headers });
+      }
       return error(503);
     }
   }

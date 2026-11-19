@@ -139,6 +139,55 @@ h1, h2, h3, p { margin: 0; }
 #shop-detail-content h4 { margin: 18px 0 6px; font-size: 14px; }
 #shop-detail-content .muted { margin-top: 12px; }
 .detail-copy { white-space: pre-wrap; }
+#plans-view { padding-top: 18px; }
+#plans-note:not(:empty) { margin-bottom: 12px; }
+#plans-note.error { color: #9b3d2f; }
+.plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.plan-row:last-child { border-bottom: 0; }
+.plan-copy { min-width: 0; }
+.plan-row h3 { margin: 6px 0 4px; font-size: 16px; }
+.plan-row p { margin-top: 4px; }
+.plan-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.shop-badge.succeeded { background: #e2eee3; color: #2a6441; }
+.shop-badge.cancelled, .shop-badge.failed, .shop-badge.missed { background: #eaece8; color: #4f5e54; }
+.reservation-form { display: grid; gap: 12px; margin: 18px 0 0; }
+.reservation-form:empty { display: none; }
+.reservation-target { display: grid; gap: 6px; color: var(--muted); }
+.reservation-target select {
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #202f2a;
+  font: inherit;
+}
+.reservation-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #edf2e9;
+}
+.reservation-confirm input { width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--accent); }
+#reservation-message:empty { display: none; }
+.reservation-submit {
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
 .secondary { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 8px 14px; color: inherit; }
 .secondary:hover:not(:disabled) { border-color: var(--accent); }
 .notice { margin-top: 16px; color: var(--muted); }
@@ -207,4 +256,6 @@ h1, h2, h3, p { margin: 0; }
   .goods-grid { grid-template-columns: minmax(0, 1fr); }
   .good-visual { height: 195px; }
   .good-body { padding: 16px; }
+  .plan-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .plan-actions { justify-content: flex-start; }
 }

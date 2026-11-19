@@ -12,6 +12,8 @@ import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
+import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
+  type MiyousheShopOrder } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
@@ -237,6 +239,15 @@ export function createHoyoClient(
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
   }
 
+  async function readForShop<T>(source: ProfileAccountContext, options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> },
+    read: (profile: ProfileAccountContext, guard: () => Promise<void>) => Promise<T>) {
+    const result = await retrieve(source, profile => read(profile, async () => {
+      await options.verifyBinding?.();
+      await ensureCurrentProfile(profile);
+    }), options.signal, error => error instanceof MiyousheExchangeError && error.reason === "expired");
+    return result.data;
+  }
+
   function roleCatalog(data: readonly unknown[]) {
     const roles = {
       gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz"),
@@ -272,6 +283,23 @@ export function createHoyoClient(
 
   return {
     refreshCredentials: recover,
+    fetchMiyousheShopAddresses(source: ProfileAccountContext, options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
+      return readForShop(source, options, (profile, guard) => readMiyousheShopAddresses(transport, profile, options.signal, guard));
+    },
+    fetchMiyousheShopAccount(source: ProfileAccountContext,
+      options: { readonly includeAddresses?: boolean; readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
+      return readForShop(source, options, async (profile, guard) => ({
+        balance: await readMiyousheShopBalance(transport, profile, options.signal, guard),
+        addresses: options.includeAddresses ? await readMiyousheShopAddresses(transport, profile, options.signal, guard) : [],
+      }));
+    },
+    exchangeMiyousheShopGoods(source: ProfileAccountContext, order: MiyousheShopOrder,
+      { signal, verifyBinding }: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
+      return submitMiyousheShopExchange(transport, source, order, signal, async () => {
+        await verifyBinding?.();
+        await ensureCurrentProfile(source);
+      });
+    },
     async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal) {
       signal?.throwIfAborted();
       const refreshed = await recover(context);

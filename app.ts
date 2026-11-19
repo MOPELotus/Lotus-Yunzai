@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
-import { bbsCheckinForums, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
+import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
@@ -72,6 +72,7 @@ import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
 import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./lib/miyoushe-web.ts";
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
+import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
 import { createCommandDelegation } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
@@ -141,6 +142,7 @@ if (import.meta.main) {
   let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
+  let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
     checkinNotify?: CheckinNotifyTransport } | undefined;
   let stopping = false;
@@ -779,13 +781,38 @@ if (import.meta.main) {
     if (!probingUpdate && shopSettings.enabled) {
       const plans = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)));
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
+      const catalog = createMiyousheShopCatalog({ profileDirectory });
+      const shopClient = createProfileHoyoClient(checkinProfiles);
+      shopPlans = createMiyousheShopPlans({
+        file: fileURLToPath(new URL("data/coinShop/plans.json", root)), profileDirectory,
+        async inspect(target, goodsId, signal, verifyBinding) {
+          await verifyBinding?.();
+          const { good, roles } = await catalog.detail(target, goodsId, signal, verifyBinding);
+          const account = await checkinProfiles.accountContext(target.qq, target.profileId);
+          await verifyBinding?.();
+          if (good.price === null) throw new MiyousheShopPlanError(503, "暂时无法核对商品价格。");
+          const { balance, addresses } = await shopClient.fetchMiyousheShopAccount(account, {
+            signal, verifyBinding, includeAddresses: good.type === 1,
+          });
+          return { good: { ...good, price: good.price }, balance, roles, addresses };
+        },
+        async submit(plan, signal, verifyBinding) {
+          await verifyBinding?.();
+          const account = await checkinProfiles.accountContext(plan.qq, plan.profileId);
+          return shopClient.exchangeMiyousheShopGoods(account, plan, { signal, verifyBinding });
+        },
+      });
       miyousheWeb = createMiyousheWeb({
         ...shopSettings, origin: () => shopSettings.origin ?? (fileBase && new URL(fileBase.origin)),
         signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
-        catalog: createMiyousheShopCatalog({ profileDirectory }),
+        catalog, plans: shopPlans,
+        async shopAddresses(target, signal, verifyBinding) {
+          const account = await checkinProfiles.accountContext(target.qq, target.profileId);
+          return shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding });
+        },
       });
       commands.registerModule(miyousheWeb.commands, "[Lotus-Plugin] Coin Shop");
     }
@@ -1016,6 +1043,7 @@ if (import.meta.main) {
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
       milkyTransport?.start();
       checkinRuntime?.start();
+      shopPlans?.start(lifecycle.signal, () => console.warn("[米游币商城] 未能读取或恢复预约。"));
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
