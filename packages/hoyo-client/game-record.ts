@@ -105,6 +105,13 @@ function apiError(payload: Json | undefined, status: number, retcode: number | u
   return new HoyoRequestError("api", `官方${label}接口拒绝请求。`, status, retcode);
 }
 
+export function genshinCnRecordRegion({ uid, region, gameBiz }: ProfileRequestContext["role"]) {
+  if (!records.gs.uid.test(uid) || (gameBiz && gameBiz !== records.gs.gameBiz)) return;
+  const expected = uid.startsWith("5") ? "cn_qd01" : "cn_gf01";
+  const savedRegion = region.trim();
+  if (savedRegion === expected || (!savedRegion && /^[125]\d{8}$/u.test(uid))) return expected;
+}
+
 export async function readCnGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
   { kind, signal }: { readonly kind: "daily-note" | "genshin-index"; readonly signal?: AbortSignal },
   verifyProfile?: () => Promise<void>) {
@@ -113,10 +120,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const label = forNote ? "体力" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
-  const legacyRegion = game === "gs" && !/^[125]\d{8}$/u.test(uid)
-    ? undefined
-    : route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
-  const region = source.role.region.trim() || legacyRegion;
+  const region = game === "gs" ? genshinCnRecordRegion(source.role) :
+    source.role.region.trim() || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
   if ((!forNote && game !== "gs") || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);

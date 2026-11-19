@@ -2,7 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { GameRecordRequestError } from "./game-record.ts";
+import { GameRecordRequestError, genshinCnRecordRegion } from "./game-record.ts";
 
 interface GrowthTarget {
   readonly id: number;
@@ -48,7 +48,8 @@ const endpoint = "https://api-takumi.mihoyo.com/event/e20200928calculate/v3/batc
 const subject = "原神背包查询";
 const maxProbeItems = 128;
 const maxResponseItems = 1024;
-const maxResponseBytes = 2 * 1024 * 1024;
+// The calculator includes per-character upgrade plans alongside the small inventory list.
+const maxResponseBytes = 12 * 1024 * 1024;
 const appVersion = "2.40.1";
 const signingSalt = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs";
 
@@ -204,9 +205,9 @@ function normalize(data: Json, uid: string, region: GenshinBackpackSnapshot["reg
 
 export async function readGenshinBackpack(source: ProfileRequestContext, transport: HoyoTransport,
   { probe, signal }: GenshinBackpackOptions, verifyProfile?: () => Promise<void>): Promise<GenshinBackpackSnapshot> {
-  const { game, role: { uid, region, gameBiz } } = source;
-  if (game !== "gs" || !/^[1-5]\d{8}$/u.test(uid) || (region !== "cn_gf01" && region !== "cn_qd01") ||
-      (uid.startsWith("5") !== (region === "cn_qd01")) || (gameBiz && gameBiz !== "hk4e_cn")) {
+  const uid = source.role.uid;
+  const region = genshinCnRecordRegion(source.role);
+  if (source.game !== "gs" || !region) {
     throw new HoyoRequestError("invalid-input", "原神背包仅支持当前档案中已确认的国服原神角色。");
   }
   const body = JSON.stringify({ items: probeItems(probe), uid, region });
@@ -258,5 +259,8 @@ export async function readGenshinBackpack(source: ProfileRequestContext, transpo
   }
   const data = object(payload?.data);
   if (retcode !== 0 || !data) responseError();
+  if (data.has_user_info !== true) {
+    throw new HoyoRequestError("response", "官方养成计算器未返回账号背包，请在米游社核对当前角色绑定后重试。");
+  }
   return normalize(data, uid, region);
 }

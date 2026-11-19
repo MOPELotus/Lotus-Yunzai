@@ -25,7 +25,7 @@ const endpoint = "https://api-takumi.mihoyo.com/event/e20200928calculate/v3/batc
 const row = { id: 202, name: "摩拉", num: 100, lack_num: 40 };
 
 function answer(data: object = { overall_consume: [row] }) {
-  return Response.json({ retcode: 0, data });
+  return Response.json({ retcode: 0, data: { has_user_info: true, ...data } });
 }
 
 test("背包请求只使用当前档案的区服、Cookie 和设备，且签名实际发送的 POST JSON", async () => {
@@ -110,15 +110,26 @@ test("核对响应中可用的角色身份，并拒绝畸形或超界库存数�
   }
   expect(await readGenshinBackpack(source, async () => answer({ overall_consume: [] }), options))
     .toEqual({ uid, region, items: [] });
+  const anonymouslyCalculated = { overall_consume: [{ ...row, lack_num: row.num }] };
+  for (const flag of [undefined, false, "true"]) {
+    await expect(readGenshinBackpack(source, async () => answer({ ...anonymouslyCalculated, has_user_info: flag }), options))
+      .rejects.toThrow("未返回账号背包");
+  }
+  const savedWithoutRegion = { ...source, role: { ...role, region: "" } };
+  const result = await readGenshinBackpack(savedWithoutRegion, async (_url, init) => {
+    expect(JSON.parse(String(init.body)).region).toBe(region);
+    return answer({ overall_consume: [row], single_role_result: "x".repeat(5_200_000) });
+  }, options);
+  expect(result.items[0]?.count).toBe(60);
 });
 
 test("错误响应和流式体积受限，取消可以中断未完成的读取", async () => {
   let cancelled = 0;
-  for (const headers of [new Headers({ "Content-Length": "2097153" }), new Headers()]) {
+  for (const headers of [new Headers({ "Content-Length": "12582913" }), new Headers()]) {
     const response = new Response(new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(new Uint8Array(1_100_000));
-        controller.enqueue(new Uint8Array(1_100_000));
+        controller.enqueue(new Uint8Array(6_500_000));
+        controller.enqueue(new Uint8Array(6_500_000));
       },
       cancel() { cancelled++; },
     }), { headers });
@@ -181,11 +192,12 @@ device: { bound: true, id: fixture-id, fp: fixture-fp }
       () => new Response(null, { status: 429 }),
       () => new Response(null, { status: 401 }),
       () => new Response(null, { status: 503 }),
+      () => answer({ has_user_info: false, overall_consume: [{ ...row, lack_num: row.num }] }),
     ]) {
       mock = response;
       await expect(client.fetchGenshinBackpack(context, options)).rejects.toThrow();
     }
-    expect(cookies).toEqual(new Array(8).fill(cookie));
+    expect(cookies).toEqual(new Array(9).fill(cookie));
     expect(exchangeCount).toBe(0);
     cookies.length = 0;
     mock = () => cookies.length === 1 ? Response.json({ retcode: -100, message: "Please login" }) : answer();
