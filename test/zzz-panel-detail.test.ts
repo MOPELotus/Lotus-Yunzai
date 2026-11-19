@@ -10,7 +10,9 @@ test("角色详情沿用旧命令、可选档案后缀和更新/列表优先级"
   expect(zzzPanelCommand("#ZZZ客服面板2")).toEqual({ kind: "detail", profileId: 2, name: "客服" });
   expect(zzzPanelCommand("%琉音面板列表2")).toEqual({ kind: "list", profileId: 2 });
   expect(zzzPanelCommand("%更新琉音面板2")).toEqual({ kind: "update", profileId: 2, names: ["琉音"] });
-  for (const command of ["琉音面板", "%琉音面板0", "%琉音面板999", "%更新展柜面板", "%展柜面板刷新", "% a\u0000面板"]) {
+  expect(zzzPanelCommand("%展柜面板刷新2")).toEqual({ kind: "showcase-update", profileId: 2 });
+  expect(zzzPanelCommand("%客服展柜面板2")).toEqual({ kind: "showcase-detail", profileId: 2, name: "客服" });
+  for (const command of ["琉音面板", "%琉音面板0", "%琉音面板999", "%更新琉音展柜面板", "%更新展柜面板2 12345678", "% a\u0000面板"]) {
     expect(zzzPanelCommand(command)).toBeUndefined();
   }
 });

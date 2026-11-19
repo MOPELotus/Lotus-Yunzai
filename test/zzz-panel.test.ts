@@ -29,7 +29,8 @@ test("绝区零面板旧名册、全量刷新与单选更新保留旧前缀和�
     kind: "update", profileId: 2, names: ["莱卡恩", "11号"],
   });
   expect(zzzPanelCommand("%11号面板")).toEqual({ kind: "detail", profileId: 1, name: "11号" });
-  for (const unrelated of ["%更新展柜面板", "%面板256", "#原神面板", "%危局"]) {
+  expect(zzzPanelCommand("%更新展柜面板")).toEqual({ kind: "showcase-update", profileId: 1 });
+  for (const unrelated of ["%面板256", "#原神面板", "%危局"]) {
     expect(zzzPanelCommand(unrelated)).toBeUndefined();
   }
 });
