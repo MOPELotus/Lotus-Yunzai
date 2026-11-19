@@ -12,6 +12,10 @@ const otherBotOwner = 52;
 const originalGroup = 77;
 const secondGroup = 78;
 const time = 1_700_000_000;
+const mediaSource = "https://multimedia.nt.qq.com.cn/download";
+const legacyPhoto = "https://gchat.qpic.cn/gchatpic_new/fixture/0";
+const mediaBytes = { photo: [255, 216, 255, 224], voice: [35, 33, 83, 73, 76, 75], video: [0, 0, 0, 16, 102, 116, 121, 112] };
+const embedded = (kind: keyof typeof mediaBytes) => `base64://${Buffer.from(mediaBytes[kind]).toString("base64")}`;
 
 async function waitFor<T>(read: () => T | undefined, description: string): Promise<T> {
   const deadline = performance.now() + 2_000;
@@ -27,6 +31,7 @@ interface Reply {
   readonly group?: number;
   readonly user?: number;
   readonly text: string;
+  readonly parts: readonly { type: string; data: Record<string, unknown> }[];
 }
 
 function reply(params: Record<string, unknown>): Reply {
@@ -36,6 +41,7 @@ function reply(params: Record<string, unknown>): Reply {
     user: Number(params.user_id) || undefined,
     text: typeof message === "string" ? message : Array.isArray(message)
       ? message.filter(part => part.type === "text").map(part => part.data.text).join("") : "",
+    parts: Array.isArray(message) ? message : [],
   };
 }
 
@@ -43,6 +49,7 @@ function gateway() {
   const sockets: Bun.ServerWebSocket<unknown>[] = [];
   const replies: Reply[] = [];
   const roleQueries: Record<string, unknown>[] = [];
+  const mediaQueries: unknown[] = [];
   let mismatched = false;
   let role = "admin";
   const success = (data: object) => Response.json({ status: "ok", retcode: 0, data });
@@ -56,6 +63,9 @@ function gateway() {
       const params = await request.json() as Record<string, unknown>;
       switch (path) {
         case "/api/get_login_info": return success({ uin: bot, nickname: "词条夹具" });
+        case "/api/get_resource_temp_url":
+          mediaQueries.push(params.resource_id);
+          return success({ url: `${mediaSource}?kind=${params.resource_id}` });
         case "/api/get_group_member_info": {
           roleQueries.push(params);
           return success({ member: { user_id: params.user_id, group_id: mismatched ? 79 : params.group_id, role } });
@@ -71,16 +81,16 @@ function gateway() {
   });
   let messageSeq = 0;
   return {
-    server, sockets, roleQueries,
+    server, sockets, roleQueries, mediaQueries,
     setRole(value: string, wrongGroup = false) { role = value; mismatched = wrongGroup; },
-    send(text: string, { account = bot, user = moderator, group = originalGroup, connection = sockets.at(-1) }: {
+    send(input: string | readonly object[], { account = bot, user = moderator, group = originalGroup, connection = sockets.at(-1) }: {
       account?: number; user?: number; group?: number | null; connection?: Bun.ServerWebSocket<unknown>;
     } = {}) {
       connection!.send(JSON.stringify({ self_id: account, time, event_type: "message_receive", data: {
         message_scene: group === null ? "friend" : "group", peer_id: group ?? user, sender_id: user,
         group_member: { group_id: group, user_id: user, role: "admin" },
         isMaster: true, boundAccount: true,
-        message_seq: ++messageSeq, time, segments: [{ type: "text", data: { text } }],
+        message_seq: ++messageSeq, time, segments: typeof input === "string" ? [{ type: "text", data: { text: input } }] : input,
       } }));
     },
     next: () => waitFor(() => replies.shift(), "未收到 Milky 词条回复。"),
@@ -106,7 +116,7 @@ async function oneBot(endpoint: string) {
   let messageId = 0;
   return {
     socket,
-    send(text: string, group: number | null = originalGroup) {
+    send(text: string | readonly object[], group: number | null = originalGroup) {
       socket.send(JSON.stringify({ self_id: bot, user_id: moderator, group_id: group ?? undefined,
         post_type: "message", message_type: group === null ? "private" : "group", sub_type: group === null ? "friend" : "normal",
         sender: { role: "admin" }, message: text, message_id: ++messageId }));
@@ -137,7 +147,24 @@ test("Milky 词条沿用旧文件，按绑定账号鉴权并隔离不同协议�
     const globalFile = join(data, "global.json");
     await writeFile(groupFile, JSON.stringify(oldGroup));
     await writeFile(globalFile, JSON.stringify(oldGlobal));
-    const host = Bun.spawn([process.execPath, "app.ts"], {
+    const expired = join(root, "media-expired");
+    await writeFile(join(root, "media-fixture.ts"), `
+      const fetch = globalThis.fetch;
+      const media = ${JSON.stringify(mediaBytes)};
+      globalThis.fetch = async (input, options) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.hostname === "127.0.0.1") return fetch(input, options);
+        if (url.hostname !== "gchat.qpic.cn" && url.hostname !== "multimedia.nt.qq.com.cn") {
+          throw new Error("词条媒体夹具拒绝外部请求");
+        }
+        if (url.searchParams.has("stale") || await Bun.file(${JSON.stringify(expired)}).exists()) {
+          return new Response(null, { status: 403 });
+        }
+        const kind = url.searchParams.get("kind") || "photo";
+        return new Response(Uint8Array.from(media[kind]), { headers: { "Content-Type": "application/octet-stream" } });
+      };
+    `);
+    const host = Bun.spawn([process.execPath, "--preload", "./media-fixture.ts", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_PROFILE_DIR: join(root, "profiles") },
     });
@@ -223,6 +250,36 @@ test("Milky 词条沿用旧文件，按绑定账号鉴权并隔离不同协议�
       one.send("   #结束添加");
       expect((await one.next()).text).toContain("添加已失效");
       expect(JSON.parse(await readFile(groupFile, "utf8"))).not.toHaveProperty("OneBot旧连接词");
+
+      one.send("#添加 OneBot归档");
+      expect((await one.next()).text).toContain("#结束添加");
+      one.send([{ type: "image", data: { url: legacyPhoto } }]);
+      one.send("    #结束添加");
+      expect((await one.next()).text).toBe("添加成功：OneBot归档");
+
+      milky.send("#添加 Milky归档");
+      expect((await milky.next()).text).toContain("#结束添加");
+      milky.send([
+        { type: "audio", data: { resource_id: "voice", temp_url: `${mediaSource}?stale=1` } },
+        { type: "video", data: { resource_id: "video" } },
+      ]);
+      milky.send("    #结束添加 ");
+      expect((await milky.next()).text).toBe("添加成功：Milky归档");
+      expect(milky.mediaQueries).toEqual(["voice", "video"]);
+      const archive = JSON.parse(await readFile(groupFile, "utf8"));
+      expect(archive.OneBot归档).toEqual([[{ type: "image", file: expect.stringMatching(/^77\/image\/[0-9a-f]{64}$/u) }]]);
+      expect(archive.Milky归档[0].map(({ type }: { type: string }) => type)).toEqual(["record", "video"]);
+
+      await writeFile(expired, "");
+      one.send("Milky归档");
+      expect((await one.next()).parts.filter(({ type }) => type !== "reply")).toEqual([
+        { type: "record", data: { file: embedded("voice") } }, { type: "video", data: { file: embedded("video") } },
+      ]);
+      milky.send("OneBot归档");
+      expect((await milky.next()).parts.filter(({ type }) => type === "image")).toEqual([
+        { type: "image", data: { uri: embedded("photo"), sub_type: "normal" } },
+      ]);
+      expect(milky.mediaQueries).toEqual(["voice", "video"]);
     } finally {
       one?.socket.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");

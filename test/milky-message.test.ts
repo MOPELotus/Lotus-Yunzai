@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { milkyMessage } from "../lib/adapters/milky-message.ts";
+import { readQqChatFile, readQqMessageMedia } from "../lib/chat-files.ts";
 import { segment, type MessageSegment, type ProtocolSegment } from "../lib/messages.ts";
 import { maxPublicFileBytes } from "../lib/public-files.ts";
 
@@ -110,18 +111,27 @@ test("Milky 只查询本会话的有效引用并核对返回的聊天身份", as
   expect(milkyMessage(incoming(), selfId, privateResult.call)?.lookupReply).toBeUndefined();
 });
 
-test("Milky 用当前图片资源 ID 按需查询临时链接", async () => {
-  const segments = [{ type: "image", data: { resource_id: "current-image" } }];
+test("Milky 用当前图片、语音和视频的资源 ID 按需续取临时链接", async () => {
+  const segments = [
+    { type: "image", data: { resource_id: "current-image" } },
+    { type: "audio", data: { resource_id: "current-audio", temp_url: "https://example.invalid/old.silk" } },
+    { type: "video", data: { resource_id: "current-video" } },
+  ];
   const url = "https://example.invalid/current.png";
   const valid = fixture({ url });
   const event = milkyMessage(incoming({ segments }), selfId, valid.call);
-  const image = Array.isArray(event?.message) ? event.message[0] : undefined;
+  const parts = Array.isArray(event?.message) ? event.message : [];
   expect(valid.calls).toEqual([]);
-  const read = image?.getDownloadUrl;
-  expect(typeof read).toBe("function");
-  if (typeof read !== "function") throw new Error("Milky 图片缺少按需下载入口");
-  expect(await Promise.all([read(), read()])).toEqual([url, url]);
-  expect(valid.calls).toEqual([{ action: "get_resource_temp_url", params: { resource_id: "current-image" } }]);
+  expect(parts.map(({ type }) => type)).toEqual(["image", "record", "video"]);
+  expect(parts[1]?.url).toBe("https://example.invalid/old.silk");
+  for (const part of parts) {
+    const read = part.getDownloadUrl;
+    if (typeof read !== "function") throw new Error("Milky 媒体缺少按需下载入口");
+    expect(await Promise.all([read(), read()])).toEqual([url, url]);
+  }
+  expect(valid.calls).toEqual(segments.map(({ data }) => ({
+    action: "get_resource_temp_url", params: { resource_id: data.resource_id },
+  })));
   const bad = fixture({ url: "file:///tmp/test.png" });
   const invalid = milkyMessage(incoming({ segments }), selfId, bad.call);
   const invalidRead = (Array.isArray(invalid?.message) ? invalid.message[0] : undefined)?.getDownloadUrl;
@@ -190,7 +200,8 @@ test("Milky 图片保留可用的临时链接和显示数据，不公开无效�
   expect(event).toMatchObject({ msg: "原文", raw_message: "原文 [image][image][image][image]", img: [first, second] });
   expect(event?.message).toEqual([
     { type: "text", text: "原文 " },
-    { type: "image", file: first, url: first, resource_id: "opaque-id", width: 640, height: 480, summary: "图片", sub_type: "normal" },
+    { type: "image", file: first, url: first, resource_id: "opaque-id", width: 640, height: 480,
+      summary: "图片", sub_type: "normal", getDownloadUrl: expect.any(Function) },
     { type: "image" }, { type: "image" }, { type: "image", file: second, url: second, sub_type: "sticker" },
   ]);
   expect(calls).toEqual([]);
@@ -253,14 +264,44 @@ test("Milky 接收表情、语音和视频，保留安全的临时链接和媒�
     { type: "text", text: "媒体 " },
     { type: "face", id: "14", is_large: true },
     { type: "face", id: "0" },
-    { type: "record", resource_id: "voice-1", url: voice, file: voice, duration: 5 },
-    { type: "video", resource_id: "video-1", url: video, file: video, duration: 8, width: 640, height: 480 },
+    { type: "record", resource_id: "voice-1", url: voice, file: voice, duration: 5, getDownloadUrl: expect.any(Function) },
+    { type: "video", resource_id: "video-1", url: video, file: video, duration: 8, width: 640, height: 480,
+      getDownloadUrl: expect.any(Function) },
     { type: "record" },
     { type: "video", duration: 0 },
   ]);
   expect(calls).toEqual([]);
   expect(milkyMessage(incoming({ segments: [{ type: "face", data: { face_id: "1e2" } }] }), selfId, call))
     .toBeUndefined();
+});
+
+test("QQ 聊天媒体下载只访问已知源和原始字节，保持普通文件的主机范围", async () => {
+  const fetch = globalThis.fetch;
+  const calls: string[] = [];
+  const bytes = Uint8Array.of(255, 216, 255, 224);
+  globalThis.fetch = (async (input, options) => {
+    calls.push(String(input));
+    expect(options).toMatchObject({ redirect: "error", credentials: "omit" });
+    if (String(input).includes("wrong-response")) return new Response('{"message":"expired"}', {
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    return new Response(bytes, { headers: { "Content-Type": "image/jpeg" } });
+  }) as typeof globalThis.fetch;
+  const recent = "https://multimedia.nt.qq.com.cn/download?fixture=1";
+  const earlier = "https://gchat.qpic.cn/gchatpic_new/fixture/0";
+  try {
+    expect(await readQqMessageMedia(recent)).toEqual(Buffer.from(bytes));
+    expect(await readQqMessageMedia(earlier)).toEqual(Buffer.from(bytes));
+    expect(await readQqMessageMedia(`${recent}&wrong-response=1`)).toBeUndefined();
+    expect(await readQqChatFile(earlier)).toBeUndefined();
+    expect(await readQqMessageMedia("https://gchat.qpic.cn/other")).toBeUndefined();
+    expect(await readQqMessageMedia("https://qq.com.invalid/download")).toBeUndefined();
+    expect(await readQqMessageMedia("https://name:fixture@multimedia.nt.qq.com.cn/download")).toBeUndefined();
+    expect(await readQqMessageMedia(recent, AbortSignal.abort())).toBeUndefined();
+    expect(calls).toEqual([recent, earlier, `${recent}&wrong-response=1`]);
+  } finally {
+    globalThis.fetch = fetch;
+  }
 });
 
 test("Milky 回复发送规范表情编号、语音地址和独立视频缩略图", async () => {

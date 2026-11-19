@@ -1,13 +1,19 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, realpath, rename, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { maxChatFileBytes } from "./chat-files.ts";
 import { segment, type InboundSegment, type MessageReply, type MessageSegment } from "./messages.ts";
 import { lockFile } from "./file-lock.ts";
 
 type Scope = number | "global";
 type Versions = readonly (readonly InboundSegment[])[];
 type MediaType = "image" | "record" | "video";
+
+export function isKeywordMedia(type: unknown): type is MediaType {
+  return type === "image" || type === "record" || type === "video";
+}
 
 function errno(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -61,7 +67,7 @@ function decode(bytes?: Uint8Array): Map<string, Versions> {
   }
 }
 
-async function save(directory: string, file: string, current: Awaited<ReturnType<typeof snapshot>>, entries: Map<string, Versions>) {
+async function save(directory: string, file: string, current: Awaited<ReturnType<typeof snapshot>>, entries: Map<string, Versions>, signal?: AbortSignal) {
   const staging = await mkdtemp(join(directory, ".keywords-write-"));
   try {
     const pending = join(staging, "keywords.json");
@@ -83,6 +89,7 @@ async function save(directory: string, file: string, current: Awaited<ReturnType
     }
 
     if (!current) {
+      signal?.throwIfAborted();
       await link(pending, file);
       return;
     }
@@ -92,7 +99,55 @@ async function save(directory: string, file: string, current: Awaited<ReturnType
         current.info.gid !== latest.info.gid || !current.bytes.equals(latest.bytes)) {
       throw new Error("词条数据已变更，请重试。");
     }
+    signal?.throwIfAborted();
     await rename(pending, file);
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function archiveDirectory(parent: string, name: string): Promise<string> {
+  const path = join(parent, name);
+  await mkdir(path, { mode: 0o700 }).catch((error: unknown) => {
+    if (errno(error) !== "EEXIST") throw error;
+  });
+  if (await realpath(path) !== path || !(await stat(path)).isDirectory()) throw new Error("词条媒体目录无效。");
+  return path;
+}
+
+async function archiveMedia(directory: string, scope: Scope, type: MediaType, bytes: Buffer, created: string[], signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const parent = await archiveDirectory(await archiveDirectory(directory, String(scope)), type);
+  const name = createHash("sha256").update(bytes).digest("hex");
+  const path = join(parent, name);
+  const staging = await mkdtemp(join(parent, ".keywords-media-"));
+  try {
+    const pending = join(staging, "content");
+    const handle = await open(pending, "wx", 0o600);
+    try {
+      await handle.writeFile(bytes, { signal });
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    if (await realpath(parent) !== parent) throw new Error("词条媒体目录已变化。");
+    signal?.throwIfAborted();
+    try {
+      await link(pending, path);
+      created.push(path);
+    } catch (error) {
+      if (errno(error) !== "EEXIST") throw error;
+      const existing = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const info = await existing.stat();
+        if (!info.isFile() || info.size !== bytes.byteLength || !bytes.equals(await existing.readFile())) {
+          throw new Error("词条媒体归档内容不一致。");
+        }
+      } finally {
+        await existing.close();
+      }
+    }
+    return `${scope}/${type}/${name}`;
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -157,32 +212,55 @@ export function createKeywordStore(root: URL) {
     return decode((await snapshot(join(directory, filename(scope))))?.bytes);
   }
 
-  async function update<T>(scope: Scope, change: (entries: Map<string, Versions>) => { changed: boolean; result: T }): Promise<T> {
+  async function update<T>(scope: Scope,
+    change: (entries: Map<string, Versions>, directory: string, created: string[]) =>
+      { changed: boolean; result: T } | Promise<{ changed: boolean; result: T }>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const name = filename(scope);
+    signal?.throwIfAborted();
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const actual = await realpath(directory);
     const file = join(actual, name);
     const database = await lockFile(join(actual, ".lotus-keywords.sqlite"), "词条数据");
+    const created: string[] = [];
     try {
+      signal?.throwIfAborted();
       const current = await snapshot(file);
       const entries = decode(current?.bytes);
-      const { changed, result } = change(entries);
-      if (changed) await save(actual, file, current, entries);
+      const { changed, result } = await change(entries, actual, created);
+      if (changed) await save(actual, file, current, entries, signal);
       return result;
+    } catch (error) {
+      await Promise.allSettled(created.map(path => rm(path, { force: true })));
+      throw error;
     } finally {
       database.close();
     }
   }
 
-  async function append(scope: Scope, key: string, parts: readonly InboundSegment[]): Promise<number> {
+  async function append(scope: Scope, key: string, parts: readonly InboundSegment[], signal?: AbortSignal): Promise<number> {
     if (typeof key !== "string" || !key.trim() || !Array.isArray(parts) || !parts.length || !parts.every(isSegment)) {
       throw new Error("词条名称或消息内容无效。");
     }
-    return update(scope, (entries) => {
-      const versions = [...entries.get(key) ?? [], parts];
+    let total = 0;
+    const pending = parts.map(part => {
+      if (!isKeywordMedia(part.type) || !(part.file instanceof Uint8Array)) return part;
+      total += part.file.byteLength;
+      if (!part.file.byteLength || total > maxChatFileBytes) throw new Error("词条媒体总大小须在 1 字节到 16 MiB 之间。");
+      return { type: part.type, file: Buffer.from(part.file) };
+    });
+    return update(scope, async (entries, actual, created) => {
+      const persisted: InboundSegment[] = [];
+      for (const part of pending) {
+        if (isKeywordMedia(part.type) && Buffer.isBuffer(part.file)) {
+          persisted.push({ type: part.type, file: await archiveMedia(actual, scope, part.type, part.file, created, signal) });
+        } else persisted.push(part);
+      }
+      const versions = [...entries.get(key) ?? [], persisted];
       entries.set(key, versions);
       return { changed: true, result: versions.length };
-    });
+    }, signal);
   }
 
   async function remove(scope: Scope, key: string, index?: number): Promise<boolean> {
@@ -208,7 +286,7 @@ export function createKeywordStore(root: URL) {
       } else if (part.type === "face") {
         const id = segmentId(data.id, 0);
         if (id !== undefined) reply.push(segment.face(id));
-      } else if (part.type === "image" || part.type === "record" || part.type === "video") {
+      } else if (isKeywordMedia(part.type)) {
         const file = typeof data.file === "string"
           ? keywordMediaUrl(data.file) ?? await localMedia(directory, part.type, data.file) : undefined;
         const media = file ?? keywordMediaUrl(data.url);

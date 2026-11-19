@@ -36,13 +36,36 @@ export function decodeChatFileBytes(value: unknown, size?: number): Uint8Array |
   if (isFileSize(bytes.byteLength, size)) return bytes;
 }
 
-export async function readQqChatFile(value: unknown, size?: number, signal?: AbortSignal): Promise<Uint8Array | undefined> {
-  if (typeof value !== "string" || value.length > 8192 || (size !== undefined && !isFileSize(size))) return;
-  let url: URL;
-  try { url = new URL(value); } catch { return; }
-  if (url.protocol !== "https:" || url.port || url.username || url.password || url.hash ||
-      ![".qq.com", ".qq.com.cn"].some((suffix) => url.hostname.endsWith(suffix))) return;
+function qqResourceUrl(value: unknown): URL | undefined {
+  if (typeof value !== "string" || value.length > 8192) return;
+  const url = URL.parse(value);
+  if (url?.protocol === "https:" && !url.port && !url.username && !url.password && !url.hash) return url;
+}
 
+function qqFileHost(url: URL) {
+  return [".qq.com", ".qq.com.cn"].some(suffix => url.hostname.endsWith(suffix));
+}
+
+export async function readQqChatFile(value: unknown, size?: number, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+  const url = qqResourceUrl(value);
+  if (!url || !qqFileHost(url) || (size !== undefined && !isFileSize(size))) return;
+  return readQqResource(url, size, signal);
+}
+
+export async function readQqMessageMedia(value: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+  const url = qqResourceUrl(value);
+  if (!url || typeof value !== "string" || /[\\\s]/u.test(value)) return;
+  const { hostname, pathname } = url;
+  const qqImage = (hostname === "gchat.qpic.cn" && (pathname === "/download" || pathname.startsWith("/gchatpic_new/"))) ||
+    (hostname === "c2cpicdw.qpic.cn" && pathname.startsWith("/offpic_new/"));
+  if (!qqFileHost(url) && !qqImage) return;
+  const bytes = await readQqResource(url, undefined, signal, true);
+  if (!bytes) return;
+  const prefix = new TextDecoder().decode(bytes.subarray(0, 128));
+  if (!/^\s*(?:<!doctype html|<html\b|<\?xml|\{|\[)/iu.test(prefix)) return bytes;
+}
+
+async function readQqResource(url: URL, size?: number, signal?: AbortSignal, media = false) {
   const timeout = AbortSignal.timeout(30_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -51,7 +74,9 @@ export async function readQqChatFile(value: unknown, size?: number, signal?: Abo
     const response = await fetch(url, {
       redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", signal: deadline,
     });
-    if (!response.ok || !response.body || Number(response.headers.get("content-length")) > maxChatFileBytes) {
+    const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+    const textual = media && /^(?:text\/|application\/(?:[a-z0-9.-]+\+)?(?:json|xml)$)/iu.test(mediaType);
+    if (!response.ok || !response.body || Number(response.headers.get("content-length")) > maxChatFileBytes || textual) {
       await response.body?.cancel();
       return;
     }

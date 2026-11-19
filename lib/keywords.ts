@@ -1,6 +1,7 @@
-import { keywordMediaUrl } from "./keyword-store.ts";
+import { decodeChatFileBytes, maxChatFileBytes, readQqMessageMedia } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
+import { isKeywordMedia } from "./keyword-store.ts";
 import type { InboundSegment, MessageEvent, MessageReply } from "./messages.ts";
 
 type Scope = number | "global";
@@ -8,7 +9,7 @@ type Variants = readonly (readonly InboundSegment[])[];
 
 interface KeywordStore {
   read(scope: Scope): Promise<ReadonlyMap<string, Variants>>;
-  append(scope: Scope, key: string, segments: readonly InboundSegment[]): Promise<number>;
+  append(scope: Scope, key: string, segments: readonly InboundSegment[], signal?: AbortSignal): Promise<number>;
   remove(scope: Scope, key: string, index?: number): Promise<boolean>;
   render(segments: readonly InboundSegment[]): Promise<MessageReply | undefined>;
 }
@@ -25,8 +26,13 @@ interface Draft {
   readonly expires: number;
   readonly scope: Scope;
   readonly name: string;
-  readonly segments: InboundSegment[];
+  readonly segments: (InboundSegment | undefined)[];
   readonly signal?: AbortSignal;
+  readonly controller: AbortController;
+  readonly active: AbortSignal;
+  pending?: Promise<void>;
+  bytes: number;
+  omitted: number;
 }
 
 interface RecentGroupStore {
@@ -40,6 +46,8 @@ const recentGroupTtl = 30 * 24 * 60 * 60_000;
 const maxDrafts = 1024;
 const maxRecentGroups = 4096;
 const maxDraftSegments = 1000;
+const maxMediaDownloads = 4;
+const maxDraftMediaBytes = maxMediaDownloads * maxChatFileBytes;
 const finishCommand = "#结束添加";
 const managementCommand = /^#(全局)?(添加|删除|消息|词条)([\s\S]*)$/u;
 const unboundMessage = "请通过已绑定的机器人连接管理词条。";
@@ -87,12 +95,18 @@ function content(event: MessageEvent): InboundSegment[] {
       kept.push({ type: "at", qq: part.qq });
     } else if (part.type === "face" && (typeof part.id === "string" || Number.isSafeInteger(part.id))) {
       kept.push({ type: "face", id: part.id });
-    } else if (part.type === "image" || part.type === "record" || part.type === "video") {
-      const file = keywordMediaUrl(part.url) ?? keywordMediaUrl(part.file);
-      if (file) kept.push({ type: part.type, file });
-    }
+    } else if (isKeywordMedia(part.type)) kept.push(part);
   }
   return kept;
+}
+
+function inlineMedia(value: unknown): Uint8Array | undefined {
+  if (typeof value !== "string" || !value.startsWith("base64://")) return;
+  const bytes = decodeChatFileBytes(value);
+  if (!bytes) return;
+  const encoded = value.slice("base64://".length);
+  if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64") ===
+      encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")) return bytes;
 }
 
 export function createKeywords(
@@ -100,10 +114,53 @@ export function createKeywords(
   resolveSettings: (event: MessageEvent, groupId?: number) => Settings,
   now: () => number = () => performance.now(),
   recentStore?: RecentGroupStore,
+  readMedia = readQqMessageMedia,
 ) {
   const drafts = new Map<string, Draft>();
   const groups = new Map<string, { readonly id: number; readonly expires: number }>();
   const groupWrites = new Map<string, Promise<void>>();
+  let draftMediaBytes = 0;
+  let mediaDownloads = 0;
+
+  async function captureMedia(part: InboundSegment, signal: AbortSignal): Promise<Uint8Array | undefined> {
+    const embedded = inlineMedia(part.file) ?? inlineMedia(part.url);
+    if (embedded) return embedded;
+    if (signal.aborted || mediaDownloads >= maxMediaDownloads) return;
+    mediaDownloads++;
+    try {
+      const direct = await readMedia(part.url ?? part.file, signal).catch(() => undefined);
+      if (direct || signal.aborted || typeof part.getDownloadUrl !== "function") return direct;
+      const fresh = await part.getDownloadUrl();
+      if (!signal.aborted) return await readMedia(fresh, signal);
+    } catch {
+      return;
+    } finally {
+      mediaDownloads--;
+    }
+  }
+
+  function addParts(draft: Draft, parts: readonly InboundSegment[]) {
+    for (const part of parts) {
+      if (!isKeywordMedia(part.type)) {
+        draft.segments.push(part);
+        continue;
+      }
+      const index = draft.segments.push(undefined) - 1;
+      draft.pending = (draft.pending ?? Promise.resolve()).then(async () => {
+        if (draft.active.aborted) return;
+        const file = draft.bytes < maxChatFileBytes ? await captureMedia(part, draft.active) : undefined;
+        if (draft.active.aborted) return;
+        if (!(file instanceof Uint8Array) || file.byteLength === 0 || draft.bytes + file.byteLength > maxChatFileBytes ||
+            draftMediaBytes + file.byteLength > maxDraftMediaBytes) {
+          draft.omitted++;
+          return;
+        }
+        draft.bytes += file.byteLength;
+        draftMediaBytes += file.byteLength;
+        draft.segments[index] = { type: part.type, file };
+      });
+    }
+  }
 
   async function remember(actor: string, group: number) {
     groups.delete(actor);
@@ -212,8 +269,9 @@ export function createKeywords(
     const draft = drafts.get(sender.chat);
     if (!draft) return false;
     const finishing = event.msg.trim() === finishCommand;
-    if (draft.signal?.aborted || draft.expires <= now()) {
+    if (draft.active.aborted || draft.expires <= now()) {
       drafts.delete(sender.chat);
+      draft.controller.abort();
       if (!finishing || !hasKeywordSession(event)) return false;
       await event.reply("添加已失效，请重新添加。");
       return true;
@@ -225,27 +283,39 @@ export function createKeywords(
       if (draft.segments.length + parts.length > maxDraftSegments) {
         await event.reply("词条片段过多，未收录这条消息。请发送 #结束添加 保存已收录的内容。");
       } else {
-        draft.segments.push(...parts);
+        addParts(draft, parts);
       }
       return true;
     }
 
     drafts.delete(sender.chat);
-    const denied = await permission(event, draft.scope);
-    if (!hasKeywordSession(event)) return true;
-    if (denied || !draft.segments.length) {
-      await event.reply(denied ?? "添加错误：没有添加内容。");
-      return true;
-    }
-    let count: number;
     try {
-      count = await store.append(draft.scope, draft.name, draft.segments);
-    } catch {
-      await event.reply("保存词条失败，请重新添加。");
+      await draft.pending;
+      if (!hasKeywordSession(event)) return true;
+      const denied = await permission(event, draft.scope);
+      if (!hasKeywordSession(event)) return true;
+      if (draft.active.aborted || draft.expires <= now()) {
+        await event.reply("添加已失效，请重新添加。");
+        return true;
+      }
+      const parts = draft.segments.filter(part => part !== undefined);
+      const omitted = draft.omitted ? `有 ${draft.omitted} 个媒体下载失败或超过限额，请重新发送。` : "";
+      if (denied || !parts.length) {
+        await event.reply(denied ?? `添加错误：没有添加内容。${omitted}`);
+        return true;
+      }
+      let count: number;
+      try {
+        count = await store.append(draft.scope, draft.name, parts, draft.active);
+      } catch {
+        if (hasKeywordSession(event)) await event.reply("保存词条失败，请重新添加。");
+        return true;
+      }
+      await event.reply(`添加成功：${draft.name}${count > 1 ? `(${count})` : ""}${omitted ? `。${omitted}` : ""}`);
       return true;
+    } finally {
+      draft.controller.abort();
     }
-    await event.reply(`添加成功：${draft.name}${count > 1 ? `(${count})` : ""}`);
-    return true;
   }
 
   async function trigger(event: MessageEvent, group: number, name: string): Promise<boolean> {
@@ -316,12 +386,27 @@ export function createKeywords(
     }
 
     const time = now();
-    for (const [chat, draft] of drafts) if (draft.signal?.aborted || draft.expires <= time) drafts.delete(chat);
+    for (const [chat, draft] of drafts) {
+      if (!draft.active.aborted && draft.expires > time) continue;
+      drafts.delete(chat);
+      draft.controller.abort();
+    }
     if (drafts.size >= maxDrafts && !drafts.has(sender.chat)) {
       await event.reply("当前添加会话较多，请稍后重试。");
       return true;
     }
-    drafts.set(sender.chat, { scope, name: argument, expires: time + draftTtl, segments: [], signal: event[delegationSession]?.signal });
+    drafts.get(sender.chat)?.controller.abort();
+    const signal = event[delegationSession]?.signal;
+    const controller = new AbortController();
+    const sources = [controller.signal, AbortSignal.timeout(draftTtl)];
+    if (signal) sources.push(signal);
+    const active = AbortSignal.any(sources);
+    const draft: Draft = { scope, name: argument, expires: time + draftTtl, segments: [], signal, controller, active, bytes: 0, omitted: 0 };
+    active.addEventListener("abort", () => {
+      draftMediaBytes -= draft.bytes;
+      draft.segments.length = 0;
+    }, { once: true });
+    drafts.set(sender.chat, draft);
     await event.reply("请发送添加内容，完成后发送#结束添加", true, { at: true });
     return true;
   }

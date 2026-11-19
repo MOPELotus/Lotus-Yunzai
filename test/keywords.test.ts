@@ -71,11 +71,11 @@ test("紧连添加命令收录多条消息，只保存可回放段并隔离机�
       { type: "file", file: "https://example.invalid/file" },
     ],
   }, true)).replies).toEqual([]);
-  expect((await send("#结束添加", {}, true)).text).toBe("添加成功：早安");
+  expect((await send("#结束添加", {}, true)).text).toBe("添加成功：早安。有 4 个媒体下载失败或超过限额，请重新发送。");
   expect(writes).toEqual([{ scope: 77, word: "早安", parts: [
     { type: "text", text: "第一段" }, { type: "text", text: "第二段" },
     { type: "at", qq: 43 }, { type: "face", id: 0 },
-    { type: "image", file: "https://example.invalid/photo.png" }, { type: "record", file: "base64://QUJD" },
+    { type: "record", file: Buffer.from("ABC") },
   ] }]);
   expect((await send("#结束添加", {}, true)).handled).toBe(false);
 });
