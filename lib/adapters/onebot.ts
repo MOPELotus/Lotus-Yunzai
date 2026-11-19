@@ -309,6 +309,9 @@ async function dispatchMessage(
       }
       return messages.length > 0 && calls.sendForward(send, target, messages);
     },
+    uploadFile: selfId !== undefined && selfId === connectedBotId && display?.closed === false
+      ? (file) => display.closed ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)
+      : undefined,
     reviewGroupRequest: messageType === "private" && owner
       ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
       : undefined,

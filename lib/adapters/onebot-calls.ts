@@ -1,3 +1,4 @@
+import { encodeChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import type { GroupMembership, GroupRequestType, RecallResult } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 
@@ -219,6 +220,19 @@ export class OneBotCalls {
     } catch (error) {
       if (error instanceof OneBotNotSentError) return false;
       throw error;
+    }
+  }
+
+  async uploadFile(send: Send, target: { group_id: number } | { user_id: number }, file: ChatFile): Promise<ChatFileResult> {
+    const uri = encodeChatFile(file);
+    if (uri === undefined) return "rejected";
+    const action = "group_id" in target ? "upload_group_file" : "upload_private_file";
+    try {
+      const result = await this.#request(send, action, { ...target, file: uri, name: file.name });
+      return isRecord(result) && typeof result.file_id === "string" && result.file_id.trim()
+        ? "confirmed" : "unknown";
+    } catch (error) {
+      return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";
     }
   }
 

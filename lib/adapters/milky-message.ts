@@ -1,8 +1,11 @@
 import { Buffer } from "node:buffer";
+import { encodeChatFile } from "../chat-files.ts";
 import type { InboundSegment, MessageEvent, MessageReply, QuotedMessage, ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
+import type { MilkyConfirmation } from "./milky-api.ts";
 
 type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
+type MilkyConfirmedCall = (action: string, params: Record<string, unknown>) => Promise<MilkyConfirmation>;
 type ScheduleRecall = (action: string, params: Record<string, unknown>, seconds: number) => void;
 type Target = { group_id: number } | { user_id: number };
 
@@ -391,7 +394,26 @@ function replyToMilky(target: Target, call: MilkyCall, {
   };
 }
 
-export function milkyFriendFileUpload(value: unknown, selfId: number, call: MilkyCall): MessageEvent | undefined {
+function uploadToMilky(target: Target, confirm: MilkyConfirmedCall): NonNullable<MessageEvent["uploadFile"]> {
+  const group = "group_id" in target;
+  const action = group ? "upload_group_file" : "upload_private_file";
+  const destination = group ? { ...target, parent_folder_id: "/" } : target;
+  return async (file) => {
+    const file_uri = encodeChatFile(file);
+    if (!file_uri) return "rejected";
+    try {
+      const result = await confirm(action, { ...destination, file_uri, file_name: file.name });
+      if (result.status === "rejected") return "rejected";
+      return result.status === "confirmed" && opaqueFileField(result.data.file_id) ? "confirmed" : "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
+}
+
+export function milkyFriendFileUpload(
+  value: unknown, selfId: number, call: MilkyCall, uploadCall?: MilkyConfirmedCall,
+): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "friend_file_upload" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
   const { user_id: userId, is_self: ownUpload } = value.data;
@@ -405,12 +427,14 @@ export function milkyFriendFileUpload(value: unknown, selfId: number, call: Milk
     msg: "", raw_message: "[file]", message: [file], file,
     isGroup: false, isPrivate: true, isMaster: false, boundAccount: false,
     async isFriend() { return true; },
+    uploadFile: uploadCall && uploadToMilky(target, uploadCall),
     reply: replyToMilky(target, call),
   };
 }
 
 export function milkyMessage(
   value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall, forwardCall?: MilkyCall,
+  uploadCall?: MilkyConfirmedCall,
 ): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "message_receive" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
@@ -475,6 +499,7 @@ export function milkyMessage(
       if (!isSequence(result?.message_seq)) throw new Error("Milky 合并转发结果未确认。");
       return true;
     }),
+    uploadFile: uploadCall && uploadToMilky(target, uploadCall),
     reply: replyToMilky(target, call, { messageId, groupSender: isGroup ? userId : undefined, scheduleRecall }),
   };
 }

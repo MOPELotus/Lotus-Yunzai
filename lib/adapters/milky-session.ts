@@ -120,7 +120,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.event_type === "friend_file_upload") {
       const upload = milkyFriendFileUpload(body, account, async (action, params) => {
         return confirmSent(upload, await call(action, params), params.message);
-      });
+      }, call.confirmed);
       if (upload) files.upload(upload);
       return "accepted";
     }
@@ -131,7 +131,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const result = await call.confirmed(action, params);
       if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
-    });
+    }, call.confirmed);
     if (message && !files.receive(message)) return "accepted";
     async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply) {
       const content = encodeMilkyReply(reply);

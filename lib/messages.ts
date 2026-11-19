@@ -1,3 +1,5 @@
+import type { ChatFile, ChatFileResult } from "./chat-files.ts";
+
 export interface MessageEvent {
   readonly msg: string;
   readonly adapter?: "milky";
@@ -30,6 +32,7 @@ export interface MessageEvent {
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
+  readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
   readonly groupRequestScope?: "milky";
   readonly canReviewGroupRequests?: boolean;
