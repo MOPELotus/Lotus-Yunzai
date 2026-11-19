@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError, type GenshinGachaPool } from "@lotus-yunzai/hoyo-client";
+import { createGenshinBackpackQuery, genshinBackpackCommand } from "./backpack.ts";
 import { buildGenshinGachaDetail } from "./gacha-detail.ts";
 import { renderGenshinGachaDetail } from "./gacha-detail-card.ts";
 import { genshinGachaThemeDirectory, readGenshinGachaSources, readGenshinUigfItems } from "./gacha-detail-source.ts";
@@ -90,6 +91,7 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
   const worldBossRanking = createGenshinWorldBossRanking(rankingDirectory, lockFile);
   const worldBossQuery = createWorldBossQuery(profiles, client, worldBossRanking, signal);
   const worldBossRankingQuery = createWorldBossRankingQuery(worldBossRanking, signal);
+  const backpackQuery = createGenshinBackpackQuery(profiles, client, signal);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
   const importGacha = createGenshinGachaImport(profiles, history, signal);
@@ -216,6 +218,8 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
       const worldBoss = worldBossCommand.exec(context.normalizedMessage);
       if (worldBoss) return worldBossQuery(Number(worldBoss[1] ?? 1), context);
       if (worldBossRankingCommand.test(context.normalizedMessage)) return worldBossRankingQuery(context);
+      const backpack = genshinBackpackCommand.exec(context.normalizedMessage);
+      if (backpack) return backpackQuery(Number(backpack[1] ?? 1), context);
       const importMatch = gachaImportCommand.exec(context.normalizedMessage);
       if (importMatch || context.attachment) {
         const imported = await importGacha(context, importMatch);
