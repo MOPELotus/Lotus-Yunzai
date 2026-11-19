@@ -33,7 +33,7 @@ export function createMilkyWebhook(settings: MilkySettings, options: MilkyTransp
       if (!running || signal.aborted) return;
       if (session) {
         account = session;
-        options.onOnline?.(session.botId, current.signal, session.send, session.checkinNotify);
+        options.onOnline?.(session.botId, current.signal, session.send, session.checkinNotify, session.ownGroupCardAccount);
       } else reconnect();
     }).catch(reconnect).finally(() => { connecting = undefined; });
   }

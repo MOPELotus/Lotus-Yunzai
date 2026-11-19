@@ -9,6 +9,7 @@ import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
 import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
+import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -54,6 +55,7 @@ interface ConnectionData {
   display?: OneBotMemberDisplay;
   skipInitialRoster?: Set<number>;
   joinRoster?: Map<number, symbol>;
+  ownGroupCardAccount?: (authorized?: () => boolean) => OwnGroupCardAccount;
 }
 
 function attachmentSize(value: unknown): number | undefined {
@@ -380,6 +382,8 @@ async function dispatchMessage(
     }) : undefined,
     listCheckinGroupMembers,
     listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
+    [ownGroupCardSession]: boundAccount && owner && !noticeAttachment && (messageType === "group" || event.sub_type === "friend")
+      ? () => connection?.ownGroupCardAccount?.(() => isMaster(selfId, userId)) : undefined,
     forward: selfId === undefined ? undefined : async (nodes) => {
       const messages = encodeOneBotForward(nodes, selfId);
       return messages ? calls.sendForward(send, target, messages) : false;
@@ -476,9 +480,21 @@ export function startOneBot(
     const send = sender(socket, { self_id: botId });
     const display = new OneBotMemberDisplay((groupId) => socket.data.calls.listMemberDisplay(send, groupId));
     socket.data.display = display;
+    const signal = socket.data.attachmentSession?.signal;
+    const { calls } = socket.data;
+    if (signal) {
+      socket.data.ownGroupCardAccount = authorize => bindOwnGroupCard({
+        adapter: "onebot", botId, signal,
+        groups: async () => (await calls.listGroups(send, signal)).map(({ id }) => id),
+        loginNickname: () => calls.loginNickname(send, botId, signal),
+        read: groupId => calls.readOwnGroupCard(send, groupId, botId, signal),
+        write: (groupId, card) => calls.setGroupCard(send, groupId, botId, card, signal),
+      }, () => !display.closed && (authorize?.() ?? true));
+    }
     socket.data.detach = options.groups.connect(botId, {
       calls: socket.data.calls,
       send,
+      ownGroupCardAccount: socket.data.ownGroupCardAccount?.(),
       retireMemberDisplay: () => {
         display.close();
         socket.data.attachmentSession?.abort();

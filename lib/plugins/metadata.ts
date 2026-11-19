@@ -4,7 +4,10 @@ import { rejectionReason, repositoryKey } from "./policy.ts";
 
 export const pluginScriptExtensions: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
-  ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98", "咕咕牛图库管理器"],
+  ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98",
+    { name: "咕咕牛图库管理器", reason: "图库管理已归并到 atlas。" }],
+  ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
+    { name: "自动群名片", reason: "批量群名片已归并到 group。" }],
 ]);
 
 interface PluginMetadata {
@@ -23,7 +26,7 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export function retiredPluginScript(source: Uint8Array): string | undefined {
+export function retiredPluginScript(source: Uint8Array): { name: string; reason: string } | undefined {
   const hash = createHash("sha256").update(source).digest("hex");
   return retiredScripts.get(hash);
 }

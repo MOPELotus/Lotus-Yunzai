@@ -5,6 +5,7 @@ import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
+import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ExecuteService } from "../../plugins/execute/index.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
@@ -206,6 +207,10 @@ export async function loadPlugins(
     readonly reportLoading?: (wait: number) => void;
     readonly fileWatch?: boolean;
     readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
+    readonly groupCardServices?: {
+      ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
+      registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+    };
   } = {},
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
@@ -231,7 +236,7 @@ export async function loadPlugins(
     const retired = retiredPluginScript(bytes);
     if (!retired) return true;
     const name = relative(root, path);
-    reject(name, "图库管理已归并到 atlas。", `${name}（${retired}）`);
+    reject(name, retired.reason, `${name}（${retired.name}）`);
     return false;
   };
   for (const candidate of await listCandidates(root)) {
@@ -348,7 +353,9 @@ export async function loadPlugins(
         if (create !== undefined && typeof create !== "function") {
           throw new Error("createModule 须为模块工厂函数。");
         }
-        const module = create ? await create(Object.freeze({ ...services, signal })) : published.default;
+        const groupCard = moduleName === "@lotus-yunzai/group" && directory &&
+          relative(root, directory) === builtInDirectories.get(moduleName) ? options.groupCardServices : undefined;
+        const module = create ? await create(Object.freeze({ ...services, ...groupCard, signal })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
@@ -471,7 +478,7 @@ export async function loadPlugins(
       const label = relative(root, entry);
       const retired = retiredPluginScript(bytes);
       if (retired) {
-        console.warn(`[插件] 拒绝热更新 ${label}（${retired}）：图库管理已归并到 atlas。`);
+        console.warn(`[插件] 拒绝热更新 ${label}（${retired.name}）：${retired.reason}`);
         continue;
       }
       if (entry.includes("?")) {

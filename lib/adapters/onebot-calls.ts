@@ -124,8 +124,8 @@ export class OneBotCalls {
     }
   }
 
-  async listGroups(send: Send) {
-    const groups = await this.#request(send, "get_group_list", {});
+  async listGroups(send: Send, signal?: AbortSignal) {
+    const groups = await this.#request(send, "get_group_list", {}, signal);
     if (!Array.isArray(groups)) throw new Error("QQ 协议端未返回群列表。");
     return groups.map((entry: unknown) => {
       if (typeof entry !== "object" || entry === null || !("group_id" in entry) ||
@@ -135,6 +135,18 @@ export class OneBotCalls {
       const name = "group_name" in entry && typeof entry.group_name === "string" ? entry.group_name : undefined;
       return { id: entry.group_id, name };
     });
+  }
+
+  async loginNickname(send: Send, botId: number, signal: AbortSignal) {
+    const result = await this.#request(send, "get_login_info", {}, signal);
+    if (isRecord(result) && result.user_id === botId) return memberDisplayName(result.nickname);
+  }
+
+  async readOwnGroupCard(send: Send, groupId: number, botId: number, signal: AbortSignal) {
+    const result = await this.#getGroupMember(send, groupId, botId, signal);
+    if (isRecord(result) && result.group_id === groupId && result.user_id === botId && typeof result.card === "string") {
+      return result.card;
+    }
   }
 
   async getGroupName(send: Send, groupId: number): Promise<string | undefined> {
@@ -177,8 +189,8 @@ export class OneBotCalls {
     }
   }
 
-  #getGroupMember(send: Send, groupId: number, userId: number): Promise<unknown> {
-    return this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true });
+  #getGroupMember(send: Send, groupId: number, userId: number, signal?: AbortSignal): Promise<unknown> {
+    return this.#request(send, "get_group_member_info", { group_id: groupId, user_id: userId, no_cache: true }, signal);
   }
 
   async #getGroupSize(send: Send, groupId: number): Promise<number | undefined> {
@@ -299,9 +311,9 @@ export class OneBotCalls {
     }
   }
 
-  async setGroupCard(send: Send, group_id: number, user_id: number, card: string): Promise<RecallResult> {
+  async setGroupCard(send: Send, group_id: number, user_id: number, card: string, signal?: AbortSignal): Promise<RecallResult> {
     try {
-      await this.#request(send, "set_group_card", { group_id, user_id, card });
+      await this.#request(send, "set_group_card", { group_id, user_id, card }, signal);
       return "confirmed";
     } catch (error) {
       return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";

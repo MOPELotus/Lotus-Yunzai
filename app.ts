@@ -27,6 +27,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
@@ -64,6 +65,8 @@ import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
+import { HandlerScope } from "./lib/plugins/handler.ts";
+import { LegacyTasks } from "./lib/plugins/tasks.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { readAccountRefreshPermission, readAccountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
@@ -121,6 +124,8 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const groupCardTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
+  const pendingGroupCardTasks = new Set<() => void>();
   const commandDelegation = createCommandDelegation({
     signal: lifecycle.signal,
     mayDelegate: event => event.adapter === "milky"
@@ -148,7 +153,7 @@ if (import.meta.main) {
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
-    checkinNotify?: CheckinNotifyTransport } | undefined;
+    checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -273,6 +278,7 @@ if (import.meta.main) {
     void stopPowerSchedule?.();
     void stopRestartSchedule?.();
     void stopUpdateSchedule?.();
+    void groupCardTasks.stop();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -537,7 +543,7 @@ if (import.meta.main) {
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
-        /^#(?:开机|关机|关机模式|重启|停机|停止)(?:\s|$)/u.test(event.msg) ||
+        /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || zzzLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
@@ -665,8 +671,9 @@ if (import.meta.main) {
       if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
       return;
     }
-    const context: CommandContext = milkyDiagnostics || runtimeStatusScope ? {
-      ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope,
+    const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
+    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount ? {
+      ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope, ownGroupCardAccount,
     } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
@@ -959,8 +966,8 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (id, signal, send, checkinNotify) => {
-        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify };
+      onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount) => {
+        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount };
         queueStartupMessages(id, "milky", signal);
       },
       isMaster: permissions.isMaster,
@@ -1082,7 +1089,31 @@ if (import.meta.main) {
           plugins: plugins?.timings ?? [],
         };
       },
-    }), { loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register });
+    }), {
+      loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
+      groupCardServices: probingUpdate ? undefined : {
+        ownGroupCardAccounts() {
+          const accounts = groups.ownGroupCardAccounts();
+          const milky = milkyOnline?.ownGroupCardAccount;
+          return milky && !milky.signal.aborted ? [...accounts, milky] : accounts;
+        },
+        registerAutoGroupCardTask(cron, run) {
+          const owner = new HandlerScope();
+          const start = () => {
+            try {
+              groupCardTasks.register(owner, { name: "[group] 自动群名片", task: { cron, fnc: run, log: false } });
+            } catch {
+              console.warn("[group] 自动群名片定时任务配置无效。");
+            }
+          };
+          pendingGroupCardTasks.add(start);
+          return async () => {
+            pendingGroupCardTasks.delete(start);
+            await groupCardTasks.cancel(new Set([owner]));
+          };
+        },
+      },
+    });
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
@@ -1100,6 +1131,8 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
+      for (const start of pendingGroupCardTasks) start();
+      pendingGroupCardTasks.clear();
       milkyTransport?.start();
       checkinRuntime?.start();
       shopPlans?.start(lifecycle.signal, () => console.warn("[米游币商城] 未能读取或恢复预约。"));
@@ -1165,7 +1198,7 @@ if (import.meta.main) {
       consoleInput?.close();
       legacy.stopContexts();
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
-        stopMilky?.(), checkinRuntime?.stop()]);
+        groupCardTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
       miyousheWeb?.close();
       await mediaDelivery.close();
       await plugins?.dispose();

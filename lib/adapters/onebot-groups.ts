@@ -1,6 +1,7 @@
 import type { MessageReply } from "../messages.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
+import type { OwnGroupCardAccount } from "./own-group-card.ts";
 import { encodeOneBotForward, encodeOneBotReply } from "./onebot-message.ts";
 
 export interface GroupTarget {
@@ -19,6 +20,7 @@ interface Connection {
   readonly calls: OneBotCalls;
   readonly send: Send;
   readonly retireMemberDisplay?: () => void;
+  readonly ownGroupCardAccount?: OwnGroupCardAccount;
 }
 
 interface ConnectedAccount {
@@ -55,6 +57,13 @@ export class OneBotGroups implements GroupTransport {
 
   onlineBots(): readonly number[] {
     return [...this.#connected.keys()].sort((left, right) => left - right);
+  }
+
+  ownGroupCardAccounts(): readonly OwnGroupCardAccount[] {
+    return [...this.#connected.values()].flatMap(({ connection }) => {
+      const account = connection.ownGroupCardAccount;
+      return account && !account.signal.aborted ? [account] : [];
+    });
   }
 
   onlineAccounts(): readonly { readonly id: number; readonly seconds: number }[] {

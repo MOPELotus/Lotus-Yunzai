@@ -12,6 +12,7 @@ import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
+import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 
 type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
 
@@ -20,7 +21,8 @@ export interface MilkyTransportOptions {
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
-  readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport) => void;
+  readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
+    ownGroupCardAccount: OwnGroupCardAccount) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
@@ -28,6 +30,7 @@ export interface MilkyTransportOptions {
 export interface MilkySession {
   readonly botId: number;
   readonly checkinNotify: CheckinNotifyTransport;
+  readonly ownGroupCardAccount: OwnGroupCardAccount;
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
@@ -188,7 +191,29 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     send: ({ groupId, userId }, reply) => sendConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, reply),
   };
 
-  return { botId: account, checkinNotify, async send(target, reply) {
+  const bindCard = (authorize?: () => boolean) => bindOwnGroupCard({
+    adapter: "milky", botId: account, signal,
+    nickname: typeof login.nickname === "string" ? login.nickname : undefined,
+    async groups() {
+      const result = await call.confirmed("get_group_list", { no_cache: true });
+      const groups = result.status === "confirmed" ? result.data.groups : undefined;
+      if (Array.isArray(groups) && groups.every(group => record(group) && positiveId(group.group_id))) {
+        return groups.map(group => group.group_id);
+      }
+    },
+    async read(group_id) {
+      const result = await call.confirmed("get_group_member_info", { group_id, user_id: account, no_cache: true });
+      const member = result.status === "confirmed" ? result.data.member : undefined;
+      if (record(member) && member.group_id === group_id && member.user_id === account && typeof member.card === "string") {
+        return member.card;
+      }
+    },
+    async write(group_id, card) {
+      return (await call.confirmed("set_group_member_card", { group_id, user_id: account, card })).status;
+    },
+  }, authorize);
+
+  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), async send(target, reply) {
     return await sendConfirmed(target, reply) === "confirmed";
   }, receive(body) {
     if (signal.aborted) return "offline";
@@ -254,6 +279,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
+      [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
+        ? () => bindCard(() => isMaster(cardOwner)) : undefined,
       privateCredentialSignal: message.isPrivate ? signal : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),

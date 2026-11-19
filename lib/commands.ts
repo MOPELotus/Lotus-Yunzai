@@ -1,10 +1,12 @@
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
+import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
+  ownGroupCardAccount?: OwnGroupCardAccount;
   runtimeDiagnosticsScope?: "milky";
   runtimeStatusScope?: "onebot" | "milky" | "terminal";
 }>;
@@ -85,11 +87,12 @@ function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
-    privateCredentialSignal, canDelegate, delegationSignal, isDelegated } = context;
+    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
+    ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     ...(runtimeStatusScope ? { runtimeStatusScope } : {}),
@@ -101,6 +104,7 @@ function commandFeatureNames(module: string, command: string): readonly string[]
   if (module === "@lotus-yunzai/system" && /^#(?:椰奶)?状态(?:pro)?$/u.test(command)) return ["[system] 状态"];
   if (module === "@lotus-yunzai/system" && command === "#统计") return ["[system] 消息统计"];
   if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];
+  if (module === "@lotus-yunzai/group" && command === "#更新群名片") return ["自动群名片"];
   return [];
 }
 
