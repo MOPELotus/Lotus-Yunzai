@@ -7,7 +7,8 @@ const gameBiz = "hk4e_global";
 const officialOrigin = "https://act.hoyolab.com";
 const activity = "e202102251931481";
 const roleEndpoint = "https://api-account-os.hoyolab.com/binding/api/getUserGameRolesByCookieToken";
-const checkinEndpoint = "https://sg-act-public-api.hoyolab.com/event/sol/info";
+const checkinEndpoint = "https://sg-act-public-api.hoyolab.com/event/sol";
+const browserUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const regions = ["os_usa", "os_euro", "os_asia", "os_cht"] as const;
 const riskCodes = [1034, 10035, 10041];
 type Region = typeof regions[number];
@@ -110,19 +111,26 @@ function checkinRole(data: Json, roles: ReadonlyMap<string, HoYoLabGenshinRole>,
 }
 
 export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSource, transport: HoyoTransport, {
-  signal, verifyProfile,
+  signal, verifyProfile, deviceId,
 }: {
   readonly signal?: AbortSignal;
   readonly verifyProfile: () => Promise<void>;
+  readonly deviceId?: string;
 }) {
   const auth = validateSource(source);
+  if (deviceId !== undefined && (typeof deviceId !== "string" || !browserUuid.test(deviceId))) {
+    throw new HoyoRequestError("invalid-input", "原神国际服浏览器会话 ID 无效。");
+  }
   const commonHeaders = { Accept: "application/json, text/plain, */*", Cookie: auth.cookie,
     Origin: officialOrigin, Referer: `${officialOrigin}/` };
+  const checkinHeaders = { ...commonHeaders, "x-rpc-signgame": "hk4e" };
 
-  async function get(url: URL, headers: HeadersInit, subject: string): Promise<Json> {
+  async function request(url: URL, headers: HeadersInit, subject: string, body?: string): Promise<Json> {
+    const writing = body !== undefined;
     const timeout = AbortSignal.timeout(10_000);
     const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const transportError = () => new HoyoRequestError("transport", `官方${subject}查询未完成。`);
+    const transportError = () => new HoyoRequestError("transport", writing
+      ? `官方${subject}结果未确认。` : `官方${subject}查询未完成。`);
     async function guard() {
       if (deadline.aborted) throw transportError();
       await verifyProfile();
@@ -133,7 +141,8 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
     let response: Response;
     try {
       response = await transport(url, {
-        method: "GET", headers, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
+        method: writing ? "POST" : "GET", headers, ...(writing && { body }),
+        credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
       });
     } catch {
       await guard();
@@ -147,7 +156,7 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
       void response.body?.cancel().catch(() => undefined);
       await guard();
       if (response.redirected || (response.url && response.url !== url.href)) {
-        throw new HoyoRequestError("http", `官方${subject}返回了意外的地址。`, status);
+        throw new HoyoRequestError(writing ? "response" : "http", `官方${subject}返回了意外的地址。`, status);
       }
       if (status === 429) throw new GameRecordRequestError(subject, "rate-limited", "http", status);
       if (challenge && challenge !== "{}") throw new GameRecordRequestError(subject, "risk", code, status);
@@ -160,8 +169,9 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
     const data = object(payload?.data);
     const message = typeof payload?.message === "string" ? payload.message : "";
     const nestedRisk = object(data?.gt_result);
-    if ((typeof retcode === "number" && riskCodes.includes(retcode)) || data?.is_risk === true ||
-        nestedRisk?.is_risk === true || /验证码|captcha|geetest|风控/iu.test(message)) {
+    if ((typeof retcode === "number" && riskCodes.includes(retcode)) ||
+        [data?.is_risk, nestedRisk?.is_risk].some(flag => flag === true || flag === 1) ||
+        /验证码|captcha|geetest|风控/iu.test(message)) {
       throw new GameRecordRequestError(subject, "risk", code, status, typeof retcode === "number" ? retcode : undefined);
     }
     if (retcode === -100) throw new GameRecordRequestError(subject, "expired", code, status, retcode);
@@ -176,7 +186,7 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
   const catalogueSubject = "原神国际服角色目录";
   const catalogueUrl = new URL(roleEndpoint);
   catalogueUrl.searchParams.set("game_biz", gameBiz);
-  const data = await get(catalogueUrl, {
+  const data = await request(catalogueUrl, {
     ...commonHeaders, "x-rpc-language": auth.language.startsWith("zh-") ? auth.language : auth.language.slice(0, 2),
   }, catalogueSubject);
   if (!Array.isArray(data.list) || data.list.length > 64) invalidResponse(catalogueSubject);
@@ -191,13 +201,18 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
     roles.set(uid, Object.freeze({ uid, region, gameBiz, ...(row.is_chosen !== undefined && { chosen: row.is_chosen }) }));
   }
 
+  let infoRead = 0;
+  let canSubmit = false;
+  let submitted = false;
   return {
     roles: Object.freeze([...roles.values()]),
     async readInfo(): Promise<HoYoLabGenshinCheckinInfo> {
+      const read = ++infoRead;
+      canSubmit = false;
       const subject = "原神国际服签到状态";
-      const infoUrl = new URL(checkinEndpoint);
+      const infoUrl = new URL(`${checkinEndpoint}/info`);
       infoUrl.search = new URLSearchParams({ lang: auth.language, act_id: activity }).toString();
-      const state = await get(infoUrl, { ...commonHeaders, "x-rpc-signgame": "hk4e" }, subject);
+      const state = await request(infoUrl, checkinHeaders, subject);
       if (typeof state.is_sign !== "boolean" || (state.first_bind !== undefined && typeof state.first_bind !== "boolean")) {
         invalidResponse(subject);
       }
@@ -206,8 +221,32 @@ export async function openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSou
       if (totalSignDays !== undefined && (typeof totalSignDays !== "number" ||
           !Number.isInteger(totalSignDays) || totalSignDays < 0 || totalSignDays > 31)) invalidResponse(subject);
       const role = checkinRole(state, roles, subject);
+      if (read === infoRead) canSubmit = !state.is_sign && state.first_bind !== true;
       return { signed: state.is_sign, firstBind: state.first_bind === true,
         ...(totalSignDays !== undefined && { totalSignDays }), ...(role && { role }) };
+    },
+    async submit({ blockedUids }: { readonly blockedUids: readonly string[] }): Promise<"accepted"> {
+      if (submitted || !canSubmit || roles.size === 0) {
+        throw new HoyoRequestError("invalid-input", "原神国际服当前账号状态无法发起签到。");
+      }
+      // This endpoint selects the account default role. Any matching exclusion blocks the write.
+      if (!Array.isArray(blockedUids) || blockedUids.some(uid => typeof uid !== "string" || !/^[1-9]\d{0,19}$/u.test(uid)) ||
+          blockedUids.some(uid => roles.has(uid))) {
+        throw new HoyoRequestError("invalid-input", "原神国际服默认角色无法安全满足签到黑名单。");
+      }
+      submitted = true;
+      const subject = "原神国际服签到提交";
+      const signUrl = new URL(`${checkinEndpoint}/sign`);
+      signUrl.searchParams.set("lang", auth.language);
+      const result = await request(signUrl, {
+        ...checkinHeaders, "Content-Type": "application/json", "x-rpc-platform": "4",
+        "x-rpc-device_id": deviceId ?? crypto.randomUUID(),
+      }, subject, JSON.stringify({ act_id: activity }));
+      const risk = result.gt_result == null ? undefined : object(result.gt_result) ?? invalidResponse(subject);
+      if (risk?.is_risk !== undefined && risk.is_risk !== false && risk.is_risk !== 0) invalidResponse(subject);
+      if (result.first_bind !== undefined && typeof result.first_bind !== "boolean") invalidResponse(subject);
+      checkinRole(result, roles, subject);
+      return "accepted";
     },
   };
 }

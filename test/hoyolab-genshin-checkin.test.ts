@@ -146,3 +146,91 @@ test("角色目录和状态在出站前与响应后都复核档案，断开后�
   await expect(reader.readInfo()).rejects.toMatchObject({ code: "transport" });
   expect(requests).toBe(2);
 });
+
+test("原神国际服只提交一次账号默认角色签到，官方受理须独立回读", async () => {
+  const deviceId = "12345678-1234-4abc-8abc-1234567890ab";
+  const sent: string[] = [];
+  let count = 0;
+  const reader = await openHoYoLabGenshinCheckin(profile, async (url, init) => {
+    sent.push(`${init.method} ${url.href}`);
+    const headers = new Headers(init.headers);
+    expect(headers.get("cookie")).toBe(profile.cookie);
+    expect(init).toMatchObject({ credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
+    if (url.hostname === "api-account-os.hoyolab.com") return confirmed({ list: [asia, europe] });
+    if (init.method === "POST") {
+      expect(init.body).toBe('{"act_id":"e202102251931481"}');
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-rpc-device_id")).toBe(deviceId);
+      expect(headers.get("x-rpc-platform")).toBe("4");
+      expect(headers.get("x-rpc-signgame")).toBe("hk4e");
+      expect(headers.get("x-rpc-device_fp")).toBeNull();
+      expect(headers.get("x-rpc-challenge")).toBeNull();
+      return confirmed({ first_bind: false });
+    }
+    return confirmed({ is_sign: ++count === 2 });
+  }, { deviceId, verifyProfile });
+  const options = { blockedUids: ["600000001"] };
+  await expect(reader.submit(options)).rejects.toMatchObject({ code: "invalid-input" });
+  expect((await reader.readInfo()).signed).toBe(false);
+  // An explicitly chosen role cannot make a potentially different default role safe.
+  await expect(reader.submit({ blockedUids: [europe.game_uid] })).rejects.toMatchObject({ code: "invalid-input" });
+  const submitted = reader.submit(options);
+  await expect(reader.submit(options)).rejects.toMatchObject({ code: "invalid-input" });
+  expect(await submitted).toBe("accepted");
+  expect((await reader.readInfo()).signed).toBe(true);
+  await expect(reader.submit(options)).rejects.toMatchObject({ code: "invalid-input" });
+  expect(sent).toEqual([
+    `GET ${catalogEndpoint}?game_biz=hk4e_global`,
+    `GET ${infoEndpoint}?lang=en-us&act_id=e202102251931481`,
+    "POST https://sg-act-public-api.hoyolab.com/event/sol/sign?lang=en-us",
+    `GET ${infoEndpoint}?lang=en-us&act_id=e202102251931481`,
+  ]);
+});
+
+test("目录为空、已签、首绑和失败状态都不能开启国际服默认角色提交", async () => {
+  let posts = 0;
+  for (const [list, state] of [
+    [[], confirmed({ is_sign: false })],
+    [[asia], confirmed({ is_sign: true })],
+    [[asia], confirmed({ is_sign: false, first_bind: true })],
+    [[asia], confirmed({ is_sign: false, uid: europe.game_uid, region: "os_euro" })],
+  ] as const) {
+    const reader = await openHoYoLabGenshinCheckin(profile, async (url, { method }) => {
+      if (method === "POST") posts++;
+      return url.hostname === "api-account-os.hoyolab.com" ? confirmed({ list }) : state;
+    }, { verifyProfile });
+    await reader.readInfo().catch(() => undefined);
+    await expect(reader.submit({ blockedUids: [] })).rejects.toMatchObject({ code: "invalid-input" });
+  }
+  expect(posts).toBe(0);
+  await expect(openHoYoLabGenshinCheckin(profile, async () => {
+    throw new Error("unexpected network");
+  }, { verifyProfile, deviceId: "not a UUID" })).rejects.toMatchObject({ code: "invalid-input" });
+});
+
+test("国际服提交风控、非零回执与未知状态均不重发", async () => {
+  for (const [outcome, detail] of [
+    [confirmed({ gt_result: { is_risk: true, challenge: "isolated" } }), { reason: "risk" }],
+    [confirmed({ gt_result: { is_risk: "unknown" } }), { code: "response" }],
+    [Response.json({ retcode: -5003, data: {} }), { code: "api", retcode: -5003 }],
+    [new Response(null, { status: 503 }), { code: "http", status: 503 }],
+  ] as const) {
+    let posts = 0;
+    const reader = await openHoYoLabGenshinCheckin(profile, async (url, init) => {
+      if (url.hostname === "api-account-os.hoyolab.com") return confirmed({ list: [asia] });
+      if (init.method === "GET") return confirmed({ is_sign: false });
+      posts++;
+      expect(new Headers(init.headers).get("x-rpc-device_id"))
+        .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+      return outcome;
+    }, { verifyProfile });
+    await reader.readInfo();
+    const planned = { blockedUids: [] };
+    const attempt = reader.submit(planned);
+    await expect(attempt).rejects.toMatchObject(detail);
+    await expect(attempt).rejects.not.toThrow(/isolated|fixture-token/u);
+    await reader.readInfo();
+    await expect(reader.submit(planned)).rejects.toMatchObject({ code: "invalid-input" });
+    expect(posts).toBe(1);
+  }
+});
