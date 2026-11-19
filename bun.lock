@@ -55,6 +55,10 @@
     },
     "plugins/atlas": {
       "name": "@lotus-yunzai/atlas",
+      "dependencies": {
+        "@lotus-yunzai/skia": "workspace:*",
+        "skia-canvas": "3.0.8",
+      },
     },
     "plugins/group": {
       "name": "@lotus-yunzai/group",
