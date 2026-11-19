@@ -1,25 +1,17 @@
-import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
+import { HoyoRequestError } from "./errors.ts";
+import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 
 export { createCredentialExchange };
+export { HoyoRequestError };
+export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 
 const gameBiz: Record<Game, string> = {
   gs: "hk4e_cn",
   sr: "hkrpg_cn",
   zzz: "nap_cn",
 };
-
-export class HoyoRequestError extends Error {
-  constructor(
-    readonly code: "invalid-input" | "transport" | "http" | "response" | "api" | "refresh",
-    message: string,
-    readonly status?: number,
-    readonly retcode?: number,
-  ) {
-    super(message);
-    this.name = "HoyoRequestError";
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -139,14 +131,18 @@ export function createHoyoClient(
     return normalizeGameRoles(data.filter((item) => isRecord(item) && item.game_biz === gameBiz[game]));
   }
 
-  async function retrieve(context: ProfileAccountContext, game?: Game, signal?: AbortSignal) {
-    if (!recovery) return { context, data: await list(context, game, signal) };
+  async function retrieve<Data>(
+    context: ProfileAccountContext,
+    attempt: (profile: ProfileAccountContext) => Promise<Data>,
+    signal?: AbortSignal,
+  ) {
+    if (!recovery) return { context, data: await attempt(context) };
     const key = keyFor(context);
     const entry = track(key);
     entry.requests++;
     try {
       try {
-        return { context, data: await list(context, game, signal) };
+        return { context, data: await attempt(context) };
       } catch (error) {
         if (signal?.aborted || !(error instanceof HoyoRequestError) ||
             error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
@@ -160,7 +156,7 @@ export function createHoyoClient(
       } catch {
         throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
       }
-      return { context: refreshed, data: await list(refreshed, game, signal) };
+      return { context: refreshed, data: await attempt(refreshed) };
     } finally {
       entry.requests--;
       release(key, entry);
@@ -196,11 +192,22 @@ export function createHoyoClient(
     },
     async syncRoles(context: ProfileAccountContext, allowRefresh = true) {
       if (!allowRefresh) return saveRoles(context, await list(context));
-      const result = await retrieve(context);
+      const result = await retrieve(context, (profile) => list(profile));
       return saveRoles(result.context, result.data);
     },
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
-      return rolesFor((await retrieve(context, game, signal)).data, game);
+      return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
+    },
+    async fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
+      const { context, data } = await retrieve(source, async (profile) => {
+        const guard = recovery && (async () => {
+          const changed = new HoyoRequestError("profile-changed", "星铁档案已变更，请重新发起请求。");
+          const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
+          if (latest.revision !== profile.revision) throw changed;
+        });
+        return readStarRailGacha({ ...source, ...profile }, transport, options, guard);
+      }, options.signal);
+      return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
     },
   };
 
