@@ -19,6 +19,7 @@ import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts"
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
 import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
+import { redeemCodeCommands } from "./lib/redeem-code-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
 import type { MilkySession, MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
@@ -592,6 +593,14 @@ if (import.meta.main) {
       await sendCommandReply(event, reply);
       return;
     }
+    const { self_id } = event;
+    const isBotMaster = (userId: number) => self_id !== undefined && masterPermissions.isMaster(self_id, userId);
+    const redeemReply = await commands.dispatchFallback(event,
+      (names) => names[0] === "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
+    if (redeemReply !== undefined) {
+      await sendCommandReply(event, redeemReply);
+      return;
+    }
     if (await legacy.dispatch(command, allowed)) return;
 
     if (isInstallCommand(command.msg)) {
@@ -608,9 +617,8 @@ if (import.meta.main) {
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
       return;
     }
-    const { self_id } = event;
-    const fallback = await commands.dispatchFallback(event, allowed, (userId) =>
-      self_id !== undefined && masterPermissions.isMaster(self_id, userId), command.msg);
+    const fallback = await commands.dispatchFallback(event,
+      (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
       return;
@@ -695,6 +703,8 @@ if (import.meta.main) {
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       viewProfile), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
+    commands.registerModule(redeemCodeCommands({ historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)) }),
+      "[Lotus-Plugin] Redeem Codes");
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
