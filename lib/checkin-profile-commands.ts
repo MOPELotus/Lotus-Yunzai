@@ -4,6 +4,7 @@ import type { CommandContext, CommandModule, CommandReply } from "./commands.ts"
 
 const toggle = /^#(启用|开启|关闭|禁用)((?:原神|星铁|崩铁|绝区零|绝)(?:游戏)?|全部游戏)签到([1-9]\d{0,2})?$/u;
 const notifyToggle = /^#(启用|开启|关闭|禁用)签到通知([1-9]\d{0,2})?$/u;
+const communityToggle = /^#(启用|开启|关闭|禁用)社区签到([1-9]\d{0,2})?$/u;
 const notifyPrefer = /^#设置通知(私聊|群聊)([1-9]\d{0,2})?$/u;
 const bindGroup = /^#(?:绑定|设置|切换)(?:通知群|签到通知群|本群通知)([1-9]\d{0,2})?$/u;
 const inheritTime = /^#(?:跟随|继承)(?:全局)?签到时间([1-9]\d{0,2})?$/u;
@@ -21,6 +22,8 @@ function matchSettings(message: string, groupId: number | undefined) {
   }
   const notification = notifyToggle.exec(message);
   if (notification) return action(notification[2], { type: "notify-enabled", enabled: isEnabled(notification[1]!) });
+  const community = communityToggle.exec(message);
+  if (community) return action(community[2], { type: "community", enabled: isEnabled(community[1]!) });
   const game = toggle.exec(message);
   if (game) {
     const enabled = isEnabled(game[1]!);

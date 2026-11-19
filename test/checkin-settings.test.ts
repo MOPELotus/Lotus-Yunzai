@@ -150,3 +150,26 @@ test("群注册原子开启确切档案并追加群，保留通知偏好与既�
     await expect(store.registerGroupCheckin(qq, 2, saved.revision, 0)).rejects.toMatchObject({ code: "invalid" });
   }, original);
 });
+
+test("社区签到开关保留分区选择和任务，兼容旧平铺配置及旧默认分区", async () => {
+  const mihoyobbs = { enable: false, read: false, like: true, extra: "保留", checkin_list: [2, "8", 2, 7, 99] };
+  await withProfile(async (store, path) => {
+    const before = await store.checkinSettings(qq, 2);
+    expect(before.communityForums).toEqual([]);
+    const enabled = await store.setProfileCheckinSettings(qq, 2, before.revision, { type: "community", enabled: true });
+    expect((await store.checkinSettings(qq, 2)).communityForums).toEqual(["2", "8"]);
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
+      ...fixture, mihoyobbs: { ...mihoyobbs, enable: true, tasks: { read: false, like: true, checkin: true } },
+    });
+    await store.setProfileCheckinSettings(qq, 2, enabled.revision, { type: "community", enabled: false });
+    expect((await store.checkinSettings(qq, 2)).communityForums).toEqual([]);
+
+    for (const checkin_list of [undefined, []]) {
+      await writeFile(path, Bun.YAML.stringify({ ...fixture,
+        mihoyobbs: { enable: true, checkin: true, ...(checkin_list === undefined ? {} : { checkin_list }) },
+      }));
+      expect((await store.checkinSettings(qq, 2)).communityForums)
+        .toEqual(checkin_list ?? ["1", "2", "3", "4", "5", "6", "8", "9", "10"]);
+    }
+  }, { ...fixture, mihoyobbs });
+});

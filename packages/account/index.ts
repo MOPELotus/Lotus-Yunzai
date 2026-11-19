@@ -46,6 +46,15 @@ function profileFilename(qq: string, id: number): string {
 const profileFilenamePattern = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u;
 const cnCheckinGame = { gs: "genshin", sr: "honkai_sr", zzz: "zzz" } as const satisfies Record<Game, string>;
 const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
+const defaultCommunityForums = ["1", "2", "3", "4", "5", "6", "8", "9", "10"] as const;
+
+function configuredCommunityForums(community: Record<string, unknown>): string[] {
+  if (community.enable !== true || record(community.tasks ?? community).checkin !== true) return [];
+  if (community.checkin_list === undefined) return [...defaultCommunityForums];
+  if (!Array.isArray(community.checkin_list)) return [];
+  const allowed = new Set<string>(defaultCommunityForums);
+  return [...new Set(community.checkin_list.map(accountId).filter((id) => allowed.has(id)))];
+}
 
 function normalizeProfileTime(time: string) {
   return /^(?:[01]?\d|2[0-3]):[0-5]\d$/u.test(time) ? time.padStart(5, "0") : undefined;
@@ -61,6 +70,7 @@ function profileSchedule(value: unknown) {
 export type ProfileCheckinSettingsChange =
   | { readonly type: "game"; readonly game: Game; readonly enabled: boolean }
   | { readonly type: "all-games"; readonly enabled: boolean }
+  | { readonly type: "community"; readonly enabled: boolean }
   | { readonly type: "notify-enabled"; readonly enabled: boolean }
   | { readonly type: "notify-preference"; readonly prefer: "private" }
   | { readonly type: "notify-preference"; readonly prefer: "group"; readonly groupId?: number }
@@ -89,6 +99,16 @@ function checkinNotifyFields(change: Extract<ProfileCheckinSettingsChange, { typ
 
 function applyCheckinSettings(document: Record<string, unknown>, change: ProfileCheckinSettingsChange) {
   switch (change?.type) {
+    case "community": {
+      if (typeof change.enabled !== "boolean") invalidCheckinSettings();
+      const community = record(document.mihoyobbs);
+      if (!change.enabled) return { ...document, mihoyobbs: { ...community, enable: false } };
+      const tasks = community.tasks === undefined
+        ? Object.fromEntries(["read", "like", "cancel_like", "share"].filter(key => Object.hasOwn(community, key))
+          .map(key => [key, community[key]]))
+        : record(community.tasks);
+      return { ...document, mihoyobbs: { ...community, enable: true, tasks: { ...tasks, checkin: true } } };
+    }
     case "game":
     case "all-games": {
       if (typeof change.enabled !== "boolean") invalidCheckinSettings();
@@ -597,8 +617,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         notifications: record(profile.notify).enable !== false,
         gameCheckin: Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"]
           .map((game) => [game, record(cn[game]).checkin === true])),
-        communityCheckin: community.enable === true && Array.isArray(community.checkin_list)
-          ? community.checkin_list.map(Number).filter(Number.isSafeInteger) : [],
+        communityCheckin: configuredCommunityForums(community).map(Number),
         international: {
           enabled: os.enable === true,
           language: /^[a-z]{2}-[a-z]{2}$/iu.test(text(os.lang)) ? text(os.lang) : "zh-cn",
@@ -650,7 +669,6 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const cn = record(record(document.games).cn);
       const community = record(document.mihoyobbs);
       const notify = record(record(document.profile).notify);
-      const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
       const games = Object.fromEntries(cnCheckinKeys.map(key => {
         const game = record(cn[key]);
@@ -658,8 +676,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const blacklist = Array.isArray(game.black_list) ? game.black_list.map(accountId).filter(Boolean) : [];
         return [key, { enabled: cn.enable !== false && (game.checkin === undefined ? defaultEnabled : game.checkin === true), blacklist }];
       }));
-      const communityForums = communityEnabled && Array.isArray(community.checkin_list)
-        ? community.checkin_list.map(accountId).filter(Boolean) : [];
+      const communityForums = configuredCommunityForums(community);
       return {
         revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
         schedule: profileSchedule(document.schedule),
