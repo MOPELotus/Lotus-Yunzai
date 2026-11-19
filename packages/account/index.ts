@@ -626,10 +626,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       profileFilename(qq, 1);
       return (await listSlots()).filter(slot => slot.qq === qq).map(slot => slot.profileId).sort((a, b) => a - b);
     },
-    async listCheckinProfiles() {
+    async listCheckinProfiles(qqs?: ReadonlySet<string>) {
       const targets = [];
       for (const { qq, profileId } of await listSlots()) {
-        if (!/^[1-9]\d{0,18}$/u.test(qq)) continue;
+        if (!/^[1-9]\d{0,18}$/u.test(qq) || (qqs && !qqs.has(qq))) continue;
         const profile = await readDocument(qq, profileId).catch(() => undefined);
         if (!profile) continue;
         targets.push({

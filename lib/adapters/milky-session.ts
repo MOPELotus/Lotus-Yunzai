@@ -40,6 +40,8 @@ function hasMessageSequence(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+const maxGroupMembers = 10_000;
+
 export async function openMilkySession(settings: MilkySettings, options: MilkyTransportOptions): Promise<MilkySession | undefined> {
   const { signal, dispatch, onSent } = options;
   const call = createMilkyApi(settings, signal);
@@ -122,6 +124,25 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     sendGroup: (group_id, reply) => sendConfirmed({ group_id }, reply),
   };
 
+  async function listGroupMembers(group_id: number) {
+    if (signal.aborted) return;
+    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true });
+    if (signal.aborted || result.status !== "confirmed") return;
+    const { members } = result.data;
+    if (!Array.isArray(members) || members.length > maxGroupMembers) return;
+    const seen = new Set<number>();
+    const roster: { id: number; name?: string }[] = [];
+    for (const member of members) {
+      if (!record(member) || member.group_id !== group_id || !positiveId(member.user_id) || seen.has(member.user_id)) return;
+      seen.add(member.user_id);
+      const card = typeof member.card === "string" ? member.card.trim() : "";
+      const nickname = typeof member.nickname === "string" ? member.nickname.trim() : "";
+      const name = card || nickname;
+      roster.push({ id: member.user_id, ...(name && { name }) });
+    }
+    return roster;
+  }
+
   return { botId: account, checkinNotify, async send(target, reply) {
     return await sendConfirmed(target, reply) === "confirmed";
   }, receive(body) {
@@ -188,8 +209,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       }
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
+    const groupId = message?.isGroup ? message.group_id : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
+      ...(positiveId(groupId) && { listCheckinGroupMembers: () => listGroupMembers(groupId) }),
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>

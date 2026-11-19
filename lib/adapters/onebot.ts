@@ -357,6 +357,12 @@ async function dispatchMessage(
     getGroupRole: selfId !== undefined && selfId === connectedBotId
       ? (id) => isId(id) ? calls.getGroupRole(send, id, userId, true) : Promise.resolve(undefined)
       : undefined,
+    listCheckinGroupMembers: boundAccount && display && "group_id" in target ? async () => {
+      if (display.closed) return;
+      const members = await calls.listMemberDisplay(send, target.group_id, true);
+      if (display.closed) return;
+      return members.map(({ id, card, nickname }) => ({ id, name: card || nickname }));
+    } : undefined,
     forward: selfId === undefined ? undefined : async (nodes) => {
       const messages = [];
       for (const node of nodes) {

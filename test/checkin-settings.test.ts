@@ -123,6 +123,8 @@ test("签到计划只读取同路径身份的实际档案及其非敏感设置",
         schedule: { mode: "fixed", fixedTime: "08:00", allowRandom: true } },
     ]);
     expect(await store.listIds(qq)).toEqual([1, 2]);
+    expect(await store.listCheckinProfiles(new Set([qq]))).toEqual(await store.listCheckinProfiles());
+    expect(await store.listCheckinProfiles(new Set(["100008"]))).toEqual([]);
     expect(await createProfileStore(join(root, "missing")).listCheckinProfiles()).toEqual([]);
   });
 });

@@ -5,13 +5,17 @@ import { OneBotMemberDisplay, type MemberRosterEntry } from "../lib/adapters/one
 test("OneBot 名单校验群与成员身份，只保留展示字段", async () => {
   const calls = new OneBotCalls();
   const member = { group_id: 77, user_id: 42, nickname: " 昵称 ", card: " 带\n换行 ", role: "owner" };
-  const fetch = (data: unknown) => calls.listMemberDisplay((frame) => {
-    expect(frame).toMatchObject({ action: "get_group_member_list", params: { group_id: 77 } });
+  const fetch = (data: unknown, fresh = false) => calls.listMemberDisplay((frame) => {
+    expect(frame).toMatchObject({
+      action: "get_group_member_list", params: { group_id: 77, ...(fresh ? { no_cache: true } : {}) },
+    });
     calls.receive({ echo: frame.echo, status: "ok", retcode: 0, data });
     return true;
-  }, 77);
+  }, 77, fresh);
   expect(await fetch([member, { user_id: 43, card: "群名片", nickname: "x".repeat(257), title: "头衔" }]))
     .toEqual([{ id: 42, nickname: "昵称" }, { id: 43, card: "群名片" }]);
+  expect(await fetch([member], true)).toEqual([{ id: 42, nickname: "昵称" }]);
+  await expect(fetch([{ user_id: 42, card: "未绑定群号" }], true)).rejects.toThrow("无效的群成员列表");
   for (const invalid of [
     null, [member, member], [{ ...member, group_id: 78 }], [{ ...member, user_id: "-1" }], Array(10_001).fill(member),
   ]) await expect(fetch(invalid)).rejects.toThrow("无效的群成员列表");

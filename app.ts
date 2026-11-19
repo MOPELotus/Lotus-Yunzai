@@ -10,6 +10,7 @@ import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
 import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
+import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
@@ -693,6 +694,11 @@ if (import.meta.main) {
     commands.registerModule(gameCheckin, "[Lotus-Plugin] Checkin");
     commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal), "[Lotus-Plugin] Checkin Admin");
     if (!probingUpdate) {
+      commands.registerModule(checkinRosterCommands({
+        profiles: checkinProfiles,
+        listMembers: ({ listCheckinGroupMembers }) => listCheckinGroupMembers?.() ?? Promise.resolve(undefined),
+        signal: lifecycle.signal,
+      }), "[Lotus-Plugin] Checkin Admin");
       const config = globalConfig.scheduler;
       if (config === undefined || (config !== null && typeof config === "object" && !Array.isArray(config) &&
           (!Object.hasOwn(config, "enable") || typeof (config as CheckinScheduleConfig).enable === "boolean"))) {

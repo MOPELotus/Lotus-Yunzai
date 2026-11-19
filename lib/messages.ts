@@ -31,6 +31,7 @@ export interface MessageEvent {
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
+  readonly listCheckinGroupMembers?: () => Promise<readonly { id: number; name?: string }[] | undefined>;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly attachment?: IncomingChatFile;
