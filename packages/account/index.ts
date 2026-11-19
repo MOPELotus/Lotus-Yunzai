@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import type { DeviceBinding } from "./device-binding.ts";
 import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
@@ -43,13 +44,84 @@ function profileFilename(qq: string, id: number): string {
 }
 
 const profileFilenamePattern = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u;
+const cnCheckinGame = { gs: "genshin", sr: "honkai_sr", zzz: "zzz" } as const satisfies Record<Game, string>;
+const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
+
+function normalizeProfileTime(time: string) {
+  return /^(?:[01]?\d|2[0-3]):[0-5]\d$/u.test(time) ? time.padStart(5, "0") : undefined;
+}
 
 function profileSchedule(value: unknown) {
   const raw = record(value);
   const mode = raw.mode === "fixed" || raw.mode === "random" ? raw.mode : "inherit";
-  const time = text(raw.fixed_time);
-  const fixedTime = /^(?:[01]?\d|2[0-3]):[0-5]\d$/u.test(time) ? time.padStart(5, "0") : undefined;
+  const fixedTime = normalizeProfileTime(text(raw.fixed_time));
   return { mode, fixedTime, allowRandom: raw.allow_random !== false } as const;
+}
+
+export type ProfileCheckinSettingsChange =
+  | { readonly type: "game"; readonly game: Game; readonly enabled: boolean }
+  | { readonly type: "all-games"; readonly enabled: boolean }
+  | { readonly type: "notify-enabled"; readonly enabled: boolean }
+  | { readonly type: "notify-preference"; readonly prefer: "private" }
+  | { readonly type: "notify-preference"; readonly prefer: "group"; readonly groupId?: number }
+  | { readonly type: "bind-notify-group"; readonly groupId: number }
+  | { readonly type: "schedule"; readonly mode: "inherit" | "random" }
+  | { readonly type: "schedule"; readonly mode: "fixed"; readonly time: string };
+
+function invalidCheckinSettings(): never {
+  throw new ProfileError("invalid", "自动签到设置无效。");
+}
+
+function checkinNotifyFields(change: Extract<ProfileCheckinSettingsChange, { type: "notify-enabled" | "notify-preference" | "bind-notify-group" }>) {
+  if (change.type === "notify-enabled") {
+    if (typeof change.enabled !== "boolean") invalidCheckinSettings();
+    return { enable: change.enabled };
+  }
+  if (change.type === "notify-preference") {
+    if (change.prefer === "private") return { prefer: "private" };
+    if (change.prefer !== "group") invalidCheckinSettings();
+    if (change.groupId === undefined) return { prefer: "group" };
+  }
+  const id = change.groupId;
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 1) invalidCheckinSettings();
+  return { prefer: "group", fallback_groups: [String(id)] };
+}
+
+function applyCheckinSettings(document: Record<string, unknown>, change: ProfileCheckinSettingsChange) {
+  switch (change?.type) {
+    case "game":
+    case "all-games": {
+      if (typeof change.enabled !== "boolean") invalidCheckinSettings();
+      const games = record(document.games);
+      const cn = record(games.cn);
+      const supported = Object.values(cnCheckinGame);
+      let keys: readonly string[];
+      if (change.type === "game") {
+        if (!Object.hasOwn(cnCheckinGame, change.game)) invalidCheckinSettings();
+        keys = [cnCheckinGame[change.game]];
+      } else {
+        keys = cnCheckinKeys.filter(key => supported.some(game => game === key) || Object.hasOwn(cn, key));
+      }
+      const updated = { ...cn };
+      for (const key of keys) updated[key] = { ...record(cn[key]), checkin: change.enabled };
+      return { ...document, games: { ...games, cn: updated } };
+    }
+    case "notify-enabled":
+    case "notify-preference":
+    case "bind-notify-group": {
+      const profile = record(document.profile);
+      return { ...document, profile: { ...profile, notify: { ...record(profile.notify), ...checkinNotifyFields(change) } } };
+    }
+    case "schedule": {
+      const { mode } = change;
+      if (mode !== "fixed" && mode !== "inherit" && mode !== "random") invalidCheckinSettings();
+      const fixedTime = mode === "fixed" && typeof change.time === "string" ? normalizeProfileTime(change.time) : undefined;
+      if (mode === "fixed" && fixedTime === undefined) invalidCheckinSettings();
+      return { ...document, schedule: { ...record(document.schedule), mode, fixed_time: fixedTime ?? "" } };
+    }
+    default:
+      invalidCheckinSettings();
+  }
 }
 
 export interface GameRole {
@@ -394,6 +466,26 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     });
   }
 
+  async function updateCheckinProfile(
+    qq: string, id: number, expectedRevision: string,
+    change: (document: Record<string, unknown>, state: ReturnType<typeof readIdentity>) => Record<string, unknown>,
+  ) {
+    const filename = profileFilename(qq, id);
+    const directory = await realpath(root).catch((error: unknown) => {
+      if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
+      throw error;
+    });
+    const path = join(directory, filename);
+    return serializeWrite(path, async () => {
+      const { document, state, revision } = await readDocument(qq, id, path);
+      if (revision !== expectedRevision) throw changedProfile();
+      const updated = change(document, state);
+      if (isDeepStrictEqual(document, updated)) return { changed: false, revision };
+      const saved = await writeProfileDocument(path, updated, revision);
+      return { changed: true, revision: saved };
+    });
+  }
+
   return {
     async openLoginSlot(qq: string, profileId = 1): Promise<ProfileLoginSlot> {
       const filename = profileFilename(qq, profileId);
@@ -559,7 +651,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const notify = record(record(document.profile).notify);
       const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
-      const games = Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"].map(key => {
+      const games = Object.fromEntries(cnCheckinKeys.map(key => {
         const game = record(cn[key]);
         const defaultEnabled = key === "genshin" || key === "honkai_sr" || key === "zzz";
         const blacklist = Array.isArray(game.black_list) ? game.black_list.map(accountId).filter(Boolean) : [];
@@ -579,20 +671,17 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
-      const filename = profileFilename(qq, id);
-      if (typeof enabled !== "boolean") throw new ProfileError("invalid", "自动签到设置无效。");
-      const directory = await realpath(root).catch((error: unknown) => {
-        if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
-        throw error;
-      });
-      const path = join(directory, filename);
-      return serializeWrite(path, async () => {
-        const { document, state, revision } = await readDocument(qq, id, path);
-        if (revision !== expectedRevision) throw changedProfile();
+      if (typeof enabled !== "boolean") invalidCheckinSettings();
+      const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
-        if (state.summary.enabled === enabled) return { enabled, changed: false, revision };
-        const saved = await writeProfileDocument(path, { ...document, enabled }, revision);
-        return { enabled, changed: true, revision: saved };
+        return state.summary.enabled === enabled ? document : { ...document, enabled };
+      });
+      return { enabled, ...result };
+    },
+    async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange) {
+      return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        return applyCheckinSettings(document, change);
       });
     },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
