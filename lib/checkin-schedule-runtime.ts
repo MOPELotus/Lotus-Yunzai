@@ -123,5 +123,23 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
         else void trigger();
       }
     },
+    async personalTomorrow(qq: string, profiles: readonly CheckinScheduleProfile[]) {
+      const now = Date.now();
+      const { tomorrow } = checkinScheduleClock(now);
+      if (!await store.read(tomorrow)) return;
+      return store.update(tomorrow, previous => {
+        if (!previous || signal.aborted) return { result: undefined };
+        let plan = previous;
+        if (canRun()) {
+          for (const profile of profiles) {
+            if (profile.qq === qq && profile.enabled) {
+              plan = addLateCheckinScheduleProfile(plan, profile, { config, now }).plan ?? plan;
+            }
+          }
+        }
+        const result = { ...plan, entries: plan.entries.filter(entry => entry.qq === qq) };
+        return { plan, result };
+      });
+    },
   };
 }
