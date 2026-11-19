@@ -38,7 +38,11 @@ export interface CnGameCheckinInfo {
   readonly totalSignDays?: number;
 }
 
-export type CnGameCheckinSource = Omit<ProfileRequestContext, "game"> & { readonly game: Game | "nxx" };
+export type CnGameCheckinSource = Omit<ProfileRequestContext, "game"> & { readonly game: Game | "nxx" | "bh3" };
+
+export function isBh3CnCheckinRegion(region: string) {
+  return region === "ios01" || region === "android01" || region === "pc01";
+}
 
 const webVersion = "2.118.1";
 const webSalt = "4751cb5557bfad5e249e58462c39fb0a";
@@ -51,9 +55,11 @@ const routes = {
     signgame: "hkrpg", biz: "hkrpg_cn", name: "星铁" },
   zzz: { endpoint: "https://act-nap-api.mihoyo.com/event/luna/zzz", activity: "e202406242138391",
     signgame: "zzz", biz: "nap_cn", name: "绝区零" },
-  // The previous Lotus client used the shared Luna route without a signgame header.
+  // The previous Lotus client used the shared Luna route without a signgame header for both games.
   nxx: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202202251749321",
     signgame: "", biz: "nxx_cn", name: "未定事件簿" },
+  bh3: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202306201626331",
+    signgame: "", biz: "bh3_cn", name: "崩坏3" },
 } as const satisfies Record<CnGameCheckinSource["game"], { endpoint: string; activity: string; signgame: string; biz: string; name: string }>;
 
 type Json = Record<string, unknown>;
@@ -94,13 +100,16 @@ function riskFlag(data: Json | undefined) {
 function requestRole(source: CnGameCheckinSource) {
   const route = Object.hasOwn(routes, source.game) ? routes[source.game] : undefined;
   const { uid, region, gameBiz } = source.role;
+  const legacyRole = typeof uid === "string" && /^[1-9]\d{0,19}$/u.test(uid) && (
+    (source.game === "nxx" && gameBiz === "nxx_cn" && region === "cn_prod_gf01") ||
+    (source.game === "bh3" && gameBiz === "bh3_cn" && isBh3CnCheckinRegion(region))
+  );
   // The official binding directory lists both Star Rail regions and only prod_gf_cn for nap_cn.
   const server = source.game === "gs" ? genshinCnRecordRegion(source.role) :
     source.game === "sr" && /^[1-5]\d{8}$/u.test(uid) &&
       (uid.startsWith("5") ? region === "prod_qd_cn" : region === "prod_gf_cn") ? region :
     source.game === "zzz" && /^[1-9]\d{7,8}$/u.test(uid) && region === "prod_gf_cn" ? region :
-    source.game === "nxx" && typeof uid === "string" && /^[1-9]\d{0,19}$/u.test(uid) &&
-      gameBiz === "nxx_cn" && region === "cn_prod_gf01" ? region : undefined;
+    legacyRole ? region : undefined;
   if (!route || (gameBiz && gameBiz !== route.biz) || !server) {
     throw new HoyoRequestError("invalid-input", "游戏签到需要当前档案中已确认的国服角色和区服。");
   }
@@ -159,11 +168,11 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   const identity = { act_id: route.activity, uid, region };
   const params = { ...identity, lang: "zh-cn" };
   const writing = action === "sign";
-  const legacyNxx = source.game === "nxx";
+  const legacyLuna = source.game === "nxx" || source.game === "bh3";
   if (!writing) url.search = new URLSearchParams(params).toString();
   const headers = headersFor(source, route);
   if (proof) {
-    if (legacyNxx) throw new HoyoRequestError("invalid-input", "请在米游社官方客户端完成未定事件簿签到验证。");
+    if (legacyLuna) throw new HoyoRequestError("invalid-input", `请在米游社官方客户端完成${route.name}签到验证。`);
     if (!writing || !proofField(proof.challenge, 1024) || !proofField(proof.validate, 2048) ||
         proof.seccode !== `${proof.validate}|jordan`) {
       throw new HoyoRequestError("invalid-input", "当前签到的人工验证结果格式无效。");
@@ -183,7 +192,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   let response: Response;
   try {
     response = await transport(url, {
-      method: writing ? "POST" : "GET", headers, body: writing ? JSON.stringify(legacyNxx ? identity : params) : undefined,
+      method: writing ? "POST" : "GET", headers, body: writing ? JSON.stringify(legacyLuna ? identity : params) : undefined,
       credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
     });
   } catch {
@@ -206,9 +215,9 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   const retcode = whole(payload?.retcode);
   const data = object(payload?.data);
   const message = typeof payload?.message === "string" ? payload.message : "";
-  const nestedRisk = legacyNxx ? object(data?.gt_result) : undefined;
+  const nestedRisk = legacyLuna ? object(data?.gt_result) : undefined;
   const inlineRisk = retcode === 0 && (riskFlag(data) || riskFlag(nestedRisk));
-  if (writing && !legacyNxx && !proof && response.ok && inlineRisk) {
+  if (writing && !legacyLuna && !proof && response.ok && inlineRisk) {
     const inline = getInlineChallenge(data);
     if (inline && data) {
       checkDataRole(data, uid, region, route);
@@ -225,11 +234,12 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   if (status === 401) throw new HoyoRequestError("http", `官方${subject}拒绝请求。`, status, retcode);
   if (retcode === undefined || deadline.aborted) invalidResponse(route);
   if (writing && retcode === -5003) {
-    if (legacyNxx && data) checkDataRole(data, uid, region, route);
+    if (source.game === "bh3" && payload?.data != null && !data) invalidResponse(route);
+    if (legacyLuna && data) checkDataRole(data, uid, region, route);
     return { route, already: true as const };
   }
   if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
-  if (legacyNxx && payload?.data != null && !data) invalidResponse(route);
+  if (legacyLuna && payload?.data != null && !data) invalidResponse(route);
   if (data) checkDataRole(data, uid, region, route);
   return { route, data };
 }

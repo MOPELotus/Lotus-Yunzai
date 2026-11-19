@@ -148,6 +148,77 @@ const nxxSource = {
   role: { ...fixture(routes[0]).role, uid: "734567890", region: "cn_prod_gf01", gameBiz: "nxx_cn" },
 } satisfies CnGameCheckinSource;
 
+const bh3Source = {
+  ...fixture(routes[0]), game: "bh3",
+  role: { ...fixture(routes[0]).role, uid: "734567890", region: "ios01", gameBiz: "bh3_cn" },
+  account: { ...fixture(routes[0]).account, stoken: "unused-stoken-fixture", stokenCookie: "stoken=fixture" },
+} satisfies CnGameCheckinSource;
+
+test("崩坏3同一 UID 的三个国服区各自使用旧 Luna 活动读取、提交和回读", async () => {
+  for (const region of ["ios01", "android01", "pc01"]) {
+    const source = { ...bh3Source, role: { ...bh3Source.role, region } };
+    const calls: string[] = [];
+    const identity = { act_id: "e202306201626331", uid: source.role.uid, region };
+    const transport: Parameters<typeof readCnGameCheckinInfo>[1] = async (url, init) => {
+      calls.push(`${init.method} ${url.pathname}`);
+      expect(url.origin).toBe("https://api-takumi.mihoyo.com");
+      expect(init.redirect).toBe("error");
+      expect(init.credentials).toBe("omit");
+      const headers = new Headers(init.headers);
+      expect(headers.get("Cookie")).toBe("cookie_token=fixture");
+      expect(headers.get("x-rpc-signgame")).toBeNull();
+      expect(headers.get("x-rpc-client_type")).toBe("5");
+      expect(headers.get("x-rpc-challenge")).toBeNull();
+      const role = { game_uid: identity.uid, region, game_biz: "bh3_cn" };
+      if (init.method === "POST") {
+        expect(url.search).toBe("");
+        expect(JSON.parse(String(init.body))).toEqual(identity);
+        return Response.json({ retcode: 0, data: { role } });
+      }
+      expect(Object.fromEntries(url.searchParams)).toEqual({ ...identity, lang: "zh-cn" });
+      expect(init.body).toBeUndefined();
+      return Response.json({ retcode: 0, data: { role, is_sign: calls.length === 3, first_bind: false } });
+    };
+    expect(await runGameCheckinSequence({
+      readInfo: () => readCnGameCheckinInfo(source, transport),
+      submit: () => submitCnGameCheckin(source, transport),
+      verifyCurrent: async () => {},
+    })).toMatchObject({ status: "signed" });
+    expect(calls).toEqual(["GET /event/luna/info", "POST /event/luna/sign", "GET /event/luna/info"]);
+  }
+});
+
+test("崩坏3渠道服与人工证明在发送前拒绝，风控与不同区服回包不能成为确认", async () => {
+  let calls = 0;
+  const transport = async () => { calls++; return Response.json({ retcode: 0 }); };
+  for (const role of [
+    ...["bb01", "hun01", "hun02", "yyb01", "", "overseas01"].map(region => ({ ...bh3Source.role, region })),
+    { ...bh3Source.role, gameBiz: "bh3_global" }, { ...bh3Source.role, gameBiz: "" },
+    { ...bh3Source.role, uid: "734567890&region=pc01" },
+  ]) {
+    const invalid = { ...bh3Source, role };
+    await expect(readCnGameCheckinInfo(invalid, transport)).rejects.toMatchObject({ code: "invalid-input" });
+    await expect(submitCnGameCheckin(invalid, transport)).rejects.toMatchObject({ code: "invalid-input" });
+  }
+  await expect(submitCnGameCheckin(bh3Source, transport, {
+    proof: { challenge: "fixture", validate: "fixture", seccode: "fixture|jordan" },
+  })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(calls).toBe(0);
+
+  const differentRegion = { game_uid: bh3Source.role.uid, region: "android01", game_biz: "bh3_cn" };
+  await expect(readCnGameCheckinInfo(bh3Source, async () =>
+    Response.json({ retcode: 0, data: { is_sign: true, role: differentRegion } }))).rejects.toMatchObject({ code: "response" });
+  for (const retcode of [0, -5003]) {
+    await expect(submitCnGameCheckin(bh3Source, async () =>
+      Response.json({ retcode, data: { role: differentRegion } }))).rejects.toMatchObject({ code: "response" });
+  }
+  const risk = () => submitCnGameCheckin(bh3Source, async () => Response.json({
+    retcode: 0, data: { gt_result: { risk_code: 375, gt: "fixture", challenge: "fixture-challenge" } },
+  }));
+  await expect(risk()).rejects.toMatchObject({ reason: "risk" });
+  await expect(risk()).rejects.not.toBeInstanceOf(GameCheckinChallengeError);
+});
+
 test("未定事件簿国服按旧协议先读同角色状态，提交后只回读一次确认", async () => {
   for (const [before, after, actions, outcome] of [
     [{ is_sign: false, first_bind: false }, true, ["info", "sign", "info"], "signed"],
