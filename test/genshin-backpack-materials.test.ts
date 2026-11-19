@@ -23,10 +23,11 @@ test("缺本地素材时按官方材料 ID 保留旧背包分类和冠冕首位"
   }
 });
 
-test("旧背包覆盖仍使用独立角色、三种官方技能组和武器范围", () => {
+test("扩展配方使用独立角色、官方元素和技能组，并保持对应武器等级", () => {
   const { items } = genshinBackpackProbe;
-  expect(items.length).toBe(47);
-  expect(new Set(items.map(item => item.avatar_id)).size).toBe(47);
-  expect(items.filter(item => item.weapon).length).toBe(23);
+  expect(items.length).toBe(62);
+  expect(new Set(items.map(item => item.avatar_id)).size).toBe(62);
+  expect(items.filter(item => item.weapon).length).toBe(34);
+  expect(items.find(({ avatar_id }) => avatar_id === 10000015)?.element_attr_id).toBe(7);
   expect(items.find(({ avatar_id }) => avatar_id === 10000015)?.skill_list.map(({ id }) => id)).toEqual([1531, 1532, 1539]);
 });

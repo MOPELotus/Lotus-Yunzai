@@ -11,7 +11,7 @@ export const genshinBackpackCommand = /^#原神背包([1-9]\d{0,2})?$/u;
 
 type Category = { readonly name: string; readonly items: readonly GenshinBackpackItem[] };
 type BackpackReply = string | { readonly type: "image"; readonly file: Uint8Array };
-const cardItemLimit = 420;
+const cardItemLimit = 540;
 const pageItemLimit = 100;
 const imageByteLimit = 16 * 1024 * 1024;
 
