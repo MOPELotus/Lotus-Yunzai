@@ -127,7 +127,8 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
     await copyHost(root);
     const config = join(root, "config", "config");
     const native = join(root, "plugins", "fixture-native-owner");
-    await Promise.all([mkdir(config, { recursive: true }), mkdir(native)]);
+    const atlas = join(root, "plugins", "atlas");
+    await Promise.all([mkdir(config, { recursive: true }), mkdir(native), mkdir(atlas)]);
     await writeFile(join(config, "other.yaml"), [
       'master: ["99:51", "100:52"]', "disablePrivate: true", `disableMsg: ${blocked}`,
     ].join("\n") + "\n");
@@ -144,6 +145,15 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
     }));
     await writeFile(join(native, "index.ts"), `
       export default { commands: { "${modernCommand}": (_args, ctx) => "原生命令主人 " + ctx.isMaster } };
+    `);
+    await writeFile(join(atlas, "package.json"), JSON.stringify({
+      name: "@lotus-yunzai/atlas", lotusYunzai: { entry: "./index.ts" },
+    }));
+    await writeFile(join(atlas, "index.ts"), `
+      export default {
+        commands: { "#检查图鉴更新": (_args, ctx) => "图鉴维护 " + (ctx.atlasMaintenance === true) },
+        aliases: { "荷花图鉴检查更新": "#检查图鉴更新" },
+      };
     `);
     await writeFile(join(root, "plugins", "milky-owner-fixture.js"), `
       export const apps = {
@@ -203,6 +213,14 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
       await mock.reply({ group_id: group }, "原生命令主人 false");
       await command("#统计 机器人 99");
       await mock.reply({ user_id: owner }, "仅当前机器人的主人可以指定统计对象。");
+      await command("荷花图鉴检查更新");
+      await mock.reply({ user_id: owner }, "图鉴维护 true");
+      await command("#检查图鉴更新", owner, group);
+      await mock.reply({ group_id: group }, "图鉴维护 true");
+      await command("#检查图鉴更新", outsider, unrestrictedGroup);
+      await mock.reply({ group_id: unrestrictedGroup }, "图鉴维护 false");
+      await command("#检查图鉴更新", otherOwner, unrestrictedGroup);
+      await mock.reply({ group_id: unrestrictedGroup }, "图鉴维护 false");
 
       expect((await webhook(endpoint, "friend_nudge", nudge(outsider))).status).toBe(200);
       await mock.reply({ user_id: outsider }, blocked);

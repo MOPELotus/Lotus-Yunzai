@@ -30,7 +30,7 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
-import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
+import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
@@ -106,6 +106,7 @@ const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
+const atlasMaintenanceCommand = /^#?(?:Lotus|lotus|荷花)?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新)$/u;
 
 function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
   return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
@@ -541,10 +542,11 @@ if (import.meta.main) {
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    const atlasCommand = atlasMaintenanceCommand.test(event.msg);
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
-        isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
+        atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || zzzLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
@@ -584,6 +586,7 @@ if (import.meta.main) {
     const statusPhoto = /^#?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
+    const atlasMaintenance = atlasCommand && canManagePackages(event) && (event.adapter !== "milky" || milky) ? true as const : undefined;
     const milkyDiagnostics = milky && event.message_type === "private" &&
       (event.msg === "#诊断" || statusCard || (bareStatus && event.msg.endsWith("pro"))) && isMilkyOwnerSession(event);
     const runtimeStatusScope = (statusCard || bareStatus || statusPhoto || statusMonitor) && !event.isDelegated ?
@@ -674,8 +677,9 @@ if (import.meta.main) {
       return;
     }
     const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
-    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount ? {
+    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount || atlasMaintenance ? {
       ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope, ownGroupCardAccount,
+      atlasMaintenance,
     } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
