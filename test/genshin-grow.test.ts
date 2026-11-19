@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { ProfileError } from "@lotus-yunzai/account";
+import { ProfileError, type ProfileRequestContext } from "@lotus-yunzai/account";
 import { lockFile } from "../lib/file-lock.ts";
 import { createGenshinGrowQuery } from "../plugins/genshin/grow/command.ts";
 import { resolveGrowthMaterials } from "../plugins/genshin/grow/catalogue.ts";
 import type { GrowthCard } from "../plugins/genshin/grow/card.ts";
+import { growthInventoryPlan, growthShortfall } from "../plugins/genshin/grow/inventory.ts";
 import { calculateCharacterGrowth, calculateWeaponGrowth, characterTarget, currentCharacter, matchGrowthCommand,
   publicCharacterGrowth, weaponTarget, type GrowthRequest, type ResolveMaterial } from "../plugins/genshin/grow/model.ts";
 
@@ -33,6 +34,89 @@ test("旧原神角色成长等级、突破、经验与天赋保留实际旧样�
   expect(calculateCharacterGrowth({ ...materials, weekly: undefined }, publicCharacterGrowth, talents, resolve)).toBeUndefined();
   expect(characterTarget(parse("#培养计算 刻晴 91"))).toBeUndefined();
   expect(currentCharacter({ level: 80, promote: 5 }, { a: 1, e: 1 })).toBeUndefined();
+});
+
+test("官方配方按已核对技能和突破等级计算，缺口只采用明确回包", () => {
+  const target = weaponTarget(parse("#养成计算 雾切 80-80+"), 5)!;
+  const weapon = calculateWeaponGrowth(materials, 5, target.from, target.to, resolve)!;
+  expect(growthInventoryPlan({ id: 11509, type: "weapon" }, weapon))
+    .toEqual({ weapon: { id: 11509, level_current: 80, level_target: 81 } });
+  const char = calculateCharacterGrowth(materials, publicCharacterGrowth, characterTarget(parse("#养成计算 胡桃 天赋 10 9 8"))!, resolve)!;
+  expect(growthInventoryPlan({ id: 10000046, type: "character" }, char)).toMatchObject({
+    avatar_id: 10000046, avatar_level_current: 1, avatar_level_target: 81, element_attr_id: 1,
+    skill_list: [{ id: 4631, level_current: 1, level_target: 10 }, { id: 4632, level_current: 1, level_target: 9 },
+      { id: 4639, level_current: 1, level_target: 8 }],
+  });
+  expect(growthInventoryPlan({ id: 99999999, type: "character" }, char)).toBeUndefined();
+  const uid = "100123456", region = "cn_gf01" as const;
+  const confirmed = { id: "202", name: "摩拉", total: 65_000, lack: 0 };
+  expect(growthShortfall({ uid, region, items: [confirmed] }, weapon, resolve)).toMatchObject({ rows: [], complete: false, mora: 0 });
+  expect(growthShortfall({ uid, region, items: [{ ...confirmed, lack: -9 }] }, weapon, resolve).mora).toBe(0);
+  expect(growthShortfall({ uid, region, items: [{ id: "1", name: "其他材料", total: 17, lack: 4 }] }, weapon, resolve))
+    .toMatchObject({ rows: [{ label: "其他材料", num: 4 }], complete: false, mora: undefined });
+});
+
+test("背包扣减仅在本人私聊或主动群聊展示，失败保留本地，换档时丢弃旧结果", async () => {
+  const uid = "100123456";
+  const role = { uid, region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true, nickname: "" };
+  let calls = 0, revision = "original", failing = false, changedDuringRender = false;
+  let visible: GrowthCard | undefined;
+  const query = createGenshinGrowQuery({
+    async savedRole() { return role; },
+    async requestContext(qq, profileId, game) {
+      expect({ qq, profileId, game }).toEqual({ qq: "42", profileId: 2, game: "gs" });
+      return { qq, profileId, game, revision, role, account: { cookie: "cookie=fixture-only" },
+        device: { id: "fixture-id", fp: "fixture-fp" } } as ProfileRequestContext;
+    },
+  }, lockFile, new AbortController().signal, {
+    async loadCatalogue() {
+      return { characters: new Map(), weapons: new Map([["雾切之回光", { id: 11509, name: "雾切之回光", abbr: "雾切", rank: 5 as const,
+        img: "meta-gs/weapon/sword/雾切之回光/icon.webp" }]]), characterAliases: undefined, weaponAliases: undefined };
+    },
+    async loadTheme() {
+      const data = Object.fromEntries(["远海夷地", "混沌", "花蜜"].map((name, index) => [name, { name, star: 5,
+        type: ["weapon", "monster", "normal"][index], items: Object.fromEntries([1, 2, 3, 4, 5].map(star =>
+          [star, { name: `${name}${star}`, type: ["weapon", "monster", "normal"][index], star }])) }]));
+      return { artifacts: new Map(), artifactSets: new Map(), characters: {}, async picture() { return undefined; },
+        async metadata(_game, type) { return type === "weapon" ? { materials } : data; } };
+    },
+    client: { async fetchGenshinGrowth(source, opts) {
+      calls++;
+      expect(source.profileId).toBe(2);
+      expect(opts.item).toEqual({ weapon: { id: 11509, level_current: 80, level_target: 81 } });
+      if (failing) throw new Error("模拟接口失败");
+      return { uid, region: "cn_gf01", revision, refreshedCookie: false,
+        items: [{ id: "202", name: "摩拉", total: 65_000, lack: 18_000 }] };
+    } },
+    async render(model) {
+      visible = model;
+      if (changedDuringRender) revision = "changed";
+      return { png: new Uint8Array([1]) };
+    },
+  });
+  const group = { user_id: 42, message_type: "group" }, direct = { ...group, message_type: "private" };
+  const command = "#养成计算 雾切 80-80+ 档案2";
+  expect(await query(command, group)).toMatchObject({ type: "image" });
+  expect(calls).toBe(0);
+  expect(await query(`${command} 扣除背包`, { ...group, isDelegated: true })).toMatchObject({ type: "image" });
+  expect(calls).toBe(0);
+  expect(await query(`${command} 扣除背包`, group)).toMatchObject({ type: "image" });
+  expect(calls).toBe(1);
+  expect(visible?.shortfall).toMatchObject({ rows: [{ label: "摩拉", num: 18_000 }], complete: false });
+  expect(visible?.notice).toContain("官方未覆盖全部本地需求，缺项的库存无法判断。");
+  expect(visible?.inventoryMora).toBeUndefined();
+  expect(await query("#养成计算 雾切 80-80+ 100123457 档案2", direct)).toMatchObject({ type: "image" });
+  expect(calls).toBe(1);
+  expect(visible?.notice).toContain("当前账号与计算角色不一致，已保留本地总需求。");
+  failing = true;
+  expect(await query(command, direct)).toMatchObject({ type: "image" });
+  expect(calls).toBe(2);
+  expect(visible?.shortfall).toBeUndefined();
+  expect(visible?.moraTotal).toBe(65_000);
+  expect(visible?.notice).toContain("米游社未能核验背包，已保留本地总需求。");
+  failing = false;
+  changedDuringRender = true;
+  expect(await query(command, direct)).toBe("原神档案角色已变化，请重新计算。");
 });
 
 test("旧武器目标区分 80 和 80+，各星级上限与无须消耗有明确定义", () => {
