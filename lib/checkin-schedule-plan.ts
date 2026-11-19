@@ -10,6 +10,9 @@ interface ScheduleWindow {
 
 export interface CheckinScheduleConfig {
   readonly enable?: boolean;
+  readonly run_due_cron?: string;
+  readonly plan_generate_cron?: string;
+  readonly catch_up_cron?: string;
   readonly mode?: ScheduleMode;
   readonly fixed_time?: string;
   readonly random?: Partial<ScheduleWindow> & { readonly notify_before?: boolean };
