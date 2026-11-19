@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createProfileStore } from "@lotus-yunzai/account";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
@@ -20,6 +21,7 @@ import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
+import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -88,6 +90,10 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const gachaBatch = createGachaBatch({
+    listIds: createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined).listIds,
+    signal: lifecycle.signal,
+  });
   const restartPausedAt = readRestartPausedAt();
   const dispatchPower = createDispatchPower(Date.now, handoff.pausedAt ?? restartPausedAt);
   let plugins: PluginLoadReport | undefined;
@@ -605,6 +611,9 @@ if (import.meta.main) {
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
+    commands.registerModule({
+      name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
+    }, "[Lotus-Plugin] Gacha Log");
     const { hostname, oneBot, https, panelToken } = network;
     const milkyOptions: MilkyTransportOptions = {
       signal: lifecycle.signal,
@@ -709,7 +718,7 @@ if (import.meta.main) {
           plugins: plugins?.timings ?? [],
         };
       },
-    }), { loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate });
+    }), { loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register });
     if (!stopping) {
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");

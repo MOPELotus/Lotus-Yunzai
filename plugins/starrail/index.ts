@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { buildStarRailGachaDetail, type StarRailGachaDetailPool } from "./gacha-detail.ts";
 import { renderStarRailGachaDetail } from "./gacha-detail-card.ts";
@@ -78,7 +79,7 @@ export function createModule({ signal, lockFile }: {
   const client = createProfileHoyoClient(profiles);
   const history = createStarRailGachaHistoryStore(historyRoot, lockFile);
   const service = createStarRailGachaSync(profiles, client, history);
-  const active = new Set<string>();
+  const updateGacha = createGachaUpdater((qq, profileId) => service.sync(qq, profileId, { signal }));
 
   async function query(qq: string, { profileId, view, all }: NonNullable<ReturnType<typeof matchGachaQuery>>) {
     if ("special" in view && view.statistics) return "联动池和新手池请使用对应的记录指令。";
@@ -146,6 +147,10 @@ export function createModule({ signal, lockFile }: {
 
   return {
     commands: {},
+    async gachaUpdate(qq: string, profileId: number) {
+      const result = await updateGacha(qq, profileId);
+      return result && { uid: result.log.uid };
+    },
     async fallback(_message: string, context: GachaContext) {
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
@@ -159,12 +164,10 @@ export function createModule({ signal, lockFile }: {
       }
       const qq = String(user_id);
       if (view) return query(qq, view);
-      const key = `${qq}/${profileId}`;
-      if (active.has(key)) return "该档案的星铁抽卡记录正在更新，请稍后再试。";
-      active.add(key);
       try {
-        await context.reply(`[荷花插件]正在为 profile ${profileId} 补齐官方范围内的星铁五星与垫抽记录。`);
-        const result = await service.sync(qq, profileId, { signal });
+        const result = await updateGacha(qq, profileId, () =>
+          context.reply(`[荷花插件]正在为 profile ${profileId} 补齐官方范围内的星铁五星与垫抽记录。`));
+        if (!result) return "该档案的星铁抽卡记录正在更新，请稍后再试。";
         try {
           const { png } = await renderStarRailGachaResult(result);
           return { type: "image" as const, file: png };
@@ -188,8 +191,6 @@ export function createModule({ signal, lockFile }: {
         } catch {
           return "[荷花插件]星铁抽卡记录更新失败，请检查档案登录状态与星铁 UID。";
         }
-      } finally {
-        active.delete(key);
       }
     },
   };

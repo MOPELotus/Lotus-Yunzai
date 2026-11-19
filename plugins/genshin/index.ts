@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError, type GenshinGachaPool } from "@lotus-yunzai/hoyo-client";
 import { buildGenshinGachaDetail } from "./gacha-detail.ts";
 import { renderGenshinGachaDetail } from "./gacha-detail-card.ts";
@@ -67,7 +68,7 @@ export function createModule({ signal, lockFile }: {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const history = createGenshinGachaHistoryStore(historyDirectory, lockFile);
   const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
-  const updating = new Set<string>();
+  const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
 
   async function view(qq: string, profileId: number, selection: GachaView, all: boolean) {
     try {
@@ -131,6 +132,7 @@ export function createModule({ signal, lockFile }: {
 
   return {
     commands: {},
+    gachaUpdate,
     async fallback(_message: string, context: GachaContext) {
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
@@ -144,12 +146,10 @@ export function createModule({ signal, lockFile }: {
       }
       const qq = String(user_id);
       if (query) return view(qq, profileId, query.view, query.all);
-      const key = `${qq}/${profileId}`;
-      if (updating.has(key)) return "该档案的原神抽卡记录正在更新，请稍后再试。";
-      updating.add(key);
       try {
-        await context.reply(`[荷花插件]正在更新 Profile ${profileId} 的抽卡记录，会补齐官方范围内的缺档。`);
-        const result = await sync.sync(qq, profileId, { signal });
+        const result = await gachaUpdate(qq, profileId, () =>
+          context.reply(`[荷花插件]正在更新 Profile ${profileId} 的抽卡记录，会补齐官方范围内的缺档。`));
+        if (!result) return "该档案的原神抽卡记录正在更新，请稍后再试。";
         try {
           const { png } = await renderGenshinGachaResult(qq, result);
           return { type: "image" as const, file: png };
@@ -171,8 +171,6 @@ export function createModule({ signal, lockFile }: {
         } catch {
           return "[荷花插件]抽卡记录更新失败，请检查档案登录状态与原神 UID。";
         }
-      } finally {
-        updating.delete(key);
       }
     },
   };

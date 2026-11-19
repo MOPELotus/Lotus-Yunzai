@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError, resolveZzzTuningRegion, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import { createZzzTuningArtwork } from "./tuning-artwork.ts";
 import { buildZzzTuningDetail, buildZzzTuningInventoryReply } from "./tuning-detail.ts";
@@ -26,7 +27,7 @@ export function createModule({ signal, lockFile }: {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const client = createProfileHoyoClient(profiles);
   const sync = createZzzTuningSync(profiles, client, historyDirectory, lockFile);
-  const updating = new Set<string>();
+  const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
 
   async function view(qq: string, profileId: number, context: GachaContext) {
     try {
@@ -75,6 +76,7 @@ export function createModule({ signal, lockFile }: {
 
   return {
     commands: {},
+    gachaUpdate,
     async fallback(_message: string, context: GachaContext) {
       const command = context.normalizedMessage.replace(romanPrefix, "#绝区零");
       const update = updateCommand.exec(command);
@@ -88,12 +90,10 @@ export function createModule({ signal, lockFile }: {
       }
       const qq = String(user_id);
       if (!update) return view(qq, profileId, context);
-      const key = `${qq}/${profileId}`;
-      if (updating.has(key)) return "该档案的绝区零抽卡记录正在更新，请稍后再试。";
-      updating.add(key);
       try {
-        await context.reply(`[荷花插件]正在为 profile ${profileId} 更新绝区零抽卡记录。`);
-        const result = await sync.sync(qq, profileId, { signal });
+        const result = await gachaUpdate(qq, profileId, () =>
+          context.reply(`[荷花插件]正在为 profile ${profileId} 更新绝区零抽卡记录。`));
+        if (!result) return "该档案的绝区零抽卡记录正在更新，请稍后再试。";
         try {
           const { png } = await renderZzzTuningResult(qq, result);
           return { type: "image" as const, file: png };
@@ -116,8 +116,6 @@ export function createModule({ signal, lockFile }: {
         } catch {
           return "[荷花插件]绝区零抽卡记录更新失败，请检查档案登录状态与绝区零 UID。";
         }
-      } finally {
-        updating.delete(key);
       }
     },
   };

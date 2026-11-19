@@ -8,6 +8,7 @@ import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { FileToUrl } from "../file-to-url.ts";
+import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { lockFile } from "../file-lock.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
@@ -21,6 +22,10 @@ interface Candidate {
 }
 
 export { systemModuleName };
+
+const gachaGames: ReadonlyMap<string, GachaGame> = new Map([
+  ["@lotus-yunzai/genshin", "gs"], ["@lotus-yunzai/starrail", "sr"], ["@lotus-yunzai/zzz", "zzz"],
+]);
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -184,7 +189,12 @@ export async function loadPlugins(
   commands: CommandRegistry,
   legacy: LegacyPlugins,
   services: PluginServices,
-  options: { readonly loadTimeout?: number; readonly reportLoading?: (wait: number) => void; readonly fileWatch?: boolean } = {},
+  options: {
+    readonly loadTimeout?: number;
+    readonly reportLoading?: (wait: number) => void;
+    readonly fileWatch?: boolean;
+    readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
+  } = {},
 ): Promise<PluginLoadReport> {
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
@@ -327,7 +337,7 @@ export async function loadPlugins(
           throw new Error("createModule 须为模块工厂函数。");
         }
         const module = create ? await create(Object.freeze({ ...services, signal })) : published.default;
-        const { commands: handlers, aliases, fallback, dispose } = record(module);
+        const { commands: handlers, aliases, fallback, dispose, gachaUpdate } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -343,6 +353,17 @@ export async function loadPlugins(
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
           fallback: fallback as CommandModule["fallback"],
         }, label);
+        const game = gachaGames.get(moduleName);
+        if (game && directory && relative(root, directory) === builtInDirectories.get(moduleName) &&
+            gachaUpdate !== undefined && options.registerGacha) {
+          if (typeof gachaUpdate !== "function") throw new Error("gachaUpdate 须为抽卡记录更新函数。");
+          const unregisterGacha = options.registerGacha(game, gachaUpdate as GachaUpdater);
+          const disposeFactory = cleanup;
+          cleanup = () => {
+            unregisterGacha();
+            return disposeFactory?.();
+          };
+        }
         if (published.apps !== undefined) {
           if (published.apps === null || typeof published.apps !== "object") {
             throw new Error("apps 须导出 V3 插件类。");
