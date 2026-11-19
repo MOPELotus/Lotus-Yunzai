@@ -8,6 +8,7 @@
     "./genshin-gacha-special": "./genshin-gacha-special-card.ts",
     "./miao-gacha-detail": "./miao-gacha-detail-card.ts",
     "./miao-gacha-version": "./miao-gacha-version-card.ts",
+    "./passport-qr": "./passport-qr-card.ts",
     "./status-card": "./status-card.ts"
   },
   "dependencies": {
