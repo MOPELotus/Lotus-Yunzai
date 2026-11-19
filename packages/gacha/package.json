@@ -4,10 +4,12 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./file-import": "./file-import.ts",
     "./miao-data": "./miao-data.ts",
     "./update": "./update.ts"
   },
   "dependencies": {
+    "@lotus-yunzai/account": "workspace:*",
     "yaml": "2.9.1"
   }
 }

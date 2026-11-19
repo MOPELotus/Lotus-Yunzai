@@ -26,6 +26,7 @@
     "packages/gacha": {
       "name": "@lotus-yunzai/gacha",
       "dependencies": {
+        "@lotus-yunzai/account": "workspace:*",
         "yaml": "2.9.1",
       },
     },
