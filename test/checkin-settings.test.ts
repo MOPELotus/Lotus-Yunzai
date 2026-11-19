@@ -173,3 +173,16 @@ test("社区签到开关保留分区选择和任务，兼容旧平铺配置及�
     }
   }, { ...fixture, mihoyobbs });
 });
+
+test("个人资料卡与实际签到沿用相同的国服开关与旧档案默认值", async () => {
+  await withProfile(async (store, path) => {
+    expect((await store.describe(qq, 2)).gameCheckin).toMatchObject({
+      genshin: false, honkai_sr: true, zzz: true, honkai2: false,
+    });
+    await writeFile(path, Bun.YAML.stringify({ ...fixture, games: { cn: { enable: false, genshin: { checkin: true } } } }));
+    const flags = (await store.describe(qq, 2)).gameCheckin;
+    expect(Object.values(flags).every(value => value === false)).toBe(true);
+    const settings = (await store.checkinSettings(qq, 2)).games;
+    expect(flags).toEqual(Object.fromEntries(Object.entries(settings).map(([key, game]) => [key, game.enabled])));
+  });
+});

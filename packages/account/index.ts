@@ -48,6 +48,16 @@ const cnCheckinGame = { gs: "genshin", sr: "honkai_sr", zzz: "zzz" } as const sa
 const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
 const defaultCommunityForums = ["1", "2", "3", "4", "5", "6", "8", "9", "10"] as const;
 
+function configuredCnCheckins(cn: Record<string, unknown>) {
+  return Object.fromEntries(cnCheckinKeys.map(key => {
+    const game = record(cn[key]);
+    const defaultEnabled = key === "genshin" || key === "honkai_sr" || key === "zzz";
+    const enabled = cn.enable !== false && (game.checkin === undefined ? defaultEnabled : game.checkin === true);
+    const blacklist = Array.isArray(game.black_list) ? game.black_list.map(accountId).filter(Boolean) : [];
+    return [key, { enabled, blacklist }];
+  }));
+}
+
 function configuredCommunityForums(community: Record<string, unknown>): string[] {
   if (community.enable !== true || record(community.tasks ?? community).checkin !== true) return [];
   if (community.checkin_list === undefined) return [...defaultCommunityForums];
@@ -615,8 +625,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         },
         schedule: { mode: text(schedule.mode), fixedTime: /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(dayTime) ? dayTime : "" },
         notifications: record(profile.notify).enable !== false,
-        gameCheckin: Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"]
-          .map((game) => [game, record(cn[game]).checkin === true])),
+        gameCheckin: Object.fromEntries(Object.entries(configuredCnCheckins(cn)).map(([game, { enabled }]) => [game, enabled])),
         communityCheckin: configuredCommunityForums(community).map(Number),
         international: {
           enabled: os.enable === true,
@@ -670,12 +679,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const community = record(document.mihoyobbs);
       const notify = record(record(document.profile).notify);
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
-      const games = Object.fromEntries(cnCheckinKeys.map(key => {
-        const game = record(cn[key]);
-        const defaultEnabled = key === "genshin" || key === "honkai_sr" || key === "zzz";
-        const blacklist = Array.isArray(game.black_list) ? game.black_list.map(accountId).filter(Boolean) : [];
-        return [key, { enabled: cn.enable !== false && (game.checkin === undefined ? defaultEnabled : game.checkin === true), blacklist }];
-      }));
+      const games = configuredCnCheckins(cn);
       const communityForums = configuredCommunityForums(community);
       return {
         revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
