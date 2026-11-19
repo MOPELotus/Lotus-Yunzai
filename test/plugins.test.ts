@@ -205,6 +205,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     `);
     await writeFile(join(plugins, "example", "legacy.js"), `
       import fetch, { Headers } from "node-fetch";
+      logger.info("V3 夹具载入");
       export class Legacy extends plugin {
         constructor() {
           super({ priority: 20, rule: [
@@ -219,6 +220,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
         async lookup(e) {
           const headers = new Headers({ Accept: "application/json" });
           const response = await fetch(${JSON.stringify(upstream.url.href)}, { headers });
+          logger.mark("V3 夹具查询完成");
           return e.reply((await response.json()).accept);
         }
       }
@@ -734,6 +736,11 @@ failsMsg: 协议拒绝
     expect(stderr).toContain("拒绝加载 miao-plugin");
     expect(stderr).not.toContain("被拒载的旧入口已执行");
     expect(stderr).toContain("OneBot 插件已清理");
+    const logDirectory = join(root, "logs");
+    const logs = await Promise.all([...new Bun.Glob("command.*.log").scanSync(logDirectory)]
+      .map(file => Bun.file(join(logDirectory, file)).text()));
+    expect(logs.join("\n")).toContain("[INFO] V3 夹具载入");
+    expect(logs.join("\n")).toContain("[INFO] V3 夹具查询完成");
   } finally {
     upstream.stop(true);
     socket?.close();

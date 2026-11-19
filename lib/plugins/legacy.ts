@@ -16,6 +16,13 @@ const legacyMessages = new WeakMap<MessageEvent, MessageEvent>();
 const legacyRuntime = Object.freeze({
   common, handler: Object.freeze({ has: Handler.has, call: Handler.call, callAll: Handler.callAll }),
 });
+const legacyLogger = Object.freeze({
+  debug: (...args: unknown[]) => console.debug(...args),
+  info: (...args: unknown[]) => console.info(...args),
+  mark: (...args: unknown[]) => console.info(...args),
+  warn: (...args: unknown[]) => console.warn(...args),
+  error: (...args: unknown[]) => console.error(...args),
+});
 
 function legacyMessage(event: MessageEvent): MessageEvent {
   const existing = legacyMessages.get(event);
@@ -138,7 +145,7 @@ export class LegacyPlugins {
 
   constructor(acceptingTasks?: () => boolean) {
     this.#tasks = new LegacyTasks(acceptingTasks);
-    Object.assign(globalThis, { plugin: Plugin, segment });
+    Object.assign(globalThis, { plugin: Plugin, segment, logger: legacyLogger });
   }
 
   register(
