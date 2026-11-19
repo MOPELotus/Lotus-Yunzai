@@ -1,4 +1,5 @@
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validGuobaApiRoute, type GuobaApiDefinition, type GuobaApiHandler } from "./panel-guoba-http.ts";
@@ -7,6 +8,7 @@ const pageDirectories = ["guoba", "webadapter"] as const;
 const descriptorFiles = ["index.js", "pages.js", "pages.json", "page.js", "page.json"] as const;
 const pageIdPattern = /^[A-Za-z0-9_-]+$/u;
 const apiMethods = new Set(["get", "post", "put", "delete", "patch", "all"]);
+const moduleCache = createRequire(import.meta.url).cache;
 const assetExtensions = new Set([
   ".html", ".js", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
   ".woff", ".woff2", ".ttf", ".map",
@@ -159,13 +161,15 @@ function extensionLogger(plugin: string) {
   });
 }
 
-async function loadDescriptor(plugin: string, directory: string, descriptor: string) {
+async function loadDescriptor(plugin: string, directory: string, descriptor: string, reload: boolean) {
   const file = await containedFile(directory, descriptor);
   if (!descriptor.endsWith(".js")) {
     const input = await readFile(file, "utf8");
     return { definitions: manifestPages(JSON.parse(input.replace(/^\uFEFF/u, ""))) };
   }
 
+  // Bun resolves query strings on file imports to the same module cache key.
+  if (reload) delete moduleCache[file];
   const { default: pages, pages: named, init } = await import(pathToFileURL(file).href);
   if (typeof init !== "function") {
     const exported: unknown = pages ?? named;
@@ -202,7 +206,7 @@ async function loadDescriptor(plugin: string, directory: string, descriptor: str
   return { definitions, registeredApis: [...registeredApis.values()] };
 }
 
-export async function loadGuobaPages(pluginDirectories: ReadonlyMap<string, string>): Promise<GuobaPages> {
+export async function loadGuobaPages(pluginDirectories: ReadonlyMap<string, string>, reload = false): Promise<GuobaPages> {
   const registry = new Map<string, { page: GuobaPage; directory: string }>();
   const apis = new Map<string, readonly GuobaApiDefinition[]>();
   const issues: GuobaPageIssue[] = [];
@@ -213,7 +217,7 @@ export async function loadGuobaPages(pluginDirectories: ReadonlyMap<string, stri
       if (directory === undefined) continue;
       descriptor = await findDescriptor(directory);
       if (descriptor === undefined) continue;
-      const { definitions, registeredApis } = await loadDescriptor(plugin, directory, descriptor);
+      const { definitions, registeredApis } = await loadDescriptor(plugin, directory, descriptor, reload);
       const staged: GuobaPage[] = [];
       for (const definition of definitions) {
         try {

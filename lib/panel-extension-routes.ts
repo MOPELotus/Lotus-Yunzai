@@ -1,7 +1,7 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { attachExtensionBridge, extensionBridge, extensionTokenHeader } from "./panel-extension-bridge.ts";
 import { dispatchGuobaApi } from "./panel-guoba-http.ts";
-import { loadGuobaPages } from "./panel-guoba-pages.ts";
+import { loadGuobaPages, type GuobaPages } from "./panel-guoba-pages.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
 const framePolicy = [
@@ -32,39 +32,59 @@ function escapedPath(name: string): string {
 export function panelExtensionRoutes(directories: PluginLoadReport["directories"]) {
   const secret = randomBytes(32);
   const sources = new Map([...directories].map(([name, { path }]) => [name, path]));
-  const registry = loadGuobaPages(sources);
+  function snapshot(reload = false) {
+    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload) };
+  }
+  let current = snapshot();
+  let scanning: Promise<GuobaPages> | undefined;
 
-  const signature = (use: TicketUse, id: string, expires: string) =>
-    createHmac("sha256", secret).update(`${use}:${id}:${expires}`).digest();
-  const mint = (use: TicketUse, id: string, expires: string) => `${expires}.${signature(use, id, expires).toString("hex")}`;
-  function validTicket(use: TicketUse, id: string, value: string): boolean {
+  const signature = (generation: string, use: TicketUse, id: string, expires: string) =>
+    createHmac("sha256", secret).update(`${generation}:${use}:${id}:${expires}`).digest();
+  const mint = (generation: string, use: TicketUse, id: string, expires: string) =>
+    `${expires}.${signature(generation, use, id, expires).toString("hex")}`;
+  function validTicket(generation: string, use: TicketUse, id: string, value: string): boolean {
     const [, expires, mac] = /^(\d{13})\.([0-9a-f]{64})$/u.exec(value) ?? [];
     return expires !== undefined && mac !== undefined && Number(expires) > Date.now() &&
-      timingSafeEqual(signature(use, id, expires), Buffer.from(mac, "hex"));
+      timingSafeEqual(signature(generation, use, id, expires), Buffer.from(mac, "hex"));
   }
 
-  async function list(request: Request): Promise<Response> {
-    if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
-    const { pages, issues } = await registry;
+  function catalog({ pages, issues }: GuobaPages): Response {
     return Response.json({
       pages: pages.map(({ id, plugin, title, icon, priority }) => ({ id, plugin, title, icon, priority })),
       issues,
     });
   }
 
+  async function list(request: Request): Promise<Response> {
+    if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
+    return catalog(await current.registry);
+  }
+
+  async function reload(request: Request): Promise<Response> {
+    if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    scanning ??= current.registry.catch(() => undefined).then(async () => {
+      const next = snapshot(true);
+      const initialized = await next.registry;
+      current = next;
+      return initialized;
+    }).finally(() => { scanning = undefined; });
+    return catalog(await scanning);
+  }
+
   async function open(request: Request, id: string): Promise<Response> {
     if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    const { registry, generation } = current;
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
     if (!page) return new Response(null, { status: 404 });
     const expires = String(Date.now() + 5 * 60_000);
-    const ticket = mint("asset", id, expires);
+    const ticket = mint(generation, "asset", id, expires);
     const url = `${assetRoot}/${id}/${ticket}/${page.src ? escapedPath(page.src) : ""}`;
     if (!apis.get(page.plugin)?.length) return Response.json({ url });
     const search = new URLSearchParams({
       __apiBase: `${apiRoot}/${id}`,
       __webBase: "/guoba",
-      token: mint("api", id, expires),
+      token: mint(generation, "api", id, expires),
     });
     return Response.json({ url: `${url}?${search}` });
   }
@@ -73,7 +93,10 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     const path = new URL(request.url).pathname;
     if (!path.startsWith("/panel/extensions/")) return;
     const [, id, ticket, encoded] = /^\/panel\/extensions\/([A-Za-z0-9_-]+)\/([^/]+)\/(.*)$/u.exec(path) ?? [];
-    if (!id || !ticket || !validTicket("asset", id, ticket)) return new Response(null, { status: 404, headers: frameHeaders });
+    const { registry, generation } = current;
+    if (!id || !ticket || !validTicket(generation, "asset", id, ticket)) {
+      return new Response(null, { status: 404, headers: frameHeaders });
+    }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { ...frameHeaders, Allow: "GET, HEAD" } });
     }
@@ -122,7 +145,10 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     const path = new URL(request.url).pathname;
     if (!path.startsWith(`${bridgeRoot}/`)) return;
     const [, id, ticket] = /^\/panel\/extensions-bridge\/([A-Za-z0-9_-]+)\/([^/]+)$/u.exec(path) ?? [];
-    if (!id || !ticket || !validTicket("asset", id, ticket)) return new Response(null, { status: 404, headers: frameHeaders });
+    const { registry, generation } = current;
+    if (!id || !ticket || !validTicket(generation, "asset", id, ticket)) {
+      return new Response(null, { status: 404, headers: frameHeaders });
+    }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { ...frameHeaders, Allow: "GET, HEAD" } });
     }
@@ -152,7 +178,8 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
         "Access-Control-Allow-Headers": `content-type, ${extensionTokenHeader}`,
       } });
     }
-    if (!validTicket("api", id, request.headers.get(extensionTokenHeader) ?? "")) {
+    const { registry, generation } = current;
+    if (!validTicket(generation, "api", id, request.headers.get(extensionTokenHeader) ?? "")) {
       return new Response(null, { status: 401, headers: apiHeaders });
     }
     const { pages, apis } = await registry;
@@ -168,6 +195,7 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
   return {
     api(path: string) {
       if (path === "/panel/api/extensions") return list;
+      if (path === "/panel/api/extensions/reload") return reload;
       const id = /^\/panel\/api\/extensions\/([A-Za-z0-9_-]+)\/open$/u.exec(path)?.[1];
       return id ? (request: Request) => open(request, id) : undefined;
     },

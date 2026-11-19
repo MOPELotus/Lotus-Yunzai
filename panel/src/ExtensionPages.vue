@@ -65,7 +65,7 @@ function scopedUrl(value: unknown, pageId: string): string | undefined {
   }
 }
 
-async function load(page?: ExtensionPage) {
+async function load(page?: ExtensionPage, rescan = false) {
   if (active || !props.token) return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -77,8 +77,9 @@ async function load(page?: ExtensionPage) {
     frameUrl.value = "";
   }
   try {
-    const response = await fetch(page ? `${endpoint}/${encodeURIComponent(page.id)}/open` : endpoint, {
-      method: page ? "POST" : "GET",
+    const path = page ? `${endpoint}/${encodeURIComponent(page.id)}/open` : rescan ? `${endpoint}/reload` : endpoint;
+    const response = await fetch(path, {
+      method: page || rescan ? "POST" : "GET",
       headers: { Authorization: `Bearer ${props.token}` },
       signal: controller.signal,
       cache: "no-store",
@@ -113,7 +114,7 @@ async function load(page?: ExtensionPage) {
         return;
       }
       catalog.value = { pages: data.pages, issues: data.issues };
-      const opened = data.pages.find(({ id }) => id === selected.value?.id);
+      const opened = rescan ? undefined : data.pages.find(({ id }) => id === selected.value?.id);
       if (!opened || opened.plugin !== selected.value?.plugin) frameUrl.value = "";
       selected.value = opened;
     }
@@ -149,7 +150,7 @@ onBeforeUnmount(() => {
   <section class="extensions" aria-labelledby="extensions-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
       <h1 id="extensions-title" tabindex="-1">扩展页面</h1>
-      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy)" @click="load()">刷新清单</ElButton>
+      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy)" @click="load(undefined, true)">重新扫描</ElButton>
     </div>
 
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
