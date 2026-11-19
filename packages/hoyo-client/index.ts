@@ -15,6 +15,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { createCredentialExchange };
 export { HoyoRequestError };
+export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,

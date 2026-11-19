@@ -513,6 +513,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   async function updateCheckinProfile(
     qq: string, id: number, expectedRevision: string,
     change: (document: Record<string, unknown>, state: ReturnType<typeof readIdentity>) => Record<string, unknown>,
+    signal?: AbortSignal,
   ) {
     const filename = profileFilename(qq, id);
     const directory = await realpath(root).catch((error: unknown) => {
@@ -521,11 +522,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     });
     const path = join(directory, filename);
     return serializeWrite(path, async () => {
+      signal?.throwIfAborted();
       const { document, state, revision } = await readDocument(qq, id, path);
       if (revision !== expectedRevision) throw changedProfile();
       const updated = change(document, state);
       if (isDeepStrictEqual(document, updated)) return { changed: false, revision };
-      const saved = await writeProfileDocument(path, updated, revision);
+      const saved = await writeProfileDocument(path, updated, revision, signal);
       return { changed: true, revision: saved };
     });
   }
@@ -738,6 +740,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         return applyCheckinSettings(document, change);
       });
+    },
+    async saveInternationalCookie(qq: string, id: number, expectedRevision: string,
+      verified: { readonly cookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU" },
+      signal?: AbortSignal) {
+      if (!verified || typeof verified.cookie !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(verified.cookie) ||
+          typeof verified.accountId !== "string" || !/^[1-9]\d{0,19}$/u.test(verified.accountId) ||
+          (verified.realm !== "SG" && verified.realm !== "US" && verified.realm !== "EU")) invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        const games = record(document.games);
+        const os = record(games.os);
+        return { ...document, games: { ...games, os: {
+          ...os, cookie: verified.cookie, enable: true,
+          verified_account_id: verified.accountId, verified_realm: verified.realm,
+        } } };
+      }, signal);
     },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
       const name = profileFilename(qq, id);

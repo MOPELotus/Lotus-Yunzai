@@ -25,6 +25,7 @@ export interface MessageEvent {
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
   readonly boundAccount?: boolean;
+  readonly privateCredentialSignal?: AbortSignal;
   readonly isOwnerEnrollmentSession?: () => boolean;
   readonly canManageProcess?: boolean;
   readonly onAwaitInput?: () => void;

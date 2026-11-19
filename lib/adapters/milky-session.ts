@@ -213,6 +213,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       ...(positiveId(groupId) && { listCheckinGroupMembers: () => listGroupMembers(groupId) }),
+      privateCredentialSignal: message.isPrivate ? signal : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>

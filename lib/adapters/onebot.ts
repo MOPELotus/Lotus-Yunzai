@@ -351,6 +351,8 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: owner,
     boundAccount,
+    privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
+      ? attachmentSession?.signal : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
