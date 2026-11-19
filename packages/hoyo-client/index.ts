@@ -1,11 +1,13 @@
 import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { createCredentialExchange };
 export { HoyoRequestError };
+export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaRow } from "./genshin-gacha.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
 
@@ -221,6 +223,10 @@ export function createHoyoClient(
     },
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
+    },
+    fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
+      return readForProfile(source, options, readGenshinGacha, (error) =>
+        error instanceof GenshinAuthKeyRequestError && isCookieExpired(error));
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
       return readForProfile(source, options, readStarRailGacha);
