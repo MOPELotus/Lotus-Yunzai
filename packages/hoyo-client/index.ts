@@ -5,6 +5,7 @@ import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
+import { openHoYoLabNxxCheckin } from "./hoyolab-nxx-checkin.ts";
 import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
@@ -367,6 +368,9 @@ export function createHoyoClient(
     },
     openHoYoLabZzzCheckin(source: HoYoLabGenshinCheckinSource, options: Parameters<typeof openHoYoLabZzzCheckin>[2]) {
       return openHoYoLabZzzCheckin(source, transport, options);
+    },
+    openHoYoLabNxxCheckin(source: HoYoLabGenshinCheckinSource, options: Parameters<typeof openHoYoLabNxxCheckin>[2]) {
+      return openHoYoLabNxxCheckin(source, transport, options);
     },
     readCloudGenshinWallet(token: string, options: Parameters<typeof readCloudGenshinWallet>[2]) {
       return readCloudGenshinWallet(token, transport, options);

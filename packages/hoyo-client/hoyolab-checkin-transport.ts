@@ -14,7 +14,11 @@ const cookiePaths = {
 } as const;
 const activityPaths = {
   cookie: ["/event/sol"],
-  ltoken: ["/event/luna/hkrpg/os", "/event/luna/zzz/os"],
+  ltoken: ["/event/luna/hkrpg/os", "/event/luna/zzz/os", "/event/luna/nxx/os"],
+} as const;
+const roleGames = {
+  cookie: ["hk4e_global"],
+  ltoken: ["hkrpg_global", "nap_global", "nxx_global"],
 } as const;
 type Credential = keyof typeof cookiePaths;
 type Json = Record<string, unknown>;
@@ -156,7 +160,7 @@ export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, trans
     deviceId: deviceId ?? crypto.randomUUID(),
     request,
     async roleList(gameBiz: string, subject: string): Promise<readonly unknown[]> {
-      if (credential === "ltoken" ? gameBiz !== "hkrpg_global" && gameBiz !== "nap_global" : gameBiz !== "hk4e_global") {
+      if (!roleGames[credential].some(game => game === gameBiz)) {
         throw new HoyoRequestError("invalid-input", "国际服角色目录不支持当前游戏。");
       }
       const url = new URL(cookiePaths[credential], roleOrigin);

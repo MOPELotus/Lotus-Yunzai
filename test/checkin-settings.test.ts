@@ -208,6 +208,7 @@ test("国际服执行按游戏获取已验证的同档普通或活动登录凭�
     enable: true, cookie: "旧未核对的海外凭据", lang: "EN_US",
     genshin: { checkin: true, black_list: ["800000123", 900000456] },
     honkai_sr: { checkin: true, black_list: ["700000123"] },
+    tears_of_themis: { checkin: true, black_list: ["101000123"] },
   };
   await withProfile(async (store) => {
     const { revision } = await store.checkinSettings(qq, 2);
@@ -219,6 +220,7 @@ test("国际服执行按游戏获取已验证的同档普通或活动登录凭�
       language: "EN_US", blacklist: ["800000123", "900000456"],
     });
     expect(await store.internationalCheckin(qq, 2, "honkai_sr")).toEqual({ status: "unverified", revision: bound.revision });
+    expect(await store.internationalCheckin(qq, 2, "tears_of_themis")).toEqual({ status: "unverified", revision: bound.revision });
     const activityCookie = "ltuid=800; ltoken=verified-activity";
     const both = await store.saveInternationalCookie(qq, 2, bound.revision, { cookie, accountId: "800", realm: "SG", activityCookie });
     expect(await store.internationalCheckin(qq, 2, "honkai_sr")).toEqual({
@@ -226,8 +228,13 @@ test("国际服执行按游戏获取已验证的同档普通或活动登录凭�
       language: "EN_US", blacklist: ["700000123"],
     });
     expect(await store.internationalCheckin(qq, 2, "genshin")).toMatchObject({ status: "verified", cookie });
+    expect(await store.internationalCheckin(qq, 2, "tears_of_themis")).toEqual({
+      status: "verified", revision: both.revision, cookie: activityCookie, accountId: "800", realm: "SG",
+      language: "EN_US", blacklist: ["101000123"],
+    });
     const off = await store.setProfileCheckinSettings(qq, 2, both.revision, { type: "international", enabled: false });
     expect(await store.internationalCheckin(qq, 2, "genshin")).toEqual({ status: "disabled", revision: off.revision });
+    expect(await store.internationalCheckin(qq, 2, "tears_of_themis")).toEqual({ status: "disabled", revision: off.revision });
     expect((await store.accountContext(qq, 2)).account.cookie).toBe(fixture.account.cookie);
   }, { ...fixture, games: { ...fixture.games, os } });
 });

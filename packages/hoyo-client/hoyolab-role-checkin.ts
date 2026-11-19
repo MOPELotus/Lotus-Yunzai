@@ -13,6 +13,10 @@ const games = {
     gameBiz: "nap_global", name: "绝区零", signgame: "zzz", activity: "e202406031448091",
     regions: ["prod_gf_jp", "prod_gf_us", "prod_gf_eu", "prod_gf_sg"],
   },
+  nxx: {
+    gameBiz: "nxx_global", name: "未定事件簿", signgame: "nxx", activity: "e202202281857121",
+    regions: ["glb_prod_wd01"],
+  },
 } as const;
 const decimal = /^[1-9]\d{0,19}$/u;
 type Game = keyof typeof games;
