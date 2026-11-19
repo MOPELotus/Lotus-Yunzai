@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
           <h2 id="extension-current-title">{{ selected.title }}</h2>
           <ElButton :loading="busy === 'open'" :disabled="Boolean(busy)" @click="load(selected)">刷新页面</ElButton>
         </div>
-        <iframe v-if="frameUrl" :src="frameUrl" :title="selected.title" sandbox="allow-scripts"
+        <iframe v-if="frameUrl" :src="frameUrl" :title="selected.title" sandbox="allow-scripts allow-forms"
           referrerpolicy="no-referrer" />
         <p v-else-if="busy === 'open'" class="extension-note" role="status">正在打开页面…</p>
       </div>

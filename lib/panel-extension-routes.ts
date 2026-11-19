@@ -4,8 +4,9 @@ import { dispatchGuobaApi } from "./panel-guoba-http.ts";
 import { loadGuobaPages, type GuobaPages } from "./panel-guoba-pages.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
+// Allow submit handlers to run inside the frame. CSP still blocks native form requests.
 const framePolicy = [
-  "sandbox allow-scripts", "default-src 'none'", "script-src 'self' 'unsafe-inline'",
+  "sandbox allow-scripts allow-forms", "default-src 'none'", "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "font-src 'self'",
   "form-action 'none'", "frame-ancestors 'self'", "base-uri 'none'",
 ].join("; ");
@@ -112,7 +113,6 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
 
     let body: string | Blob;
     let type: string;
-    const bridge = apis.get(page.plugin)?.length ? `${bridgeRoot}/${id}/${ticket}` : undefined;
     let isFrame = false;
     if (!resource && page.html !== undefined) {
       const css = page.style ? `<link rel="stylesheet" href="${escapedPath(page.style)}">` : "";
@@ -130,10 +130,11 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
       isFrame = asset.isEntry;
     }
     const headers = { ...frameHeaders, "Content-Type": type };
-    if (bridge && isFrame) {
-      headers["Content-Security-Policy"] += "; connect-src 'self'";
+    if (isFrame) {
+      if (apis.get(page.plugin)?.length) headers["Content-Security-Policy"] += "; connect-src 'self'";
       if (request.method !== "HEAD") {
-        body = attachExtensionBridge(typeof body === "string" ? body : await body.text(), bridge);
+        const src = `${bridgeRoot}/${id}/${ticket}`;
+        body = attachExtensionBridge(typeof body === "string" ? body : await body.text(), src);
       }
     }
     return new Response(request.method === "HEAD" ? null : body, {
@@ -154,8 +155,11 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     }
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
-    if (!page || !apis.get(page.plugin)?.length) return new Response(null, { status: 404, headers: frameHeaders });
-    const source = extensionBridge(`${apiRoot}/${id}`, `/guoba/api/custom/${encodeURIComponent(page.plugin)}`);
+    if (!page) return new Response(null, { status: 404, headers: frameHeaders });
+    const source = extensionBridge(apis.get(page.plugin)?.length ? {
+      apiBase: `${apiRoot}/${id}`,
+      legacyApiBase: `/guoba/api/custom/${encodeURIComponent(page.plugin)}`,
+    } : undefined);
     return new Response(request.method === "HEAD" ? null : source, {
       headers: { ...frameHeaders, "Content-Type": "text/javascript; charset=utf-8" },
     });

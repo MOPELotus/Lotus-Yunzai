@@ -1,10 +1,28 @@
 export const extensionTokenHeader = "guoba-access-token";
 
-export function extensionBridge(apiBase: string, legacyApiBase: string): string {
+export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }): string {
   // This script runs in the extension frame, whose origin is opaque.
-  const configuration = JSON.stringify({ apiBase, legacyApiBase, tokenKey: extensionTokenHeader });
+  const configuration = api ? JSON.stringify({ ...api, tokenKey: extensionTokenHeader }) : "null";
   return `(() => {
+    try {
+      void window.localStorage;
+    } catch {
+      // Legacy pages can use these preferences for the lifetime of this document.
+      const values = new Map();
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: {
+          get length() { return values.size; },
+          key(index) { return Array.from(values.keys())[index] ?? null; },
+          getItem(key) { return values.get(String(key)) ?? null; },
+          setItem(key, value) { values.set(String(key), String(value)); },
+          removeItem(key) { values.delete(String(key)); },
+          clear() { values.clear(); },
+        },
+      });
+    }
     const config = ${configuration};
+    if (!config) return;
     const token = new URLSearchParams(location.search).get("token") || "";
     const { apiBase, legacyApiBase, tokenKey } = config;
     window.__GUOBA__ = { apiBase, token, tokenKey };
