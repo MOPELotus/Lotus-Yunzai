@@ -110,7 +110,7 @@ test("只在原认证私聊和原档案未变时保存核验后的国际服账�
         requests++;
         if (behavior === "rebind") await writeFile(target, replacement);
         if (behavior === "disconnect") session.abort();
-        return { cookie, accountId: "800", realm: "EU" };
+        return { cookie, accountId: "800", realm: "EU", activityCookie: "ltuid=800; ltoken=activity-fixture" };
       },
     });
     const send = (type: MessageFallbackContext["message_type"] = "private") => {
@@ -122,7 +122,8 @@ test("只在原认证私聊和原档案未变时保存核验后的国际服账�
     expect(await send()).toBe("42 · P2");
     expect(Bun.YAML.parse(await readFile(target, "utf8"))).toEqual({
       ...fixture, games: { ...fixture.games, os: { ...fixture.games.os, enable: true,
-        cookie: "account_id=800; cookie_token=fixture", verified_account_id: "800", verified_realm: "EU" } },
+        cookie: "account_id=800; cookie_token=fixture", verified_account_id: "800", verified_realm: "EU",
+        verified_activity_cookie: "ltuid=800; ltoken=activity-fixture" } },
     });
     behavior = "rebind";
     expect(await send()).toBe("档案已变更，请重新绑定国际服 Cookie。");

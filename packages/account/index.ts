@@ -759,18 +759,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       });
     },
     async saveInternationalCookie(qq: string, id: number, expectedRevision: string,
-      verified: { readonly cookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU" },
+      verified: { readonly cookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
+        readonly activityCookie?: string },
       signal?: AbortSignal) {
       if (!verified || typeof verified.cookie !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(verified.cookie) ||
           typeof verified.accountId !== "string" || !/^[1-9]\d{0,19}$/u.test(verified.accountId) ||
-          (verified.realm !== "SG" && verified.realm !== "US" && verified.realm !== "EU")) invalidCheckinSettings();
+          (verified.realm !== "SG" && verified.realm !== "US" && verified.realm !== "EU") ||
+          (verified.activityCookie !== undefined && (typeof verified.activityCookie !== "string" ||
+            !/^[\x20-\x7e]{1,16384}$/u.test(verified.activityCookie)))) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         const games = record(document.games);
-        const os = record(games.os);
+        const { verified_activity_cookie: _previous, ...os } = record(games.os);
         return { ...document, games: { ...games, os: {
           ...os, cookie: verified.cookie, enable: true,
           verified_account_id: verified.accountId, verified_realm: verified.realm,
+          ...(verified.activityCookie && { verified_activity_cookie: verified.activityCookie }),
         } } };
       }, signal);
     },

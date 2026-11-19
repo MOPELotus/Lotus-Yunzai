@@ -5,6 +5,9 @@ import type { HoyoTransport } from "../packages/hoyo-client/credentials.ts";
 const v1 = "account_id=4201; cookie_token=fixture-token";
 const v2 = "account_id_v2=4202; cookie_token_v2=v2_fixture-token; account_mid_v2=fixture-mid";
 const endpoint = "/account/ma-passport/token/verifyCookieToken";
+const activityEndpoint = "/account/ma-passport/token/verifyLToken";
+const activityV1 = "ltuid=4201; ltoken=fixture-activity";
+const activityV2 = "ltuid_v2=4202; ltoken_v2=v2_fixture-activity; ltmid_v2=fixture-mid";
 
 function confirmed(user_info: Record<string, unknown>, data: Record<string, unknown> = {}, headers?: HeadersInit) {
   return Response.json({ retcode: 0, data: { ...data, user_info } }, { headers });
@@ -124,4 +127,82 @@ test("档案换绑或读取中取消会作废国际服账号证明", async () =>
   inFlight.abort();
   await expect(pending).rejects.toMatchObject({ code: "transport" });
   expect(cancelled).toBe(true);
+});
+
+test("完整的国际服活动凭据在同一 realm 独立核对账号，两个规范 Cookie 保持分离", async () => {
+  for (const [cookie, activityCookie, aid, realm] of [
+    [v1, activityV1, "4201", "SG"], [v2, activityV2, "4202", "EU"],
+  ] as const) {
+    const observed: Array<[string, string | null]> = [];
+    const steps: string[] = [];
+    const scope = {
+      async verifyProfile() { steps.push("verify"); },
+    };
+    const proof = await verifyHoYoLabCookie(`${cookie}; ${activityCookie}; ma_passport_region=${realm}; theme=dark`,
+      async (url, init) => {
+        steps.push("request");
+        observed.push([url.href, new Headers(init.headers).get("Cookie")]);
+        expect(init).toMatchObject({ method: "POST", body: "{}", redirect: "error", credentials: "omit",
+          referrerPolicy: "no-referrer" });
+        expect(new Headers(init.headers).get("x-rpc-domain_redirect")).toBe(realm === "SG" ? null : "true");
+        return confirmed({ aid, ...(realm === "EU" && { mid: "fixture-mid" }) }, { ma_passport_region: realm });
+      }, scope);
+    const base = `https://passport-api-${realm.toLowerCase()}.hoyolab.com`;
+    expect(observed).toEqual([[base + endpoint, cookie], [base + activityEndpoint, activityCookie]]);
+    expect(steps).toEqual(["verify", "request", "verify", "verify", "request", "verify"]);
+    expect(proof).toEqual({ cookie, activityCookie, accountId: aid, realm });
+  }
+});
+
+test("活动 Cookie 不完整、混版本或账号冲突时发起零请求", async () => {
+  for (const input of [
+    `${v1}; ltoken=fixture-activity`,
+    `${v1}; ltuid=4203; ltoken=fixture-activity`,
+    `${v1}; ltuid=4201; ltoken=v2_fixture-activity`,
+    `${v2}; ltuid_v2=4202; ltoken_v2=v2_fixture-activity`,
+    `${v2}; ltoken=other; ${activityV2}`,
+    `${v2}; ${activityV2.replace("ltmid_v2=fixture-mid", "ltmid_v2=different")}`,
+  ]) {
+    let attempts = 0;
+    await expect(verifyHoYoLabCookie(input, async () => {
+      attempts++;
+      return confirmed({ aid: 4201 });
+    })).rejects.toMatchObject({ code: "invalid-input" });
+    expect(attempts).toBe(0);
+  }
+});
+
+test("首次证明失败跳过活动验证，第二次身份失败或档案换绑不会返回部分证明", async () => {
+  const input = `${v2}; ${activityV2}; ma_passport_region=US`;
+  let attempts = 0;
+  await expect(verifyHoYoLabCookie(input, async () => {
+    attempts++;
+    return confirmed({ aid: "4201" });
+  })).rejects.toMatchObject({ code: "response" });
+  expect(attempts).toBe(1);
+
+  for (const [response, failure] of [
+    [confirmed({ aid: "4201" }), { code: "response" }],
+    [confirmed({ aid: "4202", mid: "wrong-mid" }), { code: "response" }],
+    [confirmed({ aid: "4202", ma_passport_region: "SG" }), { code: "response" }],
+    [Response.redirect("https://example.invalid"), { code: "http" }],
+    [Response.json({ retcode: -100, message: "fixture-activity-token" }), { code: "api", retcode: -100 }],
+  ] as const) {
+    attempts = 0;
+    const result = verifyHoYoLabCookie(input, async () => ++attempts === 1 ? confirmed({ aid: "4202" }) : response);
+    await expect(result).rejects.toMatchObject(failure);
+    await expect(result).rejects.not.toThrow(/fixture-activity-token/u);
+    expect(attempts).toBe(2);
+  }
+
+  attempts = 0;
+  let checks = 0;
+  const changed = new Error("档案已变更");
+  await expect(verifyHoYoLabCookie(input, async () => {
+    attempts++;
+    return confirmed({ aid: "4202" });
+  }, { async verifyProfile() {
+    if (++checks === 3) throw changed;
+  } })).rejects.toBe(changed);
+  expect(attempts).toBe(1);
 });
