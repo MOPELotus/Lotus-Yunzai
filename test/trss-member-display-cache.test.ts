@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startOneBot } from "../lib/adapters/onebot.ts";
 import { OneBotGroups } from "../lib/adapters/onebot-groups.ts";
+import type { MessageEvent } from "../lib/messages.ts";
 import { copyHost } from "./host-fixture.ts";
 
 interface Frame {
@@ -69,6 +70,49 @@ async function connect(endpoint: string, botId: number) {
 }
 
 type Gateway = Awaited<ReturnType<typeof connect>>;
+
+test("OneBot 仅在真实群会话中提供实时成员，拒绝错群和断线回包", async () => {
+  let message = Promise.withResolvers<MessageEvent>();
+  const server = startOneBot(async (event) => {
+    if (event.post_type === "message") message.resolve(event);
+  }, {
+    hostname: "127.0.0.1", port: 0, groups: new OneBotGroups(), prewarmGroupMembers: false,
+    auth: new Headers({ Authorization: `Bearer ${token}` }), isMaster: () => false, masterIds: () => [],
+  });
+  let gateway: Gateway | undefined;
+  try {
+    const url = new URL("/OneBotv11", server.url);
+    url.protocol = "ws:";
+    gateway = await connect(url.href, 99);
+    gateway.send({ post_type: "message", message_type: "private", sub_type: "friend", user_id: 42, message: "#测试" });
+    expect((await deadline(message.promise, "缺少私聊事件。")).listCurrentGroupMembers).toBeUndefined();
+    message = Promise.withResolvers<MessageEvent>();
+    groupMessage(gateway, 42, "#测试", {});
+    const event = await deadline(message.promise, "缺少群聊事件。");
+    const read = event.listCurrentGroupMembers;
+    if (!read) throw new Error("缺少本群成员查询。");
+    expect(event.listCheckinGroupMembers).toBe(read);
+
+    const query = { group_id: groupId, no_cache: true };
+    const good = read();
+    gateway.receipt(await gateway.take("get_group_member_list", query), [
+      { group_id: groupId, user_id: 42, nickname: "昵称", card: "群名片" },
+    ]);
+    expect(await good).toEqual([{ id: 42, name: "群名片" }]);
+    const wrong = read();
+    gateway.receipt(await gateway.take("get_group_member_list", query), [{ group_id: joinedGroup, user_id: 42 }]);
+    expect(await wrong).toBeUndefined();
+    const pending = read();
+    await gateway.take("get_group_member_list", query);
+    gateway.close();
+    await deadline(gateway.closed, "网关未断开。");
+    expect(await deadline(pending, "断线的查询未结束。")).toBeUndefined();
+    expect(await read()).toBeUndefined();
+  } finally {
+    gateway?.close();
+    await server.stop(true);
+  }
+});
 
 async function endpointOf(host: Bun.Subprocess<"ignore", "pipe", "pipe">) {
   const reader = host.stdout.getReader();

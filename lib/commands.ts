@@ -3,7 +3,7 @@ import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
-    "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
+    "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   runtimeDiagnosticsScope?: "milky";
   runtimeStatusScope?: "onebot" | "milky" | "terminal";
@@ -74,10 +74,12 @@ interface RegisteredCommand {
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
-    attachment, canReadAttachments, adapter, listCheckinGroupMembers, privateCredentialSignal, canDelegate, delegationSignal, isDelegated } = context;
+    attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
+    privateCredentialSignal, canDelegate, delegationSignal, isDelegated } = context;
   return {
     message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
+    ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     ...(runtimeStatusScope ? { runtimeStatusScope } : {}),

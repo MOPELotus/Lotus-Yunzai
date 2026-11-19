@@ -327,6 +327,13 @@ async function dispatchMessage(
   const owner = selfId !== undefined && isMaster(selfId, userId);
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
+  const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
+    const closed = () => display.closed || attachmentSession?.signal.aborted;
+    if (closed()) return;
+    const members = await calls.listMemberDisplay(send, target.group_id, true).catch(() => undefined);
+    if (closed()) return;
+    return members?.map(({ id, card, nickname }) => ({ id, name: card || nickname }));
+  } : undefined;
   const quotedId = oneBotMessageId(incoming.reply_id);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
   await dispatch({
@@ -371,12 +378,8 @@ async function dispatchMessage(
       memberRole: (groupId, id) => calls.getGroupRole(send, groupId, id, true),
       write: (groupId, id, card) => calls.setGroupCard(send, groupId, id, card),
     }) : undefined,
-    listCheckinGroupMembers: boundAccount && display && "group_id" in target ? async () => {
-      if (display.closed) return;
-      const members = await calls.listMemberDisplay(send, target.group_id, true);
-      if (display.closed) return;
-      return members.map(({ id, card, nickname }) => ({ id, name: card || nickname }));
-    } : undefined,
+    listCheckinGroupMembers,
+    listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
     forward: selfId === undefined ? undefined : async (nodes) => {
       const messages = encodeOneBotForward(nodes, selfId);
       return messages ? calls.sendForward(send, target, messages) : false;

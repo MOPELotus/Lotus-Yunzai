@@ -248,11 +248,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
     const groupId = message?.isGroup ? message.group_id : undefined;
+    const listCurrentGroupMembers = positiveId(groupId) ? () => listGroupMembers(groupId) : undefined;
     const cardOwner = message?.user_id;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
-      ...(positiveId(groupId) && { listCheckinGroupMembers: () => listGroupMembers(groupId) }),
+      listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       privateCredentialSignal: message.isPrivate ? signal : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),

@@ -12,6 +12,8 @@ export interface MusicCard {
   readonly image: string;
 }
 
+export type ReadCurrentGroupMembers = () => Promise<readonly { id: number; name?: string }[] | undefined>;
+
 export interface MessageEvent {
   readonly msg: string;
   readonly adapter?: "milky";
@@ -49,7 +51,8 @@ export interface MessageEvent {
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;
-  readonly listCheckinGroupMembers?: () => Promise<readonly { id: number; name?: string }[] | undefined>;
+  readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
+  readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly deliverMedia?: (file: MediaDelivery) => Promise<ChatFileResult>;

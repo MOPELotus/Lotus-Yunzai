@@ -61,8 +61,12 @@ test("Milky 从群消息的已认证会话读取实时成员，拒绝不完整�
   try {
     webhook.start();
     const oldSession = await first.promise;
-    expect((await message("friend", 42)).listCheckinGroupMembers).toBeUndefined();
-    const read = (await message("group", groupId)).listCheckinGroupMembers;
+    const privateMessage = await message("friend", 42);
+    expect(privateMessage.listCheckinGroupMembers).toBeUndefined();
+    expect(privateMessage.listCurrentGroupMembers).toBeUndefined();
+    const groupMessage = await message("group", groupId);
+    const read = groupMessage.listCurrentGroupMembers;
+    expect(groupMessage.listCheckinGroupMembers).toBe(read);
     if (!read) throw new Error("群消息缺少成员名单接口");
     expect(calls).toHaveLength(0);
 

@@ -22,6 +22,22 @@ test("引用回复沿用原消息并将撤回选项交给当前协议", async ()
   expect(sent).toEqual([["保留", true], ["稍后撤回", true, { recallMsg: 20 }]]);
 });
 
+test("当前群成员能力只传给原群消息的模块入口", async () => {
+  const registry = new CommandRegistry();
+  const read = async () => [{ id: 42 }];
+  registry.registerModule({
+    name: "roster-fixture", commands: {},
+    async fallback(_message, context) {
+      return context.listCurrentGroupMembers ? JSON.stringify(await context.listCurrentGroupMembers()) : "不可用";
+    },
+  });
+  const route = (event: MessageEvent) => registry.dispatchFallback(event, () => true, () => false);
+  const current = { ...group, listCurrentGroupMembers: read };
+  expect(await route(current)).toBe('[{"id":42}]');
+  expect(await route({ ...current, message_type: "private", isGroup: false, isPrivate: true })).toBe("不可用");
+  expect(await route({ ...current, isDelegated: true })).toBe("不可用");
+});
+
 test("旧抽卡记录功能标签仅影响真正带该标签的入口", async () => {
   const registry = new CommandRegistry();
   const seen: string[] = [];
