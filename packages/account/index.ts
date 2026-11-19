@@ -7,6 +7,7 @@ import type { DeviceBinding } from "./device-binding.ts";
 import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
 export { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
+export { loadOfficialArtwork } from "./official-artwork.ts";
 
 export const profileGames = ["gs", "sr", "zzz"] as const;
 export type Game = typeof profileGames[number];
