@@ -77,6 +77,23 @@ test("首次保存创建兼容目录，只建立有记录的卡池文件", () =>
   expect(await store.read(identity.qq, identity.uid)).toEqual({ 200: [entry] });
 }));
 
+test("新手池只读旧 100.json，四池更新和其他用户不接触这份档案", () => fixture(async (_root, role, store) => {
+  expect(await store.readBeginner(identity.qq, identity.uid)).toEqual([]);
+  await mkdir(role, { recursive: true });
+  const newcomer = { id: "9223372036854775807", uid: identity.uid, gacha_type: "100", name: "诺艾尔" };
+  const path = join(role, "100.json");
+  await writeFile(path, json([newcomer]));
+  const original = await lstat(path);
+  expect(await store.readBeginner(identity.qq, identity.uid)).toEqual([newcomer]);
+  expect(await store.readBeginner("43", identity.uid)).toEqual([]);
+  expect((await readdir(role)).sort()).toEqual(["100.json"]);
+  const regular = recorded("30", "200");
+  await store.merge(identity, latest({ 200: [regular] }), noChange);
+  expect(await store.read(identity.qq, identity.uid)).toEqual({ 200: [regular] });
+  expect(await readFile(path, "utf8")).toBe(json([newcomer]));
+  expect((await lstat(path)).ino).toBe(original.ino);
+}));
+
 test("发布日志前再次检查档案和所有旧池指纹，外部改写原样保留", () => fixture(async (_root, role, store) => {
   await mkdir(role, { recursive: true });
   const character = await writePool(role, 301, [recorded("10", "301")]);

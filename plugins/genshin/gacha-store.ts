@@ -208,11 +208,15 @@ async function readPools(directory: string) {
     const file = await readSnapshot(poolPath(directory, type));
     files.set(type, file && { stamp: file.stamp, sha256: file.sha256, owner: file.owner });
     if (!file) continue;
-    const value = decode(file.bytes);
-    if (!Array.isArray(value)) throw new Error(`${subject}的旧卡池文件须为 JSON 数组。`);
-    values[type] = value;
+    values[type] = decodePool(file);
   }
   return { files, values };
+}
+
+function decodePool(file: Snapshot): unknown[] {
+  const value = decode(file.bytes);
+  if (!Array.isArray(value)) throw new Error(`${subject}的旧卡池文件须为 JSON 数组。`);
+  return value;
 }
 
 export function createGenshinGachaHistoryStore(directory: string, acquireLock: AcquireRoleArchiveLock) {
@@ -245,6 +249,11 @@ export function createGenshinGachaHistoryStore(directory: string, acquireLock: A
   }
 
   return {
+    async readBeginner(qq: string, uid: string): Promise<unknown[]> {
+      const role = await locate({ qq, uid }, false);
+      const file = role && await readSnapshot(join(role, "100.json"));
+      return file ? decodePool(file) : [];
+    },
     async read(qq: string, uid: string): Promise<StoredPools> {
       const identity = { qq, uid };
       const role = await locate(identity, false);

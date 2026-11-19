@@ -6,6 +6,7 @@ type ItemId = string | number;
 type Star = 3 | 4 | 5;
 type ItemType = "char" | "weapon";
 type DecimalOrZero = string | 0;
+export type GenshinDisplayPool = GenshinGachaPool | 100;
 
 const poolModels = {
   301: { name: "角色", base: 0.006, soft: 74, step: 0.06, hard: 90, upRate: 0.55 },
@@ -24,7 +25,7 @@ export interface GenshinGachaPull {
   readonly name: string;
   readonly star: Star;
   readonly itemType: ItemType;
-  readonly pool: GenshinGachaPool;
+  readonly pool: GenshinDisplayPool;
   readonly time: string;
   readonly at?: number;
 }
@@ -127,7 +128,7 @@ export function resolveGenshinDetailPool(
   const regular = periods(schedule);
   const chronicle = periods(mixed);
   return ({ pool, at, name, itemType }) => {
-    if (pool === 200) return { isUp: false };
+    if (pool === 100 || pool === 200) return { isUp: false };
     if (at === undefined) return;
     const selected = pool === 500 ? chronicle : regular;
     const found = selected.find(({ from, to }) => from < at && at < to);
@@ -142,7 +143,7 @@ function dateAt(at: number | undefined): string {
 
 type SavedPull = GenshinGachaPull & { readonly isUp?: boolean };
 
-export function parseGenshinGachaRows(value: unknown, uid: string, pool: GenshinGachaPool): SavedPull[] {
+export function parseGenshinGachaRows(value: unknown, uid: string, pool: GenshinDisplayPool): SavedPull[] {
   if (!Array.isArray(value)) throw new TypeError("原神抽卡历史须为逐抽数组。");
   const rows = new Map<string, SavedPull>();
   for (const item of value as readonly unknown[]) {

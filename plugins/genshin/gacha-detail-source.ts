@@ -59,8 +59,8 @@ async function readCharacters(root: string) {
   return result;
 }
 
-async function readWeapons(root: string, records: GenshinPreviousGacha) {
-  const names = new Set(Object.values(records).flatMap((rows) => (Array.isArray(rows) ? rows : []).flatMap((value) => {
+async function readWeapons(root: string, pools: readonly unknown[]) {
+  const names = new Set(pools.flatMap((rows) => (Array.isArray(rows) ? rows : []).flatMap((value) => {
     const row = record(value);
     return row?.item_type === "武器" && safeSegment(row.name) ? [row.name] : [];
   })));
@@ -90,9 +90,9 @@ function versionPeriod(entry: GenshinGachaDetailPeriod): entry is GenshinGachaVe
   return "version" in entry && typeof entry.version === "string" && "half" in entry && typeof entry.half === "string";
 }
 
-export async function readGenshinGachaSources(root: string, records: GenshinPreviousGacha) {
+export async function readGenshinGachaSources(root: string, records: GenshinPreviousGacha, beginner?: readonly unknown[]) {
   const [characters, weapons, calendar] = await Promise.all([
-    readCharacters(root), readWeapons(root, records), readOptional(join(root, "meta-gs", "info", "pool.js")),
+    readCharacters(root), readWeapons(root, [...Object.values(records), beginner]), readOptional(join(root, "meta-gs", "info", "pool.js")),
   ]);
   const resolveItem: Resolver = ({ name, itemType }) => (itemType === "char" ? characters : weapons).get(name);
   const named = (entry: GenshinGachaVersionPeriod): GenshinGachaVersionPeriod => ({
