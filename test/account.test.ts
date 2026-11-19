@@ -44,7 +44,7 @@ device:
   raw: { osVersion: 15 }
 `);
     await writeFile(join(root, `${qq}-3.yaml`), "user: { qq: '100002' }\n");
-    await writeFile(join(root, `${qq}-7.yaml`), "account: { cookie: example }\n");
+    await writeFile(join(root, `${qq}-7.yaml`), "account: { cookie: example, current_uid: { sr: '700001' } }\n");
     await writeFile(join(root, `${qq}-255.yaml`), "profile: { id: 255 }\n");
     await writeFile(join(root, `${qq}-300.yaml`), "{}");
     await symlink(first, join(root, `${qq}-4.yaml`));
@@ -93,6 +93,9 @@ device:
     });
     await expect(profiles.requestContext(qq, 2, "gs", "800001")).rejects.toMatchObject({ code: "role-missing" });
     await expect(profiles.requestContext(qq, 7, "sr")).rejects.toMatchObject({ code: "login-required" });
+    expect(await profiles.savedRole(qq, 7, "sr")).toEqual({ uid: "700001", nickname: "" });
+    expect(await profiles.savedRole(qq, 2, "gs")).toEqual({ uid: "800001", nickname: "" });
+    await expect(profiles.savedRole(qq, 2, "sr")).rejects.toMatchObject({ code: "role-missing" });
     await expect(profiles.summary(qq, 3)).rejects.toMatchObject({ code: "invalid" });
     await expect(profiles.summary(qq, 4)).rejects.toMatchObject({ code: "invalid" });
     await expect(profiles.summary(qq, 5)).rejects.toMatchObject({ code: "missing" });
