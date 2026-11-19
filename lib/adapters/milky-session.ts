@@ -4,6 +4,7 @@ import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
 import { milkyGroupRequest } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
+import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
@@ -43,12 +44,22 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const account = login?.uin;
   if (signal.aborted || !positiveId(account)) return;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
+  const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
+  async function dispatchEvent(event: BotEvent) {
+    if (event.post_type === "message" && event.message_type === "group" && event.group_id !== undefined) {
+      const botMute = await groupMute.forMessage(event.group_id);
+      if (signal.aborted) return;
+      if (botMute) event = { ...event, botMute };
+    }
+    await dispatch(event);
+  }
+
   function deliver(event: BotEvent) {
-    void dispatch(event).catch(() => console.warn("[Milky] 处理事件失败。"));
+    void dispatchEvent(event).catch(() => console.warn("[Milky] 处理事件失败。"));
   }
   const files = createMilkyFileDelivery(signal, (event) => deliver({ ...event, adapter: "milky" }));
   signal.addEventListener("abort", () => {
@@ -90,6 +101,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         !body.event_type || !record(body.data)) return "invalid";
     if (body.self_id !== account) return "foreign";
     if (body.event_type === "bot_offline") return "offline";
+    groupMute.observe(body);
 
     function confirmSent(event: BotEvent | undefined, result: Record<string, unknown> | undefined, content: unknown) {
       if (event && hasMessageSequence(result?.message_seq)) {
