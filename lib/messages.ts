@@ -32,7 +32,7 @@ export interface MessageEvent {
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
   readonly groupRequestScope?: "milky";
   readonly canReviewGroupRequests?: boolean;
-  readonly recallReply?: () => Promise<readonly RecallResult[]>;
+  readonly recallReply?: () => Promise<readonly RecallResult[] | undefined>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;

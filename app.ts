@@ -68,6 +68,11 @@ const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
+const recallFeatureNames = ["回复撤回", "system", systemModuleName];
+
+function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
+  return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
+}
 
 if (import.meta.main) {
   const probingUpdate = process.env[pluginProbeTokenEnvironment] !== undefined;
@@ -486,7 +491,7 @@ if (import.meta.main) {
         return;
       }
     }
-    if (await privateAccess.blocked(event)) return;
+    if (!(event.adapter === "milky" && isRecallCommand(event)) && await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed)) return;
     const useKeywords = allowed(keywordFeatureNames);
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
@@ -516,9 +521,9 @@ if (import.meta.main) {
       return;
     }
 
-    if (command.isMaster && command.recallReply && /^#?撤回$/u.test(command.msg) &&
-        allowed(["回复撤回", "system", "@lotus-yunzai/system"])) {
+    if (isRecallCommand(command) && allowed(recallFeatureNames)) {
       const results = await command.recallReply();
+      if (results === undefined) return;
       const confirmed = results.filter((result) => result === "confirmed").length;
       if (!results.length) await command.reply("没有可撤回的消息。");
       else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);

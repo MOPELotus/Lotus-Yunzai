@@ -8,6 +8,7 @@ import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
+import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 
 export interface MilkyTransportOptions {
   readonly signal: AbortSignal;
@@ -46,6 +47,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
   const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
+  const recallReply = createMilkyRecallReply(signal, call.confirmed, isMaster);
 
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
@@ -162,6 +164,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const canReview = message?.isPrivate === true && canManageProcess;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview, canManageProcess,
+      recallReply: recallReply(message),
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
         !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
           ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)
