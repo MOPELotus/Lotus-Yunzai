@@ -316,7 +316,11 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   await writeFile(join(plugin, "index.ts"), `
     export default {
       commands: { "#现代优先": () => "现代处理" },
-      async fallback(message, { isMaster, isBotMaster, reply_id, lookupReply, message: segments }) {
+      async fallback(message, { isMaster, isBotMaster, reply_id, lookupReply, normalizedMessage, reply, message: segments }) {
+        if (message === "*独立回退") {
+          await reply("开始处理");
+          return normalizedMessage;
+        }
         if (message.startsWith("#")) return "回退误抢显式指令";
         if (message === "引用触发") return { type: "quoted", message: "带引用的结果" };
         if (message === "查询引用") {
@@ -357,6 +361,9 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
     { type: "reply", data: { id: "4" } },
     { type: "text", data: { text: "带引用的结果" } },
   ], 77);
+  first.send("*独立回退", 77);
+  await first.reply("开始处理", 77);
+  await first.reply("#星铁独立回退", 77);
   first.send("无匹配", 77);
   first.send(message, 81);
   first.send("#状态", 81);

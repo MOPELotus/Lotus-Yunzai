@@ -8,6 +8,7 @@ import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { FileToUrl } from "../file-to-url.ts";
+import type { lockFile } from "../file-lock.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { watchLegacyFiles } from "./file-watch.ts";
@@ -141,6 +142,7 @@ async function findEntry(directory: string, value: string): Promise<string> {
 interface PluginServices {
   readonly groups: GroupTransport;
   readonly fileToUrl: FileToUrl;
+  readonly lockFile: typeof lockFile;
   readonly signal: AbortSignal;
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
   readonly runtimeVersion: RuntimeVersion;

@@ -18,6 +18,7 @@ import { readLocalConfig } from "./lib/config.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
+import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
@@ -537,7 +538,7 @@ if (import.meta.main) {
     }
     const { self_id } = event;
     const fallback = await commands.dispatchFallback(event, allowed, (userId) =>
-      self_id !== undefined && masterPermissions.isMaster(self_id, userId));
+      self_id !== undefined && masterPermissions.isMaster(self_id, userId), command.msg);
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
       return;
@@ -684,7 +685,7 @@ if (import.meta.main) {
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
-      groups: groups.transport(), signal: lifecycle.signal, fileToUrl,
+      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {

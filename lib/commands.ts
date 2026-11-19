@@ -5,8 +5,9 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
 
-export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply">> & {
+export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply">> & {
   readonly isBotMaster: (userId: number) => boolean;
+  readonly normalizedMessage: string;
 };
 
 export interface CommandForward {
@@ -129,8 +130,9 @@ export class CommandRegistry {
       this.#handlers.set(name, command);
     }
     if (fallback) {
-      const names = name === "@lotus-yunzai/meme"
-        ? [name, label, "meme-plugin", "清语表情", "清语表情:表情包生成"] : [name, label];
+      const names = [name, label];
+      if (name === "@lotus-yunzai/meme") names.push("meme-plugin", "清语表情", "清语表情:表情包生成");
+      if (name === "@lotus-yunzai/starrail") names.push("[Lotus-Plugin] Gacha Log");
       this.#fallbacks.set(name, { handler: fallback, names });
     }
     this.#modules.add(name);
@@ -178,11 +180,13 @@ export class CommandRegistry {
     event: MessageEvent,
     allowed: (names: readonly string[]) => boolean,
     isBotMaster: MessageFallbackContext["isBotMaster"],
+    normalizedMessage = event.msg,
   ): Promise<CommandReply | undefined> {
     for (const { handler, names } of this.#fallbacks.values()) {
       if (!allowed(names)) continue;
       const reply = await handler(event.msg, {
-        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply, isBotMaster,
+        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
+        reply: event.reply, isBotMaster, normalizedMessage,
       });
       if (reply !== undefined) return reply;
     }

@@ -10,6 +10,7 @@
     "plugins/group",
     "plugins/meme",
     "plugins/notice",
+    "plugins/starrail",
     "plugins/system"
   ],
   "scripts": {

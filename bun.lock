@@ -73,6 +73,15 @@
     "plugins/notice": {
       "name": "@lotus-yunzai/notice",
     },
+    "plugins/starrail": {
+      "name": "@lotus-yunzai/starrail",
+      "dependencies": {
+        "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/hoyo-client": "workspace:*",
+        "@lotus-yunzai/skia": "workspace:*",
+        "skia-canvas": "3.0.8",
+      },
+    },
     "plugins/system": {
       "name": "@lotus-yunzai/system",
     },
@@ -122,6 +131,8 @@
     "@lotus-yunzai/panel": ["@lotus-yunzai/panel@workspace:panel"],
 
     "@lotus-yunzai/skia": ["@lotus-yunzai/skia@workspace:packages/skia"],
+
+    "@lotus-yunzai/starrail": ["@lotus-yunzai/starrail@workspace:plugins/starrail"],
 
     "@lotus-yunzai/storage": ["@lotus-yunzai/storage@workspace:packages/storage"],
 
