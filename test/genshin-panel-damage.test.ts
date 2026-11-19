@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
 import { estimatePanelDamage } from "../plugins/genshin/panel/damage.ts";
 import { createDamagePreferences, matchEnemyLevel } from "../plugins/genshin/panel/damage-preferences.ts";
-import { matchGenshinPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
+import { matchGenshinPanel, officialPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import { createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
 import type { PanelTheme } from "../plugins/genshin/panel/theme.ts";
 
@@ -74,6 +74,47 @@ test("缺失倍率不会作为零伤害，已知零数值及其他完整情景�
   expect(await estimatePanelDamage({ ...avatar, talent: { ...avatar.talent, e: undefined } }, theme()))
     .toEqual({ message: "天赋等级或旧版倍率表不完整，请先更新面板。" });
   expect(await estimatePanelDamage(avatar, theme(actor(), {}))).toEqual({ message: "旧主题缺少当前武器的属性表。" });
+});
+
+test("丝柯克的旧档战技加一级，官方面板中的实显等级不重复加成", async () => {
+  const thresholds = { e: 3, q: 5 };
+  const rankData = Array(13).fill(100);
+  rankData[10] = 200;
+  const skirk: PanelAvatar = { ...avatar, id: 10000114, name: "丝柯克", elem: "cryo", talent: { a: 10, e: 10, q: 10 } };
+  const assets = theme({
+    ...actor(), name: skirk.name, talentCons: thresholds,
+    talentData: { a: { unused: rankData }, e: { 一段伤害: rankData, 五段伤害: rankData, 重击伤害: rankData },
+      q: { 斩击伤害: rankData, 斩击最终段伤害: rankData, 蛇之狡谋加成: rankData,
+        "汲取0/1/2/3枚虚境裂隙伤害提升": rankData.map(() => [0, 0, 0, 0]) } },
+  });
+  const catalog = { ...assets, characters: { [skirk.id]: { name: skirk.name, elem: skirk.elem, talentCons: thresholds } } };
+  const builtIn = officialPanel("100123456", [
+    { base: { id: skirk.id, level: 90, promote_level: 6, actived_constellation_num: 0 },
+      skills: [10, 11, 10].map(level => ({ level, skill_type: 1 })) },
+  ], catalog, 1).avatars[skirk.id]!;
+  const original = await estimatePanelDamage(skirk, catalog, 1);
+  const lower = await estimatePanelDamage({ ...skirk, talent: { ...skirk.talent, e: 9 } }, catalog, 1);
+  const official = await estimatePanelDamage({ ...builtIn, weapon: skirk.weapon, artis: skirk.artis }, catalog, 1);
+  if (!("rows" in original) || !("rows" in lower) || !("rows" in official)) throw new Error("测试缺少丝柯克旧情景");
+  expect(original.rows[0]?.average).toBeCloseTo(Number(lower.rows[0]?.average) * 2, 8);
+  expect(official.rows).toEqual(original.rows);
+  expect(official.comparison).toEqual(original.comparison);
+});
+
+test("夜兰的弓藏保留固定重击减伤，其他技能继续走原伤害核", async () => {
+  const yelan = { ...avatar, id: 10000060, name: "夜兰", elem: "hydro" };
+  const data = { ...actor(), name: yelan.name, weapon: "bow",
+    talentData: { a: { 破局矢伤害: [3] }, e: { 技能伤害: [5] }, q: { 玄掷玲珑伤害: [12] } } };
+  const build = (name: string, affix = 1) => estimatePanelDamage({ ...yelan, weapon: { ...yelan.weapon, name, affix } },
+    theme(data, { ...weapon, name }), 1);
+  const base = await build("猎弓");
+  const rust = await build("弓藏");
+  const rustFive = await build("弓藏", 5);
+  if (!("rows" in base) || !("rows" in rust) || !("rows" in rustFive)) throw new Error("测试缺少夜兰旧情景");
+  expect(rust.rows[0]?.crit).toBeCloseTo(Number(base.rows[0]?.crit) * 0.9, 8);
+  expect(rust.rows[0]?.average).toEqual(rustFive.rows[0]?.average);
+  expect(rust.rows.slice(1).map(row => row.average)).toEqual(base.rows.slice(1).map(row => row.average));
+  expect(rust.comparison?.cells[0]?.[1]?.average).toBeGreaterThan(0);
 });
 
 test("旧敌人等级命令、场景结果和词条对照使用相同的目标等级", async () => {
@@ -169,6 +210,9 @@ test("普通详情只附有效的伤害表，按同档敌人偏好保留有效�
     expect(Object(detail[0]?.damage).comparison).toBeUndefined();
     expect(await query("#胡桃圣遗物2", { user_id: 42 })).toMatchObject({ type: "image" });
     expect(detail[1]).toMatchObject({ pane: "artifacts", damage: undefined });
+    await writeFile(join(directory, `${uid}.json`), JSON.stringify({ uid, avatars: { 10000046: { ...avatar, _source: "share" } } }));
+    expect(await query("#胡桃伤害 档案2", { user_id: 42 })).toContain("本档案的实际角色面板");
+    await writeFile(join(directory, `${uid}.json`), JSON.stringify({ uid, avatars: { 10000046: avatar } }));
     selected = {};
     expect(await query("#胡桃面板2", { user_id: 42 })).toMatchObject({ type: "image" });
     expect(detail[2]).toMatchObject({ pane: "profile", damage: undefined });
