@@ -107,20 +107,11 @@ function parseRow(row: unknown, uid: string, type: GenshinGachaPool): GenshinGac
 
 export class GenshinAuthKeyRequestError extends HoyoRequestError {}
 
-export async function readGenshinGacha(
-  source: ProfileRequestContext,
+function createGenshinRequests(
   transport: HoyoTransport,
-  { signal, intervalMs = 1_000, maxPages = 1_000 }: GenshinGachaOptions = {},
+  signal?: AbortSignal,
   verifyProfile?: () => Promise<void>,
 ) {
-  const region = cnRegion(source);
-  const uid = source.role.uid;
-  const cookie = stokenCookie(source);
-  if (!Number.isInteger(intervalMs) || intervalMs < 0 || intervalMs > 2_147_483_647 ||
-      !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1_000) {
-    throw new HoyoRequestError("invalid-input", "原神抽卡请求间隔或分页上限无效。");
-  }
-
   async function guard() {
     if (signal?.aborted) throw new HoyoRequestError("transport", "原神抽卡请求已取消。");
     await verifyProfile?.();
@@ -154,7 +145,19 @@ export async function readGenshinGacha(
     if (!record(payload.data)) throw new HoyoRequestError("response", "原神抽卡响应缺少有效数据。");
     return payload.data;
   }
+  return { guard, request };
+}
 
+export async function readGenshinAuthKey(
+  source: ProfileRequestContext,
+  transport: HoyoTransport,
+  { signal }: Pick<GenshinGachaOptions, "signal"> = {},
+  verifyProfile?: () => Promise<void>,
+) {
+  const region = cnRegion(source);
+  const uid = source.role.uid;
+  const cookie = stokenCookie(source);
+  const { request } = createGenshinRequests(transport, signal, verifyProfile);
   let headers: Headers;
   try { headers = authHeaders(cookie, source); }
   catch { throw new HoyoRequestError("invalid-input", "原神抽卡的档案设备信息无效。"); }
@@ -170,9 +173,27 @@ export async function readGenshinGacha(
     throw new HoyoRequestError("response", "原神抽卡登录响应的凭据或角色身份无效。");
   }
 
-  const baseQuery = { authkey_ver: "1", sign_type: "2", auth_appid: authApp, init_type: "301",
+  const url = new URL("/gacha_info/api/getGachaLog", gachaOrigin);
+  url.search = new URLSearchParams({ authkey_ver: "1", sign_type: "2", auth_appid: authApp, init_type: "301",
     gacha_id: "fecafa7b6560db5f3182222395d88aaa6aaac1bc", timestamp: String(Math.floor(Date.now() / 1000)),
-    lang: "zh-cn", device_type: "mobile", plat_type: "ios", region, authkey, game_biz: gameBiz, size: "20" };
+    lang: "zh-cn", device_type: "mobile", plat_type: "ios", region, authkey, game_biz: gameBiz,
+    gacha_type: "301", page: "1", size: "5", end_id: "0" }).toString();
+  return { uid, region, url };
+}
+
+export async function readGenshinGacha(
+  source: ProfileRequestContext,
+  transport: HoyoTransport,
+  { signal, intervalMs = 1_000, maxPages = 1_000 }: GenshinGachaOptions = {},
+  verifyProfile?: () => Promise<void>,
+) {
+  if (!Number.isInteger(intervalMs) || intervalMs < 0 || intervalMs > 2_147_483_647 ||
+      !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1_000) {
+    throw new HoyoRequestError("invalid-input", "原神抽卡请求间隔或分页上限无效。");
+  }
+  const { uid, region, url } = await readGenshinAuthKey(source, transport, { signal }, verifyProfile);
+  const { guard, request } = createGenshinRequests(transport, signal, verifyProfile);
+  url.searchParams.set("size", "20");
   async function readPool(type: GenshinGachaPool) {
     const rows: GenshinGachaRow[] = [];
     let cursor = "0";
@@ -181,8 +202,10 @@ export async function readGenshinGacha(
         try { await wait(intervalMs, undefined, { signal }); }
         catch { throw new HoyoRequestError("transport", "原神抽卡请求已取消。"); }
       }
-      const endpoint = new URL("/gacha_info/api/getGachaLog", gachaOrigin);
-      endpoint.search = new URLSearchParams({ ...baseQuery, gacha_type: String(type), page: String(page), end_id: cursor }).toString();
+      const endpoint = new URL(url);
+      endpoint.searchParams.set("gacha_type", String(type));
+      endpoint.searchParams.set("page", String(page));
+      endpoint.searchParams.set("end_id", cursor);
       const data = await request(endpoint, false, { method: "GET", headers: { Accept: "application/json" } });
       if ((data.region !== undefined && data.region !== region) || (data.uid !== undefined && decimal(data.uid) !== uid)) {
         throw new HoyoRequestError("response", "原神抽卡响应的账号或区服与档案不一致。");

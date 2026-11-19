@@ -2,6 +2,7 @@ import { normalizeGameRoles, profileGames, type Game, type GameRole, type Profil
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
+import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
@@ -27,6 +28,10 @@ const expired = new Set([-100, 10001, 10101, 10102, 10103]);
 function isCookieExpired(error: unknown): boolean {
   return error instanceof HoyoRequestError && error.code === "api" &&
     error.retcode !== undefined && expired.has(error.retcode);
+}
+
+function isGenshinAuthExpired(error: unknown): boolean {
+  return error instanceof GenshinAuthKeyRequestError && isCookieExpired(error);
 }
 
 interface CookieRecovery {
@@ -226,8 +231,10 @@ export function createHoyoClient(
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
-      return readForProfile(source, options, readGenshinGacha, (error) =>
-        error instanceof GenshinAuthKeyRequestError && isCookieExpired(error));
+      return readForProfile(source, options, readGenshinGacha, isGenshinAuthExpired);
+    },
+    fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
+      return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
       return readForProfile(source, options, readStarRailGacha);

@@ -14,6 +14,7 @@ import { buildGenshinGachaVersion, type GenshinGachaVersionOptions } from "./gac
 import { renderGenshinGachaVersion } from "./gacha-version-card.ts";
 
 const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
+const miniappCommand = /^#?(?:获取|更新)(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)([1-9]\d{0,2})?$/u;
 const poolCommand = /^#(?:原神)?(?:喵喵)?(全部)?(抽卡|抽奖|角色|武器|常驻|集录|up)池?(全部)?(记录|祈愿|分析|统计)([1-9]\d{0,2})?$/u;
 const versionCommand = /^#(?:原神)?(?:喵喵)?(版本(?:全部)?|全部)统计([1-9]\d{0,2})?$/u;
 const specialCommand = /^#(?:原神)?(?:喵喵)?((?:全部)?新手池?(?:全部)?|全部)(?:记录|祈愿|分析)([1-9]\d{0,2})?$/u;
@@ -28,6 +29,7 @@ const help = [
   "原神抽卡记录",
   "#登录列表 可查看档案，#同步角色 可同步原神角色。",
   "#更新抽卡记录 可补齐官方可查询范围内的记录。",
+  "#更新小助手抽卡记录 可从提瓦特小助手导入历史。",
   "#抽卡记录、#武器记录、#常驻记录、#集录记录 可查看对应卡池。",
   "#新手记录 查看旧新手池记录，#全部记录 查看各池详情。",
   "#版本统计 按期次查看角色和武器池，#全部统计 查看各池汇总。",
@@ -69,6 +71,32 @@ export function createModule({ signal, lockFile }: {
   const history = createGenshinGachaHistoryStore(historyDirectory, lockFile);
   const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
+  const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
+
+  async function importMiniapp(qq: string, profileId: number, context: GachaContext) {
+    try {
+      const result = await miniappUpdate(qq, profileId, () =>
+        context.reply(`[荷花插件]正在同步 profile ${profileId} 的提瓦特小助手抽卡记录。`));
+      if (signal.aborted) return;
+      if (!result) return "该档案的小助手抽卡记录正在同步，请稍后再试。";
+      const title = `[荷花插件]profile ${profileId} · UID ${result.uid}`;
+      const imported = result.pools.filter(({ received }) => received > 0);
+      if (!imported.length) return `${title}\n提瓦特小助手抽卡记录为空，本地记录已保留。`;
+      const lines = imported.map(({ name, received, added, total }) => `${name}记录：收到 ${received} 条，新增 ${added} 条，共 ${total} 条`);
+      return [title, ...lines, `导入成功，可使用 #抽卡记录${profileId === 1 ? "" : profileId} 查看。`].join("\n");
+    } catch (error) {
+      if (signal.aborted) return;
+      let message = "请检查档案登录状态和原神 UID，稍后再试。";
+      if (error instanceof ProfileError) {
+        if (error.code === "missing" || error.code === "login-required") message = `请先登录 profile ${profileId}。`;
+        if (error.code === "role-missing") message = `profile ${profileId} 没有同步原神 UID。`;
+        if (error.code === "changed") message = "档案已变更，请重新发起请求。";
+      } else if (error instanceof HoyoRequestError) {
+        message = error.status === 429 ? "访问过于频繁，请稍后再试。" : error.message;
+      }
+      return `[荷花插件]小助手抽卡记录同步失败：${message}`;
+    }
+  }
 
   async function view(qq: string, profileId: number, selection: GachaView, all: boolean) {
     try {
@@ -136,15 +164,17 @@ export function createModule({ signal, lockFile }: {
     async fallback(_message: string, context: GachaContext) {
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
-      const query = matched ? undefined : matchGachaQuery(context.normalizedMessage);
-      if (!matched && !query) return;
-      const profileId = query?.profileId ?? Number(matched?.[1] ?? 1);
+      const miniapp = miniappCommand.exec(context.normalizedMessage);
+      const query = matched || miniapp ? undefined : matchGachaQuery(context.normalizedMessage);
+      if (!matched && !miniapp && !query) return;
+      const profileId = query?.profileId ?? Number(matched?.[1] ?? miniapp?.[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return;
       const { user_id } = context;
       if (typeof user_id !== "number" || !Number.isSafeInteger(user_id) || user_id < 1) {
         return "请从登录档案对应的 QQ 会话使用原神抽卡记录。";
       }
       const qq = String(user_id);
+      if (miniapp) return importMiniapp(qq, profileId, context);
       if (query) return view(qq, profileId, query.view, query.all);
       try {
         const result = await gachaUpdate(qq, profileId, () =>
