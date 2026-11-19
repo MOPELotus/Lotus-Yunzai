@@ -19,6 +19,15 @@ type Group = GenshinWorldBossSnapshot["groups"][number];
 type Reply = string | { readonly type: "image"; readonly file: Uint8Array };
 type Ranking = ReturnType<typeof createGenshinWorldBossRanking>;
 
+// https://github.com/devil233-ui/resources/tree/7c14a7034f3b1a0ffea02b0cb46fdb639f3c9643/resources/json/mihoyo
+const districtOrder = ["蒙德", "龙脊雪山", "璃月", "稻妻", "渊下宫", "层岩巨渊", "须弥", "枫丹", "沉玉谷", "纳塔"];
+const legacyExcludedDistricts = new Set(["沉玉谷·上谷", "沉玉谷·南陵", "来歆山", "层岩巨渊·地下矿区", "旧日之海"]);
+
+export function orderWorldBossGroups(groups: readonly Group[]): readonly Group[] {
+  return groups.filter(({ name }) => !legacyExcludedDistricts.has(name))
+    .sort((a, b) => districtOrder.indexOf(a.name) - districtOrder.indexOf(b.name));
+}
+
 function pagedGroups(groups: readonly Group[]) {
   const pages: Group[][] = [[]];
   let remaining = bossesPerCard;
@@ -89,9 +98,10 @@ export function createWorldBossQuery(
       }
       if (!await matchesProfile()) return signal.aborted ? undefined : changed;
       if (result.status === "unavailable") return "当前米游社战绩未提供世界 BOSS 击杀统计。";
+      const groups = orderWorldBossGroups(result.groups);
       let rankingNotice = "";
       try {
-        await ranking.record({ qq, uid: result.uid, region: result.region }, result, observedAt, async () => {
+        await ranking.record({ qq, uid: result.uid, region: result.region }, { ...result, groups }, observedAt, async () => {
           if (!await matchesProfile()) throw new ProfileError("changed", changed);
         });
       } catch (error) {
@@ -99,12 +109,12 @@ export function createWorldBossQuery(
         rankingNotice = "世界 BOSS 排行暂未更新。";
       }
       if (!await matchesProfile()) return signal.aborted ? undefined : changed;
-      if (!result.groups.some(({ bosses }) => bosses.length)) {
+      if (!groups.some(({ bosses }) => bosses.length)) {
         return ["官方记录暂无世界 BOSS 击杀条目。", rankingNotice].filter(Boolean).join("\n");
       }
 
       const imageFor = await worldBossArtwork();
-      for (const page of pagedGroups(result.groups)) {
+      for (const page of pagedGroups(groups)) {
         if (signal.aborted) return;
         let reply: Reply;
         try {
