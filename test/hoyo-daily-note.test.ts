@@ -227,3 +227,43 @@ device: { id: fixture-device }
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("已保存的旧 Cookie 档案只读体力，失效不会交换凭据，冲突账号不会出站", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-daily-note-legacy-cookie-"));
+  const path = join(directory, "42-2.yaml");
+  const profile = `profile: { id: 2 }
+user: { qq: 42 }
+account:
+  cookie: "ltoken_v2=synthetic-ltoken;ltuid_v2=62;ltmid_v2=synthetic-mid;cookie_token_v2=synthetic-cookie;account_id_v2=62;account_mid_v2=synthetic-mid"
+  ltuid: 62
+  game_roles: { gs: [{ uid: '123456789', region: cn_gf01 }] }
+`;
+  try {
+    await writeFile(path, profile);
+    const profiles = createProfileStore(directory);
+    await expect(profiles.requestContext("42", 2, "gs")).rejects.toMatchObject({ code: "login-required" });
+    expect((await profiles.summary("42", 2)).loggedIn).toBe(false);
+    const { sources, verifyReadOnly } = await profiles.requestContextsForRead("42", 2, ["gs"]);
+    expect(sources[0]?.role.uid).toBe("123456789");
+    expect(verifyReadOnly).toBeFunction();
+    let requests = 0;
+    let exchanges = 0;
+    const client = createHoyoClient(async (endpoint, init) => {
+      requests++;
+      expect(endpoint.origin).toBe("https://api-takumi-record.mihoyo.com");
+      expect(new Headers(init.headers).get("cookie")).toInclude("cookie_token_v2=synthetic-cookie");
+      return Response.json({ retcode: -100 });
+    }, { profiles, async exchange() { exchanges++; throw new Error("unexpected refresh"); } });
+    expect(await client.fetchDailyNotes(sources, { verifyReadOnly })).toMatchObject([
+      { status: "rejected", reason: { message: "旧 Cookie 已失效，无法自动续期，请扫码登录。" } },
+    ]);
+    expect([requests, exchanges]).toEqual([1, 0]);
+    expect(await Bun.file(path).text()).toBe(profile);
+    await writeFile(path, profile.replace("account_id_v2=62", "account_id_v2=63"));
+    await expect(profiles.requestContextsForRead("42", 2, ["gs"])).rejects.toMatchObject({ code: "login-required" });
+    await expect(client.fetchDailyNotes(sources, { verifyReadOnly })).rejects.toMatchObject({ code: "changed" });
+    expect([requests, exchanges]).toEqual([1, 0]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

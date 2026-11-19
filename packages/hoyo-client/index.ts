@@ -250,7 +250,9 @@ export function createHoyoClient(
     async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
       return roleCatalog(await list(context, undefined, signal));
     },
-    async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions = {}) {
+    async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
+      readonly verifyReadOnly?: () => Promise<void>;
+    } = {}) {
       const first = sources[0];
       const results: PromiseSettledResult<DailyNoteSnapshot>[] = [];
       if (!first) return results;
@@ -258,25 +260,29 @@ export function createHoyoClient(
         throw new HoyoRequestError("invalid-input", "体力查询的角色来自不同档案快照。");
       }
       let current: ProfileAccountContext = first;
+      const verify = options.verifyReadOnly ?? (() => ensureCurrentProfile(current));
       let refreshAttempted = false;
       function canRefresh(error: unknown) {
         if (refreshAttempted || !isDailyNoteCookieExpired(error)) return false;
         refreshAttempted = true;
         return true;
       }
-      for (const { game, role } of sources) {
+      for (const source of sources) {
+        const { game, role } = source;
         options.signal?.throwIfAborted();
         try {
-          const value = await readForProfile({ ...current, game, role }, options, readDailyNote,
+          const value = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
+            : await readForProfile({ ...current, game, role }, options, readDailyNote,
             canRefresh, (attempt) => { current = attempt; });
           results.push({ status: "fulfilled", value });
         } catch (reason) {
           options.signal?.throwIfAborted();
-          await ensureCurrentProfile(current);
-          results.push({ status: "rejected", reason });
+          await verify();
+          results.push({ status: "rejected", reason: options.verifyReadOnly && isDailyNoteCookieExpired(reason)
+            ? new HoyoRequestError("refresh", "旧 Cookie 已失效，无法自动续期，请扫码登录。") : reason });
         }
       }
-      await ensureCurrentProfile(current);
+      await verify();
       return results;
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {

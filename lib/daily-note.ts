@@ -147,8 +147,8 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
         if (signal.aborted) return;
         const items: DailyNoteCardItem[] = [];
         try {
-          const sources = await profiles.requestContexts(qq, id, games);
-          const results = await client.fetchDailyNotes(sources, { signal });
+          const { sources, verifyReadOnly } = await profiles.requestContextsForRead(qq, id, games);
+          const results = await client.fetchDailyNotes(sources, { signal, verifyReadOnly });
           for (const game of games) {
             const start = items.length;
             sources.forEach((source, index) => {
@@ -161,7 +161,8 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
           }
         } catch (error) {
           if (signal.aborted) return;
-          if (error instanceof HoyoRequestError && error.code === "profile-changed") {
+          if ((error instanceof HoyoRequestError && error.code === "profile-changed") ||
+              (error instanceof ProfileError && error.code === "changed")) {
             return "[荷花插件]登录状态已变化，本次体力查询已停止，请重新发送原指令。";
           }
           items.push({ ok: false, error: failure(error) });

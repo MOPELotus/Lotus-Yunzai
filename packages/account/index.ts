@@ -242,6 +242,31 @@ function matchesStoredLogin(account: ReturnType<typeof readIdentity>["account"],
   return ids.length > 0 && ids.every((value) => value === stuid);
 }
 
+function hasLegacyGameCookie(account: ReturnType<typeof readIdentity>["account"]): boolean {
+  const { cookie } = account;
+  if (!cookie || cookie.length > 16_384 || /[^\x20-\x7E]/u.test(cookie)) return false;
+  const fields = cookieFields(cookie);
+  const unique = (keys: ReadonlySet<string>) => new Set(fields.filter(([key]) => keys.has(key)).map(([, value]) => value));
+  const ids = unique(new Set([...cookieIdFields, "login_uid"]));
+  const [id] = ids;
+  if (ids.size !== 1 || !id || !/^[1-9]\d{0,19}$/u.test(id) ||
+      [account.ltuid, account.stuid].some((value) => value && value !== id)) return false;
+  const tokenKeys = new Set(["ltoken", "ltoken_v2", "cookie_token", "cookie_token_v2"]);
+  const tokens = new Map<string, string>();
+  for (const [key, value] of fields) {
+    if (!tokenKeys.has(key)) continue;
+    if (!/^[!#-:<-~]+$/u.test(value) || (tokens.has(key) && tokens.get(key) !== value)) return false;
+    tokens.set(key, value);
+  }
+  if ((!tokens.has("ltoken") && !tokens.has("ltoken_v2")) ||
+      (!tokens.has("cookie_token") && !tokens.has("cookie_token_v2"))) return false;
+  const mids = unique(cookieMidFields);
+  if (account.mid) mids.add(account.mid);
+  const [mid] = mids;
+  return mids.size <= 1 && (![...tokens.keys()].some((key) => key.endsWith("_v2")) ||
+    (!!mid && /^[!#-:<-~]+$/u.test(mid)));
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
@@ -267,6 +292,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   function requestFor(profile: Awaited<ReturnType<typeof readLoggedIn>>, qq: string, profileId: number,
     game: Game, role: GameRole) {
     return { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
+  }
+
+  function requestsFor(profile: Awaited<ReturnType<typeof read>>, qq: string, id: number, games: readonly Game[]) {
+    return [...new Set(games)].flatMap((game) =>
+      normalizeGameRoles(profile.roles[game]).map((role) => requestFor(profile, qq, id, game, role)));
   }
 
   async function optionalSnapshot(path: string) {
@@ -437,8 +467,21 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async requestContexts(qq: string, id: number, games: readonly Game[] = profileGames) {
       if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
       const profile = await readLoggedIn(qq, id);
-      return [...new Set(games)].flatMap((game) =>
-        normalizeGameRoles(profile.roles[game]).map((role) => requestFor(profile, qq, id, game, role)));
+      return requestsFor(profile, qq, id, games);
+    },
+    async requestContextsForRead(qq: string, id: number, games: readonly Game[]) {
+      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
+      const profile = await read(qq, id);
+      const sources = requestsFor(profile, qq, id, games);
+      if (profile.summary.loggedIn) return { sources };
+      if (!hasLegacyGameCookie(profile.account)) throw new ProfileError("login-required", "档案尚未登录。");
+      return {
+        sources,
+        async verifyReadOnly() {
+          const current = await read(qq, id).catch(() => { throw changedProfile(); });
+          if (current.revision !== profile.revision) throw changedProfile();
+        },
+      };
     },
   };
 }
