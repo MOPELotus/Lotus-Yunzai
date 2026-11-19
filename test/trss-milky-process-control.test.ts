@@ -126,10 +126,13 @@ test.skipIf(process.platform !== "linux")("Milky 主人可软停启、同 PID �
       async function verifyProcess(command: typeof first) {
         command(probe);
         const value = JSON.parse(await mock.next(ownerTarget, expect.any(String)));
-        expect(value).toEqual({ pid: host.pid, startup: expect.any(String), isMaster: false, boundAccount: false });
+        expect(value).toEqual({ pid: host.pid, startup: expect.any(String), isMaster: true, boundAccount: false });
         return value.startup as string;
       }
       const originalBoot = await verifyProcess(first);
+      first(probe, ordinary);
+      expect(JSON.parse(await mock.next({ user_id: ordinary }, expect.any(String))))
+        .toEqual({ pid: host.pid, startup: originalBoot, isMaster: false, boundAccount: false });
 
       for (const text of ["#关机", "#重启", "#停机"]) {
         first(text, ordinary);
@@ -217,8 +220,10 @@ test("旧托管器下 Milky 主人可查看安装目录，更新和安装给出�
       await mock.next({ group_id: groupId }, "暂无权限，只有主人才能操作");
       command("#更新", ordinary);
       await mock.next({ user_id: ordinary }, "私聊已禁用");
+      command("#更新日志", otherOwner);
+      await mock.next({ user_id: otherOwner }, "私聊已禁用");
       command("#更新日志");
-      await mock.next(ownerTarget, "私聊已禁用");
+      await mock.next(ownerTarget, "暂无可用的更新日志。");
       expect(ipc.map(({ type }) => type)).toContain("lotus-ready");
       expect(ipc.map(({ type }) => type)).not.toContain("lotus-update");
       host.kill("SIGTERM");

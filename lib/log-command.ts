@@ -17,7 +17,7 @@ export function isLogCommand(message: string): boolean {
   return command.test(message.trim());
 }
 
-export function canReadRuntimeLogs(event: MessageEvent): boolean {
+function canReadRuntimeLogs(event: MessageEvent): boolean {
   if (event.adapter === "milky") return event.message_type === "private" && isMilkyOwnerSession(event);
   return event.isMaster === true && (event.message_type === "terminal" ||
     (event.message_type === "private" && event.boundAccount === true));

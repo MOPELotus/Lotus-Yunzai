@@ -1,4 +1,5 @@
 import { addAbortListener } from "node:events";
+import { isMilkyOwnerSession } from "../command-permissions.ts";
 import { segment, type BotEvent, type MessageEvent } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
 import { HandlerScope, type HandlerCallback } from "./handler.ts";
@@ -9,6 +10,15 @@ import { LegacyTasks } from "./tasks.ts";
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
 type PluginEvent = BotEvent;
 type PluginClass = new (event?: PluginEvent) => PluginInstance;
+
+function legacyMessage(event: MessageEvent): MessageEvent {
+  if (!isMilkyOwnerSession(event)) return event;
+  // Preserve the game accessors used by V3 rules while projecting the owner flag.
+  return Object.create(Object.getPrototypeOf(event), {
+    ...Object.getOwnPropertyDescriptors(event),
+    isMaster: { value: true, enumerable: true, configurable: true, writable: true },
+  });
+}
 interface Rule {
   readonly reg: RegExp;
   readonly fnc: string;
@@ -279,7 +289,8 @@ export class LegacyPlugins {
     for (const app of this.#apps) app.contexts.close();
   }
 
-  async dispatchContext(event: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+  async dispatchContext(incoming: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+    const event = legacyMessage(incoming);
     for (const app of this.#apps) {
       if (!app.published || !app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
       if (app.contexts.resolve(event)) return true;
@@ -324,7 +335,8 @@ export class LegacyPlugins {
     })();
   }
 
-  async dispatch(event: PluginEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+  async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
+    const event = incoming.post_type === "message" ? legacyMessage(incoming) : incoming;
     const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {
       if (!app.published || typeof app.initializer.accept !== "function") continue;

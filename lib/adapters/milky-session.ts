@@ -54,8 +54,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   async function dispatchEvent(event: BotEvent) {
     if (event.post_type === "message" && event.message_type === "group" && event.group_id !== undefined) {
       const botMute = await groupMute.forMessage(event.group_id);
-      if (signal.aborted) return;
       if (botMute) event = { ...event, botMute };
+    }
+    if (signal.aborted) return;
+    if (event.post_type === "message") {
+      event = { ...event, canManageProcess: positiveId(event.user_id) && isMaster(event.user_id) };
+    } else if (event.post_type === "notice" && event.notice_type === "friend") {
+      event = { ...event, isMaster: isMaster(event.user_id) };
     }
     await dispatch(event);
   }
@@ -160,10 +165,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         if (groupReviews.register(request, decision)) groupRequest = request;
       }
     }
-    const canManageProcess = positiveId(message?.user_id) && isMaster(message.user_id);
-    const canReview = message?.isPrivate === true && canManageProcess;
+    const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
     const scopedMessage = message && {
-      ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview, canManageProcess,
+      ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>

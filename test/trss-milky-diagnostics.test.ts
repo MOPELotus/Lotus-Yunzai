@@ -172,7 +172,6 @@ test("Milky 和 OneBot 主人的私聊诊断按协议隔离，终端可查看全
     await mkdir(join(root, "config", "config"), { recursive: true });
     await writeFile(join(root, "config", "config", "other.yaml"), [
       'master: ["stdin:stdin", "99:51", "100:52"]', "disablePrivate: true", `disableMsg: ${blockedTip}`,
-      "disableAdopt: ['^#诊断 ', '^#状态 ', '^#统计 ']",
     ].join("\n") + "\n");
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.url.port}`,
@@ -206,10 +205,12 @@ test("Milky 和 OneBot 主人的私聊诊断按协议隔离，终端可查看全
       }
       expect(await mock.command(ws, "#诊断", 42)).toBe(blockedTip);
       expect(await mock.command(ws, "#状态", 52)).toBe(blockedTip);
-      const groups = await mock.command(ws, "#诊断", owner, 77);
-      expect(groups).toContain("Lotus-Yunzai 运行诊断");
-      expect(groups).not.toContain("账号在线时长");
-      expect(groups).not.toContain("插件加载用时");
+      for (const [query, heading] of [["#诊断", "运行诊断"], ["#状态", "正在运行"]] as const) {
+        const report = await mock.command(ws, query, owner, 77);
+        expect(report).toContain(`Lotus-Yunzai ${heading}`);
+        expect(report).not.toContain("账号在线时长");
+        expect(report).not.toContain("插件加载用时");
+      }
       for (const query of ["#诊断 夹具", "#状态 夹具"]) {
         const report = await mock.command(ws, query);
         expect(report).toMatch(/^Lotus-Yunzai (?:运行诊断|正在运行)/u);

@@ -1,4 +1,5 @@
 import { readLocalConfig } from "./config.ts";
+import { isMilkyOwnerSession } from "./command-permissions.ts";
 import type { MessageEvent } from "./messages.ts";
 
 const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹果|ck|cookie|体力)帮助|^#?帮助$|^#*(?:删除|我的)ck$|^#(?:我的)?(?:uid|UID)[0-9]{0,2}$/u;
@@ -29,7 +30,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
   const tips = new Map<number, number>();
 
   async function blocked(event: MessageEvent): Promise<boolean> {
-    if (!enabled || event.message_type !== "private" || event.isMaster) return false;
+    if (!enabled || event.message_type !== "private" || event.isMaster || isMilkyOwnerSession(event)) return false;
     if (event.groupRequestScope === "milky" && event.canReviewGroupRequests === true && groupReviewEntry.test(event.msg)) return false;
     const files = typeof event.message === "string" ? [] : event.message.filter(({ type }) => type === "file");
     const text = event.raw_message || event.msg;

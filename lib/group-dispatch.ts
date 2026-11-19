@@ -1,4 +1,5 @@
 import { readLocalConfig } from "./config.ts";
+import { isMilkyOwnerSession } from "./command-permissions.ts";
 import type { BotEvent, MessageEvent } from "./messages.ts";
 
 const defaults = { groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"] };
@@ -131,7 +132,8 @@ export async function readGroupDispatch(root: URL) {
     const config = groupConfig(event);
     const alias = !event.atBot && strings(config.botAlias).find((text) => msg.startsWith(text));
     const mode = config.onlyReplyAt;
-    const needsAddress = !!config.botAlias && (mode === 1 || mode === "1" || ((mode === 2 || mode === "2") && !event.isMaster));
+    const owner = event.isMaster || isMilkyOwnerSession(event);
+    const needsAddress = !!config.botAlias && (mode === 1 || mode === "1" || ((mode === 2 || mode === "2") && !owner));
     const allowNew = !needsAddress || !!event.atBot || !!alias;
 
     const group = id(event.group_id);

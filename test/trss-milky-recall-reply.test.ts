@@ -174,7 +174,7 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       await waitForBind(endpoint);
       const groupTarget = { group_id: groupId };
       const privateTarget = { user_id: owner };
-      const legacyReply = "旧插件处理撤回 false false";
+      const legacyReply = "旧插件处理撤回 true false";
       let statusSequence = 900;
       async function send(value: ReturnType<typeof message>) {
         expect((await webhook(endpoint, "message_receive", value)).status).toBe(200);
@@ -193,7 +193,6 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       await send(message("#撤回", 106, outsider));
       await mock.reply({ user_id: outsider }, "私聊限制夹具");
       await send(message("#撤回 多余参数", 107, owner));
-      await mock.reply(privateTarget, "私聊限制夹具");
       await barrier();
 
       await send(message("#撤回", 200, owner, legacyGroup, 201));

@@ -23,7 +23,7 @@ import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
-import { canReadRuntimeLogs, createLogCommand, isLogCommand } from "./lib/log-command.ts";
+import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createManagedHandoff } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
@@ -494,9 +494,7 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
-    const milkyPrivateExemption = milkyDiagnostics || (milkyPrivate &&
-      (isRecallCommand(event) || (isLogCommand(event.msg) && canReadRuntimeLogs(event))));
-    if (!milkyPrivateExemption && await privateAccess.blocked(event)) return;
+    if (await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed)) return;
     const useKeywords = allowed(keywordFeatureNames);
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
