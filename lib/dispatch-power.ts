@@ -22,6 +22,8 @@ export function formatElapsed(milliseconds: number): string {
 export function createDispatchPower(now = Date.now, pausedAt?: number) {
   let paused = pausedAt !== undefined;
   let since = pausedAt ?? now();
+  let active = new AbortController();
+  if (paused) active.abort();
 
   function setPaused(value: boolean): string | undefined {
     if (paused === value) return;
@@ -29,12 +31,15 @@ export function createDispatchPower(now = Date.now, pausedAt?: number) {
     const elapsed = formatElapsed(timestamp - since);
     since = timestamp;
     paused = value;
+    if (paused) active.abort();
+    else active = new AbortController();
     return paused ? `关机成功，本次运行时长${elapsed}` : `开机成功，距离上次关机${elapsed}`;
   }
 
   return {
     get paused() { return paused; },
     get pausedAt() { return paused ? since : undefined; },
+    get activeSignal() { return active.signal; },
     setPaused,
     async handle(event: MessageEvent): Promise<void> {
       if (!isProcessMaster(event) ||

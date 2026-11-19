@@ -14,6 +14,8 @@ const retiredScripts = new Map([
     { name: "自动复读", reason: "群自动复读已归并到 group。", module: "@lotus-yunzai/group" }],
   ["1babeb445b80a5c10ba3442e3a97d1716762931677460259b3b274d1c49d7368",
     { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
+  ["bbd4e6adedab7bbef1c336b5add6ab43c725b78ed0d85c40d158b5614e75d7bf",
+    { name: "退群自动拉黑", reason: "退群黑名单已归并到 group。", module: "@lotus-yunzai/group" }],
   ["629da5e8260364f2da2c13da42be13772b065534372c63ddf3a497adc8e904c4",
     { name: "标准输入", reason: "标准输入已由宿主终端提供。", module: "@lotus-yunzai/system" }],
   ["f08fae9f680d281d9ed066b80e427908884b0f587e5221f8a2d468911ba828ca",

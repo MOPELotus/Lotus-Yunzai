@@ -28,6 +28,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { groupModerationSession } from "./lib/adapters/group-moderation.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
@@ -55,6 +56,7 @@ import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
 import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
+import { appendBlackUser } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
 import { setImagePreviews, type BotEvent, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
@@ -95,6 +97,7 @@ import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
+import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -103,6 +106,9 @@ declare global {
 const commands = new CommandRegistry();
 const terminalOutput = console.log.bind(console);
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
+const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai/group"];
+const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
+const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
@@ -134,6 +140,9 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const handoffSession = new AbortController();
+  const stopWatchingHandoff = handoff.onDisconnect(() => handoffSession.abort());
+  lifecycle.signal.addEventListener("abort", stopWatchingHandoff, { once: true });
   const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
   const pendingModuleTasks = new Set<() => void>();
   function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
@@ -207,6 +216,7 @@ if (import.meta.main) {
   let privateAccess: Awaited<ReturnType<typeof readPrivateAccess>>;
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
+  let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
@@ -500,15 +510,49 @@ if (import.meta.main) {
     if (event.post_type !== "message" || event.message_type !== "terminal") {
       recordCount("receive", event, event.post_type === "message" ? event.message : undefined);
     }
-    if (!groupDispatch.admit(event)) return;
-    if (dispatchPower.paused && event.post_type !== "message") return;
-    const handling = handleEvent(event);
+    const handling = routeEvent(event);
     pending.add(handling);
     try {
       await handling;
     } finally {
       pending.delete(handling);
     }
+  }
+
+  function moderationSignal(module: AbortSignal, transport: AbortSignal) {
+    return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, module, transport]);
+  }
+
+  async function routeEvent(event: BotEvent) {
+    if (event.post_type !== "message") {
+      if (dispatchPower.paused || await handleLeaveBlacklist(event)) return;
+      if (stopping || !handoff.accepting || dispatchPower.paused) return;
+    }
+    if (groupDispatch.admit(event)) await handleEvent(event);
+  }
+
+  async function handleLeaveBlacklist(event: Exclude<BotEvent, MessageEvent>): Promise<boolean> {
+    const registration = leaveBlacklist;
+    const notice = event.post_type === "notice" && event.notice_type === "group";
+    if (!registration || (!notice && (event.post_type !== "request" || event.request_type !== "group" || event.sub_type !== "add")) ||
+        !groupDispatch.allowsGroupModeration(event) ||
+        !groupDispatch.allows(event, notice ? leaveBlacklistNoticeNames : leaveBlacklistRequestNames)) return false;
+    const transport = groupModerationSession(event);
+    if (!transport) return false;
+    const active = moderationSignal(registration.signal, transport.signal);
+    const { self_id: botId, group_id: groupId, user_id: userId } = event;
+    if (event.post_type === "notice") {
+      return registration.policy.handle({
+        kind: event.sub_type === "decrease" ? "leave" : "join", botId, groupId, userId,
+        session: transport.signal, act: transport.act, time: event.time, operatorId: event.operator_id,
+        name: event.member?.card || event.member?.nickname || event.nickname, dismissed: event.dismiss,
+        id: event.time === undefined ? undefined : `${event.sub_type}:${groupId}:${userId}:${event.time}:${event.operator_id ?? ""}`,
+      }, active);
+    }
+    return registration.policy.handle({
+      kind: "apply", botId, groupId, userId, session: transport.signal, act: transport.act,
+      id: `${event.groupRequestScope ?? "onebot"}:${event.flag}`,
+    }, active);
   }
 
   function recordCount(direction: "receive" | "send", identity: { self_id?: number; user_id?: number; group_id?: number }, message?: unknown) {
@@ -589,6 +633,16 @@ if (import.meta.main) {
       if (allowNew && event.msg === "#开机" && allowed(["开机", "system", systemModuleName])) {
         await dispatchPower.handle(event);
       }
+      return;
+    }
+    if (leaveBlacklist?.policy.matchesCommand(event.msg) && event.message_type === "group" && event.group_id !== undefined &&
+        !event.isDelegated && allowNew && allowed(leaveBlacklistManageNames)) {
+      const transport = event[delegationSession]?.signal;
+      const { self_id, user_id } = event;
+      if (!transport || self_id === undefined || user_id === undefined || !masterPermissions.isMaster(self_id, user_id)) return;
+      const active = moderationSignal(leaveBlacklist.signal, transport);
+      const reply = await leaveBlacklist.policy.manage(event.msg, { groupId: event.group_id, signal: active }, active);
+      if (reply !== undefined && !active.aborted) await event.reply(reply);
       return;
     }
     if (allowNew && event.msg === "#关机" && allowed(processFeatureNames)) {
@@ -1151,6 +1205,47 @@ if (import.meta.main) {
           if (signal?.aborted === false) return signal;
         },
         readAutoRepeatImage: readQqMessageMedia,
+        groupLeaveBlacklist: {
+          register(policy) {
+            const session = new AbortController();
+            const registration = { policy, signal: session.signal };
+            leaveBlacklist = registration;
+            return () => {
+              session.abort();
+              if (leaveBlacklist === registration) leaveBlacklist = undefined;
+            };
+          },
+          io: {
+            async get(groupId, userId) {
+              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              return await globalThis.redis.hGet(`Yz:group-leave-blacklist:${groupId}`, String(userId)) ?? null;
+            },
+            async set(groupId, userId, json) {
+              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              await globalThis.redis.hSet(`Yz:group-leave-blacklist:${groupId}`, String(userId), json);
+            },
+            async remove(groupId, userId) {
+              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              return (await globalThis.redis.hDel(`Yz:group-leave-blacklist:${groupId}`, String(userId))) > 0;
+            },
+            async appendGlobal(userId, signal) {
+              try {
+                const outcome = await appendBlackUser(root, userId, () => !signal.aborted && !stopping && handoff.accepting);
+                if (outcome !== "protected") groupDispatch.blockUser(userId);
+                return outcome;
+              } catch {
+                return "unavailable";
+              }
+            },
+            isProtected(userId) {
+              return masterPermissions.legacyMasterIds().includes(userId) ||
+                masterPermissions.botIds().some(botId => masterPermissions.isMaster(botId, userId));
+            },
+            report(stage, outcome) {
+              if (outcome !== "confirmed") console.warn(`[group] 退群黑名单操作 ${stage} 未确认完成。`);
+            },
+          },
+        },
       },
       atlasUpdate: probingUpdate ? undefined : {
         config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {

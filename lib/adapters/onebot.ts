@@ -4,6 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
+import { bindGroupModeration } from "./group-moderation.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
@@ -137,6 +138,7 @@ async function dispatchRequest(
   event: Record<string, unknown>,
   calls: OneBotCalls,
   permissions: { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
+  connection: ConnectionData,
 ): Promise<void> {
   const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
   if (!isId(self_id) || !isId(user_id) || !isRequestFlag(flag)) return;
@@ -172,7 +174,7 @@ async function dispatchRequest(
 
   if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") || !isId(group_id)) return;
 
-  await dispatch({
+  const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
     group_name: stringField(event.group_name),
     approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
@@ -182,7 +184,18 @@ async function dispatchRequest(
       if (message === undefined) return false;
       return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
     },
+  };
+  const session = groupActionSignal(connection, self_id);
+  if (session && sub_type === "add") bindGroupModeration(request, {
+    signal: session,
+    act: signal => calls.declineGroupApplication(send, flag, signal),
   });
+  await dispatch(request);
+}
+
+function groupActionSignal(connection: ConnectionData, botId: number) {
+  const signal = connection.attachmentSession?.signal;
+  if (connection.botId === botId && connection.display?.closed === false && signal?.aborted === false) return signal;
 }
 
 async function dispatchGroupNotice(
@@ -257,6 +270,12 @@ async function dispatchGroupNotice(
       return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
     },
   };
+  const session = groupActionSignal(connection, self_id);
+  if (session) bindGroupModeration(notice, {
+    signal: session,
+    act: sub_type === "increase" && self_id !== user_id
+      ? signal => calls.kickGroupMember(send, group_id, user_id, signal) : undefined,
+  });
   try {
     await dispatch(notice);
     if (join && joins?.get(group_id) === join && !left) void display?.warm(group_id);
@@ -604,7 +623,7 @@ export function startOneBot(
               await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, socket.data);
             }
           } else if (message.post_type === "request") {
-            await dispatchRequest(dispatch, send, message, calls, options);
+            await dispatchRequest(dispatch, send, message, calls, options, socket.data);
           } else {
             await dispatchMessage(dispatch, send, message, calls, options.isMaster, socket.data);
           }

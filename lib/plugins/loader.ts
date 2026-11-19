@@ -6,6 +6,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep } from "nod
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
+import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ExecuteService } from "../../plugins/execute/index.ts";
 import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
@@ -222,6 +223,10 @@ export async function loadPlugins(
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
       autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
       readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
+      readonly groupLeaveBlacklist: {
+        readonly io: GroupLeaveBlacklistIO;
+        register(policy: GroupLeaveBlacklist): () => void;
+      };
     };
     readonly atlasUpdate?: {
       readonly config: unknown;

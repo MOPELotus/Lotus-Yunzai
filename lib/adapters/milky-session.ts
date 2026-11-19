@@ -2,6 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
+import { bindGroupModeration } from "./group-moderation.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
@@ -268,7 +269,21 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       });
       if (candidate) {
         const { decision, ...request } = candidate;
-        if (groupReviews.register(request, decision)) groupRequest = request;
+        if (groupReviews.register(request, decision)) {
+          groupRequest = request;
+          if (kind === "add") bindGroupModeration(request, {
+            signal,
+            async act(active) {
+              if (active.aborted || signal.aborted) return "rejected";
+              try {
+                return await groupReviews.review(account, request.flag, kind, false, "主动退群被拉黑",
+                  (action, params) => call.confirmed(action, params, active)) ? "confirmed" : "rejected";
+              } catch {
+                return "unknown";
+              }
+            },
+          });
+        }
       }
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
@@ -305,6 +320,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 退群回执未确认。");
       return result.status === "confirmed";
     });
+    if (event?.post_type === "notice" && event.notice_type === "group") {
+      const { group_id, user_id } = event;
+      bindGroupModeration(event, {
+        signal,
+        act: event.sub_type === "increase" && user_id !== account
+          ? async active => (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status
+          : undefined,
+      });
+    }
     if (event) deliver(event);
     return "accepted";
   } };

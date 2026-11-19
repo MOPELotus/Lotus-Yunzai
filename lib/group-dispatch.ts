@@ -130,13 +130,19 @@ export async function readGroupDispatch(root: URL) {
     };
   }
 
+  // Moderation relies on replaying the group policy even for a globally blocked applicant.
+  function allowsGroupModeration(event: BotEvent): boolean {
+    const user = id(event.user_id);
+    const group = "group_id" in event ? id(event.group_id) : undefined;
+    return !(whiteUser.size && (!user || !whiteUser.has(user))) &&
+      !(group && (blackGroup.has(group) || (whiteGroup.size && !whiteGroup.has(group)) || isBotMuted(event)));
+  }
+
   function admit(event: BotEvent): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     const user = id(event.user_id);
-    if ((user && blackUser.has(user)) || (whiteUser.size && (!user || !whiteUser.has(user)))) return false;
-
+    if ((user && blackUser.has(user)) || !allowsGroupModeration(event)) return false;
     const group = "group_id" in event ? id(event.group_id) : undefined;
-    if (group && (blackGroup.has(group) || (whiteGroup.size && !whiteGroup.has(group)) || isBotMuted(event))) return false;
     if (!groups || event.post_type !== "message" || event.message_type !== "group" || !group || event.isDelegated) return true;
 
     const config = groupConfig(event);
@@ -207,5 +213,10 @@ export async function readGroupDispatch(root: URL) {
     };
   }
 
-  return { admit, prepare, allows, keywordSettings };
+  function blockUser(userId: number): void {
+    const user = id(userId);
+    if (user) blackUser.add(user);
+  }
+
+  return { admit, prepare, allows, allowsGroupModeration, blockUser, keywordSettings };
 }

@@ -1,6 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
+import type { GroupModerationResult } from "./group-moderation.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -105,6 +106,24 @@ export class OneBotCalls {
     if (!isRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
         typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;
     return this.#confirmAction(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+  }
+
+  #moderateGroup(send: Send, action: string, params: object, signal: AbortSignal): Promise<GroupModerationResult> {
+    if (signal.aborted) return Promise.resolve("rejected");
+    return this.#request(send, action, params, signal).then(
+      () => "confirmed",
+      error => error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" : "unknown",
+    );
+  }
+
+  kickGroupMember(send: Send, group_id: number, user_id: number, signal: AbortSignal) {
+    return this.#moderateGroup(send, "set_group_kick", { group_id, user_id, reject_add_request: false }, signal);
+  }
+
+  declineGroupApplication(send: Send, flag: string, signal: AbortSignal) {
+    return this.#moderateGroup(send, "set_group_add_request", {
+      flag, sub_type: "add", approve: false, reason: "主动退群被拉黑",
+    }, signal);
   }
 
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {

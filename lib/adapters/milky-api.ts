@@ -15,14 +15,15 @@ export function createMilkyApi(settings: MilkySettings, signal: AbortSignal) {
   const headers = new Headers({ Accept: "application/json", "Content-Type": "application/json" });
   if (settings.accessToken !== undefined) headers.set("Authorization", `Bearer ${settings.accessToken}`);
 
-  async function confirmed(action: string, params: Record<string, unknown>): Promise<MilkyConfirmation> {
-    if (signal.aborted || !/^[a-z][a-z0-9_]*$/u.test(action) || !isRecord(params)) return { status: "rejected" };
+  async function confirmed(action: string, params: Record<string, unknown>, operation?: AbortSignal): Promise<MilkyConfirmation> {
+    if (signal.aborted || operation?.aborted || !/^[a-z][a-z0-9_]*$/u.test(action) || !isRecord(params)) return { status: "rejected" };
 
     let request: Request;
     try {
       const body = JSON.stringify(params);
       if (!body?.startsWith("{")) return { status: "rejected" };
-      const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const deadline = AbortSignal.any(operation ? [signal, operation, timeout] : [signal, timeout]);
       request = new Request(new URL(action, base), {
         method: "POST", headers, body, redirect: "error", signal: deadline,
       });
