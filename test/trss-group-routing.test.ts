@@ -410,7 +410,8 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
     await withHost(async (root) => {
       const plugin = join(root, "plugins/meme");
       await mkdir(plugin);
-      for (const file of ["package.json", "lotus.ts", "catalog-policy.ts", "generation.ts", "generation-args.ts", "generate-reply.ts"]) {
+      const sources = new Bun.Glob("*.ts").scanSync(join(import.meta.dir, "../plugins/meme"));
+      for (const file of ["package.json", ...sources]) {
         await cp(new URL(`../plugins/meme/${file}`, import.meta.url), join(plugin, file));
       }
       const config = join(root, "config/config");
