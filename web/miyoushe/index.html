@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>米游社功能</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main id="login" class="login" aria-labelledby="login-title">
+    <h1 id="login-title">米游社功能</h1>
+    <p id="login-message" role="status">正在读取当前档案…</p>
+    <code id="login-command" hidden>#米游社功能</code>
+    <button id="login-retry" class="secondary" type="button" hidden>重试</button>
+  </main>
+  <div id="dashboard" hidden>
+    <header class="topbar">
+      <span class="brand">米游社功能</span>
+      <div class="account">
+        <span id="profile"></span>
+        <button id="logout" class="text-button" type="button">退出</button>
+      </div>
+    </header>
+    <main class="workspace">
+      <section class="intro">
+        <div>
+          <h1 id="profile-name"></h1>
+          <p id="session-expiry"></p>
+        </div>
+        <span class="clock">北京时间 <time id="clock"></time></span>
+      </section>
+      <section class="metrics" aria-label="米游币">
+        <article><h2>可用米游币</h2><strong id="balance">—</strong></article>
+        <article><h2>今日已领</h2><strong id="received">—</strong></article>
+        <article><h2>今日任务总额</h2><strong id="today-total">—</strong></article>
+      </section>
+      <section class="catalog" aria-labelledby="overview-title">
+        <header class="section-head">
+          <h2 id="overview-title">米游社总览</h2>
+          <button id="refresh" class="secondary" type="button">刷新数据</button>
+        </header>
+        <p id="notice" class="notice" role="status" hidden></p>
+        <div id="overview-view" class="overview-view" aria-busy="false">
+          <article class="overview-section">
+            <h3>账号状态</h3>
+            <p id="account-state"></p>
+            <p id="today-schedule" class="muted" hidden></p>
+            <p id="roles-empty" class="muted" hidden>暂无绑定游戏角色</p>
+            <ul id="roles" class="rows" aria-label="已绑定角色"></ul>
+          </article>
+          <article class="overview-section">
+            <h3>当前社区任务</h3>
+            <p id="missions-empty" class="muted" hidden></p>
+            <ul id="missions" class="rows" aria-label="任务进度"></ul>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

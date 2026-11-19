@@ -69,6 +69,8 @@ import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
+import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
+import { createMiyousheWeb } from "./lib/miyoushe-web.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
@@ -125,6 +127,7 @@ if (import.meta.main) {
   let stopMilky: (() => Promise<void>) | undefined;
   let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
+  let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
     checkinNotify?: CheckinNotifyTransport } | undefined;
   let stopping = false;
@@ -715,6 +718,17 @@ if (import.meta.main) {
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    if (!probingUpdate) {
+      const plans = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)));
+      const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
+      miyousheWeb = createMiyousheWeb({
+        origin: () => fileBase, signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
+        databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
+        assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
+        overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
+      });
+      commands.registerModule(miyousheWeb.commands, "[Lotus-Plugin] Coin Shop");
+    }
     commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile }), "[Lotus-Plugin] Profile Settings");
     commands.registerModule(cloudProfileCommands({
       signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
@@ -935,7 +949,7 @@ if (import.meta.main) {
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
-        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ??
+        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ?? await miyousheWeb?.handle(request) ??
         await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
@@ -1005,6 +1019,7 @@ if (import.meta.main) {
       legacy.stopContexts();
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
         stopMilky?.(), checkinRuntime?.stop()]);
+      miyousheWeb?.close();
       await mediaDelivery.close();
       await plugins?.dispose();
     } finally {

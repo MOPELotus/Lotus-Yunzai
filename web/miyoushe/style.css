@@ -1,0 +1,141 @@
+:root {
+  color-scheme: light;
+  font: 14px/1.6 Inter, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  color: #202f2a;
+  background: #f5f6f1;
+  --line: #e1e6df;
+  --muted: #5f7064;
+  --accent: #356b52;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+
+button {
+  min-height: 40px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled { opacity: .65; cursor: wait; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+h1, h2, h3, p { margin: 0; }
+.muted { color: var(--muted); }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px max(5vw, 24px);
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.brand { font-size: 18px; font-weight: 700; }
+.account { display: flex; align-items: center; gap: 16px; color: var(--muted); }
+.account > span { white-space: nowrap; }
+.text-button { border: 0; padding: 0 6px; background: none; color: var(--accent); }
+.workspace { max-width: 1340px; margin-inline: auto; padding: 42px 32px; }
+
+.intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.intro h1 { font-size: 26px; line-height: 1.35; overflow-wrap: anywhere; }
+.intro p { margin-top: 8px; color: var(--muted); }
+.intro p:empty { display: none; }
+.clock { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 36px;
+}
+
+.metrics article {
+  padding: 22px 25px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.metrics h2 { margin-bottom: 9px; color: var(--muted); font-size: 13px; font-weight: 500; }
+.metrics strong { font-size: 34px; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.catalog {
+  padding: 22px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+
+.section-head h2 { font-size: 17px; color: var(--accent); }
+.secondary { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 8px 14px; color: inherit; }
+.secondary:hover:not(:disabled) { border-color: var(--accent); }
+.notice { margin-top: 16px; color: var(--muted); }
+.error { color: #9b3d2f; }
+.overview-view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 20px; padding-top: 20px; }
+.overview-section { border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+.overview-section h3 { font-size: 16px; margin-bottom: 10px; }
+.overview-section p + p { margin-top: 8px; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows:empty { display: none; }
+.role-row, .mission-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+.rows li + li { border-top: 1px solid var(--line); }
+.rows li:last-child { padding-bottom: 0; }
+.rows li span:last-child { text-align: end; font-variant-numeric: tabular-nums; }
+.complete { color: var(--accent); }
+
+.login {
+  max-width: 440px;
+  margin: min(15vh, 120px) auto 24px;
+  padding: 30px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.login h1 { font-size: 24px; }
+.login p { margin: 12px 0; color: var(--muted); }
+.login code { display: inline-block; padding: 6px 12px; border-radius: 8px; background: #edf2e9; color: var(--accent); }
+
+@media (max-width: 760px) {
+  .workspace { padding: 26px 16px; }
+  .topbar { min-height: 60px; padding: 8px 16px; }
+  .intro { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .intro h1 { font-size: 22px; }
+  .metrics { gap: 8px; margin-bottom: 18px; }
+  .metrics article { padding: 12px 10px; border-radius: 12px; }
+  .metrics strong { font-size: 24px; }
+  .metrics h2 { font-size: 12px; }
+  .catalog { padding: 14px; }
+  .overview-view { grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 12px; }
+  .overview-section { padding: 15px; }
+  .login { margin-inline: 16px; padding: 22px; }
+}

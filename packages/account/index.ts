@@ -697,6 +697,16 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { account, device, revision } = await readLoggedIn(qq, id);
       return { qq, profileId: id, account, device, revision };
     },
+    async loginIdentity(qq: string, id: number) {
+      const { document, state } = await readDocument(qq, id);
+      const { stuid, ltuid, stoken } = state.account;
+      const aid = stuid || ltuid;
+      if (!state.summary.loggedIn || !aid || (stuid && ltuid && stuid !== ltuid)) {
+        throw new ProfileError("login-required", "档案无法核验登录账号。");
+      }
+      const generation = text(record(document.account).updated_at) || stoken;
+      return createHash("sha256").update(JSON.stringify([qq, id, aid, generation])).digest("hex");
+    },
     async checkinSettings(qq: string, id: number) {
       const { document, state, revision } = await readDocument(qq, id);
       const cn = record(record(document.games).cn);
