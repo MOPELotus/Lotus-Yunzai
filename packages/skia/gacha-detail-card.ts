@@ -2,8 +2,9 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
 import type { GachaLuck } from "@lotus-yunzai/gacha";
+import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
 import { renderPng } from "./index.ts";
-import { FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
+import { loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
 export interface GachaDetailOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
@@ -18,8 +19,7 @@ const ink = "#414e64";
 const gold = "#d3bc8e";
 const white = "#fff";
 const muted = "#aaa";
-const bodyFont = '"StarRailGachaNumber", "StarRailGachaHan", sans-serif';
-const titleFont = '"StarRailGachaNumber", "StarRailGachaTitle", "StarRailGachaHan", sans-serif';
+const fontFamilies = new WeakMap<Context, { body: string; title: string }>();
 const themeAssets = {
   sprite: "gacha/imgs/date-icon.webp",
   star: "common/item/bg5.png",
@@ -97,13 +97,14 @@ const sharedThemes = new Map<string, ReturnType<typeof loadTheme>>();
 async function loadTheme(root: string, game: Game) {
   const config = games[game];
   const fonts = [
-    ["StarRailGachaHan", "HYWH-65W.ttf"], ["StarRailGachaTitle", "NZBZ.ttf"], ["StarRailGachaNumber", "tttgbnumber.ttf"],
+    ["Han", "HYWH-65W.ttf"], ["Title", "NZBZ.ttf"], ["Number", "tttgbnumber.ttf"],
   ] as const;
+  const aliases = {} as Record<typeof fonts[number][0], string>;
   for (const [family, filename] of fonts) {
     const asset = await themePath(root, `common/font/${filename}`);
     if (!asset) throw new Error(`${config.name}抽卡记录的原主题字体不可用。`);
     try {
-      FontLibrary.use(family, [asset]);
+      aliases[family] = registerGachaThemeFont(family, asset);
     } catch {
       throw new Error(`${config.name}抽卡记录的原主题字体不可用。`);
     }
@@ -120,7 +121,9 @@ async function loadTheme(root: string, game: Game) {
   if (!background || !face || !banner || !sprite || !star || !empty) {
     throw new Error(`${config.name}抽卡记录的原主题图片不可用。`);
   }
-  return { background, face, banner, sprite, star, empty };
+  const { Number: number, Title: title, Han: han } = aliases;
+  const families = { body: `${number}, ${han}, sans-serif`, title: `${number}, ${title}, ${han}, sans-serif` };
+  return { background, face, banner, sprite, star, empty, families };
 }
 
 function originalTheme(root: string, game: Game) {
@@ -156,13 +159,14 @@ interface TextStyle {
   readonly title?: boolean;
 }
 
-function font({ size = 16, bold = false, title = false }: TextStyle) {
-  return `${bold ? "700 " : ""}${size}px ${title ? titleFont : bodyFont}`;
+function font(ctx: Context, { size = 16, bold = false, title = false }: TextStyle) {
+  const families = fontFamilies.get(ctx)!;
+  return `${bold ? "700 " : ""}${size}px ${title ? families.title : families.body}`;
 }
 
 function paint(ctx: Context, value: string | number, x: number, y: number, style: TextStyle = {},
   align: CanvasTextAlign = "left", maxWidth?: number) {
-  ctx.font = font(style);
+  ctx.font = font(ctx, style);
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
   ctx.fillStyle = style.color ?? white;
@@ -178,7 +182,7 @@ function paint(ctx: Context, value: string | number, x: number, y: number, style
 }
 
 function measure(ctx: Context, value: string, style: TextStyle) {
-  ctx.font = font(style);
+  ctx.font = font(ctx, style);
   return ctx.measureText(value).width;
 }
 
@@ -207,7 +211,7 @@ interface Inline extends TextStyle {
 
 function inline(ctx: Context, parts: readonly Inline[], x: number, y: number, centered = false) {
   const lengths = parts.map((part) => {
-    ctx.font = font(part);
+    ctx.font = font(ctx, part);
     return ctx.measureText(part.value).width + (part.margin ?? 0);
   });
   let left = centered ? x - lengths.reduce((sum, length) => sum + length, 0) / 2 : x;
@@ -326,7 +330,7 @@ function paintLuck(ctx: Context, luck: GachaLuck, tips: readonly string[], y: nu
     ...(luck.smallNum > 0 ? [[`${luck.noWaiRate}%`, `小保底不歪 ${luck.smallWin}/${luck.smallNum} · 期望${luck.upRate}%`, `超过${luck.winPercent}%`] as const] : []),
     [luck.bigNum, "大保底"], [luck.maxUpStreak, "最多连UP"], [luck.maxWaiStreak, "最多连歪"],
   ] : [[luck.desc, `${Number(luck.fiveAvg) <= Number(luck.fiveExpect) ? "出金快于" : "出金慢于"}理论期望`]];
-  ctx.font = font({ size: 12 });
+  ctx.font = font(ctx, { size: 12 });
   const widths = cells.map(([, label]) => ctx.measureText(String(label)).width + 8);
   const extra = (510 - widths.reduce((sum, value) => sum + value, 0)) / cells.length;
   let left = 200;
@@ -362,9 +366,9 @@ function paintPageHead(ctx: Context, model: GachaDetailModel, page: NonNullable<
   const nameStyle = { size: 20, bold: true };
   const subtitle = `#${model.uid} · ${model.poolName}池抽卡记录`;
   const pageLabel = `第 ${page.page}/${page.total} 张`;
-  ctx.font = font(nameStyle);
+  ctx.font = font(ctx, nameStyle);
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
-  ctx.font = font({});
+  ctx.font = font(ctx, {});
   const free = inner - 40 - nameWidth - ctx.measureText(subtitle).width - ctx.measureText(pageLabel).width;
   if (game === "gs" || model.recordArchive) paintFitted(ctx, model.face.name, 35, 47, nameStyle, 16, nameWidth || 235);
   else paint(ctx, model.face.name, 35, 47, nameStyle, "left", nameWidth || 235);
@@ -508,6 +512,7 @@ export async function renderGachaDetail(
   const pixelHeight = game === "gs" ? Math.round(height * zoom) : Math.ceil(height * zoom);
 
   return renderPng(Math.round(width * zoom), pixelHeight, (ctx) => {
+    fontFamilies.set(ctx, theme.families);
     ctx.scale(zoom, zoom);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";

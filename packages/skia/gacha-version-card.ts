@@ -1,8 +1,9 @@
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
+import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
 import { renderPng } from "./index.ts";
-import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
+import { Canvas, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
 export interface GachaVersionOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
@@ -17,7 +18,7 @@ const gold = "#d3bc8e";
 const ink = "#414e64";
 const white = "#fff";
 const muted = "#aaa";
-const family = '"StarRailVersionNumber", "StarRailVersionHan", sans-serif';
+const fontFamilies = new WeakMap<Context, string>();
 const bannerStats = [
   ["totalNum", "抽卡总数"], ["star5Num", "金卡"], ["c5UpNum", "UP角色"], ["w5UpNum", "UP武器"],
   ["star4Num", "紫卡"], ["avgUpNum", "平均UP抽"],
@@ -95,13 +96,14 @@ async function readImage(root: string, path: string) {
 async function readTheme(root: string, game: Game) {
   const config = games[game];
   const fonts = [
-    ["StarRailVersionNumber", "tttgbnumber.ttf"], ["StarRailVersionHan", "HYWH-65W.ttf"],
+    ["Number", "tttgbnumber.ttf"], ["Han", "HYWH-65W.ttf"],
   ] as const;
+  const aliases: string[] = [];
   for (const [name, file] of fonts) {
     const path = await assetPath(root, `common/font/${file}`);
     if (!path) throw new Error(`${config.label}版本统计的原主题字体不可用。`);
     try {
-      FontLibrary.use(name, [path]);
+      aliases.push(registerGachaThemeFont(name, path));
     } catch {
       throw new Error(`${config.label}版本统计的原主题字体不可用。`);
     }
@@ -114,7 +116,7 @@ async function readTheme(root: string, game: Game) {
   if (!background || !banner || !face || !five || (game === "gs" && !four)) {
     throw new Error(`${config.label}版本统计的原主题图片不可用。`);
   }
-  return { background, banner, face, four, five };
+  return { background, banner, face, four, five, family: aliases.join(", ") + ", sans-serif" };
 }
 
 const themes = new Map<string, ReturnType<typeof readTheme>>();
@@ -147,7 +149,7 @@ function rect(ctx: Context, x: number, y: number, w: number, h: number, corners:
 
 function text(ctx: Context, value: string | number, x: number, y: number, size = 16, color = white,
   align: CanvasTextAlign = "left", maxWidth?: number, weight = false) {
-  ctx.font = `${weight ? "700 " : ""}${size}px ${family}`;
+  ctx.font = `${weight ? "700 " : ""}${size}px ${fontFamilies.get(ctx)!}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
   ctx.fillStyle = color;
@@ -160,10 +162,10 @@ function text(ctx: Context, value: string | number, x: number, y: number, size =
 }
 
 function drawNickname(ctx: Context, nickname: string, x: number, y: number, size: number, color: string, maxWidth: number) {
-  ctx.font = `700 ${size}px ${family}`;
+  ctx.font = `700 ${size}px ${fontFamilies.get(ctx)!}`;
   const width = ctx.measureText(nickname).width;
   if (width > maxWidth) size = Math.max(16, Math.floor(size * maxWidth / width));
-  ctx.font = `700 ${size}px ${family}`;
+  ctx.font = `700 ${size}px ${fontFamilies.get(ctx)!}`;
   if (ctx.measureText(nickname).width > maxWidth) {
     let fitted = "";
     for (const character of nickname) {
@@ -176,7 +178,7 @@ function drawNickname(ctx: Context, nickname: string, x: number, y: number, size
 }
 
 function richLine(ctx: Context, parts: readonly (readonly [string, string])[], x: number, y: number, size: number, weight = false) {
-  ctx.font = `${weight ? "700 " : ""}${size}px ${family}`;
+  ctx.font = `${weight ? "700 " : ""}${size}px ${fontFamilies.get(ctx)!}`;
   const widths = parts.map(([value]) => ctx.measureText(value).width);
   let left = x - widths.reduce((sum, value) => sum + value, 0) / 2;
   for (const [index, [value, color]] of parts.entries()) {
@@ -243,9 +245,9 @@ function drawPageHead(ctx: Context, model: GachaVersionModel, page: NonNullable<
   rect(ctx, margin, 25, panelWidth, 45, 30, "rgba(0,0,0,.50)");
   const mid = `#${model.uid} · ${model.poolName}统计`;
   const marker = `第 ${page.page}/${page.total} 张`;
-  ctx.font = `700 20px ${family}`;
+  ctx.font = `700 20px ${fontFamilies.get(ctx)!}`;
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
-  ctx.font = `16px ${family}`;
+  ctx.font = `16px ${fontFamilies.get(ctx)!}`;
   const free = panelWidth - 40 - nameWidth - ctx.measureText(mid).width - ctx.measureText(marker).width;
   if (game === "gs" || model.recordArchive) drawNickname(ctx, model.face.name, 35, 47, 20, white, nameWidth || 235);
   else text(ctx, model.face.name, 35, 47, 20, white, "left", nameWidth || 235, true);
@@ -337,7 +339,7 @@ function drawGroup(ctx: Context, group: Group, model: GachaVersionModel, theme: 
   });
   let left = margin + titleWidth + 20;
   for (const [index, { label, value }] of values.entries()) {
-    ctx.font = `12px ${family}`;
+    ctx.font = `12px ${fontFamilies.get(ctx)!}`;
     const statWidth = Math.max(60, ctx.measureText(label).width + 30);
     const center = left + 10 + (statWidth - 30) / 2;
     text(ctx, value, center, y + 22.5, 22, "#ffde9d", "center");
@@ -374,7 +376,7 @@ function drawGroup(ctx: Context, group: Group, model: GachaVersionModel, theme: 
       const h = image.height * zoom;
       ctx.drawImage(image, x + (side - w) / 2, top + (side - h) / 2, w, h);
     }
-    ctx.font = `16px ${family}`;
+    ctx.font = `16px ${fontFamilies.get(ctx)!}`;
     const badgeWidth = Math.max(20, ctx.measureText(String(row.num)).width + 12);
     rect(ctx, x + side - badgeWidth, top + side - 22, badgeWidth, 22, [10, 0, 0, 0], row.isUp ? "#ffeb73" : "#333");
     text(ctx, row.num, x + side - badgeWidth / 2, top + side - 11, 16, row.isUp ? "#6f4b00" : white, "center");
@@ -467,7 +469,7 @@ export async function renderGachaVersion(
   if (game === "gs") {
     // The scratch canvas measures text only. All visible graphics go through renderPng below.
     const measure = new Canvas(1, 1).getContext("2d");
-    measure.font = `14px ${family}`;
+    measure.font = `14px ${theme.family}`;
     layouts = groups.map((group) => layoutGroup(group, model, game, measure));
     ({ bottom, footer, height } = dimensions(layouts));
   }
@@ -482,6 +484,7 @@ export async function renderGachaVersion(
   }
   const zoom = Math.min(scale, 24_000 / height);
   return renderPng(Math.round(width * zoom), Math.round(height * zoom), (ctx) => {
+    fontFamilies.set(ctx, theme.family);
     ctx.scale(zoom, zoom);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";

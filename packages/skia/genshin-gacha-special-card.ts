@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
+import { loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
+import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
 import { renderPng } from "./index.ts";
 
 export interface GachaSpecialCardOptions {
@@ -58,8 +59,7 @@ const light = "#f5f6fb";
 const ink = "#1e1f20";
 const muted = "#7f858a";
 const paper = "#fff";
-const numberFont = '"StarRailSpecialNumber", "StarRailSpecialHan", sans-serif';
-const hanFont = '"StarRailSpecialHan", sans-serif';
+const fontFamilies = new WeakMap<Context, { han: string; number: string }>();
 
 async function canonicalAsset(root: string, source: string) {
   const path = source.replace(/^\//u, "");
@@ -86,11 +86,12 @@ async function image(root: string, source: string) {
 
 async function loadTheme(genshin: string, miao: string, game: Game) {
   const config = games[game];
-  for (const [family, name] of [["StarRailSpecialNumber", "tttgbnumber.ttf"], ["StarRailSpecialHan", "HYWenHei-55W.ttf"]] as const) {
+  const aliases: string[] = [];
+  for (const [family, name] of [["Number", "tttgbnumber.ttf"], ["Han", "HYWenHei-55W.ttf"]] as const) {
     const path = await canonicalAsset(genshin, `font/${name}`);
     if (!path) throw new Error(`${config.label}特殊池记录的原版字体不可用。`);
     try {
-      FontLibrary.use(family, [path]);
+      aliases.push(registerGachaThemeFont(family, path));
     } catch {
       throw new Error(`${config.label}特殊池记录的原版字体不可用。`);
     }
@@ -102,7 +103,8 @@ async function loadTheme(genshin: string, miao: string, game: Game) {
     image(genshin, "img/other/bg5.png"),
   ]);
   if (!banner || !logo || !star) throw new Error(`${config.label}特殊池记录的原版图片不可用。`);
-  return { banner, logo, star };
+  const han = aliases[1] + ", sans-serif";
+  return { banner, logo, star, fonts: { han, number: aliases[0] + ", " + han } };
 }
 
 const themeCache = new Map<string, ReturnType<typeof loadTheme>>();
@@ -134,8 +136,9 @@ function panel(ctx: Context, x: number, y: number, w: number, h: number, corners
 }
 
 function text(ctx: Context, value: string, x: number, y: number, size: number, color = ink,
-  align: CanvasTextAlign = "left", family = hanFont, maxWidth?: number, weight = false) {
-  ctx.font = `${weight ? "700 " : ""}${size}px ${family}`;
+  align: CanvasTextAlign = "left", useNumberFont = false, maxWidth?: number, weight = false) {
+  const fonts = fontFamilies.get(ctx)!;
+  ctx.font = `${weight ? "700 " : ""}${size}px ${useNumberFont ? fonts.number : fonts.han}`;
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
@@ -183,18 +186,18 @@ function drawHeader(ctx: Context, theme: Theme, pool: Pool, uid: string, x: numb
 
   const idSize = compact ? 24 : 26;
   const drawSize = compact ? 20 : 22;
-  text(ctx, `ID: ${uid}`, x + 20, y + (compact ? 31 : 32), idSize, "#000", "left", numberFont, width - 170);
+  text(ctx, `ID: ${uid}`, x + 20, y + (compact ? 31 : 32), idSize, "#000", "left", true, width - 170);
   const draws = `${pool.allNum}抽`;
-  text(ctx, draws, x + 20, y + (compact ? 68 : 72), drawSize, "#000", "left", numberFont, width - 250, true);
+  text(ctx, draws, x + 20, y + (compact ? 68 : 72), drawSize, "#000", "left", true, width - 250, true);
   const labelX = x + 26 + ctx.measureText(draws).width;
   const label = `${pool.typeName}池`;
-  ctx.font = `700 12px ${hanFont}`;
+  ctx.font = `700 12px ${fontFamilies.get(ctx)!.han}`;
   const badgeWidth = ctx.measureText(label).width + 14;
   const badgeY = y + (compact ? 60 : 64);
   // The original Genshin overview uses the same label_301 style for each pool.
   const badge = game === "gs" ? (crossPool ? "#eb6a4b" : undefined) : pool.type === 2 && !crossPool ? "#75c895" : undefined;
   if (badge) panel(ctx, labelX, badgeY, badgeWidth, 17, 9, badge);
-  text(ctx, label, labelX + 7, badgeY + 8.5, 12, "#555", "left", hanFont, undefined, true);
+  text(ctx, label, labelX + 7, badgeY + 8.5, 12, "#555", "left", false, undefined, true);
   ctx.drawImage(theme.logo, x + width - config.logoRight - config.logoWidth, y + config.logoTop,
     config.logoWidth, theme.logo.height * config.logoWidth / theme.logo.width);
 }
@@ -208,15 +211,15 @@ function drawMetrics(ctx: Context, pool: Pool, x: number, y: number, width: numb
       const top = y + 20 + row * 59;
       const amount = value === undefined ? "—" : String(value);
       const suffix = value === undefined ? "" : unit ?? "";
-      ctx.font = `24px ${numberFont}`;
+      ctx.font = `24px ${fontFamilies.get(ctx)!.number}`;
       const naturalWidth = ctx.measureText(amount).width;
-      ctx.font = `12px ${hanFont}`;
+      ctx.font = `12px ${fontFamilies.get(ctx)!.han}`;
       const unitWidth = ctx.measureText(suffix).width;
       const numberWidth = Math.min(naturalWidth, cell - unitWidth - 4);
       const left = center - (numberWidth + unitWidth) / 2;
-      text(ctx, amount, left, top + 14, 24, ink, "left", numberFont, numberWidth);
+      text(ctx, amount, left, top + 14, 24, ink, "left", true, numberWidth);
       text(ctx, suffix, left + numberWidth, top + 18, 12);
-      text(ctx, label, center, top + labelOffset, 14, muted, "center", hanFont, cell - 4);
+      text(ctx, label, center, top + labelOffset, 14, muted, "center", false, cell - 4);
     }
   }
 }
@@ -228,13 +231,13 @@ function dateRange(pool: Pool) {
 
 function drawHistoryHeading(ctx: Context, pool: Pool, x: number, y: number, width: number) {
   const label = dateRange(pool);
-  ctx.font = `15px ${hanFont}`;
+  ctx.font = `15px ${fontFamilies.get(ctx)!.han}`;
   const textWidth = Math.min(ctx.measureText(label).width, width - 60);
   const barWidth = (width - textWidth) / 2 - 20;
   ctx.fillStyle = "#ebebeb";
   ctx.fillRect(x + 10, y + 15, barWidth, 2);
   ctx.fillRect(x + width - barWidth - 10, y + 15, barWidth, 2);
-  text(ctx, label, x + width / 2, y + 14, 15, "#7d7d7d", "center", hanFont, textWidth);
+  text(ctx, label, x + width / 2, y + 14, 15, "#7d7d7d", "center", false, textWidth);
 }
 
 function amountColors(row: FiveStar, pool: Pool): readonly [string, string] {
@@ -257,16 +260,16 @@ function drawFiveStar(ctx: Context, row: FiveStar, pool: Pool, theme: Theme,
     const w = 70 * art.width / art.height;
     ctx.drawImage(art, x + (70 - w) / 2, y, w, 70);
   } else {
-    text(ctx, row.abbr || row.name, x + 35, y + 35, 13, "#51351d", "center", hanFont, 65);
+    text(ctx, row.abbr || row.name, x + 35, y + 35, 13, "#51351d", "center", false, 65);
   }
 
   const [fill, color] = amountColors(row, pool);
   ctx.fillStyle = fill;
   ctx.fillRect(x, y + 70, 70, 20);
-  text(ctx, row.num === undefined ? "—" : String(row.num), x + 35, y + 80, 16, color, "center", numberFont, 66);
+  text(ctx, row.num === undefined ? "—" : String(row.num), x + 35, y + 80, 16, color, "center", true, 66);
   if (row.isUp === true) {
     panel(ctx, x + 48, y, 22, 16, [2, 0, 2, 2], "rgba(0,0,0,.80)");
-    text(ctx, "UP", x + 59, y + 8, 12, paper, "center", numberFont);
+    text(ctx, "UP", x + 59, y + 8, 12, paper, "center", true);
   }
   ctx.restore();
 }
@@ -326,7 +329,7 @@ function drawPool(ctx: Context, p: PositionedPool, model: GachaSpecialView, them
     drawFiveStar(ctx, row, pool, theme, portraits, x + inset + index % columns * stride,
       historyTop + 32 + Math.floor(index / columns) * 100);
   }
-  if (note) text(ctx, note, x + width / 2, historyTop + 41 + cardsHeight, 12, muted, "center", hanFont, width - 20);
+  if (note) text(ctx, note, x + width / 2, historyTop + 41 + cardsHeight, 12, muted, "center", false, width - 20);
 }
 
 export async function renderGachaSpecialCard(
@@ -358,6 +361,7 @@ export async function renderGachaSpecialCard(
   const pixelWidth = Math.round(width * zoom);
   const pixelHeight = Math.round(height * zoom);
   return renderPng(pixelWidth, pixelHeight, (ctx) => {
+    fontFamilies.set(ctx, theme.fonts);
     ctx.fillStyle = light;
     ctx.fillRect(0, 0, pixelWidth, pixelHeight);
     ctx.scale(zoom, zoom);
@@ -367,6 +371,6 @@ export async function renderGachaSpecialCard(
     if (page) text(ctx, `第 ${page.page}/${page.total} 张 · ${crossPool ? "各池" : ""}第 ${page.from}~${page.to} 条五星记录`,
       width / 2, bottom + 9, 14, muted, "center");
     text(ctx, "Created By Lotus-Yunzai", width / 2 + 5, bottom + (page ? 29.5 : 7.5),
-      12, "#7994a7", "center", numberFont);
+      12, "#7994a7", "center", true);
   }, mode);
 }
