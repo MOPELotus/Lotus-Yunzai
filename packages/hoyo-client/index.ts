@@ -16,11 +16,13 @@ import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-back
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
+import { readGenshinPanel, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
+import { readZzzShiyu } from "./zzz-shiyu.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { createCredentialExchange };
@@ -31,6 +33,7 @@ export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
+export type { ZzzShiyuDate, ZzzShiyuPortrait, ZzzShiyuSnapshot, ZzzShiyuTeam } from "./zzz-shiyu.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
@@ -392,6 +395,9 @@ export function createHoyoClient(
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
     },
+    fetchGenshinPanel(source: ProfileRequestContext, options: GenshinPanelOptions = {}) {
+      return readForProfile(source, options, readGenshinPanel, isGameRecordCookieExpired);
+    },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
     },
@@ -409,6 +415,9 @@ export function createHoyoClient(
     },
     fetchZzzGameRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGameRecord, isGameRecordCookieExpired);
+    },
+    fetchZzzShiyu(source: ProfileRequestContext, options: Parameters<typeof readZzzShiyu>[2]) {
+      return readForProfile(source, options, readZzzShiyu, isGameRecordCookieExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);

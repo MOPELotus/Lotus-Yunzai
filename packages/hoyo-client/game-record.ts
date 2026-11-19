@@ -32,8 +32,17 @@ const zzzCardPaths = {
   "zzz-index": "index",
   "zzz-avatar": "avatar/basic",
   "zzz-buddy": "buddy/info",
+  "zzz-hadal": "hadal_info_v2",
 } as const;
-type RecordKind = "daily-note" | "genshin-index" | "starrail-avatar-info" | keyof typeof zzzCardPaths;
+const genshinPanelPaths = {
+  "genshin-panel-list": "character/list",
+  "genshin-panel-detail": "character/detail",
+} as const;
+type RecordOptions = { readonly signal?: AbortSignal } & (
+  { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" | Exclude<keyof typeof zzzCardPaths, "zzz-hadal"> } |
+  { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
+  { readonly kind: "zzz-hadal"; readonly scheduleType: 1 | 2 }
+);
 type Json = Record<string, unknown>;
 
 function object(value: unknown): Json | undefined {
@@ -45,7 +54,7 @@ function whole(value: unknown): number | undefined {
   if (typeof parsed === "number" && Number.isSafeInteger(parsed)) return parsed;
 }
 
-function requestHeaders(source: ProfileRequestContext, query: string): Headers {
+function requestHeaders(source: ProfileRequestContext, query: string, body?: string): Headers {
   const { account, device } = source;
   const cookie = account.cookie.trim();
   const valid = (value: string) => !/[^\x20-\x7E]/u.test(value);
@@ -54,7 +63,7 @@ function requestHeaders(source: ProfileRequestContext, query: string): Headers {
   }
   const time = Math.round(Date.now() / 1000);
   const nonce = randomInt(100000, 1000000);
-  const hash = createHash("md5").update(`salt=${signingSalt}&t=${time}&r=${nonce}&b=&q=${query}`).digest("hex");
+  const hash = createHash("md5").update(`salt=${signingSalt}&t=${time}&r=${nonce}&b=${body ?? ""}&q=${query}`).digest("hex");
   const model = device.model && valid(device.model) ? device.model : "Android";
   const android = device.androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(device.androidVersion) ? device.androidVersion : "12";
   const headers = new Headers({ Accept: "application/json", Cookie: cookie,
@@ -64,6 +73,7 @@ function requestHeaders(source: ProfileRequestContext, query: string): Headers {
   });
   if (device.id) headers.set("x-rpc-device_id", device.id);
   if (device.id && device.fp) headers.set("x-rpc-device_fp", device.fp);
+  if (body !== undefined) headers.set("Content-Type", "application/json");
   return headers;
 }
 
@@ -119,13 +129,15 @@ export function genshinCnRecordRegion({ uid, region, gameBiz }: ProfileRequestCo
 }
 
 export async function readCnGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
-  { kind, signal }: { readonly kind: RecordKind; readonly signal?: AbortSignal },
+  options: RecordOptions,
   verifyProfile?: () => Promise<void>) {
+  const { kind, signal } = options;
   const { game, role: { uid, gameBiz } } = source;
   const forNote = kind === "daily-note";
   const forStarRail = kind === "starrail-avatar-info";
+  const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
   const forZzz = Object.hasOwn(zzzCardPaths, kind);
-  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : forStarRail ? "星铁面板" : "原神战绩";
+  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -134,14 +146,29 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
   }
+  if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
+      options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
+    throw new HoyoRequestError("invalid-input", "原神面板角色编号无效。");
+  }
+  if (options.kind === "zzz-hadal" && options.scheduleType !== 1 && options.scheduleType !== 2) {
+    throw new HoyoRequestError("invalid-input", "式舆防卫战期次无效。");
+  }
   const path = forNote ? route.path : forStarRail ? "/game_record/app/hkrpg/api/avatar/info"
+    : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
     : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}` : "/game_record/app/genshin/api/index";
   const endpoint = new URL(path, origin);
-  if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
-  if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
-  endpoint.searchParams.set("role_id", uid);
-  endpoint.searchParams.set("server", region);
-  const headers = requestHeaders(source, endpoint.search.slice(1));
+  let body: string | undefined;
+  if (forGenshinPanel) {
+    body = JSON.stringify({ role_id: uid, server: region,
+      ...(options.kind === "genshin-panel-detail" && { character_ids: options.characterIds }) });
+  } else {
+    if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
+    if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
+    endpoint.searchParams.set("role_id", uid);
+    endpoint.searchParams.set("server", region);
+    if (options.kind === "zzz-hadal") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
+  }
+  const headers = requestHeaders(source, endpoint.search.slice(1), body);
 
   async function guard() {
     if (signal?.aborted) throw new HoyoRequestError("transport", `${subject}已取消。`);
@@ -155,13 +182,14 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   let response: Response;
   try {
     response = await transport(endpoint, {
-      method: "GET", headers, credentials: "omit", redirect: "error",
+      method: body === undefined ? "GET" : "POST", body, headers, credentials: "omit", redirect: "error",
       signal: deadline,
     });
   } catch {
     throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   }
-  if (response.redirected || (!response.ok && response.status !== 401 && response.status !== 429)) {
+  if (response.redirected || (response.url && response.url !== endpoint.href) ||
+      (!response.ok && response.status !== 401 && response.status !== 429)) {
     await response.body?.cancel().catch(() => undefined);
     throw new HoyoRequestError("http", `官方${label}接口返回 HTTP 错误。`, response.status);
   }
@@ -169,7 +197,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail) {
+  if (forStarRail || forGenshinPanel || options.kind === "zzz-hadal") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);
@@ -177,12 +205,14 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       throw new GameRecordRequestError(subject, "risk", "api", response.status);
     }
   }
-  const payload = await readGameRecordPayload(response, forNote ? 64 * 1024 : forStarRail ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
+  const payload = await readGameRecordPayload(response,
+    forNote ? 64 * 1024 : forStarRail || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   const retcode = whole(payload?.retcode);
   if (response.status === 401) throw apiError(payload, response.status, retcode, label);
   if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
+  if (forStarRail && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
   const data = object(payload?.data);
   if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);
