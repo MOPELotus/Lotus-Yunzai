@@ -283,6 +283,7 @@ export function createHoyoClient(
         ...roleCatalog(data),
         nxx: extraCheckinRoles(data, "nxx_cn", region => region === "cn_prod_gf01"),
         bh3: extraCheckinRoles(data, "bh3_cn", isBh3CnCheckinRegion),
+        bh2: extraCheckinRoles(data, "bh2_cn", region => region === "gf01"),
       };
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {

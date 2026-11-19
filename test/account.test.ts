@@ -9,12 +9,13 @@ import { readAccountRefreshPermission } from "../lib/permissions.ts";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
 import { createCredentialExchange, createHoyoClient, createProfileHoyoClient } from "../packages/hoyo-client/index.ts";
 
-test("签到角色目录保留同 UID 的不同崩坏3官服，忽略渠道和重复区服", async () => {
+test("扩展签到目录保留同 UID 的不同官服，忽略渠道和测试服", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-checkin-role-catalog-"));
   try {
     await writeFile(join(root, "42.yaml"), "account: { cookie: fixture-cookie, stoken: fixture-stoken }\n");
     const rows = ["bb01", "ios01", "android01", "pc01", "ios01", "hun01"]
       .map(region => ({ region, game_uid: "123456789", game_biz: "bh3_cn" }));
+    rows.push(...["bb01", "gf01", "ptr01", "gf01"].map(region => ({ region, game_uid: "223456789", game_biz: "bh2_cn" })));
     const client = createHoyoClient(async (endpoint, options) => {
       expect(String(endpoint)).toBe("https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie");
       expect(new Headers(options?.headers).get("Cookie")).toBe("fixture-cookie");
@@ -24,6 +25,7 @@ test("签到角色目录保留同 UID 的不同崩坏3官服，忽略渠道和�
     expect(catalog.bh3.map(role => [role.uid, role.region])).toEqual([
       ["123456789", "ios01"], ["123456789", "android01"], ["123456789", "pc01"],
     ]);
+    expect(catalog.bh2.map(role => [role.uid, role.region])).toEqual([["223456789", "gf01"]]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
