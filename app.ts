@@ -32,7 +32,7 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
-import { readLocalConfig } from "./lib/config.ts";
+import { readLocalConfig, readOptionalLocalConfig } from "./lib/config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
@@ -107,6 +107,14 @@ const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
 const atlasMaintenanceCommand = /^#?(?:Lotus|lotus|荷花)?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新)$/u;
+
+async function readAtlasUpdateConfig(root: URL, globalConfig: Record<string, unknown>) {
+  if (Object.hasOwn(globalConfig, "atlas")) return globalConfig.atlas;
+  for (const directory of ["Lotus-Plugin", "Lotus-ReFactor"]) {
+    const config = await readOptionalLocalConfig(new URL(`plugins/${directory}/`, root), "global");
+    if (config && Object.hasOwn(config, "atlas")) return config.atlas;
+  }
+}
 
 function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
   return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
@@ -1136,7 +1144,9 @@ if (import.meta.main) {
         },
       },
       atlasUpdate: probingUpdate ? undefined : {
-        config: globalConfig.atlas,
+        config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {
+          console.warn("[atlas] 无法读取旧图鉴更新配置。");
+        }),
         register(schedule) {
           const jobs: (() => Promise<void>)[] = [];
           for (const [kind, name] of [["version", "[atlas] 正式资料"], ["challenge", "[atlas] 挑战轮换"]] as const) {
