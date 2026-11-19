@@ -3,7 +3,7 @@ import { createProfileStore, MAX_PROFILE_ID, ProfileError, type GameRole } from 
 import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import {
   createProfileHoyoClient, HoyoRequestError, readZzzGachaLink, resolveZzzGachaLinkRole, resolveZzzTuningRegion,
-  ZzzTuningRateLimitError,
+  ZzzManualGachaLinkRequired, ZzzTuningRateLimitError,
 } from "@lotus-yunzai/hoyo-client";
 import { readZzzLegacyGacha, ZzzLegacyGachaError } from "./gacha-legacy.ts";
 import { buildZzzLegacyDetail } from "./gacha-legacy-detail.ts";
@@ -61,7 +61,12 @@ export function createModule({ signal, lockFile }: {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const client = createProfileHoyoClient(profiles);
   const sync = createZzzTuningSync(profiles, client, historyDirectory, lockFile);
-  const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
+  const syncOfficial = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
+  async function gachaUpdate(qq: string, profileId: number, notify?: () => unknown) {
+    const role = await profiles.savedRole(qq, profileId, "zzz");
+    if (overseasRegion(role)) throw new ZzzManualGachaLinkRequired();
+    return syncOfficial(qq, profileId, notify);
+  }
   const legacyHistory = Bun.env.LOTUS_ZZZ_LEGACY_HISTORY_DIR || legacyHistoryDirectory;
   const linkHistory = createZzzLinkHistory(linkHistoryDirectory, lockFile);
   const getLink = createGachaUpdater(async (qq, profileId) => {
@@ -217,6 +222,7 @@ export function createModule({ signal, lockFile }: {
         }
       } catch (error) {
         if (signal.aborted) return;
+        if (error instanceof ZzzManualGachaLinkRequired) return linkSession(context, profileId);
         if (error instanceof ZzzTuningHistoryChangedError) return "该角色的绝区零抽卡记录已由另一条请求更新。";
         if (error instanceof ProfileError) {
           if (error.code === "missing" || error.code === "login-required") return `[荷花插件]请先登录 profile ${profileId}。`;

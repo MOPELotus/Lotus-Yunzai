@@ -64,7 +64,10 @@ export function createZzzGachaLinkSession({ signal, savedRole, importLink }: {
     if (signal.aborted) return;
     const { message_type, user_id, self_id, adapter } = context;
     if (message_type !== "private" || !validId(user_id) || !validId(self_id)) {
-      if (profileId !== undefined) return "请私聊发送 %抽卡链接，再按提示录入。";
+      if (profileId !== undefined) {
+        const alias = `%抽卡链接${profileId === 1 ? "" : profileId}`;
+        return `请私聊发送 ${alias}，再按提示录入。`;
+      }
       return;
     }
     const qq = String(user_id);

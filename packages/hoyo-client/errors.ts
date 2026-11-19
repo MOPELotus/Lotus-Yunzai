@@ -9,3 +9,9 @@ export class HoyoRequestError extends Error {
     this.name = "HoyoRequestError";
   }
 }
+
+export class ZzzManualGachaLinkRequired extends HoyoRequestError {
+  constructor() {
+    super("invalid-input", "当前绝区零国际服档案需要手动录入官方抽卡链接。");
+  }
+}

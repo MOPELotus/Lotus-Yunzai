@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProfileError } from "@lotus-yunzai/account";
-import { HoyoRequestError, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import { createGachaUpdater } from "../packages/gacha/update.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import { createGachaBatch, type GachaGame } from "../lib/gacha-batch.ts";
@@ -107,6 +107,21 @@ test("retired providers cannot remove their replacement and missing providers ar
   replacement();
   await batch.fallback(command, context(command));
   expect(rendered[1]).toEqual(["P1 原神：游戏插件未加载，跳过", "P1 星铁：游戏插件未加载，跳过", "P1 绝区零：游戏插件未加载，跳过"]);
+});
+
+test("skips an international tuning profile with the matching private command and finishes later profiles", async () => {
+  const batch = createGachaBatch({
+    listIds: async () => [2, 3], signal: new AbortController().signal,
+    render: async () => { throw Error("fixture-render"); },
+  });
+  batch.register("zzz", async (_qq, id) => {
+    if (id === 2) throw new ZzzManualGachaLinkRequired();
+    return { uid: "123456789" };
+  });
+  const result = await batch.fallback(command, context(command));
+  expect(String(result)).toContain("完成 1 项，跳过 5 项，失败 0 项。");
+  expect(String(result)).toContain("P2 绝区零：国际服请私聊发送 %抽卡链接2，跳过");
+  expect(String(result)).toContain("P3 绝区零：UID 123456789 · 完成");
 });
 
 test("guards parallel batches from the same QQ and releases the slot after completion", async () => {

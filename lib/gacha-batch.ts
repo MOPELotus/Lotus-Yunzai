@@ -1,5 +1,5 @@
 import { ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
-import { HoyoRequestError, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import type { MessageFallback } from "./commands.ts";
 import { segment } from "./messages.ts";
 
@@ -24,7 +24,11 @@ function failed(message: string): Outcome {
   return { status: "failed", text: `失败：${message}` };
 }
 
-function rejected(error: unknown): Outcome {
+function rejected(error: unknown, profileId: number): Outcome {
+  if (error instanceof ZzzManualGachaLinkRequired) {
+    const command = `%抽卡链接${profileId === 1 ? "" : profileId}`;
+    return skipped(`国际服请私聊发送 ${command}，跳过`);
+  }
   if (error instanceof ProfileError) {
     if (error.code === "role-missing") return skipped("未绑定 UID，跳过");
     if (error.code === "missing" || error.code === "login-required") return failed("请先登录该档案");
@@ -49,7 +53,7 @@ async function update(entry: Entry | undefined, qq: string, profileId: number): 
     if (!/^[1-9]\d*$/u.test(result.uid)) return failed("更新结果缺少有效 UID");
     return { status: "done", text: `UID ${result.uid} · 完成` };
   } catch (error) {
-    return rejected(error);
+    return rejected(error, profileId);
   }
 }
 
