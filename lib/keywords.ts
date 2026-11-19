@@ -1,4 +1,6 @@
 import { keywordMediaUrl } from "./keyword-store.ts";
+import { delegationSession } from "./command-delegation.ts";
+import { isMilkyOwnerSession } from "./command-permissions.ts";
 import type { InboundSegment, MessageEvent, MessageReply } from "./messages.ts";
 
 type Scope = number | "global";
@@ -24,6 +26,7 @@ interface Draft {
   readonly scope: Scope;
   readonly name: string;
   readonly segments: InboundSegment[];
+  readonly signal?: AbortSignal;
 }
 
 interface RecentGroupStore {
@@ -39,6 +42,7 @@ const maxRecentGroups = 4096;
 const maxDraftSegments = 1000;
 const finishCommand = "#结束添加";
 const managementCommand = /^#(全局)?(添加|删除|消息|词条)([\s\S]*)$/u;
+const unboundMessage = "请通过已绑定的机器人连接管理词条。";
 
 function isId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -47,11 +51,16 @@ function isId(value: unknown): value is number {
 function identity(event: MessageEvent) {
   const { self_id: bot, user_id: user } = event;
   if (!isId(bot) || !isId(user) || bot === user) return;
-  const actor = `${bot}:${user}`;
+  const actor = event.adapter === "milky" ? `milky:${bot}:${user}` : `${bot}:${user}`;
   if (event.message_type === "private") return { actor, chat: `${actor}:private` };
   if (event.message_type === "group" && isId(event.group_id)) {
     return { actor, chat: `${actor}:group:${event.group_id}`, group: event.group_id };
   }
+}
+
+function hasKeywordSession(event: MessageEvent): boolean {
+  const signal = event[delegationSession]?.signal;
+  return !event.isDelegated && !signal?.aborted && (event.adapter === "milky" ? signal !== undefined : event.boundAccount !== false);
 }
 
 function numbered(name: string, variantsFor: (key: string) => Variants | undefined) {
@@ -119,8 +128,8 @@ export function createKeywords(
   }
 
   async function permission(event: MessageEvent, scope: Scope): Promise<string | undefined> {
-    if (event.boundAccount === false) return "请通过已绑定的机器人连接管理词条。";
-    if (event.isMaster) return;
+    if (!hasKeywordSession(event)) return unboundMessage;
+    if (event.adapter === "milky" ? isMilkyOwnerSession(event) : event.isMaster) return;
     if (scope === "global") return "暂无权限，只有主人才能操作全局词条。";
     const settings = resolveSettings(event, scope);
     if (settings.addLimit === 2) return "暂无权限，只有主人才能操作。";
@@ -187,6 +196,7 @@ export function createKeywords(
     try {
       const entries = await store.read(scope);
       const indexed = entries.has(argument) ? undefined : numbered(argument, (key) => entries.get(key));
+      if (!hasKeywordSession(event)) return;
       removed = await store.remove(scope, indexed?.key ?? argument, indexed?.order);
       if (indexed) label = `${indexed.key}(${indexed.order})`;
     } catch {
@@ -202,14 +212,15 @@ export function createKeywords(
     const draft = drafts.get(sender.chat);
     if (!draft) return false;
     const finishing = event.msg.trim() === finishCommand;
-    if (draft.expires <= now()) {
+    if (draft.signal?.aborted || draft.expires <= now()) {
       drafts.delete(sender.chat);
-      if (finishing) await event.reply("添加已失效，请重新添加。");
-      return finishing;
+      if (!finishing || !hasKeywordSession(event)) return false;
+      await event.reply("添加已失效，请重新添加。");
+      return true;
     }
+    if (!hasKeywordSession(event) || draft.signal !== event[delegationSession]?.signal) return false;
 
     if (!finishing) {
-      if (event.boundAccount === false) return false;
       const parts = content(event);
       if (draft.segments.length + parts.length > maxDraftSegments) {
         await event.reply("词条片段过多，未收录这条消息。请发送 #结束添加 保存已收录的内容。");
@@ -221,6 +232,7 @@ export function createKeywords(
 
     drafts.delete(sender.chat);
     const denied = await permission(event, draft.scope);
+    if (!hasKeywordSession(event)) return true;
     if (denied || !draft.segments.length) {
       await event.reply(denied ?? "添加错误：没有添加内容。");
       return true;
@@ -269,7 +281,7 @@ export function createKeywords(
   async function dispatch(event: MessageEvent): Promise<boolean> {
     const sender = identity(event);
     if (!sender) return false;
-    if (sender.group !== undefined && event.boundAccount !== false) await remember(sender.actor, sender.group);
+    if (sender.group !== undefined && hasKeywordSession(event)) await remember(sender.actor, sender.group);
     const name = event.msg.trim();
     const group = sender.group ?? await recent(sender.actor);
     if (name === finishCommand) {
@@ -297,18 +309,19 @@ export function createKeywords(
       await event.reply(denied ?? `${action}错误：没有关键词。`);
       return true;
     }
+    if (!hasKeywordSession(event)) return true;
     if (action === "删除") {
       await remove(event, scope, argument);
       return true;
     }
 
     const time = now();
-    for (const [chat, draft] of drafts) if (draft.expires <= time) drafts.delete(chat);
+    for (const [chat, draft] of drafts) if (draft.signal?.aborted || draft.expires <= time) drafts.delete(chat);
     if (drafts.size >= maxDrafts && !drafts.has(sender.chat)) {
       await event.reply("当前添加会话较多，请稍后重试。");
       return true;
     }
-    drafts.set(sender.chat, { scope, name: argument, expires: time + draftTtl, segments: [] });
+    drafts.set(sender.chat, { scope, name: argument, expires: time + draftTtl, segments: [], signal: event[delegationSession]?.signal });
     await event.reply("请发送添加内容，完成后发送#结束添加", true, { at: true });
     return true;
   }
