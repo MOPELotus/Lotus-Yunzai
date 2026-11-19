@@ -4,6 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./character-returns": "./character-returns.ts",
+    "./expectation": "./expectation.ts",
     "./file-import": "./file-import.ts",
     "./miao-data": "./miao-data.ts",
     "./update": "./update.ts"

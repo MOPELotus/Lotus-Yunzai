@@ -1,26 +1,6 @@
-const pools = {
-  "genshin-character": { base: 0.006, soft: 74, step: 0.06, hard: 90, featured: 0.50009 },
-  "genshin-weapon": { base: 0.007, soft: 64, step: 0.07, hard: 80, featured: 0.375 },
-  "hsr-character": { base: 0.006, soft: 74, step: 0.06, hard: 90, featured: 0.5625 },
-  "hsr-lightcone": { base: 0.008, soft: 66, step: 0.08, hard: 80, featured: 0.75 },
-  "zzz-character": { base: 0.006, soft: 74, step: 0.06, hard: 90, featured: 0.5 },
-  "zzz-weapon": { base: 0.01, soft: 65, step: 0.061875, hard: 80, featured: 0.75 },
-} as const;
+import { featuredChance, fiveStarChance, resolveGachaExpectationRequest, type GachaExpectationRequest, type Pool } from "./expectation-model.ts";
 
-export type GachaExpectationPool = keyof typeof pools;
-type Pool = (typeof pools)[GachaExpectationPool];
-
-export const maxGachaExpectationCopies = 20;
-
-export interface GachaExpectationRequest {
-  readonly pool: GachaExpectationPool;
-  readonly copies?: number;
-  readonly pity?: number;
-  readonly guaranteed?: boolean;
-  readonly radiance?: number;
-  readonly fate?: number;
-  readonly budget?: number;
-}
+export { maxGachaExpectationCopies, type GachaExpectationPool, type GachaExpectationRequest } from "./expectation-model.ts";
 
 export interface GachaPullStatistics {
   readonly mean: number;
@@ -33,19 +13,11 @@ export interface GachaPullStatistics {
   readonly budgetChance?: number;
 }
 
-function requireIntegerInRange(value: number, minimum: number, maximum: number, field: string): void {
-  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
-    throw new RangeError(`${field} must be an integer between ${minimum} and ${maximum}`);
-  }
-}
-
 function fiveStarDistance(pool: Pool, pity: number): Float64Array {
   const probabilities = new Float64Array(pool.hard - pity + 1);
   let remaining = 1;
   for (let pull = pity + 1; pull <= pool.hard; pull++) {
-    // The legacy weapon and light-cone ramps reach certainty before their nominal hard pity.
-    const chance = pull === pool.hard
-      ? 1 : Math.min(1, pool.base + Math.max(0, pull - pool.soft + 1) * pool.step);
+    const chance = fiveStarChance(pool, pull);
     probabilities[pull - pity] = remaining * chance;
     if (chance === 1) return probabilities.subarray(0, pull - pity + 1);
     remaining *= 1 - chance;
@@ -101,18 +73,9 @@ function summarize(probabilities: Float64Array, budget: number | undefined): Gac
  * Featured-copy model calibrated against the six pools in Xt-0's
  * mihoyo-gacha-calculator, revision 187700f. These rates model the legacy estimator.
  */
-export function calculateGachaPulls({
-  pool: poolName, copies = 1, pity = 0, guaranteed = false, radiance = 0, fate = 0, budget,
-}: GachaExpectationRequest): GachaPullStatistics {
-  if (!Object.hasOwn(pools, poolName)) throw new RangeError("unknown gacha pool");
-  const pool = pools[poolName];
-  const tracksRadiance = poolName === "genshin-character";
+export function calculateGachaPulls(request: GachaExpectationRequest): GachaPullStatistics {
+  const { pool, copies, pity, guaranteed, radiance, tracksRadiance, budget } = resolveGachaExpectationRequest(request);
   const radianceStates = tracksRadiance ? 4 : 1;
-  requireIntegerInRange(copies, 1, maxGachaExpectationCopies, "copies");
-  requireIntegerInRange(pity, 0, pool.hard - 1, "pity");
-  requireIntegerInRange(radiance, 0, radianceStates - 1, "radiance");
-  requireIntegerInRange(fate, 0, poolName === "genshin-weapon" ? 1 : 0, "fate");
-  if (budget !== undefined) requireIntegerInRange(budget, 0, Number.MAX_SAFE_INTEGER, "budget");
 
   const first = fiveStarDistance(pool, pity);
   const fresh = pity === 0 ? first : fiveStarDistance(pool, 0);
@@ -124,12 +87,12 @@ export function calculateGachaPulls({
     const next: Array<Float64Array | undefined> = Array(radianceStates);
     const direct = copy === 0 ? first : fresh;
     const afterLoss = copy === 0 ? firstWithLoss : freshWithLoss;
-    const isGuaranteed = copy === 0 && (guaranteed || fate > 0);
+    const isGuaranteed = copy === 0 && guaranteed;
     const length = (firstWithLoss.length - 1) + copy * (freshWithLoss.length - 1) + 1;
     for (let counter = 0; counter < radianceStates; counter++) {
       const from = states[counter];
       if (!from) continue;
-      const winChance = isGuaranteed || counter === 3 ? 1 : pool.featured;
+      const winChance = featuredChance(pool, isGuaranteed, counter);
       const onWin = isGuaranteed ? counter : 0;
       addConvolution(next[onWin] ??= new Float64Array(length), from, direct, winChance);
       if (winChance < 1) {
