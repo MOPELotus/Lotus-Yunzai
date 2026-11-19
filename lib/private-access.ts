@@ -6,7 +6,7 @@ const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹�
 const accountEntry = /^#(?:登录列表|账号列表|(?:清除|删除)(?:登录|扫码登录|[cC]ookie)[0-9]{0,2})$/u;
 const gachaImportEntry = /^#?(?:原神|\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)?(?:强制)?导入记录(?:json)?(?:[1-9]\d{0,2})?$/u;
 const zzzLinkPrefix = "(?:[#/]?(?:zzz|绝区零|绝区)(?:zzz|绝区零)?|#?[%％](?:zzz|绝区零|绝区)?)";
-export const zzzLinkEntry = new RegExp(`^${zzzLinkPrefix}(抽卡链接(?:[1-9]\\d{0,2})?)$`, "iu");
+export const zzzLinkEntry = new RegExp(`^${zzzLinkPrefix}((?:获取)?抽卡链接(?:[1-9]\\d{0,2})?)$`, "iu");
 const zzzLinkedViewEntry = new RegExp(`^${zzzLinkPrefix}逐抽记录(?:[1-9]\\d{0,2})?$`, "iu");
 const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;

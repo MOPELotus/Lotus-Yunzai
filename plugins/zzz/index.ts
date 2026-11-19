@@ -19,13 +19,15 @@ const updateCommand = /^#绝区零(?:更新|刷新)抽卡(?:记录|链接)?([1-9
 const viewCommand = /^#绝区零抽卡(?:记录|分析|统计)([1-9]\d{0,2})?$/u;
 const linkedViewCommand = /^#绝区零逐抽记录([1-9]\d{0,2})?$/u;
 const linkCommand = /^#绝区零抽卡链接([1-9]\d{0,2})?$/u;
+const generateLinkCommand = /^#绝区零获取抽卡链接([1-9]\d{0,2})?$/u;
 const helpCommand = /^#绝区零抽卡帮助$/u;
-const legacyPrefix = /^(?:[#/](?:zzz|绝区零)(?:zzz|绝区零)?|[%％](?:zzz|绝区零)?|zzz|绝区零)(?=(?:更新|刷新)?抽卡|逐抽记录)/iu;
+const legacyPrefix = /^(?:[#/](?:zzz|绝区零)(?:zzz|绝区零)?|[%％](?:zzz|绝区零)?|zzz|绝区零)(?=(?:更新|刷新|获取)?抽卡|逐抽记录)/iu;
 const help = [
   "绝区零抽卡记录",
   "%更新抽卡记录 同步国服米游社的六个频段。",
   "%抽卡记录 查看调频记录，当前登录可用时另发实时库存。",
   "%抽卡链接 私聊录入有效的绝区零官方抽卡链接。",
+  "%获取抽卡链接 私聊获取当前国服档案的官方抽卡链接。",
   "%逐抽记录 查看录入的记录和已有旧档案。",
   "国际服绑定档案可查看已有的旧调频记录。",
   "命令末尾可加档案编号，例如 %抽卡记录2。",
@@ -62,6 +64,15 @@ export function createModule({ signal, lockFile }: {
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const legacyHistory = Bun.env.LOTUS_ZZZ_LEGACY_HISTORY_DIR || legacyHistoryDirectory;
   const linkHistory = createZzzLinkHistory(linkHistoryDirectory, lockFile);
+  const getLink = createGachaUpdater(async (qq, profileId) => {
+    const source = await profiles.requestContext(qq, profileId, "zzz");
+    const result = await client.fetchZzzGachaAuthKey(source, { signal });
+    const latest = await profiles.requestContext(qq, profileId, "zzz").catch(() => undefined);
+    if (latest?.revision !== result.revision || latest.role.uid !== result.uid) {
+      throw new ProfileError("changed", "绝区零档案角色已变化。");
+    }
+    return result.url.href;
+  });
   const linkSession = createZzzGachaLinkSession({
     signal,
     savedRole: (qq, profileId) => profiles.savedRole(qq, profileId, "zzz"),
@@ -147,6 +158,33 @@ export function createModule({ signal, lockFile }: {
     async fallback(_message: string, context: GachaContext) {
       const command = context.normalizedMessage.replace(legacyPrefix, "#绝区零");
       if (helpCommand.test(command)) return help;
+      const generateLink = generateLinkCommand.exec(command);
+      if (generateLink) {
+        const profileId = Number(generateLink[1] ?? 1);
+        if (profileId > MAX_PROFILE_ID) return;
+        if (context.message_type !== "private" || !context.self_id || !Number.isSafeInteger(context.self_id) || context.self_id < 1 ||
+            !context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
+          return "请私聊获取绝区零抽卡链接。";
+        }
+        try {
+          const url = await getLink(String(context.user_id), profileId);
+          if (!signal.aborted) return url ?? "该档案正在获取绝区零抽卡链接，请稍后再试。";
+        } catch (error) {
+          if (signal.aborted) return;
+          if (error instanceof ProfileError) {
+            if (error.code === "missing" || error.code === "login-required") return `[荷花插件]请先登录 profile ${profileId}。`;
+            if (error.code === "role-missing") return `[荷花插件]profile ${profileId} 没有同步绝区零 UID。`;
+            if (error.code === "changed") return "绝区零档案角色已变化，请重新获取。";
+          }
+          if (error instanceof HoyoRequestError) {
+            if (error.code === "profile-changed") return "绝区零档案角色已变化，请重新获取。";
+            if (error.status === 429 || error.retcode === -110) return "绝区零抽卡链接获取频繁，请稍后再试。";
+            if (error.code === "invalid-input" || error.code === "api" || error.code === "refresh") return error.message;
+          }
+          return "绝区零抽卡链接获取失败，请稍后重试。";
+        }
+        return;
+      }
       const link = linkCommand.exec(command);
       if (link) {
         const profileId = Number(link[1] ?? 1);

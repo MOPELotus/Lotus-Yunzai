@@ -4,6 +4,7 @@ import { HoyoRequestError } from "./errors.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
+import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { createCredentialExchange };
@@ -243,6 +244,9 @@ export function createHoyoClient(
     },
     fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForProfile(source, options, readZzzTuning, isZzzTuningCookieExpired);
+    },
+    fetchZzzGachaAuthKey(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readZzzGachaAuthKey, isZzzGachaAuthExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);
