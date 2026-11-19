@@ -1,0 +1,15 @@
+{
+  "name": "@lotus-yunzai/zzz",
+  "private": true,
+  "type": "module",
+  "lotusYunzai": {
+    "entry": "./index.ts",
+    "games": ["zzz"]
+  },
+  "dependencies": {
+    "@lotus-yunzai/account": "workspace:*",
+    "@lotus-yunzai/hoyo-client": "workspace:*",
+    "@lotus-yunzai/skia": "workspace:*",
+    "@lotus-yunzai/storage": "workspace:*"
+  }
+}

@@ -132,7 +132,7 @@ export class CommandRegistry {
     if (fallback) {
       const names = [name, label];
       if (name === "@lotus-yunzai/meme") names.push("meme-plugin", "清语表情", "清语表情:表情包生成");
-      if (name === "@lotus-yunzai/starrail") names.push("[Lotus-Plugin] Gacha Log");
+      if (name === "@lotus-yunzai/starrail" || name === "@lotus-yunzai/zzz") names.push("[Lotus-Plugin] Gacha Log");
       this.#fallbacks.set(name, { handler: fallback, names });
     }
     this.#modules.add(name);

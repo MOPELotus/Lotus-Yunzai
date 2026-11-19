@@ -86,6 +86,15 @@
     "plugins/system": {
       "name": "@lotus-yunzai/system",
     },
+    "plugins/zzz": {
+      "name": "@lotus-yunzai/zzz",
+      "dependencies": {
+        "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/hoyo-client": "workspace:*",
+        "@lotus-yunzai/skia": "workspace:*",
+        "@lotus-yunzai/storage": "workspace:*",
+      },
+    },
   },
   "trustedDependencies": [
     "skia-canvas",
@@ -138,6 +147,8 @@
     "@lotus-yunzai/storage": ["@lotus-yunzai/storage@workspace:packages/storage"],
 
     "@lotus-yunzai/system": ["@lotus-yunzai/system@workspace:plugins/system"],
+
+    "@lotus-yunzai/zzz": ["@lotus-yunzai/zzz@workspace:plugins/zzz"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || 2.0.0-beta.2", "@emnapi/runtime": "^1.7.1 || 2.0.0-beta.2" } }, "sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw=="],
 

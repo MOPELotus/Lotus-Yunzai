@@ -11,6 +11,7 @@
     "plugins/meme",
     "plugins/notice",
     "plugins/starrail",
+    "plugins/zzz",
     "plugins/system"
   ],
   "scripts": {

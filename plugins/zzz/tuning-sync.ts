@@ -3,6 +3,12 @@ import type { createHoyoClient, ZzzTuningOptions } from "@lotus-yunzai/hoyo-clie
 import { createRoleJsonArchive, type AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
 import { prepareZzzTuningUpdate, readZzzTuningHistory, type ZzzTuningIdentity } from "./tuning-history.ts";
 
+export class ZzzTuningHistoryChangedError extends Error {
+  constructor() {
+    super("绝区零调频历史已更新，请重新发起请求。");
+  }
+}
+
 export function createZzzTuningSync(
   profiles: Pick<ReturnType<typeof createProfileStore>, "requestContext">,
   client: Pick<ReturnType<typeof createHoyoClient>, "fetchZzzTuning">,
@@ -32,7 +38,7 @@ export function createZzzTuningSync(
 
       return history.update({ qq, uid }, verifyProfile, (previous) => {
         // An earlier request can finish later with older official data. Publish only against the snapshot it started from.
-        if (JSON.stringify(previous) !== observed) throw new Error("绝区零调频历史已更新，请重新发起请求。");
+        if (JSON.stringify(previous) !== observed) throw new ZzzTuningHistoryChangedError();
         const result = prepareZzzTuningUpdate(previous, latest, { uid, region: latest.region, profileId });
         return { document: result.stats, result: { ...result, refreshedCookie: latest.refreshedCookie } };
       });
