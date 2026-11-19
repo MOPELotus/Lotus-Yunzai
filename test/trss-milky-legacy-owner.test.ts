@@ -15,6 +15,7 @@ const time = 1_700_000_000;
 const blocked = "私聊只接受资料夹具";
 const legacyCommand = "#旧版主人夹具";
 const modernCommand = "#原生权限夹具";
+const localDiagnostic = "#TodayEatPro20x";
 const legacyResult = "V3 主人 true 绑定 false 游戏 sr";
 
 function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
@@ -159,12 +160,16 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
       export const apps = {
         commands: class extends plugin {
           constructor() {
-            super({ event: "message", rule: [{ reg: "^${legacyCommand}$", fnc: "run", permission: "master" }] });
+            super({ event: "message", rule: [
+              { reg: "^${legacyCommand}$", fnc: "run", permission: "master" },
+              { reg: "^${localDiagnostic}$", fnc: "diagnose" },
+            ] });
           }
           run(e) {
             e.isSr = true;
             return e.reply("V3 主人 " + e.isMaster + " 绑定 " + e.boundAccount + " 游戏 " + e.game);
           }
+          diagnose(e) { return e.reply("本机诊断夹具"); }
         },
         poke: class extends plugin {
           constructor() { super({ event: "notice.friend.poke" }); }
@@ -198,6 +203,12 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
       await mock.reply({ user_id: otherOwner }, blocked);
       await command(legacyCommand);
       await mock.reply({ user_id: owner }, legacyResult);
+
+      await command(localDiagnostic, owner, group);
+      await command(localDiagnostic, outsider, unrestrictedGroup);
+      await command(localDiagnostic, otherOwner);
+      await command(localDiagnostic);
+      await mock.reply({ user_id: owner }, "本机诊断夹具");
 
       await command(legacyCommand, owner, group);
       await mock.reply({ group_id: group }, legacyResult);

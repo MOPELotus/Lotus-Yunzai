@@ -659,6 +659,9 @@ if (import.meta.main) {
     const { event, allowNew } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     const atlasCommand = atlasMaintenanceCommand.test(event.msg);
+    if (event.msg === "#TodayEatPro20x" && (event.isDelegated || !canManagePackages(event) ||
+        (event.message_type !== "terminal" && (event.message_type !== "private" || event.sub_type !== "friend" ||
+          event[delegationSession]?.signal.aborted !== false)))) return;
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
