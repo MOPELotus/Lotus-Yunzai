@@ -41,6 +41,7 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
+import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -835,13 +836,14 @@ if (import.meta.main) {
       });
       commands.registerModule(miyousheWeb.commands, "[Lotus-Plugin] Coin Shop");
     }
-    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile }), "[Lotus-Plugin] Profile Settings");
+    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile, transport: hoyoTransport }), "[Lotus-Plugin] Profile Settings");
     commands.registerModule(cloudProfileCommands({
       signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
       saveToken: checkinProfiles.saveCloudToken,
     }), "[Lotus-Plugin] Profile Settings");
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
-      { manualRelay: () => manualCaptcha, audit: checkinAudit });
+      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
     commands.registerModule(gameCheckin, "[Lotus-Plugin] Checkin");
     commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal), "[Lotus-Plugin] Checkin Admin");
     if (!probingUpdate) {

@@ -12,10 +12,11 @@ export function isHoYoLabCookieInput(raw: string): boolean {
 }
 
 export function hoyoLabProfileCommands(directory: string | undefined, signal: AbortSignal, {
-  viewProfile, verifyCookie = verifyHoYoLabCookie,
+  viewProfile, verifyCookie = verifyHoYoLabCookie, transport = fetch,
 }: {
   readonly viewProfile: (profileId: number, context: CommandContext) => CommandReply | Promise<CommandReply>;
   readonly verifyCookie?: typeof verifyHoYoLabCookie;
+  readonly transport?: Parameters<typeof verifyHoYoLabCookie>[1];
 }): CommandModule {
   const profiles = createProfileStore(directory);
 
@@ -43,7 +44,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
         scoped.throwIfAborted();
       }
       await verifyProfile();
-      const verified = await verifyCookie(match[2]!, fetch, { signal: scoped, verifyProfile });
+      const verified = await verifyCookie(match[2]!, transport, { signal: scoped, verifyProfile });
       await verifyProfile();
       await profiles.saveInternationalCookie(qq, id, current.revision, verified, scoped);
       saved = true;

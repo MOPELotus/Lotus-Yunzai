@@ -87,14 +87,15 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
 }
 
 export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
-  { makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard, manualRelay, audit }: {
+  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit }: {
     readonly makeClient?: typeof createProfileHoyoClient;
+    readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
     readonly renderReceipt?: typeof renderCheckinReceiptCard;
     readonly manualRelay?: () => ManualRelay | undefined;
     readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
   } = {}) {
   const profiles = createProfileStore(directory);
-  const client = makeClient(profiles);
+  const client = makeClient(profiles, transport);
   const active = new Set<string>();
   const activeOverseas = new Set<string>();
   const overseasDeviceId = crypto.randomUUID();
