@@ -42,6 +42,7 @@ import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
+import { loadImagePreviews } from "./lib/image-previews.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -54,7 +55,7 @@ import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type M
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import type { BotEvent, GroupRequest, MessageEvent, MessageReply } from "./lib/messages.ts";
+import { setImagePreviews, type BotEvent, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -151,6 +152,7 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
+  if (!probingUpdate) void loadImagePreviews(root).then(setImagePreviews);
   const mediaDelivery = createMediaDelivery(fileURLToPath(new URL("data", root)), () => stopping ? undefined : fileBase);
   const processReceipts = createProcessReceipts(root);
   type ProcessAction = {

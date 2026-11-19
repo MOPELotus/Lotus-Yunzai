@@ -186,7 +186,8 @@ export type MessageSegment =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "at"; readonly qq: string | number }
   | { readonly type: "face" | "reply"; readonly id: string | number }
-  | { readonly type: "image" | "record" | "video"; readonly file: MediaFile };
+  | { readonly type: "image"; readonly file: MediaFile; readonly summary?: string }
+  | { readonly type: "record" | "video"; readonly file: MediaFile };
 
 export interface ProtocolSegment {
   readonly type: MessageSegment["type"];
@@ -196,12 +197,20 @@ export interface ProtocolSegment {
 type ReplyPart = string | MessageSegment | ProtocolSegment;
 export type MessageReply = ReplyPart | readonly ReplyPart[];
 
+let imagePreviews: readonly string[] = [];
+
+export function setImagePreviews(previews: readonly string[]) {
+  imagePreviews = previews;
+}
+
 export const segment = {
   text: (text: string) => ({ type: "text", text } as const),
   at: (qq: string | number) => ({ type: "at", qq } as const),
   face: (id: string | number) => ({ type: "face", id } as const),
   reply: (id: string | number) => ({ type: "reply", id } as const),
-  image: (file: MediaFile) => ({ type: "image", file } as const),
+  image(file: MediaFile, summary = imagePreviews.length ? imagePreviews[Math.floor(Math.random() * imagePreviews.length)] : undefined) {
+    return { type: "image", file, ...(summary === undefined ? {} : { summary }) } as const;
+  },
   record: (file: MediaFile) => ({ type: "record", file } as const),
   video: (file: MediaFile) => ({ type: "video", file } as const),
 };

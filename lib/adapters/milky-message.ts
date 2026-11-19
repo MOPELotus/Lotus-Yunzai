@@ -16,7 +16,7 @@ type OutgoingSegment =
   | { type: "mention_all"; data: Record<string, never> }
   | { type: "reply"; data: { message_seq: number } }
   | { type: "face"; data: { face_id: string; is_large?: boolean } }
-  | { type: "image"; data: { uri: string; sub_type: "normal" } }
+  | { type: "image"; data: { uri: string; sub_type: "normal"; summary?: string } }
   | { type: "record"; data: { uri: string } }
   | { type: "video"; data: { uri: string; thumb_uri?: string } };
 
@@ -103,7 +103,10 @@ function mediaUri(value: unknown, remaining: number): string | undefined {
 function encodeMedia(type: MediaType, fields: Record<string, unknown>, remaining: number): OutgoingSegment | undefined {
   const uri = mediaUri(fields.file ?? fields.url, remaining);
   if (!uri) return;
-  if (type === "image") return { type, data: { uri, sub_type: "normal" } };
+  if (type === "image") {
+    const summary = typeof fields.summary === "string" ? fields.summary : undefined;
+    return { type, data: { uri, sub_type: "normal", ...(summary === undefined ? {} : { summary }) } };
+  }
   if (type === "record") return { type, data: { uri } };
   const thumb = fields.thumb_uri ?? fields.thumb;
   if (thumb === undefined) return { type, data: { uri } };
