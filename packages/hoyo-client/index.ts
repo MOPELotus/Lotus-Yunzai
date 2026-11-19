@@ -35,6 +35,7 @@ export { CloudZzzWalletError, normalizeCloudZzzComboToken, readCloudZzzWallet } 
 export { HoyoRequestError };
 export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
+export { readBbsForumPosts, type BbsForumPost } from "./bbs-forum-posts.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
