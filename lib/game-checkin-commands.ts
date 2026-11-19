@@ -382,7 +382,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
       }
       if (!scoped) {
-        for (const game of ["genshin", "honkai_sr"] as const) {
+        for (const game of ["genshin", "honkai_sr", "zzz"] as const) {
           const overseas = await profiles.internationalCheckin(qq, profileId, game);
           await verifyCurrent();
           if (overseas.revision !== revision) throw new ProfileError("changed", changed);
@@ -415,7 +415,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
                 }));
               }
             } else {
-              const remote = await client.openHoYoLabStarRailCheckin(overseas, options);
+              const remote = game === "honkai_sr" ? await client.openHoYoLabStarRailCheckin(overseas, options)
+                : await client.openHoYoLabZzzCheckin(overseas, options);
               for (const role of remote.roles) {
                 if (blocked.has(role.uid)) continue;
                 const result = await runGameCheckinSequence({ ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent });
