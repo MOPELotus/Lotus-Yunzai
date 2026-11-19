@@ -8,7 +8,7 @@ import { MiyousheExchangeError, type MiyousheShopExchangeResult } from "@lotus-y
 import { lockFile } from "./file-lock.ts";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
 import { asTrackerRecord, confirmedTracker, matchesTrackingGood, readTrackingInput, trackingCycle, trackingGame, trackingGames,
-  trackingProfileGames, trackingRule, type ShopTracker, type TrackingGame, type TrackingGood, type TrackingRole } from "./miyoushe-shop-tracking.ts";
+  trackingProfileGames, trackingRule, trackingSection, type ShopTracker, type TrackingGood, type TrackingRole } from "./miyoushe-shop-tracking.ts";
 
 const planId = /^[a-f0-9]{12}$/u;
 const numericId = /^[1-9]\d{0,19}$/u;
@@ -35,6 +35,7 @@ const details = {
   unavailable: "暂时无法核验兑换条件，请重新预约。",
   redeemed: "用户核对官方兑换记录后确认已兑换。",
   unredeemed: "用户核对官方兑换记录后确认未兑换，可重新预约。",
+  stockEmpty: "官方库存已售罄，本轮追踪结束。",
   verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
   "rate-limited": "米游社商城请求频繁，请稍后重新预约。",
 } as const;
@@ -97,9 +98,9 @@ interface Options {
   readonly submit?: (plan: Readonly<MiyousheShopPlan>, signal?: AbortSignal,
     verifyBinding?: () => Promise<void>) => Promise<MiyousheShopExchangeResult>;
   readonly tracking?: {
-    readonly catalog: (target: MiyousheOverviewTarget, game: TrackingGame, signal?: AbortSignal,
+    readonly catalog: (target: MiyousheOverviewTarget, game: string, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
-    readonly destinations: (target: MiyousheOverviewTarget, game: TrackingGame, itemType: 1 | 2, signal?: AbortSignal,
+    readonly destinations: (target: MiyousheOverviewTarget, game: string, itemType: 1 | 2, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<{
         roles?: readonly TrackingRole[]; addresses?: readonly { readonly id: string; readonly label: string }[];
       }>;
@@ -243,6 +244,13 @@ function conflictsWithCycle(plan: MiyousheShopPlan, cycleKey: string | undefined
   return !plan.bindingStamp && plan.cycleKey.split(":")[1] !== cycleKey?.split(":")[1];
 }
 
+function trackedStock(good: TrackingGood, opensAt: number, now: number) {
+  if (good.status === "available" || good.status === "ended") return false;
+  const zeroStock = good.status === "sold_out" || (good.stock === 0 && !good.unlimited);
+  if (zeroStock) return (good.serverNow ?? now) < opensAt ? "wait" : "sold-out";
+  return good.status === "unknown" && "wait";
+}
+
 function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   const plan = planId.test(id) && data.plans.find(item => item.id === id && item.qq === target.qq && item.profileId === target.profileId);
   if (!plan) throw new MiyousheShopPlanError(404, "未找到当前档案的兑换计划。");
@@ -302,7 +310,7 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
   function pauseTracks(data: Store, accountId: string, message: string, id?: string) {
     for (const value of data.trackers ?? []) {
       const rule = asTrackerRecord(value);
-      if (!rule || rule.accountId !== accountId || (id && rule.id !== id) || rule.enabled === false) continue;
+      if (!rule || rule.accountId !== accountId || (id && rule.id !== id) || rule.enabled === false || !trackingRule(rule)) continue;
       rule.enabled = false;
       rule.message = message;
     }
@@ -363,15 +371,17 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
 
   function ownsTracker(data: Store, target: MiyousheOverviewTarget, id: string) {
     const raw = asTrackerRecord(findTracker(data, id));
-    const rule = trackingRule(raw);
-    if (!raw || !rule || rule.qq !== target.qq || rule.profileId !== target.profileId) {
+    if (!raw || raw.qq !== target.qq || raw.profileId !== target.profileId) {
       throw new MiyousheShopPlanError(404, "未找到当前档案的追踪规则。");
     }
+    const rule = trackingRule(raw);
+    if (!rule) conflict("旧规则的范围或限额无法核验，请核对原始记录后重新建立规则。");
     return { raw, rule };
   }
 
   async function verifyRole(target: MiyousheOverviewTarget, rule: Pick<ShopTracker, "game" | "role">) {
     if (!rule.role) return;
+    if (!trackingGame(rule.game)) conflict("无法核验该分区的游戏角色。");
     const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[rule.game]);
     if (selected !== rule.role.uid) conflict("当前档案的游戏 UID 已换绑，请重新建立追踪。");
   }
@@ -388,108 +398,117 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
 
   async function pollRule(rule: ShopTracker & { confirmation: { bindingStamp: string; at: number } }, signal?: AbortSignal) {
     const target = { qq: rule.qq, profileId: rule.profileId };
-    await store.withAccount(rule.accountId, async () => {
-      const ownsCurrent = (data: Store) => {
-        const raw = asTrackerRecord(findTracker(data, rule.id));
-        const current = trackingRule(raw);
-        if (raw && confirmedTracker(current) && current.enabled && current.confirmation.at === rule.confirmation.at &&
-          current.confirmation.bindingStamp === rule.confirmation.bindingStamp) return raw;
-      };
-      const started = await store.change(data => {
-        const current = ownsCurrent(data);
-        if (!current || (natural(current.nextPollAt) && current.nextPollAt > now())) return false;
-        if (data.plans.some(plan => plan.accountId === rule.accountId && plan.status === "unknown")) {
-          pauseTracks(data, rule.accountId, trackerMessages.unknown);
-          return false;
-        }
-        Object.assign(current, { lastPolledAt: now(), nextPollAt: now() + rule.pollMs, matchedCount: 0, nextOpenAt: null });
-        return true;
-      });
-      if (!started) return;
-      let phase: "binding" | "catalog" = "binding";
-      try {
-        const booked = await binding(target);
-        if (booked.accountId !== rule.accountId || booked.stamp !== rule.confirmation.bindingStamp) conflict(details.changed);
-        await verifyRole(target, rule);
-        phase = "catalog";
-        const verifyBinding = async () => {
-          signal?.throwIfAborted();
-          await verifyCurrent(target, booked);
-          signal?.throwIfAborted();
-        };
-        const goods = (await tracking!.catalog(target, rule.game, signal, verifyBinding))
-          .filter(good => matchesTrackingGood(rule, good));
-        let nearest: number | undefined;
-        for (const candidate of goods) {
-          signal?.throwIfAborted();
-          if (candidate.status !== "available" && candidate.status !== "scheduled") continue;
-          if (candidate.status === "scheduled" && candidate.opensAt !== null) {
-            nearest = Math.min(nearest ?? candidate.opensAt, candidate.opensAt);
-            if (candidate.opensAt > now() + Math.max(preparingLead, rule.leadMs + 10_000)) continue;
-          }
-          const snapshot = await inspect(target, candidate.id, signal, verifyBinding);
-          const { good, balance } = snapshot;
-          if (good.id !== candidate.id || !matchesTrackingGood(rule, good) || !natural(good.price) || !natural(balance) || balance < good.price ||
-            (good.status !== "available" && (good.status !== "scheduled" || !natural(good.opensAt))) ||
-            (rule.role ? !snapshot.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region)
-              : !snapshot.addresses?.some(address => address.id === rule.addressId))) continue;
-          const cycleKey = trackingCycle(good, now());
-          if (!cycleKey) continue;
-          const created = await store.change(async data => {
-            const current = ownsCurrent(data);
-            if (!current) return false;
-            const { spent, held } = trackerUsage(data, rule.id);
-            if ((rule.spendLimit !== null && spent + held + good.price > rule.spendLimit) ||
-                data.plans.some(item => item.accountId === rule.accountId && (item.status === "unknown" ||
-                  (item.goodsId === good.id && (active(item.status) || conflictsWithCycle(item, cycleKey)))))) return false;
-            const previous = data.plans.find(item => item.trackingId === rule.id && item.goodsId === good.id &&
-              item.status === "cancelled" && item.cycleKey === cycleKey);
-            if (previous) return false;
-            await verifyBinding();
-            await verifyRole(target, rule);
-            const createdAt = now();
-            const opensAt = good.status === "available" ? createdAt : good.opensAt!;
-            if (opensAt < createdAt) return false;
-            let id: string;
-            do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
-            data.plans.push({ id, ...target, accountId: rule.accountId, botId: "", bindingStamp: booked.stamp,
-              trackingId: rule.id, cycleKey, preStartMs: rule.leadMs, retryIntervalMs: rule.intervalMs,
-              goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz,
-              type: rule.itemType, price: good.price, role: rule.role, addressId: rule.addressId || "",
-              addressLabel: addressLabel(rule.addressLabel), immediate: false, createdAt, opensAt, status: "scheduled",
-              message: statusMessage.scheduled, attempts: 0 });
-            current.message = trackerMessages.booked;
-            current.matchedCount = goods.length;
-            return true;
-          });
-          if (created) return;
-        }
-        await store.change(data => {
-          const current = ownsCurrent(data);
-          if (!current) return;
-          current.matchedCount = goods.length;
-          current.message = trackerMessages.watching;
-          if (nearest !== undefined && nearest > now()) {
-            current.nextOpenAt = nearest;
-            current.nextPollAt = Math.min(now() + rule.pollMs, Math.max(now() + 1000, nearest - Math.max(preparingLead, rule.leadMs)));
-          }
-        });
-      } catch (error) {
-        if (signal?.aborted) return;
-        await store.change(data => {
-          if (!ownsCurrent(data)) return;
-          const reason = asRecord(error)?.reason;
-          if (reason === "verification" || reason === "rate-limited" || asRecord(error)?.status === 429) {
-            pauseTracks(data, rule.accountId, reason === "verification" ? details.verification : details["rate-limited"]);
-          } else if (phase === "binding" || (error instanceof MiyousheShopPlanError && error.message === details.changed)) {
-            pauseTracks(data, rule.accountId, trackerMessages.changed, rule.id);
-          } else {
-            const current = ownsCurrent(data)!;
-            current.message = trackerMessages.retry;
-          }
-        });
+    const pollRunId = randomUUID();
+    const ownsCurrent = (data: Store) => {
+      const raw = asTrackerRecord(findTracker(data, rule.id));
+      const current = trackingRule(raw);
+      if (raw && confirmedTracker(current) && current.enabled && current.confirmation.at === rule.confirmation.at &&
+        current.confirmation.bindingStamp === rule.confirmation.bindingStamp) return raw;
+    };
+    const pendingReservation = (data: Store) => data.plans.some(plan => plan.accountId === rule.accountId && !plan.trackingId &&
+      active(plan.status) && plan.opensAt <= now() + preparingLead);
+    const started = await store.change(data => {
+      const current = ownsCurrent(data);
+      if (!current || (natural(current.nextPollAt) && current.nextPollAt > now()) || pendingReservation(data)) return false;
+      if (data.plans.some(plan => plan.accountId === rule.accountId && plan.status === "unknown")) {
+        pauseTracks(data, rule.accountId, trackerMessages.unknown);
+        return false;
       }
+      Object.assign(current, { pollRunId, lastPolledAt: now(), nextPollAt: now() + rule.pollMs, matchedCount: 0, nextOpenAt: null });
+      return true;
     });
+    if (!started) return;
+    const currentPoll = (data: Store) => {
+      const current = ownsCurrent(data);
+      return current?.pollRunId === pollRunId ? current : undefined;
+    };
+    let phase: "binding" | "catalog" = "binding";
+    try {
+      const booked = await binding(target);
+      if (booked.accountId !== rule.accountId || booked.stamp !== rule.confirmation.bindingStamp) conflict(details.changed);
+      await verifyRole(target, rule);
+      phase = "catalog";
+      const verifyBinding = async () => {
+        signal?.throwIfAborted();
+        await verifyCurrent(target, booked);
+        signal?.throwIfAborted();
+      };
+      const goods = (await tracking!.catalog(target, rule.game, signal, verifyBinding))
+        .filter(good => matchesTrackingGood(rule, good));
+      let nearest: number | undefined;
+      for (const candidate of goods) {
+        signal?.throwIfAborted();
+        if (candidate.status !== "available" && candidate.status !== "scheduled") continue;
+        if (candidate.status === "scheduled" && candidate.opensAt !== null) {
+          nearest = Math.min(nearest ?? candidate.opensAt, candidate.opensAt);
+          if (candidate.opensAt > now() + Math.max(preparingLead, rule.leadMs + 10_000)) continue;
+        }
+        const snapshot = await inspect(target, candidate.id, signal, verifyBinding);
+        const { good, balance } = snapshot;
+        if (good.id !== candidate.id || !matchesTrackingGood(rule, good) || !natural(good.price) || !natural(balance) || balance < good.price ||
+          (good.status !== "available" && (good.status !== "scheduled" || !natural(good.opensAt))) ||
+          (rule.role ? !snapshot.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region)
+            : !snapshot.addresses?.some(address => address.id === rule.addressId))) continue;
+        const cycleKey = trackingCycle(good, now());
+        if (!cycleKey) continue;
+        const created = await store.change(async data => {
+          const current = currentPoll(data);
+          if (!current) return false;
+          if (pendingReservation(data)) {
+            current.nextPollAt = Math.min(now() + 1000, Number(current.nextPollAt));
+            return false;
+          }
+          const { spent, held } = trackerUsage(data, rule.id);
+          if ((rule.spendLimit !== null && spent + held + good.price > rule.spendLimit) ||
+              data.plans.some(item => item.accountId === rule.accountId && (item.status === "unknown" ||
+                (item.goodsId === good.id && (active(item.status) || conflictsWithCycle(item, cycleKey)))))) return false;
+          const previous = data.plans.find(item => item.trackingId === rule.id && item.goodsId === good.id &&
+            item.status === "cancelled" && item.cycleKey === cycleKey);
+          if (previous) return false;
+          await verifyBinding();
+          await verifyRole(target, rule);
+          const createdAt = now();
+          const opensAt = good.status === "available" ? createdAt : good.opensAt!;
+          if (opensAt < createdAt) return false;
+          let id: string;
+          do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
+          data.plans.push({ id, ...target, accountId: rule.accountId, botId: "", bindingStamp: booked.stamp,
+            trackingId: rule.id, cycleKey, preStartMs: rule.leadMs, retryIntervalMs: rule.intervalMs,
+            goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz,
+            type: rule.itemType, price: good.price, role: rule.role, addressId: rule.addressId || "",
+            addressLabel: addressLabel(rule.addressLabel), immediate: false, createdAt, opensAt, status: "scheduled",
+            message: statusMessage.scheduled, attempts: 0 });
+          current.message = trackerMessages.booked;
+          current.matchedCount = goods.length;
+          return true;
+        });
+        if (created) return;
+      }
+      await store.change(data => {
+        const current = currentPoll(data);
+        if (!current) return;
+        current.matchedCount = goods.length;
+        current.message = trackerMessages.watching;
+        if (nearest !== undefined && nearest > now()) {
+          current.nextOpenAt = nearest;
+          current.nextPollAt = Math.min(now() + rule.pollMs, Math.max(now() + 1000, nearest - Math.max(preparingLead, rule.leadMs)));
+        }
+      });
+    } catch (error) {
+      if (signal?.aborted) return;
+      await store.change(data => {
+        const current = currentPoll(data);
+        if (!current) return;
+        const reason = asRecord(error)?.reason;
+        if (reason === "verification" || reason === "rate-limited" || asRecord(error)?.status === 429) {
+          pauseTracks(data, rule.accountId, reason === "verification" ? details.verification : details["rate-limited"]);
+        } else if (phase === "binding" || (error instanceof MiyousheShopPlanError && error.message === details.changed)) {
+          pauseTracks(data, rule.accountId, trackerMessages.changed, rule.id);
+        } else {
+          current.message = trackerMessages.retry;
+        }
+      });
+    }
   }
 
   let polling: Promise<void> | undefined;
@@ -550,11 +569,11 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
           message = details.unavailable;
           const snapshot = await inspect(target, plan.goodsId, signal, verifyBinding);
           message = details.conditions;
-          const waitingForStock = Boolean(plan.trackingId) && snapshot.good.status === "unknown";
-          const good = waitingForStock ? snapshot.good : validateInspection(snapshot, plan.goodsId, plan.immediate);
+          const trackingStatus = plan.trackingId && (snapshot.good.status === "unknown" || snapshot.good.status === "sold_out");
+          const good = trackingStatus ? snapshot.good : validateInspection(snapshot, plan.goodsId, plan.immediate);
           if (good.price !== plan.price || good.type !== plan.type || good.gameBiz !== plan.gameBiz ||
             (plan.trackingId && (good.id !== plan.goodsId || !natural(snapshot.balance) || snapshot.balance < plan.price ||
-              (good.status !== "unknown" && trackingCycle(good, now()) !== plan.cycleKey))) ||
+              (!trackingStatus && trackingCycle(good, now()) !== plan.cycleKey))) ||
             (plan.role ? !snapshot.roles?.some(role => role.uid === plan.role?.uid && role.region === plan.role?.region)
               : !snapshot.addresses?.some(address => address.id === plan.addressId))) conflict(details.conditions);
           message = details.changed;
@@ -580,11 +599,15 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
             return;
           }
         }
-        while (plan.trackingId && good.status === "unknown" && now() < plan.opensAt + maxDelay) {
+        while (plan.trackingId && trackedStock(good, plan.opensAt, now()) === "wait" && now() < plan.opensAt + maxDelay) {
           const interval = natural(plan.retryIntervalMs) ? Math.max(250, Math.min(5000, plan.retryIntervalMs)) : 500;
           await delay(Math.min(interval, plan.opensAt + maxDelay - now()), undefined, { signal, ref: false });
           if (!(await store.read()).plans.some(item => item.id === plan.id && item.status === "preparing")) return;
           good = await inspectCurrent();
+        }
+        if (plan.trackingId && trackedStock(good, plan.opensAt, now()) === "sold-out") {
+          await update(plan.id, "preparing", current => finish(current, "failed", details.stockEmpty));
+          return;
         }
         if (good.status !== "available" || now() > plan.opensAt + maxDelay) {
           await update(plan.id, "preparing", current => finish(current, "missed"));
@@ -642,8 +665,9 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
   }
 
   async function scan(signal?: AbortSignal) {
-    await poll(signal);
-    const results = await Promise.allSettled(await select(signal));
+    const initial = select(signal).then(jobs => Promise.allSettled(jobs));
+    const following = poll(signal).then(() => select(signal)).then(jobs => Promise.allSettled(jobs));
+    const results = (await Promise.all([initial, following])).flat();
     const failed = results.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
   }
@@ -656,10 +680,10 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
       const tick = () => {
         if (!polling) void poll(signal).catch(error => onError?.(error));
         void select(signal).then(jobs => {
-        for (const job of jobs) if (!seen.has(job)) {
-          seen.add(job);
-          void job.catch(error => onError?.(error));
-        }
+          for (const job of jobs) if (!seen.has(job)) {
+            seen.add(job);
+            void job.catch(error => onError?.(error));
+          }
         }).catch(error => onError?.(error));
       };
       if (submit) {
@@ -672,12 +696,15 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
     scan,
     async trackerTargets(target: MiyousheOverviewTarget, game: unknown, itemType: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
       if (!tracking) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
-      if (!trackingGame(game) || (itemType !== 1 && itemType !== 2)) bad("请选择游戏分区和商品类型。");
+      if (!trackingSection(game) || (itemType !== 1 && itemType !== 2) || (itemType === 2 && !trackingGame(game)) || game === "all") {
+        bad("请选择游戏分区和商品类型。");
+      }
       await verifyLogin?.();
       const result = await tracking.destinations(target, game, itemType, signal, verifyLogin);
       await verifyLogin?.();
       if (itemType === 1) return { type: "address" as const,
         items: (result.addresses ?? []).filter(item => matching(item.id, numericId)).map(item => ({ id: item.id, label: addressLabel(item.label) })) };
+      if (!trackingGame(game)) bad("请选择支持角色兑换的游戏分区。");
       const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[game]);
       return { type: "role" as const, items: (result.roles ?? []).filter(role => role.gameBiz === trackingGames[game] &&
         role.uid === selected && matching(role.region, code)).map(role => ({ uid: role.uid, region: role.region })) };
@@ -688,11 +715,18 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
       await recover(belongs);
       const data = await store.read();
       await verifyLogin?.();
-      const trackers = (data.trackers ?? []).flatMap(row => {
+      const trackers = (data.trackers ?? []).map(row => {
+        const raw = asTrackerRecord(row);
+        if (!raw || raw.qq !== target.qq || raw.profileId !== target.profileId || !matching(raw.id, planId)) return;
         const rule = trackingRule(row);
-        return rule && belongs(rule) ? [rule] : [];
-      }).sort((a, b) => b.createdAt - a.createdAt);
-      return { now: now(), canTrack: Boolean(tracking && submit), trackers: trackers.map(rule => publicTracker(rule, data)) };
+        const createdAt = natural(raw.createdAt) ? raw.createdAt : 0;
+        if (rule) return { ...publicTracker(rule, data), createdAt, migrationBlocked: false };
+        return { id: raw.id, profileId: target.profileId, createdAt, migrationBlocked: true, enabled: false,
+          needsConfirmation: true, game: trackingSection(raw.game) ? raw.game : "",
+          itemType: raw.itemType === 1 || raw.itemType === 2 ? raw.itemType : null, ...trackerUsage(data, raw.id),
+          message: "旧规则的范围或限额无法核验，请核对原始记录后重新建立规则。" };
+      }).filter(row => row !== undefined).sort((a, b) => b.createdAt - a.createdAt);
+      return { now: now(), canTrack: Boolean(tracking && submit), trackers };
     },
     async createTracker(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
       if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
@@ -706,8 +740,9 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
         await verifyCurrent(target, booked);
       };
       const destinations = await tracking.destinations(target, input.game, input.itemType, signal, verify);
-      const selected = input.itemType === 2 ? await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[input.game]) : undefined;
-      const role = destinations.roles?.find(role => role.uid === selected && role.gameBiz === trackingGames[input.game] &&
+      const profileGame = input.itemType === 2 && trackingGame(input.game) ? input.game : undefined;
+      const selected = profileGame && await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[profileGame]);
+      const role = profileGame && destinations.roles?.find(role => role.uid === selected && role.gameBiz === trackingGames[profileGame] &&
         matching(role.region, code));
       const address = destinations.addresses?.find(address => address.id === input.addressId);
       if (input.itemType === 2 ? !role : !address) bad("未找到当前档案的兑换目标。");
@@ -773,6 +808,7 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
           message: "持续追踪已恢复，等待符合条件的库存及场次。", pollUnit: current.pollUnit, pollMs: current.pollMs,
           leadMs: current.leadMs, intervalMs: current.intervalMs, nextPollAt: 0 });
         delete raw.afterMs;
+        delete raw.pollRunId;
         for (const plan of data.plans) {
           if (plan.trackingId === id && !plan.bindingStamp && (plan.status === "scheduled" || plan.status === "preparing")) finish(plan, "cancelled");
         }

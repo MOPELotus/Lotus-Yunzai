@@ -10,13 +10,14 @@ export interface TrackingGood {
   readonly price: number; readonly status: "available" | "scheduled" | "ended" | "sold_out" | "unknown";
   readonly opensAt: number | null; readonly serverNow?: number; readonly limitCycle?: string; readonly roleCycle?: string;
   readonly saleStartsAt?: number | null; readonly startsAt?: number | null;
+  readonly stock?: number | null; readonly unlimited?: boolean;
 }
 
 export interface ShopTracker extends MiyousheOverviewTarget {
   readonly id: string;
   readonly accountId: string;
   readonly mode: "goods" | "category";
-  readonly game: TrackingGame;
+  readonly game: string;
   readonly itemType: 1 | 2;
   readonly goodsIds: readonly string[];
   readonly names: readonly string[];
@@ -73,9 +74,14 @@ export function trackingGame(value: unknown): value is TrackingGame {
   return typeof value === "string" && Object.hasOwn(trackingGames, value);
 }
 
+export function trackingSection(value: unknown): value is string {
+  return string(value, code);
+}
+
 export function readTrackingInput(value: unknown) {
   const row = asTrackerRecord(value);
-  if (!row || row.confirmed !== true || !trackingGame(row.game) || (row.itemType !== 1 && row.itemType !== 2) ||
+  if (!row || row.confirmed !== true || !trackingSection(row.game) || (row.itemType !== 1 && row.itemType !== 2) ||
+    (row.itemType === 2 && !trackingGame(row.game)) || row.game === "all" ||
     (row.mode !== "category" && row.mode !== "goods") || !strings(row.goodsIds, 20, id => numericId.test(id)) ||
     !strings(row.keywords, 10, short) || (row.mode === "goods" ? !row.goodsIds.length || row.keywords.length : row.goodsIds.length) ||
     typeof row.followSameName !== "boolean" || !limit(row.maxPrice) || !limit(row.spendLimit) ||
@@ -91,7 +97,7 @@ export function readTrackingInput(value: unknown) {
 export function trackingRule(value: unknown): ShopTracker | undefined {
   const row = asTrackerRecord(value);
   if (!row || !string(row.id, trackerId) || !string(row.qq, numericId) || !integer(row.profileId, 1, 255) ||
-    !string(row.accountId, numericId) || !trackingGame(row.game) || (row.itemType !== 1 && row.itemType !== 2) ||
+    !string(row.accountId, numericId) || !trackingSection(row.game) || (row.itemType !== 1 && row.itemType !== 2) ||
     (row.mode !== "category" && row.mode !== "goods") || !strings(row.goodsIds, 20, id => numericId.test(id)) ||
     !strings(row.names, 20, name => name.length <= 240 && !/[\p{Cc}\p{Cf}]/u.test(name)) ||
     !strings(row.keywords, 10, short) || (row.mode === "goods" && !row.goodsIds.length) ||
@@ -101,7 +107,7 @@ export function trackingRule(value: unknown): ShopTracker | undefined {
     if (!string(row.addressId, numericId)) return;
   } else {
     const role = asTrackerRecord(row.role);
-    if (!role || row.gameBiz !== trackingGames[row.game] || role.gameBiz !== row.gameBiz || !string(role.uid, numericId) ||
+    if (!role || !trackingGame(row.game) || row.gameBiz !== trackingGames[row.game] || role.gameBiz !== row.gameBiz || !string(role.uid, numericId) ||
       !string(role.region, code)) return;
   }
   return { ...row,
@@ -117,8 +123,9 @@ export function confirmedTracker(rule: ShopTracker | undefined): rule is ShopTra
 
 export function matchesTrackingGood(rule: Pick<ShopTracker, "game" | "itemType" | "mode" | "maxPrice" | "goodsIds" | "names" | "keywords" | "followSameName">,
   good: TrackingGood) {
-  if (good.type !== rule.itemType || (good.game ? good.game !== rule.game : good.gameBiz !== trackingGames[rule.game]) ||
-    (good.type === 2 && good.gameBiz !== trackingGames[rule.game]) || (rule.maxPrice !== null && good.price > rule.maxPrice)) return false;
+  const gameBiz = trackingGame(rule.game) ? trackingGames[rule.game] : undefined;
+  if (good.type !== rule.itemType || (good.game ? good.game !== rule.game : (!gameBiz || good.gameBiz !== gameBiz)) ||
+    (good.type === 2 && good.gameBiz !== gameBiz) || (rule.maxPrice !== null && good.price > rule.maxPrice)) return false;
   if (rule.mode === "goods") {
     return rule.goodsIds.includes(good.id) || (rule.followSameName && rule.names.some(name => text(name) === text(good.name)));
   }

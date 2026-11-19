@@ -264,6 +264,66 @@ test("持续追踪按官方周期、同名选项和累计预算兑换，并在�
   });
 });
 
+test("慢速追踪目录不占用同账号已确认预约的执行窗口", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const catalogStarted = gate(), releaseCatalog = gate();
+    const posts: string[] = [];
+    const service = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime,
+      async inspect(_target, id) { return inspection({ ...trackedGood, id }); },
+      tracking: { async catalog() { catalogStarted.resolve(); await releaseCatalog.promise; return [trackedGood]; },
+        async destinations() { return { roles: [planRole] }; } },
+      async submit(plan) { posts.push(plan.goodsId); return "succeeded"; } });
+    await service.createTracker(target, trackingBody);
+    const poll = service.scan();
+    try {
+      await catalogStarted.promise;
+      const manual = await service.reserve(target, { ...body, goodsId: "28" });
+      const lifecycle = new AbortController();
+      try {
+        service.start(lifecycle.signal);
+        const deadline = Date.now() + 1800;
+        let status;
+        do {
+          await Bun.sleep(50);
+          status = (await service.list(target)).plans.find(row => row.id === manual.id)?.status;
+        } while (status !== "succeeded" && Date.now() < deadline);
+        expect(posts).toEqual(["28"]);
+        expect(status).toBe("succeeded");
+      } finally { lifecycle.abort(); }
+    } finally {
+      releaseCatalog.resolve();
+      await poll;
+    }
+  });
+});
+
+test("追踪在官方开场前遇到零库存仍检查，开场后明确零库存则不提交", async () => {
+  for (const availableAfterOpening of [true, false]) {
+    await fixture(async ({ file, profileDirectory }) => {
+      let reads = 0, posts = 0, now = startTime;
+      const opensAt = startTime + 5;
+      const scheduled = { ...trackedGood, status: "scheduled", opensAt, stock: 0, serverNow: startTime } as const;
+      const service = createMiyousheShopPlans({ file, profileDirectory, now: () => now,
+        async inspect() {
+          reads++;
+          if (reads <= 2) return inspection(scheduled);
+          if (reads === 3) return inspection({ ...trackedGood, status: "sold_out", stock: 0, serverNow: startTime });
+          now = opensAt;
+          return inspection({ ...trackedGood, stock: availableAfterOpening ? 1 : 0, serverNow: now,
+            status: availableAfterOpening ? "available" : "unknown" });
+        },
+        tracking: { async catalog() { return [scheduled]; }, async destinations() { return { roles: [planRole] }; } },
+        async submit() { posts++; return "succeeded"; } });
+      await service.createTracker(target, trackingBody);
+      const keepAlive = setInterval(() => {}, 100);
+      try { await service.scan(); } finally { clearInterval(keepAlive); }
+      expect(reads).toBe(4);
+      expect(posts).toBe(availableAfterOpening ? 1 : 0);
+      expect((await service.list(target)).plans[0]?.status).toBe(availableAfterOpening ? "succeeded" : "failed");
+    });
+  }
+});
+
 test("旧规则仍显示预算和历史，未确认或遗留提交待核对时不兑换", async () => {
   await fixture(async ({ file, profileDirectory }) => {
     let posts = 0, polls = 0;
@@ -280,13 +340,16 @@ test("旧规则仍显示预算和历史，未确认或遗留提交待核对时�
     const oldPlan = { ...target, id: "123456789abc", accountId: "123", botId: "7", trackingId: old.id, goodsId: "27",
       goodsName: trackedGood.name, gameBiz: "hk4e_cn", type: 2, price: 300, role: planRole, addressId: "", addressLabel: "",
       immediate: false, opensAt: startTime, createdAt: startTime, status: "submitting", message: "旧记录", attempts: 1 };
-    await writeFile(file, JSON.stringify({ version: 2, plans: [oldPlan], trackers: [old] }));
+    const incompatible = { ...old, id: "bbbbbbbbbbbb", maxPrice: "", spendLimit: { units: 500 }, extra: "旧数据原样保留" };
+    await writeFile(file, JSON.stringify({ version: 2, plans: [oldPlan], trackers: [old, incompatible] }));
     await service.scan();
     expect(posts).toBe(0);
     expect(polls).toBe(0);
     expect((await service.listTrackers(target)).trackers[0]).toMatchObject({
       id: old.id, needsConfirmation: true, enabled: false, held: 300, pollMs: 1_800_000,
     });
+    expect((await service.listTrackers(target)).trackers[1]).toMatchObject({ id: incompatible.id, migrationBlocked: true, enabled: false });
+    await expect(service.setTracker(target, incompatible.id, true, true)).rejects.toMatchObject({ status: 409 });
     await expect(service.setTracker(target, old.id, true, false)).rejects.toMatchObject({ status: 400 });
     await expect(service.setTracker(target, old.id, true, true)).rejects.toMatchObject({ status: 409 });
     await service.resolve(target, oldPlan.id, true);
@@ -297,6 +360,31 @@ test("旧规则仍显示预算和历史，未确认或遗留提交待核对时�
     const saved = JSON.parse(await readFile(file, "utf8"));
     expect(saved.trackers[0]).toMatchObject({ pollUnit: "minutes", pollMs: 1_800_000, extra: "保留" });
     expect(saved.trackers[0]).not.toHaveProperty("afterMs");
+    expect(saved.trackers[1]).toEqual(incompatible);
+  });
+});
+
+test("旧实物规则可核对非游戏目录分区，目标仍限原档案地址", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const goods = { ...trackedGood, game: "bbs", gameBiz: "", type: 1 };
+    const address = { id: "83", label: "李** ****8231" };
+    const posts: string[] = [];
+    const service = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime,
+      async inspect() { return { good: goods, balance: 600, addresses: [address] }; },
+      tracking: { async catalog(_target, game) { expect(game).toBe("bbs"); return [goods]; },
+        async destinations() { return { addresses: [address] }; } },
+      async submit(plan) { posts.push(plan.addressId); return "succeeded"; } });
+    await expect(service.cancel(target, "123456789abc")).rejects.toMatchObject({ status: 404 });
+    const old = { ...target, id: "cccccccccccc", accountId: "123", botId: "7", mode: "category", game: "bbs", itemType: 1,
+      goodsIds: [], names: [], keywords: [], followSameName: true, maxPrice: 300, spendLimit: 300,
+      role: null, gameBiz: "", addressId: address.id, addressLabel: address.label, pollMs: 60_000, pollUnit: "minutes",
+      leadMs: 5000, intervalMs: 500, enabled: true, createdAt: startTime, message: "旧记录" };
+    await writeFile(file, JSON.stringify({ version: 2, plans: [], trackers: [old] }));
+    await service.scan();
+    expect(posts).toEqual([]);
+    expect(await service.setTracker(target, old.id, true, true)).toMatchObject({ enabled: true, game: "bbs", addressLabel: address.label });
+    await service.scan();
+    expect(posts).toEqual([address.id]);
   });
 });
 

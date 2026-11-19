@@ -21,7 +21,7 @@ const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sol
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
 const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
 const trackers = { generation: 0, targets: null, loading: false };
-const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿" };
+const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
   scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
   failed: "未成功", cancelled: "已取消", missed: "已错过", unknown: "结果待确认",
@@ -471,8 +471,14 @@ async function loadTrackers() {
       const row = add("article", "plan-row", "");
       const copy = add("div", "plan-copy", "");
       const actions = add("div", "plan-actions", "");
-      const group = trackGames[rule.game] || rule.game;
-      const item = rule.itemType === 1 ? "实物周边" : "游戏道具";
+      const group = (Object.hasOwn(trackGames, rule.game) && trackGames[rule.game]) || rule.game || "未知分区";
+      const item = rule.itemType === 1 ? "实物周边" : rule.itemType === 2 ? "游戏道具" : "类型待核对";
+      if (rule.migrationBlocked) {
+        copy.append(add("h3", "", `${group} · ${item}`), add("p", "muted", rule.message),
+          add("p", "muted", `已用 ${point(rule.spent)} · 待结算 ${point(rule.held)}`));
+        row.append(copy);
+        return row;
+      }
       const selection = rule.mode === "goods" ? (rule.names.length ? rule.names : rule.goodsIds).join("、")
         : rule.keywords.join("、") || "全部商品";
       const limit = rule.spendLimit === null ? "不限" : point(rule.spendLimit);
@@ -544,11 +550,25 @@ async function loadTrackerTargets() {
 function openTracker() {
   const form = get("tracker-form");
   form.reset();
-  form.elements.game.replaceChildren(...Object.entries(trackGames).map(([key, name]) => new Option(name, key)));
-  if (trackGames[shop.game]) form.elements.game.value = shop.game;
+  trackerGameOptions(shop.game);
   trackerMode();
   get("tracker-dialog").showModal();
   void loadTrackerTargets();
+}
+
+function trackerGameOptions(preferred) {
+  const form = get("tracker-form").elements;
+  const physical = form.itemType.value === "1";
+  const entries = Object.entries(trackGames).filter(([key]) => physical || key !== "bbs");
+  if (physical) {
+    for (const game of shop.data?.games ?? []) {
+      if (/^[a-zA-Z0-9_]{1,32}$/u.test(game.key) && game.key !== "all" && !entries.some(([key]) => key === game.key)) {
+        entries.push([game.key, game.name]);
+      }
+    }
+  }
+  form.game.replaceChildren(...entries.map(([key, name]) => new Option(name, key)));
+  if (entries.some(([key]) => key === preferred)) form.game.value = preferred;
 }
 
 async function saveTracker(event) {
@@ -818,7 +838,11 @@ get("tracker-open").addEventListener("click", openTracker);
 get("tracker-close").addEventListener("click", () => get("tracker-dialog").close());
 get("tracker-dialog").addEventListener("close", () => trackers.targets?.abort());
 get("tracker-form").elements.mode.addEventListener("change", trackerMode);
-for (const name of ["game", "itemType"]) get("tracker-form").elements[name].addEventListener("change", () => void loadTrackerTargets());
+get("tracker-form").elements.game.addEventListener("change", () => void loadTrackerTargets());
+get("tracker-form").elements.itemType.addEventListener("change", () => {
+  trackerGameOptions(get("tracker-form").elements.game.value);
+  void loadTrackerTargets();
+});
 get("tracker-form").addEventListener("submit", event => void saveTracker(event));
 get("tab-plans").addEventListener("click", () => {
   switchTab("plans");

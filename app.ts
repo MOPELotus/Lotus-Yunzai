@@ -74,7 +74,7 @@ import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
 import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./lib/miyoushe-web.ts";
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
-import { trackingGames } from "./lib/miyoushe-shop-tracking.ts";
+import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
 import { createCommandDelegation } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
@@ -799,7 +799,7 @@ if (import.meta.main) {
             return result;
           },
           async destinations(target, game, itemType, signal, verifyBinding) {
-            if (itemType === 2) return { roles: await catalog.trackingRoles(target, trackingGames[game], signal, verifyBinding) };
+            if (itemType === 2) return { roles: trackingGame(game) ? await catalog.trackingRoles(target, trackingGames[game], signal, verifyBinding) : [] };
             await verifyBinding?.();
             const account = await checkinProfiles.accountContext(target.qq, target.profileId);
             return { addresses: await shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding }) };
