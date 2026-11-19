@@ -56,7 +56,7 @@ test("只跑中国当天到期的启用档案，保留旧社区补跑计划，�
         throw new Error("通知失败");
       },
     });
-    expect(await scheduler.tick()).toEqual({ date, status: "complete", completed: 2, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date, status: "complete", completed: 2, deferred: 0 });
     expect(trace).toEqual(["run 1001", "notify 1001", "run 1005", "notify 1005"]);
     expect((await store.read(date))?.entries.filter(entry => entry.communityRetry)).toMatchObject([
       { qq: "1002", communityRetry: retry }, { qq: "1004", communityRetry: retry },
@@ -65,7 +65,7 @@ test("只跑中国当天到期的启用档案，保留旧社区补跑计划，�
     expect(saved).not.toContain(reply);
     expect(saved).not.toContain(outcome.message);
     expect(saved).toContain("自动签到已完成。");
-    expect(await scheduler.tick()).toEqual({ date, status: "complete", completed: 0, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date, status: "complete", completed: 0, deferred: 0 });
   });
 });
 
@@ -92,16 +92,16 @@ test("第二个实例遇到日期执行锁不会清除运行标记，繁忙档�
       await entered.promise;
       const running = (await secondStore.read(date))?.entries[0]?.runningAt;
       expect(running).toBeTruthy();
-      expect(await secondScheduler.tick()).toEqual({ date, status: "locked", completed: 0, deferred: 0 });
+      expect(await secondScheduler.tick()).toMatchObject({ date, status: "locked", completed: 0, deferred: 0 });
       expect((await secondStore.read(date))?.entries[0]?.runningAt).toBe(running);
     } finally {
       release.resolve();
-      expect(await run).toEqual({ date, status: "complete", completed: 0, deferred: 1 });
+      expect(await run).toMatchObject({ date, status: "complete", completed: 0, deferred: 1 });
     }
     expect(attempts).toBe(0);
     expect((await secondStore.read(date))?.entries[0]).toMatchObject({ done: false });
     expect((await secondStore.read(date))?.entries[0]?.runningAt).toBeUndefined();
-    expect(await secondScheduler.tick()).toEqual({ date, status: "complete", completed: 1, deferred: 0 });
+    expect(await secondScheduler.tick()).toMatchObject({ date, status: "complete", completed: 1, deferred: 0 });
     expect(attempts).toBe(1);
   });
 });
@@ -121,10 +121,10 @@ test("停机保留不可确认的运行标记，恢复时再用当前设置核�
       },
       onComplete() { notifications++; },
     });
-    expect(await scheduler.tick(stop.signal)).toEqual({ date, status: "interrupted", completed: 0, deferred: 0 });
+    expect(await scheduler.tick(stop.signal)).toMatchObject({ date, status: "interrupted", completed: 0, deferred: 0 });
     expect((await store.read(date))?.entries[0]).toMatchObject({ runningAt: "2026-11-19T07:00:00.000+08:00", done: false });
     enabled = false;
-    expect(await scheduler.tick()).toEqual({ date, status: "complete", completed: 0, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date, status: "complete", completed: 0, deferred: 0 });
     expect((await store.read(date))?.entries).toEqual([]);
     expect(calls).toBe(1);
     expect(notifications).toBe(0);
@@ -143,7 +143,7 @@ test("未知运行结果保留同日 claim，重启后靠业务读回确认而�
         throw new Error("回执丢失");
       },
     });
-    expect(await scheduler.tick()).toEqual({ date, status: "interrupted", completed: 0, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date, status: "interrupted", completed: 0, deferred: 0 });
     expect((await store.read(date))?.entries[0]?.runningAt).toBeTruthy();
     const resumed = createCheckinScheduler({
       store: createCheckinScheduleStore(directory), config, now: () => dueAt + 60_000,
@@ -155,7 +155,7 @@ test("未知运行结果保留同日 claim，重启后靠业务读回确认而�
         return successful;
       },
     });
-    expect(await resumed.tick()).toEqual({ date, status: "complete", completed: 1, deferred: 0 });
+    expect(await resumed.tick()).toMatchObject({ date, status: "complete", completed: 1, deferred: 0 });
     expect(writes).toBe(1);
     const entry = (await store.read(date))?.entries[0];
     expect(entry?.runningAt).toBeUndefined();
@@ -177,11 +177,11 @@ test("跨日停止旧日期执行并保留原 claim，次日按新计划运行",
         return successful;
       },
     });
-    expect(await scheduler.tick()).toEqual({ date, status: "interrupted", completed: 0, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date, status: "interrupted", completed: 0, deferred: 0 });
     const yesterday = await store.read(date);
     expect(yesterday?.entries[0]?.runningAt).toBe("2026-11-19T23:58:00.000+08:00");
     expect(yesterday?.entries[0]?.done).toBe(false);
-    expect(await scheduler.tick()).toEqual({ date: next, status: "complete", completed: 2, deferred: 0 });
+    expect(await scheduler.tick()).toMatchObject({ date: next, status: "complete", completed: 2, deferred: 0 });
     expect(await store.read(date)).toEqual(yesterday);
     expect(invoked).toEqual([`${date} 1001`, `${next} 1001`, `${next} 1002`]);
   });

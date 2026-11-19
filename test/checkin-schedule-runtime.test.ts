@@ -44,3 +44,37 @@ test("旧七段 cron 以中国时区执行，注册时只补计划而不提前�
   }
   expect(keys()).toEqual([]);
 });
+
+test("主人手动生成计划可在关闭自动签到时确认通知，自动入口仍无执行", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-manual-plan-"));
+  const store = createCheckinScheduleStore(directory);
+  const { tomorrow, date } = checkinScheduleClock();
+  const signal = new AbortController();
+  const notices: string[] = [];
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, config: { enable: false, random: { notify_before: false } },
+    listProfiles: async () => [{ qq: "10001", profileId: 2, enabled: true }],
+    runProfile: async () => { throw new Error("disabled automatic run"); },
+    async onNotice(entry, day, late, isCurrent) {
+      expect(day).toBe(tomorrow);
+      expect(late).toBe(false);
+      expect(await isCurrent()).toBe(true);
+      expect(entry.noticeAttemptedAt).toBeString();
+      notices.push(entry.qq);
+      return { status: "confirmed" };
+    },
+  });
+  try {
+    runtime.start();
+    expect(runtime.runDue()).toBeUndefined();
+    const generated = await runtime.generateTomorrow();
+    expect(generated?.notices).toMatchObject({ confirmed: 1 });
+    expect(notices).toEqual(["10001"]);
+    expect((await store.read(tomorrow))?.entries[0]).toMatchObject({ notified: true, time: "04:30" });
+    expect(await store.read(date)).toBeUndefined();
+  } finally {
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

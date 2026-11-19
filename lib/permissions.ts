@@ -66,7 +66,8 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-export async function readAccountScopePermission(root: URL, permission: "checkin.refresh" | "checkin.register") {
+export async function readAccountScopePermission(root: URL,
+  permission: "checkin.refresh" | "checkin.register" | "scheduler.generate" | "scheduler.run_due") {
   const permissions = configRecord((await readLocalConfig(root, "global")).permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
@@ -74,7 +75,8 @@ export async function readAccountScopePermission(root: URL, permission: "checkin
   const userDeny = configuredIds(users.deny);
   const groupAllow = configuredIds(groups.allow);
   const groupDeny = configuredIds(groups.deny);
-  const scope = configRecord(configRecord(permissions.scopes)[permission]).policy;
+  const scope = configRecord(configRecord(permissions.scopes)[permission]).policy ??
+    (permission.startsWith("scheduler.") ? "master_only" : undefined);
   return (context: { user_id?: number; group_id?: number; isMaster: boolean }) => {
     const user = String(context.user_id ?? "");
     const group = String(context.group_id ?? "");

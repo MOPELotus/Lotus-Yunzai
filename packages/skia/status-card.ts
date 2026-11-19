@@ -7,6 +7,7 @@ export interface StatusCardOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory?: string;
+  readonly timeZone?: string;
 }
 
 // Miao help/version-info, as drawn by Lotus-ReFactor's Skia status template.
@@ -65,14 +66,22 @@ function paintText(ctx: Context, rows: readonly string[], x: number, y: number,
   for (const [index, row] of rows.entries()) ctx.fillText(row, x, y + index * leading);
 }
 
-function localTime(date: Date) {
+function localTime(date: Date, timeZone?: string) {
+  if (timeZone) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    }).formatToParts(date);
+    const read = (key: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === key)?.value ?? "";
+    return `${read("year")}-${read("month")}-${read("day")} ${read("hour")}:${read("minute")}:${read("second")}`;
+  }
   const pad = (number: number) => String(number).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
     `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 export async function renderStatusCard(title: string, lead: string, contents: readonly string[], at: Date,
-  { mode = "auto", scale = 4, themeDirectory = defaultTheme }: StatusCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, themeDirectory = defaultTheme, timeZone }: StatusCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡卡片缩放比例须在 1 至 4 之间。");
   const background = await themeImage(themeDirectory);
   const metrics = new Canvas(1, 1);
@@ -116,6 +125,6 @@ export async function renderStatusCard(title: string, lead: string, contents: re
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
-    paintText(ctx, [`荷花插件 · ${localTime(at)}`], 300, 20 + panelHeight + 25, 12, 18, "#fff");
+    paintText(ctx, [`荷花插件 · ${localTime(at, timeZone)}`], 300, 20 + panelHeight + 25, 12, 18, "#fff");
   }, mode);
 }

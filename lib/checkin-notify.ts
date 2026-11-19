@@ -28,6 +28,7 @@ interface CheckinNotifyOptions {
   readonly reply: MessageReply;
   readonly transports: readonly CheckinNotifyTransport[];
   readonly signal?: AbortSignal;
+  readonly verifySend?: () => Promise<boolean>;
 }
 
 function validId(id: number) {
@@ -35,7 +36,7 @@ function validId(id: number) {
 }
 
 export async function notifyCheckin({
-  userId, settings, reply, transports, signal,
+  userId, settings, reply, transports, signal, verifySend,
 }: CheckinNotifyOptions): Promise<CheckinNotifyResult> {
   if (!settings.enabled || signal?.aborted) return { status: "skipped" };
   if (!validId(userId)) return { status: "unavailable" };
@@ -44,7 +45,7 @@ export async function notifyCheckin({
     if (signal?.aborted) return;
     let verified: boolean;
     try {
-      verified = await check();
+      verified = await check() && !signal?.aborted && (!verifySend || await verifySend());
     } catch {
       return;
     }

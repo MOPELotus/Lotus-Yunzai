@@ -8,7 +8,7 @@ import { accountCommands } from "./lib/account-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
-import { checkinPlanCommands } from "./lib/checkin-plan-commands.ts";
+import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-commands.ts";
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
@@ -46,7 +46,7 @@ import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type M
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
+import type { BotEvent, GroupRequest, MessageEvent, MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -620,10 +620,11 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
-    const [network, permissions, canRefresh, canRegisterCheckin, globalConfig, access, friendRequests, routing, invitations, botConfig,
+    const [network, permissions, canRefresh, canRegisterCheckin, canGenerate, canRunDue, globalConfig, access, friendRequests, routing, invitations, botConfig,
       runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
-      readAccountScopePermission(root, "checkin.register"), readLocalConfig(root, "global"),
+      readAccountScopePermission(root, "checkin.register"), readAccountScopePermission(root, "scheduler.generate"),
+      readAccountScopePermission(root, "scheduler.run_due"), readLocalConfig(root, "global"),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
       readFriendRequests(root),
@@ -694,6 +695,20 @@ if (import.meta.main) {
       const config = globalConfig.scheduler;
       if (config === undefined || (config !== null && typeof config === "object" && !Array.isArray(config) &&
           (!Object.hasOwn(config, "enable") || typeof (config as CheckinScheduleConfig).enable === "boolean"))) {
+        async function deliverCheckin(qq: string, profileId: number, reply: MessageReply, revision: string, verifyPlan?: () => Promise<boolean>) {
+          const current = await checkinProfiles.checkinSettings(qq, profileId).catch(() => undefined);
+          if (!current?.enabled || current.revision !== revision || lifecycle.signal.aborted ||
+              (verifyPlan && !await verifyPlan())) return { status: "skipped" as const };
+          const transports = [...groups.checkinNotifications()];
+          if (milkyOnline?.checkinNotify && !milkyOnline.signal.aborted) transports.push(milkyOnline.checkinNotify);
+          return notifyCheckin({
+            userId: Number(qq), settings: current.notify, reply, transports, signal: lifecycle.signal,
+            async verifySend() {
+              const latest = await checkinProfiles.checkinSettings(qq, profileId).catch(() => undefined);
+              return latest?.enabled === true && latest.revision === revision && (!verifyPlan || await verifyPlan());
+            },
+          });
+        }
         const runtime = createCheckinScheduleRuntime({
           store: createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root))),
           config: (config ?? {}) as CheckinScheduleConfig,
@@ -702,12 +717,14 @@ if (import.meta.main) {
           runProfile: (entry, scope) => gameCheckin.runScheduled(entry.qq, entry.profileId, scope),
           async onComplete(entry, result) {
             if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
+            await deliverCheckin(entry.qq, entry.profileId, result.reply, result.revision);
+          },
+          async onNotice(entry, date, late, isCurrent) {
             const current = await checkinProfiles.checkinSettings(entry.qq, entry.profileId).catch(() => undefined);
-            if (!current?.enabled || current.revision !== result.revision) return;
-            const transports = [...groups.checkinNotifications()];
-            if (milkyOnline?.checkinNotify && !milkyOnline.signal.aborted) transports.push(milkyOnline.checkinNotify);
-            await notifyCheckin({ userId: Number(entry.qq), settings: current.notify, reply: result.reply, transports,
-              signal: lifecycle.signal });
+            if (!current?.enabled || !current.notify.enabled || lifecycle.signal.aborted) return { status: "skipped" };
+            const reply = await checkinPlanNotice(entry, date, current.displayName, late, lifecycle.signal);
+            if (!reply) return { status: "skipped" };
+            return deliverCheckin(entry.qq, entry.profileId, reply, current.revision, isCurrent);
           },
         });
         checkinRuntime = runtime;
@@ -715,7 +732,8 @@ if (import.meta.main) {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
           viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
         }), "[Lotus-Plugin] Profile Settings");
-        commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal), "[Lotus-Plugin] Scheduler");
+        commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal,
+          { canGenerate, canRunDue }), "[Lotus-Plugin] Scheduler");
       } else {
         console.warn("[签到计划] 全局 scheduler 配置无效。");
       }

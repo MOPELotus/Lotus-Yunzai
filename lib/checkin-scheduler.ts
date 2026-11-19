@@ -39,6 +39,7 @@ interface TickResult {
   readonly status: "disabled" | "locked" | "complete" | "interrupted";
   readonly completed: number;
   readonly deferred: number;
+  readonly entries: readonly CheckinScheduleEntry[];
 }
 
 function sameProfile(left: CheckinScheduleEntry, right: CheckinScheduleEntry) {
@@ -61,7 +62,8 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
     const { date } = clock;
     let completed = 0;
     let deferred = 0;
-    const result = (status: TickResult["status"]): TickResult => ({ date, status, completed, deferred });
+    const entries: CheckinScheduleEntry[] = [];
+    const result = (status: TickResult["status"]): TickResult => ({ date, status, completed, deferred, entries });
     if (shutdown?.aborted) return result("interrupted");
     if (config.enable === false) return result("disabled");
 
@@ -129,6 +131,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
             deferred++;
           } else {
             completed++;
+            entries.push(settled);
             verifyDay();
             try {
               await onComplete?.(settled, outcome);

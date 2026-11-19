@@ -1,13 +1,23 @@
 import { Job } from "node-schedule";
+import type { CheckinNotifyResult } from "./checkin-notify.ts";
+import { notifyCheckinPlan } from "./checkin-plan-notice.ts";
 import {
   addLateCheckinScheduleProfile, checkinScheduleClock, generateCheckinSchedulePlan, reconcileCheckinSchedulePlan,
-  type CheckinScheduleConfig, type CheckinScheduleProfile,
+  type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinSchedulePlan, type CheckinScheduleProfile,
 } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
 import { createCheckinScheduler } from "./checkin-scheduler.ts";
 
 type Store = ReturnType<typeof createCheckinScheduleStore>;
 type Runner = Pick<Parameters<typeof createCheckinScheduler>[0], "runProfile" | "onComplete">;
+type Tick = Awaited<ReturnType<ReturnType<typeof createCheckinScheduler>["tick"]>>;
+type RuntimeTick = Tick | { readonly status: "failed" };
+type PlanNotice = (entry: CheckinScheduleEntry, date: string, late: boolean, isCurrent: () => Promise<boolean>) =>
+  Promise<Pick<CheckinNotifyResult, "status">>;
+interface TomorrowPlan {
+  readonly plan: CheckinSchedulePlan;
+  readonly notices?: Awaited<ReturnType<typeof notifyCheckinPlan>>;
+}
 const dueCron = "0 * * * * *";
 
 function normalizeCron(value: unknown): string | undefined {
@@ -20,40 +30,60 @@ function normalizeCron(value: unknown): string | undefined {
   return fields.join(" ");
 }
 
-export function createCheckinScheduleRuntime({ store, config, listProfiles, signal, runProfile, onComplete }: Runner & {
+export function createCheckinScheduleRuntime({ store, config, listProfiles, signal, runProfile, onComplete, onNotice }: Runner & {
   readonly store: Store;
   readonly config: CheckinScheduleConfig;
   readonly listProfiles: () => Promise<readonly CheckinScheduleProfile[]>;
   readonly signal: AbortSignal;
+  readonly onNotice?: PlanNotice;
 }) {
   const jobs: Job[] = [];
-  let operation: Promise<void> | undefined;
-  let preparation: Promise<void> | undefined;
+  let operation: Promise<RuntimeTick | undefined> | undefined;
+  let preparation: Promise<TomorrowPlan | undefined> | undefined;
+  let forcedPlan: Promise<TomorrowPlan | undefined> | undefined;
   let tomorrowPrepared = "";
   let stopped = false;
   let immediateDue = false;
 
-  function canRun() {
-    return !stopped && !signal.aborted && config.enable !== false;
+  function canRun(force = false) {
+    return !stopped && !signal.aborted && (force || config.enable !== false);
   }
 
-  async function prepareTomorrow(profiles: readonly CheckinScheduleProfile[]) {
+  async function notifyPlanned(plan: CheckinSchedulePlan, late: boolean, force = false) {
+    if (!canRun(force) || !onNotice) return;
+    return notifyCheckinPlan(store, plan, (slot, date) => onNotice(slot, date, late, async () => {
+      if (!canRun(force)) return false;
+      const clock = checkinScheduleClock();
+      if (date !== clock.tomorrow && (!late || date !== clock.date)) return false;
+      const current = await store.read(date);
+      return current?.generatedAt === plan.generatedAt && current.entries.some(entry =>
+        entry.qq === slot.qq && entry.profileId === slot.profileId && entry.time === slot.time && entry.mode === slot.mode &&
+        entry.noticeAttemptedAt === slot.noticeAttemptedAt && !entry.notified && !entry.done);
+    }), signal);
+  }
+
+  async function prepareTomorrow(profiles: readonly CheckinScheduleProfile[], force = false): Promise<TomorrowPlan | undefined> {
     const now = Date.now();
     const { tomorrow } = checkinScheduleClock(now);
-    if (!canRun() || (!profiles.some(profile => profile.enabled) && !await store.read(tomorrow))) return;
-    await store.update(tomorrow, previous => {
-      if (!canRun()) return { result: undefined };
-      const plan = previous ? reconcileCheckinSchedulePlan(previous, { now, profiles, config }) :
+    if (!canRun(force) || (!force && !profiles.some(profile => profile.enabled) && !await store.read(tomorrow))) return;
+    const saved = await store.update(tomorrow, previous => {
+      if (!canRun(force) || checkinScheduleClock().tomorrow !== tomorrow) return { result: undefined };
+      const plan = previous && !force ? reconcileCheckinSchedulePlan(previous, { now, profiles, config }) :
         generateCheckinSchedulePlan({ date: tomorrow, now, profiles, config });
-      return { plan, result: undefined };
+      return { plan, result: plan };
     });
+    if (!saved) return;
     tomorrowPrepared = tomorrow;
+    const notices = force || config.random?.notify_before !== false ? await notifyPlanned(saved, false, force) : undefined;
+    return { plan: saved, notices };
   }
 
   function prepare() {
+    if (forcedPlan) return forcedPlan;
     if (!canRun() || preparation || tomorrowPrepared === checkinScheduleClock().tomorrow) return preparation;
-    preparation = listProfiles().then(prepareTomorrow).catch(() => {
+    preparation = listProfiles().then(profiles => prepareTomorrow(profiles)).catch(() => {
       if (canRun()) console.warn("[签到计划] 无法准备明日计划。");
+      return undefined;
     }).finally(() => { preparation = undefined; });
     return preparation;
   }
@@ -65,9 +95,10 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
       const profiles = await listProfiles();
       if (!canRun() || (!profiles.some(profile => profile.enabled) && !await store.read(date))) return;
       const scheduler = createCheckinScheduler({ store, config, listProfiles: async () => profiles, runProfile, onComplete });
-      await scheduler.tick(signal);
+      return scheduler.tick(signal);
     })().catch(() => {
       if (canRun()) console.warn("[签到计划] 无法执行本轮自动签到。");
+      return { status: "failed" as const };
     }).finally(() => { operation = undefined; });
     return operation;
   }
@@ -91,6 +122,12 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
 
   return {
     enabled: config.enable !== false,
+    runDue: trigger,
+    generateTomorrow() {
+      if (!canRun(true)) return;
+      return forcedPlan ??= Promise.resolve(preparation).then(listProfiles)
+        .then(profiles => prepareTomorrow(profiles, true)).finally(() => { forcedPlan = undefined; });
+    },
     start() {
       if (!canRun() || jobs.length) return;
       immediateDue = schedule(config.run_due_cron, dueCron, "到期任务", trigger) === dueCron;
@@ -103,18 +140,20 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
       stopped = true;
       for (const job of jobs) job.cancel();
       jobs.length = 0;
-      await Promise.all([operation, preparation]);
+      await Promise.allSettled([operation, preparation, forcedPlan]);
     },
     async addRegisteredProfile(profile: CheckinScheduleProfile) {
       if (!canRun()) return;
       const now = Date.now();
       const { date, tomorrow } = checkinScheduleClock(now);
       for (const day of [date, tomorrow]) {
-        await store.update(day, plan => {
+        const updated = await store.update(day, plan => {
           if (!plan || !canRun()) return { result: undefined };
           const result = addLateCheckinScheduleProfile(plan, profile, { config, now });
-          return { plan: result.plan ?? plan, result: undefined };
+          const changed = result.plan ?? plan;
+          return { plan: changed, result: "entry" in result ? { ...changed, entries: [result.entry] } : undefined };
         });
+        if (updated && config.late_registration?.notify !== false) await notifyPlanned(updated, true);
       }
       if (preparation) void preparation.then(() => prepare());
       else void prepare();
