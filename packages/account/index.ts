@@ -516,6 +516,25 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { account, device, revision } = await readLoggedIn(qq, id);
       return { qq, profileId: id, account, device, revision };
     },
+    async checkinSettings(qq: string, id: number) {
+      const { document, state, revision } = await readDocument(qq, id);
+      const cn = record(record(document.games).cn);
+      const community = record(document.mihoyobbs);
+      const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
+      const name = text(record(document.user).nickname) || `QQ ${qq}`;
+      const sensitive = [state.account.cookie, state.account.ltoken, state.account.stoken, state.account.stokenCookie,
+        state.account.mid, state.device.id, state.device.fp].filter(Boolean);
+      const displayName = sensitive.some(secret => name.includes(secret)) ? "档案" : name.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 80) || "档案";
+      const games = Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"].map(key => {
+        const game = record(cn[key]);
+        const defaultEnabled = key === "genshin" || key === "honkai_sr" || key === "zzz";
+        const blacklist = Array.isArray(game.black_list) ? game.black_list.map(accountId).filter(Boolean) : [];
+        return [key, { enabled: cn.enable !== false && (game.checkin === undefined ? defaultEnabled : game.checkin === true), blacklist }];
+      }));
+      const communityForums = communityEnabled && Array.isArray(community.checkin_list)
+        ? community.checkin_list.map(accountId).filter(Boolean) : [];
+      return { revision, displayName, games, communityForums };
+    },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
       const name = profileFilename(qq, id);
       if (!credentials.cookie.trim() || !credentials.ltoken.trim() ||
