@@ -1,6 +1,5 @@
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { GameRecordRequestError } from "./game-record.ts";
 import {
   openHoYoLabCheckinTransport, type HoYoLabCheckinAccount, type HoYoLabCheckinOptions,
 } from "./hoyolab-checkin-transport.ts";
@@ -109,26 +108,19 @@ export async function openHoYoLabStarRailCheckin(
           if (read === attempt.read) attempt.canSubmit = !signed && firstBind !== true;
           return { signed, firstBind: firstBind === true, ...(totalSignDays !== undefined && { totalSignDays }) };
         },
-        async submit(): Promise<"accepted" | "already"> {
+        async submit(): Promise<"accepted"> {
           if (attempt.submitted || !attempt.canSubmit) invalidSelection();
           attempt.submitted = true;
           const subject = "星铁国际服签到提交";
           const url = new URL(`${endpoint}/sign`);
-          try {
-            const data = await client.request(url, {
-              ...readHeaders, "Content-Type": "application/json", "x-rpc-platform": "4", "x-rpc-client_type": "5",
-              "x-rpc-device_id": client.deviceId,
-            }, subject, JSON.stringify(params));
-            verifyRole(data, role, subject);
-            verifyRiskFields(data, subject);
-            if (data.first_bind !== undefined && typeof data.first_bind !== "boolean") invalidResponse(subject);
-            return "accepted";
-          } catch (error) {
-            // "Already" is an acknowledgment. The same-role status read still decides the result.
-            if (error instanceof HoyoRequestError && !(error instanceof GameRecordRequestError) &&
-                error.code === "api" && error.status === 200 && error.retcode === -5003) return "already";
-            throw error;
-          }
+          const data = await client.request(url, {
+            ...readHeaders, "Content-Type": "application/json", "x-rpc-platform": "4", "x-rpc-client_type": "5",
+            "x-rpc-device_id": client.deviceId, "x-rpc-device_fp": client.deviceId,
+          }, subject, JSON.stringify(params));
+          verifyRole(data, role, subject);
+          verifyRiskFields(data, subject);
+          if (data.first_bind !== undefined && typeof data.first_bind !== "boolean") invalidResponse(subject);
+          return "accepted";
         },
       };
     },

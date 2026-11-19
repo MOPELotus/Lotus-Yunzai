@@ -28,7 +28,7 @@ test("星铁国际服以独立 LToken 读取角色目录，同 UID 跨区各自�
     expect(init).toMatchObject({ credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
     expect(headers.get("cookie")).toBe(profile.cookie);
     expect(headers.get("origin")).toBe("https://act.hoyolab.com");
-    for (const key of ["ds", "x-rpc-device_fp", "x-rpc-challenge"]) expect(headers.has(key)).toBe(false);
+    for (const key of ["ds", "x-rpc-challenge"]) expect(headers.has(key)).toBe(false);
     if (url.href === directoryUrl + "?game_biz=hkrpg_global") {
       expect(init.method).toBe("GET");
       expect(headers.get("x-rpc-language")).toBe("zh-tw");
@@ -41,6 +41,7 @@ test("星铁国际服以独立 LToken 读取角色目录，同 UID 跨区各自�
       expect(headers.get("x-rpc-client_type")).toBe("5");
       expect(headers.get("x-rpc-platform")).toBe("4");
       expect(headers.get("x-rpc-device_id")).toBe(deviceId);
+      expect(headers.get("x-rpc-device_fp")).toBe(deviceId);
       const params = JSON.parse(String(init.body));
       expect(params).toEqual(callsFor(params.region));
       signed.add(params.region);
@@ -118,10 +119,9 @@ test("星铁目录拒绝绑定身份不符和缺少独立 HoYoLAB LToken 的档�
   }
 });
 
-test("官方已签到回执仍复核同一角色，风险或限流不回读，未知结果只查一次", async () => {
+test("星铁国际服非零回执不推断已签到，风险或限流不回读，未知结果只查一次", async () => {
   for (const scenario of [
-    { response: () => Response.json({ retcode: -5003, data: null }), after: false, status: "unconfirmed", reads: 2 },
-    { response: () => Response.json({ retcode: -5003, data: null }), after: true, status: "already", reads: 2 },
+    { response: () => Response.json({ retcode: -5003, data: null }), status: "failed", reads: 1 },
     { response: () => new Response(null, { status: 503 }), after: true, status: "signed", reads: 2 },
     { response: () => ok({ gt_result: { is_risk: true, challenge: "private" } }), status: "failed", reads: 1, reason: "risk" },
     { response: () => ok({ is_risk: "true" }), after: false, status: "unconfirmed", reads: 2 },

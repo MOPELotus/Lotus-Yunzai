@@ -710,19 +710,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         },
       };
     },
-    async internationalGenshinCheckin(qq: string, id: number) {
+    async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr") {
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
-      const genshin = record(os.genshin);
-      if (os.enable !== true || genshin.checkin !== true) return { status: "disabled" as const, revision };
+      const setting = record(os[game]);
+      if (os.enable !== true || setting.checkin !== true) return { status: "disabled" as const, revision };
       const verifiedAccountId = text(os.verified_account_id);
       const realm = os.verified_realm;
-      const cookie = typeof os.cookie === "string" ? os.cookie : "";
+      const credential = game === "genshin" ? os.cookie : os.verified_activity_cookie;
+      const cookie = typeof credential === "string" ? credential : "";
       if (!state.summary.loggedIn || !/^[1-9]\d{0,19}$/u.test(verifiedAccountId) || !cookie ||
           (realm !== "SG" && realm !== "US" && realm !== "EU")) return { status: "unverified" as const, revision };
       return {
         status: "verified", revision, cookie, accountId: verifiedAccountId, realm, language: text(os.lang) || "zh-cn",
-        blacklist: Array.isArray(genshin.black_list) ? genshin.black_list.map(accountId).filter(Boolean) : [],
+        blacklist: Array.isArray(setting.black_list) ? setting.black_list.map(accountId).filter(Boolean) : [],
       } as const;
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {

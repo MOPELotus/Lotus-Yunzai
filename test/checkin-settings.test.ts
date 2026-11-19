@@ -203,22 +203,31 @@ test("国际服总开关和语言只更新本档原海外段", async () => {
   }, { ...fixture, games: { ...fixture.games, os } });
 });
 
-test("原神国际服执行只获取已验证的同档独立凭据和海外配置", async () => {
+test("国际服执行按游戏获取已验证的同档普通或活动登录凭据", async () => {
   const os = {
     enable: true, cookie: "旧未核对的海外凭据", lang: "EN_US",
     genshin: { checkin: true, black_list: ["800000123", 900000456] },
+    honkai_sr: { checkin: true, black_list: ["700000123"] },
   };
   await withProfile(async (store) => {
     const { revision } = await store.checkinSettings(qq, 2);
-    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({ status: "unverified", revision });
+    expect(await store.internationalCheckin(qq, 2, "genshin")).toEqual({ status: "unverified", revision });
     const cookie = "account_id=800; cookie_token=verified-fixture";
     const bound = await store.saveInternationalCookie(qq, 2, revision, { cookie, accountId: "800", realm: "SG" });
-    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({
+    expect(await store.internationalCheckin(qq, 2, "genshin")).toEqual({
       status: "verified", revision: bound.revision, cookie, accountId: "800", realm: "SG",
       language: "EN_US", blacklist: ["800000123", "900000456"],
     });
-    const off = await store.setProfileCheckinSettings(qq, 2, bound.revision, { type: "international", enabled: false });
-    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({ status: "disabled", revision: off.revision });
+    expect(await store.internationalCheckin(qq, 2, "honkai_sr")).toEqual({ status: "unverified", revision: bound.revision });
+    const activityCookie = "ltuid=800; ltoken=verified-activity";
+    const both = await store.saveInternationalCookie(qq, 2, bound.revision, { cookie, accountId: "800", realm: "SG", activityCookie });
+    expect(await store.internationalCheckin(qq, 2, "honkai_sr")).toEqual({
+      status: "verified", revision: both.revision, cookie: activityCookie, accountId: "800", realm: "SG",
+      language: "EN_US", blacklist: ["700000123"],
+    });
+    expect(await store.internationalCheckin(qq, 2, "genshin")).toMatchObject({ status: "verified", cookie });
+    const off = await store.setProfileCheckinSettings(qq, 2, both.revision, { type: "international", enabled: false });
+    expect(await store.internationalCheckin(qq, 2, "genshin")).toEqual({ status: "disabled", revision: off.revision });
     expect((await store.accountContext(qq, 2)).account.cookie).toBe(fixture.account.cookie);
   }, { ...fixture, games: { ...fixture.games, os } });
 });

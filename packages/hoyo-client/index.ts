@@ -4,6 +4,7 @@ import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
+import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
@@ -357,6 +358,9 @@ export function createHoyoClient(
     },
     openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSource, options: Parameters<typeof openHoYoLabGenshinCheckin>[2]) {
       return openHoYoLabGenshinCheckin(source, transport, options);
+    },
+    openHoYoLabStarRailCheckin(source: HoYoLabGenshinCheckinSource, options: Parameters<typeof openHoYoLabStarRailCheckin>[2]) {
+      return openHoYoLabStarRailCheckin(source, transport, options);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);

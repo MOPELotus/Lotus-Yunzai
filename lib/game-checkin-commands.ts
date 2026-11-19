@@ -96,6 +96,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
   const active = new Set<string>();
+  const activeOverseas = new Set<string>();
   const overseasDeviceId = crypto.randomUUID();
 
   async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"], notes: readonly string[], points?: string) {
@@ -381,37 +382,65 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
       }
       if (!scoped) {
-        const overseas = await profiles.internationalGenshinCheckin(qq, profileId);
-        await verifyCurrent();
-        if (overseas.revision !== revision) throw new ProfileError("changed", changed);
-        const genshin = rows.find(row => row.key === "genshin")!;
-        if (overseas.status === "unverified") {
-          genshin.game += " · 国际服待绑定";
-          count("failed");
-          notes.push("原神国际服：请先在私聊核验并绑定 HoYoLAB Cookie。");
-        } else if (overseas.status === "verified") {
+        for (const game of ["genshin", "honkai_sr"] as const) {
+          const overseas = await profiles.internationalCheckin(qq, profileId, game);
+          await verifyCurrent();
+          if (overseas.revision !== revision) throw new ProfileError("changed", changed);
+          if (overseas.status === "disabled") continue;
+          const row = rows.find(item => item.key === game)!;
+          if (overseas.status === "unverified") {
+            row.game += " · 国际服待绑定";
+            count("failed");
+            const credential = game === "genshin" ? "HoYoLAB Cookie" : "包含活动登录凭据的 HoYoLAB Cookie";
+            notes.push(`${row.label}国际服：请先在私聊核验并绑定${credential}。`);
+            continue;
+          }
+          const overseasKey = `${overseas.realm}/${overseas.accountId}/${game}`;
+          if (activeOverseas.has(overseasKey)) {
+            row.game += " · 国际服处理中";
+            count("failed");
+            notes.push(`${row.label}国际服：同账号签到正在执行，请稍后查询。`);
+            continue;
+          }
+          activeOverseas.add(overseasKey);
           try {
-            const remote = await client.openHoYoLabGenshinCheckin(overseas, { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId });
-            await verifyCurrent();
+            const options = { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId };
             const blocked = new Set(overseas.blacklist);
-            if (!remote.roles.length || remote.roles.some(role => blocked.has(role.uid))) {
-              genshin.game += " · 国际服跳过";
-              count("skipped");
+            const results: GameCheckinResult[] = [];
+            if (game === "genshin") {
+              const remote = await client.openHoYoLabGenshinCheckin(overseas, options);
+              if (remote.roles.length && !remote.roles.some(role => blocked.has(role.uid))) {
+                results.push(await runGameCheckinSequence({
+                  signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),
+                }));
+              }
             } else {
-              const result = await runGameCheckinSequence({
-                signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),
-              });
-              const finished = outcome([result], "HoYoLAB");
-              genshin.game += ` · 国际服${finished.label}`;
-              count(result.status);
-              if (finished.reason) notes.push(`原神国际服：${finished.reason}`);
+              const remote = await client.openHoYoLabStarRailCheckin(overseas, options);
+              for (const role of remote.roles) {
+                if (blocked.has(role.uid)) continue;
+                const result = await runGameCheckinSequence({ ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent });
+                results.push(result);
+                if (result.status === "failed" && result.error instanceof GameRecordRequestError) break;
+              }
             }
+            await verifyCurrent();
+            if (!results.length) {
+              row.game += " · 国际服跳过";
+              count("skipped");
+              continue;
+            }
+            for (const result of results) count(result.status);
+            const finished = outcome(results, "HoYoLAB");
+            row.game += ` · 国际服${finished.label}`;
+            if (finished.reason) notes.push(`${row.label}国际服：${finished.reason}`);
           } catch (error) {
             await verifyCurrent();
-            genshin.game += " · 国际服失败";
+            row.game += " · 国际服失败";
             count("failed");
             const reason = outcome([{ status: "failed", error }], "HoYoLAB").reason;
-            notes.push(`原神国际服：${reason === "部分角色签到失败" ? "无法读取账号角色目录" : reason}`);
+            notes.push(`${row.label}国际服：${reason === "部分角色签到失败" ? "无法读取账号角色目录" : reason}`);
+          } finally {
+            activeOverseas.delete(overseasKey);
           }
         }
       }
