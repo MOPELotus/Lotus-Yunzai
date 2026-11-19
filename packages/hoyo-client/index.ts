@@ -2,7 +2,9 @@ import { normalizeGameRoles, profileGames, type Game, type GameRole, type Profil
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { isGameRecordCookieExpired } from "./game-record.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
+import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
@@ -10,6 +12,8 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { createCredentialExchange };
 export { HoyoRequestError };
+export { GameRecordRequestError } from "./game-record.ts";
+export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
 export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
@@ -287,6 +291,9 @@ export function createHoyoClient(
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
       return readForProfile(source, options, readGenshinGacha, isGenshinAuthExpired);
+    },
+    fetchGenshinWorldBoss(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readGenshinWorldBoss, isGameRecordCookieExpired);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
