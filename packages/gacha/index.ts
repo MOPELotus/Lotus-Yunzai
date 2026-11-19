@@ -115,8 +115,8 @@ function winPercent(attempts: number, wins: number, upRate: number): string | fa
   return boundedPercent(below).toFixed(1);
 }
 
-export function applyGachaGuarantees(fiveLog: readonly GachaGuaranteeRow[]): GachaGuarantees {
-  let guaranteed: boolean | undefined = false;
+export function applyGachaGuarantees(fiveLog: readonly GachaGuaranteeRow[], initialGuaranteed: boolean | null = false): GachaGuarantees {
+  let guaranteed: boolean | undefined = initialGuaranteed ?? undefined;
   let smallNum = 0, smallWin = 0, bigNum = 0, maxUpStreak = 0, maxWaiStreak = 0;
   let wins = 0, losses = 0;
   for (const row of [...fiveLog].reverse()) {

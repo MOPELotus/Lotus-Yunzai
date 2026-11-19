@@ -13,7 +13,7 @@ export interface StarRailGachaFileContext extends GachaFileImportContext {
   readonly uploadFile?: (file: { readonly name: string; readonly bytes: Uint8Array }) => Promise<"confirmed" | "rejected" | "unknown">;
 }
 
-function legacyTimezone(role: GameRole) {
+export function starRailLegacyArchiveTimezone(role: GameRole) {
   if (role.region === "prod_gf_cn" || role.region === "prod_qd_cn" || (!role.region && /^[125]\d{8}$/u.test(role.uid))) return 8;
 }
 
@@ -46,12 +46,12 @@ export function createStarRailGachaFiles(
     prefix: "*", gameName: "星铁", signal, savedRole, failure: describe,
     async importDocument(input, { qq, profileId, role, verifyProfile }) {
       const incoming = selectStarRailUigf(input, { uid: role.uid,
-        legacyMiaoServerTime: legacyTimezone(role) === 8 && legacyMiaoTime(input) });
-      const result = await archive.merge({ qq, uid: role.uid }, incoming, verifyProfile, { legacyTimezone: legacyTimezone(role) });
+        legacyMiaoServerTime: starRailLegacyArchiveTimezone(role) === 8 && legacyMiaoTime(input) });
+      const result = await archive.merge({ qq, uid: role.uid }, incoming, verifyProfile, { legacyTimezone: starRailLegacyArchiveTimezone(role) });
       const lines = result.pools.flatMap(({ pool, received, added, total }) => received
         ? [`${poolNames[pool]}记录：读取 ${received} 条，新增 ${added} 条，共 ${total} 条`] : []);
       return [`UID ${role.uid} · 星铁逐抽记录导入成功`, ...lines,
-        `可使用 *导出记录${profileId === 1 ? "" : profileId} 导出逐抽档案。`].join("\n");
+        `可使用 *逐抽记录${profileId === 1 ? "" : profileId} 查看，或使用 *导出记录${profileId === 1 ? "" : profileId} 导出。`].join("\n");
     },
   });
 
@@ -79,7 +79,7 @@ export function createStarRailGachaFiles(
       const qq = String(user_id);
       const role = await savedRole(qq, profileId);
       const { uid } = role;
-      const data = await archive.read({ qq, uid }, { legacyTimezone: legacyTimezone(role) });
+      const data = await archive.read({ qq, uid }, { legacyTimezone: starRailLegacyArchiveTimezone(role) });
       if (data.status === "unavailable") {
         return data.reason === "mirror" ? "旧星铁档案含有用于显示的占位记录，无法导出真实逐抽。"
           : "本地没有可导出的星铁逐抽记录。可先用 *导入记录 导入 UIGF 或 SRGF 文件。";

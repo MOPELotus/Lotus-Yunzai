@@ -51,6 +51,7 @@ interface Group {
 }
 interface MiaoGachaVersionModel {
   readonly uid: string;
+  readonly recordArchive?: true;
   readonly face: { readonly name: string; readonly face?: string; readonly banner?: string };
   readonly poolName: string;
   readonly gacha: {
@@ -59,6 +60,7 @@ interface MiaoGachaVersionModel {
     readonly totalStat: Stats<Exclude<typeof bannerStats[number][0], "avgUpNum">> & {
       readonly avgUpNum: string | 0;
       readonly unassignedDraws: number;
+      readonly unclassifiedDraws?: number;
     };
     readonly isMix: boolean;
     readonly shownNum?: number;
@@ -218,7 +220,7 @@ function drawBanner(ctx: Context, model: MiaoGachaVersionModel, theme: Theme, as
   ctx.save();
   ctx.shadowColor = "#f0ece4";
   ctx.shadowBlur = 3;
-  if (game === "gs") drawNickname(ctx, model.face.name, 111, 58, 24, ink, nameWidth);
+  if (game === "gs" || model.recordArchive) drawNickname(ctx, model.face.name, 111, 58, 24, ink, nameWidth);
   else text(ctx, model.face.name, 111, 58, 24, ink, "left", nameWidth, true);
   text(ctx, `#${model.uid}`, 111, 86, 16, ink, "left", nameWidth);
   ctx.restore();
@@ -245,7 +247,7 @@ function drawPageHead(ctx: Context, model: MiaoGachaVersionModel, page: NonNulla
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
   ctx.font = `16px ${family}`;
   const free = panelWidth - 40 - nameWidth - ctx.measureText(mid).width - ctx.measureText(marker).width;
-  if (game === "gs") drawNickname(ctx, model.face.name, 35, 47, 20, white, nameWidth || 235);
+  if (game === "gs" || model.recordArchive) drawNickname(ctx, model.face.name, 35, 47, 20, white, nameWidth || 235);
   else text(ctx, model.face.name, 35, 47, 20, white, "left", nameWidth || 235, true);
   text(ctx, mid, 35 + nameWidth + Math.max(0, free / 2), 47, 16, "#ddd");
   text(ctx, marker, 705, 47, 16, "#ffd484", "right");
@@ -389,8 +391,21 @@ function drawGroup(ctx: Context, group: Group, model: MiaoGachaVersionModel, the
   ctx.stroke();
 }
 
-function drawNotice(ctx: Context, game: Game) {
+function drawNotice(ctx: Context, game: Game, recordArchive?: true, poolName?: string) {
   const light = "rgba(255,255,255,.90)";
+  if (recordArchive) {
+    if (poolName === "全部") {
+      richLine(ctx, [
+        ["本地逐抽档案 · 统计角色、光锥与常驻池，", light], ["*逐抽全部记录", gold], [" 查看六池", light],
+      ], width / 2, 128, 13);
+      return;
+    }
+    richLine(ctx, [
+      ["本地逐抽档案 · ", light], ["*逐抽角色统计", gold], ["  ", light], ["*逐抽光锥统计", gold],
+      ["  ", light], ["*逐抽常驻统计", gold], ["  ", light], ["*逐抽全部统计", gold],
+    ], width / 2, 128, 13);
+    return;
+  }
   if (game === "gs") {
     richLine(ctx, [
       ["#角色统计/#武器统计", gold], [" 角色/武器池统计，  ", light],
@@ -411,17 +426,18 @@ function drawNotice(ctx: Context, game: Game) {
 }
 
 function unassignedNotice(model: MiaoGachaVersionModel) {
-  const { unassignedDraws, totalNum } = model.gacha.totalStat;
-  return unassignedDraws > 0
-    ? `累计 ${totalNum} 抽 · 分期可确认 ${totalNum - unassignedDraws} 抽 · ${unassignedDraws} 抽未能归至期次`
-    : "";
+  const { unassignedDraws, unclassifiedDraws, totalNum } = model.gacha.totalStat;
+  const notes = [];
+  if (unassignedDraws > 0) notes.push(`累计 ${totalNum} 抽 · 分期可确认 ${totalNum - unassignedDraws} 抽 · ${unassignedDraws} 抽未能归至期次`);
+  if (unclassifiedDraws) notes.push(`${unclassifiedDraws} 抽星级未辨认`);
+  return notes.join(" · ");
 }
 
 function pagingNote(model: MiaoGachaVersionModel, game: Game) {
   const { pageInfo, gacha, poolName } = model;
   if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 期，共 ${pageInfo.count} 期卡池`;
   return gacha.hiddenNum
-    ? `仅显示最近 ${gacha.shownNum} 期卡池，更早的 ${gacha.hiddenNum} 期未显示（顶部统计包含全部数据），发送 ${games[game].prefix}${poolName}全部统计 查看全部`
+    ? `仅显示最近 ${gacha.shownNum} 期卡池，更早的 ${gacha.hiddenNum} 期未显示（顶部统计包含全部数据），发送 ${games[game].prefix}${model.recordArchive ? "逐抽" : ""}${poolName}全部统计 查看全部`
     : "";
 }
 
@@ -475,7 +491,7 @@ export async function renderMiaoGachaVersion(
     if (laterPage) drawPageHead(ctx, model, laterPage, game);
     else {
       drawBanner(ctx, model, theme, images, game);
-      drawNotice(ctx, game);
+      drawNotice(ctx, game, model.recordArchive, model.poolName);
       if (note) text(ctx, note, width / 2, config.groupsTop - 2, 13, gold, "center", panelWidth - 16);
     }
     let y = top;

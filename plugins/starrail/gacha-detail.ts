@@ -11,6 +11,8 @@ type Items = Record<string, {
 interface FiveStarDisplay {
   id: ItemId;
   count: number;
+  countKnown?: false;
+  countAtLeast?: true;
   date: string;
   isUp?: boolean;
   isBig?: true;
@@ -36,6 +38,7 @@ interface GachaDetailStats {
 
 export interface StarRailGachaDetailModel {
   readonly uid: string;
+  readonly recordArchive?: true;
   readonly face: Face;
   readonly poolName: "角色" | "光锥" | "常驻";
   readonly gacha: {
@@ -45,6 +48,7 @@ export interface StarRailGachaDetailModel {
     readonly luck?: GachaLuck;
     readonly maxFour: { readonly name: string; readonly count: number };
     readonly noWaiRate: DecimalOrZero;
+    readonly unclassified?: number;
     readonly shownNum?: number;
     readonly hiddenNum?: number;
   };
@@ -67,7 +71,7 @@ export interface StarRailGachaDetailOptions {
 
 const pityItem = 888;
 const unknownPull = 403;
-const detailPools = {
+export const detailPools = {
   GachaType_AvatarUp: { legacy: 11, name: "角色", base: 0.006, soft: 74, step: 0.06, hard: 90, upRate: 0.5 },
   GachaType_EquipmentUp: { legacy: 12, name: "光锥", base: 0.008, soft: 66, step: 0.07, hard: 80, upRate: 0.75 },
   GachaType_Standard: { legacy: 1, name: "常驻", base: 0.006, soft: 74, step: 0.06, hard: 90, upRate: 0 },

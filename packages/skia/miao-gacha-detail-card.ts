@@ -44,6 +44,8 @@ interface Row {
   readonly id: string | number;
   readonly date: string;
   readonly count: number;
+  readonly countKnown?: false;
+  readonly countAtLeast?: true;
   readonly isUp?: boolean;
 }
 
@@ -51,6 +53,7 @@ type Stat = typeof statLabels[number][0] | "upYs";
 
 interface MiaoGachaDetailModel {
   readonly uid: string;
+  readonly recordArchive?: true;
   readonly face: { readonly name: string; readonly face?: string; readonly banner?: string };
   readonly poolName?: string;
   readonly gacha: {
@@ -60,6 +63,7 @@ interface MiaoGachaDetailModel {
     readonly luck?: GachaLuck;
     readonly shownNum?: number;
     readonly hiddenNum?: number;
+    readonly unclassified?: number;
   };
   readonly pageInfo?: { readonly page: number; readonly total: number; readonly from: number; readonly to: number; readonly count: number };
 }
@@ -252,7 +256,7 @@ function paintBanner(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, fa
   ctx.shadowColor = "#f0ece4";
   ctx.shadowBlur = 3;
   const nameStyle = { color: ink, size: 24, bold: true };
-  if (game === "gs") paintFitted(ctx, model.face.name, 111, 58, nameStyle, 16, nameWidth);
+  if (game === "gs" || model.recordArchive) paintFitted(ctx, model.face.name, 111, 58, nameStyle, 16, nameWidth);
   else paint(ctx, model.face.name, 111, 58, nameStyle, "left", nameWidth);
   paint(ctx, `#${model.uid}`, 111, 86, { color: ink, size: 16 }, "left", nameWidth);
   ctx.restore();
@@ -340,9 +344,12 @@ function paintLuck(ctx: Context, luck: GachaLuck, tips: readonly string[], y: nu
   ctx.restore();
 }
 
-function paintNotice(ctx: Context, y: number, game: Game) {
+function paintNotice(ctx: Context, y: number, game: Game, recordArchive?: true) {
   const prefix = games[game].prefix;
-  const assets = [
+  const assets = recordArchive ? [
+    ["本地逐抽档案 · ", "rgba(255,255,255,.90)"], ["*逐抽版本统计", gold], ["查看分期，", "rgba(255,255,255,.90)"],
+    ["*逐抽全部记录", gold], ["查看六池", "rgba(255,255,255,.90)"],
+  ] as const : [
     [`${prefix}抽卡帮助`, gold], ["查看用法，", "rgba(255,255,255,.90)"],
     [`${prefix}更新抽卡记录`, gold], ["更新抽卡信息，", "rgba(255,255,255,.90)"],
     [`${prefix}抽卡统计`, gold], [`${prefix}角色统计`, gold], ["可查看按卡池分析结果", "rgba(255,255,255,.90)"],
@@ -359,7 +366,7 @@ function paintPageHead(ctx: Context, model: MiaoGachaDetailModel, page: NonNulla
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
   ctx.font = font({});
   const free = inner - 40 - nameWidth - ctx.measureText(subtitle).width - ctx.measureText(pageLabel).width;
-  if (game === "gs") paintFitted(ctx, model.face.name, 35, 47, nameStyle, 16, nameWidth || 235);
+  if (game === "gs" || model.recordArchive) paintFitted(ctx, model.face.name, 35, 47, nameStyle, 16, nameWidth || 235);
   else paint(ctx, model.face.name, 35, 47, nameStyle, "left", nameWidth || 235);
   paint(ctx, subtitle, 35 + nameWidth + Math.max(0, free / 2), 47, { color: "#ddd" });
   paint(ctx, pageLabel, 705, 47, { color: "#ffd484" }, "right");
@@ -408,7 +415,7 @@ function paintRows(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, port
     const name = pity ? "已抽" : item?.abbr || item?.name || "未知";
     const nameWidth = iconX - frame - dateWidth - 5;
     const nameStyle = { color: row.isUp ? "#ffd484" : muted };
-    if (game === "gs") paintFitted(ctx, name, iconX - 5, y + 19, { ...nameStyle, size: 16 }, 12, nameWidth, "right");
+    if (game === "gs" || model.recordArchive) paintFitted(ctx, name, iconX - 5, y + 19, { ...nameStyle, size: 16 }, 12, nameWidth, "right");
     else paint(ctx, name, iconX - 5, y + 19, nameStyle, "right", nameWidth);
     if (item?.star === 5 || pity) {
       ctx.save();
@@ -429,10 +436,16 @@ function paintRows(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, port
     const ink = low ? "#6f4b00" : white;
     const minimum = low ? 18 : good ? maxBarWidth * 0.13 : 0;
     const bar = Math.min(maxBarWidth, Math.max(minimum, count / cap * maxBarWidth));
-    panel(ctx, process, y + 6, bar, 26, [0, 5, 5, 0], color);
-    paint(ctx, count, process + 5, y + 19, { color: ink });
+    if (row.countKnown === false) {
+      paint(ctx, "—", process + 5, y + 19, { color: muted });
+    } else {
+      const tint = row.countAtLeast ? "rgba(204,204,204,.24)" : color;
+      panel(ctx, process, y + 6, bar, 26, [0, 5, 5, 0], tint);
+      paint(ctx, row.countAtLeast ? `≥${count}` : count, process + 5, y + 19, { color: row.countAtLeast ? white : ink });
+    }
     if (row.isUp && !pity) {
-      const badgeX = process + bar + (low ? 4 : -31);
+      const badgeOffset = bar + (low ? 4 : -31);
+      const badgeX = process + (row.countKnown === false ? 30 : row.countAtLeast ? Math.max(38, badgeOffset) : badgeOffset);
       panel(ctx, badgeX, y + 9, 26, 18, 15, "#ffeb73");
       paint(ctx, "UP", badgeX + 13, y + 18, { color: "#6f4b00", size: 12, bold: true }, "center");
     }
@@ -450,7 +463,7 @@ function pagingNote(model: MiaoGachaDetailModel, game: Game) {
   const { pageInfo, gacha, poolName = "角色" } = model;
   if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 条，共 ${pageInfo.count} 条五星记录`;
   return gacha.hiddenNum
-    ? `仅显示最近 ${gacha.shownNum} 条记录，更早的 ${gacha.hiddenNum} 条未显示（顶部统计包含全部记录），发送 ${games[game].prefix}${poolName}全部记录 查看全部`
+    ? `仅显示最近 ${gacha.shownNum} 条记录，更早的 ${gacha.hiddenNum} 条未显示（顶部统计包含全部记录），发送 ${games[game].prefix}${model.recordArchive ? "逐抽" : ""}${poolName}全部记录 查看全部`
     : "";
 }
 
@@ -483,7 +496,8 @@ export async function renderMiaoGachaDetail(
   const tips = luck ? luckTips(luck) : [];
   const luckHeight = Math.max(101, (luck?.isUpPool ? 109 : 93) + tips.length * 21);
   const top = laterPage ? 80 : luck ? 156 + luckHeight : 146;
-  const more = pagingNote(model, game);
+  const more = [pagingNote(model, game), model.gacha.unclassified ? `${model.gacha.unclassified} 抽星级未辨认` : ""]
+    .filter(Boolean).join(" · ");
   const rows = model.gacha.fiveLog;
   const rowsHeight = Math.max(16, rows.reduce((sum, row, index) => sum + 38 + (hasDate(rows[index - 1], row) ? 5 : 0), 0));
   const panelHeight = rowsHeight + (more ? 28 : 0);
@@ -504,7 +518,7 @@ export async function renderMiaoGachaDetail(
     } else {
       paintBanner(ctx, model, theme, face, banner, game);
       if (luck) paintLuck(ctx, luck, tips, 125, luckHeight, game);
-      paintNotice(ctx, top - 18, game);
+      paintNotice(ctx, top - 18, game, model.recordArchive);
     }
     paintRows(ctx, model, theme, images, top, panelHeight, more, game);
     ctx.save();

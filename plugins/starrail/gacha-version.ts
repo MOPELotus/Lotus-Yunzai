@@ -33,7 +33,7 @@ interface Item {
   readonly count: 0;
   readonly name: string;
   readonly abbr: string;
-  readonly star: 5;
+  readonly star: 3 | 4 | 5;
   readonly img: string;
 }
 
@@ -58,13 +58,14 @@ interface Group {
   readonly to: string;
   readonly name: string;
   readonly upIds: Readonly<Record<string, string>>;
-  readonly items: readonly { id: string; num: number; star: 5; isUp: 0 | 1 }[];
+  readonly items: readonly { id: string; num: number; star: 3 | 4 | 5; isUp: 0 | 1 }[];
   readonly stats: Stats;
   readonly unassigned?: true;
 }
 
 export interface StarRailGachaVersionModel {
   readonly uid: string;
+  readonly recordArchive?: true;
   readonly face: StarRailGachaDetailOptions["face"];
   readonly poolName: string;
   readonly gacha: {
@@ -74,6 +75,7 @@ export interface StarRailGachaVersionModel {
       readonly avgUpNum: string | 0;
       readonly unassignedDraws: number;
       readonly unassignedFiveStars: number;
+      readonly unclassifiedDraws?: number;
     };
     readonly isMix: false;
     readonly shownNum?: number;

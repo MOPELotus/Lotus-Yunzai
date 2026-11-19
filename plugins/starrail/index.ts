@@ -4,9 +4,13 @@ import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { buildStarRailGachaDetail, type StarRailGachaDetailPool } from "./gacha-detail.ts";
 import { renderStarRailGachaDetail } from "./gacha-detail-card.ts";
-import { readStarRailGachaItems, starRailGachaThemeDirectory } from "./gacha-detail-source.ts";
-import { createStarRailGachaFiles, type StarRailGachaFileContext } from "./gacha-files.ts";
-import { createStarRailGachaRecordArchive } from "./gacha-record-archive.ts";
+import { readStarRailGachaItems, readStarRailRecordItems, starRailGachaThemeDirectory } from "./gacha-detail-source.ts";
+import { createStarRailGachaFiles, starRailLegacyArchiveTimezone, type StarRailGachaFileContext } from "./gacha-files.ts";
+import { createStarRailGachaRecordArchive, StarRailGachaArchiveError } from "./gacha-record-archive.ts";
+import { buildStarRailRecordDetail } from "./gacha-record-detail.ts";
+import { resolveStarRailRecordPool, starRailRecordDraws } from "./gacha-record-source.ts";
+import { buildStarRailRecordSpecial, renderStarRailRecordSpecial } from "./gacha-record-special.ts";
+import { buildStarRailRecordVersion } from "./gacha-record-version.ts";
 import { renderStarRailGachaFailure, renderStarRailGachaResult } from "./gacha-result-card.ts";
 import { readStarRailGachaSchedule, resolveStarRailDetailPool } from "./gacha-schedule.ts";
 import { buildStarRailGachaSpecial, type StarRailGachaSpecialOptions } from "./gacha-special.ts";
@@ -18,6 +22,8 @@ import { renderStarRailGachaVersion } from "./gacha-version-card.ts";
 
 const updateCommand = /^#星铁更新抽卡记录([1-9]\d{0,2})?$/u;
 const helpCommand = /^#星铁(?:抽卡|记录)帮助$/u;
+const recordPrefix = "#星铁逐抽";
+const recordDefault = /^(?:记录|祈愿|分析|统计)(?:[1-9]\d{0,2})?$/u;
 const poolCommand = /^#星铁(?:喵喵)?(全部)?(抽卡|抽奖|角色|光锥|武器|常驻|up)池?(全部)?(记录|祈愿|分析|统计)([1-9]\d{0,2})?$/u;
 const versionCommand = /^#星铁(?:喵喵)?(版本|全部)(全部)?统计([1-9]\d{0,2})?$/u;
 const specialCommand = /^#星铁(?:喵喵)?(?:(全部)?(角色联动|光锥联动|武器联动|新手)池?(全部)?(记录|祈愿|分析|统计)|全部(?:记录|祈愿|分析))([1-9]\d{0,2})?$/u;
@@ -43,6 +49,7 @@ const help = [
   "*抽卡记录、*光锥记录、*常驻记录、*新手记录、*角色联动记录、*光锥联动记录 可查看指定卡池。",
   "*全部记录 可查看各池，*版本统计 可按活动卡池期次查看。",
   "私聊 *导入记录 可接收 UIGF / SRGF 文件，*导出记录 可发送本地逐抽档案。",
+  "*逐抽记录、*逐抽版本统计、*逐抽全部记录 查看本地逐抽档案。",
   "末尾加档案编号可选档案，如 *抽卡记录2。单池可加「全部」查看各页，如 *角色全部记录2。",
 ].join("\n");
 
@@ -83,23 +90,44 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
   const service = createStarRailGachaSync(profiles, client, history);
   const updateGacha = createGachaUpdater((qq, profileId) => service.sync(qq, profileId, { signal }));
 
-  async function query(qq: string, { profileId, view, all }: NonNullable<ReturnType<typeof matchGachaQuery>>) {
-    if ("special" in view && view.statistics) return "联动池和新手池请使用对应的记录指令。";
+  async function query(qq: string, { profileId, view, all }: NonNullable<ReturnType<typeof matchGachaQuery>>, recordArchive: boolean) {
+    if (!recordArchive && "special" in view && view.statistics) return "联动池和新手池请使用对应的记录指令。";
     try {
-      const { uid, nickname } = await profiles.savedRole(qq, profileId, "sr");
-      const snapshot = await history.read(qq, uid);
-      if (snapshot === null) {
+      const role = await profiles.savedRole(qq, profileId, "sr");
+      const { uid, nickname } = role;
+      const snapshot = recordArchive ? null : await history.read(qq, uid);
+      const raw = snapshot === null ? await archive.read({ qq, uid }, { legacyTimezone: starRailLegacyArchiveTimezone(role) }) : undefined;
+      if (raw?.status === "unavailable") {
+        if (recordArchive) return raw.reason === "mirror"
+          ? `UID:${uid} 本地只有旧显示镜像，请通过 *导入记录${profileId === 1 ? "" : profileId} 导入真实逐抽文件。`
+          : `UID:${uid} 本地暂无逐抽档案，可使用 *导入记录${profileId === 1 ? "" : profileId}。`;
         return `[荷花插件]profile ${profileId} 暂无星铁抽卡记录，请先使用 *更新抽卡记录${profileId === 1 ? "" : profileId}。`;
       }
       const themeDirectory = starRailGachaThemeDirectory();
-      const [resolveItem, schedule] = await Promise.all([
-        readStarRailGachaItems(themeDirectory), "special" in view ? [] : readStarRailGachaSchedule(themeDirectory),
+      const rawArchive = raw?.status === "available" ? raw.archive : undefined;
+      const [resolveItem, schedule, draws] = await Promise.all([
+        rawArchive ? undefined : readStarRailGachaItems(themeDirectory),
+        rawArchive || !("special" in view) ? readStarRailGachaSchedule(themeDirectory) : [],
+        rawArchive && readStarRailRecordItems(themeDirectory).then((resolver) => starRailRecordDraws(rawArchive, resolver)),
       ]);
-      const options = {
-        uid, history: snapshot, face: { name: nickname || "旅行者" }, now: new Date(), resolveItem,
-      };
+      const shared = { uid, face: { name: nickname || "开拓者" }, now: new Date() };
+      const options = { ...shared, history: snapshot, resolveItem, face: { name: nickname || "旅行者" } };
       const resolvePool = resolveStarRailDetailPool(schedule);
+      const resolveRecordPool = draws && resolveStarRailRecordPool(schedule);
       function buildPage(page?: number) {
+        if (draws) {
+          const records = { ...shared, draws, resolvePool: resolveRecordPool, page };
+          if ("detail" in view) {
+            const model = buildStarRailRecordDetail({ ...records, pool: view.detail });
+            return model && { kind: "detail" as const, model: { ...model, recordArchive: true as const } };
+          }
+          if ("special" in view) {
+            const model = buildStarRailRecordSpecial({ ...records, pool: view.special });
+            return model && { kind: "record-special" as const, model };
+          }
+          const model = buildStarRailRecordVersion({ ...records, type: view.version, schedule });
+          return model && { kind: "version" as const, model };
+        }
         if ("detail" in view) {
           const model = buildStarRailGachaDetail({ ...options, pool: view.detail, resolvePool, page });
           return model && { kind: "detail" as const, model };
@@ -120,7 +148,8 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
           if (signal.aborted) return;
           const result = page === 1 ? first : buildPage(page);
           if (!result) throw new Error("星铁抽卡记录缺少分页。");
-          const render = result.kind === "special" ? renderStarRailGachaSpecial(result.model, { themeDirectory })
+          const render = result.kind === "record-special" ? renderStarRailRecordSpecial(result.model, { themeDirectory })
+            : result.kind === "special" ? renderStarRailGachaSpecial(result.model, { themeDirectory })
             : result.kind === "detail" ? renderStarRailGachaDetail(result.model, { themeDirectory })
             : renderStarRailGachaVersion(result.model, { themeDirectory });
           const { png } = await render;
@@ -143,6 +172,7 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
         if (error.code === "missing") return `[荷花插件]请先登录 profile ${profileId}。`;
         if (error.code === "role-missing") return `[荷花插件]profile ${profileId} 没有同步星铁 UID。`;
       }
+      if (error instanceof StarRailGachaArchiveError) return error.message;
       return "星铁抽卡记录读取失败，请检查本地历史文件。";
     }
   }
@@ -158,7 +188,10 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
       if (fileReply !== undefined) return fileReply;
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
-      const view = matched ? undefined : matchGachaQuery(context.normalizedMessage);
+      const recordArchive = context.normalizedMessage.startsWith(recordPrefix);
+      const suffix = recordArchive ? context.normalizedMessage.slice(recordPrefix.length) : "";
+      const queryMessage = recordArchive ? `#星铁${recordDefault.test(suffix) ? "抽卡" : ""}${suffix}` : context.normalizedMessage;
+      const view = matched ? undefined : matchGachaQuery(queryMessage);
       if (!matched && !view) return;
       const profileId = view?.profileId ?? Number(matched?.[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return;
@@ -167,7 +200,7 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
         return "请从登录档案对应的 QQ 会话使用星铁抽卡记录。";
       }
       const qq = String(user_id);
-      if (view) return query(qq, view);
+      if (view) return query(qq, view, recordArchive);
       try {
         const result = await updateGacha(qq, profileId, () =>
           context.reply(`[荷花插件]正在为 profile ${profileId} 补齐官方范围内的星铁五星与垫抽记录。`));
