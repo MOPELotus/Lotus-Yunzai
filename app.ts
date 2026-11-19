@@ -13,7 +13,7 @@ import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
-import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
+import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
@@ -516,7 +516,7 @@ if (import.meta.main) {
     const context: CommandContext = milkyDiagnostics ? { ...command, runtimeDiagnosticsScope: "milky" } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
-      await event.reply(reply);
+      await sendCommandReply(event, reply);
       return;
     }
     if (await legacy.dispatch(command, allowed)) return;

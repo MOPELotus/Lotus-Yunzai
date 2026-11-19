@@ -5,7 +5,30 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
 
-export type CommandHandler = (argument: string, context: CommandContext) => MessageReply | Promise<MessageReply>;
+export interface CommandForward {
+  readonly type: "forward";
+  readonly nodes: readonly MessageReply[];
+}
+
+export type CommandReply = MessageReply | CommandForward;
+export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
+
+export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forward">, reply: CommandReply): Promise<void> {
+  if (typeof reply !== "object" || reply === null || !("type" in reply) || reply.type !== "forward") {
+    await event.reply(reply);
+    return;
+  }
+  if (!Array.isArray(reply.nodes) || !reply.nodes.length) return;
+  if (event.forward) {
+    try {
+      if (await event.forward(reply.nodes)) return;
+    } catch {
+      await event.reply("合并转发结果未确认，请在聊天中核对。");
+      return;
+    }
+  }
+  for (const node of reply.nodes) await event.reply(node);
+}
 
 export interface CommandModule {
   readonly name: string;
@@ -97,7 +120,7 @@ export class CommandRegistry {
     message: string,
     context: CommandContext = { message_type: "terminal", isMaster: false },
     allowed?: (names: readonly string[]) => boolean,
-  ): Promise<MessageReply | undefined> {
+  ): Promise<CommandReply | undefined> {
     const input = message.trim();
     const separator = input.search(/\s/u);
     const name = separator === -1 ? input : input.slice(0, separator);
