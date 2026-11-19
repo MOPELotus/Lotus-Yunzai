@@ -111,6 +111,9 @@
     },
     "plugins/notice": {
       "name": "@lotus-yunzai/notice",
+      "dependencies": {
+        "node-schedule": "2.1.2",
+      },
     },
     "plugins/starrail": {
       "name": "@lotus-yunzai/starrail",
