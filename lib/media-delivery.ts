@@ -2,7 +2,7 @@ import { link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "no
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isChatFileName, type ChatFileResult } from "./chat-files.ts";
 
-type MediaKind = "image" | "video" | "file";
+type MediaKind = "image" | "video" | "record" | "file";
 export interface MediaDelivery {
   readonly path: string;
   readonly name: string;
@@ -19,6 +19,7 @@ const maxSize = 1024 ** 3;
 const contentTypes: Readonly<Record<string, string>> = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
   ".mp4": "video/mp4", ".mkv": "video/x-matroska", ".flv": "video/x-flv", ".mov": "video/quicktime", ".m4v": "video/mp4",
+  ".wav": "audio/wav",
 };
 const privateHeaders = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
@@ -63,7 +64,7 @@ export function createMediaDelivery(dataDirectory: string, baseUrl: () => URL | 
     const task = dirname(path);
     const parent = dirname(task);
     if (!/^task-[A-Za-z0-9]+$/u.test(basename(task)) ||
-        !["bilibili", "douyin"].some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
+        !["bilibili", "douyin", "music"].some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
     const [parentPath, taskPath, file] = await Promise.all([realpath(parent), realpath(task), realpath(path)]);
     if (relative(parentPath, taskPath) !== basename(task) || file !== `${taskPath}${sep}${basename(path)}`) return;
     const marker = join(taskPath, ".lotus-media-task.json");
@@ -86,11 +87,11 @@ export function createMediaDelivery(dataDirectory: string, baseUrl: () => URL | 
   async function deliver({ path, type, name }: MediaDelivery, send: SendSessionMedia): Promise<ChatFileResult> {
     const base = baseUrl();
     if (closed || !base || !isChatFileName(name) || typeof path !== "string" ||
-        (type !== "image" && type !== "video" && type !== "file")) return "rejected";
+        (type !== "image" && type !== "video" && type !== "record" && type !== "file")) return "rejected";
     const source = await sourceFile(path).catch(() => undefined);
     if (!source || closed || occupied + source.stat.size > maxSize || count >= 32) return "rejected";
     const mime = type === "file" ? "application/octet-stream" : contentTypes[extname(path).toLowerCase()];
-    if (!mime || (type !== "file" && !mime.startsWith(`${type}/`))) return "rejected";
+    if (!mime || (type !== "file" && !mime.startsWith(`${type === "record" ? "audio" : type}/`))) return "rejected";
     occupied += source.stat.size;
     count++;
     const token = crypto.randomUUID();

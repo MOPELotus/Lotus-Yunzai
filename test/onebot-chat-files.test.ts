@@ -3,6 +3,7 @@ import type { ChatFile } from "../lib/chat-files.ts";
 import type { MessageEvent } from "../lib/messages.ts";
 import { startOneBot } from "../lib/adapters/onebot.ts";
 import { OneBotGroups } from "../lib/adapters/onebot-groups.ts";
+import { encodeOneBotMusicCard } from "../lib/adapters/onebot-message.ts";
 
 interface Frame {
   readonly action: string;
@@ -12,6 +13,18 @@ interface Frame {
 
 const file: ChatFile = { name: "祈愿记录.json", bytes: new Uint8Array([0, 42, 255]) };
 const token = "onebot-chat-files-fixture";
+
+test("OneBot 音乐卡保留原平台并拒绝本地或夹带凭据的链接", () => {
+  const card = {
+    type: "163", url: "https://music.163.com/#/song?id=42", audio: "https://example.org/track.mp3",
+    title: "歌曲", content: "歌手", singer: "歌手", image: "https://example.org/cover.png",
+  } as const;
+  expect(encodeOneBotMusicCard(card)).toEqual([{ type: "music", data: card }]);
+  for (const url of ["https://localhost.local/", "https://127.0.0.1/", "https://[::1]/", "file:///tmp/audio.wav",
+    "https://user:password@example.org/track.mp3", "https://example.org:7788/track.mp3"]) {
+    expect(encodeOneBotMusicCard({ ...card, audio: url })).toBeUndefined();
+  }
+});
 
 function deadline<T>(pending: Promise<T>, label: string): Promise<T> {
   const { promise, reject } = Promise.withResolvers<T>();

@@ -1,6 +1,16 @@
 import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 
+export interface MusicCard {
+  readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
+  readonly url: string;
+  readonly audio: string;
+  readonly title: string;
+  readonly content: string;
+  readonly singer: string;
+  readonly image: string;
+}
+
 export interface MessageEvent {
   readonly msg: string;
   readonly adapter?: "milky";
@@ -37,6 +47,7 @@ export interface MessageEvent {
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly deliverMedia?: (file: MediaDelivery) => Promise<ChatFileResult>;
+  readonly sendMusicCard?: (card: MusicCard) => Promise<ChatFileResult>;
   readonly [sendSessionMedia]?: SendSessionMedia;
   readonly attachment?: IncomingChatFile;
   readonly canReadAttachments?: boolean;

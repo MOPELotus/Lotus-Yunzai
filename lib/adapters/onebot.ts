@@ -5,7 +5,7 @@ import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
-import { decodeOneBotMessage, encodeOneBotReply } from "./onebot-message.ts";
+import { decodeOneBotMessage, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -382,6 +382,11 @@ async function dispatchMessage(
       if (display.closed || attachmentSession.signal.aborted) return "rejected";
       if (type === "file") return calls.uploadFileUri(send, target, url, name);
       const message = encodeOneBotReply({ type, data: { file: url, name } });
+      return message ? calls.sendConfirmed(send, target, message) : "rejected";
+    } : undefined,
+    sendMusicCard: boundAccount && attachmentSession && display?.closed === false ? async (card) => {
+      if (display.closed || attachmentSession.signal.aborted) return "rejected";
+      const message = encodeOneBotMusicCard(card);
       return message ? calls.sendConfirmed(send, target, message) : "rejected";
     } : undefined,
     reviewGroupRequest: messageType === "private" && owner

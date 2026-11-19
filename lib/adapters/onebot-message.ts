@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
+import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { InboundSegment } from "../messages.ts";
+import type { InboundSegment, MusicCard } from "../messages.ts";
 
 interface OutboundSegment {
   type: string;
@@ -75,6 +76,27 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
     segments.unshift({ type: "reply", data: { id: String(quoteId) } });
   }
   return segments;
+}
+
+function musicUrl(value: unknown, page = false): URL | undefined {
+  if (typeof value !== "string" || value.length > 8192) return;
+  const url = URL.parse(value);
+  if (!url || url.protocol !== "https:" || url.username || url.password || url.port || (!page && url.hash) ||
+      !url.hostname.includes(".") || isIP(url.hostname) || /(?:^|\.)(?:localhost|local|internal|test)$/iu.test(url.hostname)) return;
+  return url;
+}
+
+export function encodeOneBotMusicCard(card: MusicCard): OutboundSegment[] | undefined {
+  if (!isRecord(card)) return;
+  const { type, title, content, singer } = card;
+  if (!["163", "qq", "kugou", "kuwo", "migu"].some(platform => type === platform) ||
+      ![title, content, singer].every(value => typeof value === "string" && value.trim() && value.length <= 256 &&
+        !/[\u0000-\u001f\u007f]/u.test(value))) return;
+  const url = musicUrl(card.url, true);
+  const audio = musicUrl(card.audio);
+  const image = musicUrl(card.image);
+  if (!url || !audio || !image) return;
+  return [{ type: "music", data: { type, url: url.href, audio: audio.href, image: image.href, title, content, singer } }];
 }
 
 function unescapeCQ(value: string, parameter = false): string {
