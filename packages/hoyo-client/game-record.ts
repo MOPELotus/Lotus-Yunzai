@@ -31,6 +31,7 @@ const riskCodes = new Set([1034, 10035, 10041]);
 const zzzCardPaths = {
   "zzz-index": "index",
   "zzz-avatar": "avatar/basic",
+  "zzz-panel-detail": "avatar/info",
   "zzz-buddy": "buddy/info",
   "zzz-hadal": "hadal_info_v2",
   "zzz-deadly": "hadal_mem_detail_v2",
@@ -41,8 +42,9 @@ const genshinPanelPaths = {
 } as const;
 type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" |
-    Exclude<keyof typeof zzzCardPaths, "zzz-hadal" | "zzz-deadly"> } |
+    Exclude<keyof typeof zzzCardPaths, "zzz-hadal" | "zzz-deadly" | "zzz-panel-detail"> } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
+  { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
   { readonly kind: "zzz-hadal" | "zzz-deadly"; readonly scheduleType: 1 | 2 }
 );
 type Json = Record<string, unknown>;
@@ -138,8 +140,10 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const forNote = kind === "daily-note";
   const forStarRail = kind === "starrail-avatar-info";
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
+  const zzzPanelDetail = kind === "zzz-panel-detail";
   const forZzz = Object.hasOwn(zzzCardPaths, kind);
-  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
+  const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : forZzz ? "绝区零战绩" :
+    forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -151,6 +155,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
       options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
     throw new HoyoRequestError("invalid-input", "原神面板角色编号无效。");
+  }
+  if (zzzPanelDetail && (!Number.isSafeInteger(options.characterId) || options.characterId < 1)) {
+    throw new HoyoRequestError("invalid-input", "绝区零面板代理人编号无效。");
   }
   const zzzPeriod = options.kind === "zzz-hadal" || options.kind === "zzz-deadly";
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
@@ -170,8 +177,11 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     endpoint.searchParams.set(kind === "zzz-deadly" ? "uid" : "role_id", uid);
     endpoint.searchParams.set(kind === "zzz-deadly" ? "region" : "server", region);
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
+    if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
   }
   const headers = requestHeaders(source, endpoint.search.slice(1), body);
+  // The signed query for this route ends at need_wiki. The selected ID is appended afterward.
+  if (zzzPanelDetail) endpoint.searchParams.set("id_list[]", String(options.characterId));
 
   async function guard() {
     if (signal?.aborted) throw new HoyoRequestError("transport", `${subject}已取消。`);
@@ -200,7 +210,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || zzzPeriod) {
+  if (forStarRail || forGenshinPanel || zzzPanelDetail || zzzPeriod || kind === "zzz-avatar") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);

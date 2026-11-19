@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import { createHoyoClient, GameRecordRequestError, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { readCnGameRecord } from "../packages/hoyo-client/game-record.ts";
 import { readZzzGameRecord } from "../packages/hoyo-client/zzz-game-record.ts";
 
 const source = {
@@ -15,6 +17,26 @@ const index = {
 const avatar = { id: 1091, name_mi18n: "雅", element_type: 202, sub_element_type: 1, rarity: "S", level: 60, rank: 0 };
 const buddy = { id: 54001, name: "鲨牙布", rarity: "S", level: 50, star: 2, bangboo_square_url: "https://act-webstatic.mihoyo.com/buddy.png" };
 const payload = (data: unknown) => Response.json({ retcode: 0, data });
+
+test("绝区零面板只签旧基础查询，提交单个代理人编号并区分请验证", async () => {
+  const query = "lang=zh-cn&role_id=12345678&server=prod_qd_cn&need_wiki=false";
+  let requests = 0;
+  await expect(readCnGameRecord(source, async (url, init) => {
+    requests++;
+    expect(url.href).toBe(`${endpoint}avatar/info?${query}&id_list%5B%5D=1091`);
+    expect(init).toMatchObject({ method: "GET", redirect: "error", credentials: "omit" });
+    const headers = new Headers(init.headers);
+    expect(headers.get("cookie")).toBe("ltoken=fixture-cookie");
+    const [time, nonce, hash] = headers.get("DS")!.split(",");
+    const expected = createHash("md5").update(`salt=xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs&t=${time}&r=${nonce}&b=&q=${query}`).digest("hex");
+    expect(hash).toBe(expected);
+    return new Response(JSON.stringify({ retcode: 0, data: { avatar_list: [] } }), { headers: { "x-rpc-aigis": '{"fixture":true}' } });
+  }, { kind: "zzz-panel-detail", characterId: 1091 })).rejects.toMatchObject({ reason: "risk" });
+  const unexpected = async () => { requests++; throw new Error("非法编号不应创建请求。"); };
+  await expect(readCnGameRecord(source, unexpected, { kind: "zzz-panel-detail", characterId: 0 }))
+    .rejects.toMatchObject({ code: "invalid-input" });
+  expect(requests).toBe(1);
+});
 
 test("绝区零个人战绩按同档案顺序读取概览、代理人与邦布", async () => {
   const requests: string[] = [];
