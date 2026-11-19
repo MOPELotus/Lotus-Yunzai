@@ -186,3 +186,19 @@ test("个人资料卡与实际签到沿用相同的国服开关与旧档案默�
     expect(flags).toEqual(Object.fromEntries(Object.entries(settings).map(([key, game]) => [key, game.enabled])));
   });
 });
+
+test("国际服总开关和语言只更新本档原海外段", async () => {
+  const os = { enable: false, lang: "zh-cn", cookie: "旧档案值", zzz: { checkin: true, black_list: ["123456789"] }, extra: "保留" };
+  await withProfile(async (store, path) => {
+    const before = await store.checkinSettings(qq, 2);
+    const language = await store.setProfileCheckinSettings(qq, 2, before.revision,
+      { type: "international-language", language: "ZH_TW" });
+    expect((await store.describe(qq, 2)).international).toEqual({ enabled: false, language: "ZH_TW", hasCookie: true });
+    const enabled = await store.setProfileCheckinSettings(qq, 2, language.revision, { type: "international", enabled: true });
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
+      ...fixture, games: { ...fixture.games, os: { ...os, lang: "ZH_TW", enable: true } },
+    });
+    await expect(store.setProfileCheckinSettings(qq, 2, enabled.revision, { type: "international-language", language: "en\nUS" }))
+      .rejects.toMatchObject({ code: "invalid" });
+  }, { ...fixture, games: { ...fixture.games, os } });
+});

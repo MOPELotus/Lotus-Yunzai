@@ -38,6 +38,7 @@ import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
+import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -522,7 +523,8 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
-    const protectedModule = isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
+    const protectedModule = isHoYoLabCookieInput(event.msg) || isHoYoLabCookieInput(event.raw_message)
+      ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
       : isDeviceBindingInput(event.msg) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
@@ -692,6 +694,9 @@ if (import.meta.main) {
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, {
+      viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+    }), "[Lotus-Plugin] Profile Settings");
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit });
     commands.registerModule(gameCheckin, "[Lotus-Plugin] Checkin");

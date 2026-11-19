@@ -81,6 +81,8 @@ export type ProfileCheckinSettingsChange =
   | { readonly type: "game"; readonly game: Game; readonly enabled: boolean }
   | { readonly type: "all-games"; readonly enabled: boolean }
   | { readonly type: "community"; readonly enabled: boolean }
+  | { readonly type: "international"; readonly enabled: boolean }
+  | { readonly type: "international-language"; readonly language: string }
   | { readonly type: "notify-enabled"; readonly enabled: boolean }
   | { readonly type: "notify-preference"; readonly prefer: "private" }
   | { readonly type: "notify-preference"; readonly prefer: "group"; readonly groupId?: number }
@@ -109,6 +111,17 @@ function checkinNotifyFields(change: Extract<ProfileCheckinSettingsChange, { typ
 
 function applyCheckinSettings(document: Record<string, unknown>, change: ProfileCheckinSettingsChange) {
   switch (change?.type) {
+    case "international":
+    case "international-language": {
+      const games = record(document.games);
+      const os = record(games.os);
+      if (change.type === "international") {
+        if (typeof change.enabled !== "boolean") invalidCheckinSettings();
+        return { ...document, games: { ...games, os: { ...os, enable: change.enabled } } };
+      }
+      if (typeof change.language !== "string" || !/^[A-Za-z_-]{1,32}$/u.test(change.language)) invalidCheckinSettings();
+      return { ...document, games: { ...games, os: { ...os, lang: change.language } } };
+    }
     case "community": {
       if (typeof change.enabled !== "boolean") invalidCheckinSettings();
       const community = record(document.mihoyobbs);
@@ -629,7 +642,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         communityCheckin: configuredCommunityForums(community).map(Number),
         international: {
           enabled: os.enable === true,
-          language: /^[a-z]{2}-[a-z]{2}$/iu.test(text(os.lang)) ? text(os.lang) : "zh-cn",
+          language: /^[A-Za-z_-]{1,32}$/u.test(text(os.lang)) ? text(os.lang) : "zh-cn",
           hasCookie: Boolean(text(os.cookie)),
         },
         cloud: ["genshin", "zzz"].flatMap((game) => {
