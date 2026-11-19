@@ -51,6 +51,7 @@ export interface MessageEvent {
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly mentionLike?: MentionLikeTarget;
+  readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;

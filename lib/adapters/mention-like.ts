@@ -6,6 +6,8 @@ export interface MentionLikeTarget {
   like(count: number): Promise<number>;
 }
 
+export type ProfileLikeImage = (userId: number, outcome: "success" | "failure", signal: AbortSignal) => Promise<Uint8Array | undefined>;
+
 export function mentionedProfileId(message: MessageEvent["message"], botId: number, senderId: number): number | undefined {
   if (typeof message === "string") return;
   let target: number | undefined;
@@ -31,7 +33,9 @@ export function bindMentionLike(
       return await friend() && !signal.aborted;
     },
     async like(count: number) {
-      if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted || !await member() || signal.aborted) return 0;
+      if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted || !await member() || signal.aborted) {
+        throw new Error("当前会话无法核实点赞对象。");
+      }
       return send(count);
     },
   });

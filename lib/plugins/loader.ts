@@ -6,6 +6,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep } from "nod
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
+import type { ProfileLikeImage } from "../adapters/mention-like.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
@@ -225,10 +226,15 @@ export async function loadPlugins(
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
       autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
       readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
+      readonly profileLikeImage?: ProfileLikeImage;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;
         register(policy: GroupLeaveBlacklist): () => void;
       };
+    };
+    readonly profileLikeImages?: {
+      readonly directory: string;
+      register(renderer: ProfileLikeImage): () => void;
     };
     readonly guidesSchedule?: {
       register(policy: CalendarSchedule): () => void;
@@ -422,6 +428,17 @@ export async function loadPlugins(
           fallback: fallback as CommandModule["fallback"],
           fallbackFeatures: fallbackFeatures as CommandModule["fallbackFeatures"],
         }, label);
+        if (builtIn && moduleName === "@lotus-yunzai/meme" && options.profileLikeImages &&
+            typeof published.createProfileLikeImageRenderer === "function") {
+          const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory);
+          if (typeof renderer !== "function") throw new Error("资料卡回执图片入口必须返回渲染函数。");
+          const removeRenderer = options.profileLikeImages.register(renderer);
+          const dispose = cleanup;
+          cleanup = async () => {
+            removeRenderer();
+            await dispose?.();
+          };
+        }
         const game = gachaGames.get(moduleName);
         if (game && directory && relative(root, directory) === builtInDirectories.get(moduleName) &&
             gachaUpdate !== undefined && options.registerGacha) {

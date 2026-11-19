@@ -389,6 +389,8 @@ async function dispatchMessage(
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
       ? attachmentSession?.signal : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
+    profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
+      (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,
     mentionLike: likeSession && mentioned !== undefined && "group_id" in target
       ? bindMentionLike(mentioned, likeSession,
         async () => await calls.getGroupRole(send, target.group_id, mentioned, true) !== undefined,

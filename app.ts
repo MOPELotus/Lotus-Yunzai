@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
@@ -31,6 +31,7 @@ import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { groupModerationSession } from "./lib/adapters/group-moderation.ts";
+import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
@@ -235,6 +236,7 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
+  let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
@@ -1232,6 +1234,10 @@ if (import.meta.main) {
     Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl, express: legacy.httpRoutes.express }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
+    const storedLikeAssets = new URL("data/group/like-assets/", root);
+    const likeAssets = Bun.env.LOTUS_GROUP_LIKE_ASSETS_DIR?.trim() ||
+      (await stat(storedLikeAssets).then(info => info.isDirectory(), () => false)
+        ? fileURLToPath(storedLikeAssets) : fileURLToPath(new URL("plugins/yenai-plugin/resources/memes/", root)));
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       messageStatistics: createMessageStatistics(counts),
@@ -1291,6 +1297,10 @@ if (import.meta.main) {
           if (signal?.aborted === false) return signal;
         },
         readAutoRepeatImage: readQqMessageMedia,
+        async profileLikeImage(userId, outcome, signal) {
+          if (signal.aborted || stopping || !handoff.accepting) return;
+          return likeImageRenderer?.(userId, outcome, nativeOperationSignal(signal));
+        },
         groupLeaveBlacklist: {
           register(policy) {
             const session = new AbortController();
@@ -1331,6 +1341,15 @@ if (import.meta.main) {
               if (outcome !== "confirmed") console.warn(`[group] 退群黑名单操作 ${stage} 未确认完成。`);
             },
           },
+        },
+      },
+      profileLikeImages: probingUpdate ? undefined : {
+        directory: likeAssets,
+        register(renderer) {
+          likeImageRenderer = renderer;
+          return () => {
+            if (likeImageRenderer === renderer) likeImageRenderer = undefined;
+          };
         },
       },
       guidesSchedule: probingUpdate ? undefined : {

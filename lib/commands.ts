@@ -4,7 +4,8 @@ import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
-    "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
+    "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
+    "profileLikeImageSignal"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
   atlasMaintenance?: true;
@@ -86,7 +87,7 @@ interface RegisteredCommand {
 }
 
 function commandContext(context: CommandContext): CommandContext {
-  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, isFriend, reviewGroupRequest,
+  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
@@ -95,6 +96,7 @@ function commandContext(context: CommandContext): CommandContext {
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     ...(message_type === "group" && !isDelegated && mentionLike ? { mentionLike } : {}),
+    ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,

@@ -62,8 +62,13 @@ export class OneBotCalls {
     if (!Number.isInteger(count) || count < 1 || count > 10) {
       throw new RangeError("单次点赞次数须为 1 至 10。");
     }
-    await this.#request(send, "send_like", { user_id: userId, times: count }, signal);
-    return count;
+    try {
+      await this.#request(send, "send_like", { user_id: userId, times: count }, signal);
+      return count;
+    } catch (error) {
+      if (error instanceof OneBotRejectedError) return 0;
+      throw error;
+    }
   }
 
   async isFriend(send: Send, userId: number): Promise<boolean> {

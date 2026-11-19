@@ -21,11 +21,11 @@ test("点赞写入前复核成员资格，并在会话失效后停在发送前",
     writes++;
     return count;
   });
-  expect(await target.like(11)).toBe(0);
+  await expect(target.like(11)).rejects.toThrow("无法核实");
   const running = target.like(5);
   session.abort();
   member.resolve(true);
-  expect(await running).toBe(0);
+  await expect(running).rejects.toThrow("无法核实");
   expect(await target.isFriend()).toBe(false);
   expect(writes).toBe(0);
 });

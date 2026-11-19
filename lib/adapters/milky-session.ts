@@ -62,6 +62,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
   const recallReply = createMilkyRecallReply(signal, call.confirmed, isMaster);
 
+  async function likeProfile(user_id: number, count: number) {
+    if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted) throw new Error("当前会话无法提交点赞。");
+    const result = await call.confirmed("send_profile_like", { user_id, count });
+    if (result.status === "unknown") throw new Error("Milky 点赞结果未确认。");
+    return result.status === "confirmed" ? count : 0;
+  }
+
   function confirmSent(recipient: MessageRecipient | undefined, result: Record<string, unknown> | undefined, content: unknown) {
     if (recipient && hasMessageSequence(result?.message_seq)) {
       onSent?.({ self_id: account, group_id: recipient.group_id, user_id: recipient.user_id }, content);
@@ -296,10 +303,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,
+      profileLikeImageSignal: signal,
       mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,
         () => checkinNotify.isGroupMember(groupId, mentioned),
         () => checkinNotify.isFriend(mentioned),
-        async count => (await call.confirmed("send_profile_like", { user_id: mentioned, count })).status === "confirmed" ? count : 0)
+        count => likeProfile(mentioned, count))
         : undefined,
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
