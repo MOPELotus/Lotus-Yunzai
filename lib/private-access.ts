@@ -61,5 +61,5 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
     return true;
   }
 
-  return { blocked, blockedPoke };
+  return { disabled: enabled, blocked, blockedPoke };
 }

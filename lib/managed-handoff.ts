@@ -6,6 +6,7 @@ import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdatePr
 interface ManagedHandoff {
   readonly managed: boolean;
   readonly accepting: boolean;
+  readonly supportsAdapterReceipts: boolean;
   readonly pausedAt?: number;
   ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[]): Promise<void>;
   restart(pausedAt?: number): boolean;
@@ -40,6 +41,7 @@ export function createManagedHandoff(): ManagedHandoff {
     return {
       managed: false,
       accepting: true,
+      supportsAdapterReceipts: false,
       async ready() {},
       restart: () => false,
       reportPower: () => false,
@@ -163,6 +165,7 @@ export function createManagedHandoff(): ManagedHandoff {
 
   return {
     managed: true,
+    supportsAdapterReceipts: adapterReceipts,
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     get accepting() { return accepting && connected(); },
     ready(revision, signal, loadedPlugins) {

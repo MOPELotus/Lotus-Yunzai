@@ -1,9 +1,10 @@
 import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import type { MessageEvent } from "./messages.ts";
+import { canManagePackages } from "./package-command-permissions.ts";
 import { parseUpdateTarget } from "./update-target.ts";
 
 type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet: boolean,
-  report: (status: ManagedUpdateProgress) => void, all: boolean, force: boolean) => boolean;
+  report: (status: ManagedUpdateProgress) => void, all: boolean, force: boolean) => boolean | Promise<boolean>;
 
 const command = /^#(全部)?(安?静)?(强制)?更新/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
@@ -35,12 +36,20 @@ export function isUpdateCommand(text: string): boolean {
   return updatePrefix(text.trimStart()) !== undefined;
 }
 
+export function hasValidUpdateTarget(text: string): boolean {
+  const message = text.trimStart();
+  const match = updatePrefix(message);
+  if (!match) return false;
+  const requested = parseUpdateTarget(message.slice(match[0].length));
+  return requested !== undefined && (match[1] === undefined || requested === "");
+}
+
 export function createUpdateCommand(request: RequestUpdate) {
   return async (event: MessageEvent): Promise<void> => {
     const message = event.msg.trimStart();
     const match = updatePrefix(message);
     if (!match) return;
-    if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) {
+    if (!canManagePackages(event)) {
       await event.reply("暂无权限，只有主人才能操作");
       return;
     }
@@ -68,7 +77,7 @@ export function createUpdateCommand(request: RequestUpdate) {
     };
     let sent: boolean;
     try {
-      sent = request(event, requested || undefined, quiet, report, all, force);
+      sent = await request(event, requested || undefined, quiet, report, all, force);
     } catch {
       await event.reply("发送更新请求失败，请稍后重试。");
       return;

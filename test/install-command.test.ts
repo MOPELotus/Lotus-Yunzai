@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createInstallCommand, isInstallCommand, parseInstallName } from "../lib/install-command.ts";
+import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "../lib/install-command.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 
 type Callbacks = Parameters<typeof createInstallCommand>[0];
@@ -80,6 +80,28 @@ test("安装名单和执行均检查主人权限，不接受 URL、路径、Shel
   expect(listed).toEqual([]);
   expect(replies.slice(0, 4)).toEqual(Array(4).fill("暂无权限，只有主人才能操作"));
   expect(replies.slice(4)).toEqual(Array(invalid.length).fill("请发送 #安装插件 查看可安装插件，再用 #安装插件名 进行安装。"));
+});
+
+test("Milky 安装和目录查询只接受具备专用权限的有效会话", async () => {
+  const target = { adapter: "milky", isMaster: false, boundAccount: false, canManageProcess: true } as const;
+  const { dispatch, installed, listed, replies } = fixture();
+  await dispatch("#安装插件", target);
+  await dispatch("#安装Atlas", { ...target, message_type: "group", group_id: 30 });
+  for (const event of [
+    { ...target, canManageProcess: undefined, isMaster: true, boundAccount: true },
+    { ...target, self_id: -2 }, { ...target, user_id: undefined },
+    { ...target, message_type: "group" as const, group_id: 0.5 },
+  ]) {
+    await dispatch("#安装插件", event);
+    await dispatch("#安装Atlas", event);
+  }
+  expect(listed).toEqual(["private"]);
+  expect(installed).toEqual([{ shortName: "Atlas", type: "group" }]);
+  expect(replies.slice(1)).toEqual(Array(8).fill("暂无权限，只有主人才能操作"));
+  for (const text of [" #安装插件", "#安装 Atlas", "#安装TRSS-Plugin"]) expect(hasValidInstallTarget(text)).toBe(true);
+  for (const text of ["#安装", "#安装 x/y", "#安装 ./Atlas", "#安装 Atlas\n", "#更新Atlas"]) {
+    expect(hasValidInstallTarget(text)).toBe(false);
+  }
 });
 
 test("按顺序回复安装状态，清楚处理关闭管理入口、列表及请求失败", async () => {

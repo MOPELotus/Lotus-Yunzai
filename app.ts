@@ -25,13 +25,14 @@ import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createManagedHandoff } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
-import { createInstallCommand, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
+import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
 import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
+import { isMilkyPackageManager } from "./lib/package-command-permissions.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
@@ -52,7 +53,7 @@ import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
-import { createUpdateCommand, describeUpdateProgress, isUpdateCommand } from "./lib/update-command.ts";
+import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
@@ -118,9 +119,10 @@ if (import.meta.main) {
   });
   const updateLogCommand = createUpdateLogCommand((requested) =>
     plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
-  const updateCommand = createUpdateCommand((event, requested, quiet, report, all, force) => {
+  const updateCommand = createUpdateCommand(async (event, requested, quiet, report, all, force) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
+    if (await reportOldMilkySupervisor(event)) return true;
     return handoff.update({
       requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target,
       directories: updateDirectories(),
@@ -151,6 +153,7 @@ if (import.meta.main) {
         report("unavailable");
         return true;
       }
+      if (await reportOldMilkySupervisor(event)) return true;
       return handoff.update({ install: name, quiet: false, target, directories: updateDirectories() }, (status) => {
         if (status === "current") report("exists");
         else if (status !== "dirty" && status !== "ahead" && status !== "diverged") report(status);
@@ -158,6 +161,12 @@ if (import.meta.main) {
       });
     },
   });
+
+  async function reportOldMilkySupervisor(event: MessageEvent): Promise<boolean> {
+    if (event.adapter !== "milky" || !handoff.managed || handoff.supportsAdapterReceipts) return false;
+    await event.reply("当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun scripts/run-managed.ts 后重试。");
+    return true;
+  }
 
   function updateDirectories() {
     return [...plugins?.directories ?? []].map(([name, metadata]) => ({ name, ...metadata }));
@@ -304,7 +313,10 @@ if (import.meta.main) {
     if (type === "terminal") return { type };
     const id = type === "group" ? event.group_id : event.user_id;
     const botId = event.self_id;
-    if (event.adapter === "milky" && event.canManageProcess === true && botId && id) return { type, botId, id, adapter: "milky" };
+    if (event.adapter === "milky") {
+      if (isMilkyPackageManager(event) && botId && id) return { type, botId, id, adapter: "milky" };
+      return;
+    }
     if (event.boundAccount === true && botId && id) return { type, botId, id };
   }
 
@@ -443,6 +455,16 @@ if (import.meta.main) {
     if (matchesMasterEnrollment(event.msg)) {
       if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
+    }
+    if (privateAccess.disabled && event.message_type === "private" && isMilkyPackageManager(event)) {
+      if (hasValidUpdateTarget(event.msg)) {
+        if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
+        return;
+      }
+      if (hasValidInstallTarget(event.msg)) {
+        if (allowNew && allowed(installFeatureNames)) await installCommand(event);
+        return;
+      }
     }
     if (await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed)) return;

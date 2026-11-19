@@ -424,6 +424,149 @@ test.skipIf(!Bun.which("git"))("#强制更新对齐分叉的宿主并归档私�
 test.skipIf(!Bun.which("git"))("#强制更新对齐领先的宿主失败后恢复原分支和暂存区", () => exerciseUpdate(true, "host", true), 35_000);
 test.skipIf(!Bun.which("git"))("#全部强制更新同时对齐宿主和插件并归档两份本地修改", () => exerciseUpdate(false, "all", true), 35_000);
 
+function milkyUpdateGateway(token: string, botId: number) {
+  const sockets = [Promise.withResolvers<Bun.ServerWebSocket<number>>(), Promise.withResolvers<Bun.ServerWebSocket<number>>()];
+  const firstClosed = Promise.withResolvers<void>();
+  const releaseReplacement = Promise.withResolvers<void>();
+  const frames: Frame[] = [];
+  let available = Promise.withResolvers<void>();
+  let generations = 0;
+  let messageId = 0;
+  let receiptId = 0;
+  const time = 1_700_000_000;
+  const server = Bun.serve<number>({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(request, gateway) {
+      if (request.headers.get("Authorization") !== `Bearer ${token}`) return new Response(null, { status: 401 });
+      const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/event") {
+        const generation = generations++;
+        if (generation > 0) await releaseReplacement.promise;
+        if (gateway.upgrade(request, { data: generation })) return;
+        return new Response(null, { status: 426 });
+      }
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      if (path === "/api/get_login_info") {
+        return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "托管更新夹具" } });
+      }
+      if (path !== "/api/send_private_message" && path !== "/api/send_group_message") {
+        return new Response(null, { status: 404 });
+      }
+      const body = await request.json() as {
+        user_id?: number; group_id?: number; message: { type: string; data: { text: string } }[];
+      };
+      expect(body.message).toEqual([{ type: "text", data: { text: expect.any(String) } }]);
+      frames.push({
+        action: path.slice("/api/".length),
+        params: { user_id: body.user_id, group_id: body.group_id, message: body.message[0]!.data.text },
+      });
+      available.resolve();
+      return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++receiptId, time } });
+    },
+    websocket: {
+      open(socket) { sockets[socket.data]?.resolve(socket); },
+      message() {},
+      close(socket) { if (socket.data === 0) firstClosed.resolve(); },
+    },
+  });
+  return {
+    server, firstClosed, releaseReplacement, frames,
+    async open(generation: number) {
+      const socket = await deadline(sockets[generation]!.promise, "未收到本代托管宿主的 Milky 连接。", 16_000);
+      return (text: string, userId: number, groupId?: number) => socket.send(JSON.stringify({
+        time, self_id: botId, event_type: "message_receive",
+        data: {
+          time, message_seq: ++messageId, sender_id: userId, peer_id: groupId ?? userId,
+          message_scene: groupId === undefined ? "friend" : "group",
+          segments: [{ type: "text", data: { text } }],
+        },
+      }));
+    },
+    async next(target: Target, pattern: RegExp) {
+      if (!frames.length) await deadline(available.promise, "未收到托管更新的 Milky 回复。", 10_000);
+      const frame = frames.shift()!;
+      if (!frames.length) available = Promise.withResolvers<void>();
+      expect(frame.action).toBe("group_id" in target ? "send_group_message" : "send_private_message");
+      expect(frame.params).toMatchObject(target);
+      expect(frame.params.message).toMatch(pattern);
+      return frame.params.message;
+    },
+  };
+}
+
+async function exerciseMilkyUpdate(fail: boolean) {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-milky-managed-update-"));
+  const milkyToken = "managed-update-milky-fixture";
+  const mock = milkyUpdateGateway(milkyToken, 99);
+  try {
+    const { active, old, candidate } = await fixtureRepository(temporary, fail);
+    await writeFile(join(active, "config/config/other.yaml"), [
+      'master: ["99:51", "100:52"]', "disablePrivate: true", "disableMsg: 私聊限制夹具",
+      "disableAdopt: ['^#诊断$', '^#版本$']",
+    ].join("\n") + "\n");
+    await writeFile(join(active, "config/milky.yaml"), [
+      "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
+      `access_token: ${milkyToken}`, "ws:", "  reconnect_interval: 0.05",
+    ].join("\n") + "\n");
+    const supervisor = bootSupervisor(active);
+    try {
+      const initial = await deadline(supervisor.nextEndpoint(), "Milky 更新测试宿主启动超时。");
+      const coexisting = await supervisor.open(initial, 99);
+      await expectVersion(coexisting, old);
+      const command = await mock.open(0);
+
+      command("#诊断", 51);
+      const diagnostics = await mock.next({ user_id: 51 }, /^Lotus-Yunzai 运行诊断/u);
+      expect(diagnostics).not.toContain("账号在线时长");
+      command("#更新", 42);
+      await mock.next({ user_id: 42 }, /^私聊限制夹具$/u);
+      command("#更新", 52, 77);
+      await mock.next({ group_id: 77 }, /^暂无权限/u);
+      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+
+      command("#更新", 51);
+      await mock.next({ user_id: 51 }, /^开始更新/u);
+      const [replacement] = await Promise.all([
+        deadline(supervisor.nextEndpoint(), "Milky 更新后托管宿主未启动。", 16_000),
+        deadline(mock.firstClosed.promise, "Milky 更新时未关闭原事件连接。", 16_000),
+      ]);
+      const expected = fail ? old : candidate;
+      expect(git(active, "rev-parse", "HEAD")).toBe(expected);
+      const sameOneBot = await supervisor.open(replacement, 99);
+      await expectVersion(sameOneBot, expected);
+      // The replacement's held upgrade leaves only earlier update progress in this queue.
+      while (mock.frames.length) {
+        await mock.next({ user_id: 51 }, /^正在(?:准备候选版本|切换到候选版本)。$/u);
+      }
+
+      mock.releaseReplacement.resolve();
+      const updated = await mock.open(1);
+      const receipt = await mock.next({ user_id: 51 }, fail ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
+      if (!fail) expect(receipt).toContain(candidate.slice(0, 12));
+      updated("#版本", 51);
+      const version = await mock.next({ user_id: 51 }, /^Lotus-Yunzai 版本/u);
+      expect(version).toContain(expected.slice(0, 12));
+      expect(sameOneBot.frames).toEqual([]);
+      expect(mock.frames).toEqual([]);
+      await supervisor.stop();
+      const diagnosticsAfterStop = await supervisor.stderr;
+      if (fail) expect(diagnosticsAfterStop).toContain(liveFailure);
+      else expect(diagnosticsAfterStop).not.toContain(liveFailure);
+    } finally {
+      mock.releaseReplacement.resolve();
+      await supervisor.close();
+    }
+  } finally {
+    mock.server.stop(true);
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(!Bun.which("git"))("Milky 主人可在限制私聊时触发真实托管更新，回执仅返回原 Milky 私聊",
+  () => exerciseMilkyUpdate(false), 35_000);
+test.skipIf(!Bun.which("git"))("Milky 托管更新在活动环境失败后回滚，回执仅返回原 Milky 私聊",
+  () => exerciseMilkyUpdate(true), 35_000);
+
 async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-scheduled-update-"));
   try {

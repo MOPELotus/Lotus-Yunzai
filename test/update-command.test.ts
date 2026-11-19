@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ManagedUpdateProgress } from "../lib/managed-update-protocol.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
-import { createUpdateCommand, isUpdateCommand } from "../lib/update-command.ts";
+import { createUpdateCommand, hasValidUpdateTarget, isUpdateCommand } from "../lib/update-command.ts";
 
 type Request = Parameters<typeof createUpdateCommand>[0];
 type Report = Parameters<Request>[3];
@@ -109,6 +109,33 @@ test("只允许已绑定机器人的主人或授权终端，拒绝路径和控�
   expect(replies.slice(4)).toEqual(Array(invalid.length).fill("请输入有效的插件名，例如 #更新 system 或 #更新 @lotus-yunzai/system。"));
   await dispatch("#更新", { message_type: "group", isGroup: true, isPrivate: false });
   expect(calls).toEqual([{ target: undefined, quiet: false, type: "group", all: false, force: false }]);
+});
+
+test("Milky 更新只使用专用权限和有效会话，授权校验沿用更新参数语法", async () => {
+  const target = { adapter: "milky", isMaster: false, boundAccount: false, canManageProcess: true } as const;
+  const { dispatch, calls, replies } = fixture(async (_event, _target, _quiet, report) => {
+    await Promise.resolve();
+    report("checking");
+    return true;
+  });
+  await dispatch("#更新", target);
+  await dispatch("#更新system", { ...target, message_type: "group", group_id: 10 });
+  for (const event of [
+    { ...target, canManageProcess: false, isMaster: true, boundAccount: true }, { ...target, self_id: 0 },
+    { ...target, user_id: Number.MAX_SAFE_INTEGER + 1 }, { ...target, message_type: "group" as const, group_id: undefined },
+    { ...target, message_type: "terminal" as const, isMaster: true },
+  ]) await dispatch("#更新", event);
+  expect(calls.map(({ type }) => type)).toEqual(["private", "group"]);
+  expect(replies).toEqual([
+    "开始更新，正在检查上游。", "开始更新，正在检查上游。",
+    ...Array(5).fill("暂无权限，只有主人才能操作"),
+  ]);
+  for (const text of ["#更新", " #静更新system", "#更新 @lotus-yunzai/system", "#全部强制更新"]) {
+    expect(hasValidUpdateTarget(text)).toBe(true);
+  }
+  for (const text of ["#更新日志", "#全部更新system", "#更新 ../system", "#更新 system\n", "未知命令"]) {
+    expect(hasValidUpdateTarget(text)).toBe(false);
+  }
 });
 
 test("进度消息按收到顺序发送，静默仅省略正常进度和已是最新", async () => {

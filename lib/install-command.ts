@@ -1,4 +1,5 @@
 import type { MessageEvent } from "./messages.ts";
+import { canManagePackages } from "./package-command-permissions.ts";
 
 export type InstallProgress = "checking" | "building" | "switching" | "busy" | "exists" | "unavailable" | "rejected" | "failed";
 
@@ -37,11 +38,16 @@ export function isInstallCommand(message: string): boolean {
   return message.trimStart().startsWith(command);
 }
 
+export function hasValidInstallTarget(text: string): boolean {
+  const message = text.trimStart();
+  return message.startsWith(command) && parseInstallName(message.slice(command.length)) !== undefined;
+}
+
 export function createInstallCommand(callbacks: InstallCallbacks) {
   return async (event: MessageEvent): Promise<void> => {
     const message = event.msg.trimStart();
     if (!message.startsWith(command)) return;
-    if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) {
+    if (!canManagePackages(event)) {
       await event.reply("暂无权限，只有主人才能操作");
       return;
     }

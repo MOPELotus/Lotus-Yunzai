@@ -176,3 +176,60 @@ test.skipIf(process.platform !== "linux")("Milky 主人可软停启、同 PID �
     await rm(root, { recursive: true, force: true });
   }
 }, 14_000);
+
+test("旧托管器下 Milky 主人可查看安装目录，更新和安装给出升级提示", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-milky-old-supervisor-"));
+  const mock = mockGateway();
+  try {
+    await copyHost(root);
+    await mkdir(join(root, "config", "config"), { recursive: true });
+    await Promise.all([
+      writeFile(join(root, "config", "config", "other.yaml"), [
+        `master: ["${botId}:${owner}", "100:${otherOwner}"]`, "disablePrivate: true", "disableMsg: 私聊已禁用", "",
+      ].join("\n")),
+      writeFile(join(root, "config", "milky.yaml"), [
+        "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`, `access_token: ${token}`, "",
+      ].join("\n")),
+      writeFile(join(root, "config", "install.yaml"), JSON.stringify({
+        plugins: { "隔离插件": {
+          url: "https://example.invalid/fixtures/milky.git", directory: "managed-fixture", branch: "main", revision: "a".repeat(40),
+        } },
+      })),
+    ]);
+    const ipc: { type?: string }[] = [];
+    const host = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root, stdin: "ignore", stdout: "ignore", stderr: "pipe",
+      env: { PATH: process.env.PATH, LOTUS_MANAGED_TOKEN: crypto.randomUUID() },
+      ipc(message: { type?: string }) { ipc.push(message); },
+    });
+    const stderr = new Response(host.stderr).text();
+    try {
+      const command = commands(await deadline(mock.sessions[0]!.promise, "旧托管器夹具未建立 Milky 连接。"));
+      const ownerTarget = { user_id: owner };
+      const upgrade = "当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun scripts/run-managed.ts 后重试。";
+      command("#安装插件");
+      await mock.next(ownerTarget, expect.stringMatching(/可安装插件列表：[\s\S]*隔离插件/u));
+      command("#更新");
+      await mock.next(ownerTarget, upgrade);
+      command("#安装隔离插件");
+      await mock.next(ownerTarget, upgrade);
+      command("#更新", otherOwner, groupId);
+      await mock.next({ group_id: groupId }, "暂无权限，只有主人才能操作");
+      command("#更新", ordinary);
+      await mock.next({ user_id: ordinary }, "私聊已禁用");
+      command("#更新日志");
+      await mock.next(ownerTarget, "私聊已禁用");
+      expect(ipc.map(({ type }) => type)).toContain("lotus-ready");
+      expect(ipc.map(({ type }) => type)).not.toContain("lotus-update");
+      host.kill("SIGTERM");
+      expect(await deadline(host.exited, "旧托管器夹具未退出。")).toBe(143);
+      expect(await stderr).not.toMatch(/未能完成启动交接/u);
+    } finally {
+      if (host.exitCode === null && host.signalCode === null) host.kill("SIGKILL");
+      await host.exited;
+    }
+  } finally {
+    mock.server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);
