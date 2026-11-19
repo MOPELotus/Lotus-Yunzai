@@ -125,8 +125,33 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
-  const groupCardTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
-  const pendingGroupCardTasks = new Set<() => void>();
+  const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
+  const pendingModuleTasks = new Set<() => void>();
+  function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
+    const owner = new HandlerScope();
+    let startup: Promise<void> | undefined;
+    const start = () => {
+      try {
+        moduleTasks.register(owner, { name, task: { cron, fnc: run, log: false } });
+      } catch {
+        console.warn(`${name} 定时配置无效。`);
+        return;
+      }
+      if (runAtStartup) {
+        startup = Promise.resolve().then(async () => {
+          if (!lifecycle.signal.aborted && handoff.accepting) await run();
+        }).catch(() => console.warn(`${name} 启动检查失败。`));
+        const finished = startup;
+        pending.add(finished);
+        void finished.finally(() => pending.delete(finished));
+      }
+    };
+    pendingModuleTasks.add(start);
+    return async () => {
+      pendingModuleTasks.delete(start);
+      await Promise.all([moduleTasks.cancel(new Set([owner])), startup]);
+    };
+  }
   const commandDelegation = createCommandDelegation({
     signal: lifecycle.signal,
     mayDelegate: event => event.adapter === "milky"
@@ -279,7 +304,7 @@ if (import.meta.main) {
     void stopPowerSchedule?.();
     void stopRestartSchedule?.();
     void stopUpdateSchedule?.();
-    void groupCardTasks.stop();
+    void moduleTasks.stop();
     void legacy.stopTasks();
     legacy.stopContexts();
     consoleInput?.close();
@@ -1107,19 +1132,23 @@ if (import.meta.main) {
           return milky && !milky.signal.aborted ? [...accounts, milky] : accounts;
         },
         registerAutoGroupCardTask(cron, run) {
-          const owner = new HandlerScope();
-          const start = () => {
-            try {
-              groupCardTasks.register(owner, { name: "[group] 自动群名片", task: { cron, fnc: run, log: false } });
-            } catch {
-              console.warn("[group] 自动群名片定时任务配置无效。");
-            }
-          };
-          pendingGroupCardTasks.add(start);
-          return async () => {
-            pendingGroupCardTasks.delete(start);
-            await groupCardTasks.cancel(new Set([owner]));
-          };
+          return registerModuleTask("[group] 自动群名片", cron, run);
+        },
+      },
+      atlasUpdate: probingUpdate ? undefined : {
+        config: globalConfig.atlas,
+        register(schedule) {
+          const jobs: (() => Promise<void>)[] = [];
+          for (const [kind, name] of [["version", "[atlas] 正式资料"], ["challenge", "[atlas] 挑战轮换"]] as const) {
+            const task = schedule[kind];
+            if (task?.issue) console.warn(`${name} ${task.issue}`);
+            if (typeof task?.cron !== "string" || typeof task.run !== "function") continue;
+            jobs.push(registerModuleTask(name, task.cron, async () => {
+              const summary = await task.run();
+              if (summary) console.log(`${name}\n${summary}`);
+            }, kind === "challenge"));
+          }
+          return async () => { await Promise.all(jobs.map(stopJob => stopJob())); };
         },
       },
     });
@@ -1140,8 +1169,8 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories);
-      for (const start of pendingGroupCardTasks) start();
-      pendingGroupCardTasks.clear();
+      for (const start of pendingModuleTasks) start();
+      pendingModuleTasks.clear();
       milkyTransport?.start();
       checkinRuntime?.start();
       shopPlans?.start(lifecycle.signal, () => console.warn("[米游币商城] 未能读取或恢复预约。"));
@@ -1207,7 +1236,7 @@ if (import.meta.main) {
       consoleInput?.close();
       legacy.stopContexts();
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
-        groupCardTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
+        moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
       miyousheWeb?.close();
       await mediaDelivery.close();
       await plugins?.dispose();

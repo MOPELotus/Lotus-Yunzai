@@ -191,6 +191,14 @@ export interface PluginLoadReport {
   dispose(): Promise<void>;
 }
 
+interface AtlasScheduledRun {
+  readonly cron?: string;
+  readonly issue?: string;
+  run(): Promise<string>;
+}
+
+type AtlasSchedule = Readonly<Partial<Record<"version" | "challenge", AtlasScheduledRun>>>;
+
 async function disposeModule(name: string, cleanup: () => unknown): Promise<void> {
   try {
     await cleanup();
@@ -212,6 +220,10 @@ export async function loadPlugins(
     readonly groupCardServices?: {
       ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+    };
+    readonly atlasUpdate?: {
+      readonly config: unknown;
+      register(schedule: AtlasSchedule): () => Promise<void>;
     };
   } = {},
 ): Promise<PluginLoadReport> {
@@ -366,10 +378,13 @@ export async function loadPlugins(
         if (create !== undefined && typeof create !== "function") {
           throw new Error("createModule 须为模块工厂函数。");
         }
-        const groupCard = moduleName === "@lotus-yunzai/group" && directory &&
-          relative(root, directory) === builtInDirectories.get(moduleName) ? options.groupCardServices : undefined;
-        const module = create ? await create(Object.freeze({ ...services, ...groupCard, signal })) : published.default;
-        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate } = record(module);
+        const builtIn = directory && relative(root, directory) === builtInDirectories.get(moduleName);
+        const groupCard = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupCardServices : undefined;
+        const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
+        const module = create ? await create(Object.freeze({ ...services, ...groupCard, signal,
+          ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
+        })) : published.default;
+        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -398,6 +413,14 @@ export async function loadPlugins(
           cleanup = () => {
             unregisterGacha();
             return disposeFactory?.();
+          };
+        }
+        if (atlasUpdate && atlasSchedule) {
+          const stopSchedule = atlasUpdate.register(atlasSchedule as AtlasSchedule);
+          const disposeFactory = cleanup;
+          cleanup = async () => {
+            await stopSchedule();
+            await disposeFactory?.();
           };
         }
         if (published.apps !== undefined) {
