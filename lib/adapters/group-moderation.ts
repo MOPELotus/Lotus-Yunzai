@@ -108,6 +108,12 @@ interface GroupModerationSession {
   readonly signal: AbortSignal;
   readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
+  readonly memberMessage?: {
+    canAct(signal: AbortSignal): Promise<boolean>;
+    botCanAct(signal: AbortSignal): Promise<boolean>;
+    mute(seconds: number, signal: AbortSignal): Promise<GroupModerationResult>;
+    recall(signal: AbortSignal): Promise<GroupModerationResult>;
+  };
 }
 
 type GroupModerationEvent = GroupNotice | GroupRequest | MessageEvent;
@@ -123,10 +129,10 @@ export function groupModerationSession(event: GroupModerationEvent) {
 }
 
 export async function canModerateGroupSubject(
-  role: (userId: number) => Promise<Role | undefined>, bot: number, subject?: number,
+  role: (userId: number) => Promise<Role | undefined>, bot: number, subject?: number, permitAdmin = true,
 ) {
   if (bot === subject) return false;
   const [botRole, subjectRole] = await Promise.all([role(bot), subject === undefined ? undefined : role(subject)]);
   return (botRole === "owner" || botRole === "admin") &&
-    (subject === undefined || subjectRole === "member" || (botRole === "owner" && subjectRole === "admin"));
+    (subject === undefined || subjectRole === "member" || (permitAdmin && botRole === "owner" && subjectRole === "admin"));
 }

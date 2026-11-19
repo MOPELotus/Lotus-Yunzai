@@ -75,11 +75,19 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config/other.yaml"), 'master: ["100:51"]\nmasterQQ: [52]\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n");
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
     const legacyList = join(legacyDirectory, "groupAdmin.yaml");
     await writeFile(legacyList, "# 原群管配置\nblackQQ: [52, 57]\nwhiteQQ: [59] # 白名单\nnoBan: false\n");
+    const legacyRules = join(root, "plugins/yenai-plugin/config/group");
+    await mkdir(legacyRules, { recursive: true });
+    const testRules = JSON.stringify({ muteTime: 45, bannedWords: {
+      合成违禁测试: { matchType: 1, penaltyType: 5 },
+      合成踢黑测试: { matchType: 2, penaltyType: 6 },
+    } });
+    await writeFile(join(legacyRules, "79.json"), testRules);
+    await writeFile(join(legacyRules, "81.json"), testRules);
     await writeFile(join(root, "config/milky.yaml"),
       `enable: true\nhost: 127.0.0.1\nport: ${milky.port}\nconnection: webhook\naccess_token: ${token}\n`);
     disableMemberPrewarm(root);
@@ -293,6 +301,41 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     ]);
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.user_id === 61)
       .map(({ params }) => params)).toEqual([{ group_id: 79, user_id: 61, duration: 0 }]);
+
+    const censored = oneBotMessage("合成违禁测试", 42, 79);
+    send(censored);
+    const censoredReply = JSON.stringify((await oneBotReply(20)).params.message);
+    expect(censoredReply).toContain("触发违禁词：合成****");
+    expect(censoredReply).toContain("禁言45秒、撤回消息");
+    send(censored);
+    send(oneBotMessage("合成违禁测试", 53, 79));
+    send(oneBotMessage("合成违禁测试", 59, 79));
+    send(oneBotMessage("合成违禁测试", 42, 81));
+
+    const kickByRule = { ...milkyMessage("开头 合成踢黑测试 结尾"),
+      peer_id: 79, sender_id: 43, group_member: { group_id: 79, user_id: 43, role: "member" } };
+    expect((await webhook("message_receive", kickByRule)).status).toBe(200);
+    expect(JSON.stringify((await milkyReply(14)).params.message)).toContain("踢出群聊、加入黑名单");
+    expect(await list()).toEqual({ blackQQ: [52, 57, 58, 43], whiteQQ: [59, 61], noBan: false });
+    await webhook("message_receive", kickByRule);
+    const failedByRule = { ...milkyMessage("合成违禁测试"), peer_id: 79, sender_id: 44,
+      group_member: { group_id: 79, user_id: 44, role: "member" } };
+    await webhook("message_receive", failedByRule);
+    expect(JSON.stringify((await milkyReply(15)).params.message)).toContain("禁言45秒结果未确认、撤回消息");
+    await webhook("message_receive", failedByRule);
+    await Bun.sleep(40);
+    expect(oneBotMuted().filter(({ duration }) => duration === 45)).toEqual([
+      { group_id: 79, user_id: 42, duration: 45 },
+    ]);
+    expect(oneBotCalls.filter(({ action }) => action === "delete_msg").map(({ params }) => params)).toEqual([
+      { message_id: censored.message_id },
+    ]);
+    expect(milkyCalls.filter(({ action }) => action === "recall_group_message").map(({ params }) => params)).toEqual([
+      { group_id: 79, message_seq: failedByRule.message_seq },
+    ]);
+    expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.user_id === 43)).toHaveLength(1);
+    expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.duration === 45)).toHaveLength(1);
+    expect(await readFile(join(legacyRules, "79.json"), "utf8")).toBe(testRules);
   } finally {
     socket?.close();
     host?.kill();

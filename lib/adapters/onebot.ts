@@ -491,10 +491,19 @@ async function dispatchMessage(
     },
   };
   if (likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous") {
+    const checkRole = (active: AbortSignal, subject?: number, permitAdmin?: boolean) =>
+      canModerateGroupSubject(id => calls.getGroupRole(send, target.group_id, id, true, active), selfId, subject, permitAdmin);
+    const nativeId = oneBotMessageId(messageId);
     bindGroupModeration(inbound, {
       signal: likeSession,
-      canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, target.group_id, id, true, active), selfId, userId),
+      canModerate: active => checkRole(active, userId),
       act: active => calls.kickGroupMember(send, target.group_id, userId, active),
+      memberMessage: nativeId === undefined ? undefined : {
+        canAct: active => checkRole(active, userId, false),
+        botCanAct: active => checkRole(active),
+        mute: (seconds, active) => calls.setGroupMute(send, target.group_id, userId, seconds, active),
+        recall: active => calls.recallMessage(send, nativeId, active),
+      },
     });
   }
   await dispatch(inbound);

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { ProfileLikeImage } from "../adapters/mention-like.ts";
+import type { GroupBannedWords } from "../../plugins/group/banned-words.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
@@ -231,6 +232,7 @@ export async function loadPlugins(
         blocked(userId: number): Promise<boolean>;
         shouldAutoUnmute(userId: number): Promise<boolean>;
       }): () => void;
+      registerGroupBannedWords?(policy: GroupBannedWords): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;
         register(policy: GroupLeaveBlacklist): () => void;

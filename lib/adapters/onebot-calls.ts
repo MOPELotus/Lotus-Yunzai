@@ -269,8 +269,8 @@ export class OneBotCalls {
     return id;
   }
 
-  async deleteMessage(send: Send, messageId: number): Promise<void> {
-    await this.#request(send, "delete_msg", { message_id: messageId });
+  async deleteMessage(send: Send, messageId: number, signal?: AbortSignal): Promise<void> {
+    await this.#request(send, "delete_msg", { message_id: messageId }, signal);
   }
 
   async sendForward(send: Send, target: { group_id: number } | { user_id: number }, messages: readonly object[]): Promise<boolean> {
@@ -334,9 +334,9 @@ export class OneBotCalls {
     }
   }
 
-  async recallMessage(send: Send, messageId: number): Promise<RecallResult> {
+  async recallMessage(send: Send, messageId: number, signal?: AbortSignal): Promise<RecallResult> {
     try {
-      await this.deleteMessage(send, messageId);
+      await this.deleteMessage(send, messageId, signal);
       return "confirmed";
     } catch (error) {
       return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";

@@ -86,12 +86,24 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted) return;
     if (event.post_type === "message") {
       event = { ...event, canManageProcess: positiveId(event.user_id) && isMaster(event.user_id) };
-      const { group_id, user_id } = event;
+      const { group_id, user_id, message_id } = event;
       if (event.message_type === "group" && positiveId(group_id) && positiveId(user_id) && !event.attachmentOnly) {
+        const checkRole = (active: AbortSignal, subject?: number, permitAdmin?: boolean) =>
+          canModerateGroupSubject(id => memberRole(group_id, id, active), account, subject, permitAdmin);
         bindGroupModeration(event, {
           signal,
-          canModerate: () => canModerateGroupSubject(id => delegation.memberRole(group_id, id), account, user_id),
+          canModerate: active => checkRole(active, user_id),
           async act(active) { return (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status; },
+          memberMessage: message_id === undefined ? undefined : {
+            canAct: active => checkRole(active, user_id, false),
+            botCanAct: active => checkRole(active),
+            async mute(duration, active) {
+              return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration }, active)).status;
+            },
+            async recall(active) {
+              return (await call.confirmed("recall_group_message", { group_id, message_seq: message_id }, active)).status;
+            },
+          },
         });
       }
     } else if (event.post_type === "notice" && event.notice_type === "friend") {

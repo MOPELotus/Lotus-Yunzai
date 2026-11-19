@@ -34,7 +34,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
-import { groupModerationSession, type MemberMuteNotice } from "./lib/adapters/group-moderation.ts";
+import { groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice } from "./lib/adapters/group-moderation.ts";
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -107,6 +107,7 @@ import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
+import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -122,6 +123,7 @@ const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lo
 const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
 const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunzai/group"];
 const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunzai/group"];
+const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -256,6 +258,8 @@ if (import.meta.main) {
   const managedModerationResults = new Map<string, boolean>();
   const managedModerationPending = new Set<string>();
   const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
+  let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
+  const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
@@ -613,6 +617,7 @@ if (import.meta.main) {
       : event.post_type === "message" ? (event.message_id === undefined ? undefined : [event.adapter ?? "onebot", event.message_id])
         : event.time;
     if (id === undefined) return false;
+    if (event.post_type === "message" && moderatedMessages.has(moderatedMessageKey(event))) return true;
     const active = nativeOperationSignal(registration.signal, transport.signal);
     const blocked = () => registration.policy.blocked(user).catch(() => false);
     if (active.aborted || !await blocked() || active.aborted) return false;
@@ -676,6 +681,67 @@ if (import.meta.main) {
     if (await notice.unmute(signal) === "confirmed" && !signal.aborted) {
       await notice.reply("已解除白名单用户的禁言");
     }
+  }
+
+  async function handleGroupBannedWords(source: MessageEvent, text: string): Promise<boolean> {
+    const registration = groupBannedWords;
+    if (!registration || source.message_type !== "group" || source.isDelegated || !text) return false;
+    const { self_id: bot, group_id: group, user_id: user, message_id } = source;
+    if (!bot || !group || !user || message_id === undefined) return false;
+    const transport = groupModerationSession(source);
+    if (!transport?.memberMessage || !transport.act) return false;
+    const { memberMessage, act } = transport;
+    const signal = nativeOperationSignal(registration.signal, transport.signal);
+    const active = () => !signal.aborted && bot !== user &&
+      !masterPermissions.isMaster(bot, user) && !masterPermissions.legacyMasterIds().includes(user);
+    if (!active()) return false;
+    const key = moderatedMessageKey(source);
+    if (moderatedMessages.has(key)) return true;
+    const match = () => registration.policy.match(group, user, text, signal).catch(() => undefined);
+    if (!await match() || !active() || !await memberMessage.canAct(signal).catch(() => false) || !active()) return false;
+    const rule = await match();
+    if (!rule || !active()) return false;
+    if (moderatedMessages.has(key)) return true;
+    if (moderatedMessages.size >= 4096) moderatedMessages.delete(moderatedMessages.values().next().value!);
+    moderatedMessages.add(key);
+
+    const receipts: string[] = [];
+    async function apply(label: string, run: () => Promise<GroupModerationResult>) {
+      const result = active() ? await run().catch(() => "unknown" as const) : "rejected";
+      receipts.push(result === "confirmed" ? label : `${label}${result === "unknown" ? "结果未确认" : "未执行"}`);
+      return result === "confirmed";
+    }
+    if (rule.action === "kick" || rule.action === "kick-recall" || rule.action === "kick-blacklist") {
+      if (await apply("踢出群聊", () => act(signal)) && rule.action === "kick-blacklist" && active()) {
+        try {
+          await registration.policy.recordConfirmedKick(user, signal, async () => active() && await memberMessage.botCanAct(signal) && active());
+          receipts.push("加入黑名单");
+        } catch {
+          receipts.push("黑名单保存失败");
+        }
+      }
+    }
+    if ((rule.action === "mute" || rule.action === "mute-recall") && isMemberMuteDuration(rule.seconds) && rule.seconds > 0) {
+      await apply(`禁言${rule.seconds}秒`, () => memberMessage.mute(rule.seconds, signal));
+    }
+    if (rule.action === "recall" || rule.action === "kick-recall" || rule.action === "mute-recall") {
+      await apply("撤回消息", () => memberMessage.recall(signal));
+    }
+    if (active() && receipts.length) {
+      const nickname = source.sender?.card || source.sender?.nickname;
+      const name = typeof nickname === "string" ? nickname.replace(/[\r\n]/gu, " ").trim().slice(0, 80) : "";
+      const contact = name ? `${name}(${user})` : String(user);
+      try {
+        await source.reply(`触发违禁词：${rule.preview}\n触发者：${contact}\n执行：${receipts.join("、")}`, false, { recallMsg: 30 });
+      } catch {
+        // A reply failure does not retry any moderation action.
+      }
+    }
+    return true;
+  }
+
+  function moderatedMessageKey(source: MessageEvent): string {
+    return JSON.stringify([source.adapter ?? "onebot", source.self_id, source.group_id, source.message_id]);
   }
 
   async function handleLeaveBlacklist(event: Exclude<BotEvent, MessageEvent>): Promise<boolean> {
@@ -901,6 +967,7 @@ if (import.meta.main) {
       return;
     }
     if (!allowNew) return;
+    if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg)) return;
 
     const command = normalizeGameCommand(event);
     if (isUpdateLogCommand(command.msg)) {
@@ -1544,6 +1611,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (managedBlacklist === registration) managedBlacklist = undefined;
+          };
+        },
+        registerGroupBannedWords(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupBannedWords = registration;
+          return () => {
+            session.abort();
+            if (groupBannedWords === registration) groupBannedWords = undefined;
           };
         },
         groupLeaveBlacklist: {
