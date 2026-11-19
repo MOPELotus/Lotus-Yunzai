@@ -2,7 +2,7 @@ import { createProfileStore, MAX_PROFILE_ID, ProfileError,
   type ProfileCheckinSettingsChange } from "@lotus-yunzai/account";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
 
-const toggle = /^#(启用|开启|关闭|禁用)((?:原神|星铁|崩铁|绝区零|绝|未定事件簿|未定|崩坏3|崩三|崩坏2|崩二)(?:游戏)?|全部游戏)签到([1-9]\d{0,2})?$/u;
+const toggle = /^#(启用|开启|关闭|禁用)((?:原神|星铁|崩铁|绝区零|绝|未定事件簿|未定|崩坏3|崩三|崩坏2|崩二|因缘精灵)(?:游戏)?|全部游戏)签到([1-9]\d{0,2})?$/u;
 const notifyToggle = /^#(启用|开启|关闭|禁用)签到通知([1-9]\d{0,2})?$/u;
 const communityToggle = /^#(启用|开启|关闭|禁用)社区签到([1-9]\d{0,2})?$/u;
 const notifyPrefer = /^#设置通知(私聊|群聊)([1-9]\d{0,2})?$/u;
@@ -15,6 +15,7 @@ const games = new Map<string, CheckinGame>([
   ["原神", "gs"], ["星铁", "sr"], ["崩铁", "sr"], ["绝区零", "zzz"], ["绝", "zzz"],
   ["未定事件簿", "nxx"], ["未定", "nxx"],
   ["崩坏3", "bh3"], ["崩三", "bh3"], ["崩坏2", "bh2"], ["崩二", "bh2"],
+  ["因缘精灵", "hna"],
 ]);
 
 function isEnabled(action: string) {

@@ -212,6 +212,11 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       const gameRows = scoped ? [] : rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled);
       const retryForums: string[] = [];
+      const hna = rows.find(row => row.key === "hna");
+      if (!scoped && hna?.game === "未执行") {
+        hna.game = "跳过";
+        count("skipped");
+      }
       if (scoped) {
         for (const row of rows) {
           if (row.game === "未执行") row.game = "首轮已处理";
