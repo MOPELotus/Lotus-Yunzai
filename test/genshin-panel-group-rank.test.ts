@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
 import { estimatePanelDamage } from "../plugins/genshin/panel/damage.ts";
+import { scorePanelArtifacts } from "../plugins/genshin/panel/artifact-score.ts";
 import { createGroupPanelRank, type GroupRankContext } from "../plugins/genshin/panel/group-rank.ts";
-import { matchGroupPanelRank, projectRankAvatar } from "../plugins/genshin/panel/group-rank-model.ts";
+import { decodeRankAvatar, displayedRankScore, legacyAffixRankScores, matchGroupPanelRank, projectRankAvatar } from "../plugins/genshin/panel/group-rank-model.ts";
 import type { PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import type { PanelTheme } from "../plugins/genshin/panel/theme.ts";
 
@@ -29,7 +30,11 @@ const theme: PanelTheme = {
 test("原神旧角色排名别名及 103 级默认情景，排除公开统计与预设面板", async () => {
   expect(matchGroupPanelRank("#群内胡桃排名榜")).toMatchObject({ character: { id: 10000046 }, mode: "damage" });
   expect(matchGroupPanelRank("#原神芙芙圣遗物评分排行")).toMatchObject({ character: { id: 10000089 }, mode: "artifacts" });
-  for (const raw of ["#芙芙排名统计", "#世界BOSS排行", "#星铁胡桃排行", "#胡桃双爆排行", "#最强胡桃"]) {
+  expect(matchGroupPanelRank("#原神群内芙芙双爆排行")).toMatchObject({ character: { id: 10000089 }, mode: "crit" });
+  expect(matchGroupPanelRank("#胡桃双暴词条排行")).toMatchObject({ character: { id: 10000046 }, mode: "crit" });
+  expect(matchGroupPanelRank("#加权有效词条胡桃排名榜")).toMatchObject({ character: { id: 10000046 }, mode: "valid" });
+  expect(matchGroupPanelRank("#胡桃词条排行")).toMatchObject({ character: { id: 10000046 }, mode: "valid" });
+  for (const raw of ["#芙芙排名统计", "#世界BOSS排行", "#星铁胡桃排行", "#双暴胡桃词条排行", "#最强胡桃"]) {
     expect(matchGroupPanelRank(raw)).toBeUndefined();
   }
   const result = await projectRankAvatar(avatar, theme);
@@ -40,6 +45,26 @@ test("原神旧角色排名别名及 103 级默认情景，排除公开统计与
   expect(result?.damage).toEqual({ title: expected.title, score: expected.average });
   expect(result?.artifacts?.score).toBeGreaterThan(0);
   expect(await projectRankAvatar({ ...avatar, _source: "change" }, theme)).toBeUndefined();
+});
+
+test("旧双暴与有效词条使用原权重、固定头部主词条、全量精度排序数值", async () => {
+  const { rating } = await scorePanelArtifacts(avatar, theme);
+  if (!rating) throw new Error("测试缺少有效圣遗物词条");
+  const scores = legacyAffixRankScores(rating);
+  const piece = rating.items["1"]!;
+  const expected = piece.subs.reduce((sum, attr) => sum + (rating.weights[attr.key]?.mark ?? 0) * attr.value / 85, 0);
+  expect(scores.crit).toBe(expected);
+  expect(scores.valid).toBe(expected);
+  const mainOnly = { ...rating, items: { "5": { ...piece, main: { key: "cdmg", value: 62.2 }, subs: [] } } };
+  expect(legacyAffixRankScores(mainOnly)).toEqual({ crit: 9.41, valid: 0 });
+  const result = await projectRankAvatar(avatar, theme);
+  if (!result) throw new Error("测试未生成排行摘要");
+  expect(displayedRankScore(result, "crit")).toBe(expected * 6.6044);
+  expect(decodeRankAvatar({ ...result, crit: undefined, valid: undefined })).toMatchObject({ artifacts: result.artifacts });
+  expect(decodeRankAvatar({ ...result, crit: { score: 0 }, valid: { score: 0 } })?.crit).toBeUndefined();
+  const unknown = await projectRankAvatar({ ...avatar, artis: { 1: { ...avatar.artis["1"]!, scoreReady: false } } }, theme);
+  expect(unknown?.crit).toBeUndefined();
+  expect(unknown?.valid).toBeUndefined();
 });
 
 test("群榜只取本群主动展示的摘要，查榜期间离群或切档不返回排行", async () => {
@@ -87,6 +112,10 @@ test("群榜只取本群主动展示的摘要，查榜期间离群或切档不�
     expect(await ranking.query("#胡桃排行", scope(42, 77, 99, "milky"), load)).toContain("本群暂无");
     await observe(43);
     expect(await ranking.query("#胡桃圣遗物评分排行", scope(42), load)).toMatchObject({ type: "image" });
+    expect(exposed).toEqual(["100123457", "100123456"]);
+    expect(await ranking.query("#胡桃双暴排行", scope(42), load)).toMatchObject({ type: "image" });
+    expect(exposed).toEqual(["100123457", "100123456"]);
+    expect(await ranking.query("#胡桃词条排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123457", "100123456"]);
     phase = "leave";
     expect(await ranking.query("#胡桃排行", scope(42), load)).toContain("群成员或档案已变化");
