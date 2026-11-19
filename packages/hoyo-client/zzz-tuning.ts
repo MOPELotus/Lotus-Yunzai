@@ -218,7 +218,7 @@ function poolOf(type: Pool, band: Json, periods: ZzzTuningPeriod[]): ZzzTuningPo
   };
 }
 
-function resolveRegion(source: ProfileRequestContext): ZzzTuningSnapshot["region"] {
+export function resolveZzzTuningRegion(source: Pick<ProfileRequestContext, "game" | "role">): ZzzTuningSnapshot["region"] {
   const { uid, gameBiz } = source.role;
   const region = source.role.region.trim() || (/^[1-9]\d{7,8}$/u.test(uid) ? "prod_gf_cn" : "");
   if (source.game !== "zzz" || !/^[1-9]\d{7,9}$/u.test(uid) || (gameBiz && gameBiz !== "nap_cn") ||
@@ -254,7 +254,7 @@ function apiError(payload: Json, status: number, retcode: number): HoyoRequestEr
 
 function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, options: ZzzTuningOptions, guard?: Guard) {
   const { intervalMs = 1200, signal } = options;
-  const region = resolveRegion(source);
+  const region = resolveZzzTuningRegion(source);
   const { uid } = source.role;
   const cookie = source.account.cookie;
   if (!cookie.trim() || !cookie.includes("=") || /[\r\n\0]/u.test(cookie) ||

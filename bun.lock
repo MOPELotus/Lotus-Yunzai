@@ -99,9 +99,11 @@
       "name": "@lotus-yunzai/zzz",
       "dependencies": {
         "@lotus-yunzai/account": "workspace:*",
+        "@lotus-yunzai/atlas": "workspace:*",
         "@lotus-yunzai/hoyo-client": "workspace:*",
         "@lotus-yunzai/skia": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
+        "skia-canvas": "3.0.8",
       },
     },
   },

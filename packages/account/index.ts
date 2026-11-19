@@ -203,14 +203,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
     },
-    async savedRole(qq: string, id: number, game: Game): Promise<Pick<GameRole, "uid" | "nickname">> {
+    async savedRole(qq: string, id: number, game: Game): Promise<GameRole> {
       if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
       const { roles, selected } = await read(qq, id);
       const list = normalizeGameRoles(roles[game]);
       const uid = accountId(selected[game]);
-      const role = uid ? list.find((item) => item.uid === uid) ?? { uid, nickname: "" } : list[0];
+      const role = uid ? list.find((item) => item.uid === uid) ?? { uid, nickname: "", region: "", gameBiz: "", chosen: false } : list[0];
       if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
-      return { uid: role.uid, nickname: role.nickname };
+      return role;
     },
     async listIds(qq: string): Promise<number[]> {
       const base = profileFilename(qq, 1);

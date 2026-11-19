@@ -93,8 +93,9 @@ device:
     });
     await expect(profiles.requestContext(qq, 2, "gs", "800001")).rejects.toMatchObject({ code: "role-missing" });
     await expect(profiles.requestContext(qq, 7, "sr")).rejects.toMatchObject({ code: "login-required" });
-    expect(await profiles.savedRole(qq, 7, "sr")).toEqual({ uid: "700001", nickname: "" });
-    expect(await profiles.savedRole(qq, 2, "gs")).toEqual({ uid: "800001", nickname: "" });
+    expect(await profiles.savedRole(qq, 7, "sr")).toEqual({ uid: "700001", nickname: "", region: "", gameBiz: "", chosen: false });
+    expect(await profiles.savedRole(qq, 2, "gs")).toMatchObject({ uid: "800001", nickname: "", region: "" });
+    expect(await profiles.savedRole(qq, 1, "gs")).toMatchObject({ uid: "800001", region: "cn_gf01" });
     await expect(profiles.savedRole(qq, 2, "sr")).rejects.toMatchObject({ code: "role-missing" });
     await expect(profiles.summary(qq, 3)).rejects.toMatchObject({ code: "invalid" });
     await expect(profiles.summary(qq, 4)).rejects.toMatchObject({ code: "invalid" });
