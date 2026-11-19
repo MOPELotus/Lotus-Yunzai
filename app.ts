@@ -11,6 +11,7 @@ import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify
 import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
+import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
@@ -622,10 +623,11 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
-    const [network, permissions, canRefresh, canRegisterCheckin, canGenerate, canRunDue, globalConfig, access, friendRequests, routing, invitations, botConfig,
+    const [network, permissions, canRefresh, canRegisterCheckin, canRegisterGroup, canGenerate, canRunDue, globalConfig, access, friendRequests, routing, invitations, botConfig,
       runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
-      readAccountScopePermission(root, "checkin.register"), readAccountScopePermission(root, "scheduler.generate"),
+      readAccountScopePermission(root, "checkin.register"), readAccountScopePermission(root, "checkin.group_register"),
+      readAccountScopePermission(root, "scheduler.generate"),
       readAccountScopePermission(root, "scheduler.run_due"), readLocalConfig(root, "global"),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
@@ -738,6 +740,15 @@ if (import.meta.main) {
         commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
           viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+        }), "[Lotus-Plugin] Profile Settings");
+        commands.registerModule(checkinGroupRegistrationCommands({
+          profiles: checkinProfiles, signal: lifecycle.signal, canRegister: canRegisterGroup,
+          async addRegisteredProfile(qq, profileId, revision) {
+            const current = await checkinProfiles.checkinSettings(qq, profileId);
+            if (lifecycle.signal.aborted) return;
+            if (current.revision !== revision) throw new Error("签到档案已变更。");
+            await runtime.addRegisteredProfile({ qq, profileId, name: current.displayName, enabled: current.enabled, schedule: current.schedule });
+          },
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinProfileCommands(profileDirectory, lifecycle.signal, {
           reconcilePlans: runtime.reconcileExistingPlans,

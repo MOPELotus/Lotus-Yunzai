@@ -67,7 +67,7 @@ function configuredIds(value: unknown): Set<string> {
 }
 
 export async function readAccountScopePermission(root: URL,
-  permission: "checkin.refresh" | "checkin.register" | "scheduler.generate" | "scheduler.run_due") {
+  permission: "checkin.refresh" | "checkin.register" | "checkin.group_register" | "scheduler.generate" | "scheduler.run_due") {
   const permissions = configRecord((await readLocalConfig(root, "global")).permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
@@ -76,7 +76,7 @@ export async function readAccountScopePermission(root: URL,
   const groupAllow = configuredIds(groups.allow);
   const groupDeny = configuredIds(groups.deny);
   const scope = configRecord(configRecord(permissions.scopes)[permission]).policy ??
-    (permission.startsWith("scheduler.") ? "master_only" : undefined);
+    (permission.startsWith("scheduler.") || permission === "checkin.group_register" ? "master_only" : undefined);
   return (context: { user_id?: number; group_id?: number; isMaster: boolean }) => {
     const user = String(context.user_id ?? "");
     const group = String(context.group_id ?? "");

@@ -124,7 +124,29 @@ test("签到计划只读取同路径身份的实际档案及其非敏感设置",
     ]);
     expect(await store.listIds(qq)).toEqual([1, 2]);
     expect(await store.listCheckinProfiles(new Set([qq]))).toEqual(await store.listCheckinProfiles());
+    expect(await store.listCheckinProfiles(new Set([qq]), 2)).toEqual([(await store.listCheckinProfiles())[1]!]);
     expect(await store.listCheckinProfiles(new Set(["100008"]))).toEqual([]);
     expect(await createProfileStore(join(root, "missing")).listCheckinProfiles()).toEqual([]);
   });
+});
+
+test("群注册原子开启确切档案并追加群，保留通知偏好与既有配置", async () => {
+  const original = {
+    ...fixture,
+    profile: { ...fixture.profile, notify: { fallback_groups: [123, "456"], prefer: "private", enable: false, extra: true } },
+  };
+  await withProfile(async (store, path) => {
+    const first = await store.checkinSettings(qq, 2);
+    const saved = await store.registerGroupCheckin(qq, 2, first.revision, 789, "群\n名");
+    expect(saved.status).toBe("updated");
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
+      ...original, enabled: true, user: { ...original.user, nickname: "群名" },
+      profile: { ...original.profile, notify: { ...original.profile.notify, fallback_groups: [123, "456", "789"] } },
+    });
+    expect(await store.registerGroupCheckin(qq, 2, saved.revision, 123, "新名字"))
+      .toEqual({ status: "existing", revision: saved.revision });
+    await expect(store.registerGroupCheckin(qq, 2, first.revision, 888)).rejects.toMatchObject({ code: "changed" });
+    await expect(store.registerGroupCheckin(qq, 3, saved.revision, 888)).rejects.toMatchObject({ code: "missing" });
+    await expect(store.registerGroupCheckin(qq, 2, saved.revision, 0)).rejects.toMatchObject({ code: "invalid" });
+  }, original);
 });

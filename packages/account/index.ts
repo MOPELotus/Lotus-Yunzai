@@ -626,10 +626,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       profileFilename(qq, 1);
       return (await listSlots()).filter(slot => slot.qq === qq).map(slot => slot.profileId).sort((a, b) => a - b);
     },
-    async listCheckinProfiles(qqs?: ReadonlySet<string>) {
+    async listCheckinProfiles(qqs?: ReadonlySet<string>, onlyProfile?: number) {
       const targets = [];
       for (const { qq, profileId } of await listSlots()) {
-        if (!/^[1-9]\d{0,18}$/u.test(qq) || (qqs && !qqs.has(qq))) continue;
+        if (!/^[1-9]\d{0,18}$/u.test(qq) || (qqs && !qqs.has(qq)) ||
+            (onlyProfile !== undefined && profileId !== onlyProfile)) continue;
         const profile = await readDocument(qq, profileId).catch(() => undefined);
         if (!profile) continue;
         targets.push({
@@ -677,6 +678,25 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return state.summary.enabled === enabled ? document : { ...document, enabled };
       });
       return { enabled, ...result };
+    },
+    async registerGroupCheckin(qq: string, id: number, expectedRevision: string, groupId: number, nickname?: string) {
+      if (!Number.isSafeInteger(groupId) || groupId < 1) invalidCheckinSettings();
+      const name = typeof nickname === "string" ? nickname.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 40) : "";
+      const { changed, revision } = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        const profile = record(document.profile);
+        const notify = record(profile.notify);
+        const groups = Array.isArray(notify.fallback_groups) ? notify.fallback_groups as unknown[] : [];
+        const present = groups.some(value => accountId(value) === String(groupId));
+        if (present && state.summary.enabled) return document;
+        const user = record(document.user);
+        return {
+          ...document, enabled: true,
+          ...(name && !text(user.nickname) ? { user: { ...user, nickname: name } } : {}),
+          profile: { ...profile, notify: { ...notify, fallback_groups: present ? groups : [...groups, String(groupId)] } },
+        };
+      });
+      return { status: changed ? "updated" as const : "existing" as const, revision };
     },
     async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange) {
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
