@@ -154,11 +154,22 @@ const bh3Source = {
   account: { ...fixture(routes[0]).account, stoken: "unused-stoken-fixture", stokenCookie: "stoken=fixture" },
 } satisfies CnGameCheckinSource;
 
-test("崩坏3同一 UID 的三个国服区各自使用旧 Luna 活动读取、提交和回读", async () => {
-  for (const region of ["ios01", "android01", "pc01"]) {
-    const source = { ...bh3Source, role: { ...bh3Source.role, region } };
+const bh2Source = {
+  ...bh3Source, game: "bh2",
+  role: { ...bh3Source.role, region: "gf01", gameBiz: "bh2_cn" },
+} satisfies CnGameCheckinSource;
+
+test("崩坏3同 UID 的三个官服区与崩坏学园2官服各自使用旧 Luna 活动读取、提交和回读", async () => {
+  const targets = [
+    ...["ios01", "android01", "pc01"].map(region => ({
+      source: { ...bh3Source, role: { ...bh3Source.role, region } }, activity: "e202306201626331",
+    })),
+    { source: bh2Source, activity: "e202203291431091" },
+  ];
+  for (const { source, activity } of targets) {
+    const { uid, region, gameBiz } = source.role;
     const calls: string[] = [];
-    const identity = { act_id: "e202306201626331", uid: source.role.uid, region };
+    const identity = { act_id: activity, uid, region };
     const transport: Parameters<typeof readCnGameCheckinInfo>[1] = async (url, init) => {
       calls.push(`${init.method} ${url.pathname}`);
       expect(url.origin).toBe("https://api-takumi.mihoyo.com");
@@ -169,7 +180,7 @@ test("崩坏3同一 UID 的三个国服区各自使用旧 Luna 活动读取、�
       expect(headers.get("x-rpc-signgame")).toBeNull();
       expect(headers.get("x-rpc-client_type")).toBe("5");
       expect(headers.get("x-rpc-challenge")).toBeNull();
-      const role = { game_uid: identity.uid, region, game_biz: "bh3_cn" };
+      const role = { game_uid: uid, region, game_biz: gameBiz };
       if (init.method === "POST") {
         expect(url.search).toBe("");
         expect(JSON.parse(String(init.body))).toEqual(identity);
@@ -186,6 +197,39 @@ test("崩坏3同一 UID 的三个国服区各自使用旧 Luna 活动读取、�
     })).toMatchObject({ status: "signed" });
     expect(calls).toEqual(["GET /event/luna/info", "POST /event/luna/sign", "GET /event/luna/info"]);
   }
+});
+
+test("崩坏学园2的渠道、测试服、人工证明不会出站，风控停止原官服签到", async () => {
+  const unexpected = async () => { throw new Error("unverified server was contacted"); };
+  for (const region of ["bb01", "bb02", "uc01", "uc02", "tx01", "hun01", "ptr01", "ios01", ""]) {
+    const source = { ...bh2Source, role: { ...bh2Source.role, region } };
+    await expect(readCnGameCheckinInfo(source, unexpected)).rejects.toMatchObject({ code: "invalid-input" });
+    await expect(submitCnGameCheckin(source, unexpected)).rejects.toMatchObject({ code: "invalid-input" });
+  }
+  const otherGame = { ...bh2Source, role: { ...bh2Source.role, gameBiz: "bh2_global" } };
+  await expect(submitCnGameCheckin(otherGame, unexpected)).rejects.toMatchObject({ code: "invalid-input" });
+  await expect(submitCnGameCheckin(bh2Source, unexpected, {
+    proof: { challenge: "fixture", validate: "fixture", seccode: "fixture|jordan" },
+  })).rejects.toMatchObject({ code: "invalid-input" });
+
+  const wrongRegion = { game_uid: bh2Source.role.uid, region: "bb01", game_biz: "bh2_cn" };
+  await expect(submitCnGameCheckin(bh2Source, async () =>
+    Response.json({ retcode: -5003, data: { role: wrongRegion } }))).rejects.toMatchObject({ code: "response" });
+  const calls: string[] = [];
+  const transport: Parameters<typeof readCnGameCheckinInfo>[1] = async (_url, init) => {
+    calls.push(init.method!);
+    return init.method === "GET"
+      ? Response.json({ retcode: 0, data: { is_sign: false, first_bind: false } })
+      : Response.json({ retcode: 0, data: { gt_result: { risk_code: 375, gt: "fixture", challenge: "fixture" } } });
+  };
+  const result = await runGameCheckinSequence({
+    readInfo: () => readCnGameCheckinInfo(bh2Source, transport),
+    submit: () => submitCnGameCheckin(bh2Source, transport),
+    verifyCurrent: async () => {},
+  });
+  expect(result).toMatchObject({ status: "failed", error: { reason: "risk" } });
+  expect(result.status === "failed" && result.error).not.toBeInstanceOf(GameCheckinChallengeError);
+  expect(calls).toEqual(["GET", "POST"]);
 });
 
 test("崩坏3渠道服与人工证明在发送前拒绝，风控与不同区服回包不能成为确认", async () => {
