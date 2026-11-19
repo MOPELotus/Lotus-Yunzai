@@ -40,11 +40,39 @@ test("合成数据通过原计算器选择技能，保留零暴击及默认最�
 
 test("缺乏角色、配装、原始资料或属性证据时不给出伤害数值", async () => {
   const reader = createPanelDamageReader();
-  await expect(reader({ ...avatar, id: 1341 }, "/not/loaded")).rejects.toThrow(/只有安比/u);
+  await expect(reader({ ...avatar, id: 1341 }, "/not/loaded")).rejects.toThrow(/尚未核验/u);
   await expect(reader(avatar, undefined)).rejects.toThrow(/未配置/u);
   await expect(reader(avatar, "/not/loaded")).rejects.toThrow(/版本一致/u);
   const unverified = { ...avatar, weapon: { id: 14177, name: "合成未确认音擎", rarity: "S", star: 1, level: 30 } };
   expect(() => calculatePanelDamage(unverified, numericFixture, noGear)).toThrow(/音擎/u);
   expect(() => calculatePanelDamage({ ...avatar, properties: [] }, numericFixture, noGear)).toThrow(ZzzDamageUnavailable);
   expect(() => calculatePanelDamage({ ...avatar, skills: [] }, numericFixture, noGear)).toThrow(/技能等级/u);
+});
+
+test("冰、以太与物理使用角色自身属性，按旧规则保留可见技能顺序", () => {
+  const cases = [
+    [1191, "艾莲", 202, "碎冰", ["AQ3", "CF", "CCP", "CCX0", "CCXP", "CCXX", "EQ1", "EQ2", "RL", "RZ"]],
+    [1241, "朱鸢", 205, "侵蚀", ["AQY3", "CCQ", "EQ", "RL", "RZ"]],
+    [1061, "可琳", 200, "强击", ["AP5", "CF", "EQ0", "EQ", "RL", "RZ"]],
+  ] as const;
+  for (const [id, name_mi18n, element_type, anomaly, multipliers] of cases) {
+    const original = { ...avatar, id, name_mi18n, element_type, avatar_profession: 1 };
+    const data: DamageData = {
+      ...numericFixture,
+      character: { skill: Object.fromEntries(multipliers.map(name => [name, [1]])) },
+      anomaly: [{ ...numericFixture.anomaly[0]!, name: anomaly, element_type }],
+    };
+    const current = calculatePanelDamage(original, data, noGear, 1);
+    expect(current.selected.skill.type).toBe(anomaly);
+    expect(current.skills.map(row => row.skill.type)).toEqual(
+      [anomaly, ...multipliers.filter(type => type !== "CCX0" && type !== "EQ0")],
+    );
+    expect(() => calculatePanelDamage({ ...original, element_type: 203 }, data, noGear)).toThrow(/规则/u);
+    if (id === 1241) {
+      const mindscape = calculatePanelDamage({ ...original, rank: 6 }, data, noGear, 4);
+      expect(mindscape.selected.skill.type).toBe("EQ");
+      expect(mindscape.selected.result.expectDMG).toBeGreaterThan(current.skills[3]!.result.expectDMG);
+      expect(mindscape.skills.map(row => row.skill.type)).toEqual(current.skills.map(row => row.skill.type));
+    }
+  }
 });
