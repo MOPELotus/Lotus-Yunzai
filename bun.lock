@@ -136,6 +136,10 @@
     },
     "plugins/system": {
       "name": "@lotus-yunzai/system",
+      "dependencies": {
+        "@lotus-yunzai/skia": "workspace:*",
+        "skia-canvas": "3.0.8",
+      },
     },
     "plugins/zzz": {
       "name": "@lotus-yunzai/zzz",

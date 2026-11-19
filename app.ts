@@ -82,6 +82,7 @@ import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
+import { createRuntimeStatus } from "./lib/runtime-status.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
@@ -564,9 +565,11 @@ if (import.meta.main) {
         return;
       }
     }
-    const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
-    const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
-      isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
+    const statusCard = /^#(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
+    const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
+    const milkyDiagnostics = milky && event.message_type === "private" && (event.msg === "#诊断" || statusCard) && isMilkyOwnerSession(event);
+    const runtimeStatusScope = statusCard && !event.isDelegated ?
+      event.message_type === "terminal" && event.isMaster ? "terminal" : milky ? "milky" : event.boundAccount ? "onebot" : undefined : undefined;
     const originalMessage = [event.msg, event.raw_message];
     const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
       : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
@@ -652,7 +655,9 @@ if (import.meta.main) {
       if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
       return;
     }
-    const context: CommandContext = milkyDiagnostics ? { ...command, runtimeDiagnosticsScope: "milky" } : command;
+    const context: CommandContext = milkyDiagnostics || runtimeStatusScope ? {
+      ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope,
+    } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
       await sendCommandReply(event, reply);
@@ -753,10 +758,10 @@ if (import.meta.main) {
       isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
     });
     const valkey = probingUpdate ? undefined : await readStorageConnection(root, Bun.env.LOTUS_VALKEY_URL);
-    const segmentCounts = botConfig.msg_type_count;
+    const segmentCounts = botConfig.msg_type_count === true || botConfig.msg_type_count === 1 || botConfig.msg_type_count === "1";
     onlineCooldown = onlineNoticeSeconds(botConfig.online_msg_exp);
     onlineVersion = runtimeVersion.version;
-    counts = createMessageCounts(() => globalThis.redis, segmentCounts === true || segmentCounts === 1 || segmentCounts === "1");
+    counts = createMessageCounts(() => globalThis.redis, segmentCounts);
     if (valkey !== undefined) {
       globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
@@ -1023,6 +1028,18 @@ if (import.meta.main) {
       groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
+      runtimeStatus: createRuntimeStatus({
+        accounts() {
+          const accounts = groups.onlineAccounts().map(account => ({ ...account, adapter: "onebot" as const }));
+          const online = milkyOnline;
+          if (!online || online.signal.aborted) return accounts;
+          return [...accounts, { id: online.id, adapter: "milky" as const,
+            seconds: Math.max(0, Math.floor((performance.now() - online.startedAt) / 1_000)) }];
+        },
+        readCounts: counts.read,
+        countImages: segmentCounts,
+        loadedNames: () => plugins?.records.filter(record => record.status === "loaded").map(record => record.name),
+      }),
       runtimeDiagnostics(context: CommandContext) {
         const online = milkyOnline;
         const terminal = context.message_type === "terminal";

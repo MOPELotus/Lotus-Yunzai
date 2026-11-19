@@ -4,7 +4,10 @@ export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
-> & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
+> & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
+  runtimeDiagnosticsScope?: "milky";
+  runtimeStatusScope?: "onebot" | "milky" | "terminal";
+}>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply">> & {
   readonly isBotMaster: (userId: number) => boolean;
@@ -70,13 +73,14 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
-    groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, message, raw_message, uploadFile,
+    groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCheckinGroupMembers, privateCredentialSignal, canDelegate, delegationSignal, isDelegated } = context;
   return {
     message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
+    ...(runtimeStatusScope ? { runtimeStatusScope } : {}),
     member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
   };
 }

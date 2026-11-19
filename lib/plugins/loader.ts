@@ -155,6 +155,7 @@ interface PluginServices {
   readonly signal: AbortSignal;
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
   readonly runtimeVersion: RuntimeVersion;
+  readonly runtimeStatus?: ReturnType<typeof import("../runtime-status.ts").createRuntimeStatus>;
   readonly runtimeDiagnostics: (context: CommandContext) => {
     readonly accounts: readonly { readonly id: number; readonly seconds: number; readonly adapter?: "milky" }[];
     readonly plugins: readonly PluginLoadTiming[];
