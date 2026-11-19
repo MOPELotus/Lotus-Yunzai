@@ -55,8 +55,11 @@ function bbsReadMayRetry(error: unknown) {
     (error.code === "http" && (error.status === 403 || (error.status !== undefined && error.status >= 500))));
 }
 
-function bbsPoints(state: BbsMissionState) {
+function bbsPoints(state: BbsMissionState, receivedBefore?: number) {
   const lines: string[] = [];
+  if (receivedBefore !== undefined && state.receivedPoints !== undefined && state.receivedPoints >= receivedBefore) {
+    lines.push(`本轮期间新增：${state.receivedPoints - receivedBefore}`);
+  }
   if (state.totalPoints !== undefined) lines.push(`当前余额：${state.totalPoints}`);
   if (state.receivedPoints !== undefined) {
     lines.push(`今日已领取：${state.receivedPoints}${state.todayTotalPoints === undefined ? "" : `/${state.todayTotalPoints}`}`);
@@ -308,15 +311,17 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         for (const row of selected) {
           if (row.community === "未执行") row.community = "跳过";
         }
+        let receivedBefore: number | undefined;
         if (accepted && !notes.length) {
           try {
+            receivedBefore = state?.receivedPoints;
             state = await client.fetchBbsMissionState(account, { signal, recoverCookie: false });
           } catch {
             await verifyCurrent();
             return;
           }
         }
-        return state && !notes.length ? bbsPoints(state) : undefined;
+        return state && !notes.length ? bbsPoints(state, receivedBefore) : undefined;
       }
       if (gameRows.length) {
         try {
