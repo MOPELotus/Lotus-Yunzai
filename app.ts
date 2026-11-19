@@ -8,7 +8,7 @@ import { accountCommands } from "./lib/account-commands.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
-import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
+import { notifyCheckin, type BotNotifications, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
 import { checkinPlanCommands, checkinPlanNotice, checkinScheduleSettingCommands } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
@@ -368,6 +368,15 @@ if (import.meta.main) {
 
   function onlineMilkyBotId() {
     return milkyOnline?.signal.aborted === false ? milkyOnline.id : undefined;
+  }
+
+  function subscriptionTransport(): readonly BotNotifications[] {
+    const sessions = [...groups.checkinNotifications()];
+    const milky = milkyOnline;
+    if (milky?.checkinNotify && !milky.signal.aborted && !sessions.some(bot => bot.botId === milky.id)) {
+      sessions.push({ botId: milky.id, ...milky.checkinNotify });
+    }
+    return sessions;
   }
 
   function processOwnerTargets(botIds?: readonly number[]): OwnerTarget[] {
@@ -753,7 +762,7 @@ if (import.meta.main) {
           const current = await checkinProfiles.checkinSettings(qq, profileId).catch(() => undefined);
           if (!current?.enabled || current.revision !== revision || lifecycle.signal.aborted ||
               (verifyPlan && !await verifyPlan())) return { status: "skipped" as const };
-          const transports = [...groups.checkinNotifications()];
+          const transports: CheckinNotifyTransport[] = [...groups.checkinNotifications()];
           if (milkyOnline?.checkinNotify && !milkyOnline.signal.aborted) transports.push(milkyOnline.checkinNotify);
           return notifyCheckin({
             userId: Number(qq), settings: current.notify, reply, transports, signal: lifecycle.signal,
@@ -912,7 +921,7 @@ if (import.meta.main) {
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
-      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile,
+      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       runtimeDiagnostics(context: CommandContext) {

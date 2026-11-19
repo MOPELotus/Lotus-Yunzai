@@ -1,5 +1,5 @@
 import type { MessageReply } from "../messages.ts";
-import type { CheckinNotifyTransport } from "../checkin-notify.ts";
+import type { BotNotifications } from "../checkin-notify.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import { encodeOneBotReply } from "./onebot-message.ts";
 
@@ -65,7 +65,7 @@ export class OneBotGroups implements GroupTransport {
     }));
   }
 
-  checkinNotifications(): readonly CheckinNotifyTransport[] {
+  checkinNotifications(): readonly BotNotifications[] {
     return this.onlineBots().flatMap(botId => {
       const account = this.#connected.get(botId);
       if (!account) return [];
@@ -77,6 +77,7 @@ export class OneBotGroups implements GroupTransport {
         return calls.sendConfirmed(send, target, message);
       };
       return [{
+        botId,
         isFriend: async (userId: number) => active() && await calls.isFriend(send, userId) && active(),
         isGroupMember: async (groupId: number, userId: number) =>
           active() && await calls.getGroupRole(send, groupId, userId, true) !== undefined && active(),

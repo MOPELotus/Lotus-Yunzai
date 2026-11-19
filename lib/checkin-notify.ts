@@ -16,6 +16,8 @@ export interface CheckinNotifyTransport {
   readonly sendGroup: (groupId: number, reply: MessageReply) => Promise<CheckinNotifyDelivery>;
 }
 
+export type BotNotifications = CheckinNotifyTransport & { readonly botId: number };
+
 type FinalDelivery = "confirmed" | "unknown";
 export type CheckinNotifyResult =
   | { readonly status: "skipped" | "unavailable" }
