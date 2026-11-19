@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { InboundSegment, MusicCard } from "../messages.ts";
+import type { InboundSegment, MessageReply, MusicCard } from "../messages.ts";
 
 interface OutboundSegment {
   type: string;
@@ -76,6 +76,16 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
     segments.unshift({ type: "reply", data: { id: String(quoteId) } });
   }
   return segments;
+}
+
+export function encodeOneBotForward(nodes: readonly MessageReply[], selfId: number) {
+  const messages = [];
+  for (const node of nodes) {
+    const content = encodeOneBotReply(typeof node === "string" ? [node] : node);
+    if (!Array.isArray(content)) return;
+    messages.push({ type: "node", data: { uin: String(selfId), name: "Lotus-Yunzai", content } });
+  }
+  if (messages.length) return messages;
 }
 
 function musicUrl(value: unknown, page = false): URL | undefined {

@@ -14,6 +14,8 @@ export interface CheckinNotifyTransport {
   readonly isGroupMember: (groupId: number, userId: number) => Promise<boolean>;
   readonly sendPrivate: (userId: number, reply: MessageReply) => Promise<CheckinNotifyDelivery>;
   readonly sendGroup: (groupId: number, reply: MessageReply) => Promise<CheckinNotifyDelivery>;
+  readonly sendForward?: (target: { readonly groupId: number; readonly userId?: never } |
+    { readonly userId: number; readonly groupId?: never }, nodes: readonly MessageReply[]) => Promise<CheckinNotifyDelivery>;
 }
 
 export type BotNotifications = CheckinNotifyTransport & { readonly botId: number };

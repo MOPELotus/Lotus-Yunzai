@@ -6,7 +6,7 @@ import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
-import { decodeOneBotMessage, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
+import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -368,13 +368,8 @@ async function dispatchMessage(
       return members.map(({ id, card, nickname }) => ({ id, name: card || nickname }));
     } : undefined,
     forward: selfId === undefined ? undefined : async (nodes) => {
-      const messages = [];
-      for (const node of nodes) {
-        const content = encodeOneBotReply(typeof node === "string" ? [node] : node);
-        if (!Array.isArray(content)) return false;
-        messages.push({ type: "node", data: { uin: String(selfId), name: "Lotus-Yunzai", content } });
-      }
-      return messages.length > 0 && calls.sendForward(send, target, messages);
+      const messages = encodeOneBotForward(nodes, selfId);
+      return messages ? calls.sendForward(send, target, messages) : false;
     },
     uploadFile: boundAccount && attachmentSession && display?.closed === false
       ? (file) => display.closed || attachmentSession.signal.aborted ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)

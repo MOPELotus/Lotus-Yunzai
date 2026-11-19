@@ -8,7 +8,7 @@ import { milkyGroupRequest } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
-import { encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
+import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 
@@ -123,6 +123,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
     sendPrivate: (user_id, reply) => sendConfirmed({ user_id }, reply),
     sendGroup: (group_id, reply) => sendConfirmed({ group_id }, reply),
+    async sendForward({ groupId, userId }, nodes) {
+      const messages = encodeMilkyForward(nodes, account);
+      if (signal.aborted || !messages || !positiveId(groupId ?? userId)) return "rejected";
+      const params = groupId === undefined ? { user_id: userId } : { group_id: groupId };
+      const result = await call.confirmed(groupId === undefined ? "send_private_message" : "send_group_message",
+        { ...params, message: [{ type: "forward", data: { messages } }] });
+      if (result.status !== "confirmed") return result.status;
+      return hasMessageSequence(result.data.message_seq) ? "confirmed" : "unknown";
+    },
   };
 
   async function listGroupMembers(group_id: number) {

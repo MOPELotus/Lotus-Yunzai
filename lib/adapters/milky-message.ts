@@ -170,7 +170,7 @@ export function encodeMilkyReply(reply: MessageReply, quoteId?: number, mention?
   return message;
 }
 
-function encodeForward(nodes: readonly MessageReply[], selfId: number): ForwardNode[] | undefined {
+export function encodeMilkyForward(nodes: readonly MessageReply[], selfId: number): ForwardNode[] | undefined {
   if (!Array.isArray(nodes) || nodes.length === 0 || nodes.length > maxForwardNodes) return;
   const messages: ForwardNode[] = [];
   let remainingMediaBytes = maxPublicFileBytes;
@@ -520,7 +520,7 @@ export function milkyMessage(
       return result === undefined ? 0 : count;
     },
     forward: forwardCall && (async (nodes) => {
-      const messages = encodeForward(nodes, selfId);
+      const messages = encodeMilkyForward(nodes, selfId);
       if (!messages) return false;
       const result = await forwardCall(action, { ...target, message: [{ type: "forward", data: { messages } }] });
       if (result === undefined) return false;

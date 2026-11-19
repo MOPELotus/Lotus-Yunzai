@@ -1,7 +1,7 @@
 import type { MessageReply } from "../messages.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
-import { encodeOneBotReply } from "./onebot-message.ts";
+import { encodeOneBotForward, encodeOneBotReply } from "./onebot-message.ts";
 
 export interface GroupTarget {
   readonly id: number;
@@ -76,6 +76,12 @@ export class OneBotGroups implements GroupTransport {
         if (!active() || message === undefined) return "rejected" as const;
         return calls.sendConfirmed(send, target, message);
       };
+      const sendForward: NonNullable<BotNotifications["sendForward"]> = async ({ groupId, userId }, nodes) => {
+        const messages = encodeOneBotForward(nodes, botId);
+        const targetId = groupId ?? userId;
+        if (!active() || !messages || !Number.isSafeInteger(targetId) || targetId < 1) return "rejected";
+        return calls.sendForwardConfirmed(send, groupId === undefined ? { user_id: targetId } : { group_id: targetId }, messages);
+      };
       return [{
         botId,
         isFriend: async (userId: number) => active() && await calls.isFriend(send, userId) && active(),
@@ -83,6 +89,7 @@ export class OneBotGroups implements GroupTransport {
           active() && await calls.getGroupRole(send, groupId, userId, true) !== undefined && active(),
         sendPrivate: (userId: number, reply: MessageReply) => deliver({ user_id: userId }, reply),
         sendGroup: (groupId: number, reply: MessageReply) => deliver({ group_id: groupId }, reply),
+        sendForward,
       }];
     });
   }
