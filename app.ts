@@ -390,6 +390,13 @@ if (import.meta.main) {
     return milkyOnline?.signal.aborted === false ? milkyOnline.id : undefined;
   }
 
+  function statusStorage(namespace: "status-photo" | "status-monitor") {
+    return {
+      async get(key: string) { return storage(namespace).get(key); },
+      async set(key: string, value: string, ttlSeconds: number) { return storage(namespace).set(key, value, ttlSeconds); },
+    };
+  }
+
   function subscriptionTransport(): readonly BotNotifications[] {
     const sessions = [...groups.checkinNotifications()];
     const milky = milkyOnline;
@@ -566,11 +573,12 @@ if (import.meta.main) {
       }
     }
     const statusCard = /^#(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
+    const statusMonitor = /^#(?:椰奶)?监控$/u.test(event.msg);
     const statusPhoto = /^#?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
     const milkyDiagnostics = milky && event.message_type === "private" && (event.msg === "#诊断" || statusCard) && isMilkyOwnerSession(event);
-    const runtimeStatusScope = (statusCard || statusPhoto) && !event.isDelegated ?
+    const runtimeStatusScope = (statusCard || statusPhoto || statusMonitor) && !event.isDelegated ?
       event.message_type === "terminal" && event.isMaster ? "terminal" : milky ? "milky" : event.boundAccount ? "onebot" : undefined : undefined;
     const originalMessage = [event.msg, event.raw_message];
     const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
@@ -1039,10 +1047,8 @@ if (import.meta.main) {
       groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
-      statusPhotoStorage: {
-        async get(key: string) { return storage("status-photo").get(key); },
-        async set(key: string, value: string, ttlSeconds: number) { return storage("status-photo").set(key, value, ttlSeconds); },
-      },
+      statusPhotoStorage: statusStorage("status-photo"),
+      statusMonitorStorage: statusStorage("status-monitor"),
       runtimeStatus: createRuntimeStatus({
         accounts() {
           const accounts = groups.onlineAccounts().map(account => ({ ...account, adapter: "onebot" as const }));
