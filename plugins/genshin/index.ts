@@ -14,7 +14,8 @@ import { createGenshinGachaSync } from "./gacha-sync.ts";
 import { exportGenshinUigf, type GenshinUigfExportOptions } from "./gacha-uigf.ts";
 import { buildGenshinGachaVersion, type GenshinGachaVersionOptions } from "./gacha-version.ts";
 import { renderGenshinGachaVersion } from "./gacha-version-card.ts";
-import { createWorldBossQuery, worldBossCommand } from "./world-boss.ts";
+import { createGenshinWorldBossRanking } from "./world-boss-ranking.ts";
+import { createWorldBossQuery, createWorldBossRankingQuery, worldBossCommand, worldBossRankingCommand } from "./world-boss.ts";
 
 const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
 const miniappCommand = /^#?(?:获取|更新)(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)([1-9]\d{0,2})?$/u;
@@ -29,6 +30,7 @@ const versionPools = new Map<string, VersionPool>([["角色", "char"], ["武器"
 type GachaView = { readonly detail: GenshinGachaPool } | { readonly version: VersionPool }
   | { readonly special: "beginner" | "all" };
 const historyDirectory = fileURLToPath(new URL("../../data/gachaJson/", import.meta.url));
+const rankingDirectory = fileURLToPath(new URL("../../data/genshinWorldBossRecords/", import.meta.url));
 const help = [
   "原神抽卡记录",
   "#登录列表 可查看档案，#同步角色 可同步原神角色。",
@@ -85,7 +87,9 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
   const history = createGenshinGachaHistoryStore(historyDirectory, lockFile);
   const client = createProfileHoyoClient(profiles);
   const sync = createGenshinGachaSync(profiles, client, history);
-  const worldBossQuery = createWorldBossQuery(profiles, client, signal);
+  const worldBossRanking = createGenshinWorldBossRanking(rankingDirectory, lockFile);
+  const worldBossQuery = createWorldBossQuery(profiles, client, worldBossRanking, signal);
+  const worldBossRankingQuery = createWorldBossRankingQuery(worldBossRanking, signal);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
   const importGacha = createGenshinGachaImport(profiles, history, signal);
@@ -211,6 +215,7 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
     async fallback(_message: string, context: GachaContext) {
       const worldBoss = worldBossCommand.exec(context.normalizedMessage);
       if (worldBoss) return worldBossQuery(Number(worldBoss[1] ?? 1), context);
+      if (worldBossRankingCommand.test(context.normalizedMessage)) return worldBossRankingQuery(context);
       const importMatch = gachaImportCommand.exec(context.normalizedMessage);
       if (importMatch || context.attachment) {
         const imported = await importGacha(context, importMatch);
