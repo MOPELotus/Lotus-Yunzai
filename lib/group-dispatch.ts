@@ -20,6 +20,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Bilibili", ["[media] B 站解析"]],
   ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
   ["椰奶小助手", ["[group] 群名片"]],
+  ["复读", ["主动复读"]],
   ["椰奶状态", ["[system] 状态"]],
   ["状态统计", ["[system] 状态", "[system] 消息统计"]],
   ["meme-plugin", ["[meme] 表情合成"]],

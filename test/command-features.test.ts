@@ -85,8 +85,8 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
   try {
     await mkdir(join(root, "config"));
     await writeFile(join(root, "config", "group.yaml"), Bun.YAML.stringify({
-      "77": { disable: [legacyLabel, "[Lotus-Plugin] Profile Settings"] },
-      "78": { enable: ["[Lotus-Plugin] Checkin Admin", "[Lotus-Plugin] Music"] },
+      "77": { disable: [legacyLabel, "[Lotus-Plugin] Profile Settings", "复读"] },
+      "78": { enable: ["[Lotus-Plugin] Checkin Admin", "[Lotus-Plugin] Music", "复读"] },
       "79": { enable: [gachaLabel], disable: [legacyLabel] },
     }));
     const { allows } = await readGroupDispatch(pathToFileURL(`${root}/`));
@@ -94,6 +94,9 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
     expect(allows(group, ["@lotus-yunzai/cloud-profile"])).toBe(false);
     expect(allows(group, ["@lotus-yunzai/checkin-group-registration"])).toBe(false);
     expect(allows(group, ["@lotus-yunzai/starrail"])).toBe(true);
+    expect(allows(group, ["主动复读"])).toBe(false);
+    expect(allows(group, ["自动复读"])).toBe(true);
+    expect(allows({ ...group, group_id: 78 }, ["主动复读"])).toBe(true);
     expect(allows({ ...group, group_id: 78 }, ["@lotus-yunzai/checkin-roster"])).toBe(true);
     expect(allows({ ...group, group_id: 78 }, ["[media] 点歌"])).toBe(true);
     expect(allows({ ...group, group_id: 78 }, ["[media] B 站解析"])).toBe(false);

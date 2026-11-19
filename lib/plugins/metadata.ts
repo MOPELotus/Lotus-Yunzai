@@ -8,6 +8,10 @@ const retiredScripts = new Map([
     { name: "咕咕牛图库管理器", reason: "图库管理已归并到 atlas。", module: "@lotus-yunzai/atlas" }],
   ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
     { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
+  ["9d03582599fff6214732f963fceccde151a1307169c956e28c2f52327734180f",
+    { name: "主动复读", reason: "主人主动复读已归并到 group。", module: "@lotus-yunzai/group" }],
+  ["1babeb445b80a5c10ba3442e3a97d1716762931677460259b3b274d1c49d7368",
+    { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
     { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
 ]);
