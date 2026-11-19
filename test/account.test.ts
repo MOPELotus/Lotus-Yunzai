@@ -68,6 +68,12 @@ device:
       device: { id: "fixture-device-two", fp: "fixture-fp-two", androidVersion: "15" },
     });
     expect((await profiles.requestContext(qq, 2, "gs", "800004")).role.uid).toBe("800004");
+    const allAlternate = await profiles.requestContexts(qq, 2, ["sr", "gs", "gs"]);
+    expect(allAlternate.map(({ game, role }) => [game, role.uid])).toEqual([["gs", "800004"], ["gs", "800003"]]);
+    expect(allAlternate.every(({ qq: owner, profileId, revision, account, device }) => owner === qq && profileId === 2 &&
+      revision === alternate.revision && account.cookie === alternate.account.cookie && device.id === alternate.device.id)).toBe(true);
+    expect(await profiles.requestContexts(qq, 2, ["zzz"])).toEqual([]);
+    await expect(profiles.requestContexts(qq, 7)).rejects.toMatchObject({ code: "login-required" });
     const beforeRoleBinding = await profiles.accountContext(qq, 2);
     const captured: Array<{ biz: string | null; cookie: string | null }> = [];
     const hoyo = createHoyoClient(async (endpoint, init) => {

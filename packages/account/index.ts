@@ -161,6 +161,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     return profile;
   }
 
+  function requestFor(profile: Awaited<ReturnType<typeof readLoggedIn>>, qq: string, profileId: number,
+    game: Game, role: GameRole) {
+    return { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
+  }
+
   async function updateAccount(
     qq: string,
     id: number,
@@ -283,9 +288,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           ?? roles.find((item) => item.chosen) ?? roles[0];
       if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
 
-      return {
-        qq, profileId: id, game, role, account: profile.account, device: profile.device, revision: profile.revision,
-      };
+      return requestFor(profile, qq, id, game, role);
+    },
+    async requestContexts(qq: string, id: number, games: readonly Game[] = profileGames) {
+      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
+      const profile = await readLoggedIn(qq, id);
+      return [...new Set(games)].flatMap((game) =>
+        normalizeGameRoles(profile.roles[game]).map((role) => requestFor(profile, qq, id, game, role)));
     },
   };
 }
