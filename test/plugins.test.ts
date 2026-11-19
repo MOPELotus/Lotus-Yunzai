@@ -212,6 +212,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
             { reg: /^#优先$/g, fnc: "replyLower" },
             { reg: "^#管理$", fnc: "replyLower", permission: "master" },
             { reg: "^#旧 HTTP 查询$", fnc: "lookup" },
+            { reg: "^#期望计算帮助$", fnc: "replyLower" },
           ] });
         }
         replyLower(e) {
@@ -377,6 +378,27 @@ failsMsg: 协议拒绝
     }
 
     expect(await send("#优先")).toMatchObject({ group_id: 77, message: "收到 #优先 42" });
+    expect(await send("#期望计算帮助")).toMatchObject({
+      group_id: 77, message: expect.stringContaining("#期望分布"),
+    });
+    const estimate = new Promise<Record<string, unknown>[]>(resolve => {
+      const frames: Record<string, unknown>[] = [];
+      const receive = ({ data }: MessageEvent) => {
+        frames.push(JSON.parse(data).params);
+        if (frames.length < 2) return;
+        client.removeEventListener("message", receive);
+        resolve(frames);
+      };
+      client.addEventListener("message", receive);
+    });
+    client.send(JSON.stringify({ ...event, message: "#期望计算星铁 人物 1个" }));
+    expect(await estimate).toMatchObject([
+      { group_id: 77, message: "正在计算平均抽数…" },
+      { group_id: 77, message: [
+        { type: "reply", data: { id: "123" } },
+        { type: "text", data: { text: expect.stringContaining("期望抽数 89.55 抽") } },
+      ] },
+    ]);
     expect(await send("#优先")).toMatchObject({ group_id: 77, message: "收到 #优先 42" });
     expect(await send("#管理", { sender: { role: "member" } })).toMatchObject({
       group_id: 77, message: "暂无权限执行此指令。",

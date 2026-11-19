@@ -2,6 +2,8 @@ import { createInterface } from "node:readline";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
+import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
+import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
@@ -43,6 +45,7 @@ import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
+import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { loadImagePreviews } from "./lib/image-previews.ts";
@@ -111,6 +114,7 @@ const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai
 const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
 const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
+const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
@@ -553,8 +557,8 @@ if (import.meta.main) {
     }
   }
 
-  function nativeOperationSignal(module: AbortSignal, transport: AbortSignal) {
-    return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, module, transport]);
+  function nativeOperationSignal(...scopes: AbortSignal[]) {
+    return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, ...scopes]);
   }
 
   async function routeEvent(event: BotEvent) {
@@ -811,6 +815,19 @@ if (import.meta.main) {
     }
     const { self_id } = event;
     const isBotMaster = (userId: number) => self_id !== undefined && masterPermissions.isMaster(self_id, userId);
+    if (isGachaExpectationInput(command.msg)) {
+      if (!allowed(gachaExpectationNames)) return;
+      const scope = event.delegationSignal ?? event[delegationSession]?.signal;
+      const calculationSignal = scope ? nativeOperationSignal(scope) : nativeOperationSignal();
+      const request = { ...event, calculationSignal };
+      const estimate = await commands.dispatchFallback(request,
+        (names) => names[0] === gachaExpectationModuleName, isBotMaster, command.msg);
+      if (estimate !== undefined && !calculationSignal.aborted) {
+        handled?.();
+        await sendCommandReply(event, estimate);
+      }
+      return;
+    }
     if (statusPhoto && runtimeStatusScope) {
       const photoEvent = { ...event, runtimeStatusScope };
       const original = await commands.dispatchFallback(photoEvent,
@@ -964,6 +981,7 @@ if (import.meta.main) {
       viewProfile));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(redeemCodeCommands({ historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)) }));
+    commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
@@ -1247,6 +1265,7 @@ if (import.meta.main) {
       },
     }), {
       loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
+      hostReplacementModules: [gachaExpectationModuleName],
       groupServices: probingUpdate ? undefined : {
         ownGroupCardAccounts() {
           const accounts = groups.ownGroupCardAccounts();

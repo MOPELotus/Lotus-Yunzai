@@ -219,6 +219,7 @@ export async function loadPlugins(
     readonly reportLoading?: (wait: number) => void;
     readonly fileWatch?: boolean;
     readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
+    readonly hostReplacementModules?: readonly string[];
     readonly groupServices?: {
       ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
@@ -245,6 +246,7 @@ export async function loadPlugins(
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
   const retiredDirectories = new Map<string, ReadonlySet<string>>();
+  const hostReplacements = new Set(options.hostReplacementModules?.filter(name => commands.hasModule(name)));
   const loadedEntries = new Map<string, { path: string; packageName: string }>();
   const watched = new Map<string, {
     packageName: string;
@@ -585,6 +587,7 @@ export async function loadPlugins(
     if (!isManagedPluginDirectory(directory)) continue;
     // Older supervisors still require the original directory name during activation.
     if ([...replacements].every(module => {
+      if (hostReplacements.has(module)) return true;
       const builtIn = builtInDirectories.get(module);
       return builtIn !== undefined && directories.get(builtIn)?.packageName === module;
     })) readyDirectories.add(directory);

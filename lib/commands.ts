@@ -10,6 +10,7 @@ export type CommandContext = Readonly<Pick<
   atlasMaintenance?: true;
   runtimeDiagnosticsScope?: "milky";
   runtimeStatusScope?: "onebot" | "milky" | "terminal";
+  calculationSignal?: AbortSignal;
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply">> & {
@@ -88,14 +89,14 @@ function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
-    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance } = context;
+    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
-    privateCredentialSignal, canDelegate, delegationSignal, isDelegated,
+    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     ...(runtimeStatusScope ? { runtimeStatusScope } : {}),
     member: member && { is_admin: member.is_admin, is_owner: member.is_owner },

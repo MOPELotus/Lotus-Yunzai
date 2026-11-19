@@ -24,6 +24,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
   ["AutoCalendar", ["[guides] 定时日历"]],
+  ["抽卡期望计算", ["[gacha] 抽卡期望"]],
   ["椰奶状态", ["[system] 状态"]],
   ["状态统计", ["[system] 状态", "[system] 消息统计"]],
   ["meme-plugin", ["[meme] 表情合成"]],

@@ -26,6 +26,8 @@ const retiredScripts = new Map([
     { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
   ["a82020972ef0b317cc617136757f268feb61fdc397df58e2b331deb0507f6b9d",
     { name: "定时日历", reason: "定时日历已归并到 guides。", module: "@lotus-yunzai/guides" }],
+  ["22779ce7c2e87de4653cd9d2ee8187cfe436e7d4ae42e6dfeaebde14b9bb6ed1",
+    { name: "抽卡期望计算", reason: "抽卡期望和分布已由宿主提供。", module: "@lotus-yunzai/gacha-expectation" }],
 ]);
 
 interface PluginMetadata {
