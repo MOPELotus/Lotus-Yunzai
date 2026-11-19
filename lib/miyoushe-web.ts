@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { MiyousheExchangeError } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import type { CommandModule } from "./commands.ts";
 import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overview.ts";
@@ -27,6 +27,30 @@ interface Row extends MiyousheOverviewTarget {
   readonly expiresAt: number;
 }
 
+type VerifyLogin = () => Promise<void>;
+export interface MiyoushePreviewSettingsPatch {
+  readonly enabled: boolean;
+  readonly games: readonly Game[];
+  readonly revision: string;
+}
+export interface MiyoushePreviewSettings extends MiyoushePreviewSettingsPatch {
+  readonly canEnable?: boolean;
+  readonly waitingForHistory?: boolean;
+}
+export class MiyoushePreviewSettingsError extends Error {
+  constructor(readonly status: 400 | 403 | 409 | 503, message: string) { super(message); }
+}
+
+function previewSettingsPatch(input: unknown): MiyoushePreviewSettingsPatch | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return;
+  const { enabled, games, revision } = input as Record<string, unknown>;
+  if (Object.keys(input).length !== 3 || typeof enabled !== "boolean" ||
+    typeof revision !== "string" || !/^[a-f0-9]{64}$/u.test(revision) ||
+    !Array.isArray(games) || games.length > profileGames.length || (enabled && !games.length) ||
+    games.some(game => !profileGames.includes(game)) || new Set(games).size !== games.length) return;
+  return { enabled, games, revision };
+}
+
 interface Options {
   readonly origin: () => URL | undefined;
   readonly databasePath: string;
@@ -38,6 +62,11 @@ interface Options {
   readonly plans?: ReturnType<typeof createMiyousheShopPlans>;
   readonly shopAddresses?: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyBinding: () => Promise<void>) =>
     Promise<readonly { id: string; label: string }[]>;
+  readonly previewSettings?: {
+    readonly read: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyLogin: VerifyLogin) => Promise<MiyoushePreviewSettings>;
+    readonly save: (target: MiyousheOverviewTarget, patch: MiyoushePreviewSettingsPatch, signal: AbortSignal,
+      verifyLogin: VerifyLogin) => Promise<MiyoushePreviewSettings>;
+  };
   readonly path?: string;
   readonly ticketMinutes?: number;
   readonly sessionHours?: number;
@@ -72,7 +101,7 @@ export function miyousheWebSettings(raw: unknown) {
 }
 
 export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
-  path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours, now = Date.now }: Options) {
+  previewSettings, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours, now = Date.now }: Options) {
   const mount = normalizedPath(path) ?? "/miyoushe";
   const prefix = `${mount}/`;
   const ticketMinutes = typeof configuredTicketMinutes === "number" && Number.isSafeInteger(configuredTicketMinutes) &&
@@ -161,6 +190,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     const goodsId = /^api\/goods\/([1-9]\d{0,19})$/u.exec(part)?.[1];
     const planAction = /^api\/plans\/([a-f0-9]{12})\/(cancel|resolve)$/u.exec(part);
     const trackingAction = /^api\/trackers\/([a-f0-9]{12})\/(pause|resume)$/u.exec(part);
+    const previewRoute = previewSettings && part === "api/preview-settings";
     const editingPlans = plans && (planAction || trackingAction ||
       ((part === "api/plans" || part === "api/trackers") && method !== "GET"));
     if (part === "" || part === "style.css" || part === "app.js") {
@@ -171,10 +201,10 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         ? new Response(method === "HEAD" ? null : asset, { headers: { ...headers, "Content-Type": `${contentType}; charset=utf-8` } })
         : error(404);
     }
-    if (part === "api/claim" || part === "api/logout" || editingPlans) {
+    if (part === "api/claim" || part === "api/logout" || editingPlans || (previewRoute && method !== "GET")) {
       if (method !== "POST") return error(405);
       if (request.headers.get("Origin") !== base.origin) return error(403);
-    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId)) ||
+    } else if (part === "api/overview" || previewRoute || (catalog && (part === "api/catalog" || goodsId)) ||
       (plans && ["api/plans", "api/trackers", "api/tracking-targets"].includes(part))) {
       if (method !== "GET") return error(405);
       const fetchSite = request.headers.get("Sec-Fetch-Site");
@@ -225,6 +255,20 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       }
       await verifyLogin();
       const target = { qq: row.qq, profileId: row.profileId };
+      if (previewRoute && previewSettings) {
+        let settings: MiyoushePreviewSettings;
+        if (method === "POST") {
+          const patch = previewSettingsPatch(await readPanelJson(request).catch(() => undefined));
+          if (!patch) return Response.json({ message: "请选择有效的前瞻兑换设置。" }, { status: 400, headers });
+          await verifyLogin();
+          settings = await previewSettings.save(target, patch, deadline, verifyLogin);
+        } else settings = await previewSettings.read(target, deadline, verifyLogin);
+        await verifyLogin();
+        return Response.json({
+          enabled: settings.enabled, games: settings.games, revision: settings.revision,
+          canEnable: settings.canEnable !== false, waitingForHistory: settings.waitingForHistory === true,
+        }, { headers });
+      }
       if (plans && part === "api/tracking-targets") {
         if (searchParams.getAll("game").length !== 1 || searchParams.getAll("itemType").length !== 1 ||
           [...searchParams.keys()].some(key => key !== "game" && key !== "itemType")) return error(400);
@@ -266,10 +310,12 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       const view = catalog && part === "api/catalog" ? await catalog.list(target, searchParams, deadline, verifyLogin)
         : await overview(target, deadline, verifyLogin);
       await verifyLogin();
-      return Response.json({ ...view, expiresAt: row.expiresAt }, { headers });
+      return Response.json({ ...view, ...(part === "api/overview" && { previewSettingsAvailable: Boolean(previewSettings) }),
+        expiresAt: row.expiresAt }, { headers });
     } catch (failure) {
       if (failure instanceof ProfileError && failure.code === "changed") return error(401);
-      if (failure instanceof MiyousheShopError || failure instanceof MiyousheShopPlanError || failure instanceof MiyousheExchangeError) {
+      if (failure instanceof MiyousheShopError || failure instanceof MiyousheShopPlanError || failure instanceof MiyousheExchangeError ||
+          failure instanceof MiyoushePreviewSettingsError) {
         return Response.json({ message: failure.message }, { status: failure.status, headers });
       }
       return error(503);

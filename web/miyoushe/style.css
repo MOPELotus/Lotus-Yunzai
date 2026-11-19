@@ -212,6 +212,14 @@ h1, h2, h3, p { margin: 0; }
 .overview-view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 20px; padding-top: 20px; }
 .overview-section { border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
 .overview-section h3 { font-size: 16px; margin-bottom: 10px; }
+.preview-settings { grid-column: 1 / -1; }
+#preview-settings-form { display: grid; gap: 12px; }
+#preview-games { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; margin: 0; padding: 0; border: 0; }
+#preview-games legend { padding: 0 0 6px; color: var(--muted); }
+#preview-games label { display: flex; gap: 7px; align-items: center; }
+#preview-games input { width: 17px; height: 17px; accent-color: var(--accent); }
+#preview-settings-note:empty { display: none; }
+#preview-settings-save { justify-self: start; }
 .overview-section p + p { margin-top: 8px; }
 .rows { list-style: none; margin: 0; padding: 0; }
 .rows:empty { display: none; }

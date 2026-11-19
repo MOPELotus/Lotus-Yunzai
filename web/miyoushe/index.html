@@ -60,6 +60,22 @@
             <p id="missions-empty" class="muted" hidden></p>
             <ul id="missions" class="rows" aria-label="任务进度"></ul>
           </article>
+          <article id="preview-settings" class="overview-section preview-settings" hidden>
+            <h3>前瞻兑换码</h3>
+            <form id="preview-settings-form">
+              <fieldset id="preview-games" disabled>
+                <legend>自动兑换游戏</legend>
+                <label><input type="checkbox" name="game" value="gs"> 原神</label>
+                <label><input type="checkbox" name="game" value="sr"> 崩坏：星穹铁道</label>
+                <label><input type="checkbox" name="game" value="zzz"> 绝区零</label>
+              </fieldset>
+              <label class="reservation-confirm">
+                <input id="preview-enabled" type="checkbox" disabled> 自动兑换所选游戏的国服前瞻码
+              </label>
+              <p id="preview-settings-note" class="muted" role="status"></p>
+              <button id="preview-settings-save" type="submit" class="secondary" disabled>保存设置</button>
+            </form>
+          </article>
         </div>
         <div id="shop-view" hidden>
           <div class="shop-filters">

@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProfileStore } from "@lotus-yunzai/account";
+import { createProfileStore, ProfileError } from "@lotus-yunzai/account";
 import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
 import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
@@ -86,7 +86,7 @@ import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receip
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
-import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./lib/miyoushe-web.ts";
+import { createMiyousheWeb, isMiyousheWebCommand, MiyoushePreviewSettingsError, miyousheWebSettings } from "./lib/miyoushe-web.ts";
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
 import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
@@ -1012,6 +1012,7 @@ if (import.meta.main) {
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = { historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal };
     const publicPreview = new RedeemCodeService(previewOptions);
+    let previewSettings: Parameters<typeof createMiyousheWeb>[0]["previewSettings"];
     if (probingUpdate) {
       commands.registerModule(redeemCodeCommands(previewOptions, publicPreview));
     } else {
@@ -1054,6 +1055,36 @@ if (import.meta.main) {
       }));
       registerModuleTask("[前瞻兑换]", "0 */5 * * * *",
         () => preview.scan(previewSignal, () => console.warn("[前瞻兑换] 某项任务未完成。")));
+      previewSettings = {
+        async read({ qq, profileId }, signal, verifyLogin) {
+          await verifyLogin();
+          const { enabled, games, revision, loggedIn, allowNewJournal } = await checkinProfiles.previewRedeemSettings(qq, profileId);
+          const canEnable = loggedIn && (enabled || canRegisterCheckin({ user_id: Number(qq), isMaster: false }));
+          const waitingForHistory = enabled && !allowNewJournal && !await preview.hasHistory().catch(() => false);
+          signal.throwIfAborted();
+          return { enabled, games, revision, canEnable, waitingForHistory };
+        },
+        async save(target, patch, signal, verifyLogin) {
+          const current = await this.read(target, signal, verifyLogin);
+          if (current.revision !== patch.revision) throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
+          if (patch.enabled && !current.canEnable) throw new MiyoushePreviewSettingsError(403, "当前会话无权注册前瞻码自动兑换。");
+          let saved;
+          try {
+            saved = await checkinProfiles.setPreviewRedeemSettings(
+              target.qq, target.profileId, patch.revision, patch.enabled, patch.games, signal, verifyLogin,
+            );
+          } catch (error) {
+            if (error instanceof ProfileError && error.code === "changed") {
+              await verifyLogin();
+              throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
+            }
+            throw error;
+          }
+          const updated = await this.read(target, signal, verifyLogin);
+          if (updated.revision !== saved.revision) throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
+          return updated;
+        },
+      };
     }
     const shopSettings = miyousheWebSettings(globalConfig.coin_shop);
     if (!probingUpdate && shopSettings.enabled) {
@@ -1104,7 +1135,7 @@ if (import.meta.main) {
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
-        catalog, plans: shopPlans,
+        catalog, plans: shopPlans, previewSettings,
         async shopAddresses(target, signal, verifyBinding) {
           const account = await checkinProfiles.accountContext(target.qq, target.profileId);
           return shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding });

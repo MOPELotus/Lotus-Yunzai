@@ -525,3 +525,29 @@ test("刷新回执保留逐档状态，绘制失败时返回同一批操作的�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("自动兑换独立保存旧档游戏和本版预设，写入前会话失效时不落盘", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-preview-settings-"));
+  try {
+    const live = "profile: {id: 1}\naccount: {cookie: old, stoken: token}\n";
+    const old = "profile: {id: 2}\naccount: {cookie: old, stoken: token}\nauto_redeem: {enable: true, games: [sr]}\n";
+    await writeFile(join(root, "42.yaml"), live);
+    await writeFile(join(root, "42-2.yaml"), old);
+    const profiles = createProfileStore(root);
+    const settings = await profiles.previewRedeemSettings("42", 1);
+    expect(settings).toMatchObject({ enabled: false, games: ["gs", "sr", "zzz"], allowNewJournal: false });
+    await expect(profiles.setPreviewRedeemSettings("42", 1, settings.revision, true, ["gs"], undefined, async () => {
+      throw new Error("会话已失效");
+    })).rejects.toThrow("会话已失效");
+    expect(await readFile(join(root, "42.yaml"), "utf8")).toBe(live);
+    const preset = await profiles.setPreviewRedeemSettings("42", 1, settings.revision, false, ["zzz"]);
+    expect(await profiles.previewRedeemSettings("42", 1)).toMatchObject({
+      revision: preset.revision, enabled: false, games: ["zzz"], allowNewJournal: true,
+    });
+    expect(await profiles.listPreviewRedeemProfiles()).toEqual([{ qq: "42", profileId: 2, games: ["sr"], allowNewJournal: false }]);
+    await expect(profiles.setPreviewRedeemSettings("42", 1, settings.revision, true, ["gs"])).rejects.toMatchObject({ code: "changed" });
+    expect(await readFile(join(root, "42-2.yaml"), "utf8")).toBe(old);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

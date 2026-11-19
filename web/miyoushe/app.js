@@ -20,6 +20,7 @@ let tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
 const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+const preview = { data: null, active: null };
 const trackers = { generation: 0, targets: null, loading: false };
 const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
@@ -53,8 +54,78 @@ function showLogin(message, help = false, retry = false) {
   get("missions-empty").textContent = "";
   for (const id of ["balance", "received", "today-total"]) get(id).textContent = "—";
   for (const id of ["roles", "missions"]) get(id).replaceChildren();
+  preview.active?.abort();
+  preview.active = null;
+  preview.data = null;
+  get("preview-settings").hidden = true;
+  get("preview-settings-form").reset();
+  previewSettingsButtons();
   resetShop();
   switchTab("overview");
+}
+
+function previewPatch() {
+  return {
+    enabled: get("preview-enabled").checked,
+    games: Array.from(get("preview-games").querySelectorAll("input:checked"), input => input.value),
+    revision: preview.data?.revision,
+  };
+}
+
+function previewSettingsButtons() {
+  const loaded = preview.data;
+  get("preview-games").disabled = !loaded || Boolean(preview.active);
+  get("preview-enabled").disabled = !loaded || Boolean(preview.active) || (loaded.canEnable === false && !loaded.enabled);
+  const patch = previewPatch();
+  get("preview-settings-save").disabled = !loaded || Boolean(preview.active) || (patch.enabled && !patch.games.length) ||
+    (patch.enabled === loaded.enabled && patch.games.length === loaded.games.length && patch.games.every(game => loaded.games.includes(game)));
+  get("preview-settings-form").setAttribute("aria-busy", String(Boolean(preview.active)));
+}
+
+function renderPreviewSettings(data) {
+  preview.data = data;
+  get("preview-enabled").checked = data.enabled;
+  for (const input of get("preview-games").querySelectorAll("input")) input.checked = data.games.includes(input.value);
+  const messages = [];
+  if (data.waitingForHistory) messages.push("旧档案需要补齐兑换记录后才会自动兑换。");
+  if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动兑换的权限。");
+  return messages.join(" ");
+}
+
+async function updatePreviewSettings(patch) {
+  if (preview.active || get("preview-settings").hidden) return;
+  const active = preview.active = new AbortController();
+  const deadline = AbortSignal.any([active.signal, AbortSignal.timeout(20_000)]);
+  const notice = get("preview-settings-note");
+  previewSettingsButtons();
+  notice.classList.remove("error");
+  notice.textContent = patch ? "正在保存设置…" : "正在读取设置…";
+  try {
+    const response = await request("api/preview-settings", patch ? {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch), signal: deadline,
+    } : { signal: deadline });
+    if (active.signal.aborted) return;
+    if (response.status === 401) {
+      showLogin(`登录已失效。${loginHelp}`, true);
+      return;
+    }
+    if (!response.ok) throw new Error(await planFailure(response));
+    const data = await response.json();
+    if (active.signal.aborted) return;
+    const message = renderPreviewSettings(data);
+    notice.textContent = patch ? ["设置已保存。", message].filter(Boolean).join(" ") : message;
+  } catch (error) {
+    if (active.signal.aborted) return;
+    notice.classList.add("error");
+    notice.textContent = error instanceof TypeError || deadline.aborted
+      ? (patch ? "保存结果尚未确认，请刷新设置。" : "设置读取失败，请刷新后重试。")
+      : error.message;
+  } finally {
+    if (preview.active === active) {
+      preview.active = null;
+      previewSettingsButtons();
+    }
+  }
 }
 
 function showNotice(message, error = false) {
@@ -792,8 +863,13 @@ async function refresh() {
       return;
     }
     if (!response.ok) throw new Error("无法读取档案和任务。");
-    showOverview(await response.json());
+    const data = await response.json();
+    showOverview(data);
     showNotice("");
+    if (!get("dashboard").hidden) {
+      get("preview-settings").hidden = data.previewSettingsAvailable !== true;
+      if (tab === "overview") void updatePreviewSettings();
+    }
     if (!get("dashboard").hidden && tab === "shop") await loadCatalog();
   } catch {
     if (get("dashboard").hidden) showLogin("暂时无法读取档案和任务。", false, true);
@@ -825,7 +901,15 @@ get("refresh").addEventListener("click", () => {
 });
 get("login-retry").addEventListener("click", refresh);
 get("logout").addEventListener("click", logout);
-get("tab-overview").addEventListener("click", () => switchTab("overview"));
+get("tab-overview").addEventListener("click", () => {
+  switchTab("overview");
+  if (!preview.data) void updatePreviewSettings();
+});
+get("preview-settings-form").addEventListener("change", previewSettingsButtons);
+get("preview-settings-form").addEventListener("submit", event => {
+  event.preventDefault();
+  if (!get("preview-settings-save").disabled) void updatePreviewSettings(previewPatch());
+});
 get("tab-shop").addEventListener("click", () => {
   switchTab("shop");
   if (!shop.data && !shop.catalogRequest) void loadCatalog();

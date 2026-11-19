@@ -329,13 +329,15 @@ function changedProfile(): ProfileError {
   return new ProfileError("changed", "档案已变更，请重新发起请求。");
 }
 
-async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal) {
+async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal,
+  verify?: () => Promise<void>) {
   const yaml = Bun.YAML.stringify(document);
   if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
   const temporary = await mkdtemp(join(dirname(path), ".profile-write-"));
   try {
     const staged = join(temporary, "profile.yaml");
     await writeFile(staged, yaml, { mode: 0o600 });
+    await verify?.();
     if (expected === null) {
       signal?.throwIfAborted();
       await link(staged, path).catch((error: unknown) => {
@@ -538,7 +540,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   async function updateCheckinProfile(
     qq: string, id: number, expectedRevision: string,
     change: (document: Record<string, unknown>, state: ReturnType<typeof readIdentity>) => Record<string, unknown>,
-    signal?: AbortSignal,
+    signal?: AbortSignal, verify?: () => Promise<void>,
   ) {
     const filename = profileFilename(qq, id);
     const directory = await realpath(root).catch((error: unknown) => {
@@ -552,7 +554,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (revision !== expectedRevision) throw changedProfile();
       const updated = change(document, state);
       if (isDeepStrictEqual(document, updated)) return { changed: false, revision };
-      const saved = await writeProfileDocument(path, updated, revision, signal);
+      const saved = await writeProfileDocument(path, updated, revision, signal, verify);
       return { changed: true, revision: saved };
     });
   }
@@ -742,17 +744,17 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { qq, profileId, revision, account: state.account, device: state.device, selectedUid };
     },
     async setPreviewRedeemSettings(qq: string, profileId: number, expectedRevision: string, enabled: boolean,
-      games?: readonly Game[], signal?: AbortSignal) {
+      games?: readonly Game[], signal?: AbortSignal, verify?: () => Promise<void>) {
       if (typeof enabled !== "boolean" || (games && games.some(game => !profileGames.includes(game)))) invalidCheckinSettings();
       return updateCheckinProfile(qq, profileId, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         const previous = previewRedeemPreference(document.auto_redeem);
         const selected = games ? [...new Set(games)] : previous.games;
         if (enabled && !selected.length) throw new ProfileError("invalid", "请至少选择一款游戏。");
-        if (document.auto_redeem === undefined && !enabled) return document;
+        if (document.auto_redeem === undefined && !enabled && games === undefined) return document;
         return { ...document, auto_redeem: { ...record(document.auto_redeem), enable: enabled, games: selected,
-          ...(enabled && document.auto_redeem === undefined && { local_enrollment: true }) } };
-      }, signal);
+          ...(document.auto_redeem === undefined && { local_enrollment: true }) } };
+      }, signal, verify);
     },
     async accountContext(qq: string, id = 1) {
       const { account, device, revision } = await readLoggedIn(qq, id);
