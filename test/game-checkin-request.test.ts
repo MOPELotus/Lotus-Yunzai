@@ -118,6 +118,9 @@ test("内联人工验证保留相同的活动和角色，只转发一次准确�
   } });
   expect((attempt as GameCheckinChallengeError).message).not.toContain("source-challenge");
   await expect(readCnGameCheckinInfo(source, async () => blocked())).rejects.not.toBeInstanceOf(GameCheckinChallengeError);
+  await expect(submitCnGameCheckin(source, async () => Response.json({ retcode: 0,
+    data: { ...challenge, captcha_version: 4, captcha_id: "different-fixture" } })))
+    .rejects.not.toBeInstanceOf(GameCheckinChallengeError);
   await expect(submitCnGameCheckin(source, async () =>
     Response.json({ retcode: 0, data: { ...challenge, uid: "100000016" } }))).rejects.toMatchObject({ code: "response" });
   const proof = { challenge: "sdk-returned-challenge", validate: "sdk-validation", seccode: "sdk-validation|jordan" };

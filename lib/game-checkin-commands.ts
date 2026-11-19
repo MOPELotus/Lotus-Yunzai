@@ -1,7 +1,10 @@
-import { createProfileStore, MAX_PROFILE_ID, ProfileError, type Game, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { createProfileHoyoClient, GameRecordRequestError, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { setTimeout } from "node:timers/promises";
+import { createProfileStore, MAX_PROFILE_ID, ProfileError, type Game, type ProfileAccountContext,
+  type ProfileRequestContext } from "@lotus-yunzai/account";
+import { createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CommandModule } from "./commands.ts";
+import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
 import { segment } from "./messages.ts";
 
@@ -17,6 +20,7 @@ const labels = [
 const gameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
 const changed = "档案已变更，请重新发起签到。";
 type Settings = Awaited<ReturnType<ReturnType<typeof createProfileStore>["checkinSettings"]>>;
+type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
 
 function rowsFor(settings: Settings) {
   return labels.map(([label, key, forum]) => ({
@@ -46,7 +50,7 @@ function outcome(rows: readonly GameCheckinResult[]) {
 }
 
 export function gameCheckinCommands(directory: string | undefined, signal: AbortSignal,
-  makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard): CommandModule {
+  makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard, manualRelay?: () => ManualRelay | undefined): CommandModule {
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
   const active = new Set<string>();
@@ -62,6 +66,35 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
     }
     return [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
       `${label} · 游戏 ${game} · 社区 ${community}`), ...notes].join("\n");
+  }
+
+  async function submit(source: ProfileRequestContext, verifyCurrent: () => Promise<void>,
+    notify: ((message: string) => unknown) | undefined, label: string) {
+    try {
+      return await client.submitCnGameCheckin(source, { signal });
+    } catch (error) {
+      const relay = notify && error instanceof GameCheckinChallengeError ? manualRelay?.() : undefined;
+      if (!relay || !notify || !(error instanceof GameCheckinChallengeError)) throw error;
+      await verifyCurrent();
+      const registration = await relay.register(error.challenge);
+      if (!registration) throw error;
+      await verifyCurrent();
+      if (await notify(`请打开链接完成${label}签到的人工验证。链接只可使用一次。\n${registration.link}`) === false) throw error;
+      while (Date.now() < registration.expiresAt) {
+        await setTimeout(Math.min(1_500, Math.max(1, registration.expiresAt - Date.now())), undefined, { signal });
+        await verifyCurrent();
+        const read = await relay.readResult(registration.ticket);
+        if (read.status === "pending") continue;
+        if (read.status !== "complete" || !("validate" in read.result)) throw error;
+        await verifyCurrent();
+        const state = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
+        await verifyCurrent();
+        if (state.signed) return "already";
+        if (state.firstBind) throw error;
+        return client.submitCnGameCheckin(source, { signal, proof: read.result });
+      }
+      throw error;
+    }
   }
 
   return {
@@ -132,7 +165,8 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
                 results.push(await runGameCheckinSequence({
                   signal, verifyCurrent,
                   readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
-                  submit: () => client.submitCnGameCheckin(source, { signal }),
+                  submit: () => submit(source, verifyCurrent,
+                    context.message_type === "private" ? message => context.reply(message) : undefined, row.label),
                 }));
               }
               const finished = outcome(results);

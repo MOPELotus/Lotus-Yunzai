@@ -74,6 +74,9 @@ function passthroughFlag(value: unknown) {
 function getInlineChallenge(data: Json | undefined): GameCheckinChallenge | undefined {
   const gt = data?.gt;
   const challenge = data?.challenge;
+  const versions = [data?.captchaVersion, data?.captcha_version].filter(value => value !== undefined);
+  if (versions.some(version => version !== 3 && version !== "3" && version !== "v3") ||
+      [data?.captchaId, data?.captcha_id].some(id => id !== undefined && id !== gt)) return;
   if (!proofField(gt, 256) || !proofField(challenge, 1024)) return;
   return { captchaVersion: 3, gt, challenge, success: passthroughFlag(data?.success), new_captcha: passthroughFlag(data?.new_captcha) };
 }

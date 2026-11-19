@@ -671,7 +671,8 @@ if (import.meta.main) {
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context)), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
-    commands.registerModule(gameCheckinCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Checkin");
+    commands.registerModule(gameCheckinCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
+      undefined, undefined, () => manualCaptcha), "[Lotus-Plugin] Checkin");
     commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
