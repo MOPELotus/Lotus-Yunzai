@@ -38,6 +38,8 @@ export interface CnGameCheckinInfo {
   readonly totalSignDays?: number;
 }
 
+export type CnGameCheckinSource = Omit<ProfileRequestContext, "game"> & { readonly game: Game | "nxx" };
+
 const webVersion = "2.118.1";
 const webSalt = "4751cb5557bfad5e249e58462c39fb0a";
 const randomAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -49,10 +51,13 @@ const routes = {
     signgame: "hkrpg", biz: "hkrpg_cn", name: "星铁" },
   zzz: { endpoint: "https://act-nap-api.mihoyo.com/event/luna/zzz", activity: "e202406242138391",
     signgame: "zzz", biz: "nap_cn", name: "绝区零" },
-} as const satisfies Record<Game, { endpoint: string; activity: string; signgame: string; biz: string; name: string }>;
+  // The previous Lotus client used the shared Luna route without a signgame header.
+  nxx: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202202251749321",
+    signgame: "", biz: "nxx_cn", name: "未定事件簿" },
+} as const satisfies Record<CnGameCheckinSource["game"], { endpoint: string; activity: string; signgame: string; biz: string; name: string }>;
 
 type Json = Record<string, unknown>;
-type SignRoute = typeof routes[Game];
+type SignRoute = typeof routes[CnGameCheckinSource["game"]];
 
 function object(value: unknown): Json | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Json;
@@ -81,21 +86,28 @@ function getInlineChallenge(data: Json | undefined): GameCheckinChallenge | unde
   return { captchaVersion: 3, gt, challenge, success: passthroughFlag(data?.success), new_captcha: passthroughFlag(data?.new_captcha) };
 }
 
-function requestRole(source: ProfileRequestContext) {
+function riskFlag(data: Json | undefined) {
+  return data?.is_risk === true || (whole(data?.is_risk) ?? 0) > 0 ||
+    whole(data?.risk_code) === 375 || whole(data?.success) === 1;
+}
+
+function requestRole(source: CnGameCheckinSource) {
   const route = Object.hasOwn(routes, source.game) ? routes[source.game] : undefined;
   const { uid, region, gameBiz } = source.role;
   // The official binding directory lists both Star Rail regions and only prod_gf_cn for nap_cn.
   const server = source.game === "gs" ? genshinCnRecordRegion(source.role) :
     source.game === "sr" && /^[1-5]\d{8}$/u.test(uid) &&
       (uid.startsWith("5") ? region === "prod_qd_cn" : region === "prod_gf_cn") ? region :
-    source.game === "zzz" && /^[1-9]\d{7,8}$/u.test(uid) && region === "prod_gf_cn" ? region : undefined;
+    source.game === "zzz" && /^[1-9]\d{7,8}$/u.test(uid) && region === "prod_gf_cn" ? region :
+    source.game === "nxx" && typeof uid === "string" && /^[1-9]\d{0,19}$/u.test(uid) &&
+      gameBiz === "nxx_cn" && region === "cn_prod_gf01" ? region : undefined;
   if (!route || (gameBiz && gameBiz !== route.biz) || !server) {
     throw new HoyoRequestError("invalid-input", "游戏签到需要当前档案中已确认的国服角色和区服。");
   }
   return { route, uid, region: server };
 }
 
-function headersFor(source: ProfileRequestContext, route: SignRoute) {
+function headersFor(source: CnGameCheckinSource, route: SignRoute) {
   const { account, device } = source;
   const cookie = account.cookie.trim();
   if (!cookie.includes("=") || cookie.length > 16_384 || /[^\x20-\x7e]/u.test(cookie) ||
@@ -109,10 +121,11 @@ function headersFor(source: ProfileRequestContext, route: SignRoute) {
   const android = device.androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(device.androidVersion) ? device.androidVersion : "12";
   const headers = new Headers({
     Accept: "application/json", "Content-Type": "application/json", Cookie: cookie, Origin: origin, Referer: `${origin}/`,
-    "x-rpc-signgame": route.signgame, "x-rpc-app_version": webVersion, "x-rpc-client_type": "5",
+    "x-rpc-app_version": webVersion, "x-rpc-client_type": "5",
     "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 Mobile Safari/537.36 miHoYoBBS/${webVersion}`,
     DS: `${timestamp},${nonce},${digest}`,
   });
+  if (route.signgame) headers.set("x-rpc-signgame", route.signgame);
   if (device.id) headers.set("x-rpc-device_id", device.id);
   if (device.id && device.fp) headers.set("x-rpc-device_fp", device.fp);
   return headers;
@@ -139,15 +152,18 @@ function invalidResponse(route: SignRoute): never {
   throw new HoyoRequestError("response", `官方${route.name}签到响应无效。`);
 }
 
-async function requestCheckin(source: ProfileRequestContext, transport: HoyoTransport, action: "info" | "sign",
+async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransport, action: "info" | "sign",
   { signal, proof }: GameCheckinSubmitOptions, verifyProfile?: () => Promise<void>) {
   const { route, uid, region } = requestRole(source);
   const url = new URL(`${route.endpoint}/${action}`);
-  const params = { act_id: route.activity, uid, region, lang: "zh-cn" };
+  const identity = { act_id: route.activity, uid, region };
+  const params = { ...identity, lang: "zh-cn" };
   const writing = action === "sign";
+  const legacyNxx = source.game === "nxx";
   if (!writing) url.search = new URLSearchParams(params).toString();
   const headers = headersFor(source, route);
   if (proof) {
+    if (legacyNxx) throw new HoyoRequestError("invalid-input", "请在米游社官方客户端完成未定事件簿签到验证。");
     if (!writing || !proofField(proof.challenge, 1024) || !proofField(proof.validate, 2048) ||
         proof.seccode !== `${proof.validate}|jordan`) {
       throw new HoyoRequestError("invalid-input", "当前签到的人工验证结果格式无效。");
@@ -167,10 +183,11 @@ async function requestCheckin(source: ProfileRequestContext, transport: HoyoTran
   let response: Response;
   try {
     response = await transport(url, {
-      method: writing ? "POST" : "GET", headers, body: writing ? JSON.stringify(params) : undefined,
+      method: writing ? "POST" : "GET", headers, body: writing ? JSON.stringify(legacyNxx ? identity : params) : undefined,
       credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
     });
   } catch {
+    await guard();
     throw new HoyoRequestError("transport", writing ? `${route.name}签到提交结果未确认。` : `${route.name}签到状态暂时无法读取。`);
   }
   const status = response.status;
@@ -189,9 +206,9 @@ async function requestCheckin(source: ProfileRequestContext, transport: HoyoTran
   const retcode = whole(payload?.retcode);
   const data = object(payload?.data);
   const message = typeof payload?.message === "string" ? payload.message : "";
-  const inlineRisk = retcode === 0 && (data?.is_risk === true || (whole(data?.is_risk) ?? 0) > 0 ||
-    whole(data?.risk_code) === 375 || whole(data?.success) === 1);
-  if (writing && !proof && response.ok && inlineRisk) {
+  const nestedRisk = legacyNxx ? object(data?.gt_result) : undefined;
+  const inlineRisk = retcode === 0 && (riskFlag(data) || riskFlag(nestedRisk));
+  if (writing && !legacyNxx && !proof && response.ok && inlineRisk) {
     const inline = getInlineChallenge(data);
     if (inline && data) {
       checkDataRole(data, uid, region, route);
@@ -206,14 +223,18 @@ async function requestCheckin(source: ProfileRequestContext, transport: HoyoTran
   }
   if (retcode === -100) throw new GameRecordRequestError(subject, "expired", code, status, retcode);
   if (status === 401) throw new HoyoRequestError("http", `官方${subject}拒绝请求。`, status, retcode);
-  if (writing && retcode === -5003) return { route, already: true as const };
   if (retcode === undefined || deadline.aborted) invalidResponse(route);
+  if (writing && retcode === -5003) {
+    if (legacyNxx && data) checkDataRole(data, uid, region, route);
+    return { route, already: true as const };
+  }
   if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
+  if (legacyNxx && payload?.data != null && !data) invalidResponse(route);
   if (data) checkDataRole(data, uid, region, route);
   return { route, data };
 }
 
-export async function readCnGameCheckinInfo(source: ProfileRequestContext, transport: HoyoTransport,
+export async function readCnGameCheckinInfo(source: CnGameCheckinSource, transport: HoyoTransport,
   options: GameCheckinOptions = {}, verifyProfile?: () => Promise<void>): Promise<CnGameCheckinInfo> {
   const { route, data } = await requestCheckin(source, transport, "info", options, verifyProfile);
   if (!data || typeof data.is_sign !== "boolean" || (data.first_bind !== undefined && typeof data.first_bind !== "boolean")) invalidResponse(route);
@@ -223,7 +244,7 @@ export async function readCnGameCheckinInfo(source: ProfileRequestContext, trans
 }
 
 /** A POST acknowledgment is only evidence to proceed to the independent status check. */
-export async function submitCnGameCheckin(source: ProfileRequestContext, transport: HoyoTransport,
+export async function submitCnGameCheckin(source: CnGameCheckinSource, transport: HoyoTransport,
   options: GameCheckinSubmitOptions = {}, verifyProfile?: () => Promise<void>) {
   const result = await requestCheckin(source, transport, "sign", options, verifyProfile);
   return result.already ? "already" as const : "accepted" as const;

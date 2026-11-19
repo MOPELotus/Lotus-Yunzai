@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { runGameCheckinSequence } from "../lib/game-checkin-sequence.ts";
 import type { ProfileRequestContext } from "../packages/account/index.ts";
 import { createHoyoClient, GameCheckinChallengeError } from "../packages/hoyo-client/index.ts";
-import { readCnGameCheckinInfo, submitCnGameCheckin } from "../packages/hoyo-client/game-checkin.ts";
+import { readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "../packages/hoyo-client/game-checkin.ts";
 
 const routes = [
   ["gs", "hk4e_cn", "cn_gf01", "100000015", "https://api-takumi.mihoyo.com/event/luna", "e202311201442471", "hk4e"],
@@ -140,4 +141,101 @@ test("内联人工验证保留相同的活动和角色，只转发一次准确�
   await expect(submitCnGameCheckin(source, async () => { calls++; return blocked(); },
     { proof: { ...proof, seccode: "unrelated-fixture" } })).rejects.toMatchObject({ code: "invalid-input" });
   expect(calls).toBe(0);
+});
+
+const nxxSource = {
+  ...fixture(routes[0]), game: "nxx",
+  role: { ...fixture(routes[0]).role, uid: "734567890", region: "cn_prod_gf01", gameBiz: "nxx_cn" },
+} satisfies CnGameCheckinSource;
+
+test("未定事件簿国服按旧协议先读同角色状态，提交后只回读一次确认", async () => {
+  for (const [before, after, actions, outcome] of [
+    [{ is_sign: false, first_bind: false }, true, ["info", "sign", "info"], "signed"],
+    [{ is_sign: false, first_bind: false }, false, ["info", "sign", "info"], "unconfirmed"],
+    [{ is_sign: true, first_bind: false }, false, ["info"], "already"],
+    [{ is_sign: false, first_bind: true }, false, ["info"], "first-bind"],
+  ] as const) {
+    const methods: string[] = [];
+    const verify = async () => undefined;
+    const transport = async (url: URL, init: RequestInit) => {
+      expect(url.origin).toBe("https://api-takumi.mihoyo.com");
+      const action = init.method === "POST" ? "sign" : "info";
+      expect(url.pathname).toBe(`/event/luna/${action}`);
+      methods.push(action);
+      const identity = { act_id: "e202202251749321", uid: nxxSource.role.uid, region: "cn_prod_gf01" };
+      const headers = new Headers(init.headers);
+      expect(headers.get("Cookie")).toBe("cookie_token=fixture");
+      expect(headers.get("x-rpc-signgame")).toBeNull();
+      expect(headers.get("x-rpc-challenge")).toBeNull();
+      expect(headers.get("x-rpc-client_type")).toBe("5");
+      expect(init.redirect).toBe("error");
+      if (action === "sign") {
+        expect(url.search).toBe("");
+        expect(JSON.parse(String(init.body))).toEqual(identity);
+        return Response.json({ retcode: 0, data: { role: { game_uid: identity.uid, region: identity.region, game_biz: "nxx_cn" } } });
+      }
+      expect(init.body).toBeUndefined();
+      expect(Object.fromEntries(url.searchParams)).toEqual({ ...identity, lang: "zh-cn" });
+      return Response.json({ retcode: 0, data: {
+        ...(methods.length > 1 ? { is_sign: after, first_bind: false } : before),
+        role: { game_uid: Number(identity.uid), region: identity.region, game_biz: "nxx_cn" },
+        total_sign_day: 5,
+      } });
+    };
+    expect(await runGameCheckinSequence({
+      readInfo: () => readCnGameCheckinInfo(nxxSource, transport, {}, verify),
+      submit: () => submitCnGameCheckin(nxxSource, transport, {}, verify),
+      verifyCurrent: verify,
+    })).toMatchObject({ status: outcome });
+    expect(methods).toEqual([...actions]);
+  }
+});
+
+test("未定只接受目录确认的官方服角色，拒绝空区、渠道服、外服和跨档证明", async () => {
+  let calls = 0;
+  const transport = async () => { calls++; return Response.json({ retcode: 0 }); };
+  for (const role of [
+    { ...nxxSource.role, region: "cn_prod_mix01" },
+    { ...nxxSource.role, region: "cn_prod_bb01" },
+    { ...nxxSource.role, region: "" },
+    { ...nxxSource.role, gameBiz: "" },
+    { ...nxxSource.role, gameBiz: "nxx_global" },
+    { ...nxxSource.role, uid: "734567890&region=cn_prod_gf01" },
+  ]) {
+    const invalid = { ...nxxSource, role };
+    await expect(readCnGameCheckinInfo(invalid, transport)).rejects.toMatchObject({ code: "invalid-input" });
+    await expect(submitCnGameCheckin(invalid, transport)).rejects.toMatchObject({ code: "invalid-input" });
+  }
+  await expect(submitCnGameCheckin(nxxSource, transport, {
+    proof: { challenge: "fixture-c", validate: "fixture-v", seccode: "fixture-v|jordan" },
+  })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(calls).toBe(0);
+});
+
+test("未定状态失败和风控保留清楚分类，换绑中止后不再处理传输回包", async () => {
+  const risk = { is_risk: true, gt: "fixture-gt", challenge: "fixture-challenge" };
+  for (const [value, expected] of [
+    [{ retcode: 0, data: risk }, { reason: "risk" }],
+    [{ retcode: 0, data: { gt_result: risk } }, { reason: "risk" }],
+    [{ retcode: 1034, data: risk }, { reason: "risk" }],
+    [{ retcode: -100, message: "请先登录后参与活动（-100）" }, { reason: "expired" }],
+    [{ retcode: -5003, data: { role_id: "765432109" } }, { code: "response" }],
+    [{ retcode: 0, data: { region: "cn_prod_bb01" } }, { code: "response" }],
+    [{ retcode: 0, data: true }, { code: "response" }],
+  ] as const) {
+    const reply = submitCnGameCheckin(nxxSource, async () => Response.json(value), {});
+    await expect(reply).rejects.not.toBeInstanceOf(GameCheckinChallengeError);
+    await expect(reply).rejects.toMatchObject(expected);
+  }
+  const changed = new Error("fixture profile changed");
+  let valid = true;
+  let calls = 0;
+  await expect(submitCnGameCheckin(nxxSource, async () => {
+    calls++;
+    valid = false;
+    throw new Error("fixture connection lost");
+  }, {}, async () => {
+    if (!valid) throw changed;
+  })).rejects.toBe(changed);
+  expect(calls).toBe(1);
 });
