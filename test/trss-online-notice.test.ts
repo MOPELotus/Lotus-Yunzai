@@ -93,6 +93,53 @@ async function expectWelcome(clients: readonly Gateway[], owner: number) {
   expect(received.params.message).toMatch(/欢迎使用.*Lotus-Yunzai v1\.2\.3/u);
 }
 
+function milkyGateway(botId: number) {
+  const sockets: Bun.ServerWebSocket<undefined>[] = [];
+  const calls: Frame[] = [];
+  const confirmReceipt = Promise.withResolvers<void>();
+  let sequence = 0;
+  const server = Bun.serve<undefined>({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(request, gateway) {
+      if (request.headers.get("Authorization") !== `Bearer ${token}`) return new Response(null, { status: 401 });
+      const { pathname } = new URL(request.url);
+      if (request.method === "GET" && pathname === "/event" && gateway.upgrade(request)) return;
+      if (request.method !== "POST") return new Response(null, { status: 404 });
+      if (pathname === "/api/get_login_info") {
+        return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "上线通知夹具" } });
+      }
+      if (pathname !== "/api/send_private_message" && pathname !== "/api/send_group_message") {
+        return new Response(null, { status: 404 });
+      }
+      const { message, ...target } = await request.json() as {
+        user_id?: number;
+        group_id?: number;
+        message: readonly { type: string; data: { text?: string } }[];
+      };
+      const text = message.map(({ type, data }) => type === "text" ? data.text : "").join("");
+      calls.push({ action: pathname.slice("/api/".length), params: { ...target, message: text } });
+      if (text.startsWith("重启成功")) await confirmReceipt.promise;
+      return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++sequence } });
+    },
+    websocket: { open(socket) { sockets.push(socket); }, message() {} },
+  });
+  return {
+    port: server.port, calls, confirm: confirmReceipt.resolve,
+    open: (generation: number) => waitFor(() => sockets[generation], "模拟 Milky 未连接。"),
+    next: () => waitFor(() => calls.shift(), "未收到 Milky 上线通知夹具的回复。"),
+    status(socket: Bun.ServerWebSocket<undefined>) {
+      socket.send(JSON.stringify({ event_type: "message_receive", self_id: botId, data: {
+        message_scene: "friend", peer_id: 42, sender_id: 42, message_seq: 1,
+        segments: [{ type: "text", data: { text: "#状态" } }],
+      } }));
+    },
+    close() {
+      confirmReceipt.resolve();
+      server.stop(true);
+    },
+  };
+}
+
 test.skipIf(!valkeyServer)("TRSS 上线通知按绑定机器人和 Valkey 冷却跨进程去重", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-online-notice-"));
   const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
@@ -188,6 +235,49 @@ test.skipIf(!valkeyServer)("TRSS 上线通知按绑定机器人和 Valkey 冷却
       await expectCooldown(99);
       for (const client of [legacy, duplicate, fresh]) expect(client.frames).toEqual([]);
     });
+
+    const milky = milkyGateway(101);
+    try {
+      await writeFile(join(root, "config/milky.yaml"), [
+        "enable: true", "host: 127.0.0.1", `port: ${milky.port}`, `access_token: ${token}`,
+        "ws:", "  reconnect_interval: 0.05",
+      ].join("\n") + "\n");
+      await createProcessReceipts(pathToFileURL(root + "/")).save({
+        kind: "restart", at: Date.now(), target: { type: "group", botId: 101, id: 77, adapter: "milky" },
+      });
+      await withHost(async (open) => {
+        const first = await milky.open(0);
+        const receipt = await milky.next();
+        expect(receipt).toMatchObject({ action: "send_group_message", params: { group_id: 77 } });
+        expect(receipt.params.message).toMatch(/^重启成功，用时/u);
+        await Bun.sleep(50);
+        expect(milky.calls).toEqual([]);
+        expect(await redis.get(key(101))).toBeNull();
+
+        milky.confirm();
+        const welcome = await milky.next();
+        expect(welcome).toMatchObject({ action: "send_private_message", params: { user_id: 53 } });
+        expect(welcome.params.message).toMatch(/欢迎使用.*Lotus-Yunzai v1\.2\.3/u);
+        await expectCooldown(101);
+
+        const sameBot = await open(101);
+        await sameBot.status();
+        first.close();
+        const reconnected = await milky.open(1);
+        milky.status(reconnected);
+        const status = await milky.next();
+        expect(status).toMatchObject({ action: "send_private_message", params: { user_id: 42 } });
+        expect(status.params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
+        await Bun.sleep(100);
+        expect(milky.calls).toEqual([]);
+        expect(sameBot.frames).toEqual([]);
+        await expectCooldown(101);
+      });
+    } finally {
+      milky.close();
+      await rm(join(root, "config/milky.yaml"), { force: true });
+      await redis.del(key(101));
+    }
 
     await writeFile(join(root, "config/bot.yaml"), "online_msg_exp: 0\n");
     await withHost(async (open) => {

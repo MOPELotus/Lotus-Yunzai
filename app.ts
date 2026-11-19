@@ -287,16 +287,16 @@ if (import.meta.main) {
         deliverProcessReceipt(botId, true, adapter, signal),
         deliverProcessReceipt(botId, "install", adapter, signal),
       ]);
-      if (botId === undefined || adapter === "milky") return;
+      if (botId === undefined) return;
       await notifyOnlineMasters(botId, onlineCooldown, {
-        signal: lifecycle.signal,
+        signal: signal ?? lifecycle.signal,
         version: onlineVersion,
         masterIds: (id) => masterPermissions.masterIds(id),
         async claim(id, seconds) {
           const redis = globalThis.redis;
           return redis?.isReady === true && await redis.set(`Yz:loginMsg:${id}`, "1", { NX: true, EX: seconds }) === "OK";
         },
-        send: (id, userId, message) => groups.sendPrivate(id, userId, message),
+        send: (botId, id, message) => sendProcessMessage({ type: "private", botId, id, adapter }, message, signal),
       });
     });
     if (key !== undefined) boundDeliveries.set(key, delivery);
