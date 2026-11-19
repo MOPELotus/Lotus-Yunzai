@@ -39,6 +39,7 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
     },
     async mute() { sent++; return "confirmed"; },
     async wholeMute() { sent++; return "confirmed"; },
+    async kick() { sent++; return "confirmed"; },
   });
   const held = actions.groupMute(42, 300);
   active = false;
@@ -58,6 +59,7 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       const params = await request.json() as Call["params"];
       milkyCalls.push({ action, params });
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
+          (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
         { member: liveMember(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length } : {};
@@ -181,6 +183,28 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     await milkyReply(6);
     expect(milkyCalls.filter(({ action }) => action === "set_group_whole_mute").map(({ params }) => params)).toEqual([
       { group_id: group, is_mute: true }, { group_id: group, is_mute: false },
+    ]);
+
+    send(oneBotMessage("#踢42"));
+    expect(JSON.stringify((await oneBotReply(9)).params.message)).toContain("42");
+    send(oneBotMessage("#踢黑53"));
+    await oneBotReply(10);
+    send(oneBotMessage("#踢黑52"));
+    await oneBotReply(11);
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_kick").map(({ params }) => params)).toEqual([
+      { group_id: group, user_id: 42, reject_add_request: false },
+    ]);
+    await webhook("message_receive", milkyMessage("#踢黑55"));
+    expect(JSON.stringify((await milkyReply(7)).params.message)).toContain("55");
+    const kickUnknown = milkyMessage("#踢44");
+    await webhook("message_receive", kickUnknown);
+    expect(JSON.stringify((await milkyReply(8)).params.message)).toContain("未确认");
+    await webhook("message_receive", kickUnknown);
+    await webhook("message_receive", milkyMessage("#解禁56"));
+    await milkyReply(9);
+    expect(milkyCalls.filter(({ action }) => action === "kick_group_member").map(({ params }) => params)).toEqual([
+      { group_id: group, user_id: 55, reject_add_request: true },
+      { group_id: group, user_id: 44, reject_add_request: false },
     ]);
   } finally {
     socket?.close();

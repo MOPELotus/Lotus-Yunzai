@@ -1,8 +1,10 @@
 import type { GroupNotice, GroupRequest } from "../messages.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
-export type GroupMuteAction = (userId: number, seconds: number) => Promise<GroupModerationResult | "protected" | "unavailable">;
+type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
+export type GroupMuteAction = (userId: number, seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
+export type GroupKickAction = (userId: number, block: boolean) => Promise<GroupMemberModerationResult>;
 
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
@@ -11,7 +13,7 @@ export interface GroupActionPolicy {
 
 type Role = "member" | "admin" | "owner";
 
-export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute }: {
+export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -21,7 +23,8 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly role: (userId: number) => Promise<Role | undefined>;
   readonly mute: (userId: number, seconds: number) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
-}): { groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction } {
+  readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
+}): { groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
     const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
@@ -40,18 +43,21 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     }
   }
 
+  async function protectedTarget(userId: number, protectMasters: boolean) {
+    if (!Number.isSafeInteger(userId) || userId <= 0) return "rejected" as const;
+    const authority = await authorize();
+    if (typeof authority === "string") return authority;
+    const target = await role(userId).catch(() => undefined);
+    if (!active() || !target) return "unavailable" as const;
+    if (userId === bot || target === "owner" || (protectMasters && isProtected(userId)) ||
+        (target === "admin" && (authority.botRole !== "owner" || !authority.master))) return "protected" as const;
+  }
+
   return {
     async groupMute(userId, seconds) {
       if (!active()) return "unavailable";
-      if (!Number.isSafeInteger(userId) || userId <= 0 || !Number.isInteger(seconds) || seconds < 0 ||
-          seconds > 2_147_483_647) return "rejected";
-      const authority = await authorize();
-      if (typeof authority === "string") return authority;
-      const target = await role(userId).catch(() => undefined);
-      if (!active() || !target) return "unavailable";
-      if (userId === bot || target === "owner" || (seconds > 0 && isProtected(userId)) ||
-          (target === "admin" && (authority.botRole !== "owner" || !authority.master))) return "protected";
-      return apply(() => mute(userId, seconds));
+      if (!Number.isInteger(seconds) || seconds < 0 || seconds > 2_147_483_647) return "rejected";
+      return await protectedTarget(userId, seconds > 0) ?? apply(() => mute(userId, seconds));
     },
     async groupWholeMute(enabled) {
       if (!active()) return "unavailable";
@@ -59,6 +65,11 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       const authority = await authorize();
       if (typeof authority === "string") return authority;
       return apply(() => wholeMute(enabled));
+    },
+    async groupKick(userId, block) {
+      if (!active()) return "unavailable";
+      if (typeof block !== "boolean") return "rejected";
+      return await protectedTarget(userId, true) ?? apply(() => kick(userId, block));
     },
   };
 }

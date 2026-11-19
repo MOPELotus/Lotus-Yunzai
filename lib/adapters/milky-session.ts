@@ -322,6 +322,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         async wholeMute(is_mute) {
           return (await call.confirmed("set_group_whole_mute", { group_id: groupId, is_mute }, signal)).status;
         },
+        async kick(user_id, reject_add_request) {
+          return (await call.confirmed("kick_group_member", { group_id: groupId, user_id, reject_add_request }, signal)).status;
+        },
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")

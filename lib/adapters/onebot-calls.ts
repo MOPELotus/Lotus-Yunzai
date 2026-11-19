@@ -121,8 +121,8 @@ export class OneBotCalls {
     );
   }
 
-  kickGroupMember(send: Send, group_id: number, user_id: number, signal: AbortSignal) {
-    return this.#moderateGroup(send, "set_group_kick", { group_id, user_id, reject_add_request: false }, signal);
+  kickGroupMember(send: Send, group_id: number, user_id: number, signal: AbortSignal, reject_add_request = false) {
+    return this.#moderateGroup(send, "set_group_kick", { group_id, user_id, reject_add_request }, signal);
   }
 
   setGroupMute(send: Send, group_id: number, user_id: number, duration: number, signal: AbortSignal) {
