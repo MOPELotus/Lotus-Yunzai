@@ -60,10 +60,31 @@
             <p id="missions-empty" class="muted" hidden></p>
             <ul id="missions" class="rows" aria-label="任务进度"></ul>
           </article>
-          <article id="preview-settings" class="overview-section preview-settings" hidden>
+          <article id="checkin-settings" class="overview-section profile-settings" hidden>
+            <h3>签到与通知</h3>
+            <form id="checkin-settings-form">
+              <fieldset id="checkin-switches" class="settings-options" aria-label="签到与通知选项" disabled>
+                <label><input id="checkin-enabled" type="checkbox"> 自动签到</label>
+                <label><input id="checkin-community" type="checkbox"> 社区签到</label>
+                <label><input id="checkin-notify" type="checkbox"> 签到结果通知</label>
+              </fieldset>
+              <fieldset id="checkin-games" class="settings-options" disabled>
+                <legend>国服游戏签到</legend>
+                <label><input type="checkbox" name="game" value="genshin"> 原神</label>
+                <label><input type="checkbox" name="game" value="honkai_sr"> 崩坏：星穹铁道</label>
+                <label><input type="checkbox" name="game" value="zzz"> 绝区零</label>
+                <label><input type="checkbox" name="game" value="honkai3rd"> 崩坏3</label>
+                <label><input type="checkbox" name="game" value="honkai2"> 崩坏学园2</label>
+                <label><input type="checkbox" name="game" value="tears_of_themis"> 未定事件簿</label>
+              </fieldset>
+              <p id="checkin-settings-note" class="muted" role="status"></p>
+              <button id="checkin-settings-save" type="submit" class="secondary" disabled>保存设置</button>
+            </form>
+          </article>
+          <article id="preview-settings" class="overview-section profile-settings" hidden>
             <h3>前瞻兑换码</h3>
             <form id="preview-settings-form">
-              <fieldset id="preview-games" disabled>
+              <fieldset id="preview-games" class="settings-options" disabled>
                 <legend>自动兑换游戏</legend>
                 <label><input type="checkbox" name="game" value="gs"> 原神</label>
                 <label><input type="checkbox" name="game" value="sr"> 崩坏：星穹铁道</label>

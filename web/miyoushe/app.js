@@ -20,7 +20,9 @@ let tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
 const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
-const preview = { data: null, active: null };
+const preview = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
+const checkin = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
+const profileEditors = [checkin, preview];
 const trackers = { generation: 0, targets: null, loading: false };
 const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
@@ -54,12 +56,14 @@ function showLogin(message, help = false, retry = false) {
   get("missions-empty").textContent = "";
   for (const id of ["balance", "received", "today-total"]) get(id).textContent = "—";
   for (const id of ["roles", "missions"]) get(id).replaceChildren();
-  preview.active?.abort();
-  preview.active = null;
-  preview.data = null;
-  get("preview-settings").hidden = true;
-  get("preview-settings-form").reset();
-  previewSettingsButtons();
+  for (const editor of profileEditors) {
+    editor.active?.abort();
+    editor.active = null;
+    editor.data = null;
+    get(editor.key + "-settings").hidden = true;
+    get(editor.key + "-settings-form").reset();
+    editor.buttons();
+  }
   resetShop();
   switchTab("overview");
 }
@@ -83,7 +87,6 @@ function previewSettingsButtons() {
 }
 
 function renderPreviewSettings(data) {
-  preview.data = data;
   get("preview-enabled").checked = data.enabled;
   for (const input of get("preview-games").querySelectorAll("input")) input.checked = data.games.includes(input.value);
   const messages = [];
@@ -92,16 +95,49 @@ function renderPreviewSettings(data) {
   return messages.join(" ");
 }
 
-async function updatePreviewSettings(patch) {
-  if (preview.active || get("preview-settings").hidden) return;
-  const active = preview.active = new AbortController();
+const checkinSwitches = ["enabled", "notify", "community"];
+
+function checkinPatch() {
+  return {
+    revision: checkin.data?.revision,
+    enabled: get("checkin-enabled").checked,
+    notify: get("checkin-notify").checked,
+    community: get("checkin-community").checked,
+    games: Object.fromEntries(Array.from(get("checkin-games").querySelectorAll("input"), input => [input.value, input.checked])),
+  };
+}
+
+function checkinSettingsButtons() {
+  const loaded = checkin.data;
+  const pending = Boolean(checkin.active);
+  get("checkin-games").disabled = !loaded || pending;
+  get("checkin-switches").disabled = !loaded || pending;
+  get("checkin-enabled").disabled = !loaded || (loaded.canEnable === false && !loaded.enabled);
+  const patch = checkinPatch();
+  get("checkin-settings-save").disabled = !loaded || pending ||
+    (checkinSwitches.every(key => patch[key] === loaded[key]) && Object.entries(patch.games).every(([key, value]) => loaded.games[key] === value));
+  get("checkin-settings-form").setAttribute("aria-busy", String(pending));
+}
+
+function renderCheckinSettings(data) {
+  for (const key of checkinSwitches) get("checkin-" + key).checked = data[key];
+  for (const input of get("checkin-games").querySelectorAll("input")) input.checked = data.games[input.value] === true;
+  const messages = [];
+  if (data.cnEnabled === false) messages.push("当前档案的国服签到总开关已关闭，各游戏的选择仍会保留。");
+  if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动签到的权限。");
+  return messages.join(" ");
+}
+
+async function updateProfileSettings(editor, patch) {
+  if (editor.active || get(editor.key + "-settings").hidden) return;
+  const active = editor.active = new AbortController();
   const deadline = AbortSignal.any([active.signal, AbortSignal.timeout(20_000)]);
-  const notice = get("preview-settings-note");
-  previewSettingsButtons();
+  const notice = get(editor.key + "-settings-note");
+  editor.buttons();
   notice.classList.remove("error");
   notice.textContent = patch ? "正在保存设置…" : "正在读取设置…";
   try {
-    const response = await request("api/preview-settings", patch ? {
+    const response = await request("api/" + editor.key + "-settings", patch ? {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch), signal: deadline,
     } : { signal: deadline });
     if (active.signal.aborted) return;
@@ -112,7 +148,21 @@ async function updatePreviewSettings(patch) {
     if (!response.ok) throw new Error(await planFailure(response));
     const data = await response.json();
     if (active.signal.aborted) return;
-    const message = renderPreviewSettings(data);
+    const previous = editor.data;
+    editor.data = data;
+    const message = editor.render(data);
+    if (patch) {
+      // Both sections use the same profile revision. Keep the other section's
+      // unchanged settings and any unsaved edits after our own successful write.
+      for (const other of profileEditors) if (other !== editor && other.data?.revision === patch.revision) {
+        other.data = { ...other.data, revision: data.revision };
+      }
+      if (editor === checkin && previous?.enabled !== data.enabled) {
+        const schedule = get("today-schedule");
+        schedule.textContent = data.enabled ? "档案自动签到已开启。刷新后查看今日安排。" : "自动签到已关闭。";
+        schedule.hidden = false;
+      }
+    }
     notice.textContent = patch ? ["设置已保存。", message].filter(Boolean).join(" ") : message;
   } catch (error) {
     if (active.signal.aborted) return;
@@ -121,9 +171,9 @@ async function updatePreviewSettings(patch) {
       ? (patch ? "保存结果尚未确认，请刷新设置。" : "设置读取失败，请刷新后重试。")
       : error.message;
   } finally {
-    if (preview.active === active) {
-      preview.active = null;
-      previewSettingsButtons();
+    if (editor.active === active) {
+      editor.active = null;
+      editor.buttons();
     }
   }
 }
@@ -867,8 +917,10 @@ async function refresh() {
     showOverview(data);
     showNotice("");
     if (!get("dashboard").hidden) {
-      get("preview-settings").hidden = data.previewSettingsAvailable !== true;
-      if (tab === "overview") void updatePreviewSettings();
+      for (const editor of profileEditors) {
+        get(editor.key + "-settings").hidden = data[editor.key + "SettingsAvailable"] !== true;
+        if (tab === "overview") void updateProfileSettings(editor);
+      }
     }
     if (!get("dashboard").hidden && tab === "shop") await loadCatalog();
   } catch {
@@ -903,13 +955,16 @@ get("login-retry").addEventListener("click", refresh);
 get("logout").addEventListener("click", logout);
 get("tab-overview").addEventListener("click", () => {
   switchTab("overview");
-  if (!preview.data) void updatePreviewSettings();
+  for (const editor of profileEditors) if (!editor.data) void updateProfileSettings(editor);
 });
-get("preview-settings-form").addEventListener("change", previewSettingsButtons);
-get("preview-settings-form").addEventListener("submit", event => {
-  event.preventDefault();
-  if (!get("preview-settings-save").disabled) void updatePreviewSettings(previewPatch());
-});
+for (const editor of profileEditors) {
+  const form = get(editor.key + "-settings-form");
+  form.addEventListener("change", editor.buttons);
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    if (!get(editor.key + "-settings-save").disabled) void updateProfileSettings(editor, editor.patch());
+  });
+}
 get("tab-shop").addEventListener("click", () => {
   switchTab("shop");
   if (!shop.data && !shop.catalogRequest) void loadCatalog();

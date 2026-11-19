@@ -86,7 +86,8 @@ import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receip
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
-import { createMiyousheWeb, isMiyousheWebCommand, MiyoushePreviewSettingsError, miyousheWebSettings } from "./lib/miyoushe-web.ts";
+import { createMiyousheWeb, isMiyousheWebCommand, MiyoushePreviewSettingsError, MiyousheSettingsError,
+  miyousheWebSettings } from "./lib/miyoushe-web.ts";
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
 import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
@@ -1136,6 +1137,45 @@ if (import.meta.main) {
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
         catalog, plans: shopPlans, previewSettings,
+        checkinSettings: {
+          async read({ qq, profileId }, signal, verifyLogin) {
+            await verifyLogin();
+            const { loggedIn, ...current } = await checkinProfiles.webCheckinSettings(qq, profileId);
+            signal.throwIfAborted();
+            return { ...current, canEnable: loggedIn && (current.enabled || canRegisterCheckin({ user_id: Number(qq), isMaster: false })) };
+          },
+          async save(target, patch, signal, verifyLogin) {
+            const { qq, profileId } = target;
+            const current = await this.read(target, signal, verifyLogin);
+            const conflict = () => new MiyousheSettingsError(409, "档案设置已变化，请重新读取。");
+            if (current.revision !== patch.revision) throw conflict();
+            if (patch.enabled && !current.canEnable) throw new MiyousheSettingsError(403, "当前会话无权注册自动签到。");
+            let saved;
+            try {
+              saved = await checkinProfiles.setWebCheckinSettings(qq, profileId, patch.revision, patch, signal, verifyLogin);
+            } catch (error) {
+              if (!(error instanceof ProfileError) || error.code !== "changed") throw error;
+              await verifyLogin();
+              throw conflict();
+            }
+            const updated = await this.read(target, signal, verifyLogin);
+            if (updated.revision !== saved.revision) throw conflict();
+            if (saved.changed && current.enabled !== updated.enabled && checkinRuntime) {
+              const runtime = checkinRuntime;
+              try {
+                if (updated.enabled) {
+                  const profile = await checkinProfiles.checkinSettings(qq, profileId);
+                  if (profile.revision === updated.revision) {
+                    await runtime.addRegisteredProfile({ qq, profileId, name: profile.displayName, enabled: true, schedule: profile.schedule });
+                  }
+                } else await runtime.reconcileExistingPlans();
+              } catch {
+                console.warn("[签到计划] 网页设置已保存，计划等待重新检查。");
+              }
+            }
+            return updated;
+          },
+        },
         async shopAddresses(target, signal, verifyBinding) {
           const account = await checkinProfiles.accountContext(target.qq, target.profileId);
           return shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding });

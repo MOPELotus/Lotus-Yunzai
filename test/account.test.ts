@@ -551,3 +551,39 @@ test("自动兑换独立保存旧档游戏和本版预设，写入前会话失�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("网页签到一次保存现有开关，保留主人排期、通知群及未展示的旧设置", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-web-checkin-preferences-"));
+  try {
+    const file = join(root, "42-2.yaml");
+    const original = {
+      enabled: false, account: { cookie: "test-cookie", stoken: "test-token" },
+      profile: { id: 2, notify: { enable: true, prefer: "group", fallback_groups: ["71"], extension: "保留" } },
+      schedule: { mode: "fixed", fixed_time: "11:01" },
+      games: { cn: { enable: false, genshin: { checkin: false, black_list: ["81"] }, hna: { checkin: true } },
+        os: { enable: true, cookie: "test-os" } },
+      mihoyobbs: { enable: false, tasks: { checkin: false, read: true, like: true }, checkin_list: [1, 6] },
+    };
+    await writeFile(file, Bun.YAML.stringify(original));
+    const profiles = createProfileStore(root);
+    const current = await profiles.webCheckinSettings("42", 2);
+    expect(current).toMatchObject({ enabled: false, notify: true, community: false, cnEnabled: false, games: {
+      genshin: false, honkai_sr: true, zzz: true, honkai2: false, honkai3rd: false, tears_of_themis: false,
+    } });
+    const patch = { enabled: true, notify: false, community: true, games: { ...current.games, genshin: true } };
+    const saved = await profiles.setWebCheckinSettings("42", 2, current.revision, patch);
+    expect(await profiles.webCheckinSettings("42", 2)).toMatchObject({ ...patch, revision: saved.revision, cnEnabled: false });
+    expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({
+      ...original, enabled: true,
+      profile: { ...original.profile, notify: { ...original.profile.notify, enable: false } },
+      games: { ...original.games, cn: { ...original.games.cn, genshin: { checkin: true, black_list: ["81"] } } },
+      mihoyobbs: { ...original.mihoyobbs, enable: true, tasks: { ...original.mihoyobbs.tasks, checkin: true } },
+    });
+    const unchanged = await readFile(file);
+    await expect(profiles.setWebCheckinSettings("42", 2, current.revision, patch)).rejects.toMatchObject({ code: "changed" });
+    expect(await readFile(file)).toEqual(unchanged);
+    expect((await profiles.checkinSettings("42", 2)).games.genshin?.enabled).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

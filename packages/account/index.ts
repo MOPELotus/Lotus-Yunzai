@@ -49,6 +49,8 @@ const cnCheckinGame = {
 } as const;
 type CnCheckinGame = keyof typeof cnCheckinGame;
 const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
+const webCheckinGames = cnCheckinKeys.filter(game => game !== "hna");
+type WebCheckinGame = typeof webCheckinGames[number];
 const defaultCommunityForums = ["1", "2", "3", "4", "5", "6", "8", "9", "10"] as const;
 
 function configuredCnCheckins(cn: Record<string, unknown>) {
@@ -109,6 +111,13 @@ export type ProfileCheckinSettingsChange =
   | { readonly type: "bind-notify-group"; readonly groupId: number }
   | { readonly type: "schedule"; readonly mode: "inherit" | "random" }
   | { readonly type: "schedule"; readonly mode: "fixed"; readonly time: string };
+
+interface WebCheckinPreferences {
+  readonly enabled: boolean;
+  readonly notify: boolean;
+  readonly community: boolean;
+  readonly games: Readonly<Record<WebCheckinGame, boolean>>;
+}
 
 function invalidCheckinSettings(): never {
   throw new ProfileError("invalid", "自动签到设置无效。");
@@ -782,6 +791,44 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         schedule: profileSchedule(document.schedule),
         notify: profileNotifications(record(document.profile).notify),
       };
+    },
+    async webCheckinSettings(qq: string, id: number) {
+      const { document, state, revision } = await readDocument(qq, id);
+      const cn = record(record(document.games).cn);
+      const configured = configuredCnCheckins({ ...cn, enable: true });
+      const community = record(document.mihoyobbs);
+      return {
+        enabled: state.summary.enabled,
+        notify: profileNotifications(record(document.profile).notify).enabled,
+        community: community.enable === true && record(community.tasks ?? community).checkin === true,
+        games: Object.fromEntries(webCheckinGames.map(key => [key, configured[key]?.enabled === true])) as Record<WebCheckinGame, boolean>,
+        cnEnabled: cn.enable !== false,
+        loggedIn: state.summary.loggedIn, revision,
+      };
+    },
+    async setWebCheckinSettings(qq: string, id: number, expectedRevision: string, patch: WebCheckinPreferences,
+      signal?: AbortSignal, verify?: () => Promise<void>) {
+      if (typeof patch.enabled !== "boolean" || typeof patch.notify !== "boolean" || typeof patch.community !== "boolean") invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        const raw = record(record(document.games).cn);
+        const configured = configuredCnCheckins({ ...raw, enable: true });
+        let updated = state.summary.enabled === patch.enabled ? document : { ...document, enabled: patch.enabled };
+        if (patch.notify !== profileNotifications(record(document.profile).notify).enabled) {
+          updated = applyCheckinSettings(updated, { type: "notify-enabled", enabled: patch.notify });
+        }
+        const community = record(document.mihoyobbs);
+        const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
+        if (patch.community !== communityEnabled) updated = applyCheckinSettings(updated, { type: "community", enabled: patch.community });
+        for (const [key, enabled] of Object.entries(patch.games)) {
+          if (!webCheckinGames.some(game => game === key) || typeof enabled !== "boolean") invalidCheckinSettings();
+          const entry = Object.entries(cnCheckinGame).find(([, name]) => name === key);
+          if (entry && configured[key]?.enabled !== enabled) {
+            updated = applyCheckinSettings(updated, { type: "game", game: entry[0] as CnCheckinGame, enabled });
+          }
+        }
+        return updated;
+      }, signal, verify);
     },
     async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {
       const { document, state, revision } = await readDocument(qq, id);
