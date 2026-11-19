@@ -15,6 +15,7 @@ const sources = ["manual", "scheduled", "scheduled_community_retry"] as const;
 const statuses = {
   signed: "签到成功", already: "已签到", "first-bind": "首次绑定",
   unconfirmed: "未确认", failed: "失败", skipped: "跳过",
+  "community-accepted": "社区已受理", "community-already": "社区已签到",
 } as const;
 type Counts = Readonly<Partial<Record<keyof typeof statuses, number>>>;
 

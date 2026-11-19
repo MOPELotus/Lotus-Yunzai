@@ -1,4 +1,5 @@
 import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -14,6 +15,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { createCredentialExchange };
 export { HoyoRequestError };
+export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof, type CnGameCheckinInfo } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
@@ -310,6 +312,22 @@ export function createHoyoClient(
     },
     submitCnGameCheckin(source: ProfileRequestContext, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
       return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
+    },
+    async fetchBbsMissionState(source: ProfileAccountContext,
+      options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean;
+        readonly onCredentialRefresh?: (profile: ProfileAccountContext) => void } = {}) {
+      const { context, data } = await retrieve(source,
+        (profile) => {
+          if (profile.revision !== source.revision) options.onCredentialRefresh?.(profile);
+          return readBbsMissionState(profile, transport, options, () => ensureCurrentProfile(profile));
+        },
+        options.signal,
+        (error) => options.recoverCookie !== false && error instanceof BbsCheckinRequestError && error.reason === "cookie-expired");
+      return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
+    },
+    submitBbsCheckin(source: ProfileAccountContext, forum: BbsCheckinForum,
+      options: Parameters<typeof submitBbsCheckin>[3] = {}) {
+      return submitBbsCheckin(source, transport, forum, options, () => ensureCurrentProfile(source));
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);

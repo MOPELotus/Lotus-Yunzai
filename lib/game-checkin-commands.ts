@@ -1,7 +1,8 @@
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type Game, type ProfileAccountContext,
   type ProfileRequestContext } from "@lotus-yunzai/account";
-import { createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { BbsCheckinRequestError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
+  HoyoRequestError, type BbsMissionState } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
@@ -21,6 +22,7 @@ const labels = [
 const gameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
 const changed = "档案已变更，请重新发起签到。";
 type Settings = Awaited<ReturnType<ReturnType<typeof createProfileStore>["checkinSettings"]>>;
+type CheckinCount = keyof NonNullable<CheckinAuditEntry["counts"]>;
 type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
 type CheckinRun = { readonly status: "busy"; readonly reply?: MessageReply } |
   { readonly status: "complete"; readonly stage: CheckinAuditEntry["stage"]; readonly ok: boolean;
@@ -32,10 +34,25 @@ function completedRun(stage: CheckinAuditEntry["stage"], ok: boolean, reply?: Me
 
 function rowsFor(settings: Settings) {
   return labels.map(([label, key, forum]) => ({
-    label, key,
+    label, key, forum,
     game: key ? (settings.games[key]?.enabled ? "未执行" : "关闭") : "无",
     community: settings.communityForums.includes(forum) ? "未执行" : "关闭",
   }));
+}
+
+function bbsIssue(error: unknown) {
+  if (error instanceof BbsCheckinRequestError) return error.message;
+  if (error instanceof HoyoRequestError && error.code === "invalid-input") return error.message;
+  return "米游社社区签到暂未完成，请在官方客户端核对。";
+}
+
+function bbsPoints(state: BbsMissionState) {
+  const lines: string[] = [];
+  if (state.totalPoints !== undefined) lines.push(`当前余额：${state.totalPoints}`);
+  if (state.receivedPoints !== undefined) {
+    lines.push(`今日已领取：${state.receivedPoints}${state.todayTotalPoints === undefined ? "" : `/${state.todayTotalPoints}`}`);
+  }
+  return lines.join("\n");
 }
 
 function outcome(rows: readonly GameCheckinResult[]) {
@@ -68,9 +85,10 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const client = makeClient(profiles);
   const active = new Set<string>();
 
-  async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"], notes: readonly string[]) {
+  async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"], notes: readonly string[], points?: string) {
     try {
-      const detail = notes.length ? { title: "失败" as const, message: notes.join("\n").slice(0, 180) } : undefined;
+      const detail = notes.length ? { title: "失败" as const, message: notes.join("\n").slice(0, 180) }
+        : points ? { title: "米游币" as const, message: points } : undefined;
       const { png } = await renderReceipt({ displayName: settings.displayName, profileId, rows, detail },
         { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || undefined });
       if (png.byteLength && png.byteLength <= 16 * 1024 * 1024) return segment.image(png);
@@ -78,7 +96,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       // The result is still available via the same rows if the old render resources are missing.
     }
     return [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
-      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes].join("\n");
+      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(points ? [points] : [])].join("\n");
   }
 
   async function submit(source: ProfileRequestContext, verifyCurrent: () => Promise<void>,
@@ -119,7 +137,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     const { signal } = input;
     if (signal.aborted) return { status: "busy" };
     input.verifyDay?.();
-    const counts: Partial<Record<GameCheckinResult["status"] | "skipped", number>> = {};
+    const counts: Partial<Record<CheckinCount, number>> = {};
     const auditResult = async (stage: CheckinAuditEntry["stage"], ok: boolean) => {
       if (signal.aborted) return;
       try {
@@ -168,6 +186,63 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const rows = rowsFor(settings);
       const notes: string[] = [];
       const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled);
+      async function runCommunity() {
+        const selected = rows.filter(row => row.community === "未执行");
+        if (!selected.length) return;
+        let state: BbsMissionState;
+        try {
+          await verifyCurrent();
+          const snapshot = await client.fetchBbsMissionState(account, {
+            signal, recoverCookie: gameRows.length === 0,
+            onCredentialRefresh(current) {
+              account = current;
+              revision = current.revision;
+            },
+          });
+          await verifyCurrent();
+          state = snapshot;
+        } catch (error) {
+          await verifyCurrent();
+          for (const row of selected) {
+            row.community = "失败";
+            count("failed");
+          }
+          notes.push(bbsIssue(error));
+          return;
+        }
+
+        let accepted = false;
+        for (const row of selected) {
+          await verifyCurrent();
+          try {
+            const result = await client.submitBbsCheckin(account, row.forum, { signal });
+            await verifyCurrent();
+            row.community = result === "accepted" ? "已受理" : "已签到";
+            accepted ||= result === "accepted";
+            count(result === "accepted" ? "community-accepted" : "community-already");
+          } catch (error) {
+            await verifyCurrent();
+            const explicit = error instanceof BbsCheckinRequestError ||
+              (error instanceof HoyoRequestError && (error.code === "api" || error.code === "invalid-input"));
+            row.community = explicit ? "失败" : "未确认";
+            count(explicit ? "failed" : "unconfirmed");
+            notes.push(`${row.label}社区：${bbsIssue(error)}`);
+            if (!(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api") break;
+          }
+        }
+        for (const row of selected) {
+          if (row.community === "未执行") row.community = "跳过";
+        }
+        if (accepted && !notes.length) {
+          try {
+            state = await client.fetchBbsMissionState(account, { signal, recoverCookie: false });
+          } catch {
+            await verifyCurrent();
+            return;
+          }
+        }
+        return notes.length ? undefined : bbsPoints(state);
+      }
       if (gameRows.length) {
         try {
           await verifyCurrent();
@@ -219,11 +294,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           notes.push("米游社角色查询未完成。");
         }
       }
+      const points = await runCommunity();
       await verifyCurrent();
       const ok = !(counts.failed || counts["first-bind"] || counts.unconfirmed);
       await auditResult("checkin", ok);
       await verifyCurrent();
-      const reply = await receipt(settings, profileId, rows, notes);
+      const reply = await receipt(settings, profileId, rows, notes, points);
       await verifyCurrent();
       return completedRun("checkin", ok, reply, revision);
     } catch (error) {
