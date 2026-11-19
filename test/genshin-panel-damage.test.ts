@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { ProfileError } from "@lotus-yunzai/account";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
 import { estimatePanelDamage } from "../plugins/genshin/panel/damage.ts";
 import { createDamagePreferences, matchEnemyLevel } from "../plugins/genshin/panel/damage-preferences.ts";
 import { matchGenshinPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
+import { createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
 import type { PanelTheme } from "../plugins/genshin/panel/theme.ts";
 
 const avatar: PanelAvatar = {
@@ -134,6 +136,43 @@ test.skipIf(!valkey)("本地敌人等级按 QQ 持久化，继承旧键优先级
     admin?.close();
     server.kill();
     await server.exited;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("普通详情只附有效的伤害表，按同档敌人偏好保留有效零和缺数据情景", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-damage-summary-"));
+  const uid = "100123456";
+  const role = { uid, nickname: "", region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true };
+  let selected = actor({ attack: 0, q: false });
+  const detail: Record<string, unknown>[] = [];
+  const query = createGenshinPanelQuery({ async savedRole() { return role; },
+    async requestContext() { throw new ProfileError("login-required", "只读取已绑定 UID"); },
+  }, { async fetchGenshinPanel() { throw new Error("详情不刷新面板"); } }, lockFile, new AbortController().signal, {
+    archiveDirectory: join(directory, "panels"), legacyDirectory: directory,
+    theme: async () => theme(selected),
+    render: {
+      async list() { throw new Error("详情不渲染列表"); },
+      async detail(_snapshot, _avatar, _theme, options) { detail.push({ ...options }); return { png: new Uint8Array([1]) }; },
+    },
+  });
+  try {
+    await mkdir(join(directory, "panels"));
+    await writeFile(join(directory, `${uid}.json`), JSON.stringify({ uid, avatars: { 10000046: avatar } }));
+    expect(await query("#敌人等级90 档案2", { user_id: 42 })).toBe("敌人等级已经设置为90");
+    expect(await query("#胡桃详情2", { user_id: 42 })).toMatchObject({ type: "image" });
+    expect(detail[0]).toMatchObject({ pane: "profile", profileId: 2, damage: {
+      enemyLevel: 90, enemyName: "小宝", rows: [
+        { average: 0, crit: 0 }, { average: 0, crit: 0 }, { unavailable: true },
+      ],
+    } });
+    expect(Object(detail[0]?.damage).comparison).toBeUndefined();
+    expect(await query("#胡桃圣遗物2", { user_id: 42 })).toMatchObject({ type: "image" });
+    expect(detail[1]).toMatchObject({ pane: "artifacts", damage: undefined });
+    selected = {};
+    expect(await query("#胡桃面板2", { user_id: 42 })).toMatchObject({ type: "image" });
+    expect(detail[2]).toMatchObject({ pane: "profile", damage: undefined });
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
