@@ -15,7 +15,7 @@ function checkIdentity(qq: string, uid: string, subject: string): void {
   }
 }
 
-async function readSnapshot(file: string, subject: string) {
+async function readSnapshot(file: string, subject: string, maxBytes?: number) {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((error: unknown) => {
     if (!missing(error)) throw error;
   });
@@ -23,7 +23,19 @@ async function readSnapshot(file: string, subject: string) {
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new Error(`${subject}须为普通 JSON 文件。`);
-    return { info, bytes: await handle.readFile() };
+    if (maxBytes === undefined) return { info, bytes: await handle.readFile() };
+    if (info.size > maxBytes) throw new Error(`${subject}的 JSON 文件过大。`);
+    const bytes = Buffer.alloc(info.size);
+    for (let offset = 0; offset < bytes.length;) {
+      const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (!bytesRead) throw new Error(`${subject}已变更，请重新读取。`);
+      offset += bytesRead;
+    }
+    const latest = await handle.stat();
+    if (latest.size !== info.size || latest.ctimeMs !== info.ctimeMs || latest.mtimeMs !== info.mtimeMs) {
+      throw new Error(`${subject}已变更，请重新读取。`);
+    }
+    return { info, bytes };
   } finally {
     await handle.close();
   }
@@ -31,10 +43,12 @@ async function readSnapshot(file: string, subject: string) {
 
 type StoredSnapshot = NonNullable<Awaited<ReturnType<typeof readSnapshot>>>;
 
-function decode(current: StoredSnapshot | undefined, subject: string): unknown {
+function decode(current: StoredSnapshot | undefined, subject: string, rejectNull: boolean): unknown {
   if (!current) return null;
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(current.bytes));
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(current.bytes));
+    if (rejectNull && value === null) throw new TypeError("缺少存档数据。");
+    return value;
   } catch {
     throw new Error(`${subject}的 JSON 格式无效。`);
   }
@@ -53,9 +67,13 @@ async function save(
   data: unknown,
   verifyProfile: VerifyProfile,
   subject: string,
+  maxBytes?: number,
 ): Promise<void> {
   const encoded = JSON.stringify(data, null, 2);
   if (encoded === undefined) throw new TypeError(`${subject}缺少可保存的 JSON。`);
+  if (maxBytes !== undefined && Buffer.byteLength(encoded, "utf8") + 1 > maxBytes) {
+    throw new Error(`${subject}的 JSON 文件过大。`);
+  }
   const staging = await mkdtemp(join(directory, ".lotus-gacha-write-"));
   try {
     const pending = join(staging, "history.json");
@@ -74,7 +92,7 @@ async function save(
       await handle.close();
     }
 
-    const latest = original && await readSnapshot(file, subject);
+    const latest = original && await readSnapshot(file, subject, maxBytes);
     if (original && !unchanged(original, latest)) {
       throw new Error(`${subject}已变更，请重新更新。`);
     }
@@ -98,8 +116,16 @@ async function save(
 export function createRoleJsonArchive(
   directory: string,
   acquireLock: AcquireRoleArchiveLock,
-  { subject, lockSuffix }: { readonly subject: string; readonly lockSuffix: string },
+  { subject, lockSuffix, maxBytes, rejectNull = false }: {
+    readonly subject: string;
+    readonly lockSuffix: string;
+    readonly maxBytes?: number;
+    readonly rejectNull?: boolean;
+  },
 ) {
+  if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
+    throw new RangeError(`${subject}的 JSON 文件大小上限无效。`);
+  }
   async function locate(qq: string, create: boolean) {
     if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
     try {
@@ -119,12 +145,13 @@ export function createRoleJsonArchive(
     async read(qq: string, uid: string): Promise<unknown> {
       checkIdentity(qq, uid, subject);
       const userDirectory = await locate(qq, false);
-      return userDirectory ? decode(await readSnapshot(join(userDirectory, `${uid}.json`), subject), subject) : null;
+      return userDirectory ? decode(await readSnapshot(join(userDirectory, `${uid}.json`), subject, maxBytes), subject, rejectNull) : null;
     },
     async update<Result>(
       { qq, uid }: { readonly qq: string; readonly uid: string },
       verifyProfile: VerifyProfile,
-      prepare: (snapshot: unknown) => { readonly document: unknown; readonly result: Result },
+      prepare: (snapshot: unknown) =>
+        { readonly document?: unknown; readonly result: Result } | Promise<{ readonly document?: unknown; readonly result: Result }>,
     ) {
       checkIdentity(qq, uid, subject);
       await verifyProfile();
@@ -133,10 +160,15 @@ export function createRoleJsonArchive(
       const lock = await acquireLock(join(userDirectory, `.${uid}.${lockSuffix}.sqlite`), subject);
       try {
         await verifyProfile();
-        const original = await readSnapshot(file, subject);
-        const { document, result } = prepare(decode(original, subject));
-        await save(userDirectory, file, original, document, verifyProfile, subject);
-        return result;
+        const original = await readSnapshot(file, subject, maxBytes);
+        const prepared = await prepare(decode(original, subject, rejectNull));
+        if ("document" in prepared) {
+          if (rejectNull && prepared.document === null) throw new TypeError(`${subject}缺少可保存的数据。`);
+          await save(userDirectory, file, original, prepared.document, verifyProfile, subject, maxBytes);
+        } else {
+          await verifyProfile();
+        }
+        return prepared.result;
       } finally {
         lock.close();
       }

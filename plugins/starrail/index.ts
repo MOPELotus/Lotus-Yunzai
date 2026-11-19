@@ -5,6 +5,8 @@ import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-cl
 import { buildStarRailGachaDetail, type StarRailGachaDetailPool } from "./gacha-detail.ts";
 import { renderStarRailGachaDetail } from "./gacha-detail-card.ts";
 import { readStarRailGachaItems, starRailGachaThemeDirectory } from "./gacha-detail-source.ts";
+import { createStarRailGachaFiles, type StarRailGachaFileContext } from "./gacha-files.ts";
+import { createStarRailGachaRecordArchive } from "./gacha-record-archive.ts";
 import { renderStarRailGachaFailure, renderStarRailGachaResult } from "./gacha-result-card.ts";
 import { readStarRailGachaSchedule, resolveStarRailDetailPool } from "./gacha-schedule.ts";
 import { buildStarRailGachaSpecial, type StarRailGachaSpecialOptions } from "./gacha-special.ts";
@@ -32,12 +34,15 @@ const specialPools = new Map<string, SpecialPool>([
   ["武器联动", "GachaType_CollabEquipmentUp"], ["新手", "GachaType_Newbie"],
 ]);
 const historyRoot = fileURLToPath(new URL("../../data/starRailGachaJson/", import.meta.url));
+const recordsRoot = fileURLToPath(new URL("../../data/starRailGachaRows/", import.meta.url));
+const legacyRecordsRoot = fileURLToPath(new URL("../../data/srJson/", import.meta.url));
 const help = [
   "星铁抽卡记录",
   "#登录列表 可查看档案，#同步角色 可同步星铁角色。",
   "*更新抽卡记录 可更新官方范围内的记录。",
   "*抽卡记录、*光锥记录、*常驻记录、*新手记录、*角色联动记录、*光锥联动记录 可查看指定卡池。",
   "*全部记录 可查看各池，*版本统计 可按活动卡池期次查看。",
+  "私聊 *导入记录 可接收 UIGF / SRGF 文件，*导出记录 可发送本地逐抽档案。",
   "末尾加档案编号可选档案，如 *抽卡记录2。单池可加「全部」查看各页，如 *角色全部记录2。",
 ].join("\n");
 
@@ -65,19 +70,16 @@ function matchGachaQuery(message: string): { profileId: number; view: GachaView;
   return { profileId: Number(pool[5] ?? 1), view, all: !!(pool[1] || pool[3]) };
 }
 
-interface GachaContext {
-  readonly normalizedMessage: string;
-  readonly user_id?: number;
-  reply(message: string): unknown;
-}
-
-export function createModule({ signal, lockFile }: {
+export function createModule({ signal, lockFile, runtimeVersion }: {
   signal: AbortSignal;
   lockFile: Parameters<typeof createStarRailGachaHistoryStore>[1];
+  runtimeVersion?: { readonly version?: string; readonly revision?: string };
 }) {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const client = createProfileHoyoClient(profiles);
   const history = createStarRailGachaHistoryStore(historyRoot, lockFile);
+  const archive = createStarRailGachaRecordArchive({ directory: recordsRoot, legacyDirectory: legacyRecordsRoot }, lockFile);
+  const gachaFiles = createStarRailGachaFiles(profiles, archive, signal, runtimeVersion?.version ?? runtimeVersion?.revision ?? "dev");
   const service = createStarRailGachaSync(profiles, client, history);
   const updateGacha = createGachaUpdater((qq, profileId) => service.sync(qq, profileId, { signal }));
 
@@ -151,7 +153,9 @@ export function createModule({ signal, lockFile }: {
       const result = await updateGacha(qq, profileId);
       return result && { uid: result.log.uid };
     },
-    async fallback(_message: string, context: GachaContext) {
+    async fallback(_message: string, context: StarRailGachaFileContext) {
+      const fileReply = await gachaFiles(context);
+      if (fileReply !== undefined) return fileReply;
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
       const view = matched ? undefined : matchGachaQuery(context.normalizedMessage);
