@@ -1,5 +1,7 @@
 import { createClient } from "redis";
 
+export { createRoleJsonArchive, type AcquireRoleArchiveLock } from "./role-json-archive.ts";
+
 export interface StorageConnectionOptions {
   readonly host: string;
   readonly port: number;
