@@ -6,6 +6,9 @@ export type GroupMuteAction = (userId: number, seconds: number) => Promise<Group
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
 export type GroupKickAction = (userId: number, block: boolean) => Promise<GroupMemberModerationResult>;
 export type GroupManageBlacklistAction = () => Promise<boolean>;
+export type GroupSpecialTitleAction = (
+  userId: number, title: string, verify?: () => Promise<boolean>,
+) => Promise<GroupMemberModerationResult>;
 
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
@@ -32,7 +35,7 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
-export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick }: {
+export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -43,9 +46,11 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly mute: (userId: number, seconds: number) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
   readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
+  readonly title: (userId: number, text: string) => Promise<GroupModerationResult>;
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
+  groupSetSpecialTitle: GroupSpecialTitleAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -101,6 +106,22 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     },
     groupManageBlacklist: () => canManage("list"),
     groupManageWhitelistAutoUnmute: () => canManage("automatic"),
+    async groupSetSpecialTitle(userId, text, verify) {
+      if (!active()) return "unavailable";
+      if (!Number.isSafeInteger(userId) || userId <= 0 || typeof text !== "string") return "rejected";
+      if (userId === bot) return "protected";
+      const [actorRole, botRole, targetRole] = await Promise.all([role(actor), role(bot), userId === actor ? undefined : role(userId)])
+        .catch(() => []);
+      if (!active() || !actorRole || botRole !== "owner" || (userId !== actor && (!targetRole || !isMaster()))) return "unavailable";
+      if (targetRole === "owner") return "protected";
+      if (verify) {
+        const permitted = await verify().catch(() => undefined);
+        if (permitted === undefined) return "unavailable";
+        if (!permitted) return "protected";
+      }
+      if (userId !== actor && !isMaster()) return "unavailable";
+      return apply(() => title(userId, text));
+    },
   };
 }
 

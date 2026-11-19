@@ -23,7 +23,8 @@ async function waitUntil<T>(read: () => T | undefined, description: string): Pro
 }
 
 function liveMember({ group_id, user_id }: Call["params"]) {
-  const role = user_id === milkyId ? "owner" : [oneBotId, operator, 53].includes(Number(user_id)) ? "admin" : "member";
+  const role = user_id === milkyId || (user_id === oneBotId && group_id === 82) ? "owner" :
+    [oneBotId, operator, 53].includes(Number(user_id)) ? "admin" : "member";
   return { group_id: user_id === 45 ? 80 : group_id, user_id, role };
 }
 
@@ -40,6 +41,7 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
     async mute() { sent++; return "confirmed"; },
     async wholeMute() { sent++; return "confirmed"; },
     async kick() { sent++; return "confirmed"; },
+    async title() { sent++; return "confirmed"; },
   });
   const held = actions.groupMute(42, 300);
   active = false;
@@ -74,7 +76,7 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
     });
     await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config/other.yaml"), 'master: ["100:51"]\nmasterQQ: [52]\n');
+    await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\n');
     await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
@@ -335,6 +337,45 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     ]);
     expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.user_id === 43)).toHaveLength(1);
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.duration === 45)).toHaveLength(1);
+    expect(await readFile(join(legacyRules, "79.json"), "utf8")).toBe(testRules);
+
+    const titleReply = (value: string) => waitUntil(() => oneBotReplies().find(({ params }) =>
+      JSON.stringify(params.message).includes(value)), "OneBot 未回复群头衔指令。");
+    send(oneBotMessage("#申请头衔旅人", 42, 82));
+    await titleReply("已将你的头衔更换为「旅人」");
+    send(oneBotMessage("#申请头衔不能设置", 42, 79));
+    await titleReply("请核对群成员和群主权限");
+    send(oneBotMessage([text("#修改头衔不能代改"), at(42)], 51, 82));
+    await titleReply("没有设置该群头衔的权限");
+    send(oneBotMessage([text("#设置头衔同行者"), at(42)], 52, 82));
+    await titleReply("同行者");
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_special_title").map(({ params }) => params)).toEqual([
+      { group_id: 82, user_id: 42, special_title: "旅人" }, { group_id: 82, user_id: 42, special_title: "同行者" },
+    ]);
+
+    const milkyTitle = (message: string, sender_id = operator) => ({
+      ...milkyMessage(message), peer_id: 79, sender_id, group_member: { group_id: 79, user_id: sender_id, role: sender_id === operator ? "admin" : "member" },
+    });
+    await webhook("message_receive", milkyTitle("#增加头衔屏蔽词云游"));
+    expect(JSON.stringify((await milkyReply(16)).params.message)).toContain("云游");
+    await webhook("message_receive", milkyTitle("#我要头衔云游", 42));
+    expect(JSON.stringify((await milkyReply(17)).params.message)).toContain("头衔包含屏蔽词");
+    await webhook("message_receive", milkyTitle("#我要头衔云游者", 42));
+    expect(JSON.stringify((await milkyReply(18)).params.message)).toContain("云游者");
+    await webhook("message_receive", milkyTitle("#切换头衔屏蔽词匹配模式"));
+    expect(JSON.stringify((await milkyReply(19)).params.message)).toContain("模糊");
+    await webhook("message_receive", milkyTitle("#申请头衔云游者", 42));
+    expect(JSON.stringify((await milkyReply(20)).params.message)).toContain("头衔包含屏蔽词");
+    await webhook("message_receive", milkyTitle("#我要头衔云游者"));
+    expect(JSON.stringify((await milkyReply(21)).params.message)).toContain("云游者");
+    await webhook("message_receive", milkyTitle("#申请头衔", 42));
+    await milkyReply(22);
+    expect(milkyCalls.filter(({ action }) => action === "set_group_member_special_title").map(({ params }) => params)).toEqual([
+      { group_id: 79, user_id: 42, special_title: "云游者" }, { group_id: 79, user_id: operator, special_title: "云游者" },
+      { group_id: 79, user_id: 42, special_title: "" },
+    ]);
+    const titles = JSON.parse(await readFile(join(root, "data/group/banned-words/79.json"), "utf8"));
+    expect(titles).toEqual({ ...JSON.parse(testRules), TitleBannedWords: ["云游"], TitleFilterModeChange: 1 });
     expect(await readFile(join(legacyRules, "79.json"), "utf8")).toBe(testRules);
   } finally {
     socket?.close();
