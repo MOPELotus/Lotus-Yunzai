@@ -76,3 +76,64 @@ test("冰、以太与物理使用角色自身属性，按旧规则保留可见�
     }
   }
 });
+
+test("露西的六影召唤物按旧序号显示，各档案独立计算攻击力", () => {
+  const lucy = { ...avatar, id: 1151, name_mi18n: "露西", element_type: 201, avatar_profession: 4 };
+  const data: DamageData = {
+    ...numericFixture,
+    character: {
+      skill: Object.fromEntries(["AP4", "AZCD", "AZH", "CF", "EQP", "EQX", "RL", "RZ"].map(name => [name, [1]])),
+      buff: { E1: [0.1], E2: [1], T: [1] },
+    },
+    anomaly: [{ ...numericFixture.anomaly[0]!, name: "灼烧", element_type: 201 }],
+  };
+  const low = calculatePanelDamage(lucy, data, noGear, 3);
+  expect(low.selected.skill.type).toBe("AZCD");
+  expect(low.skills.some(row => row.skill.type === "Y6")).toBe(false);
+  const stronger = calculatePanelDamage({
+    ...lucy, rank: 6,
+    properties: (avatar.properties as { property_name: string; base: string; final: string }[]).map(row =>
+      row.property_name === "攻击力" ? { ...row, final: "200" } : row),
+  }, data, noGear, 5);
+  expect(stronger.selected.skill.type).toBe("Y6");
+  expect(stronger.skills[2]!.result.expectDMG).toBeGreaterThan(low.selected.result.expectDMG);
+  expect(calculatePanelDamage(lucy, data, noGear, 3).selected.result).toEqual(low.selected.result);
+});
+
+test("命破用旧贯穿乘区，允许面板省去普通能量和穿透率", () => {
+  const properties = (avatar.properties as { property_name: string }[]).filter(row =>
+    row.property_name !== "能量自动回复" && row.property_name !== "穿透率");
+  const data: DamageData = {
+    ...numericFixture,
+    character: { skill: Object.fromEntries(["AQ4", "CF", "EP", "EQ", "LTT", "LTL", "RL", "RQ"].map(name => [name, [1]])) },
+  };
+  const haru = { ...avatar, id: 1441, name_mi18n: "真斗", element_type: 201, avatar_profession: 6, properties };
+  const actual = calculatePanelDamage(haru, data, noGear, 5);
+  expect(actual.skills).toHaveLength(7);
+  expect(actual.selected.skill.type).toBe("LTT");
+  expect(actual.selected.skill.isSheerDMG).toBe(true);
+  expect(actual.selected.areas.DefenceArea).toBe(1);
+  expect(actual.selected.result.expectDMG).toBeGreaterThan(actual.skills[0]!.result.expectDMG);
+});
+
+test("星见雅的碎冰和紊乱选择原特殊属性，拒绝混入普通冰数据", () => {
+  const miyabi = {
+    ...avatar, id: 1091, name_mi18n: "雅", element_type: 202, sub_element_type: 1, avatar_profession: 3,
+  };
+  const multiplier = { ...numericFixture.anomaly[0]!, name: "碎冰" as const, element_type: 202 };
+  const data: DamageData = {
+    ...numericFixture,
+    character: {
+      skill: Object.fromEntries(["AP5", "CF", "TP", "AX1", "AX2", "AX3", "EQ1", "EQ2", "RL", "RZ"].map(name => [name, [1]])),
+    },
+    anomaly: [
+      { ...multiplier, discover: { multiplier: 0.2, fixed_multiplier: 0.2 } },
+      { ...multiplier, sub_element_type: 1, multiplier: 3, discover: { multiplier: 0.5, fixed_multiplier: 1 } },
+    ],
+  };
+  const actual = calculatePanelDamage(miyabi, data, noGear, 2);
+  expect(actual.selected.skill.type).toBe("紊乱");
+  expect(actual.skills[0]!.props?.倍率).toBe(3);
+  expect(actual.selected.props?.倍率).toBe(1.5);
+  expect(() => calculatePanelDamage({ ...miyabi, sub_element_type: 0 }, data, noGear)).toThrow(/规则/u);
+});
