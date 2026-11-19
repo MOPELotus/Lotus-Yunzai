@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bindMessageGroupMute } from "../lib/adapters/group-moderation.ts";
+import { bindMessageGroupActions } from "../lib/adapters/group-moderation.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const group = 77;
@@ -31,15 +31,16 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
   const requested = Promise.withResolvers<void>();
   let active = true;
   let sent = 0;
-  const mute = bindMessageGroupMute({
+  const actions = bindMessageGroupActions({
     bot: 99, actor: 51, signal: new AbortController().signal, accepting: () => active, isMaster: () => true,
     isProtected: () => false, async role(id) {
       if (id === 42) await requested.promise;
       return id === 99 ? "admin" : "member";
     },
     async mute() { sent++; return "confirmed"; },
+    async wholeMute() { sent++; return "confirmed"; },
   });
-  const held = mute(42, 300);
+  const held = actions.groupMute(42, 300);
   active = false;
   requested.resolve();
   expect(await held).toBe("unavailable");
@@ -56,7 +57,8 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       const action = new URL(request.url).pathname.split("/").at(-1)!;
       const params = await request.json() as Call["params"];
       milkyCalls.push({ action, params });
-      if (action === "set_group_member_mute" && params.user_id === 44) return new Response(null, { status: 503 });
+      if ((action === "set_group_member_mute" && params.user_id === 44) ||
+          (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
         { member: liveMember(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length } : {};
       return Response.json({ status: "ok", retcode: 0, data });
@@ -158,6 +160,28 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       { group_id: group, user_id: 53, duration: 0 },
     ]);
     expect(oneBotMuted()).toHaveLength(2);
+
+    send(oneBotMessage("#全体禁言"));
+    expect(JSON.stringify((await oneBotReply(6)).params.message)).toContain("禁言");
+    send(oneBotMessage("#全员解禁"));
+    expect(JSON.stringify((await oneBotReply(7)).params.message)).toContain("已关闭全体禁言");
+    send(oneBotMessage("#全员禁言", 54));
+    expect(JSON.stringify((await oneBotReply(8)).params.message)).toContain("管理权限");
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_whole_ban").map(({ params }) => params)).toEqual([
+      { group_id: group, enable: true }, { group_id: group, enable: false },
+    ]);
+
+    await webhook("message_receive", milkyMessage("#全员禁言"));
+    expect(JSON.stringify((await milkyReply(4)).params.message)).toContain("禁言");
+    const wholeUnknown = milkyMessage("#全体解禁");
+    await webhook("message_receive", wholeUnknown);
+    expect(JSON.stringify((await milkyReply(5)).params.message)).toContain("未确认");
+    await webhook("message_receive", wholeUnknown);
+    await webhook("message_receive", milkyMessage("#解禁42"));
+    await milkyReply(6);
+    expect(milkyCalls.filter(({ action }) => action === "set_group_whole_mute").map(({ params }) => params)).toEqual([
+      { group_id: group, is_mute: true }, { group_id: group, is_mute: false },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

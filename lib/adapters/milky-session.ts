@@ -2,7 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupMute, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -310,7 +310,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         () => checkinNotify.isFriend(mentioned),
         count => likeProfile(mentioned, count))
         : undefined,
-      groupMute: positiveId(groupId) && positiveId(cardOwner) ? bindMessageGroupMute({
+      ...(positiveId(groupId) && positiveId(cardOwner) && bindMessageGroupActions({
         bot: account, actor: cardOwner, signal,
         accepting: options.canModerateGroups,
         isMaster: () => isMaster(cardOwner),
@@ -319,7 +319,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         async mute(user_id, duration) {
           return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, signal)).status;
         },
-      }) : undefined,
+        async wholeMute(is_mute) {
+          return (await call.confirmed("set_group_whole_mute", { group_id: groupId, is_mute }, signal)).status;
+        },
+      })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
         ? () => bindCard(() => isMaster(cardOwner)) : undefined,
