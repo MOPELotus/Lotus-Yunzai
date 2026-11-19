@@ -217,6 +217,7 @@ h1, h2, h3, p { margin: 0; }
 .settings-options { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; margin: 0; padding: 0; border: 0; }
 .settings-options legend { padding: 0 0 6px; color: var(--muted); }
 .settings-options label { display: flex; gap: 7px; align-items: center; }
+.settings-options-main { flex-basis: 100%; }
 .settings-options input { width: 17px; height: 17px; accent-color: var(--accent); }
 .profile-settings [role="status"]:empty { display: none; }
 .profile-settings button { justify-self: start; }
