@@ -5,6 +5,7 @@
   "exports": {
     ".": "./index.ts",
     "./daily-note": "./daily-note-card.ts",
+    "./genshin-backpack": "./genshin-backpack-card.ts",
     "./genshin-gacha-special": "./genshin-gacha-special-card.ts",
     "./genshin-world-boss": "./genshin-world-boss-card.ts",
     "./genshin-world-boss-ranking": "./genshin-world-boss-ranking-card.ts",
