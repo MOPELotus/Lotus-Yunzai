@@ -2,7 +2,7 @@ import type { MessageEvent, MessageReply } from "./messages.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
-    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile"
+    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply">> & {
@@ -66,10 +66,11 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
-    groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, message, raw_message, uploadFile } = context;
+    groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, message, raw_message, uploadFile,
+    attachment, canReadAttachments, adapter } = context;
   return {
     message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
-    reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile,
+    reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
   };

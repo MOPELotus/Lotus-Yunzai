@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { encodeChatFile } from "../chat-files.ts";
+import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import type { InboundSegment, MessageEvent, MessageReply, QuotedMessage, ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
@@ -264,6 +264,26 @@ function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCa
   return downloadable;
 }
 
+function milkyAttachment(segment: InboundSegment | undefined): IncomingChatFile | undefined {
+  if (!segment) return;
+  const { name, size, getDownloadUrl } = segment;
+  if (!isChatFileName(name) || !isId(size) || size > maxChatFileBytes || typeof getDownloadUrl !== "function") return;
+  let downloading: Promise<Uint8Array | undefined> | undefined;
+  const download = async (signal?: AbortSignal): Promise<Uint8Array | undefined> => {
+    const url = await getDownloadUrl();
+    if (!signal?.aborted && typeof url === "string") return readQqChatFile(url, size, signal);
+  };
+  return Object.freeze({
+    name,
+    size,
+    async read(signal?: AbortSignal) {
+      if (signal?.aborted) return;
+      const bytes = await (downloading ??= download(signal));
+      if (!signal?.aborted) return bytes;
+    },
+  });
+}
+
 function decodeSegments(value: unknown, selfId: number, target: Target, call: MilkyCall) {
   if (!Array.isArray(value) || value.length === 0) return;
   const message: InboundSegment[] = [];
@@ -425,9 +445,11 @@ export function milkyFriendFileUpload(
     post_type: "message", message_type: "private", sub_type: "friend",
     self_id: selfId, user_id: userId, sender: { user_id: userId },
     msg: "", raw_message: "[file]", message: [file], file,
+    attachment: milkyAttachment(file),
     isGroup: false, isPrivate: true, isMaster: false, boundAccount: false,
     async isFriend() { return true; },
     uploadFile: uploadCall && uploadToMilky(target, uploadCall),
+    canReadAttachments: true,
     reply: replyToMilky(target, call),
   };
 }
@@ -445,6 +467,7 @@ export function milkyMessage(
   const target = isGroup ? { group_id: peerId } : { user_id: peerId };
   const incoming = decodeSegments(segments, selfId, target, call);
   if (!incoming) return;
+  const files = incoming.message.filter(({ type }) => type === "file");
   const quotedSequence = segmentNumber(incoming.replyId);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
   async function lookupQuote(sequence: number): Promise<QuotedMessage | undefined> {
@@ -470,7 +493,8 @@ export function milkyMessage(
     msg: incoming.text.trim(), raw_message: incoming.raw, message: incoming.message,
     atBot: incoming.atBot, at: incoming.at, reply_id: incoming.replyId, img: incoming.img,
     lookupReply: isSequence(quotedSequence) ? () => quoted ??= lookupQuote(quotedSequence) : undefined,
-    file: incoming.message.find(({ type }) => type === "file"),
+    file: files[0],
+    attachment: files.length === 1 ? milkyAttachment(files[0]) : undefined,
     isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,
     async getGroupRole(groupId) {
       if (!isId(groupId)) return;
@@ -500,6 +524,7 @@ export function milkyMessage(
       return true;
     }),
     uploadFile: uploadCall && uploadToMilky(target, uploadCall),
+    canReadAttachments: true,
     reply: replyToMilky(target, call, { messageId, groupSender: isGroup ? userId : undefined, scheduleRecall }),
   };
 }

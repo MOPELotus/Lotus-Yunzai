@@ -1,3 +1,4 @@
+import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
@@ -44,6 +45,7 @@ async function readOneBotQuote(
 interface ConnectionData {
   readonly calls: OneBotCalls;
   readonly mutes: OneBotMutes;
+  readonly attachmentSession?: AbortController;
   botId?: number;
   detach?: () => void;
   display?: OneBotMemberDisplay;
@@ -51,8 +53,56 @@ interface ConnectionData {
   joinRoster?: Map<number, symbol>;
 }
 
+function attachmentSize(value: unknown): number | undefined {
+  const size = typeof value === "string" && /^\d{1,16}$/u.test(value) ? Number(value) : value;
+  if (typeof size === "number" && Number.isSafeInteger(size) && size > 0 && size <= maxChatFileBytes) return size;
+}
+
+function attachmentId(value: unknown, name: string): string | undefined {
+  if (typeof value === "string" && value !== name && value.length <= 1024 && /^\/?[A-Za-z0-9_+-]+={0,2}$/u.test(value)) {
+    return value;
+  }
+}
+
+function incomingAttachment(
+  session: AbortSignal, calls: OneBotCalls, send: Send, target: { group_id: number } | { user_id: number },
+  data: Record<string, unknown>, source: "message" | "group_upload" | "offline_file",
+): IncomingChatFile | undefined {
+  if (session.aborted) return;
+  const name = source === "message" ? data.file : data.name;
+  if (!isChatFileName(name)) return;
+  const rawSize = source === "message" ? data.file_size : data.size;
+  const size = attachmentSize(rawSize);
+  if (rawSize !== undefined && size === undefined) return;
+  const fileId = attachmentId(source === "group_upload" ? data.id : data.file_id, name);
+  const busid = "group_id" in target && typeof data.busid === "number" && Number.isSafeInteger(data.busid) && data.busid >= 0
+    ? data.busid : undefined;
+  const directUrl = source === "offline_file" && typeof data.url === "string" ? data.url : undefined;
+  if (!fileId && directUrl === undefined) return;
+  const fileTarget = busid !== undefined ? { ...target, busid } : target;
+  return Object.freeze({
+    name, size,
+    async read(signal?: AbortSignal) {
+      const readSignal = signal ? AbortSignal.any([session, signal]) : session;
+      if (readSignal.aborted) return;
+      return fileId ? calls.readFile(send, fileTarget, fileId, name, size, readSignal) : readQqChatFile(directUrl, size, readSignal);
+    },
+  });
+}
+
+function structuredAttachment(message: unknown): Record<string, unknown> | undefined {
+  if (!Array.isArray(message)) return;
+  const files = message.filter((part: unknown) => isRecord(part) && part.type === "file");
+  const data = files.length === 1 ? files[0]?.data : undefined;
+  return isRecord(data) ? data : undefined;
+}
+
 function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string): boolean {
   return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
+}
+
+function isLoopback(address?: string): boolean {
+  return address === "::1" || /^(?:::ffff:)?127(?:\.\d{1,3}){3}$/u.test(address ?? "");
 }
 
 interface MessageIdentity {
@@ -238,10 +288,10 @@ async function dispatchMessage(
   event: Record<string, unknown>,
   calls: OneBotCalls,
   isMaster: (bot: number, user: number) => boolean,
-  mutes?: OneBotMutes,
-  connectedBotId?: number,
-  display?: OneBotMemberDisplay,
+  connection?: ConnectionData,
+  noticeAttachment?: IncomingChatFile,
 ): Promise<void> {
+  const { mutes, botId: connectedBotId, display, attachmentSession } = connection ?? {};
   const userId = event.user_id;
   if (event.post_type !== "message" || !isId(userId) || userId === event.self_id) return;
 
@@ -257,6 +307,10 @@ async function dispatchMessage(
   const selfId = isId(event.self_id) ? event.self_id : undefined;
   const incoming = decodeOneBotMessage(event.message, selfId);
   if (incoming === undefined) return;
+  const boundAccount = selfId !== undefined && selfId === connectedBotId;
+  const rawFile = !noticeAttachment && boundAccount && attachmentSession ? structuredAttachment(event.message) : undefined;
+  const attachment = noticeAttachment ?? (rawFile && attachmentSession
+    ? incomingAttachment(attachmentSession.signal, calls, send, target, rawFile, "message") : undefined);
   const { text, ...messageFields } = incoming;
   const sender = isRecord(event.sender) ? event.sender : undefined;
   if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {
@@ -277,6 +331,9 @@ async function dispatchMessage(
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
     ...messageFields,
     file: incoming.message.find(({ type }) => type === "file"),
+    attachment,
+    canReadAttachments: boundAccount && !!attachmentSession && !attachmentSession.signal.aborted,
+    attachmentOnly: noticeAttachment !== undefined && messageType === "group" ? true : undefined,
     post_type: "message",
     message_type: messageType,
     sub_type: typeof event.sub_type === "string" ? event.sub_type : undefined,
@@ -293,7 +350,7 @@ async function dispatchMessage(
     isGroup: messageType === "group",
     isPrivate: messageType === "private",
     isMaster: owner,
-    boundAccount: selfId !== undefined && selfId === connectedBotId,
+    boundAccount,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
@@ -309,8 +366,8 @@ async function dispatchMessage(
       }
       return messages.length > 0 && calls.sendForward(send, target, messages);
     },
-    uploadFile: selfId !== undefined && selfId === connectedBotId && display?.closed === false
-      ? (file) => display.closed ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)
+    uploadFile: boundAccount && attachmentSession && display?.closed === false
+      ? (file) => display.closed || attachmentSession.signal.aborted ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)
       : undefined,
     reviewGroupRequest: messageType === "private" && owner
       ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
@@ -357,6 +414,8 @@ export function startOneBot(
     http?: (request: Request) => Response | Promise<Response>;
   },
 ) {
+  const authenticated = [...options.auth].length > 0;
+
   function sender(socket: Bun.ServerWebSocket<ConnectionData>, source: MessageIdentity): Send {
     return (frame) => {
       const sent = sendFrame(socket, JSON.stringify(frame));
@@ -373,7 +432,10 @@ export function startOneBot(
     socket.data.detach = options.groups.connect(botId, {
       calls: socket.data.calls,
       send,
-      retireMemberDisplay: () => display.close(),
+      retireMemberDisplay: () => {
+        display.close();
+        socket.data.attachmentSession?.abort();
+      },
     });
     options.onBind?.(botId);
     if (options.prewarmGroupMembers) {
@@ -414,7 +476,8 @@ export function startOneBot(
       }
       const header = request.headers.get("X-Self-ID");
       const id = header !== null && /^[1-9]\d*$/u.test(header) ? Number(header) : undefined;
-      const data = { calls: new OneBotCalls(), mutes: new OneBotMutes(), botId: isId(id) ? id : undefined };
+      const data = { calls: new OneBotCalls(), mutes: new OneBotMutes(), botId: isId(id) ? id : undefined,
+        attachmentSession: authenticated || isLoopback(server.requestIP(request)?.address) ? new AbortController() : undefined };
       if (!server.upgrade(request, { data })) {
         return new Response(null, { status: 426 });
       }
@@ -431,7 +494,7 @@ export function startOneBot(
         } catch {
           return;
         }
-        const { calls, botId, mutes } = socket.data;
+        const { calls, botId, mutes, attachmentSession } = socket.data;
         if (!isRecord(message) || calls.receive(message)) return;
         if (botId !== undefined && isId(message.self_id) && message.self_id !== botId) return;
         if (message.post_type === "meta_event") {
@@ -453,12 +516,25 @@ export function startOneBot(
             if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
                 isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
               socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
+            } else if (message.notice_type === "group_upload") {
+              if (!attachmentSession || botId === undefined || message.self_id !== botId || !isId(message.user_id) ||
+                  !isId(message.group_id) || !isRecord(message.file)) return;
+              const attachment = incomingAttachment(attachmentSession.signal, calls, send, { group_id: message.group_id }, message.file,
+                "group_upload");
+              if (!attachment) return;
+              await dispatchMessage(dispatch, send, {
+                ...message, post_type: "message", message_type: "group", sub_type: "normal", message_id: undefined, raw_message: undefined,
+                message: [{ type: "file", data: message.file }],
+              }, calls, options.isMaster, socket.data, attachment);
             } else if (message.notice_type === "offline_file" && isId(message.self_id) &&
                 !message.group_id && isRecord(message.file)) {
+              const attachment = isId(message.user_id) && message.self_id === botId && attachmentSession
+                ? incomingAttachment(attachmentSession.signal, calls, send, { user_id: message.user_id }, message.file, "offline_file")
+                : undefined;
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
                 message: [{ type: "file", data: message.file }],
-              }, calls, options.isMaster);
+              }, calls, options.isMaster, undefined, attachment);
             } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
               await dispatchFriendPoke(dispatch, send, message, options.isMaster);
             } else {
@@ -467,7 +543,7 @@ export function startOneBot(
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options);
           } else {
-            await dispatchMessage(dispatch, send, message, calls, options.isMaster, mutes, botId, socket.data.display);
+            await dispatchMessage(dispatch, send, message, calls, options.isMaster, socket.data);
           }
         } catch {
           console.error("处理 OneBot 事件失败。");
@@ -476,6 +552,7 @@ export function startOneBot(
       close(socket) {
         socket.data.detach?.();
         socket.data.display?.close();
+        socket.data.attachmentSession?.abort();
         socket.data.calls.close();
       },
     },

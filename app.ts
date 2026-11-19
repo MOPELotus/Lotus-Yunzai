@@ -503,6 +503,15 @@ if (import.meta.main) {
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
     if (await privateAccess.blocked(event)) return;
+    if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {
+      if (event.attachment) {
+        const { self_id } = event;
+        const reply = await commands.dispatchFallback(event, allowed, (userId) =>
+          self_id !== undefined && masterPermissions.isMaster(self_id, userId));
+        if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
     if (await legacy.dispatchContext(event, allowed)) return;
     const useKeywords = allowed(keywordFeatureNames);
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;
