@@ -14,6 +14,7 @@ import { createGenshinGachaSync } from "./gacha-sync.ts";
 import { exportGenshinUigf, type GenshinUigfExportOptions } from "./gacha-uigf.ts";
 import { buildGenshinGachaVersion, type GenshinGachaVersionOptions } from "./gacha-version.ts";
 import { renderGenshinGachaVersion } from "./gacha-version-card.ts";
+import { createWorldBossQuery, worldBossCommand } from "./world-boss.ts";
 
 const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
 const miniappCommand = /^#?(?:获取|更新)(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)([1-9]\d{0,2})?$/u;
@@ -72,7 +73,7 @@ interface GachaContext {
   readonly attachment?: { readonly name: string; read(signal?: AbortSignal): Promise<Uint8Array | undefined> };
   readonly canReadAttachments?: boolean;
   readonly uploadFile?: (file: { readonly name: string; readonly bytes: Uint8Array }) => Promise<"confirmed" | "rejected" | "unknown">;
-  reply(message: string): unknown;
+  reply(message: string | { readonly type: "image"; readonly file: Uint8Array }): unknown;
 }
 
 export function createModule({ signal, lockFile, runtimeVersion }: {
@@ -82,7 +83,9 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
 }) {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const history = createGenshinGachaHistoryStore(historyDirectory, lockFile);
-  const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
+  const client = createProfileHoyoClient(profiles);
+  const sync = createGenshinGachaSync(profiles, client, history);
+  const worldBossQuery = createWorldBossQuery(profiles, client, signal);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
   const importGacha = createGenshinGachaImport(profiles, history, signal);
@@ -206,6 +209,8 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
     commands: {},
     gachaUpdate,
     async fallback(_message: string, context: GachaContext) {
+      const worldBoss = worldBossCommand.exec(context.normalizedMessage);
+      if (worldBoss) return worldBossQuery(Number(worldBoss[1] ?? 1), context);
       const importMatch = gachaImportCommand.exec(context.normalizedMessage);
       if (importMatch || context.attachment) {
         const imported = await importGacha(context, importMatch);
