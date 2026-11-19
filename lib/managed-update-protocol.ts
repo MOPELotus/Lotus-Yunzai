@@ -8,9 +8,25 @@ export interface ManagedUpdateRequest {
   readonly force?: boolean;
   readonly quiet: boolean;
   readonly target: { readonly type: "terminal" } |
-    { readonly type: "group" | "private"; readonly botId: number; readonly id: number } |
+    { readonly type: "group" | "private"; readonly botId: number; readonly id: number; readonly adapter?: "milky" } |
     { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean };
   readonly directories: readonly { readonly name: string; readonly path: string; readonly packageName: string }[];
+}
+
+export type ManagedUpdateWireRequest = Omit<ManagedUpdateRequest, "target"> & {
+  readonly target: { readonly type: "terminal" } |
+    { readonly type: "group" | "private" | "milky-group" | "milky-private"; readonly botId: number; readonly id: number } |
+    { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean };
+};
+
+export function encodeManagedUpdateRequest(request: ManagedUpdateRequest): ManagedUpdateWireRequest {
+  const { target } = request;
+  if ((target.type === "group" || target.type === "private") && target.adapter === "milky") {
+    // Older supervisors must reject an adapter-qualified target rather than treat it as OneBot.
+    const { botId, id } = target;
+    return { ...request, target: { type: target.type === "group" ? "milky-group" : "milky-private", botId, id } };
+  }
+  return request;
 }
 
 const progress = ["checking", "building", "switching", "busy", "current", "dirty", "ahead", "diverged",
@@ -45,9 +61,17 @@ export function isManagedPluginDirectory(value: unknown): value is string {
 
 function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined {
   if (!record(value)) return;
-  const { type, botId, id } = value;
+  const { type, botId, id, adapter } = value;
+  if (type === "group" || type === "private") {
+    if (!positiveId(botId) || !positiveId(id) || (adapter !== undefined && adapter !== "milky")) return;
+    return adapter === "milky" ? { type, botId, id, adapter } : { type, botId, id };
+  }
+  if ("adapter" in value) return;
+  if (type === "milky-group" || type === "milky-private") {
+    if (!positiveId(botId) || !positiveId(id)) return;
+    return { type: type === "milky-group" ? "group" : "private", botId, id, adapter: "milky" };
+  }
   if (type === "terminal") return { type };
-  if ((type === "group" || type === "private") && positiveId(botId) && positiveId(id)) return { type, botId, id };
   if (type === "scheduled") {
     const { botIds, terminal } = value;
     if (!Array.isArray(botIds) || botIds.length > managedUpdateScheduledBotLimit || typeof terminal !== "boolean") return;

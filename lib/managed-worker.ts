@@ -35,6 +35,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   const token = crypto.randomUUID();
   const env: NodeJS.ProcessEnv = {
     ...(options.env ?? process.env), LOTUS_MANAGED_TOKEN: token, LOTUS_MANAGED_HELD: held ? "1" : "0",
+    LOTUS_MANAGED_ADAPTER_RECEIPTS: "1",
   };
   let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
   if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);

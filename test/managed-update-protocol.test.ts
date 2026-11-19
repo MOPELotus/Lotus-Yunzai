@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { isManagedUpdateName, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress,
+import { encodeManagedUpdateRequest, isManagedUpdateName, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress,
   parseManagedUpdateRequest } from "../lib/managed-update-protocol.ts";
 
 const directory = { name: "群工具-Plugin", path: resolve("fixtures", "plugins", "群工具-Plugin"), packageName: "@fixture/group" };
@@ -104,4 +104,41 @@ test("托管安装仅传目录短名和原会话，不能混用更新参数", ()
     { requested: "system" }, { all: true }, { all: false }, { quiet: true }, { force: true },
     { target: { type: "scheduled", botIds: [], terminal: true } },
   ]) expect(parseManagedUpdateRequest({ ...install, ...mixed })).toBeUndefined();
+});
+
+test("Milky 托管更新与安装使用独立的线协议接收人类型", () => {
+  for (const [type, wireType] of [["private", "milky-private"], ["group", "milky-group"]] as const) {
+    const target = { ...request.target, type, adapter: "milky" as const };
+    for (const input of [{ ...request, target }, { install: "群工具", quiet: false, directories: [directory], target }]) {
+      const wire = encodeManagedUpdateRequest(input);
+      expect(wire.target).toEqual({ type: wireType, botId: 99, id: 77 });
+      expect(wire.target).not.toHaveProperty("adapter");
+      const parsed = parseManagedUpdateRequest(JSON.parse(JSON.stringify(wire)));
+      expect(parsed).toEqual(input);
+      expect(parseManagedUpdateRequest(parsed)).toEqual(input);
+      expect(parseManagedUpdateRequest(input)).toEqual(input);
+    }
+  }
+});
+
+test("非 Milky 请求继续使用原线协议，拒绝错误位置或值的适配器", () => {
+  const scheduled = { all: true, quiet: true, target: { type: "scheduled" as const, botIds: [99], terminal: true }, directories: [] };
+  const terminal = { ...request, target: { type: "terminal" as const } };
+  const privateRequest = { ...request, target: { ...request.target, type: "private" as const } };
+  for (const input of [request, privateRequest, scheduled, terminal]) {
+    expect(encodeManagedUpdateRequest(input)).toEqual(input);
+    expect(parseManagedUpdateRequest(encodeManagedUpdateRequest(input))).toEqual(input);
+  }
+  for (const adapter of ["onebot", "Milky", "", null, true]) {
+    expect(parseManagedUpdateRequest({ ...request, target: { ...request.target, adapter } })).toBeUndefined();
+  }
+  for (const input of [terminal, scheduled]) {
+    expect(parseManagedUpdateRequest({ ...input, target: { ...input.target, adapter: "milky" } })).toBeUndefined();
+  }
+  for (const type of ["milky-private", "milky-group"]) {
+    const target = { ...request.target, type };
+    expect(parseManagedUpdateRequest({ ...request, target: { ...target, adapter: "milky" } })).toBeUndefined();
+    expect(parseManagedUpdateRequest({ ...request, target: { ...target, botId: 0 } })).toBeUndefined();
+    expect(parseManagedUpdateRequest({ ...request, target: { ...target, id: String(target.id) } })).toBeUndefined();
+  }
 });

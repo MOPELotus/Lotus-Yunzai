@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createManagedSupervisor } from "../lib/managed-supervisor.ts";
+import { createProcessReceipts } from "../lib/process-receipts.ts";
 import { activateUpdate } from "../lib/update-activation.ts";
 
 const liveValue = "production fixture environment";
@@ -231,3 +233,91 @@ test("候选在提交后退出时，反向切换保留实际迁移的插件状�
   expect(await readFile(join(active, "revision.txt"), "utf8")).toBe(oldRevision);
   expect(await readFile(join(active, "plugins/loose.js"), "utf8")).toBe("// local script");
 }), 14_000);
+
+function gitFixture(directory: string, ...args: string[]): string {
+  const child = Bun.spawnSync([
+    "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", ...args,
+  ], { cwd: directory, env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } });
+  if (child.exitCode !== 0) throw new Error(`Git 夹具命令失败（${args[0]}）。\n${child.stderr.toString()}`);
+  return child.stdout.toString().trimEnd();
+}
+
+test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执，同 QQ 的 OneBot 不能领取", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-milky-receipt-"));
+  let supervisor: Supervisor | undefined;
+  try {
+    const writer = join(temporary, "writer");
+    const active = join(temporary, "active");
+    const origin = join(temporary, "origin.git");
+    const audit = join(temporary, "worker-events.jsonl");
+    const target = { type: "private", adapter: "milky", botId: 99, id: 51 } as const;
+    gitFixture(temporary, "init", "--bare", "--quiet", "--initial-branch=main", origin);
+    gitFixture(temporary, "init", "--quiet", "--initial-branch=main", writer);
+    await mkdir(join(writer, "scripts"));
+    const handoffModule = fileURLToPath(new URL("../lib/managed-handoff.ts", import.meta.url));
+    await Promise.all([
+      writeFile(join(writer, ".gitignore"), "/config/\n/data/\n/logs/\n"),
+      writeFile(join(writer, "package.json"), JSON.stringify({
+        name: "lotus-yunzai", private: true, type: "module", scripts: { typecheck: "bun --version" },
+      })),
+      writeFile(join(writer, "scripts/bootstrap.ts"), "export {};\n"),
+      writeFile(join(writer, "revision.txt"), "initial worker\n"),
+      writeFile(join(writer, "app.ts"), `
+        import { appendFileSync } from "node:fs";
+        import { createManagedHandoff } from ${JSON.stringify(handoffModule)};
+        const result = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+        if (result.exitCode !== 0) process.exit(11);
+        const revision = result.stdout.toString().trim();
+        const held = Bun.env.LOTUS_MANAGED_HELD === "1";
+        const handoff = createManagedHandoff();
+        if (!handoff.managed) {
+          const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () =>
+            Response.json({ status: "ok", revision }) });
+          console.log("HTTP 正在监听 " + server.url.origin + "/status");
+        } else {
+          const audit = ${JSON.stringify(audit)};
+          function record(event) { appendFileSync(audit, event + "\\n"); }
+          process.on("SIGTERM", () => process.exit(143));
+          const timeout = setTimeout(() => process.exit(30), 14_000);
+          await handoff.ready(revision, new AbortController().signal);
+          record("active " + revision);
+          if (!held && !handoff.update({ quiet: true, target: ${JSON.stringify(target)}, directories: [] }, record)) {
+            record("IPC rejected");
+            clearTimeout(timeout);
+            process.exit(12);
+          }
+        }
+      `),
+      writeFile(audit, ""),
+    ]);
+    gitFixture(writer, "add", "--all");
+    gitFixture(writer, "commit", "--quiet", "-m", "Fixture active host");
+    gitFixture(writer, "push", "--quiet", origin, "main");
+    gitFixture(temporary, "clone", "--quiet", "--no-local", origin, active);
+    await writeFile(join(writer, "revision.txt"), "candidate worker\n");
+    gitFixture(writer, "commit", "--quiet", "-am", "Fixture candidate host");
+    gitFixture(writer, "push", "--quiet", origin, "main");
+    const revision = gitFixture(writer, "rev-parse", "HEAD");
+
+    supervisor = createManagedSupervisor(active, { env: { PATH: process.env.PATH } });
+    await supervisor.start();
+    await waitFor(async () => {
+      const events = (await readFile(audit, "utf8")).trim().split("\n");
+      if (events.includes(`active ${revision}`)) return true;
+      const failure = events.find((event) => ["IPC rejected", "failed", "unavailable", "rejected", "current"].includes(event));
+      if (failure) throw new Error(`Milky 更新夹具未切换（${failure}）。`);
+    }, "Milky 更新候选未接管。");
+
+    await supervisor.stop();
+    const receipts = createProcessReceipts(pathToFileURL(`${active}/`));
+    expect(await receipts.takeUpdate(99)).toBeUndefined();
+    expect(await receipts.takeUpdate(99, "milky")).toMatchObject({ kind: "update", result: "updated", revision, target });
+    expect(await receipts.takeUpdate(99, "milky")).toBeUndefined();
+  } finally {
+    try {
+      await supervisor?.stop();
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  }
+}, 18_000);

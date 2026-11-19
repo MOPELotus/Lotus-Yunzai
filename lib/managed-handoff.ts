@@ -1,6 +1,7 @@
 import { isGitRevision } from "./local-git.ts";
-import { isManagedPluginDirectory, isManagedUpdateProgress, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
-  type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
+import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdateProgress, isTerminalManagedUpdateProgress,
+  managedUpdateDirectoryLimit, parseManagedUpdateRequest, type ManagedUpdateProgress, type ManagedUpdateRequest,
+  type ManagedUpdateWireRequest } from "./managed-update-protocol.ts";
 
 interface ManagedHandoff {
   readonly managed: boolean;
@@ -16,7 +17,7 @@ interface ManagedHandoff {
 
 type Notice = { type: "lotus-ready"; revision?: string; plugins?: readonly string[] } | { type: "lotus-restart"; pausedAt?: number } |
   { type: "lotus-power"; pausedAt?: number } |
-  { type: "lotus-update"; requestId: string; request: ManagedUpdateRequest };
+  { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const failed = () => new Error("受管进程未能完成启动交接。");
@@ -29,9 +30,11 @@ export function createManagedHandoff(): ManagedHandoff {
   const token = process.env.LOTUS_MANAGED_TOKEN;
   const held = process.env.LOTUS_MANAGED_HELD === "1";
   const paused = process.env.LOTUS_MANAGED_PAUSED_AT;
+  const adapterReceipts = process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS === "1";
   delete process.env.LOTUS_MANAGED_TOKEN;
   delete process.env.LOTUS_MANAGED_HELD;
   delete process.env.LOTUS_MANAGED_PAUSED_AT;
+  delete process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS;
 
   if (!token || !uuid.test(token) || typeof process.send !== "function" || process.connected !== true) {
     return {
@@ -121,12 +124,14 @@ export function createManagedHandoff(): ManagedHandoff {
 
   function update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean {
     if (!activated || !accepting || restarting || !connected()) return false;
+    const parsed = parseManagedUpdateRequest(request);
+    if (!parsed) return false;
+    const snapshot = encodeManagedUpdateRequest(parsed);
+    if (!adapterReceipts && (snapshot.target.type === "milky-group" || snapshot.target.type === "milky-private")) return false;
     if (cancelUpdate) {
       onProgress("busy");
       return true;
     }
-    const snapshot = parseManagedUpdateRequest(request);
-    if (!snapshot) return false;
     const requestId = crypto.randomUUID();
 
     function clear() {

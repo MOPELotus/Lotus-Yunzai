@@ -9,6 +9,7 @@ async function worker(source: string, options: {
   disconnected?: boolean;
   token?: string;
   paused?: string;
+  adapterReceipts?: string;
   receive?: (message: Record<string, unknown>, child: Bun.Subprocess) => void;
 } = {}) {
   const messages: Record<string, unknown>[] = [];
@@ -19,10 +20,12 @@ async function worker(source: string, options: {
     assert.equal(process.env.LOTUS_MANAGED_TOKEN, undefined);
     assert.equal(process.env.LOTUS_MANAGED_HELD, undefined);
     assert.equal(process.env.LOTUS_MANAGED_PAUSED_AT, undefined);
+    assert.equal(process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS, undefined);
     ${source}
   `], {
     env: { PATH: process.env.PATH, LOTUS_MANAGED_TOKEN: options.token ?? token,
-      LOTUS_MANAGED_HELD: options.held ? "1" : "0", LOTUS_MANAGED_PAUSED_AT: options.paused },
+      LOTUS_MANAGED_HELD: options.held ? "1" : "0", LOTUS_MANAGED_PAUSED_AT: options.paused,
+      LOTUS_MANAGED_ADAPTER_RECEIPTS: options.adapterReceipts },
     stdin: "ignore", stdout: "ignore", stderr: "pipe",
     ipc: options.disconnected ? undefined : (message: Record<string, unknown>, child) => {
       messages.push(message);
@@ -225,4 +228,48 @@ test("更新进度绑定请求与托管令牌，忙时同步通知，终态释�
   expect(updates).toHaveLength(2);
   expect(updates[0]?.requestId).not.toBe(updates[1]?.requestId);
   expect(updates[0]).toMatchObject({ token, request: { quiet: false, target: { type: "private", botId: 99, id: 51 } } });
+});
+
+test("旧托管父进程拒绝 Milky 更新和安装，同时保留 OneBot 请求格式", async () => {
+  const messages = await worker(`
+    await handoff.ready(undefined, new AbortController().signal);
+    const listenerCount = process.listenerCount("message");
+    const request = { quiet: false, target: { type: "private", botId: 99, id: 51 }, directories: [] };
+    const denied = () => assert.fail("unsupported adapter sent progress");
+    assert.equal(handoff.update({ ...request, target: { ...request.target, adapter: "milky" } }, denied), false);
+    assert.equal(handoff.update({ ...request, install: "weather", target: { ...request.target, type: "group", adapter: "milky" } }, denied), false);
+    assert.equal(process.listenerCount("message"), listenerCount);
+    const done = Promise.withResolvers();
+    assert.equal(handoff.update(request, done.resolve), true);
+    assert.equal(handoff.update({ ...request, target: { ...request.target, adapter: "milky" } }, denied), false);
+    assert.equal(await done.promise, "current");
+  `, {
+    receive(message, child) {
+      if (message.type === "lotus-update") child.send({ type: "lotus-update-progress", token, requestId: message.requestId, status: "current" });
+    },
+  });
+  expect(messages).toHaveLength(2);
+  expect(messages[1]?.request).toEqual({ quiet: false, target: { type: "private", botId: 99, id: 51 }, directories: [] });
+});
+
+test("支持适配器回执的父进程收到独立的 Milky 群聊和私聊线格式", async () => {
+  const messages = await worker(`
+    await handoff.ready(undefined, new AbortController().signal);
+    for (const type of ["group", "private"]) {
+      const done = Promise.withResolvers();
+      const operation = type === "group" ? { requested: "weather" } : { install: "weather" };
+      const request = { ...operation, quiet: false, target: { type, adapter: "milky", botId: 99, id: 51 }, directories: [] };
+      assert.equal(handoff.update(request, done.resolve), true);
+      assert.equal(await done.promise, "unavailable");
+    }
+  `, {
+    adapterReceipts: "1",
+    receive(message, child) {
+      if (message.type === "lotus-update") child.send({ type: "lotus-update-progress", token, requestId: message.requestId, status: "unavailable" });
+    },
+  });
+  expect(messages.slice(1).map(({ request }) => request)).toEqual([
+    { quiet: false, requested: "weather", target: { type: "milky-group", botId: 99, id: 51 }, directories: [] },
+    { quiet: false, install: "weather", target: { type: "milky-private", botId: 99, id: 51 }, directories: [] },
+  ]);
 });
