@@ -12,6 +12,8 @@ const retiredScripts = new Map([
     { name: "主动复读", reason: "主人主动复读已归并到 group。", module: "@lotus-yunzai/group" }],
   ["1babeb445b80a5c10ba3442e3a97d1716762931677460259b3b274d1c49d7368",
     { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
+  ["629da5e8260364f2da2c13da42be13772b065534372c63ddf3a497adc8e904c4",
+    { name: "标准输入", reason: "标准输入已由宿主终端提供。", module: "@lotus-yunzai/system" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
     { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
 ]);
