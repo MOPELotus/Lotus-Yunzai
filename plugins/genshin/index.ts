@@ -5,6 +5,7 @@ import { createProfileHoyoClient, HoyoRequestError, type GenshinGachaPool } from
 import { buildGenshinGachaDetail } from "./gacha-detail.ts";
 import { renderGenshinGachaDetail } from "./gacha-detail-card.ts";
 import { genshinGachaThemeDirectory, readGenshinGachaSources, readGenshinUigfItems } from "./gacha-detail-source.ts";
+import { createGenshinGachaImport, gachaImportCommand } from "./gacha-import.ts";
 import { renderGenshinGachaFailure, renderGenshinGachaResult } from "./gacha-result-card.ts";
 import { buildGenshinGachaSpecial } from "./gacha-special.ts";
 import { renderGenshinGachaSpecial } from "./gacha-special-card.ts";
@@ -35,6 +36,7 @@ const help = [
   "#抽卡记录、#武器记录、#常驻记录、#集录记录 可查看对应卡池。",
   "#新手记录 查看旧新手池记录，#全部记录 查看各池详情。",
   "私聊 #导出记录 发送 UIGF 文件，可用 #导出记录jsonv2 选择旧格式。",
+  "私聊 #导入记录 后发送 UIGF JSON 文件，可在命令末尾指定档案。",
   "#版本统计 按期次查看角色和武器池，#全部统计 查看各池汇总。",
   "末尾加档案编号可选档案。单池可加「全部」查看各页，如 #角色全部记录2。",
 ].join("\n");
@@ -63,7 +65,12 @@ function matchGachaQuery(message: string): { profileId: number; view: GachaView;
 interface GachaContext {
   readonly normalizedMessage: string;
   readonly user_id?: number;
+  readonly self_id?: number;
+  readonly group_id?: number;
+  readonly adapter?: string;
   readonly message_type?: string;
+  readonly attachment?: { readonly name: string; read(signal?: AbortSignal): Promise<Uint8Array | undefined> };
+  readonly canReadAttachments?: boolean;
   readonly uploadFile?: (file: { readonly name: string; readonly bytes: Uint8Array }) => Promise<"confirmed" | "rejected" | "unknown">;
   reply(message: string): unknown;
 }
@@ -78,6 +85,7 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
   const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
+  const importGacha = createGenshinGachaImport(profiles, history, signal);
 
   async function exportHistory(qq: string, profileId: number, version: GenshinUigfExportOptions["version"], context: GachaContext) {
     if (!context.uploadFile) return "当前会话暂不支持发送抽卡文件。";
@@ -198,6 +206,11 @@ export function createModule({ signal, lockFile, runtimeVersion }: {
     commands: {},
     gachaUpdate,
     async fallback(_message: string, context: GachaContext) {
+      const importMatch = gachaImportCommand.exec(context.normalizedMessage);
+      if (importMatch || context.attachment) {
+        const imported = await importGacha(context, importMatch);
+        if (importMatch || imported !== undefined) return imported;
+      }
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
       const miniapp = miniappCommand.exec(context.normalizedMessage);

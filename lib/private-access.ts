@@ -4,6 +4,7 @@ import type { MessageEvent } from "./messages.ts";
 
 const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹果|ck|cookie|体力)帮助|^#?帮助$|^#*(?:删除|我的)ck$|^#(?:我的)?(?:uid|UID)[0-9]{0,2}$/u;
 const accountEntry = /^#(?:登录列表|账号列表|(?:清除|删除)(?:登录|扫码登录|[cC]ookie)[0-9]{0,2})$/u;
+const gachaImportEntry = /^#?(?:原神)?(?:强制)?导入记录(?:json)?(?:[1-9]\d{0,2})?$/u;
 const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;
 const defaultMessage = "私聊功能已禁用，仅支持发送cookie，抽卡记录链接，记录日志文件";
@@ -39,7 +40,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
         const filename = typeof name === "string" ? name : file;
         return typeof filename === "string" && allowedFile.test(filename);
       })
-      : legacyEntry.test(text) || accountEntry.test(event.msg) || custom?.test(text);
+      : legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) || custom?.test(text);
     if (allowed) return false;
 
     const { user_id: userId, self_id: selfId } = event;
