@@ -204,7 +204,7 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       await command(`#拒绝入群 ${indirect.id} 不接收他人邀请`, 52);
       expect(await privateText(mock, 52)).toBe("私聊关闭");
 
-      await command("#状态");
+      await command("#状态 机器人 99");
       expect(await privateText(mock)).toBe("私聊关闭");
 
       await command(`#同意入群 ${direct.id}`);
