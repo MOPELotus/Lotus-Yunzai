@@ -87,17 +87,24 @@ function tokenFields(token: string, key: "ltoken" | "cookie_token", login: Retur
 }
 
 export function createCredentialExchange(transport: HoyoTransport = fetch) {
-  return async function exchange(profile: ProfileAccountContext): Promise<RefreshedCredentials> {
+  return async function exchange(profile: ProfileAccountContext, { signal, verifyProfile }: {
+    readonly signal?: AbortSignal;
+    readonly verifyProfile?: () => Promise<void>;
+  } = {}): Promise<RefreshedCredentials> {
     const login = readLogin(profile.account);
     const v2 = login.stoken.startsWith("v2_");
 
     async function request(endpoint: URL, params: URLSearchParams, type: string) {
       endpoint.search = params.toString();
+      signal?.throwIfAborted();
+      await verifyProfile?.();
+      signal?.throwIfAborted();
+      const timeout = AbortSignal.timeout(15_000);
       let response: Response;
       try {
         response = await transport(endpoint, {
           headers: requestHeaders(profile, login, params.toString(), type),
-          method: "GET", redirect: "error", signal: AbortSignal.timeout(15_000),
+          method: "GET", redirect: "error", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
       } catch {
         throw new Error("令牌交换请求未完成。");
@@ -112,6 +119,9 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
       } catch {
         throw new Error("令牌交换响应无法读取。");
       }
+      signal?.throwIfAborted();
+      await verifyProfile?.();
+      signal?.throwIfAborted();
       if (payload.retcode !== 0) throw new Error("令牌交换未成功。");
       return record(payload.data);
     }

@@ -12,6 +12,7 @@ export { createCredentialExchange };
 export { HoyoRequestError };
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
+export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
@@ -206,8 +207,7 @@ export function createHoyoClient(
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
   }
 
-  async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
-    if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
+  function roleCatalog(data: readonly unknown[]) {
     const roles = {
       gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz"),
     };
@@ -218,6 +218,12 @@ export function createHoyoClient(
         throw new HoyoRequestError("response", "米游社角色资料不完整。");
       }
     }
+    return roles;
+  }
+
+  async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
+    if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
+    const roles = roleCatalog(data);
     await recovery.profiles.saveRoles(context.qq, context.profileId, context.revision, roles);
     return roles;
   }
@@ -240,6 +246,9 @@ export function createHoyoClient(
     },
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
+    },
+    async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
+      return roleCatalog(await list(context, undefined, signal));
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions = {}) {
       const first = sources[0];

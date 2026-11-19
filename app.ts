@@ -42,6 +42,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
+import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
@@ -504,6 +505,14 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
+    if (isPassportLoginInput(event.msg)) {
+      if (allowNew) {
+        const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/passport-login" && allowed(names),
+          (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
+        if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
     const tuningLink = isZzzGachaLinkMessage(event.msg);
     const tuningLinkEntry = zzzLinkEntry.test(event.msg);
     if (tuningLink || tuningLinkEntry || (event.isPrivate && event.msg.trim() === "取消")) {
@@ -641,6 +650,7 @@ if (import.meta.main) {
       return renderStatusCard(...args);
     }));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
+    commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[Lotus-Plugin] Gacha Log");
