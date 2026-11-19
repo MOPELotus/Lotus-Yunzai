@@ -419,6 +419,7 @@ async function dispatchMessage(
     groupActivityRoster: likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
       ? () => calls.listGroupActivity(send, target.group_id, selfId, userId, () => isMaster(selfId, userId), likeSession)
       : undefined,
+    groupActivitySignal: likeSession && event.sub_type !== "anonymous" ? likeSession : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId

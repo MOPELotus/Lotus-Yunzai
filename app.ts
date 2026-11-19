@@ -966,6 +966,15 @@ if (import.meta.main) {
       handled?.();
       return;
     }
+    if (!event.isDelegated && event.message_type === "group" && /^#?(?:确认|取消)清理$/u.test(event.msg)) {
+      const reply = await commands.dispatchFallback(event,
+        names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 从未发言成员") && allowed(names),
+        user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
+    }
     if (!allowNew) return;
     if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg)) return;
 

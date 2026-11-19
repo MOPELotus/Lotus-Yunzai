@@ -357,6 +357,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner) ? () => listGroupActivity(groupId, cardOwner) : undefined,
+      groupActivitySignal: positiveId(groupId) ? signal : undefined,
       likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,
       profileLikeImageSignal: signal,
       mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,

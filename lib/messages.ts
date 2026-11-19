@@ -61,6 +61,7 @@ export interface MessageEvent {
   readonly groupSetAdmin?: GroupSetAdminAction;
   readonly groupMuteRoster?: () => Promise<readonly MutedGroupMember[] | undefined>;
   readonly groupActivityRoster?: () => Promise<readonly GroupActivityMember[] | undefined>;
+  readonly groupActivitySignal?: AbortSignal;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

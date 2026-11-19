@@ -55,15 +55,22 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
   const rosterChanges = new Map<string, "admin" | "member">();
+  let cleanupRosterChanged = false;
   const activity = (group_id: number, bot: number) => {
-    const joined = Math.floor(Date.now() / 1000) - 3600;
+    const joined = 1_700_000_000;
     return [
       { group_id, user_id: bot, role: "member", join_time: joined, last_sent_time: joined },
       { group_id, user_id: operator, role: "admin", join_time: joined, last_sent_time: joined },
-      { group_id, user_id: 42, role: "member", card: "从未发言夹具", join_time: joined, last_sent_time: joined },
+      { group_id, user_id: 42, role: "member", card: "从未发言夹具", join_time: joined,
+        last_sent_time: group_id === 86 && cleanupRosterChanged ? joined + 60 : joined },
       { group_id, user_id: 54, role: "member", card: "已有活动夹具", join_time: joined, last_sent_time: joined + 10 },
+      ...(group_id === 86 ? [{ group_id, user_id: 62, role: "member", join_time: joined + 1, last_sent_time: joined + 1 }] : []),
+      ...(group_id === 86 && cleanupRosterChanged ? [
+        { group_id, user_id: 63, role: "member", join_time: joined + 12, last_sent_time: joined + 12 },
+      ] : []),
     ];
   };
+  const reportedMembers = (group: unknown, bot: number) => group === 85 ? 5 : activity(Number(group), bot).length;
   function member(params: Call["params"]) {
     const baseline = liveMember(params);
     return { ...baseline, role: rosterChanges.get(`${params.group_id}:${params.user_id}`) ?? baseline.role };
@@ -85,7 +92,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
         { member: member(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length }
-        : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: params.group_id === 85 ? 5 : 4 } }
+        : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId) } }
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) } : {};
       return Response.json({ status: "ok", retcode: 0, data });
     },
@@ -99,7 +106,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n");
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
     const legacyList = join(legacyDirectory, "groupAdmin.yaml");
@@ -143,7 +150,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { uin: "43", cardName: "合成群名片", nick: "合成昵称", role: 2, shutUpTime: nowSeconds() + 81 },
           { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
           { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
-        ] : action === "get_group_info" ? { group_id: params.group_id, member_count: params.group_id === 85 ? 5 : 4 }
+        ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
         : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId) : {};
       if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied ? 100 : 0, data: reply }));
     };
@@ -480,6 +487,21 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(oneBotCalls.filter(({ action }) => action === "send_group_forward_msg")).toHaveLength(2);
     expect(oneBotCalls.filter(({ action, params }) => action === "get_group_member_list" && params.group_id === 84)
       .every(({ params }) => params.no_cache === true)).toBe(true);
+
+    send(oneBotMessage("助理#清理从未发言的人", operator, 86));
+    await groupReplyWith("请在 120 秒内发送");
+    send(oneBotMessage("确认清理", operator, 84));
+    send(oneBotMessage("确认清理", 54, 86));
+    cleanupRosterChanged = true;
+    const confirmation = oneBotMessage("#确认清理", operator, 86);
+    send(confirmation);
+    const cleanup = await waitUntil(() => oneBotCalls.find(({ action, params }) =>
+      action === "send_group_forward_msg" && params.group_id === 86), "OneBot 未转发已确认的清理回执。");
+    expect(JSON.stringify(cleanup.params.messages)).toContain("62");
+    send(confirmation);
+    await Bun.sleep(60);
+    expect(oneBotCalls.filter(({ action, params }) => action === "set_group_kick" && params.group_id === 86)
+      .map(({ params }) => params)).toEqual([{ group_id: 86, user_id: 62, reject_add_request: false }]);
   } finally {
     socket?.close();
     host?.kill();
