@@ -54,7 +54,7 @@ function isGenshinAuthExpired(error: unknown): boolean {
 
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">;
-  readonly exchange: (profile: ProfileAccountContext) => Promise<RefreshedCredentials>;
+  readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
 }
 
 interface CookieRevision {
@@ -98,7 +98,7 @@ export function createHoyoClient(
       if (latest.revision !== context.revision) {
         throw new HoyoRequestError("refresh", "档案已变更，请重新发起请求。");
       }
-      const credentials = await recovery.exchange(latest);
+      const credentials = await recovery.exchange(latest, { verifyProfile: () => ensureCurrentProfile(latest) });
       return recovery.profiles.saveRefreshedCredentials(latest.qq, latest.profileId, latest.revision, credentials);
     })();
     entry.refreshed = operation;
@@ -241,10 +241,15 @@ export function createHoyoClient(
 
   return {
     refreshCredentials: recover,
-    async refreshProfile(context: ProfileAccountContext) {
+    async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal) {
+      signal?.throwIfAborted();
       const refreshed = await recover(context);
       try {
-        await saveRoles(refreshed, await list(refreshed));
+        signal?.throwIfAborted();
+        await ensureCurrentProfile(refreshed);
+        const roles = await list(refreshed, undefined, signal);
+        signal?.throwIfAborted();
+        await saveRoles(refreshed, roles);
         return { rolesSynced: true };
       } catch {
         return { rolesSynced: false };

@@ -12,6 +12,7 @@ import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-comma
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
+import { checkinBatchRefreshCommands } from "./lib/checkin-batch-refresh-commands.ts";
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
@@ -701,6 +702,8 @@ if (import.meta.main) {
         listMembers: ({ listCheckinGroupMembers }) => listCheckinGroupMembers?.() ?? Promise.resolve(undefined),
         signal: lifecycle.signal,
       }), "[Lotus-Plugin] Checkin Admin");
+      commands.registerModule(checkinBatchRefreshCommands({ profiles: checkinProfiles, signal: lifecycle.signal }),
+        "[Lotus-Plugin] Checkin Admin");
       const config = globalConfig.scheduler;
       if (config === undefined || (config !== null && typeof config === "object" && !Array.isArray(config) &&
           (!Object.hasOwn(config, "enable") || typeof (config as CheckinScheduleConfig).enable === "boolean"))) {
