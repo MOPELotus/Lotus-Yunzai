@@ -48,7 +48,7 @@ import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
-import { loadImagePreviews } from "./lib/image-previews.ts";
+import { startImagePreviews } from "./lib/image-previews.ts";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -215,7 +215,12 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
-  if (!probingUpdate) void loadImagePreviews(root).then(setImagePreviews);
+  if (!probingUpdate) whenModuleTasksActive(() => {
+    const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
+    const running = startImagePreviews(root, active, setImagePreviews);
+    pending.add(running);
+    void running.then(() => pending.delete(running));
+  });
   const mediaDelivery = createMediaDelivery(fileURLToPath(new URL("data", root)), () => stopping ? undefined : fileBase);
   const processReceipts = createProcessReceipts(root);
   type ProcessAction = {

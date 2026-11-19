@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { encodeMilkyReply } from "../lib/adapters/milky-message.ts";
 import { encodeOneBotForward, encodeOneBotReply } from "../lib/adapters/onebot-message.ts";
-import { loadImagePreviews } from "../lib/image-previews.ts";
+import { loadImagePreviews, prepareImagePreviewRelease, startImagePreviews } from "../lib/image-previews.ts";
 import { segment, setImagePreviews } from "../lib/messages.ts";
 
 test("出站图片预览沿用旧缓存，二种适配器发送同一份摘要并保留显式值", async () => {
@@ -57,6 +58,55 @@ test("从旧单库存档只读恢复摘要，保留旧格式和源码数据", as
     const source = await readFile(path);
     expect(await loadImagePreviews(root)).toEqual(["甲句。 —— [朝代] 作者 《题目》", "乙句！ —— [朝代] 作者 《题目》", "丙句 —— [朝代] 作者 《题目》"]);
     expect(await readFile(path)).toEqual(source);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("首次取得的资源需验 HTTPS 来源、大小和摘要，原子保存后可离线启动", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-image-preview-release-"));
+  const root = pathToFileURL(`${directory}/`);
+  try {
+    const source = join(directory, "fixture.sqlite");
+    const db = new Database(source);
+    try {
+      db.exec(`CREATE TABLE poems_zh_hans (title TEXT, content TEXT, author_id INTEGER, dynasty_id INTEGER);
+        CREATE TABLE authors_zh_hans (id INTEGER, name TEXT);
+        CREATE TABLE dynasties_zh_hans (id INTEGER, name TEXT);
+        INSERT INTO poems_zh_hans VALUES ('', '原始资料', null, null);`);
+    } finally {
+      db.close();
+    }
+    const bytes = await readFile(source);
+    const archive = Bun.gzipSync(bytes);
+    const asset = {
+      url: "https://github.com/fixture/release",
+      compressedBytes: archive.byteLength,
+      unpackedLimit: bytes.byteLength,
+      sha256: createHash("sha256").update(archive).digest("hex"),
+    };
+    const controller = new AbortController();
+    const received: string[] = [];
+    const request = (async (input: URL, init: RequestInit) => {
+      expect(init.redirect).toBe("manual");
+      received.push(input.hostname);
+      return input.hostname === "github.com"
+        ? Response.redirect("https://release-assets.githubusercontent.com/source", 302)
+        : new Response(archive);
+    }) as typeof fetch;
+    expect(await prepareImagePreviewRelease(root, controller.signal, request, { ...asset, sha256: "0".repeat(64) })).toEqual([]);
+    expect(await prepareImagePreviewRelease(root, controller.signal, request, { ...asset, unpackedLimit: 128 })).toEqual([]);
+    expect(await prepareImagePreviewRelease(root, controller.signal, request, { ...asset, url: "https://example.invalid/file" })).toEqual([]);
+    expect(await loadImagePreviews(root)).toEqual([]);
+    expect(await readdir(join(directory, "data/image-previews"))).toEqual([".release.sqlite"]);
+    expect(await prepareImagePreviewRelease(root, controller.signal, request, asset)).toEqual(["原始资料"]);
+    expect(received).toEqual(Array.from({ length: 3 }, () => ["github.com", "release-assets.githubusercontent.com"]).flat());
+    controller.abort();
+    expect(await prepareImagePreviewRelease(root, controller.signal, request, asset)).toEqual([]);
+    const published: (readonly string[])[] = [];
+    await startImagePreviews(root, new AbortController().signal, lines => published.push(lines));
+    expect(published).toEqual([["原始资料"]]);
+    expect((await readdir(join(directory, "data/image-previews"))).sort()).toEqual([".release.sqlite", "release-lines.json"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
