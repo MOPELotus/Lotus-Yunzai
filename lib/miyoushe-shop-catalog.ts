@@ -1,5 +1,5 @@
 import { createProfileStore, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { createProfileHoyoClient, HoyoRequestError, isCookieExpired } from "@lotus-yunzai/hoyo-client";
 import { MiyousheShopError, readMiyousheShop } from "@lotus-yunzai/hoyo-client/miyoushe-shop";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
 
@@ -129,15 +129,37 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
     return value;
   }
 
+  async function readBoundRoles(account: ProfileAccountContext, signal?: AbortSignal, verifyLogin?: () => Promise<void>) {
+    async function verify() {
+      signal?.throwIfAborted();
+      await verifyLogin?.();
+      const current = await profiles.accountContext(account.qq, account.profileId);
+      signal?.throwIfAborted();
+      if (current.revision !== account.revision) {
+        throw new HoyoRequestError("profile-changed", "档案已变更，请刷新后重试。");
+      }
+    }
+    await verify();
+    let catalog;
+    try {
+      catalog = await roleClient.fetchRoleCatalog(account, signal);
+    } catch (error) {
+      if (!isCookieExpired(error)) throw error;
+      await verify();
+      account = await roleClient.refreshCredentials(account);
+      await verify();
+      catalog = await roleClient.fetchRoleCatalog(account, signal);
+    }
+    await verify();
+    return { account, catalog };
+  }
+
   return {
     async trackingRoles(target: MiyousheOverviewTarget, gameBiz: string, signal?: AbortSignal, verifyLogin?: () => Promise<void>) {
       const game = gameKeys.get(gameBiz);
       if (!game) return [];
       await verifyLogin?.();
-      const account = await profiles.accountContext(target.qq, target.profileId);
-      await verifyLogin?.();
-      const catalog = await roleClient.fetchRoleCatalog(account, signal);
-      await verifyLogin?.();
+      const { account, catalog } = await readBoundRoles(await profiles.accountContext(target.qq, target.profileId), signal, verifyLogin);
       return catalog[game].filter(role => role.gameBiz === gameBiz && /^[a-z0-9_]{1,32}$/iu.test(role.region))
         .map(role => ({ uid: role.uid, region: role.region, gameBiz, nickname: redacted(role.nickname, account) }));
     },
@@ -180,30 +202,13 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
       const { missingStart: _missingStart, ...good } = await getProduct(id, signal);
       const game = gameKeys.get(good.gameBiz);
       if (good.type !== 2 || !game) return { good, roles: [], roleError: undefined };
-      let account = await profiles.accountContext(target.qq, target.profileId);
-      await verifyLogin?.();
+      const profile = await profiles.accountContext(target.qq, target.profileId);
       try {
-        let catalog;
-        try {
-          catalog = await roleClient.fetchRoleCatalog(account, signal);
-        } catch (error) {
-          if (!(error instanceof HoyoRequestError) || error.code !== "api" ||
-              ![-100, 10001, 10101, 10102, 10103].includes(error.retcode ?? 0)) throw error;
-          signal?.throwIfAborted();
-          await verifyLogin?.();
-          account = await roleClient.refreshCredentials(account);
-          signal?.throwIfAborted();
-          await verifyLogin?.();
-          catalog = await roleClient.fetchRoleCatalog(account, signal);
-        }
+        const { account, catalog } = await readBoundRoles(profile, signal, verifyLogin);
         const roles = catalog[game]
           .filter(role => role.gameBiz === good.gameBiz && /^[a-z0-9_]{1,32}$/iu.test(role.region))
           .map(role => ({ uid: role.uid, nickname: redacted(role.nickname, account), region: role.region,
             regionName: redacted(role.regionName ?? "", account), level: count(role.level) }));
-        signal?.throwIfAborted();
-        const current = await profiles.accountContext(target.qq, target.profileId);
-        if (account.revision !== current.revision) throw new HoyoRequestError("profile-changed", "档案已变更，请刷新后重试。");
-        await verifyLogin?.();
         return { good, roles, roleError: undefined };
       } catch (error) {
         signal?.throwIfAborted();

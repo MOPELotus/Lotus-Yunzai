@@ -69,7 +69,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const expired = new Set([-100, 10001, 10101, 10102, 10103]);
 
-function isCookieExpired(error: unknown): boolean {
+export function isCookieExpired(error: unknown): boolean {
   return error instanceof HoyoRequestError && error.code === "api" &&
     error.retcode !== undefined && expired.has(error.retcode);
 }

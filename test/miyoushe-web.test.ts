@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createProfileStore } from "@lotus-yunzai/account";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import type { MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
+import { createMiyousheShopCatalog } from "../lib/miyoushe-shop-catalog.ts";
+import { createMiyousheShopPlans } from "../lib/miyoushe-shop-plans.ts";
 import { createMiyousheWeb, miyousheWebSettings } from "../lib/miyoushe-web.ts";
 
 const origin = new URL("https://miyoushe.example.org");
@@ -81,6 +84,95 @@ test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档�
     const next = /#ticket=([\w-]{43})/u.exec(String(await run(message())))?.[1];
     now += 600_000;
     expect((await web.handle(claim(next!)))?.status).toBe(401);
+  } finally {
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("商城追踪目标只刷新当前档案一次，同一网页会话可读商品，换绑不重试", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-web-roles-"));
+  const profiles = createProfileStore(root);
+  const filename = join(root, "42-2.yaml");
+  const other = join(root, "42.yaml");
+  const uid = "1000042";
+  const expired = "old-session";
+  const refreshed = "ltoken_v2=v2_fresh;ltuid_v2=71;ltmid_v2=login-mid;cookie_token=fresh;account_id=71;";
+  function profile(id: number, aid: string, cookie: string) {
+    return Bun.YAML.stringify({ profile: { id }, account: { stuid: aid, stoken: "v2_login", mid: "login-mid",
+      updated_at: "2026-11-01", cookie, current_uid: { gs: uid } } });
+  }
+  const paths: string[] = [];
+  let rebind = false;
+  const catalog = createMiyousheShopCatalog({ profileDirectory: root, async transport(url, init) {
+    expect(init.method ?? "GET").toBe("GET");
+    const supplied = new Headers(init.headers).get("Cookie");
+    if (url.pathname.endsWith("/goods/detail")) {
+      paths.push("商品");
+      expect(supplied).toBeNull();
+      return Response.json({ retcode: 0, data: { goods_id: "27", goods_name: "测试商品", price: 100, type: 2, game_biz: "hk4e_cn" } });
+    }
+    if (url.pathname.endsWith("/getUserGameRolesByCookie")) {
+      paths.push("角色");
+      if (supplied === expired) {
+        if (rebind) await writeFile(filename, profile(2, "72", "rebound"));
+        return Response.json({ retcode: -100 });
+      }
+      expect(supplied).toBe(refreshed);
+      return Response.json({ retcode: 0, data: { list: [
+        { game_biz: "hk4e_cn", game_uid: uid, region: "cn_gf01" },
+        { game_biz: "hk4e_cn", game_uid: "1000043", region: "cn_qd01" },
+      ] } });
+    }
+    expect(url.origin).toBe("https://passport-api.mihoyo.com");
+    expect(url.searchParams.get("stoken")).toBe("v2_login");
+    const ltoken = url.pathname.endsWith("/getLTokenBySToken");
+    paths.push(ltoken ? "登录令牌" : "会话凭据");
+    return Response.json({ retcode: 0, data: ltoken ? { token: { token: "v2_fresh" }, user_info: { uid: "71" } }
+      : { cookie_token: "fresh", account_id: "71", mid: "login-mid" } });
+  } });
+  const plans = createMiyousheShopPlans({ file: join(root, "plans.json"), profileDirectory: root,
+    async inspect() { throw new Error("读取目标时不检查订单"); },
+    tracking: { async catalog() { return []; }, async destinations(target, _game, _itemType, signal, verify) {
+      return { roles: await catalog.trackingRoles(target, "hk4e_cn", signal, verify) };
+    } },
+  });
+  const web = createMiyousheWeb({ origin: () => origin, databasePath: join(root, "auth.sqlite"),
+    assetDirectory: "web/miyoushe", signal: session.signal, loginIdentity: profiles.loginIdentity, catalog, plans,
+    async overview() { throw new Error("测试不读取概况"); },
+  });
+  async function authorize() {
+    const reply = await web.commands.fallback!(command, message());
+    const ticket = /#ticket=([\w-]{43})/u.exec(String(reply))![1]!;
+    const claimed = await web.handle(claim(ticket));
+    expect(claimed?.status).toBe(204);
+    return claimed!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+  }
+  const targets = "api/tracking-targets?game=hk4e&itemType=2";
+  try {
+    const std = profile(1, "73", "untouched");
+    await writeFile(other, std);
+    await writeFile(filename, profile(2, "71", expired));
+    const cookie = await authorize();
+    const response = await web.handle(request(targets, { headers: { Cookie: cookie } }));
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({ type: "role", items: [{ uid, region: "cn_gf01" }] });
+    expect(paths).toEqual(["角色", "登录令牌", "会话凭据", "角色"]);
+    expect((await profiles.accountContext("42", 2)).account.cookie).toBe(refreshed);
+    const detail = await web.handle(request("api/goods/27", { headers: { Cookie: cookie } }));
+    expect(detail?.status).toBe(200);
+    expect(await detail?.json()).toMatchObject({ good: { id: "27" }, roles: [{ uid }, { uid: "1000043" }] });
+    expect(paths.slice(4)).toEqual(["商品", "角色"]);
+    expect(await readFile(other, "utf8")).toBe(std);
+
+    await writeFile(filename, profile(2, "71", expired));
+    rebind = true;
+    const before = paths.length;
+    expect((await web.handle(request(targets, { headers: { Cookie: cookie } })))?.status).toBe(401);
+    expect(paths.slice(before)).toEqual(["角色"]);
+    expect((await profiles.accountContext("42", 2)).account.cookie).toBe("rebound");
+    expect((await web.handle(request(targets, { headers: { Cookie: cookie } })))?.status).toBe(401);
+    expect(paths.slice(before)).toEqual(["角色"]);
   } finally {
     web.close();
     await rm(root, { recursive: true, force: true });
