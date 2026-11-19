@@ -58,11 +58,11 @@ export class OneBotCalls {
     }
   }
 
-  async likeSelf(send: Send, userId: number, count: number): Promise<number> {
+  async likeSelf(send: Send, userId: number, count: number, signal?: AbortSignal): Promise<number> {
     if (!Number.isInteger(count) || count < 1 || count > 10) {
       throw new RangeError("单次点赞次数须为 1 至 10。");
     }
-    await this.#request(send, "send_like", { user_id: userId, times: count });
+    await this.#request(send, "send_like", { user_id: userId, times: count }, signal);
     return count;
   }
 

@@ -3,6 +3,7 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration } from "./group-moderation.ts";
+import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
@@ -288,11 +289,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
     const groupId = message?.isGroup ? message.group_id : undefined;
+    const mentioned = message && positiveId(groupId) && positiveId(message.user_id)
+      ? mentionedProfileId(message.message, account, message.user_id) : undefined;
     const listCurrentGroupMembers = positiveId(groupId) ? () => listGroupMembers(groupId) : undefined;
     const cardOwner = message?.user_id;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,
+        () => checkinNotify.isGroupMember(groupId, mentioned),
+        () => checkinNotify.isFriend(mentioned),
+        async count => (await call.confirmed("send_profile_like", { user_id: mentioned, count })).status === "confirmed" ? count : 0)
+        : undefined,
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
         ? () => bindCard(() => isMaster(cardOwner)) : undefined,

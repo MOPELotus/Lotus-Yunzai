@@ -2,7 +2,7 @@ import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 
 export type CommandContext = Readonly<Pick<
-  MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
+  MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
@@ -86,7 +86,7 @@ interface RegisteredCommand {
 }
 
 function commandContext(context: CommandContext): CommandContext {
-  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
+  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
@@ -94,6 +94,7 @@ function commandContext(context: CommandContext): CommandContext {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
+    ...(message_type === "group" && !isDelegated && mentionLike ? { mentionLike } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
@@ -104,6 +105,10 @@ function commandContext(context: CommandContext): CommandContext {
 }
 
 function commandFeatureNames(module: string, command: string): readonly string[] {
+  if (module === "@lotus-yunzai/group" &&
+      /^#(?:全部赞我|(?:我要|给我)?(?:资料卡)?点赞|[赞超操草抄吵炒](?:我|他|她|它|ta))$/iu.test(command)) {
+    return ["[group] 资料卡点赞"];
+  }
   if (module === "@lotus-yunzai/system" && /^#(?:椰奶)?状态(?:pro)?$/u.test(command)) return ["[system] 状态"];
   if (module === "@lotus-yunzai/system" && command === "#统计") return ["[system] 消息统计"];
   if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];

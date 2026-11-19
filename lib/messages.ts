@@ -2,6 +2,7 @@ import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
+import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 
 export interface MusicCard {
   readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
@@ -49,6 +50,7 @@ export interface MessageEvent {
   readonly isDelegated?: boolean;
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
+  readonly mentionLike?: MentionLikeTarget;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;

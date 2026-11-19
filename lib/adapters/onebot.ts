@@ -5,6 +5,7 @@ import { segment, type BotEvent, type FriendPoke, type FriendRequest, type Group
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration } from "./group-moderation.ts";
+import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
@@ -346,6 +347,9 @@ async function dispatchMessage(
     ? await mutes.forMessage(target.group_id, selfId, () => calls.getGroupRole(send, target.group_id, selfId))
     : undefined;
   const owner = selfId !== undefined && isMaster(selfId, userId);
+  const likeSession = connection && selfId !== undefined && "group_id" in target && !noticeAttachment
+    ? groupActionSignal(connection, selfId) : undefined;
+  const mentioned = likeSession && selfId !== undefined ? mentionedProfileId(incoming.message, selfId, userId) : undefined;
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
   const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
@@ -385,6 +389,12 @@ async function dispatchMessage(
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
       ? attachmentSession?.signal : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
+    mentionLike: likeSession && mentioned !== undefined && "group_id" in target
+      ? bindMentionLike(mentioned, likeSession,
+        async () => await calls.getGroupRole(send, target.group_id, mentioned, true) !== undefined,
+        () => calls.isFriend(send, mentioned),
+        count => calls.likeSelf(send, mentioned, count, likeSession))
+      : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId

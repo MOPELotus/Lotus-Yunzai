@@ -20,6 +20,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Bilibili", ["[media] B 站解析"]],
   ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
   ["椰奶小助手", ["[group] 群名片"]],
+  ["椰奶点赞", ["[group] 资料卡点赞"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
