@@ -13,6 +13,7 @@ import type { CommandContext, CommandModule, CommandRegistry } from "../commands
 import type { FileToUrl } from "../file-to-url.ts";
 import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { lockFile } from "../file-lock.ts";
+import { isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { watchLegacyFiles } from "./file-watch.ts";
@@ -184,6 +185,7 @@ export interface PluginLoadRecord {
 export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
+  readonly readyDirectories: readonly string[];
   readonly timings: readonly PluginLoadTiming[];
   startWatching(): void;
   dispose(): Promise<void>;
@@ -216,6 +218,7 @@ export async function loadPlugins(
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
+  const retiredDirectories = new Map<string, ReadonlySet<string>>();
   const loadedEntries = new Map<string, { path: string; packageName: string }>();
   const watched = new Map<string, {
     packageName: string;
@@ -232,19 +235,19 @@ export async function loadPlugins(
     console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
     records.push({ name, status: "rejected", reason });
   };
-  const allowedScript = (path: string, bytes: Uint8Array) => {
+  const rejectRetiredScript = (path: string, bytes: Uint8Array) => {
     const retired = retiredPluginScript(bytes);
-    if (!retired) return true;
+    if (!retired) return;
     const name = relative(root, path);
     reject(name, retired.reason, `${name}（${retired.name}）`);
-    return false;
+    return retired;
   };
   for (const candidate of await listCandidates(root)) {
     if (services.signal.aborted) break;
     const label = relative(root, candidate.path);
     try {
       if (candidate.kind === "script") {
-        if (allowedScript(candidate.path, await readFile(candidate.path))) {
+        if (!rejectRetiredScript(candidate.path, await readFile(candidate.path))) {
           ready.push({ label, entry: candidate.path });
         }
         continue;
@@ -270,21 +273,31 @@ export async function loadPlugins(
       }
       if (declaredEntry !== undefined) {
         const entry = await findEntry(candidate.path, declaredEntry);
-        if (!allowedScript(entry, await readFile(entry))) continue;
+        const retired = rejectRetiredScript(entry, await readFile(entry));
+        if (retired) {
+          retiredDirectories.set(directory, new Set([retired.module]));
+          continue;
+        }
         ready.push({ label, entry, moduleName: name, directory: candidate.path, packageName: name });
       } else {
         const entries = [];
         const { scripts, flat } = await legacyEntries(candidate.path);
         const attempted = new Map<string, string>();
+        const retiredModules = new Set<string>();
         for (const file of scripts) {
           const entry = await findEntry(candidate.path, file);
           const bytes = await readFile(entry);
           if (options.fileWatch && flat.has(file)) attempted.set(file, scriptHash(bytes));
-          if (allowedScript(entry, bytes)) {
+          const retired = rejectRetiredScript(entry, bytes);
+          if (retired) retiredModules.add(retired.module);
+          else {
             entries.push({ label: relative(root, join(candidate.path, file)), entry, directory: candidate.path, packageName: name });
           }
         }
-        if (!entries.length) continue;
+        if (!entries.length) {
+          if (retiredModules.size) retiredDirectories.set(directory, retiredModules);
+          continue;
+        }
         ready.push(...entries);
         if (attempted.size) watched.set(candidate.path, {
           packageName: name, physicalPath: await realpath(candidate.path),
@@ -527,8 +540,18 @@ export async function loadPlugins(
 
   let watcher: ReturnType<typeof watchLegacyFiles> | undefined;
   let disposal: Promise<void> | undefined;
+  const readyDirectories = new Set(directories.keys());
+  for (const [directory, replacements] of retiredDirectories) {
+    if (readyDirectories.size >= managedUpdateDirectoryLimit) break;
+    if (!isManagedPluginDirectory(directory)) continue;
+    // Older supervisors still require the original directory name during activation.
+    if ([...replacements].every(module => {
+      const builtIn = builtInDirectories.get(module);
+      return builtIn !== undefined && directories.get(builtIn)?.packageName === module;
+    })) readyDirectories.add(directory);
+  }
   return {
-    records, directories, timings,
+    records, directories, timings, readyDirectories: [...readyDirectories],
     startWatching() {
       if (!watcher && watched.size && !services.signal.aborted && !disposal) {
         watcher = watchLegacyFiles(root, [...watched.keys()], reconcile, {

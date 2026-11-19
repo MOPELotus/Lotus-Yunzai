@@ -5,11 +5,11 @@ import { rejectionReason, repositoryKey } from "./policy.ts";
 export const pluginScriptExtensions: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
   ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98",
-    { name: "咕咕牛图库管理器", reason: "图库管理已归并到 atlas。" }],
+    { name: "咕咕牛图库管理器", reason: "图库管理已归并到 atlas。", module: "@lotus-yunzai/atlas" }],
   ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
-    { name: "自动群名片", reason: "批量群名片已归并到 group。" }],
+    { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
-    { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。" }],
+    { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
 ]);
 
 interface PluginMetadata {
@@ -28,7 +28,7 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export function retiredPluginScript(source: Uint8Array): { name: string; reason: string } | undefined {
+export function retiredPluginScript(source: Uint8Array) {
   const hash = createHash("sha256").update(source).digest("hex");
   return retiredScripts.get(hash);
 }

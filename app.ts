@@ -1135,7 +1135,7 @@ if (import.meta.main) {
         await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
-      await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
+      await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories);
       for (const start of pendingGroupCardTasks) start();
       pendingGroupCardTasks.clear();
       milkyTransport?.start();
