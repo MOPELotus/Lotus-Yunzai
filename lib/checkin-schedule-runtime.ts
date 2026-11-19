@@ -116,15 +116,16 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
     if (threshold !== undefined && clock.minute * 60 + Math.floor(at / 1000) % 60 >= threshold) return prepare(config, at, false);
   }
 
-  function trigger() {
+  function trigger(communityRetriesOnly = false) {
     const snapshot = config;
     if (!canRun(snapshot) || operation) return operation;
     operation = (async () => {
       const { date } = checkinScheduleClock(now());
+      if (communityRetriesOnly && !await store.read(date)) return;
       const profiles = await listProfiles();
       if (!canRun(snapshot) || (!profiles.some(profile => profile.enabled) && !await store.read(date))) return;
       const scheduler = createCheckinScheduler({ store, config: snapshot, listProfiles: async () => profiles, runProfile, onComplete, now });
-      return scheduler.tick(signal);
+      return scheduler.tick(signal, { communityRetriesOnly });
     })().catch(() => {
       if (canRun(snapshot)) console.warn("[签到计划] 无法执行本轮自动签到。");
       return { status: "failed" as const };
@@ -174,8 +175,11 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       started = true;
       const due = schedule(config.run_due_cron, dueCron, "到期任务", trigger);
       const fallback = schedule(config.catch_up_cron, "0 */10 * * * *", "计划补偿", catchUp);
+      const finalRetry = schedule(undefined, "0 50,59 23 * * *", "社区补跑", () =>
+        operation ? operation.then(() => trigger(true)) : trigger(true));
       if (due.job) jobs.push(due.job);
       if (fallback.job) jobs.push(fallback.job);
+      if (finalRetry.job) jobs.push(finalRetry.job);
       immediateDue = due.rule === dueCron;
       schedulePlan();
       void catchUp();

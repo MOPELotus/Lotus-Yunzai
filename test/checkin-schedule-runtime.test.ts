@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scheduledJobs } from "node-schedule";
-import { checkinScheduleClock } from "../lib/checkin-schedule-plan.ts";
+import { checkinScheduleClock, generateCheckinSchedulePlan } from "../lib/checkin-schedule-plan.ts";
 import { createCheckinScheduleRuntime } from "../lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 
@@ -26,7 +26,7 @@ test("旧七段 cron 以中国时区执行，注册时只补计划而不提前�
     .filter(name => !known.has(name) && name.startsWith("lotus-checkin-"));
   try {
     runtime.start();
-    expect(keys()).toHaveLength(3);
+    expect(keys()).toHaveLength(4);
     const due = keys().find(name => name.includes("到期任务"))!;
     const dateOfNextRun = scheduledJobs[due]!.nextInvocation();
     expect(dateOfNextRun).toBeTruthy();
@@ -220,6 +220,48 @@ test("复杂 cron 仍交给中国时区 Job，自动补偿不猜测应触发的�
     planned.invoke();
     await until(async () => (await store.read(tomorrow))?.entries[0]?.qq === "10001");
     expect(calls).toBe(1);
+  } finally {
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("两次日末任务只补跑当天可核对的社区，不启动普通签到", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-community-final-"));
+  const store = createCheckinScheduleStore(directory);
+  const signal = new AbortController();
+  const known = new Set(Object.keys(scheduledJobs));
+  const at = Date.parse("2026-11-19T23:50:00+08:00");
+  const { date } = checkinScheduleClock(at);
+  const profiles = [{ qq: "10001", profileId: 2, enabled: true }, { qq: "10002", profileId: 2, enabled: true }];
+  const config = { fixed_time: "09:00", plan_generate_cron: "0 17 9 * * 1,3", run_due_cron: "15 9 * * *" };
+  const plan = generateCheckinSchedulePlan({ config, profiles, now: at, date });
+  const accountKey = "a".repeat(64);
+  const ready = { forums: ["6"], attempts: 2, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true } as const;
+  const calls: string[] = [];
+  const runtime = createCheckinScheduleRuntime({
+    store, config, signal: signal.signal, now: () => at,
+    listProfiles: async () => profiles,
+    async runProfile(entry, context) {
+      calls.push(entry.qq);
+      expect(context.communityAccountKey).toBe(accountKey);
+      expect(context.communityRetryForums).toEqual(["6"]);
+      return { status: "complete", ok: true, stage: "checkin" };
+    },
+  });
+  try {
+    await store.update(date, () => ({
+      plan: { ...plan, entries: plan.entries.map(entry => entry.qq === "10001" ? { ...entry, communityRetry: ready } : entry) },
+      result: undefined,
+    }));
+    runtime.start();
+    const final = Object.entries(scheduledJobs).find(([name]) => !known.has(name) && name.includes("社区补跑"))?.[1]!;
+    expect(["23:50", "23:59"]).toContain(checkinScheduleClock(new Date(String(final.nextInvocation()))).time);
+    final.invoke();
+    await until(async () => (await store.read(date))?.entries.some(entry => entry.qq === "10001" && entry.done) === true);
+    expect(calls).toEqual(["10001"]);
+    expect((await store.read(date))?.entries.find(entry => entry.qq === "10002")?.done).toBe(false);
   } finally {
     signal.abort();
     await runtime.stop();

@@ -114,10 +114,10 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
         if (result?.status === "failed") return "本轮到期签到暂时无法执行。";
         if (result?.status === "locked") return "到期签到正在执行，请稍后。";
         if (!result) return "当前没有到期且未完成的签到任务。";
-        const message = result.status === "interrupted" ? "本轮中止，已确认的任务保留结果。" : result.completed
+        const message = result.status === "interrupted" ? "本轮中止，已确认的任务保留结果。" : result.entries.length
           ? "本轮到期签到已处理，结果按档案设置通知。" : "当前没有到期且未完成的签到任务。";
         const lines = result.entries.slice(0, 8).map(entry =>
-          `QQ ${entry.qq} · P${entry.profileId}：${entry.ok ? "成功" : "失败"} · ${entry.stage}`);
+          `QQ ${entry.qq} · P${entry.profileId}：${entry.communityRetry ? "已安排社区补跑" : entry.ok ? "成功" : "失败"} · ${entry.stage}`);
         if (result.deferred) lines.push(`稍后处理：${result.deferred} 个档案`);
         return statusMessage("到期签到", `${result.date}\n${message}`, lines, signal);
       },

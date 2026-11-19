@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
-import { isZzzGachaLinkMessage } from "@lotus-yunzai/hoyo-client";
+import { bbsCheckinForums, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
@@ -16,7 +16,7 @@ import { checkinBatchRefreshCommands } from "./lib/checkin-batch-refresh-command
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
-import type { CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
+import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
 import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
@@ -727,9 +727,20 @@ if (import.meta.main) {
           listProfiles: checkinProfiles.listCheckinProfiles,
           signal: lifecycle.signal,
           runProfile: (entry, scope) => gameCheckin.runScheduled(entry.qq, entry.profileId, scope),
-          async onComplete(entry, result) {
+          async onComplete(entry, result, attempt) {
             if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
-            await deliverCheckin(entry.qq, entry.profileId, result.reply, result.revision);
+            const forumNames = (ids: readonly string[]) => ids.map(id => Object.hasOwn(bbsCheckinForums, id)
+              ? bbsCheckinForums[id as BbsCheckinForum] : `分区 ${id}`).join("、");
+            const lines: string[] = [];
+            if (attempt) lines.push(`社区签到补跑第 ${attempt.number} 次（Profile ${entry.profileId}）`,
+              `本轮分区：${forumNames(attempt.forums)}。游戏签到以首轮为准。`);
+            if (entry.communityRetry?.verifiedUnsent) {
+              const time = checkinScheduleClock(Date.parse(entry.communityRetry.nextAt)).iso.slice(11, 16);
+              lines.push(`预计 ${time} 补跑社区：${forumNames(entry.communityRetry.forums)}。`);
+            } else if (attempt && !entry.ok) lines.push("今日社区补跑已结束，请核对签到结果。");
+            const reply: MessageReply = lines.length
+              ? [`${lines.join("\n")}\n`, ...(Array.isArray(result.reply) ? result.reply : [result.reply])] : result.reply;
+            await deliverCheckin(entry.qq, entry.profileId, reply, result.revision);
           },
           async onNotice(entry, date, late, isCurrent) {
             const current = await checkinProfiles.checkinSettings(entry.qq, entry.profileId).catch(() => undefined);

@@ -35,11 +35,13 @@ export interface CheckinScheduleCommunityRetry {
   readonly forums: readonly string[];
   readonly attempts: number;
   readonly nextAt: string;
+  readonly verifiedUnsent?: true;
+  readonly accountKey?: string;
   readonly otherFailure?: boolean;
   readonly initialMessage?: string;
 }
 
-const communityWriteStatuses = ["pending", "accepted", "already", "rejected", "blocked", "unconfirmed"] as const;
+const communityWriteStatuses = ["pending", "accepted", "already", "rejected", "blocked", "unconfirmed", "retryable"] as const;
 export type CheckinCommunityWriteStatus = typeof communityWriteStatuses[number];
 const communityWriteForums = new Set(["1", "2", "3", "4", "5", "6", "8", "9", "10"]);
 
@@ -61,6 +63,7 @@ export interface CheckinScheduleEntry {
   readonly message?: string;
   readonly communityRetry?: CheckinScheduleCommunityRetry;
   readonly communityWrites?: Readonly<Record<string, CheckinCommunityWriteStatus>>;
+  readonly communityWriteAccount?: string;
 }
 
 export interface CheckinSchedulePlan {
@@ -339,14 +342,20 @@ function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | un
   if (value === undefined) return;
   const retry = record(value);
   if (!retry) invalid();
-  const { forums, attempts, nextAt, otherFailure, initialMessage } = retry;
+  const { forums, attempts, nextAt, otherFailure, initialMessage, verifiedUnsent, accountKey } = retry;
   if (!Array.isArray(forums) || !forums.every((id): id is string => typeof id === "string" && /^[1-9]\d*$/u.test(id)) ||
       typeof attempts !== "number" || !Number.isSafeInteger(attempts) || attempts < 0 ||
-      !isTimestamp(nextAt) || (otherFailure !== undefined && typeof otherFailure !== "boolean") ||
+      !isTimestamp(nextAt) || (verifiedUnsent !== undefined && verifiedUnsent !== true) ||
+      (verifiedUnsent && (!forums.length || forums.length > 9 || new Set(forums).size !== forums.length ||
+        !forums.every(id => communityWriteForums.has(id)) || typeof accountKey !== "string" || !communityAccountPattern.test(accountKey))) ||
+      (!verifiedUnsent && accountKey !== undefined) ||
+      (otherFailure !== undefined && typeof otherFailure !== "boolean") ||
       (initialMessage !== undefined && typeof initialMessage !== "string")) invalid();
-  return { forums, attempts, nextAt, ...(otherFailure !== undefined && { otherFailure }),
+  return { forums, attempts, nextAt, ...(verifiedUnsent && { verifiedUnsent, accountKey: accountKey as string }), ...(otherFailure !== undefined && { otherFailure }),
     ...(initialMessage !== undefined && { initialMessage }) };
 }
+
+const communityAccountPattern = /^[0-9a-f]{64}$/u;
 
 function parseCommunityWrites(value: unknown): CheckinScheduleEntry["communityWrites"] {
   if (value === undefined) return;
@@ -366,7 +375,7 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
   const entry = record(value);
   if (!entry) invalid();
   const { qq, profileId = 1, name = "", time, mode, notified = false, noticeAttemptedAt, done = false,
-    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt } = entry;
+    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt, communityWriteAccount } = entry;
   if (typeof qq !== "string" || !validIdentity(qq, profileId) || (mode !== "late_random" && !isMode(mode)) ||
       typeof time !== "string" || !Number.isInteger(checkinScheduleMinute(time)) ||
       typeof name !== "string" || typeof notified !== "boolean" || typeof done !== "boolean" ||
@@ -374,13 +383,14 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
       (ok !== undefined && typeof ok !== "boolean") || (stage !== undefined && typeof stage !== "string") ||
       (message !== undefined && typeof message !== "string") || (late !== undefined && late !== true) ||
       (lateRegisteredAt !== undefined && !isTimestamp(lateRegisteredAt)) ||
-      (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt))) invalid();
+      (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt)) ||
+      (communityWriteAccount !== undefined && (typeof communityWriteAccount !== "string" || !communityAccountPattern.test(communityWriteAccount)))) invalid();
   const communityRetry = parseCommunityRetry(entry.communityRetry);
   const communityWrites = parseCommunityWrites(entry.communityWrites);
   return { qq, profileId, name, time, mode, notified, ...(noticeAttemptedAt && { noticeAttemptedAt }), done, ...(late && { late }),
     ...(lateRegisteredAt && { lateRegisteredAt }), ...(runningAt && { runningAt }), ...(doneAt && { doneAt }),
     ...(ok !== undefined && { ok }), ...(stage !== undefined && { stage }), ...(message !== undefined && { message }),
-    ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }) };
+    ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }), ...(communityWriteAccount && { communityWriteAccount }) };
 }
 
 /** Validate the on-disk version 1 shape before its entries can be scheduled. */

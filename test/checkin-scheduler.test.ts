@@ -139,6 +139,47 @@ test("社区签到提交前记录写入意图，重启保留已受理和未确�
   });
 });
 
+test("只补跑有未提交证据的分区，限流档案按旧间隔与收尾时刻推进", async () => {
+  await withStore(async store => {
+    const accountKey = "a".repeat(64);
+    let at = dueAt;
+    const another = { qq: "2002", profileId: 1, enabled: true, schedule: { mode: "fixed", fixedTime: "08:30" } } as const;
+    const retryOnly = { communityRetriesOnly: true };
+    const runner = createCheckinScheduler({
+      store, config, now: () => at, listProfiles: async () => [first, another],
+      async runProfile(entry, context) {
+        expect(entry.qq).toBe(first.qq);
+        const journal = context.communityWrites!;
+        if (!context.communityRetryForums) {
+          await journal.start("2", accountKey);
+          await journal.settle("2", "accepted");
+        } else {
+          expect(context.communityRetryForums).toEqual(["6", "8"]);
+          expect(context.communityAccountKey).toBe(accountKey);
+          expect(journal.previous).toEqual({ 2: "accepted", 6: "retryable" });
+        }
+        await journal.start("6", accountKey);
+        await journal.settle("6", "retryable");
+        return { ...successful, ok: false, retryCommunity: { forums: ["6", "8"], otherFailure: false, accountKey } };
+      },
+    });
+    expect(await runner.tick()).toMatchObject({ completed: 0, deferred: 1 });
+    const get = async () => (await store.read(date))?.entries.find(entry => entry.qq === first.qq);
+    const retry = { forums: ["6", "8"], verifiedUnsent: true, accountKey, otherFailure: false } as const;
+    expect((await get())?.communityRetry).toEqual({ ...retry, attempts: 0, nextAt: "2026-11-18T23:10:00.000Z" });
+    at += 9 * 60_000;
+    expect(await runner.tick(undefined, retryOnly)).toMatchObject({ completed: 0, deferred: 0 });
+    at += 60_000;
+    expect(await runner.tick(undefined, retryOnly)).toMatchObject({ completed: 0, deferred: 1 });
+    expect((await get())?.communityRetry).toEqual({ ...retry, attempts: 1, nextAt: "2026-11-19T00:10:00.000Z" });
+    at = Date.parse(`${date}T23:50:00+08:00`);
+    expect(await runner.tick(undefined, retryOnly)).toMatchObject({ completed: 1, deferred: 0 });
+    expect(await get()).toMatchObject({ done: true, ok: false, communityWrites: { 2: "accepted", 6: "retryable" } });
+    expect((await get())?.communityRetry).toBeUndefined();
+    expect((await store.read(date))?.entries.find(entry => entry.qq === another.qq)).toMatchObject({ done: false });
+  });
+});
+
 test("停机保留不可确认的运行标记，恢复时再用当前设置核对同日档案", async () => {
   await withStore(async store => {
     const stop = new AbortController();
