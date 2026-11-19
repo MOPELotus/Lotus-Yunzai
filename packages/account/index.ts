@@ -44,7 +44,8 @@ function profileFilename(qq: string, id: number): string {
 }
 
 const profileFilenamePattern = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u;
-const cnCheckinGame = { gs: "genshin", sr: "honkai_sr", zzz: "zzz" } as const satisfies Record<Game, string>;
+const cnCheckinGame = { gs: "genshin", sr: "honkai_sr", zzz: "zzz", nxx: "tears_of_themis" } as const;
+type CnCheckinGame = keyof typeof cnCheckinGame;
 const cnCheckinKeys = ["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"] as const;
 const defaultCommunityForums = ["1", "2", "3", "4", "5", "6", "8", "9", "10"] as const;
 
@@ -78,7 +79,7 @@ function profileSchedule(value: unknown) {
 }
 
 export type ProfileCheckinSettingsChange =
-  | { readonly type: "game"; readonly game: Game; readonly enabled: boolean }
+  | { readonly type: "game"; readonly game: CnCheckinGame; readonly enabled: boolean }
   | { readonly type: "all-games"; readonly enabled: boolean }
   | { readonly type: "community"; readonly enabled: boolean }
   | { readonly type: "international"; readonly enabled: boolean }

@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import { createProfileStore, MAX_PROFILE_ID, ProfileError, type Game, type ProfileAccountContext,
-  type ProfileRequestContext } from "@lotus-yunzai/account";
+import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
-  HoyoRequestError, type BbsMissionState } from "@lotus-yunzai/hoyo-client";
+  HoyoRequestError, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
@@ -14,8 +13,8 @@ import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
 const targets = {
-  genshin: "gs", honkai_sr: "sr", zzz: "zzz",
-} as const satisfies Readonly<Record<string, Game>>;
+  genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx",
+} as const satisfies Readonly<Record<string, CnGameCheckinSource["game"]>>;
 const labels = [
   ["原神", "genshin", "2"], ["崩坏2", "honkai2", "3"], ["崩坏3", "honkai3rd", "1"],
   ["未定事件簿", "tears_of_themis", "4"], ["大别野", "", "5"], ["星铁", "honkai_sr", "6"],
@@ -109,7 +108,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(points ? [points] : [])].join("\n");
   }
 
-  async function submit(source: ProfileRequestContext, verifyCurrent: () => Promise<void>,
+  async function submit(source: CnGameCheckinSource, verifyCurrent: () => Promise<void>,
     notify: ((message: string) => unknown) | undefined, label: string, signal: AbortSignal) {
     try {
       return await client.submitCnGameCheckin(source, { signal });

@@ -3,7 +3,7 @@ import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type Bbs
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { readCnGameCheckinInfo, submitCnGameCheckin } from "./game-checkin.ts";
+import { readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
@@ -17,7 +17,8 @@ export { createCredentialExchange };
 export { HoyoRequestError };
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
-export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof, type CnGameCheckinInfo } from "./game-checkin.ts";
+export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
+  type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot } from "./genshin-backpack.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
@@ -203,10 +204,10 @@ export function createHoyoClient(
     if (latest.revision !== profile.revision) throw changed;
   }
 
-  async function readForProfile<Options extends { readonly signal?: AbortSignal }, Data extends object>(
-    source: ProfileRequestContext,
+  async function readForProfile<Source extends ProfileAccountContext, Options extends { readonly signal?: AbortSignal }, Data extends object>(
+    source: Source,
     options: Options,
-    reader: (source: ProfileRequestContext, transport: HoyoTransport, options: Options, guard?: () => Promise<void>) => Promise<Data>,
+    reader: (source: Source, transport: HoyoTransport, options: Options, guard?: () => Promise<void>) => Promise<Data>,
     isExpired?: (error: unknown) => boolean,
     onAttempt?: (profile: ProfileAccountContext) => void,
   ) {
@@ -264,7 +265,10 @@ export function createHoyoClient(
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
     },
     async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
-      return roleCatalog(await list(context, undefined, signal));
+      const data = await list(context, undefined, signal);
+      const nxx = normalizeGameRoles(data.filter(item => isRecord(item) && item.game_biz === "nxx_cn" && item.region === "cn_prod_gf01"))
+        .filter(role => /^[1-9]\d{0,19}$/u.test(role.uid));
+      return { ...roleCatalog(data), nxx };
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
       readonly verifyReadOnly?: () => Promise<void>;
@@ -310,12 +314,12 @@ export function createHoyoClient(
     fetchGenshinBackpack(source: ProfileRequestContext, options: GenshinBackpackOptions) {
       return readForProfile(source, options, readGenshinBackpack, isGameRecordCookieExpired);
     },
-    fetchCnGameCheckinInfo(source: ProfileRequestContext,
+    fetchCnGameCheckinInfo(source: CnGameCheckinSource,
       options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean } = {}) {
       return readForProfile(source, options, readCnGameCheckinInfo,
         options.recoverCookie === false ? () => false : isGameRecordCookieExpired);
     },
-    submitCnGameCheckin(source: ProfileRequestContext, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
+    submitCnGameCheckin(source: CnGameCheckinSource, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
       return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
     },
     async fetchBbsMissionState(source: ProfileAccountContext,

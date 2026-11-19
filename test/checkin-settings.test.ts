@@ -202,3 +202,15 @@ test("国际服总开关和语言只更新本档原海外段", async () => {
       .rejects.toMatchObject({ code: "invalid" });
   }, { ...fixture, games: { ...fixture.games, os } });
 });
+
+test("未定签到默认关闭，开启只影响当前档案的未定配置", async () => {
+  await withProfile(async (store, path) => {
+    const initial = await store.checkinSettings(qq, 2);
+    expect(initial.games.tears_of_themis?.enabled).toBe(false);
+    await store.setProfileCheckinSettings(qq, 2, initial.revision, { type: "game", game: "nxx", enabled: true });
+    expect((await store.describe(qq, 2)).gameCheckin.tears_of_themis).toBe(true);
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
+      ...fixture, games: { cn: { ...fixture.games.cn, tears_of_themis: { checkin: true } } },
+    });
+  });
+});
