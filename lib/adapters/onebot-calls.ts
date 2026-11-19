@@ -299,6 +299,15 @@ export class OneBotCalls {
     }
   }
 
+  async setGroupCard(send: Send, group_id: number, user_id: number, card: string): Promise<RecallResult> {
+    try {
+      await this.#request(send, "set_group_card", { group_id, user_id, card });
+      return "confirmed";
+    } catch (error) {
+      return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";
+    }
+  }
+
   #messageId(result: unknown): number | undefined {
     const id = typeof result === "object" && result !== null && "message_id" in result
       ? result.message_id : undefined;

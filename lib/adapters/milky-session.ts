@@ -1,6 +1,7 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
+import { bindGroupCard } from "./group-card.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
@@ -241,6 +242,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     const canReview = message?.isPrivate === true && positiveId(message.user_id) && isMaster(message.user_id);
     const groupId = message?.isGroup ? message.group_id : undefined;
+    const cardOwner = message?.user_id;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
@@ -248,6 +250,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       privateCredentialSignal: message.isPrivate ? signal : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),
+      setGroupCard: positiveId(cardOwner) && isMaster(cardOwner) && Array.isArray(message.message) &&
+          (positiveId(groupId) || message.sub_type === "friend") ? bindGroupCard({
+        botId: account,
+        groupId,
+        message: message.message,
+        active: () => !signal.aborted && isMaster(cardOwner),
+        memberRole: delegation.memberRole,
+        async write(group_id, user_id, card) {
+          return (await call.confirmed("set_group_member_card", { group_id, user_id, card })).status;
+        },
+      }) : undefined,
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
         !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
           ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)

@@ -3,6 +3,7 @@ import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
+import { bindGroupCard } from "./group-card.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
@@ -361,6 +362,15 @@ async function dispatchMessage(
     getGroupRole: selfId !== undefined && selfId === connectedBotId
       ? (id) => isId(id) ? calls.getGroupRole(send, id, userId, true) : Promise.resolve(undefined)
       : undefined,
+    setGroupCard: boundAccount && owner && attachmentSession && display && !noticeAttachment &&
+        (messageType === "group" || event.sub_type === "friend") ? bindGroupCard({
+      botId: selfId,
+      groupId: "group_id" in target ? target.group_id : undefined,
+      message: incoming.message,
+      active: () => !display.closed && !attachmentSession.signal.aborted && isMaster(selfId, userId),
+      memberRole: (groupId, id) => calls.getGroupRole(send, groupId, id, true),
+      write: (groupId, id, card) => calls.setGroupCard(send, groupId, id, card),
+    }) : undefined,
     listCheckinGroupMembers: boundAccount && display && "group_id" in target ? async () => {
       if (display.closed) return;
       const members = await calls.listMemberDisplay(send, target.group_id, true);

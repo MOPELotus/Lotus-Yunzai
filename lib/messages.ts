@@ -48,6 +48,7 @@ export interface MessageEvent {
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
+  readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;
   readonly listCheckinGroupMembers?: () => Promise<readonly { id: number; name?: string }[] | undefined>;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
@@ -80,6 +81,7 @@ export interface QuotedMessage {
 }
 
 export type RecallResult = "confirmed" | "rejected" | "unknown";
+export type GroupCardResult = RecallResult | "missing-group" | "insufficient-role";
 
 export interface ReplyOptions {
   readonly at?: boolean | string | number;
