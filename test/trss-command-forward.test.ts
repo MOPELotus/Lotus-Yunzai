@@ -84,6 +84,31 @@ async function writePlugin(root: string) {
         "#文字夹具": () => ${JSON.stringify(plain)},
       } };
     `),
+    writeFile(join(root, "plugins", "legacy-forward-fixture.js"), `
+      import common from "../lib/common/common.js";
+      import Handler from "../lib/plugins/handler.js";
+      export default class extends plugin {
+        constructor() {
+          super({ name: "V3 转发夹具", rule: [
+            { reg: /^#旧版转发$/, fnc: "send" },
+            { reg: /^#旧公共转发$/, fnc: "send" },
+          ] });
+        }
+        init() {
+          Handler.add({ ns: "primary", key: "fixture.forward.title", fn: () => ${JSON.stringify(title)}, priority: 1 });
+          Handler.add({ ns: "alternate", key: "fixture.forward.title", fn: () => "备用标题", priority: 2 });
+        }
+        async send(e) {
+          const { handler } = e.runtime;
+          const key = "fixture.forward.title";
+          if (!handler.has(key) || await handler.callAll(key, e) !== "备用标题") return false;
+          const { makeForwardMsg } = e.msg === "#旧版转发" ? e.runtime.common : common;
+          return e.reply(await makeForwardMsg(e, [
+            segment.image(new Uint8Array([1, 2, 3])), segment.image(new Uint8Array([4, 5, 6])),
+          ], await handler.call(key, e)));
+        }
+      }
+    `),
   ]);
 }
 
@@ -117,7 +142,7 @@ function openGateway(endpoint: string) {
   };
 }
 
-test("宿主通过当前 OneBot 会话按顺序发送现代指令的合并转发", async () => {
+test("宿主通过当前 OneBot 会话按顺序发送现代与 V3 指令的合并转发", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-command-forward-"));
   let host: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
   let gateway: ReturnType<typeof openGateway> | undefined;
@@ -135,8 +160,8 @@ test("宿主通过当前 OneBot 会话按顺序发送现代指令的合并转发
     const bot = gateway = openGateway(endpoint);
     await deadline(bot.opened, "合并转发测试网关连接超时。");
 
-    async function forward(type: "group" | "private") {
-      bot.command("#转发夹具", type);
+    async function forward(type: "group" | "private", command = "#转发夹具") {
+      bot.command(command, type);
       const frame = await bot.next();
       expect(frame).toMatchObject(type === "group" ? {
         action: "send_group_forward_msg", params: { group_id: 77 },
@@ -149,6 +174,8 @@ test("宿主通过当前 OneBot 会话按顺序发送现代指令的合并转发
 
     bot.receipt(await forward("group"), "ok", 0);
     bot.receipt(await forward("private"), "ok", 0);
+    bot.receipt(await forward("group", "#旧版转发"), "ok", 0);
+    bot.receipt(await forward("private", "#旧公共转发"), "ok", 0);
 
     bot.receipt(await forward("group"), "failed", 1404);
     for (const message of [title, [images[0]], [images[1]]]) {
@@ -174,7 +201,7 @@ test("宿主通过当前 OneBot 会话按顺序发送现代指令的合并转发
   }
 }, 20_000);
 
-test("宿主通过 Milky 在群聊和私聊发送现代指令的合并转发", async () => {
+test("宿主通过 Milky 在群聊和私聊发送现代与 V3 指令的合并转发", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-command-forward-"));
   const calls = inbox<{ action: string; body: MilkyFixtureBody }>();
   let mode: "accepted" | "rejected" | "unknown" = "accepted";
@@ -243,8 +270,8 @@ test("宿主通过 Milky 在群聊和私聊发送现代指令的合并转发", a
         body: { ...(group ? { group_id: 77 } : { user_id: 42 }), message },
       });
     }
-    async function forward(group: boolean) {
-      await command("#转发夹具", group);
+    async function forward(group: boolean, name = "#转发夹具") {
+      await command(name, group);
       await next(group, [{ type: "forward", data: {
         messages: [text(title), ...segments].map((segment) => ({
           user_id: 99, sender_name: "Lotus-Yunzai", segments: [segment],
@@ -254,11 +281,13 @@ test("宿主通过 Milky 在群聊和私聊发送现代指令的合并转发", a
 
     await forward(true);
     await forward(false);
+    await forward(true, "#旧公共转发");
+    await forward(false, "#旧版转发");
     mode = "rejected";
-    await forward(true);
+    await forward(true, "#旧版转发");
     for (const segment of [text(title), ...segments]) await next(true, [segment]);
     mode = "unknown";
-    await forward(false);
+    await forward(false, "#旧公共转发");
     await next(false, [text(unconfirmed)]);
     await command("#文字夹具", false);
     await next(false, [text(plain)]);

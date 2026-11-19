@@ -1,8 +1,10 @@
 import { addAbortListener } from "node:events";
 import { isMilkyOwnerSession } from "../command-permissions.ts";
-import { segment, type BotEvent, type MessageEvent } from "../messages.ts";
+import { sendCommandReply, type CommandForward } from "../commands.ts";
+import common, { isLegacyForward } from "../common/common.js";
+import { segment, type BotEvent, type MessageEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { PluginContexts } from "./contexts.ts";
-import { HandlerScope, type HandlerCallback } from "./handler.ts";
+import Handler, { HandlerScope, type HandlerCallback } from "./handler.ts";
 import { LegacyHttpRoutes } from "./legacy-http.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
@@ -10,14 +12,36 @@ import { LegacyTasks } from "./tasks.ts";
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
 type PluginEvent = BotEvent;
 type PluginClass = new (event?: PluginEvent) => PluginInstance;
+const legacyMessages = new WeakMap<MessageEvent, MessageEvent>();
+const legacyRuntime = Object.freeze({
+  common, handler: Object.freeze({ has: Handler.has, call: Handler.call, callAll: Handler.callAll }),
+});
 
 function legacyMessage(event: MessageEvent): MessageEvent {
-  if (!isMilkyOwnerSession(event)) return event;
-  // Preserve the game accessors used by V3 rules while projecting the owner flag.
-  return Object.create(Object.getPrototypeOf(event), {
-    ...Object.getOwnPropertyDescriptors(event),
-    isMaster: { value: true, enumerable: true, configurable: true, writable: true },
-  });
+  const existing = legacyMessages.get(event);
+  if (existing) return existing;
+  const reply = event.reply.bind(event);
+  const compatibleReply = (message: MessageReply | CommandForward, quote?: boolean, options?: ReplyOptions) => {
+    if (!isLegacyForward(message)) return reply(message, quote, options);
+    if (!message.nodes.length) return false;
+    return sendCommandReply({ reply, forward: event.forward }, message).then(() => true);
+  };
+  const access = {
+    reply: { value: compatibleReply, enumerable: true, configurable: true, writable: true },
+    runtime: { value: legacyRuntime, configurable: true, writable: true },
+  };
+  const milkyOwner = isMilkyOwnerSession(event);
+  const legacy: MessageEvent = milkyOwner || !Object.isExtensible(event) ||
+      Object.getOwnPropertyDescriptor(event, "reply")?.configurable === false
+    ? Object.create(Object.getPrototypeOf(event), {
+      ...Object.getOwnPropertyDescriptors(event),
+      ...(milkyOwner && { isMaster: { value: true, enumerable: true, configurable: true, writable: true } }),
+      ...access,
+    })
+    : Object.defineProperties(event, access);
+  legacyMessages.set(event, legacy);
+  legacyMessages.set(legacy, legacy);
+  return legacy;
 }
 interface Rule {
   readonly reg: RegExp;
