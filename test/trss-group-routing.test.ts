@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { Database } from "bun:sqlite";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -356,3 +357,59 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   first.send("#状态", 81);
   await first.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
 }), 12_000);
+
+test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引用回复", async () => {
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
+  const requests: FormData[] = [];
+  const service = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    if (request.method !== "POST" || new URL(request.url).pathname !== "/memes/sample/") {
+      return new Response(null, { status: 404 });
+    }
+    requests.push(await request.formData());
+    return new Response(Uint8Array.fromBase64(png), { headers: { "content-type": "image/png" } });
+  } });
+  try {
+    await withHost(async (root) => {
+      const plugin = join(root, "plugins/meme");
+      await mkdir(plugin);
+      for (const file of ["package.json", "lotus.ts", "catalog-policy.ts", "generation.ts", "generate-reply.ts"]) {
+        await cp(new URL(`../plugins/meme/${file}`, import.meta.url), join(plugin, file));
+      }
+      const config = join(root, "config/config");
+      const memeConfig = join(root, "data/meme/config");
+      await mkdir(config, { recursive: true });
+      await mkdir(memeConfig, { recursive: true });
+      await writeFile(join(config, "group.yaml"), 'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"81": { disable: ["清语表情:表情包生成"] }\n');
+      await writeFile(join(memeConfig, "server.yaml"), `url: "${service.url.href}"\n`);
+      await writeFile(join(memeConfig, "meme.yaml"), "reply: true\n");
+      const db = new Database(join(memeConfig, "../data.db"));
+      try {
+        db.run("CREATE TABLE meme (key TEXT PRIMARY KEY, keyWords TEXT, min_images INTEGER, max_images INTEGER, min_texts INTEGER, max_texts INTEGER, params TEXT)");
+        db.run("INSERT INTO meme VALUES ('sample', ?, 1, 1, 1, 1, ?)", [JSON.stringify(["表情夹具"]),
+          JSON.stringify({ min_images: 1, max_images: 1, min_texts: 1, max_texts: 1 })]);
+      } finally {
+        db.close();
+      }
+    }, async (connect) => {
+      const bot = await connect(99);
+      const trigger: Inbound = [
+        { type: "text", data: { text: "表情夹具 晚安" } },
+        { type: "image", data: { file: `base64://${png}` } },
+      ];
+      bot.send(trigger, 77);
+      await bot.reply([
+        { type: "reply", data: { id: "1" } },
+        { type: "image", data: { file: `base64://${png}` } },
+      ], 77);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.getAll("texts")).toEqual(["晚安"]);
+      expect(await (requests[0]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+      bot.send(trigger, 81);
+      bot.send("#状态", 81);
+      await bot.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
+      expect(requests).toHaveLength(1);
+    });
+  } finally {
+    await service.stop(true);
+  }
+}, 12_000);

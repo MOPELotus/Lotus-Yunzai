@@ -128,7 +128,11 @@ export class CommandRegistry {
     for (const [name, command] of local) {
       this.#handlers.set(name, command);
     }
-    if (fallback) this.#fallbacks.set(name, { handler: fallback, names: [name, label] });
+    if (fallback) {
+      const names = name === "@lotus-yunzai/meme"
+        ? [name, label, "meme-plugin", "清语表情", "清语表情:表情包生成"] : [name, label];
+      this.#fallbacks.set(name, { handler: fallback, names });
+    }
     this.#modules.add(name);
 
     let active = true;
