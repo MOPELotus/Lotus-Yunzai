@@ -2,5 +2,11 @@
   "name": "@lotus-yunzai/gacha",
   "private": true,
   "type": "module",
-  "exports": "./index.ts"
+  "exports": {
+    ".": "./index.ts",
+    "./miao-data": "./miao-data.ts"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  }
 }

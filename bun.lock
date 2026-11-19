@@ -24,6 +24,9 @@
     },
     "packages/gacha": {
       "name": "@lotus-yunzai/gacha",
+      "dependencies": {
+        "yaml": "2.9.1",
+      },
     },
     "packages/hoyo-client": {
       "name": "@lotus-yunzai/hoyo-client",
@@ -34,6 +37,7 @@
     "packages/skia": {
       "name": "@lotus-yunzai/skia",
       "dependencies": {
+        "@lotus-yunzai/gacha": "workspace:*",
         "skia-canvas": "3.0.8",
       },
     },

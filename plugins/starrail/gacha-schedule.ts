@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseDocument } from "yaml";
+import { readMiaoArrayExport } from "@lotus-yunzai/gacha/miao-data";
 import type { StarRailGachaDetailOptions } from "./gacha-detail.ts";
 
 interface Period {
@@ -33,19 +33,8 @@ function period(row: unknown): row is Period {
 
 /** The original export uses literal flow collections, which can be read without running the theme's JavaScript. */
 export function parseStarRailGachaSchedule(source: string): readonly Period[] {
-  const declaration = /^export const poolDetailSr[ \t]*=[ \t]*/mu.exec(source);
-  if (!declaration) return [];
-  const literal = source.slice(declaration.index + declaration[0].length)
-    .split(/^export\s/mu, 1)[0]!.trim().replace(/;$/u, "").trimEnd();
-  if (!literal.startsWith("[") || !literal.endsWith("]")) return [];
-  try {
-    const document = parseDocument(literal, { schema: "failsafe", strict: true, uniqueKeys: true });
-    if (document.errors.length || document.warnings.length) return [];
-    const result: unknown = document.toJS({ maxAliasCount: 0 });
-    return Array.isArray(result) && result.every(period) ? result : [];
-  } catch {
-    return [];
-  }
+  const periods = readMiaoArrayExport(source, "poolDetailSr");
+  return periods.every(period) ? periods : [];
 }
 
 export async function readStarRailGachaSchedule(root: string): Promise<readonly Period[]> {

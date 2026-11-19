@@ -34,7 +34,7 @@ function missing(error: unknown): boolean {
 }
 
 function checkIdentity(qq: string, uid: string) {
-  if (!/^[1-9]\d*$/u.test(qq) || !/^[1-5]\d{8}$/u.test(uid)) throw new TypeError("原神抽卡档案的 QQ 或 UID 无效。");
+  if (!/^[1-9]\d*$/u.test(qq) || !/^[1-9]\d*$/u.test(uid)) throw new TypeError("原神抽卡档案的 QQ 或 UID 无效。");
 }
 
 function stamp(info: BigIntStats): string {

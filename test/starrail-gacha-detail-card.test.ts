@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { renderGenshinGachaDetail } from "../plugins/genshin/gacha-detail-card.ts";
 import { renderStarRailGachaDetail } from "../plugins/starrail/gacha-detail-card.ts";
 import type { StarRailGachaDetailModel } from "../plugins/starrail/gacha-detail.ts";
 
-const detail: StarRailGachaDetailModel = {
+const detail = {
   uid: "100000002",
   face: { name: "测试开拓者" },
   poolName: "角色",
@@ -17,15 +18,22 @@ const detail: StarRailGachaDetailModel = {
     maxFour: { name: "无", count: 0 },
     noWaiRate: 0,
   },
-};
+} satisfies StarRailGachaDetailModel;
 
-test("星铁记录卡拒绝越界字体、缺少原主题和无效缩放比例", async () => {
+const renderers = [
+  ["星铁", (themeDirectory: string, scale?: number) => renderStarRailGachaDetail(detail, { themeDirectory, scale, mode: "gpu" })],
+  ["原神", (themeDirectory: string, scale?: number) => renderGenshinGachaDetail({
+    ...detail, game: "gs", elem: "hydro", type: 301, poolName: "角色",
+  }, { themeDirectory, scale, mode: "gpu" })],
+] as const;
+
+test.each(renderers)("%s 记录卡拒绝越界字体、缺少原主题和无效缩放比例", async (game, render) => {
   const root = await mkdtemp(join(tmpdir(), "lotus-gacha-theme-"));
   try {
     const themeDirectory = join(root, "theme");
-    await expect(renderStarRailGachaDetail(detail, { themeDirectory, mode: "gpu" }))
-      .rejects.toThrow("星铁抽卡记录的原主题目录不可用。");
-    await expect(renderStarRailGachaDetail(detail, { scale: 0, themeDirectory, mode: "gpu" }))
+    await expect(render(themeDirectory))
+      .rejects.toThrow(`${game}抽卡记录的原主题目录不可用。`);
+    await expect(render(themeDirectory, 0))
       .rejects.toThrow(RangeError);
 
     const fonts = join(themeDirectory, "common", "font");
@@ -33,8 +41,8 @@ test("星铁记录卡拒绝越界字体、缺少原主题和无效缩放比例",
     await mkdir(fonts, { recursive: true });
     await writeFile(outside, "outside-theme");
     await symlink(outside, join(fonts, "HYWH-65W.ttf"));
-    await expect(renderStarRailGachaDetail(detail, { themeDirectory, mode: "gpu" }))
-      .rejects.toThrow("星铁抽卡记录的原主题字体不可用。");
+    await expect(render(themeDirectory))
+      .rejects.toThrow(`${game}抽卡记录的原主题字体不可用。`);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

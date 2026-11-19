@@ -1,12 +1,25 @@
 import { fileURLToPath } from "node:url";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
-import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { createProfileHoyoClient, HoyoRequestError, type GenshinGachaPool } from "@lotus-yunzai/hoyo-client";
+import { buildGenshinGachaDetail } from "./gacha-detail.ts";
+import { renderGenshinGachaDetail } from "./gacha-detail-card.ts";
+import { genshinGachaThemeDirectory, readGenshinGachaSources } from "./gacha-detail-source.ts";
 import { renderGenshinGachaFailure, renderGenshinGachaResult } from "./gacha-result-card.ts";
 import { createGenshinGachaHistoryStore } from "./gacha-store.ts";
 import { createGenshinGachaSync } from "./gacha-sync.ts";
 
 const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
+const detailCommand = /^#(?:原神)?(?:喵喵)?(全部)?(抽卡|抽奖|角色|武器|常驻|集录|up)池?(全部)?(?:记录|祈愿|分析)([1-9]\d{0,2})?$/u;
+const helpCommand = /^#(?:原神)?(?:抽卡|记录)帮助$/u;
+const detailPools = new Map<string, GenshinGachaPool>([["武器", 302], ["常驻", 200], ["集录", 500]]);
 const historyDirectory = fileURLToPath(new URL("../../data/gachaJson/", import.meta.url));
+const help = [
+  "原神抽卡记录",
+  "#登录列表 可查看档案，#同步角色 可同步原神角色。",
+  "#更新抽卡记录 可补齐官方可查询范围内的记录。",
+  "#抽卡记录、#武器记录、#常驻记录、#集录记录 可查看对应卡池。",
+  "末尾加档案编号可选档案。单池可加「全部」查看各页，如 #角色全部记录2。",
+].join("\n");
 
 interface GachaContext {
   readonly normalizedMessage: string;
@@ -23,18 +36,61 @@ export function createModule({ signal, lockFile }: {
   const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
   const updating = new Set<string>();
 
+  async function view(qq: string, profileId: number, pool: GenshinGachaPool, all: boolean) {
+    try {
+      const { uid, nickname } = await profiles.savedRole(qq, profileId, "gs");
+      const records = await history.read(qq, uid);
+      const themeDirectory = genshinGachaThemeDirectory();
+      const face = {
+        name: nickname || "旅行者", face: "/meta-gs/character/芙宁娜/imgs/face-q.webp",
+        banner: "/meta-gs/character/芙宁娜/imgs/banner.webp",
+      };
+      const options = { uid, records, face, pool, now: new Date(), ...await readGenshinGachaSources(themeDirectory, records) };
+      const first = buildGenshinGachaDetail({ ...options, page: all ? 1 : undefined });
+      if (!first) return `UID:${uid} 本地暂无该卡池抽卡记录，请先使用 #更新抽卡记录${profileId === 1 ? "" : profileId}。`;
+      try {
+        const pages = [];
+        const total = first.pageInfo?.total ?? 1;
+        for (let page = 1; page <= total; page++) {
+          if (signal.aborted) return;
+          const model = page === 1 ? first : buildGenshinGachaDetail({ ...options, page })!;
+          const { png } = await renderGenshinGachaDetail(model, { themeDirectory });
+          pages.push({ type: "image" as const, file: png });
+        }
+        if (signal.aborted) return;
+        const current = await profiles.savedRole(qq, profileId, "gs").catch(() => undefined);
+        if (current?.uid !== uid) return "原神档案角色已变化，请重新查询。";
+        if (pages.length === 1) return pages[0];
+        const title = `UID:${uid} ${first.poolName}池抽卡记录，共${first.gacha.stat.fiveNum}条五星，分${pages.length}张图`;
+        return { type: "forward" as const, nodes: [title, ...pages] };
+      } catch {
+        if (!signal.aborted) return "原神抽卡记录已读取，原版详情图暂时无法生成。";
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error instanceof ProfileError) {
+        if (error.code === "missing") return `[荷花插件]请先登录 profile ${profileId}。`;
+        if (error.code === "role-missing") return `[荷花插件]profile ${profileId} 没有同步原神 UID。`;
+      }
+      return "原神抽卡记录读取失败，请检查本地历史文件。";
+    }
+  }
+
   return {
     commands: {},
     async fallback(_message: string, context: GachaContext) {
+      if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
-      if (!matched) return;
-      const profileId = Number(matched[1] ?? 1);
+      const detail = matched ? null : detailCommand.exec(context.normalizedMessage);
+      if (!matched && !detail) return;
+      const profileId = Number(matched?.[1] ?? detail?.[4] ?? 1);
       if (profileId > MAX_PROFILE_ID) return;
       const { user_id } = context;
       if (typeof user_id !== "number" || !Number.isSafeInteger(user_id) || user_id < 1) {
-        return "请从登录档案对应的 QQ 会话更新原神抽卡记录。";
+        return "请从登录档案对应的 QQ 会话使用原神抽卡记录。";
       }
       const qq = String(user_id);
+      if (detail) return view(qq, profileId, detailPools.get(detail[2]!) ?? 301, !!(detail[1] || detail[3]));
       const key = `${qq}/${profileId}`;
       if (updating.has(key)) return "该档案的原神抽卡记录正在更新，请稍后再试。";
       updating.add(key);
