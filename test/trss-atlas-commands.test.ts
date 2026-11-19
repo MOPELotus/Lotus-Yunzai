@@ -8,7 +8,7 @@ const token = "atlas-command-fixture";
 const excludedCommands = [
   "#未知样例图鉴", "#西风图鉴", "#101图鉴", "%锋镝图鉴",
   "#西风剑攻略", "*锋镝练度", "#我的深渊战绩",
-  "#图鉴西风", "荷花图鉴未知样例", "#图鉴西风剑攻略", "荷花图鉴更新", "#Lotus图鉴重置",
+  "#图鉴西风", "荷花图鉴未知样例", "#图鉴西风剑攻略", "荷花图鉴更新", "#更新图鉴", "#Lotus图鉴重置",
 ];
 
 async function writeCatalog(directory: string) {

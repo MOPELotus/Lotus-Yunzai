@@ -27,6 +27,7 @@ export function describeUpdateProgress(status: ManagedUpdateProgress): string {
 }
 
 function updatePrefix(message: string): RegExpExecArray | undefined {
+  if (message.trimEnd() === "#更新图鉴") return;
   const match = command.exec(message);
   if (!match || (match[1] === undefined && message.startsWith("日志", match[0].length))) return;
   return match;
