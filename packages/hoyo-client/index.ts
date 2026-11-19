@@ -3,7 +3,7 @@ import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type Bbs
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
+import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
@@ -234,6 +234,18 @@ export function createHoyoClient(
     return roles;
   }
 
+  function extraCheckinRoles(data: readonly unknown[], biz: string, allowedRegion: (region: string) => boolean) {
+    const roles = new Map<string, GameRole>();
+    for (const item of data) {
+      if (!isRecord(item) || item.game_biz !== biz || typeof item.region !== "string" || !allowedRegion(item.region)) continue;
+      const role = normalizeGameRoles([item])[0];
+      if (!role || !/^[1-9]\d{0,19}$/u.test(role.uid)) continue;
+      const key = `${role.region}:${role.uid}`;
+      if (!roles.has(key)) roles.set(key, role);
+    }
+    return [...roles.values()];
+  }
+
   async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
     if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
     const roles = roleCatalog(data);
@@ -267,9 +279,11 @@ export function createHoyoClient(
     },
     async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
       const data = await list(context, undefined, signal);
-      const nxx = normalizeGameRoles(data.filter(item => isRecord(item) && item.game_biz === "nxx_cn" && item.region === "cn_prod_gf01"))
-        .filter(role => /^[1-9]\d{0,19}$/u.test(role.uid));
-      return { ...roleCatalog(data), nxx };
+      return {
+        ...roleCatalog(data),
+        nxx: extraCheckinRoles(data, "nxx_cn", region => region === "cn_prod_gf01"),
+        bh3: extraCheckinRoles(data, "bh3_cn", isBh3CnCheckinRegion),
+      };
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
       readonly verifyReadOnly?: () => Promise<void>;

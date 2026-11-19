@@ -214,3 +214,16 @@ test("未定签到默认关闭，开启只影响当前档案的未定配置", as
     });
   });
 });
+
+test("崩坏3签到沿用关闭缺省与独立的旧区服角色黑名单", async () => {
+  await withProfile(async (store, path) => {
+    const initial = await store.checkinSettings(qq, 2);
+    expect(initial.games.honkai3rd?.enabled).toBe(false);
+    await store.setProfileCheckinSettings(qq, 2, initial.revision, { type: "game", game: "bh3", enabled: true });
+    expect((await store.describe(qq, 2)).gameCheckin.honkai3rd).toBe(true);
+    expect((await store.checkinSettings(qq, 2)).games.honkai3rd?.blacklist).toEqual(["123456"]);
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
+      ...fixture, games: { cn: { ...fixture.games.cn, honkai3rd: { checkin: true, black_list: ["123456"] } } },
+    });
+  }, { ...fixture, games: { cn: { ...fixture.games.cn, honkai3rd: { black_list: ["123456"] } } } });
+});

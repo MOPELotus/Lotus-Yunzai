@@ -13,7 +13,7 @@ import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
 const targets = {
-  genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx",
+  genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx", honkai3rd: "bh3",
 } as const satisfies Readonly<Record<string, CnGameCheckinSource["game"]>>;
 const labels = [
   ["原神", "genshin", "2"], ["崩坏2", "honkai2", "3"], ["崩坏3", "honkai3rd", "1"],
