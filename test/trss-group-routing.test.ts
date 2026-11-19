@@ -435,10 +435,25 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
       expect(requests).toHaveLength(1);
       expect(requests[0]?.getAll("texts")).toEqual(["晚安"]);
       expect(await (requests[0]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+      bot.send([
+        { type: "reply", data: { id: "1" } },
+        { type: "text", data: { text: "表情夹具 用引用图" } },
+      ], 77);
+      const lookup = await bot.action();
+      expect(lookup).toMatchObject({ action: "get_msg", params: { message_id: 1 } });
+      bot.sendFrame({ echo: lookup.echo, status: "ok", retcode: 0, data: {
+        message_type: "group", group_id: 77, message_id: 1, sender: { user_id: 51 }, message: trigger,
+      } });
+      await bot.reply([
+        { type: "reply", data: { id: "2" } },
+        { type: "image", data: { file: `base64://${png}` } },
+      ], 77);
+      expect(requests[1]?.getAll("texts")).toEqual(["用引用图"]);
+      expect(await (requests[1]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
       bot.send(trigger, 81);
       bot.send("#状态", 81);
       await bot.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(2);
     });
   } finally {
     await service.stop(true);
