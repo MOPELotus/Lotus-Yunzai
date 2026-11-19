@@ -12,6 +12,7 @@ interface CheckinScheduledCompletion {
   readonly ok: boolean;
   readonly stage: typeof stages[number];
   readonly reply?: MessageReply;
+  readonly revision?: string;
 }
 
 export type CheckinScheduledOutcome = { readonly status: "busy" } | CheckinScheduledCompletion;

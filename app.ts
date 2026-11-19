@@ -7,6 +7,11 @@ import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
+import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
+import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
+import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
+import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
+import type { CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
 import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
@@ -51,7 +56,7 @@ import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTo
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
-import { readAccountRefreshPermission, readMasterPermissions } from "./lib/permissions.ts";
+import { readAccountRefreshPermission, readAccountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
@@ -108,8 +113,10 @@ if (import.meta.main) {
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
+  let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
-  let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"] } | undefined;
+  let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
+    checkinNotify?: CheckinNotifyTransport } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -612,8 +619,10 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
-    const [network, permissions, canRefresh, access, friendRequests, routing, invitations, botConfig, runtimeVersion, milky] = await Promise.all([
+    const [network, permissions, canRefresh, canRegisterCheckin, globalConfig, access, friendRequests, routing, invitations, botConfig,
+      runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
+      readAccountScopePermission(root, "checkin.register"), readLocalConfig(root, "global"),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
       readFriendRequests(root),
@@ -674,9 +683,41 @@ if (import.meta.main) {
       (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context)), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
-    commands.registerModule(gameCheckinCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      { manualRelay: () => manualCaptcha, audit: checkinAudit }), "[Lotus-Plugin] Checkin");
+    const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
+    const checkinProfiles = createProfileStore(profileDirectory);
+    const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
+      { manualRelay: () => manualCaptcha, audit: checkinAudit });
+    commands.registerModule(gameCheckin, "[Lotus-Plugin] Checkin");
     commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal), "[Lotus-Plugin] Checkin Admin");
+    if (!probingUpdate) {
+      const config = globalConfig.scheduler;
+      if (config === undefined || (config !== null && typeof config === "object" && !Array.isArray(config) &&
+          (!Object.hasOwn(config, "enable") || typeof (config as CheckinScheduleConfig).enable === "boolean"))) {
+        const runtime = createCheckinScheduleRuntime({
+          store: createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root))),
+          config: (config ?? {}) as CheckinScheduleConfig,
+          listProfiles: checkinProfiles.listCheckinProfiles,
+          signal: lifecycle.signal,
+          runProfile: (entry, scope) => gameCheckin.runScheduled(entry.qq, entry.profileId, scope),
+          async onComplete(entry, result) {
+            if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
+            const current = await checkinProfiles.checkinSettings(entry.qq, entry.profileId).catch(() => undefined);
+            if (!current?.enabled || current.revision !== result.revision) return;
+            const transports = [...groups.checkinNotifications()];
+            if (milkyOnline?.checkinNotify && !milkyOnline.signal.aborted) transports.push(milkyOnline.checkinNotify);
+            await notifyCheckin({ userId: Number(entry.qq), settings: current.notify, reply: result.reply, transports,
+              signal: lifecycle.signal });
+          },
+        });
+        checkinRuntime = runtime;
+        commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
+          canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
+          viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+        }), "[Lotus-Plugin] Profile Settings");
+      } else {
+        console.warn("[签到计划] 全局 scheduler 配置无效。");
+      }
+    }
     commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
@@ -687,8 +728,8 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (id, signal, send) => {
-        milkyOnline = { id, startedAt: performance.now(), signal, send };
+      onOnline: (id, signal, send, checkinNotify) => {
+        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify };
         queueStartupMessages(id, "milky", signal);
       },
       isMaster: permissions.isMaster,
@@ -816,6 +857,7 @@ if (import.meta.main) {
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, [...plugins.directories.keys()]);
       milkyTransport?.start();
+      checkinRuntime?.start();
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
@@ -877,7 +919,8 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
-      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(), stopMilky?.()]);
+      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
+        stopMilky?.(), checkinRuntime?.stop()]);
       await plugins?.dispose();
     } finally {
       try {

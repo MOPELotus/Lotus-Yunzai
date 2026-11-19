@@ -90,6 +90,17 @@ export class OneBotCalls {
     }
   }
 
+  async sendCheckinNotification(send: Send, target: { user_id: number } | { group_id: number }, message: unknown) {
+    try {
+      const result = await this.#request(send, "send_msg", {
+        ...target, message, message_type: "group_id" in target ? "group" : "private", auto_escape: true,
+      });
+      return this.#messageId(result) === undefined ? "unknown" as const : "confirmed" as const;
+    } catch (error) {
+      return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" as const : "unknown" as const;
+    }
+  }
+
   async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {
     if (!isRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
         typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;

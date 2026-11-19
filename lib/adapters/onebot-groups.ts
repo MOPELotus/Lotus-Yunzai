@@ -1,4 +1,5 @@
 import type { MessageReply } from "../messages.ts";
+import type { CheckinNotifyTransport } from "../checkin-notify.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import { encodeOneBotReply } from "./onebot-message.ts";
 
@@ -62,6 +63,27 @@ export class OneBotGroups implements GroupTransport {
       id,
       seconds: Math.max(0, Math.floor((now - account.startedAt) / 1_000)),
     }));
+  }
+
+  checkinNotifications(): readonly CheckinNotifyTransport[] {
+    return this.onlineBots().flatMap(botId => {
+      const account = this.#connected.get(botId);
+      if (!account) return [];
+      const { calls, send } = account.connection;
+      const active = () => this.#connected.get(botId) === account;
+      const deliver = async (target: { user_id: number } | { group_id: number }, reply: MessageReply) => {
+        const message = encodeOneBotReply(reply);
+        if (!active() || message === undefined) return "rejected" as const;
+        return calls.sendCheckinNotification(send, target, message);
+      };
+      return [{
+        isFriend: async (userId: number) => active() && await calls.isFriend(send, userId) && active(),
+        isGroupMember: async (groupId: number, userId: number) =>
+          active() && await calls.getGroupRole(send, groupId, userId, true) !== undefined && active(),
+        sendPrivate: (userId: number, reply: MessageReply) => deliver({ user_id: userId }, reply),
+        sendGroup: (groupId: number, reply: MessageReply) => deliver({ group_id: groupId }, reply),
+      }];
+    });
   }
 
   async listGroups(botId: number): Promise<readonly GroupTarget[]> {

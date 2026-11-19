@@ -556,6 +556,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { document, state, revision } = await readDocument(qq, id);
       const cn = record(record(document.games).cn);
       const community = record(document.mihoyobbs);
+      const notify = record(record(document.profile).notify);
       const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
       const games = Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"].map(key => {
@@ -569,6 +570,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return {
         revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
         schedule: profileSchedule(document.schedule),
+        notify: {
+          enabled: notify.enable !== false,
+          prefer: notify.prefer === "group" ? "group" as const : "private" as const,
+          fallbackGroups: Array.isArray(notify.fallback_groups) ? notify.fallback_groups.map(value => Number(accountId(value)))
+            .filter(id => Number.isSafeInteger(id) && id > 0) : [],
+        },
       };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {

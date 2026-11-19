@@ -7,7 +7,7 @@ import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
-import { segment } from "./messages.ts";
+import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
 const targets = {
@@ -22,6 +22,13 @@ const gameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", ye
 const changed = "档案已变更，请重新发起签到。";
 type Settings = Awaited<ReturnType<ReturnType<typeof createProfileStore>["checkinSettings"]>>;
 type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
+type CheckinRun = { readonly status: "busy"; readonly reply?: MessageReply } |
+  { readonly status: "complete"; readonly stage: CheckinAuditEntry["stage"]; readonly ok: boolean;
+    readonly reply?: MessageReply; readonly revision?: string };
+
+function completedRun(stage: CheckinAuditEntry["stage"], ok: boolean, reply?: MessageReply, revision?: string): CheckinRun {
+  return { status: "complete", stage, ok, reply, revision };
+}
 
 function rowsFor(settings: Settings) {
   return labels.map(([label, key, forum]) => ({
@@ -50,13 +57,13 @@ function outcome(rows: readonly GameCheckinResult[]) {
   return { label: signed ? "成功" : "已完成" };
 }
 
-export function gameCheckinCommands(directory: string | undefined, signal: AbortSignal,
+export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
   { makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard, manualRelay, audit }: {
     readonly makeClient?: typeof createProfileHoyoClient;
     readonly renderReceipt?: typeof renderCheckinReceiptCard;
     readonly manualRelay?: () => ManualRelay | undefined;
     readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
-  } = {}): CommandModule {
+  } = {}) {
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
   const active = new Set<string>();
@@ -75,7 +82,7 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
   }
 
   async function submit(source: ProfileRequestContext, verifyCurrent: () => Promise<void>,
-    notify: ((message: string) => unknown) | undefined, label: string) {
+    notify: ((message: string) => unknown) | undefined, label: string, signal: AbortSignal) {
     try {
       return await client.submitCnGameCheckin(source, { signal });
     } catch (error) {
@@ -96,129 +103,165 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
         const state = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
         await verifyCurrent();
         if (state.signed) return "already";
-        if (state.firstBind) throw error;
+        if (state.firstBind || Date.now() >= registration.expiresAt) throw error;
         return client.submitCnGameCheckin(source, { signal, proof: read.result });
       }
       throw error;
     }
   }
 
-  return {
+  async function runProfile(qq: string, profileId: number, input: {
+    readonly source: "manual" | "scheduled";
+    readonly signal: AbortSignal;
+    readonly notify?: (message: string) => unknown;
+    readonly verifyDay?: () => void;
+  }): Promise<CheckinRun> {
+    const { signal } = input;
+    if (signal.aborted) return { status: "busy" };
+    input.verifyDay?.();
+    const counts: Partial<Record<GameCheckinResult["status"] | "skipped", number>> = {};
+    const auditResult = async (stage: CheckinAuditEntry["stage"], ok: boolean) => {
+      if (signal.aborted) return;
+      try {
+        await audit?.append({ qq, profileId, stage, ok, source: input.source, counts });
+      } catch {
+        console.warn("[签到] 无法保存签到审计。");
+      }
+    };
+    const count = (status: keyof typeof counts) => { counts[status] = (counts[status] ?? 0) + 1; };
+    const startedDay = gameDay.format(Date.now());
+    let account: ProfileAccountContext;
+    let settings: Settings;
+    let knownRevision: string | undefined;
+    try {
+      settings = await profiles.checkinSettings(qq, profileId);
+      knownRevision = settings.revision;
+      if (input.source === "scheduled" && !settings.enabled) return { status: "busy" };
+      account = await profiles.accountContext(qq, profileId);
+      if (account.revision !== settings.revision) return { status: "busy", reply: changed };
+    } catch (error) {
+      if (signal.aborted) return { status: "busy" };
+      await auditResult("precheck", false);
+      if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
+        return completedRun("precheck", false, `请先登录 profile ${profileId}。`, knownRevision);
+      }
+      return completedRun("precheck", false, "无法读取签到档案。", knownRevision);
+    }
+    const key = account.account.ltuid || account.account.stuid || `${qq}/${profileId}`;
+    if (active.has(key)) return { status: "busy", reply: "此账号的签到正在执行，请稍后。" };
+    active.add(key);
+    try {
+      let revision = account.revision;
+      function verifyDay() {
+        signal.throwIfAborted();
+        input.verifyDay?.();
+        if (gameDay.format(Date.now()) !== startedDay) {
+          throw new HoyoRequestError("profile-changed", "签到日期已切换，请重新签到。");
+        }
+      }
+      async function verifyCurrent() {
+        verifyDay();
+        const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
+        verifyDay();
+        if (current?.revision !== revision) throw new ProfileError("changed", changed);
+      }
+      const rows = rowsFor(settings);
+      const notes: string[] = [];
+      const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled);
+      if (gameRows.length) {
+        try {
+          await verifyCurrent();
+          account = await client.refreshCredentials(account);
+          revision = account.revision;
+          await verifyCurrent();
+        } catch {
+          await verifyCurrent();
+          await auditResult("refresh", false);
+          const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"]);
+          await verifyCurrent();
+          return completedRun("refresh", false, reply, revision);
+        }
+        try {
+          const roles = await client.fetchRoleCatalog(account, signal);
+          await verifyCurrent();
+          for (const row of gameRows) {
+            const game = targets[row.key as keyof typeof targets];
+            const blacklist = new Set(settings.games[row.key]?.blacklist);
+            const eligible = roles[game].filter(role => !blacklist.has(role.uid));
+            if (!eligible.length) {
+              row.game = "跳过";
+              count("skipped");
+              continue;
+            }
+            const results: GameCheckinResult[] = [];
+            for (const role of eligible) {
+              const source = { ...account, game, role };
+              const result = await runGameCheckinSequence({
+                signal, verifyCurrent,
+                readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
+                submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
+              });
+              results.push(result);
+              count(result.status);
+            }
+            const finished = outcome(results);
+            row.game = finished.label;
+            if (finished.reason) notes.push(`${row.label}：${finished.reason}`);
+          }
+        } catch (error) {
+          if (error instanceof ProfileError ||
+            (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
+          await verifyCurrent();
+          for (const row of gameRows.filter(row => row.game === "未执行")) {
+            row.game = "失败";
+            count("failed");
+          }
+          notes.push("米游社角色查询未完成。");
+        }
+      }
+      await verifyCurrent();
+      const ok = !(counts.failed || counts["first-bind"] || counts.unconfirmed);
+      await auditResult("checkin", ok);
+      await verifyCurrent();
+      const reply = await receipt(settings, profileId, rows, notes);
+      await verifyCurrent();
+      return completedRun("checkin", ok, reply, revision);
+    } catch (error) {
+      if (signal.aborted) return { status: "busy" };
+      if (error instanceof ProfileError && error.code === "changed") return { status: "busy", reply: changed };
+      if (error instanceof HoyoRequestError && error.code === "profile-changed") return { status: "busy", reply: error.message };
+      input.verifyDay?.();
+      await auditResult("runner", false);
+      return completedRun("runner", false, "签到未完成，请核对米游社状态。");
+    } finally {
+      active.delete(key);
+    }
+  }
+
+  const commands: CommandModule = {
     name: "@lotus-yunzai/checkin", commands: {},
     async fallback(_message, context) {
       const match = manual.exec(context.normalizedMessage);
-      if (!match || signal.aborted) return;
+      if (!match || lifecycleSignal.aborted) return;
       const profileId = Number(match[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话发送签到指令。";
-      const qq = String(context.user_id);
-      const counts: Partial<Record<GameCheckinResult["status"] | "skipped", number>> = {};
-      const auditResult = async (stage: CheckinAuditEntry["stage"], ok: boolean) => {
-        if (signal.aborted) return;
-        try {
-          await audit?.append({ qq, profileId, stage, ok, source: "manual", counts });
-        } catch {
-          console.warn("[签到] 无法保存签到审计。");
-        }
-      };
-      const count = (status: keyof typeof counts) => { counts[status] = (counts[status] ?? 0) + 1; };
-      const startedDay = gameDay.format(Date.now());
-      let account: ProfileAccountContext;
-      let settings: Settings;
-      try {
-        settings = await profiles.checkinSettings(qq, profileId);
-        account = await profiles.accountContext(qq, profileId);
-        if (account.revision !== settings.revision) return changed;
-      } catch (error) {
-        if (signal.aborted) return;
-        await auditResult("precheck", false);
-        if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
-          return `请先登录 profile ${profileId}。`;
-        }
-        return "无法读取签到档案。";
-      }
-      const key = account.account.ltuid || account.account.stuid || `${qq}/${profileId}`;
-      if (active.has(key)) return "此账号的签到正在执行，请稍后。";
-      active.add(key);
-      try {
-        let revision = account.revision;
-        async function verifyCurrent() {
-          signal.throwIfAborted();
-          if (gameDay.format(Date.now()) !== startedDay) {
-            throw new HoyoRequestError("profile-changed", "签到日期已切换，请重新签到。");
-          }
-          const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
-          if (current?.revision !== revision) throw new ProfileError("changed", changed);
-        }
-        const rows = rowsFor(settings);
-        const notes: string[] = [];
-        const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled);
-        if (gameRows.length) {
-          try {
-            await verifyCurrent();
-            account = await client.refreshCredentials(account);
-            revision = account.revision;
-            await verifyCurrent();
-          } catch {
-            await verifyCurrent();
-            await auditResult("refresh", false);
-            const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"]);
-            await verifyCurrent();
-            return reply;
-          }
-          try {
-            const roles = await client.fetchRoleCatalog(account, signal);
-            await verifyCurrent();
-            for (const row of gameRows) {
-              const game = targets[row.key as keyof typeof targets];
-              const blacklist = new Set(settings.games[row.key]?.blacklist);
-              const eligible = roles[game].filter(role => !blacklist.has(role.uid));
-              if (!eligible.length) {
-                row.game = "跳过";
-                count("skipped");
-                continue;
-              }
-              const results: GameCheckinResult[] = [];
-              for (const role of eligible) {
-                const source = { ...account, game, role };
-                const result = await runGameCheckinSequence({
-                  signal, verifyCurrent,
-                  readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
-                  submit: () => submit(source, verifyCurrent,
-                    context.message_type === "private" ? message => context.reply(message) : undefined, row.label),
-                });
-                results.push(result);
-                count(result.status);
-              }
-              const finished = outcome(results);
-              row.game = finished.label;
-              if (finished.reason) notes.push(`${row.label}：${finished.reason}`);
-            }
-          } catch (error) {
-            if (error instanceof ProfileError ||
-              (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
-            await verifyCurrent();
-            for (const row of gameRows.filter(row => row.game === "未执行")) {
-              row.game = "失败";
-              count("failed");
-            }
-            notes.push("米游社角色查询未完成。");
-          }
-        }
-        await verifyCurrent();
-        await auditResult("checkin", !(counts.failed || counts["first-bind"] || counts.unconfirmed));
-        await verifyCurrent();
-        const reply = await receipt(settings, profileId, rows, notes);
-        await verifyCurrent();
-        return reply;
-      } catch (error) {
-        if (signal.aborted) return;
-        if (error instanceof ProfileError && error.code === "changed") return changed;
-        if (error instanceof HoyoRequestError && error.code === "profile-changed") return error.message;
-        return "签到未完成，请核对米游社状态。";
-      } finally {
-        active.delete(key);
-      }
+      const result = await runProfile(String(context.user_id), profileId, {
+        source: "manual", signal: lifecycleSignal,
+        notify: context.message_type === "private" ? message => context.reply(message) : undefined,
+      });
+      return result.reply;
+    },
+  };
+
+  return {
+    ...commands,
+    async runScheduled(qq: string, profileId: number, context: {
+      readonly signal: AbortSignal;
+      readonly verifyDay: () => void;
+    }): Promise<CheckinRun> {
+      const signal = AbortSignal.any([lifecycleSignal, context.signal]);
+      return runProfile(qq, profileId, { signal, verifyDay: context.verifyDay, source: "scheduled" });
     },
   };
 }

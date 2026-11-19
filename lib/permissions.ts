@@ -66,7 +66,7 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-export async function readAccountRefreshPermission(root: URL) {
+export async function readAccountScopePermission(root: URL, permission: "checkin.refresh" | "checkin.register") {
   const permissions = configRecord((await readLocalConfig(root, "global")).permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
@@ -74,7 +74,7 @@ export async function readAccountRefreshPermission(root: URL) {
   const userDeny = configuredIds(users.deny);
   const groupAllow = configuredIds(groups.allow);
   const groupDeny = configuredIds(groups.deny);
-  const scope = configRecord(configRecord(permissions.scopes)["checkin.refresh"]).policy;
+  const scope = configRecord(configRecord(permissions.scopes)[permission]).policy;
   return (context: { user_id?: number; group_id?: number; isMaster: boolean }) => {
     const user = String(context.user_id ?? "");
     const group = String(context.group_id ?? "");
@@ -82,4 +82,8 @@ export async function readAccountRefreshPermission(root: URL) {
     if (scope === "master_only") return context.isMaster;
     return scope === "allow" || userAllow.has(user) || groupAllow.has(group) || permissions.default_policy !== "deny";
   };
+}
+
+export function readAccountRefreshPermission(root: URL) {
+  return readAccountScopePermission(root, "checkin.refresh");
 }
