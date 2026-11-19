@@ -325,7 +325,7 @@ export async function loadPlugins(
           throw new Error("createModule 须为模块工厂函数。");
         }
         const module = create ? await create(Object.freeze({ ...services, signal })) : published.default;
-        const { commands: handlers, aliases, dispose } = record(module);
+        const { commands: handlers, aliases, fallback, dispose } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -339,6 +339,7 @@ export async function loadPlugins(
         }
         unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
+          fallback: fallback as CommandModule["fallback"],
         }, label);
         if (published.apps !== undefined) {
           if (published.apps === null || typeof published.apps !== "object") {

@@ -535,6 +535,13 @@ if (import.meta.main) {
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
       return;
     }
+    const { self_id } = event;
+    const fallback = await commands.dispatchFallback(event, allowed, (userId) =>
+      self_id !== undefined && masterPermissions.isMaster(self_id, userId));
+    if (fallback !== undefined) {
+      await sendCommandReply(event, fallback);
+      return;
+    }
     if (useKeywords) await keywords.dispatch(event);
   }
 

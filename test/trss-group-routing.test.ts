@@ -301,3 +301,58 @@ test("OneBot 群禁言按机器人生效，全员禁言保留管理员入口", (
   a.send("#状态", 77);
   await a.reply(alive, 77);
 }), 9_000);
+
+test("原生消息回退可退让，沿用群权限并查询当前机器人的主人", () => withHost(async (root) => {
+  const config = join(root, "config/config");
+  await mkdir(config, { recursive: true });
+  await writeFile(join(config, "other.yaml"), 'master: ["99:51", "100:52"]\n');
+  await writeFile(join(config, "group.yaml"), 'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"81": { disable: [fixture-fallback] }\n');
+  const plugin = join(root, "plugins/fixture-fallback");
+  await mkdir(plugin, { recursive: true });
+  await writeFile(join(plugin, "package.json"), JSON.stringify({
+    name: "fixture-fallback", lotusYunzai: { entry: "./index.ts" },
+  }));
+  await writeFile(join(plugin, "index.ts"), `
+    export default {
+      commands: { "#现代优先": () => "现代处理" },
+      fallback(message, { isMaster, isBotMaster, reply_id, message: segments }) {
+        if (message.startsWith("#")) return "回退误抢显式指令";
+        if (message === "引用触发") return { type: "quoted", message: "带引用的结果" };
+        if (message !== "旧触发") return;
+        return [isMaster, isBotMaster(51), isBotMaster(52), reply_id, segments.map(item => item.type).join(",")].join("/");
+      },
+    };
+  `);
+  await writeFile(join(root, "plugins/fixture-fallback-legacy.js"), `
+    export default class extends plugin {
+      constructor() { super({ rule: [{ reg: "^#旧版优先$", fnc: "run" }] }); }
+      run() { return this.reply("旧版处理"); }
+    }
+  `);
+}, async (connect) => {
+  const first = await connect(99);
+  const second = await connect(100);
+  const message: Inbound = [
+    { type: "reply", data: { id: "123" } },
+    { type: "text", data: { text: "旧触发" } },
+    { type: "at", data: { qq: "51" } },
+    { type: "image", data: { file: "fixture.png" } },
+  ];
+  first.send("#现代优先", 77);
+  await first.reply("现代处理", 77);
+  first.send("#旧版优先", 77);
+  await first.reply("旧版处理", 77);
+  first.send(message, 77);
+  await first.reply("false/true/false/123/reply,text,at,image", 77);
+  second.send(message, 77);
+  await second.reply("false/false/true/123/reply,text,at,image", 77);
+  first.send("引用触发", 77);
+  await first.reply([
+    { type: "reply", data: { id: "4" } },
+    { type: "text", data: { text: "带引用的结果" } },
+  ], 77);
+  first.send("无匹配", 77);
+  first.send(message, 81);
+  first.send("#状态", 81);
+  await first.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
+}), 12_000);

@@ -5,16 +5,37 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & { runtimeDiagnosticsScope?: "milky" }>;
 
+export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender">> & {
+  readonly isBotMaster: (userId: number) => boolean;
+};
+
 export interface CommandForward {
   readonly type: "forward";
   readonly nodes: readonly MessageReply[];
 }
 
-export type CommandReply = MessageReply | CommandForward;
+export interface QuotedCommandReply {
+  readonly type: "quoted";
+  readonly message: MessageReply;
+}
+
+export type CommandReply = MessageReply | CommandForward | QuotedCommandReply;
 export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
+export type MessageFallback = (
+  message: string,
+  context: MessageFallbackContext,
+) => CommandReply | undefined | Promise<CommandReply | undefined>;
 
 export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forward">, reply: CommandReply): Promise<void> {
-  if (typeof reply !== "object" || reply === null || !("type" in reply) || reply.type !== "forward") {
+  if (typeof reply !== "object" || reply === null || !("type" in reply)) {
+    await event.reply(reply);
+    return;
+  }
+  if (reply.type === "quoted") {
+    await event.reply(reply.message, true);
+    return;
+  }
+  if (reply.type !== "forward") {
     await event.reply(reply);
     return;
   }
@@ -34,11 +55,23 @@ export interface CommandModule {
   readonly name: string;
   readonly commands: Readonly<Record<string, CommandHandler>>;
   readonly aliases?: Readonly<Record<string, string>>;
+  readonly fallback?: MessageFallback;
 }
 
 interface RegisteredCommand {
   readonly handler: CommandHandler;
   readonly names: readonly string[];
+}
+
+function commandContext(context: CommandContext): CommandContext {
+  const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
+    groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, message, raw_message } = context;
+  return {
+    message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
+    reviewGroupRequest, groupRequestScope, canReviewGroupRequests,
+    ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
+    member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
+  };
 }
 
 function legacyFeatureNames(module: string, command: string): readonly string[] {
@@ -50,6 +83,7 @@ function legacyFeatureNames(module: string, command: string): readonly string[] 
 
 export class CommandRegistry {
   readonly #handlers = new Map<string, RegisteredCommand>();
+  readonly #fallbacks = new Map<string, { readonly handler: MessageFallback; readonly names: readonly string[] }>();
   readonly #modules = new Set<string>();
 
   register(name: string, handler: CommandHandler): void {
@@ -62,9 +96,12 @@ export class CommandRegistry {
   }
 
   registerModule(module: CommandModule, label = module.name): () => void {
-    const { name } = module;
+    const { name, fallback } = module;
     if (this.hasModule(name)) {
       throw new Error(`模块已注册：${name}`);
+    }
+    if (fallback !== undefined && typeof fallback !== "function") {
+      throw new Error(`模块 ${name} 的 fallback 须为消息处理函数。`);
     }
 
     const commands = Object.entries(module.commands);
@@ -91,6 +128,7 @@ export class CommandRegistry {
     for (const [name, command] of local) {
       this.#handlers.set(name, command);
     }
+    if (fallback) this.#fallbacks.set(name, { handler: fallback, names: [name, label] });
     this.#modules.add(name);
 
     let active = true;
@@ -100,6 +138,7 @@ export class CommandRegistry {
       }
       active = false;
       this.#modules.delete(name);
+      this.#fallbacks.delete(name);
       for (const command of local.keys()) {
         this.#handlers.delete(command);
       }
@@ -128,14 +167,20 @@ export class CommandRegistry {
     const command = this.#handlers.get(name);
     if (!command || (allowed && !allowed(command.names))) return;
 
-    const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
-      groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope,
-      message: segments, raw_message } = context;
-    return command.handler(argument, {
-      message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message: segments, raw_message,
-      reviewGroupRequest, groupRequestScope, canReviewGroupRequests,
-      ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
-      member: member && { is_admin: member.is_admin, is_owner: member.is_owner },
-    });
+    return command.handler(argument, commandContext(context));
+  }
+
+  async dispatchFallback(
+    event: MessageEvent,
+    allowed: (names: readonly string[]) => boolean,
+    isBotMaster: MessageFallbackContext["isBotMaster"],
+  ): Promise<CommandReply | undefined> {
+    for (const { handler, names } of this.#fallbacks.values()) {
+      if (!allowed(names)) continue;
+      const reply = await handler(event.msg, {
+        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, isBotMaster,
+      });
+      if (reply !== undefined) return reply;
+    }
   }
 }
