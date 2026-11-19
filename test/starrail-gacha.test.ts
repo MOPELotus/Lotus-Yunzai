@@ -90,7 +90,7 @@ test("继承荷花星铁官方六池，从档案选定角色并按双游标读�
         return ok({
           list: [
             { item: null, gacha_count: 4 },
-            { id: pad, item: { item_id: 1001 }, is_up: true, gacha_count: "57" },
+            { id: pad, item: { item_id: 1001 }, is_up: true, time: "2025-01-11 08:00:00", gacha_count: "57" },
           ],
           has_more: true, next_max_id: pad, version_id: "12",
         });
@@ -107,10 +107,11 @@ test("继承荷花星铁官方六池，从档案选定角色并按双游标读�
     expect(result.pools.map<string>((pool) => pool.type)).toEqual(Object.keys(starRailGachaPools));
     expect(result.pools[0]).toMatchObject({
       cards: [{ gacha_id: "3020", total_count: 65, up_count: 1 }],
-      fiveStars: [{ id: pad, gacha_count: 57 }, { uuid: "legacy-id", gacha_count: 8 }],
+      fiveStars: [{ id: pad, gacha_count: 57, time: "2025-01-11 08:00:00" }, { uuid: "legacy-id", gacha_count: 8 }],
       pity: 4,
     });
     expect(result.pools[1]).toMatchObject({ cards: [], fiveStars: [], pity: null });
+    expect(result.pools[0]?.fiveStars[1]).not.toHaveProperty("is_up");
     expect(callOrder).toEqual(["account", "brief",
       ...Object.keys(starRailGachaPools).flatMap((type) => [
         `pool_stat:${type}`, `five_star_list:${type}`,

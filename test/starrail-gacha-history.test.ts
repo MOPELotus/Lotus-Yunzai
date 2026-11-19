@@ -37,7 +37,7 @@ function fixture() {
         cards: [{ gacha_id: "old", total_count: 250, up_count: 2 }, { gacha_id: "active", total_count: "60", up_count: 1 }],
         cardCounters: { old: 250, active: "60" }, totalDraws: "358", pity: 12,
         fiveStars: [
-          { ...row(oldId), legacy_time: "2024-12-26 17:00:00" },
+          { ...row(oldId), is_up: undefined, legacy_time: "2024-12-26 17:00:00" },
           { ...row(sameId, "same"), got_item: { detail: true } },
           { uuid: "now-with-id", item, is_up: true, gacha_count: "20" },
         ],
@@ -63,7 +63,7 @@ test("合并 Lotus-ReFactor v1 历史的五星、各期累计抽数和垫抽，�
         { gacha_id: "new", total_count: 20, up_count: 0 },
         { gacha_id: "active", total_count: 62, up_count: 1 },
       ],
-      fiveStars: [row(sameId, "same"), row(mappedId, "now-with-id"), row(newId), row(newId)],
+      fiveStars: [{ ...row(sameId, "same"), is_up: undefined }, row(mappedId, "now-with-id"), row(newId), row(newId)],
     },
     GachaType_Standard: { cards: [{ gacha_id: "legacy-standard", total_count: 90, up_count: 0 }], pity: 0 },
   });
@@ -81,12 +81,13 @@ test("合并 Lotus-ReFactor v1 历史的五星、各期累计抽数和垫抽，�
     imported: { snapshotVersion: 1 },
     fiveStars: [
       { id: newId },
-      { id: sameId, got_item: { detail: true } },
+      { id: sameId, got_item: { detail: true }, is_up: true },
       { id: mappedId, uuid: "now-with-id" },
       { id: oldId, legacy_time: "2024-12-26 17:00:00" },
     ],
   });
   expect(first.log.pools.GachaType_Standard).toMatchObject({ totalDraws: 302, pity: 0, cardCounters: { "legacy-standard": 90 } });
+  expect(first.log.pools.GachaType_AvatarUp.fiveStars[3]).not.toHaveProperty("is_up");
   expect(first.pools).toHaveLength(6);
   expect(first).toMatchObject({ added: 1, total: 4 });
   expect(previous).toEqual(preserved);

@@ -66,14 +66,16 @@ function parseCards(data: Record<string, unknown>) {
 }
 
 function parseFiveStar(row: Record<string, unknown>) {
-  const { item, id, uuid } = row;
+  const { item, id, uuid, is_up, time } = row;
   if (!isRecord(item) || !identifier(item.item_id) ||
       [id, uuid].some((value) => typeof value === "number" && !Number.isSafeInteger(value)) ||
       !(identifier(id) || identifier(uuid))) {
     throw new HoyoRequestError("response", "星铁五星记录或编号无效。");
   }
   return {
-    id: identifier(id), uuid: identifier(uuid), item, is_up: row.is_up === true,
+    id: identifier(id), uuid: identifier(uuid), item,
+    ...(typeof is_up === "boolean" ? { is_up } : {}),
+    ...(typeof time === "string" && time.trim() ? { time: time.trim() } : {}),
     got_item: row.got_item ?? null, gacha_count: count(row.gacha_count),
   };
 }

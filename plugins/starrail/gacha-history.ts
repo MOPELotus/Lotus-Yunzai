@@ -18,7 +18,7 @@ type FiveStarHistory = ObjectRecord & {
   readonly id: string;
   readonly uuid: string;
   readonly item: ObjectRecord | null;
-  readonly is_up: boolean;
+  readonly is_up?: boolean;
   readonly got_item: unknown;
   readonly gacha_count: number;
 };
@@ -56,12 +56,13 @@ function count(value: unknown): number {
 
 function normalizeFiveStar(value: unknown, isIncoming: boolean): FiveStarHistory {
   const row = record(value, "星铁五星记录格式有误。");
+  const { is_up, ...fields } = row;
   const id = idText(row.id);
   const uuid = idText(row.uuid);
   if (!id && !uuid) throw new TypeError("星铁五星记录缺少编号。");
   const item = row.item == null && !isIncoming ? null : record(row.item, "星铁五星物品资料格式有误。");
   return {
-    ...row, id, uuid, item, is_up: row.is_up === true, got_item: row.got_item ?? null,
+    ...fields, id, uuid, item, ...(typeof is_up === "boolean" ? { is_up } : {}), got_item: row.got_item ?? null,
     gacha_count: count(isIncoming ? row.gacha_count : row.gacha_count ?? 0),
   };
 }
