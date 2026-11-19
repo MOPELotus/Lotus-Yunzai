@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
-import type { InboundSegment, MessageEvent, MessageReply, QuotedMessage, ReplyOptions } from "../messages.ts";
+import { notifyReplyDelivery, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
 
@@ -411,6 +411,7 @@ function replyToMilky(target: Target, call: MilkyCall, {
       if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
         scheduleRecall?.(group ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
       }
+      await notifyReplyDelivery(options.onDelivered, sequence);
       return true;
     } catch {
       return false;

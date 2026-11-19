@@ -431,8 +431,13 @@ async function dispatchMessage(
 
       const params = { message_type: messageType, ...target, message, auto_escape: true };
       const seconds = options.recallMsg;
-      if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
-        return calls.replyWithRecall(send, params, seconds, messageId);
+      const recall = typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120 ? seconds : undefined;
+      const onDelivered = options.onDelivered;
+      const report = onDelivered && boundAccount && attachmentSession && !attachmentSession.signal.aborted
+        ? (id: number) => oneBotMessageId(id) !== undefined && !attachmentSession.signal.aborted ? onDelivered(id) : undefined
+        : undefined;
+      if (recall !== undefined || report) {
+        return calls.replyWithReceipt(send, params, recall, messageId, report);
       }
       return send({ action: "send_msg", params });
     },

@@ -22,6 +22,30 @@ test("引用回复沿用原消息并将撤回选项交给当前协议", async ()
   expect(sent).toEqual([["保留", true], ["稍后撤回", true, { recallMsg: 20 }]]);
 });
 
+test("需要回执的模块回复只交给当前协议确认", async () => {
+  const registry = new CommandRegistry();
+  const delivered: number[] = [];
+  registry.registerModule({
+    name: "delivery-fixture",
+    commands: {
+      "#回执": (_, context) => {
+        expect(context.message_id).toBe(88);
+        return { type: "delivery", message: "回复", onDelivered: id => { delivered.push(id); } };
+      },
+    },
+  });
+  const reply = await registry.dispatch("#回执", { ...group, message_id: 88 });
+  if (!reply) throw new Error("没有收到待确认的回复。");
+  await sendCommandReply({ reply(message, quote, options) {
+    expect(message).toBe("回复");
+    expect(quote).toBe(false);
+    expect(delivered).toEqual([]);
+    options?.onDelivered?.(100);
+    return true;
+  } }, reply);
+  expect(delivered).toEqual([100]);
+});
+
 test("当前群成员能力只传给原群消息的模块入口", async () => {
   const registry = new CommandRegistry();
   const read = async () => [{ id: 42 }];

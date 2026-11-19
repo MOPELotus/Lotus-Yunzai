@@ -1,5 +1,5 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
-import type { GroupMembership, GroupRequestType, RecallResult } from "../messages.ts";
+import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
@@ -314,7 +314,8 @@ export class OneBotCalls {
     return typeof id === "number" && Number.isSafeInteger(id) ? id : undefined;
   }
 
-  async replyWithRecall(send: Send, params: object, seconds: number, original?: number): Promise<boolean> {
+  async replyWithReceipt(send: Send, params: object, seconds?: number, original?: number,
+    onDelivered?: ReplyOptions["onDelivered"]): Promise<boolean> {
     let result: unknown;
     try {
       result = await this.#request(send, "send_msg", params);
@@ -324,6 +325,12 @@ export class OneBotCalls {
     const id = this.#messageId(result);
     if (this.#closed || id === undefined) return true;
 
+    if (seconds !== undefined) this.#scheduleRecall(send, id, seconds, original);
+    await notifyReplyDelivery(onDelivered, id);
+    return true;
+  }
+
+  #scheduleRecall(send: Send, id: number, seconds: number, original?: number): void {
     const timer = setTimeout(() => {
       this.#recalls.delete(timer);
       const messages = new Set(original === undefined ? [id] : [id, original]);
@@ -335,7 +342,6 @@ export class OneBotCalls {
     }, seconds * 1_000);
     timer.unref();
     this.#recalls.add(timer);
-    return true;
   }
 
   receive(message: Record<string, unknown>): boolean {

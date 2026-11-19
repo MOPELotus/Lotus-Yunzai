@@ -62,3 +62,29 @@ test("失去确认返回 false，未连接和无效收件人或内容明确报�
   expect(await sent).toBe(false);
   await expect(groups.sendPrivate(99, 42, "离线")).rejects.toBeInstanceOf(OneBotNotSentError);
 });
+
+test("需要回执的 OneBot 回复仅记录已确认的消息编号", async () => {
+  const { calls, send, frames } = connection();
+  const observed: number[] = [];
+  const callback = (messageId: number) => { observed.push(messageId); };
+  const reply = () => calls.replyWithReceipt(send, { user_id: 42, message: "测试" }, undefined, undefined, callback);
+  const confirmed = reply();
+  const first = frames.at(-1)!;
+  expect(first.action).toBe("send_msg");
+  calls.receive({ echo: "不同请求", status: "ok", retcode: 0, data: { message_id: 100 } });
+  expect(observed).toEqual([]);
+  calls.receive({ echo: first.echo, status: "ok", retcode: 0, data: { message_id: -49 } });
+  expect(await confirmed).toBe(true);
+  calls.receive({ echo: first.echo, status: "ok", retcode: 0, data: { message_id: -49 } });
+
+  const missing = reply();
+  calls.receive({ echo: frames.at(-1)!.echo, status: "ok", retcode: 0, data: {} });
+  expect(await missing).toBe(true);
+  const rejected = reply();
+  calls.receive({ echo: frames.at(-1)!.echo, status: "failed", retcode: 100, data: { message_id: 200 } });
+  expect(await rejected).toBe(false);
+  const pending = reply();
+  calls.close();
+  expect(await pending).toBe(false);
+  expect(observed).toEqual([-49]);
+});

@@ -89,6 +89,16 @@ export type GroupCardResult = RecallResult | "missing-group" | "insufficient-rol
 export interface ReplyOptions {
   readonly at?: boolean | string | number;
   readonly recallMsg?: number;
+  readonly onDelivered?: (messageId: number) => void | Promise<void>;
+}
+
+export async function notifyReplyDelivery(callback: ReplyOptions["onDelivered"], messageId: number): Promise<void> {
+  if (!callback) return;
+  try {
+    await callback(messageId);
+  } catch {
+    console.warn("[消息] 已确认送达，回执记录失败。");
+  }
 }
 
 export interface GroupNotice {

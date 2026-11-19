@@ -156,6 +156,10 @@ interface PluginServices {
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
   readonly runtimeVersion: RuntimeVersion;
   readonly runtimeStatus?: ReturnType<typeof import("../runtime-status.ts").createRuntimeStatus>;
+  readonly statusPhotoStorage?: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string, ttlSeconds: number): Promise<unknown>;
+  };
   readonly runtimeDiagnostics: (context: CommandContext) => {
     readonly accounts: readonly { readonly id: number; readonly seconds: number; readonly adapter?: "milky" }[];
     readonly plugins: readonly PluginLoadTiming[];

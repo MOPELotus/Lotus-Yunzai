@@ -1,7 +1,7 @@
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 
 export type CommandContext = Readonly<Pick<
-  MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
+  MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
@@ -25,7 +25,13 @@ export interface QuotedCommandReply {
   readonly options?: ReplyOptions;
 }
 
-export type CommandReply = MessageReply | CommandForward | QuotedCommandReply;
+export interface DeliveryCommandReply {
+  readonly type: "delivery";
+  readonly message: MessageReply;
+  readonly onDelivered: NonNullable<ReplyOptions["onDelivered"]>;
+}
+
+export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply;
 export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
 export type MessageFallback = (
   message: string,
@@ -40,6 +46,10 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
   if (reply.type === "quoted") {
     if (reply.options === undefined) await event.reply(reply.message, true);
     else await event.reply(reply.message, true, reply.options);
+    return;
+  }
+  if (reply.type === "delivery") {
+    await event.reply(reply.message, false, { onDelivered: reply.onDelivered });
     return;
   }
   if (reply.type !== "forward") {
@@ -72,12 +82,12 @@ interface RegisteredCommand {
 }
 
 function commandContext(context: CommandContext): CommandContext {
-  const { message_type, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
+  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated } = context;
   return {
-    message_type, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
+    message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated,
