@@ -9,6 +9,7 @@ import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
 import { checkinPlanCommands, checkinPlanNotice } from "./lib/checkin-plan-commands.ts";
+import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
@@ -730,6 +731,10 @@ if (import.meta.main) {
         checkinRuntime = runtime;
         commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
+          viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+        }), "[Lotus-Plugin] Profile Settings");
+        commands.registerModule(checkinProfileCommands(profileDirectory, lifecycle.signal, {
+          reconcilePlans: runtime.reconcileExistingPlans,
           viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal,

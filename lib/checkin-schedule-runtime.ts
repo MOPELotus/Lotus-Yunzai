@@ -125,7 +125,7 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
     runDue: trigger,
     generateTomorrow() {
       if (!canRun(true)) return;
-      return forcedPlan ??= Promise.resolve(preparation).then(listProfiles)
+      return forcedPlan ??= Promise.resolve(preparation).then(() => listProfiles())
         .then(profiles => prepareTomorrow(profiles, true)).finally(() => { forcedPlan = undefined; });
     },
     start() {
@@ -179,6 +179,19 @@ export function createCheckinScheduleRuntime({ store, config, listProfiles, sign
         const result = { ...plan, entries: plan.entries.filter(entry => entry.qq === qq) };
         return { plan, result };
       });
+    },
+    async reconcileExistingPlans() {
+      if (!canRun()) return;
+      const profiles = await listProfiles();
+      const now = Date.now();
+      const { date, tomorrow } = checkinScheduleClock(now);
+      for (const day of [date, tomorrow]) {
+        if (!canRun() || !await store.read(day)) continue;
+        await store.update(day, current => ({
+          plan: current && canRun() ? reconcileCheckinSchedulePlan(current, { config, now, profiles }) : undefined,
+          result: undefined,
+        }));
+      }
     },
   };
 }
