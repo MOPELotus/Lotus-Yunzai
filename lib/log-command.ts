@@ -1,3 +1,4 @@
+import { isMilkyOwnerSession } from "./command-permissions.ts";
 import type { MessageEvent } from "./messages.ts";
 import { replyWithLog } from "./log-reply.ts";
 
@@ -16,6 +17,12 @@ export function isLogCommand(message: string): boolean {
   return command.test(message.trim());
 }
 
+export function canReadRuntimeLogs(event: MessageEvent): boolean {
+  if (event.adapter === "milky") return event.message_type === "private" && isMilkyOwnerSession(event);
+  return event.isMaster === true && (event.message_type === "terminal" ||
+    (event.message_type === "private" && event.boundAccount === true));
+}
+
 function parseQuery(argument: string): LogQuery | undefined {
   const amount = /^(\d+)(?:\s+|$)/u.exec(argument);
   if (!amount) return argument ? { limit: maxLimit, search: argument } : { limit: defaultLimit };
@@ -32,9 +39,7 @@ export function createLogCommand(readLogs: ReadLogs) {
     const match = command.exec(message);
     if (!match) return false;
 
-    const terminal = event.message_type === "terminal";
-    const boundPrivate = event.message_type === "private" && event.boundAccount === true;
-    if (event.isMaster !== true || (!terminal && !boundPrivate)) return true;
+    if (!canReadRuntimeLogs(event)) return true;
 
     const query = parseQuery(message.slice(match[0].length).trim());
     if (!query) {

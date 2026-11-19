@@ -1,6 +1,6 @@
 import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import type { MessageEvent } from "./messages.ts";
-import { canManagePackages } from "./package-command-permissions.ts";
+import { canManagePackages } from "./command-permissions.ts";
 import { parseUpdateTarget } from "./update-target.ts";
 
 type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet: boolean,

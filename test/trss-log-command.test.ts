@@ -188,3 +188,175 @@ test("日志指令只向授权终端和已绑定机器人的私聊主人发送�
     await rm(root, { recursive: true, force: true });
   }
 }, 10_000);
+
+type MilkyText = { type: "text"; data: { text: string } };
+type MilkyForward = {
+  type: "forward";
+  data: { messages: { user_id: number; sender_name: string; segments: MilkyText[] }[] };
+};
+type MilkyLogTarget = { user_id: number } | { group_id: number };
+
+function milkyLogGateway(accessToken: string) {
+  const frames: { action: string; body: { message: (MilkyText | MilkyForward)[] } }[] = [];
+  let receipt: "ok" | "rejected" | "unknown" = "ok";
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(request) {
+      if (request.method !== "POST" || request.headers.get("Authorization") !== `Bearer ${accessToken}`) {
+        return new Response(null, { status: 401 });
+      }
+      const path = new URL(request.url).pathname;
+      if (path === "/api/get_login_info") {
+        return Response.json({ status: "ok", retcode: 0, data: { uin: 99, nickname: "日志夹具" } });
+      }
+      if (path !== "/api/send_private_message" && path !== "/api/send_group_message") {
+        return new Response(null, { status: 404 });
+      }
+      const body = await request.json() as (typeof frames)[number]["body"];
+      frames.push({ action: path.slice("/api/".length), body });
+      if (body.message[0]?.type === "forward") {
+        if (receipt === "rejected") return Response.json({ status: "failed", retcode: -404, message: "夹具拒绝转发" });
+        if (receipt === "unknown") return new Response(null, { status: 503 });
+      }
+      return Response.json({ status: "ok", retcode: 0, data: { message_seq: 10 } });
+    },
+  });
+  async function next(target: MilkyLogTarget) {
+    const frame = await until(() => frames.shift(), "没有收到日志测试 Milky 动作。");
+    expect(frame.action).toBe("group_id" in target ? "send_group_message" : "send_private_message");
+    expect(frame.body).toMatchObject(target);
+    return frame.body.message;
+  }
+  return {
+    server, frames, next,
+    setReceipt(value: typeof receipt) { receipt = value; },
+    async singleText(target: MilkyLogTarget, value: string | ReturnType<typeof expect.stringContaining>) {
+      expect(await next(target)).toEqual([{ type: "text", data: { text: value } }]);
+    },
+  };
+}
+
+test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文本回退", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-milky-log-command-"));
+  const accessToken = "milky-log-fixture";
+  const mock = milkyLogGateway(accessToken);
+  try {
+    await copyHost(root);
+    await mkdir(join(root, "config", "config"), { recursive: true });
+    await writeFile(join(root, "config", "config", "other.yaml"), [
+      'master: ["99:51", "100:52"]', "disablePrivate: true", "disableMsg: 私聊限制夹具",
+    ].join("\n") + "\n");
+    await writeFile(join(root, "config", "milky.yaml"), [
+      "enable: true", "host: 127.0.0.1", `port: ${mock.server.url.port}`,
+      "connection: webhook", `access_token: ${accessToken}`,
+    ].join("\n") + "\n");
+    const host = Bun.spawn([process.execPath, "app.ts"], {
+      cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_HTTP_PORT: "0" },
+    });
+    const reader = host.stdout.getReader();
+    const decoder = new TextDecoder();
+    const stderr = new Response(host.stderr).text();
+    const timeout = setTimeout(() => host.kill("SIGKILL"), 7_000);
+    try {
+      let output = "";
+      while (!output.includes("Lotus-Yunzai 已启动")) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("Milky 日志测试宿主未启动。\n" + output);
+        output += decoder.decode(chunk.value, { stream: true });
+      }
+      const origin = /HTTP 正在监听 (http:\/\/127\.0\.0\.1:\d+)\/status/u.exec(output)?.[1];
+      if (!origin) throw new Error("Milky 日志测试宿主未输出 HTTP 监听地址。");
+      const endpoint = new URL("/milky", origin);
+      const time = Math.floor(Date.now() / 1_000);
+      function deliver(event_type: string, data: object, self_id = 99) {
+        return fetch(endpoint, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ time, self_id, event_type, data }),
+          signal: AbortSignal.timeout(2_000),
+        });
+      }
+      const bound = await until(async () => {
+        const response = await deliver("fixture_unsupported", {});
+        return response.status === 503 ? undefined : response.status;
+      }, "Milky 日志测试没有绑定账号。");
+      expect(bound).toBe(200);
+      let sequence = 0;
+      async function command(text: string, sender_id = 51, group?: number, account = 99) {
+        const response = await deliver("message_receive", {
+          time, message_seq: ++sequence, sender_id, peer_id: group ?? sender_id,
+          message_scene: group === undefined ? "friend" : "group",
+          segments: [{ type: "text", data: { text } }],
+        }, account);
+        expect(response.status).toBe(account === 99 ? 200 : 403);
+      }
+      const key = "milky-fixture-query";
+      const day = new Date().toISOString().slice(0, 10);
+      const runtime = join(root, "logs", `command.${day}.log`);
+      await appendFile(runtime, [
+        `${key} Cookie: ${unsafeMarkers[0]}`,
+        `${key} Authorization: Bearer ${unsafeMarkers[1]}`,
+        `${key} AuthKey=${unsafeMarkers[2]}`,
+        "",
+      ].join("\n"));
+      await writeFile(join(root, "logs", "error.log"), "milky-fixture-error-line\n");
+
+      const owner = { user_id: 51 };
+      await command(`#日志 ${key}`, 51, undefined, 100);
+      await command(`#日志 ${key}`, 51, 77);
+      await command("#帮助", 51, 77);
+      await mock.singleText({ group_id: 77 }, expect.stringContaining("Lotus-Yunzai 系统指令"));
+      for (const user of [42, 52]) {
+        await command(`#日志 ${key}`, user);
+        await mock.singleText({ user_id: user }, "私聊限制夹具");
+      }
+      await command(`#日志 ${unsafeMarkers[0]}`);
+      await mock.singleText(owner, "暂无相关运行日志。");
+
+      async function forwarded(text: string) {
+        await command(text);
+        const message = await mock.next(owner);
+        expect(message).toHaveLength(1);
+        const forward = message[0];
+        if (forward?.type !== "forward") throw new Error("Milky 日志测试未收到原生合并转发。");
+        for (const node of forward.data.messages) {
+          expect(node).toMatchObject({ user_id: 99, sender_name: "Lotus-Yunzai" });
+          expect(node.segments).toEqual([{ type: "text", data: { text: expect.any(String) } }]);
+        }
+        const content = forward.data.messages.flatMap(({ segments }) => segments.map(({ data }) => data.text)).join("\n");
+        for (const secret of unsafeMarkers) expect(content).not.toContain(secret);
+        return content;
+      }
+
+      expect(await forwarded(`#日志 1 ${key}`)).toBe(`最近 1 条运行日志\n${key} AuthKey=[已隐藏]`);
+      const filtered = await forwarded(`#运行日志 ${key}`);
+      expect(filtered).toContain(`${key} Cookie: [已隐藏]`);
+      expect(filtered).toContain(`${key} Authorization: [已隐藏]`);
+      expect(filtered).not.toContain("Lotus-Yunzai 已启动");
+
+      mock.setReceipt("rejected");
+      const error = await forwarded("#错误日志");
+      expect(error).toBe("最近 1 条错误日志\nmilky-fixture-error-line");
+      await mock.singleText(owner, error);
+      mock.setReceipt("unknown");
+      expect(await forwarded(`#日志 1 ${key}`)).toContain(`${key} AuthKey=[已隐藏]`);
+      await mock.singleText(owner, "日志转发结果未确认，请在聊天中核对。");
+
+      await command("#帮助");
+      await mock.singleText(owner, expect.stringContaining("Lotus-Yunzai 系统指令"));
+      await Bun.sleep(80);
+      expect(mock.frames).toEqual([]);
+    } finally {
+      if (host.exitCode === null && host.signalCode === null) host.kill();
+      await host.exited;
+      reader.releaseLock();
+      clearTimeout(timeout);
+    }
+    const diagnostics = await stderr;
+    for (const secret of unsafeMarkers) expect(diagnostics).not.toContain(secret);
+  } finally {
+    mock.server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 12_000);

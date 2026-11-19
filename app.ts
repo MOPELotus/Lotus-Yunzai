@@ -12,6 +12,7 @@ import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
+import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
@@ -22,7 +23,7 @@ import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
-import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
+import { canReadRuntimeLogs, createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { createManagedHandoff } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
@@ -32,7 +33,6 @@ import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
 import type { BotEvent, GroupRequest, MessageEvent } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
-import { isMilkyPackageManager } from "./lib/package-command-permissions.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelGroupSettings } from "./lib/panel-group.ts";
@@ -321,7 +321,7 @@ if (import.meta.main) {
     const id = type === "group" ? event.group_id : event.user_id;
     const botId = event.self_id;
     if (event.adapter === "milky") {
-      if (isMilkyPackageManager(event) && botId && id) return { type, botId, id, adapter: "milky" };
+      if (isMilkyOwnerSession(event) && botId && id) return { type, botId, id, adapter: "milky" };
       return;
     }
     if (event.boundAccount === true && botId && id) return { type, botId, id };
@@ -481,7 +481,7 @@ if (import.meta.main) {
       if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
     }
-    if (privateAccess.disabled && event.message_type === "private" && isMilkyPackageManager(event)) {
+    if (privateAccess.disabled && event.message_type === "private" && isMilkyOwnerSession(event)) {
       if (hasValidUpdateTarget(event.msg)) {
         if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
         return;
@@ -491,7 +491,9 @@ if (import.meta.main) {
         return;
       }
     }
-    if (!(event.adapter === "milky" && isRecallCommand(event)) && await privateAccess.blocked(event)) return;
+    const milkyPrivateExemption = event.adapter === "milky" && event.message_type === "private" &&
+      (isRecallCommand(event) || (isLogCommand(event.msg) && canReadRuntimeLogs(event)));
+    if (!milkyPrivateExemption && await privateAccess.blocked(event)) return;
     if (await legacy.dispatchContext(event, allowed)) return;
     const useKeywords = allowed(keywordFeatureNames);
     if ((useKeywords && await keywords.continue(event)) || !allowNew) return;

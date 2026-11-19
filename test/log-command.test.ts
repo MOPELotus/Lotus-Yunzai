@@ -64,6 +64,21 @@ test("日志仅由当前已绑定机器人的主人私聊或授权终端读取",
   expect(replies).toEqual(["最近 2 条运行日志\nnewest\noldest"]);
 });
 
+test("Milky 日志只认当前账号的私聊主人权限", async () => {
+  const { dispatch, queries, replies } = fixture();
+  const milky = { adapter: "milky", isMaster: false, boundAccount: false, canManageProcess: true } as const;
+  await dispatch("#日志", { ...milky, message_type: "group", group_id: 77, isGroup: true, isPrivate: false });
+  await dispatch("#日志", { ...milky, self_id: 0 });
+  await dispatch("#日志", { ...milky, user_id: undefined });
+  await dispatch("#日志", { ...milky, canManageProcess: false, isMaster: true, boundAccount: true });
+  expect(queries).toEqual([]);
+  expect(replies).toEqual([]);
+
+  await dispatch("#错误日志 1 newer", milky);
+  expect(queries).toEqual([["error", { limit: 1, search: "newer" }]]);
+  expect(replies[0]).toMatch(/^最近 1 条错误日志\nnewest/u);
+});
+
 test("合并转发保序按行分节点，超长行按完整字符切分，确认后不重复回复", async () => {
   const first = `first${"中".repeat(250)}`;
   const second = `second${"文".repeat(250)}`;
