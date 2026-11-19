@@ -67,7 +67,7 @@ function bbsPoints(state: BbsMissionState, receivedBefore?: number) {
   return lines.join("\n");
 }
 
-function outcome(rows: readonly GameCheckinResult[]) {
+function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社") {
   const unconfirmed = rows.filter(row => row.status === "unconfirmed").length;
   const failed = rows.filter(row => row.status === "failed").length;
   const firstBind = rows.filter(row => row.status === "first-bind").length;
@@ -75,10 +75,10 @@ function outcome(rows: readonly GameCheckinResult[]) {
   const reasons = new Set<string>();
   for (const row of rows) {
     if (row.status !== "failed" || !(row.error instanceof GameRecordRequestError)) continue;
-    reasons.add({ risk: "需要在米游社完成验证", expired: "Cookie 已过期", "rate-limited": "请求频繁" }[row.error.reason]);
+    reasons.add({ risk: `需要在${officialClient}完成验证`, expired: "Cookie 已过期", "rate-limited": "请求频繁" }[row.error.reason]);
   }
-  const unsent = (firstBind ? ["首次绑定需在米游社签到"] : []).concat([...reasons]);
-  if (unconfirmed) return { label: "未确认", reason: ["提交结果未确认，请在米游社核对", ...unsent].join("，") };
+  const unsent = (firstBind ? [`首次绑定需在${officialClient}签到`] : []).concat([...reasons]);
+  if (unconfirmed) return { label: "未确认", reason: [`提交结果未确认，请在${officialClient}核对`, ...unsent].join("，") };
   if (failed || firstBind) return {
     label: failed ? "失败" : "首次绑定",
     reason: [...unsent, ...(signed ? [`${signed} 个角色已签到`] : [])].join("，") || "部分角色签到失败",
@@ -96,6 +96,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
   const active = new Set<string>();
+  const overseasDeviceId = crypto.randomUUID();
 
   async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"], notes: readonly string[], points?: string) {
     try {
@@ -377,6 +378,41 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             count("failed");
           }
           notes.push("米游社角色查询未完成。");
+        }
+      }
+      if (!scoped) {
+        const overseas = await profiles.internationalGenshinCheckin(qq, profileId);
+        await verifyCurrent();
+        if (overseas.revision !== revision) throw new ProfileError("changed", changed);
+        const genshin = rows.find(row => row.key === "genshin")!;
+        if (overseas.status === "unverified") {
+          genshin.game += " · 国际服待绑定";
+          count("failed");
+          notes.push("原神国际服：请先在私聊核验并绑定 HoYoLAB Cookie。");
+        } else if (overseas.status === "verified") {
+          try {
+            const remote = await client.openHoYoLabGenshinCheckin(overseas, { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId });
+            await verifyCurrent();
+            const blocked = new Set(overseas.blacklist);
+            if (!remote.roles.length || remote.roles.some(role => blocked.has(role.uid))) {
+              genshin.game += " · 国际服跳过";
+              count("skipped");
+            } else {
+              const result = await runGameCheckinSequence({
+                signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),
+              });
+              const finished = outcome([result], "HoYoLAB");
+              genshin.game += ` · 国际服${finished.label}`;
+              count(result.status);
+              if (finished.reason) notes.push(`原神国际服：${finished.reason}`);
+            }
+          } catch (error) {
+            await verifyCurrent();
+            genshin.game += " · 国际服失败";
+            count("failed");
+            const reason = outcome([{ status: "failed", error }], "HoYoLAB").reason;
+            notes.push(`原神国际服：${reason === "部分角色签到失败" ? "无法读取账号角色目录" : reason}`);
+          }
         }
       }
       const points = await runCommunity();

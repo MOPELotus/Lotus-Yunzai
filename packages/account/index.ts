@@ -710,6 +710,21 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         },
       };
     },
+    async internationalGenshinCheckin(qq: string, id: number) {
+      const { document, state, revision } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      const genshin = record(os.genshin);
+      if (os.enable !== true || genshin.checkin !== true) return { status: "disabled" as const, revision };
+      const verifiedAccountId = text(os.verified_account_id);
+      const realm = os.verified_realm;
+      const cookie = typeof os.cookie === "string" ? os.cookie : "";
+      if (!state.summary.loggedIn || !/^[1-9]\d{0,19}$/u.test(verifiedAccountId) || !cookie ||
+          (realm !== "SG" && realm !== "US" && realm !== "EU")) return { status: "unverified" as const, revision };
+      return {
+        status: "verified" as const, revision, cookie, accountId: verifiedAccountId, realm, language: text(os.lang) || "zh-cn",
+        blacklist: Array.isArray(genshin.black_list) ? genshin.black_list.map(accountId).filter(Boolean) : [],
+      };
+    },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {

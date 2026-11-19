@@ -203,6 +203,26 @@ test("国际服总开关和语言只更新本档原海外段", async () => {
   }, { ...fixture, games: { ...fixture.games, os } });
 });
 
+test("原神国际服执行只获取已验证的同档独立凭据和海外配置", async () => {
+  const os = {
+    enable: true, cookie: "旧未核对的海外凭据", lang: "EN_US",
+    genshin: { checkin: true, black_list: ["800000123", 900000456] },
+  };
+  await withProfile(async (store) => {
+    const { revision } = await store.checkinSettings(qq, 2);
+    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({ status: "unverified", revision });
+    const cookie = "account_id=800; cookie_token=verified-fixture";
+    const bound = await store.saveInternationalCookie(qq, 2, revision, { cookie, accountId: "800", realm: "SG" });
+    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({
+      status: "verified", revision: bound.revision, cookie, accountId: "800", realm: "SG",
+      language: "EN_US", blacklist: ["800000123", "900000456"],
+    });
+    const off = await store.setProfileCheckinSettings(qq, 2, bound.revision, { type: "international", enabled: false });
+    expect(await store.internationalGenshinCheckin(qq, 2)).toEqual({ status: "disabled", revision: off.revision });
+    expect((await store.accountContext(qq, 2)).account.cookie).toBe(fixture.account.cookie);
+  }, { ...fixture, games: { ...fixture.games, os } });
+});
+
 test("未定签到默认关闭，开启只影响当前档案的未定配置", async () => {
   await withProfile(async (store, path) => {
     const initial = await store.checkinSettings(qq, 2);

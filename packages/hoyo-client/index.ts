@@ -3,6 +3,7 @@ import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type Bbs
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
@@ -353,6 +354,9 @@ export function createHoyoClient(
     submitBbsCheckin(source: ProfileAccountContext, forum: BbsCheckinForum,
       options: Parameters<typeof submitBbsCheckin>[3] = {}) {
       return submitBbsCheckin(source, transport, forum, options, () => ensureCurrentProfile(source));
+    },
+    openHoYoLabGenshinCheckin(source: HoYoLabGenshinCheckinSource, options: Parameters<typeof openHoYoLabGenshinCheckin>[2]) {
+      return openHoYoLabGenshinCheckin(source, transport, options);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
