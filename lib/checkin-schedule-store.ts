@@ -78,6 +78,10 @@ async function isInterruptedLink(info: Stats, otherPath: string): Promise<boolea
   return other?.isFile() === true && sameInode(info, other);
 }
 
+class CheckinScheduleReadConflict extends Error {
+  constructor() { super("自动签到计划在读取期间已变更。"); }
+}
+
 async function snapshot(file: string, stage: string) {
   const handle = await open(file, safeRead).catch((error: unknown) => {
     if (errno(error) === "ENOENT") return undefined;
@@ -86,18 +90,20 @@ async function snapshot(file: string, stage: string) {
   if (!handle) return;
   try {
     const state = await handle.stat();
-    if (!state.isFile() || state.size > maxPlanBytes || !sameInode(state, await named(file)) ||
-        (state.nlink !== 1 && !await isInterruptedLink(state, stage))) {
+    const visible = await named(file);
+    if (!state.isFile() || state.size > maxPlanBytes || (visible && !visible.isFile())) {
       throw new Error("自动签到计划须为同一目录下的普通文件。");
     }
+    if (!sameInode(state, visible)) throw new CheckinScheduleReadConflict();
+    if (state.nlink !== 1 && !await isInterruptedLink(state, stage)) throw new Error("自动签到计划须为同一目录下的普通文件。");
     const bytes = Buffer.allocUnsafe(state.size);
     for (let offset = 0; offset < bytes.length;) {
       const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (!bytesRead) throw new Error("自动签到计划在读取期间已变更。");
+      if (!bytesRead) throw new CheckinScheduleReadConflict();
       offset += bytesRead;
     }
     if (!stableFile(state, await handle.stat()) || !sameInode(state, await named(file))) {
-      throw new Error("自动签到计划在读取期间已变更。");
+      throw new CheckinScheduleReadConflict();
     }
     return { bytes, state };
   } finally {
@@ -148,7 +154,11 @@ export function createCheckinScheduleStore(path: string) {
     const { file, stage } = files(date);
     const initial = await scheduleDirectory(directory, false);
     if (!initial) return;
-    const current = await snapshot(file, stage);
+    const current = await snapshot(file, stage).catch(async (error: unknown) => {
+      if (!(error instanceof CheckinScheduleReadConflict)) throw error;
+      await assertDirectory(directory, initial);
+      return snapshot(file, stage);
+    });
     await assertDirectory(directory, initial);
     return current && decoded(current.bytes, date);
   }
