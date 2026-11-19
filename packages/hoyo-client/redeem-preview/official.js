@@ -7,7 +7,7 @@ const LIVE = "https://api-takumi.mihoyo.com/event/miyolive"
 const LIVE_STATIC = "https://api-takumi-static.mihoyo.com/event/miyolive"
 
 export function versionOf(text) {
-  return String(text || "").match(/(?:[vV]\s*)?(\d+\.\d+)\s*(?:版本|更新|前瞻|特别节目)/)?.[1] || ""
+  return String(text || "").match(/(?:[vV]\s*)?(\d+\.\d+)\s*(?:版本|更新|前瞻|特别节目|「[^」]+」\s*(?:前瞻|特别节目))/)?.[1] || ""
 }
 
 export function compareVersions(a, b) {
@@ -51,9 +51,10 @@ export function parseExpiry(text, referenceMs) {
   return null
 }
 
-export function previewAnnouncement(posts, newestVersion) {
+export function previewAnnouncement(posts, newestVersion, includeUnversioned = false) {
   for (const post of [...posts].sort((a, b) => Number(b.created_at) - Number(a.created_at))) {
-    if (versionOf(post.subject) !== newestVersion || !/前瞻|特别节目/.test(post.subject)) continue
+    const version = versionOf(post.subject)
+    if ((version !== newestVersion && !(includeUnversioned && !version)) || !/前瞻|特别节目/.test(post.subject)) continue
     const reference = Number(post.created_at) * 1000
     if (!Number.isFinite(reference) || reference <= 0) continue
     const text = plainText(post.structured_content || post.content)
@@ -152,7 +153,7 @@ export class MiyoliveProvider {
     const addPosts = list => {
       for (const item of list || []) {
         const post = normalizePost(item)
-        if (!post || String(post.uid) !== game.uid || !/前瞻|特别节目|直播|兑换码/.test(post.subject || "")) continue
+        if (!post || String(post.uid) !== game.uid || !(game.postPattern || /前瞻|特别节目|直播|兑换码/).test(post.subject || "")) continue
         if (!posts.some(p => p.post_id === post.post_id)) posts.push(post)
         activityIds(post).forEach(id => ids.add(id))
       }
@@ -170,18 +171,22 @@ export class MiyoliveProvider {
     }
     // Search only the official author's results. This also recovers older preview links
     // after the homepage entry disappears, without trusting community reposts.
-    if (!ids.size && posts.length) {
+    if (!ids.size && (posts.length || game.searchKeyword)) {
       const version = posts.map(p => versionOf(p.subject)).filter(Boolean).sort(compareVersions).at(-1)
-      if (version) {
+      const keyword = game.searchKeyword || (version && `${version} 前瞻 特别节目`)
+      if (keyword) {
         try {
-          const search = await this.request(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(version + " 前瞻 特别节目")}&size=20&page=1&sort_type=1`)
+          const search = await this.request(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`)
           addPosts(search.posts || search.list)
         } catch (error) { errors.push(error.message) }
       }
     }
     // A post's full structured content sometimes contains links omitted in the list.
     const newestVersion = posts.map(p => versionOf(p.subject)).filter(Boolean).sort(compareVersions).at(-1) || ""
-    const relevant = posts.filter(p => newestVersion && versionOf(p.subject) === newestVersion).slice(0, 5)
+    const relevant = posts.filter(p => {
+      const version = versionOf(p.subject)
+      return (newestVersion && version === newestVersion) || (game.searchKeyword && !version && /特别节目/.test(p.subject))
+    }).sort((a, b) => Number(b.created_at) - Number(a.created_at)).slice(0, 5)
     const details = await Promise.allSettled(relevant.map(p => this.request(`${BBS}/post/wapi/getPostFull?post_id=${p.post_id}&gids=${game.gids}&read=0`)))
     for (const result of details) {
       if (result.status !== "fulfilled") continue
@@ -192,7 +197,7 @@ export class MiyoliveProvider {
         activityIds(post).forEach(id => ids.add(id))
       }
     }
-    const announcement = previewAnnouncement(posts, newestVersion)
+    const announcement = previewAnnouncement(posts, newestVersion, Boolean(game.searchKeyword))
     // On discovery failures, do not present an old remembered activity as current.
     if (homeResult.status === "rejected" || postsResult.status === "rejected") {
       if (announcement?.startAt > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }

@@ -1,4 +1,5 @@
 export { parseRedeemCommand } from "./games.js";
+export { planetLaunchMessages } from "./planet-launch.ts";
 export { formatRedeemResult, RedeemCodeService } from "./service.js";
 
 export interface RedeemPreviewOptions {

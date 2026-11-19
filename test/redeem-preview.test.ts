@@ -23,7 +23,10 @@ const recap = { uid: author, post_id: "101", subject: "《原神》7.2版本前�
 type MockOptions = {
   game?: { uid: string; gids: string; version: string; title: string };
   posts?: readonly object[];
+  searchPosts?: readonly object[];
   nav?: readonly object[];
+  end?: string;
+  codeTip?: string;
   ended?: boolean;
   apiError?: boolean;
   wrongStreamer?: boolean;
@@ -53,16 +56,17 @@ function officialMock(options: MockOptions = {}) {
         expect(target.searchParams.get("uid")).toBe(game.uid);
         return ok({ list: (options.posts ?? [recap]).map(post => ({ post })), is_last: true });
       case "bbs-api.mihoyo.com/post/wapi/searchPosts":
-        return ok({ posts: (options.posts ?? [recap]).map(post => ({ post })) });
+        return ok({ posts: (options.searchPosts ?? options.posts ?? [recap]).map(post => ({ post })) });
       case "bbs-api.mihoyo.com/post/wapi/getPostFull":
-        return ok({ post: { post: (options.posts ?? [recap]).find(post => "post_id" in post && post.post_id === target.searchParams.get("post_id")) } });
+        return ok({ post: { post: [...(options.posts ?? [recap]), ...(options.searchPosts ?? [])]
+          .find(post => "post_id" in post && post.post_id === target.searchParams.get("post_id")) } });
       case "api-takumi.mihoyo.com/event/miyolive/index":
         expect(headers.get("x-rpc-act_id")).toBe(activity);
         if (options.ended) return Response.json({ retcode: -500012 });
         if (options.apiError) return new Response(null, { status: 502 });
         return ok({ streamer: { aid: options.wrongStreamer ? "1" : game.uid },
-          live: { title: game.title, start: "2026-10-23 20:00:00", remain: 0, code_ver: "fixture-version" },
-          template: JSON.stringify({ codeTipText: "兑换码将于10月26日12:00过期。" }) });
+          live: { title: game.title, start: "2026-10-23 20:00:00", end: options.end, remain: 0, code_ver: "fixture-version" },
+          template: JSON.stringify({ codeTipText: options.codeTip ?? "兑换码将于10月26日12:00过期。" }) });
       case "api-takumi-static.mihoyo.com/event/miyolive/refreshCode":
         expect(headers.get("x-rpc-act_id")).toBe(activity);
         expect(target.searchParams.get("version")).toBe("fixture-version");
@@ -113,7 +117,7 @@ test("原神旧别名匿名查询，中文码和奖励分别发送，同次并�
   expect(await fallback("#原神前瞻兑换码")).toEqual(first);
   expect(mock.calls.filter(url => url.pathname.endsWith("/refreshCode"))).toHaveLength(2);
   const count = mock.calls.length;
-  for (const cmd of ["#注册自动兑换前瞻兑换码2", "#兑换码使用", "#兑换码 使用", "#星布谷地公测兑换码"]) {
+  for (const cmd of ["#注册自动兑换前瞻兑换码2", "#兑换码使用", "#兑换码 使用", "#星布谷地公测兑换码2"]) {
     expect(await fallback(cmd)).toBeUndefined();
   }
   expect(mock.calls).toHaveLength(count);
@@ -124,6 +128,8 @@ const additionalGames = [
     aliases: ["*兑换码", "*前瞻兑换码", "#星铁兑换码", "#崩铁兑换码", "#星穹铁道前瞻兑换码", "#崩坏：星穹铁道直播CoDe"] },
   { id: "zzz", uid: "152039148", gids: "8", version: "3.4", title: "绝区零3.4版本前瞻",
     aliases: ["%兑换码", "％直播兑换码", "#绝区零兑换码", "#绝区前瞻兑换码", "#zzzcode"] },
+  { id: "bh3", uid: "73565430", gids: "1", version: "9.1", title: "米游社崩坏3-9.1特别节目",
+    aliases: ["#崩三兑换码", "#崩坏三前瞻兑换码", "#崩坏3兑换码"] },
 ];
 
 for (const game of additionalGames) {
@@ -156,6 +162,56 @@ for (const game of additionalGames) {
     expect(wrong.calls.some(url => url.pathname.endsWith("/refreshCode"))).toBe(false);
   });
 }
+
+test("崩坏3 通过官方庆典预告发现特别节目，公告未明确失效时间时只报状态及来源", async () => {
+  const game = additionalGames.find(game => game.id === "bh3")!;
+  const posts = [{ uid: game.uid, post_id: "103", subject: "【资讯】V9.2更新内容前瞻丨新服装",
+    created_at: start / 1000 + 172800 }];
+  const searchPosts = [
+    { uid: "1", post_id: "104", subject: "【资讯】十周年庆典特别节目预告", link: page.replace(activity, "unofficial") },
+    { uid: game.uid, post_id: "105", subject: "【资讯】《崩坏3》十周年庆典特别节目预告",
+      created_at: start / 1000 - 172800, content: page },
+  ];
+  const mock = officialMock({ game, posts, searchPosts, nav: [], end: "2026-10-23 21:30:00", codeTip: "兑换码存在有效期，请及时兑换哦~" });
+  const commands = new CommandRegistry();
+  commands.registerModule(redeemCodeCommands({ fetch: mock.fetch, now: () => expiry }));
+  const reply = await commands.dispatchFallback(message("#崩坏三兑换码"), () => true, () => false);
+  expect(reply).toContain("特别节目于 2026-10-23 21:30:00（北京时间）结束。");
+  expect(reply).toContain("暂未找到官方公布的兑换码有效期");
+  expect(reply).toContain(page);
+  expect(reply).not.toContain(fixtureItems[0]!.code);
+  expect(mock.calls.filter(url => url.pathname.endsWith("/index"))).toHaveLength(1);
+  expect(mock.calls.some(url => url.pathname.endsWith("/refreshCode"))).toBe(false);
+});
+
+test("星布谷地公测码开服前按独立节点提示，官方截止时刻起只提示过期", async () => {
+  const cutoff = Date.parse("2027-01-03T10:00:00+08:00");
+  let now = Date.parse("2026-11-19T20:00:00+08:00");
+  let networkCalls = 0;
+  const commands = new CommandRegistry();
+  commands.registerModule(redeemCodeCommands({ now: () => now, async fetch() {
+    networkCalls++;
+    throw new Error("固定公测活动不发网络请求");
+  } }));
+  const query = (cmd: string) => commands.dispatchFallback(message(cmd), () => true, () => false);
+  const expected = [
+    "《星布谷地》公测前瞻兑换码", "XBGD1204", "奇物海哨×10", "公测开服后可兑换，公测日期：2026年12月4日。",
+    "兑换方式：游戏内【设置】—【账号】—【兑换码】，奖励在飞件箱领取。",
+    "有效期至：2027-01-03 10:00:00 前（北京时间）",
+    "官方页面：https://www.miyoushe.com/planet/article/79270201",
+    "有效期来源：https://www.miyoushe.com/planet/article/79269582",
+  ];
+  expect(await query("#星布谷地公测兑换码")).toEqual({ type: "forward", nodes: expected });
+  now = cutoff - 1;
+  expect(await query("#星布谷地公测兑换码")).toEqual({ type: "forward", nodes: expected });
+  now = cutoff;
+  const expired = await query("#星布谷地公测兑换码");
+  expect(expired).toContain("本次公测兑换码已过期");
+  expect(expired).toContain("2027-01-03 10:00:00 前（北京时间）");
+  expect(expired).not.toContain("XBGD1204");
+  expect(await query("#星布谷地公测兑换码2")).toBeUndefined();
+  expect(networkCalls).toBe(0);
+});
 
 test("活动到期与撤页都保留官方到期时间，未知错误独立报告", async () => {
   for (const options of [{}, { ended: true }]) {

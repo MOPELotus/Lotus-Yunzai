@@ -5,7 +5,7 @@ import path from "node:path"
 import { REDEEM_GAMES } from "./games.js"
 import { MiyoliveProvider, compareVersions, versionOf, plainText, parseExpiry, parseOfficialDate } from "./official.js"
 
-const historyGames = ["gs", "sr", "zzz", "bh3"]
+const historyGames = REDEEM_GAMES.map(game => game.id)
 
 export class RedeemCodeService {
   /** @param {import("./index.ts").RedeemPreviewOptions} options */
@@ -78,6 +78,15 @@ export class RedeemCodeService {
       const result = { ...base, title: activity.live.title, version, actId: activity.actId, codeVersion: activity.live.code_ver, source: pageUrl, expiry, expirySource, startAt: startMs }
       if (startMs > this.now() || Number(activity.live.remain) > 0) return { ...result, status: "unreleased", reason: "前瞻尚未开始，兑换码尚未发放" }
       if (expiry && expiry.ms <= this.now()) return { ...result, status: "expired" }
+      if (!expiry && game.requireExpiry) {
+        const endAt = parseOfficialDate(activity.live.end)
+        const reason = "暂未找到官方公布的兑换码有效期，请查看官方活动页。"
+        if (endAt > 0 && endAt <= this.now()) {
+          const end = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "medium" }).format(endAt)
+          return { ...result, status: "expiry-unconfirmed", reason: `特别节目于 ${end}（北京时间）结束。${reason}` }
+        }
+        return { ...result, status: "expiry-unconfirmed", reason }
+      }
       const entries = await provider.codes(activity)
       if (expiry && expiry.ms <= this.now()) return { ...result, status: "expired" }
       const seen = new Set()
@@ -146,6 +155,7 @@ export function formatRedeemResult(result) {
   if (result.status === "unavailable") return `${title}\n${result.reason}，请稍后再查。`
   const lines = [title]
   if (result.status === "expired") lines.push("本次前瞻兑换码已过期，请等待下一版本前瞻。")
+  else if (result.status === "expiry-unconfirmed") lines.push(result.reason)
   else if (result.status === "unreleased") lines.push(result.reason || "兑换码尚未发放。")
   else for (const item of result.codes) lines.push("", item.code, ...(item.reward ? [item.reward] : []))
   if (result.expiry) lines.push("", `有效期至：${result.expiry.text}（北京时间）`)
