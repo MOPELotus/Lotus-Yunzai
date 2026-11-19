@@ -88,6 +88,8 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
       "77": { disable: [legacyLabel, "[Lotus-Plugin] Profile Settings", "复读"] },
       "78": { enable: ["[Lotus-Plugin] Checkin Admin", "[Lotus-Plugin] Music", "复读"] },
       "79": { enable: [gachaLabel], disable: [legacyLabel] },
+      "80": { disable: ["genshin-inventory"] },
+      "81": { enable: ["genshin-world-boss-kill-count-inventory"] },
     }));
     const { allows } = await readGroupDispatch(pathToFileURL(`${root}/`));
     expect(allows(group, [gachaLabel])).toBe(false);
@@ -101,6 +103,11 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
     expect(allows({ ...group, group_id: 78 }, ["[media] 点歌"])).toBe(true);
     expect(allows({ ...group, group_id: 78 }, ["[media] B 站解析"])).toBe(false);
     expect(allows({ ...group, group_id: 79 }, [gachaLabel])).toBe(false);
+    expect(allows({ ...group, group_id: 80 }, ["[genshin] 背包"])).toBe(false);
+    expect(allows({ ...group, group_id: 80 }, ["[genshin] 世界 BOSS"])).toBe(true);
+    expect(allows({ ...group, group_id: 80 }, ["@lotus-yunzai/genshin"])).toBe(true);
+    expect(allows({ ...group, group_id: 81 }, ["[genshin] 世界 BOSS"])).toBe(true);
+    expect(allows({ ...group, group_id: 81 }, ["[genshin] 背包"])).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

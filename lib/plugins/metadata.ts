@@ -16,6 +16,10 @@ const retiredScripts = new Map([
     { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
   ["629da5e8260364f2da2c13da42be13772b065534372c63ddf3a497adc8e904c4",
     { name: "标准输入", reason: "标准输入已由宿主终端提供。", module: "@lotus-yunzai/system" }],
+  ["f08fae9f680d281d9ed066b80e427908884b0f587e5221f8a2d468911ba828ca",
+    { name: "原神背包查询", reason: "原神背包查询已归并到 genshin。", module: "@lotus-yunzai/genshin" }],
+  ["5965452098afb917602bfcc63bcd63f0162e480b523cade00b0f0e6eb21d89ab",
+    { name: "原神世界BOSS", reason: "世界 BOSS 战绩和排行已归并到 genshin。", module: "@lotus-yunzai/genshin" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
     { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
 ]);

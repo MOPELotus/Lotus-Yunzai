@@ -140,7 +140,7 @@ test("按已绑角色读旧面板，更新合并现有记录，档案切换终�
 });
 
 
-test("旧抽卡开关只标记抽卡档案命令和 JSON 入站，原神面板与模拟使用自己的路由", () => {
+test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指令生效", () => {
   const controller = new AbortController();
   const module = createModule({ signal: controller.signal, lockFile });
   try {
@@ -150,7 +150,14 @@ test("旧抽卡开关只标记抽卡档案命令和 JSON 入站，原神面板�
     for (const raw of ["#抽卡记录2", "#更新抽卡记录", "#强制导出记录", "#更新小助手抽卡记录", "#抽卡帮助", "#导入记录"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual(gachaFeature);
     }
-    for (const raw of ["#面板", "#更新面板2", "#芙宁娜面板", "#武器十连", "#原神背包", "#世界boss"]) {
+    for (const raw of ["#原神背包", "#原神背包2"]) {
+      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 背包"]);
+    }
+    for (const raw of ["#世界BOSS击杀", "#BOSS击杀", "#原神世界boss击杀2", "#原神世界Boss击杀排行", "#boss击杀排行"]) {
+      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 世界 BOSS"]);
+    }
+    for (const raw of ["#面板", "#更新面板2", "#芙宁娜面板", "#武器十连", "#原神养成计算 芙宁娜",
+      "#原神练度统计", "#天赋统计", "#芙宁娜排行", "#背包", "#世界boss", "#星铁BOSS击杀"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual([]);
     }
     expect(module.fallbackFeatures({ ...context(""), attachment })).toEqual(gachaFeature);
