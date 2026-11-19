@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { BbsCheckinRequestError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
+import { BbsCheckinRequestError, CloudGenshinWalletError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
   HoyoRequestError, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
@@ -98,11 +98,15 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const active = new Set<string>();
   const activeOverseas = new Set<string>();
   const overseasDeviceId = crypto.randomUUID();
+  const cloudDeviceId = crypto.randomUUID();
 
-  async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"], notes: readonly string[], points?: string) {
+  async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"],
+    notes: readonly string[], { points, cloud }: { readonly points?: string; readonly cloud?: string } = {}) {
+    const extras = [points, cloud].filter(Boolean).join("\n");
     try {
-      const detail = notes.length ? { title: "失败" as const, message: notes.join("\n").slice(0, 180) }
-        : points ? { title: "米游币" as const, message: points } : undefined;
+      const detail: CheckinReceiptCardModel["detail"] = notes.length
+        ? { title: "失败", message: [notes.join("\n").slice(0, 180), cloud].filter(Boolean).join("\n") }
+        : extras ? { title: points ? "米游币" : "云原神", message: extras } : undefined;
       const { png } = await renderReceipt({ displayName: settings.displayName, profileId, rows, detail },
         { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || undefined });
       if (png.byteLength && png.byteLength <= 16 * 1024 * 1024) return segment.image(png);
@@ -110,7 +114,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       // The result is still available via the same rows if the old render resources are missing.
     }
     return [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
-      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(points ? [points] : [])].join("\n");
+      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(extras ? [extras] : [])].join("\n");
   }
 
   async function submit(source: CnGameCheckinSource, verifyCurrent: () => Promise<void>,
@@ -446,13 +450,35 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
       }
       const points = await runCommunity();
+      let cloud: string | undefined;
+      if (!scoped) {
+        const wallet = await profiles.cloudGenshinCheckin(qq, profileId);
+        await verifyCurrent();
+        if (wallet.revision !== revision) throw new ProfileError("changed", changed);
+        if (wallet.enabled && !wallet.token) cloud = "请先在私聊绑定云原神凭据。";
+        if (wallet.enabled && wallet.token) {
+          try {
+            const state = await client.readCloudGenshinWallet(wallet.token, {
+              signal, browserDeviceId: cloudDeviceId, verifyProfile: verifyCurrent,
+            });
+            await verifyCurrent();
+            cloud = `云原神剩余免费时长：${state.freeTimeMinutes} 分钟`;
+          } catch (error) {
+            await verifyCurrent();
+            count("failed");
+            notes.push(error instanceof CloudGenshinWalletError && error.reason === "expired"
+              ? "云原神凭据已失效，请在官方客户端重新登录后绑定。"
+              : "暂时无法读取云原神剩余免费时长。");
+          }
+        }
+      }
       await verifyCurrent();
       const otherFailure = Boolean(counts.failed || counts["first-bind"] || counts.unconfirmed);
       const retry = retryForums.length ? { forums: retryForums, otherFailure, accountKey: communityAccountKey } : undefined;
       const ok = !otherFailure && !retry;
       await auditResult("checkin", ok);
       await verifyCurrent();
-      const reply = await receipt(settings, profileId, rows, notes, points);
+      const reply = await receipt(settings, profileId, rows, notes, { points, cloud });
       await verifyCurrent();
       return completedRun("checkin", ok, reply, revision, retry);
     } catch (error) {

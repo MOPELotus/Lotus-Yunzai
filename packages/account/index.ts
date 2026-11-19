@@ -732,6 +732,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         blacklist: Array.isArray(setting.black_list) ? setting.black_list.map(accountId).filter(Boolean) : [],
       } as const;
     },
+    async cloudGenshinCheckin(qq: string, id: number) {
+      const { document, revision } = await readDocument(qq, id);
+      const config = record(record(record(document.cloud_games).cn).genshin);
+      const enabled = config.enable === true;
+      return { enabled, revision, token: enabled && typeof config.token === "string" ? config.token : "" };
+    },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
