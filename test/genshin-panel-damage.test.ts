@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { lockFile } from "../lib/file-lock.ts";
 import { estimatePanelDamage } from "../plugins/genshin/panel/damage.ts";
+import { createDamagePreferences, matchEnemyLevel } from "../plugins/genshin/panel/damage-preferences.ts";
 import { matchGenshinPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import type { PanelTheme } from "../plugins/genshin/panel/theme.ts";
 
@@ -67,4 +72,68 @@ test("缺失倍率不会作为零伤害，已知零数值及其他完整情景�
   expect(await estimatePanelDamage({ ...avatar, talent: { ...avatar.talent, e: undefined } }, theme()))
     .toEqual({ message: "天赋等级或旧版倍率表不完整，请先更新面板。" });
   expect(await estimatePanelDamage(avatar, theme(actor(), {}))).toEqual({ message: "旧主题缺少当前武器的属性表。" });
+});
+
+test("旧敌人等级命令、场景结果和词条对照使用相同的目标等级", async () => {
+  expect(matchEnemyLevel("#敌人等级 0")).toEqual({ profileId: 1, enemyLevel: 0 });
+  expect(matchEnemyLevel("#原神怪物等级999 档案 2")).toEqual({ profileId: 2, enemyLevel: 999 });
+  for (const invalid of ["#星铁敌人等级80", "#敌人等级1000", "#敌人等级-1", "#怪物等级80 档案256"]) {
+    expect(matchEnemyLevel(invalid)).toBeUndefined();
+  }
+  const original = await estimatePanelDamage(avatar, theme(), 2);
+  const changed = await estimatePanelDamage(avatar, theme(), 2, 90);
+  if (!("rows" in original) || !("rows" in changed)) throw new Error("测试面板缺少伤害结果");
+  const multiplier = 393 / 380;
+  expect(changed.enemyLevel).toBe(90);
+  expect(changed.rows[1]?.crit).toBeCloseTo(Number(original.rows[1]?.crit) * multiplier, 8);
+  expect(changed.rows[1]?.average).toBeCloseTo(Number(original.rows[1]?.average) * multiplier, 8);
+  expect(changed.comparison?.cells[0]?.[1]?.average)
+    .toBeCloseTo(Number(original.comparison?.cells[0]?.[1]?.average) * multiplier, 8);
+});
+
+const valkey = Bun.which("valkey-server");
+test.skipIf(!valkey)("本地敌人等级按 QQ 持久化，继承旧键优先级并保持旧库只读", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-damage-preferences-"));
+  const socket = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = socket.port;
+  socket.stop(true);
+  const server = Bun.spawn([valkey!, "--bind", "127.0.0.1", "--port", String(port),
+    "--dir", directory, "--save", "", "--appendonly", "no"], { stdout: "ignore", stderr: "ignore" });
+  const endpoint = `redis://127.0.0.1:${port}/3`;
+  let admin: InstanceType<typeof Bun.RedisClient> | undefined;
+  try {
+    for (let attempt = 0; attempt < 100 && !admin; attempt++) {
+      const client = new Bun.RedisClient(endpoint, { autoReconnect: false });
+      try { await client.connect(); admin = client; } catch { client.close(); await Bun.sleep(20); }
+    }
+    if (!admin) throw new Error("隔离 Valkey 实例未启动。");
+    await admin.send("ACL", ["SETUSER", "preferences", "on", ">read-fixture", "~miao:user-cfg:*", "~genshin:user-cfg:*",
+      "+getrange", "+select", "+hello", "+client"]);
+    const source = `redis://preferences:read-fixture@127.0.0.1:${port}/3`;
+    await admin.set("miao:user-cfg:42", '{"char":{"enemyLv":0},"other":true}');
+    await admin.set("genshin:user-cfg:42", '{"char":{"enemyLv":95}}');
+    await admin.set("genshin:user-cfg:43", '{"char":{"enemyLv":91}}');
+    await admin.set("miao:user-cfg:44", '{"unrelated":true}');
+    await admin.set("genshin:user-cfg:44", '{"char":{"enemyLv":92}}');
+    await admin.set("miao:user-cfg:45", '{"char":{"enemyLv":"90"}}');
+    const signal = new AbortController().signal;
+    const settings = createDamagePreferences(directory, lockFile, signal, source);
+    expect(await settings.level("42")).toBe(0);
+    expect(await settings.level("43")).toBe(91);
+    expect(await settings.level("44")).toBe(103);
+    await expect(settings.level("45")).rejects.toThrow("无法读取旧敌人等级");
+    expect(await settings.level("46")).toBe(103);
+    await expect(settings.setLevel("42", 80, async () => { throw new Error("已换绑"); })).rejects.toThrow("已换绑");
+    expect(await settings.level("42")).toBe(0);
+    expect(await settings.setLevel("42", 90, async () => {})).toBe(90);
+    const restarted = createDamagePreferences(directory, lockFile, signal);
+    expect(await restarted.level("42")).toBe(90);
+    expect(await restarted.level("43")).toBe(103);
+    expect(await admin.get("miao:user-cfg:42")).toBe('{"char":{"enemyLv":0},"other":true}');
+  } finally {
+    admin?.close();
+    server.kill();
+    await server.exited;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
