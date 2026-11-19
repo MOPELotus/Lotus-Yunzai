@@ -23,6 +23,7 @@ export interface MessageEvent {
   readonly isPrivate: boolean;
   readonly isMaster: boolean;
   readonly boundAccount?: boolean;
+  readonly canManageProcess?: boolean;
   readonly onAwaitInput?: () => void;
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly isFriend?: () => Promise<boolean>;

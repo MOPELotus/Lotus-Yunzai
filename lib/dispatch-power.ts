@@ -3,6 +3,10 @@ import type { MessageEvent } from "./messages.ts";
 const pause = "#关机";
 const resume = "#开机";
 
+export function isProcessMaster(event: MessageEvent): boolean {
+  return event.adapter === "milky" ? event.canManageProcess === true : event.isMaster === true;
+}
+
 export function formatElapsed(milliseconds: number): string {
   const elapsed = Math.max(0, Math.floor(milliseconds));
   const seconds = Math.floor(elapsed / 1000);
@@ -33,7 +37,8 @@ export function createDispatchPower(now = Date.now, pausedAt?: number) {
     get pausedAt() { return paused ? since : undefined; },
     setPaused,
     async handle(event: MessageEvent): Promise<void> {
-      if (event.isMaster !== true || (event.message_type !== "terminal" && event.boundAccount !== true)) return;
+      if (!isProcessMaster(event) ||
+          (event.adapter !== "milky" && event.message_type !== "terminal" && event.boundAccount !== true)) return;
       if (event.msg !== (paused ? resume : pause)) return;
 
       const message = setPaused(!paused);

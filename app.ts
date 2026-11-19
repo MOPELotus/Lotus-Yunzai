@@ -14,7 +14,7 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { CommandRegistry, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
-import { createDispatchPower, formatElapsed } from "./lib/dispatch-power.ts";
+import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
@@ -304,11 +304,12 @@ if (import.meta.main) {
     if (type === "terminal") return { type };
     const id = type === "group" ? event.group_id : event.user_id;
     const botId = event.self_id;
+    if (event.adapter === "milky" && event.canManageProcess === true && botId && id) return { type, botId, id, adapter: "milky" };
     if (event.boundAccount === true && botId && id) return { type, botId, id };
   }
 
   async function controlProcess(event: MessageEvent, kind: ProcessAction["kind"]) {
-    if (!event.isMaster) {
+    if (!isProcessMaster(event)) {
       await event.reply("暂无权限，只有主人才能操作");
       return;
     }
@@ -431,7 +432,7 @@ if (import.meta.main) {
       return;
     }
     if (allowNew && event.msg === "#关机" && allowed(processFeatureNames)) {
-      if (event.isMaster) await dispatchPower.handle(event);
+      if (isProcessMaster(event)) await dispatchPower.handle(event);
       else await event.reply("暂无权限，只有主人才能操作");
       return;
     }
@@ -763,7 +764,7 @@ if (import.meta.main) {
       } catch {
         await Promise.allSettled(targets.map((target, index) => {
           if (saved[index]?.status === "fulfilled") {
-            return processReceipts.discard(target.type === "terminal" ? undefined : target.botId);
+            return target.type === "terminal" ? processReceipts.discard() : processReceipts.discard(target.botId, target.adapter);
           }
         }));
         console.error("[进程管理] 无法重新启动宿主。");
