@@ -351,7 +351,9 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       const groupPath = `${prefix}/api/send_group_message`;
       expect((await webhook(endpoint, message("group", botId, "#赞我", 20), milkyToken)).status).toBe(200);
       const deniedLike = await deadline(gateway.replies.nonFriend.promise, "Milky 未回报非好友点赞拒绝。");
-      expect(deniedLike.body).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: "仅好友可用" } }] });
+      expect(deniedLike.body).toEqual({ group_id: groupId, message: [
+        { type: "reply", data: { message_seq: 20 } }, { type: "text", data: { text: "仅好友可用" } },
+      ] });
       expect(gateway.calls.slice(beforeLikes).map(({ path }) => path)).toEqual([friendPath, groupPath]);
 
       expect((await webhook(endpoint, message("group", botId, "#赞我", 21), milkyToken)).status).toBe(200);
@@ -364,7 +366,9 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       });
       gateway.releaseLike.resolve();
       const confirmedLike = await deadline(gateway.replies.liked.promise, "Milky 未回报点赞成功。");
-      expect(confirmedLike.body).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: "确认 3" } }] });
+      expect(confirmedLike.body).toEqual({ group_id: groupId, message: [
+        { type: "reply", data: { message_seq: 21 } }, { type: "text", data: { text: "确认 3" } },
+      ] });
       const likeCalls = gateway.calls.slice(beforeLikes);
       expect(likeCalls.map(({ path }) => path)).toEqual([friendPath, groupPath, friendPath, likePath, groupPath, groupPath]);
       expect(likeCalls.filter(({ path }) => path === friendPath).map(({ body }) => body)).toEqual([

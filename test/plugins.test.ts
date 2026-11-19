@@ -673,10 +673,13 @@ failsMsg: 协议拒绝
     client.send(JSON.stringify({ echo: friends.echo, status: "ok", retcode: 0, data: [{ user_id: 42 }] }));
     const like = await likeRequest;
     expect(like).toMatchObject({ action: "send_like", params: { user_id: 42, times: 3 } });
+    const likeReply = (text: string) => [
+      { type: "reply", data: { id: String(event.message_id) } }, { type: "text", data: { text } },
+    ];
     const confirmation = nextFrame();
     client.send(JSON.stringify({ echo: "unrelated", status: "failed", retcode: 100 }));
     client.send(JSON.stringify({ echo: like.echo, status: "ok", retcode: 0 }));
-    expect(await confirmation).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "确认 3" } });
+    expect(await confirmation).toMatchObject({ action: "send_msg", params: { group_id: 77, message: likeReply("确认 3") } });
 
     const privateLike = nextFrame();
     client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#赞我" }));
@@ -684,7 +687,7 @@ failsMsg: 协议拒绝
     expect(refused).toMatchObject({ action: "send_like", params: { user_id: 42 } });
     const rejection = nextFrame();
     client.send(JSON.stringify({ echo: refused.echo, status: "failed", retcode: 1404 }));
-    expect(await rejection).toMatchObject({ action: "send_msg", params: { user_id: 42, message: "协议拒绝" } });
+    expect(await rejection).toMatchObject({ action: "send_msg", params: { user_id: 42, message: likeReply("协议拒绝") } });
     expect(await send("#状态", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: expect.stringContaining("Lotus-Yunzai 正在运行"),
     });
@@ -711,7 +714,7 @@ failsMsg: 协议拒绝
     expect(updatedLike).toMatchObject({ action: "send_like", params: { user_id: 42, times: 4 } });
     const afterChange = nextFrame();
     client.send(JSON.stringify({ echo: updatedLike.echo, status: "ok", retcode: 0 }));
-    expect(await afterChange).toMatchObject({ action: "send_msg", params: { user_id: 42, message: "确认 4" } });
+    expect(await afterChange).toMatchObject({ action: "send_msg", params: { user_id: 42, message: likeReply("确认 4") } });
 
     client.close();
     backend.kill();

@@ -21,14 +21,14 @@ const messages = [
 ] as const;
 type ToggleKey = (typeof toggles)[number]["key"];
 type MessageKey = (typeof messages)[number]["key"];
-type Settings = Record<ToggleKey, boolean> & Record<MessageKey, string | false> & { count: number };
-type Draft = Omit<Settings, "count"> & { count: number | "" };
+type Settings = Record<ToggleKey, boolean> & Record<MessageKey, string | false> & { count: number; recall: number };
+type Draft = Omit<Settings, "count" | "recall"> & { count: number | ""; recall: number | "" };
 interface Snapshot {
   settings: Settings;
   revision: string;
 }
 const placeholderHelp = "{{at}} 提及发送者，{{userId}} 显示「你」，{{doType}} 显示操作名称，{{thumbUpNum}} 显示确认的点赞数。";
-const keys = [...toggles.map(({ key }) => key), "count", ...messages.map(({ key }) => key)] as const;
+const keys = [...toggles.map(({ key }) => key), "count", "recall", ...messages.map(({ key }) => key)] as const;
 const endpoint = `${import.meta.env.BASE_URL}api/settings/group/likes`;
 
 const baseline = shallowRef<Snapshot>();
@@ -47,14 +47,20 @@ const changed = computed(() => {
   return saved && edited ? keys.filter((key) => saved[key] !== edited[key]) : [];
 });
 const dirty = computed(() => changed.value.length > 0);
-const validCount = computed(() => {
-  const count = draft.value?.count;
-  return typeof count === "number" && Number.isInteger(count) && count >= 1 && count <= 10;
-});
+const validCount = computed(() => isCount(draft.value?.count));
+const validRecall = computed(() => isRecall(draft.value?.recall));
 watch(dirty, (value) => {
   emit("dirty-change", value);
   if (!value) confirmReload.value = false;
 });
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 10;
+}
+
+function isRecall(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 120;
+}
 
 function isSnapshot(value: unknown): value is Snapshot {
   if (value === null || typeof value !== "object" || !("revision" in value) ||
@@ -62,8 +68,7 @@ function isSnapshot(value: unknown): value is Snapshot {
       value.settings === null || typeof value.settings !== "object") return false;
 
   const config = value.settings as Record<string, unknown>;
-  return typeof config.count === "number" && Number.isInteger(config.count) &&
-    config.count >= 1 && config.count <= 10 &&
+  return isCount(config.count) && isRecall(config.recall) &&
     toggles.every(({ key }) => typeof config[key] === "boolean") &&
     messages.every(({ key }) => config[key] === false || typeof config[key] === "string");
 }
@@ -83,7 +88,7 @@ async function request(method: "GET" | "PUT") {
   if (active || !props.token) return;
   const current = baseline.value;
   const edited = draft.value;
-  if (method === "PUT" && (!current || !edited || !dirty.value || !validCount.value || conflict.value)) return;
+  if (method === "PUT" && (!current || !edited || !dirty.value || !validCount.value || !validRecall.value || conflict.value)) return;
   const body = method === "PUT" && current && edited
     ? JSON.stringify({ revision: current.revision, patch: Object.fromEntries(changed.value.map((key) => [key, edited[key]])) })
     : undefined;
@@ -112,7 +117,7 @@ async function request(method: "GET" | "PUT") {
       return;
     }
     if (!response.ok) {
-      if (response.status === 400) error.value = "配置值无效，请检查点赞次数和提示文本。";
+      if (response.status === 400) error.value = "配置值无效，请检查点赞次数、撤回时间和提示文本。";
       else if (response.status === 404) error.value = "群点赞模块未启用。";
       else error.value = "宿主暂时无法读取或写入群点赞配置。";
       return;
@@ -197,6 +202,12 @@ onBeforeUnmount(() => {
           <input id="like-count" v-model.number="draft.count" type="number" min="1" max="10" step="1"
             required aria-describedby="like-count-help" :aria-invalid="!validCount" />
         </div>
+        <div class="setting-row">
+          <label for="like-recall">结果回复撤回时间</label>
+          <p class="setting-help" id="like-recall-help">单位为秒，填 0 保留回复，最长 120 秒。</p>
+          <input id="like-recall" v-model.number="draft.recall" type="number" min="0" max="120" step="any"
+            required aria-describedby="like-recall-help" :aria-invalid="!validRecall" />
+        </div>
       </fieldset>
 
       <fieldset class="settings-card" aria-labelledby="like-messages-title" :disabled="Boolean(busy)">
@@ -234,7 +245,7 @@ onBeforeUnmount(() => {
       <div class="feedback save-bar">
         <p v-if="notice || dirty" role="status">{{ dirty ? "有未保存的改动" : notice }}</p>
         <ElButton type="primary" native-type="submit"
-          :loading="busy === 'PUT'" :disabled="!dirty || !validCount || conflict || Boolean(busy)">
+          :loading="busy === 'PUT'" :disabled="!dirty || !validCount || !validRecall || conflict || Boolean(busy)">
           保存配置
         </ElButton>
       </div>

@@ -1,4 +1,4 @@
-import type { MessageEvent, MessageReply } from "./messages.ts";
+import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "isFriend" |
@@ -19,6 +19,7 @@ export interface CommandForward {
 export interface QuotedCommandReply {
   readonly type: "quoted";
   readonly message: MessageReply;
+  readonly options?: ReplyOptions;
 }
 
 export type CommandReply = MessageReply | CommandForward | QuotedCommandReply;
@@ -34,7 +35,8 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
     return;
   }
   if (reply.type === "quoted") {
-    await event.reply(reply.message, true);
+    if (reply.options === undefined) await event.reply(reply.message, true);
+    else await event.reply(reply.message, true, reply.options);
     return;
   }
   if (reply.type !== "forward") {
