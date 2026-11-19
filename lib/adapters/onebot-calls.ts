@@ -1,7 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
-import { readGroupActivity, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
+import { readGroupActivity, type GroupActivityVisibility, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -251,13 +251,14 @@ export class OneBotCalls {
     }
   }
 
-  async listGroupActivity(send: Send, group: number, bot: number, actor: number, master: () => boolean, signal: AbortSignal) {
+  async listGroupActivity(send: Send, group: number, bot: number, actor: number, master: () => boolean, signal: AbortSignal,
+    visibility?: GroupActivityVisibility) {
     try {
       const count = await this.#getGroupSize(send, group, signal);
       if (count === undefined || count > 10_000 || signal.aborted) return;
       const members = await this.#request(send, "get_group_member_list", { group_id: group, no_cache: true }, signal);
       if (signal.aborted || await this.#getGroupSize(send, group, signal) !== count || signal.aborted) return;
-      return readGroupActivity(members, { group, bot, actor, master, count });
+      return readGroupActivity(members, { group, bot, actor, master, count, visibility });
     } catch {
       return undefined;
     }

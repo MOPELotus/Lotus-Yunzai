@@ -63,7 +63,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { group_id, user_id: operator, role: "admin", join_time: joined, last_sent_time: joined },
       { group_id, user_id: 42, role: "member", card: "从未发言夹具", join_time: joined,
         last_sent_time: group_id === 86 && cleanupRosterChanged ? joined + 60 : joined },
-      { group_id, user_id: 54, role: "member", card: "已有活动夹具", join_time: joined, last_sent_time: joined + 10 },
+      { group_id, user_id: 54, role: "member", card: "已有活动夹具", join_time: joined + 5, last_sent_time: joined + 10 },
       ...(group_id === 86 ? [{ group_id, user_id: 62, role: "member", join_time: joined + 1, last_sent_time: joined + 1 }] : []),
       ...(group_id === 86 && cleanupRosterChanged ? [
         { group_id, user_id: 63, role: "member", join_time: joined + 12, last_sent_time: joined + 12 },
@@ -502,6 +502,18 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await Bun.sleep(60);
     expect(oneBotCalls.filter(({ action, params }) => action === "set_group_kick" && params.group_id === 86)
       .map(({ params }) => params)).toEqual([{ group_id: 86, user_id: 62, reject_add_request: false }]);
+
+    send(oneBotMessage("#查看潜水排行榜二", 54, 84));
+    const inactive = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_group_forward_msg" &&
+      params.group_id === 84 && JSON.stringify(params.messages).includes("排行榜")), "普通群员未收到 OneBot 排行。");
+    expect(JSON.stringify(inactive.params.messages)).toContain("https://q1.qlogo.cn/g?b=qq&s=100&nk=99");
+    expect(JSON.stringify(inactive.params.messages)).not.toContain("已有活动夹具");
+    await webhook("message_receive", { ...milkyTitle("#获取最近的入群记录1", 54), peer_id: 84,
+      group_member: { group_id: 84, user_id: 54, role: "member" } });
+    const newest = await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
+      params.group_id === 84 && JSON.stringify(params.message).includes("已有活动夹具")), "普通群员未收到 Milky 新入群记录。");
+    expect(JSON.stringify(newest.params.message)).toContain("最后发言时间");
+    expect(JSON.stringify(newest.params.message)).not.toContain("从未发言夹具");
   } finally {
     socket?.close();
     host?.kill();

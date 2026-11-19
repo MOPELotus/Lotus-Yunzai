@@ -3,7 +3,8 @@ import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./m
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
-import type { GroupActivityMember, GroupKickAction, GroupManageBlacklistAction, GroupMuteAction, GroupSetAdminAction, GroupSpecialTitleAction, GroupWholeMuteAction, MutedGroupMember } from "./adapters/group-moderation.ts";
+import type { GroupActivityMember, GroupActivityVisibility, GroupKickAction, GroupManageBlacklistAction, GroupMuteAction,
+  GroupSetAdminAction, GroupSpecialTitleAction, GroupWholeMuteAction, MutedGroupMember } from "./adapters/group-moderation.ts";
 
 export interface MusicCard {
   readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
@@ -60,7 +61,7 @@ export interface MessageEvent {
   readonly groupSetSpecialTitle?: GroupSpecialTitleAction;
   readonly groupSetAdmin?: GroupSetAdminAction;
   readonly groupMuteRoster?: () => Promise<readonly MutedGroupMember[] | undefined>;
-  readonly groupActivityRoster?: () => Promise<readonly GroupActivityMember[] | undefined>;
+  readonly groupActivityRoster?: (visibility?: GroupActivityVisibility) => Promise<readonly GroupActivityMember[] | undefined>;
   readonly groupActivitySignal?: AbortSignal;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;

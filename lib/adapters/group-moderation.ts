@@ -26,9 +26,12 @@ export interface GroupActivityMember {
   readonly lastSentTime: number;
 }
 
+export type GroupActivityVisibility = "management" | "member";
+
 export function readGroupActivity(members: unknown, scope: {
   readonly group: number; readonly bot: number; readonly actor: number; readonly master: () => boolean;
   readonly count: number;
+  readonly visibility?: GroupActivityVisibility;
 }): readonly GroupActivityMember[] | undefined {
   if (!Array.isArray(members) || scope.count < 1 || scope.count > 10_000 || members.length !== scope.count) return;
   const roster = new Map<number, GroupActivityMember>();
@@ -44,7 +47,8 @@ export function readGroupActivity(members: unknown, scope: {
     roster.set(user_id, { userId: user_id, name, role, joinTime: join_time, lastSentTime: last_sent_time });
   }
   const actor = roster.get(scope.actor);
-  if (actor && roster.has(scope.bot) && (actor.role !== "member" || scope.master())) return [...roster.values()];
+  if (actor && roster.has(scope.bot) &&
+      (scope.visibility === "member" || actor.role !== "member" || scope.master())) return [...roster.values()];
 }
 
 export interface GroupActionPolicy {

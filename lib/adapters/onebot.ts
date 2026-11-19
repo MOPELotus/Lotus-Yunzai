@@ -417,7 +417,7 @@ async function dispatchMessage(
       return calls.listMutedMembers(send, target.group_id, likeSession);
     } : undefined,
     groupActivityRoster: likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
-      ? () => calls.listGroupActivity(send, target.group_id, selfId, userId, () => isMaster(selfId, userId), likeSession)
+      ? visibility => calls.listGroupActivity(send, target.group_id, selfId, userId, () => isMaster(selfId, userId), likeSession, visibility)
       : undefined,
     groupActivitySignal: likeSession && event.sub_type !== "anonymous" ? likeSession : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
