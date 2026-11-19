@@ -10,7 +10,14 @@ import { createZzzTuningSync, ZzzTuningHistoryChangedError } from "./tuning-sync
 
 const updateCommand = /^#绝区零(?:更新|刷新)抽卡(?:记录|链接)?([1-9]\d{0,2})?$/u;
 const viewCommand = /^#绝区零抽卡(?:记录|分析|统计)([1-9]\d{0,2})?$/u;
-const romanPrefix = /^#?zzz(?=(?:更新|刷新)?抽卡)/iu;
+const helpCommand = /^#绝区零抽卡帮助$/u;
+const legacyPrefix = /^(?:[#/](?:zzz|绝区零)(?:zzz|绝区零)?|[%％](?:zzz|绝区零)?|zzz|绝区零)(?=(?:更新|刷新)?抽卡)/iu;
+const help = [
+  "绝区零抽卡记录",
+  "%更新抽卡记录 同步国服米游社的六个频段。",
+  "%抽卡记录 查看调频记录，当前登录可用时另发实时库存。",
+  "命令末尾可加档案编号，例如 %抽卡记录2。",
+].join("\n");
 const historyDirectory = fileURLToPath(new URL("../../data/zzzTuningStats/", import.meta.url));
 
 interface GachaContext {
@@ -78,7 +85,8 @@ export function createModule({ signal, lockFile }: {
     commands: {},
     gachaUpdate,
     async fallback(_message: string, context: GachaContext) {
-      const command = context.normalizedMessage.replace(romanPrefix, "#绝区零");
+      const command = context.normalizedMessage.replace(legacyPrefix, "#绝区零");
+      if (helpCommand.test(command)) return help;
       const update = updateCommand.exec(command);
       const matched = update ?? viewCommand.exec(command);
       if (!matched) return;
