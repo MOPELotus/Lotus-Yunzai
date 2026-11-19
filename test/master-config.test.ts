@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, readdir, rm, stat, sy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { persistMaster } from "../lib/master-config.ts";
+import { appendBlackUser, persistMaster } from "../lib/master-config.ts";
 import { readMasterPermissions } from "../lib/permissions.ts";
 
 const lockName = ".other.yaml.lotus-master.sqlite";
@@ -99,6 +99,27 @@ test("跟随配置符号链接并保留链接本身，多个授权并发时不�
   expect(new Set((output as { master: string[] }).master)).toEqual(new Set(["10:20", "10:21", "10:22"]));
   expect(new Set((output as { masterQQ: number[] }).masterQQ)).toEqual(new Set([21, 22]));
   expect((await readdir(directory)).sort()).toEqual([".managed-other.yaml.lotus-master.sqlite", "config", "managed-other.yaml"]);
+}));
+
+test("全局黑名单与主人授权使用同一配置锁，保留原字段并豁免主人", () => fixture(async (root, directory) => {
+  const file = await setup(directory, 'master: ["10:20"]\nmasterQQ: [19]\nblackUser: ["0030"] # 手动封禁\n');
+  const live = () => true;
+  expect(await appendBlackUser(root, 20, live)).toBe("protected");
+  expect(await appendBlackUser(root, 19, live)).toBe("protected");
+  expect(await appendBlackUser(root, 30, live)).toBe("existing");
+  const [blocked] = await Promise.all([appendBlackUser(root, 31, live), persistMaster(root, 10, 21, 20)]);
+  expect(blocked).toBe("added");
+  expect(await appendBlackUser(root, 21, live)).toBe("protected");
+  const written = await readFile(file, "utf8");
+  expect(written).toContain("# 手动封禁");
+  expect(Bun.YAML.parse(written)).toEqual({ master: ["10:20", "10:21"], masterQQ: [19, 21], blackUser: ["0030", 31] });
+  let checks = 0;
+  await expect(appendBlackUser(root, 32, () => ++checks === 1)).rejects.toThrow("会话已失效");
+  expect(await readFile(file, "utf8")).toBe(written);
+  const alias = 'master: ["10:20"]\nblackUser: &users [30]\nother: *users\n';
+  await writeFile(file, alias);
+  await expect(appendBlackUser(root, 32, live)).rejects.toThrow("其他 YAML 字段或引用");
+  expect(await readFile(file, "utf8")).toBe(alias);
 }));
 
 test("共享锚点会改变其他字段时拒绝写入，格式错误也保持原文件", () => fixture(async (root, directory) => {

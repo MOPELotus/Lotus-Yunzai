@@ -84,46 +84,20 @@ function unknownFields(values: Map<unknown, unknown>) {
   return new Map([...values].filter(([key]) => typeof key !== "string" || !ownerFields.has(key)));
 }
 
-export async function persistMaster(
-  root: URL, bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean,
-): Promise<Record<string, unknown>> {
-  if (!isId(bot) || !isId(user) || (approver !== "stdin" && !isId(approver))) {
-    throw new Error("主人授权须指定有效的机器人与 QQ 账号。");
-  }
-
+async function editOtherConfig<T>(
+  root: URL,
+  mutate: (current: ReturnType<typeof readDocument>) => { result: T; yaml?: string },
+  isCurrent?: () => boolean,
+): Promise<T> {
   const file = await effectiveFile(root);
-  const database = await lockFile(join(dirname(file), `.${basename(file)}.lotus-master.sqlite`), "主人配置");
+  const database = await lockFile(join(dirname(file), `.${basename(file)}.lotus-master.sqlite`), "other.yaml");
   try {
-    if (await effectiveFile(root) !== file) throw new Error("主人配置位置已变更，请重新发起授权。");
+    if (await effectiveFile(root) !== file) throw new Error("other.yaml 的配置位置已变更。");
     const current = await readSnapshot(file);
-    const { document, values, config } = readDocument(current.bytes.toString("utf8"));
-    const masters = valuesOf(config.master);
-    if (!masters.every((entry) => typeof entry === "string" && ownerPair.test(entry.trim()))) {
-      throw new Error("主人配置包含无效账号绑定。");
-    }
-    const authorization = approver === "stdin" ? "stdin:stdin" : `${bot}:${approver}`;
-    if (!masters.some((entry) => typeof entry === "string" && entry.trim() === authorization)) {
-      throw new Error("当前操作者未获得这台机器人的主人授权。");
-    }
-
-    const owner = `${bot}:${user}`;
-    const legacy = valuesOf(config.masterQQ);
-    const alreadyMaster = masters.some((entry) => typeof entry === "string" && entry.trim() === owner);
-    const alreadyLegacy = legacy.some((entry) => entry === user ||
-      (typeof entry === "string" && /^\d+$/u.test(entry.trim()) && Number(entry) === user));
-    if (isCurrent && !isCurrent()) throw new Error("主人授权会话已失效，请重新申请。");
-    if (alreadyMaster && alreadyLegacy) return config;
-    if (!alreadyMaster) append(document, "master", masters, owner);
-    if (!alreadyLegacy) append(document, "masterQQ", legacy, user);
-
-    const yaml = document.toString();
-    const next = readDocument(yaml);
-    if (!isDeepStrictEqual(unknownFields(values), unknownFields(next.values)) ||
-        !isDeepStrictEqual(valuesOf(next.config.master), alreadyMaster ? masters : [...masters, owner]) ||
-        !isDeepStrictEqual(valuesOf(next.config.masterQQ), alreadyLegacy ? legacy : [...legacy, user])) {
-      throw new Error("写入主人配置将改变其他 YAML 字段或引用。");
-    }
-
+    if (isCurrent && !isCurrent()) throw new Error("配置写入会话已失效。");
+    const edit = mutate(readDocument(current.bytes.toString("utf8")));
+    const { yaml } = edit;
+    if (yaml === undefined) return edit.result;
     const directory = await mkdtemp(join(dirname(file), ".lotus-master-"));
     try {
       const staged = join(directory, "other.yaml");
@@ -140,21 +114,95 @@ export async function persistMaster(
         await output.close();
       }
 
-      if (await effectiveFile(root) !== file) throw new Error("主人配置位置已变更，请重新发起授权。");
+      if (await effectiveFile(root) !== file) throw new Error("other.yaml 的配置位置已变更。");
       const latest = await readSnapshot(file);
       if (current.stat.ino !== latest.stat.ino || current.stat.dev !== latest.stat.dev ||
           current.stat.mode !== latest.stat.mode || current.stat.uid !== latest.stat.uid ||
           current.stat.gid !== latest.stat.gid || !current.bytes.equals(latest.bytes)) {
-        throw new Error("主人配置已变更，请重新发起授权。");
+        throw new Error("other.yaml 已变更。");
       }
       // Keep the final session check and config replacement in the same event-loop turn.
-      if (isCurrent && !isCurrent()) throw new Error("主人授权会话已失效，请重新申请。");
+      if (isCurrent && !isCurrent()) throw new Error("配置写入会话已失效。");
       renameSync(staged, file);
-      return next.config;
+      return edit.result;
     } finally {
       await rm(directory, { recursive: true, force: true }).catch(() => undefined);
     }
   } finally {
     database.close();
   }
+}
+
+export async function persistMaster(
+  root: URL, bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean,
+): Promise<Record<string, unknown>> {
+  if (!isId(bot) || !isId(user) || (approver !== "stdin" && !isId(approver))) {
+    throw new Error("主人授权须指定有效的机器人与 QQ 账号。");
+  }
+
+  return editOtherConfig(root, ({ document, values, config }) => {
+    const masters = valuesOf(config.master);
+    if (!masters.every((entry) => typeof entry === "string" && ownerPair.test(entry.trim()))) {
+      throw new Error("主人配置包含无效账号绑定。");
+    }
+    const authorization = approver === "stdin" ? "stdin:stdin" : `${bot}:${approver}`;
+    if (!masters.some((entry) => typeof entry === "string" && entry.trim() === authorization)) {
+      throw new Error("当前操作者未获得这台机器人的主人授权。");
+    }
+
+    const owner = `${bot}:${user}`;
+    const legacy = valuesOf(config.masterQQ);
+    const alreadyMaster = masters.some((entry) => typeof entry === "string" && entry.trim() === owner);
+    const alreadyLegacy = legacy.some((entry) => entry === user ||
+      (typeof entry === "string" && /^\d+$/u.test(entry.trim()) && Number(entry) === user));
+    if (alreadyMaster && alreadyLegacy) return { result: config };
+    if (!alreadyMaster) append(document, "master", masters, owner);
+    if (!alreadyLegacy) append(document, "masterQQ", legacy, user);
+
+    const yaml = document.toString();
+    const next = readDocument(yaml);
+    if (!isDeepStrictEqual(unknownFields(values), unknownFields(next.values)) ||
+        !isDeepStrictEqual(valuesOf(next.config.master), alreadyMaster ? masters : [...masters, owner]) ||
+        !isDeepStrictEqual(valuesOf(next.config.masterQQ), alreadyLegacy ? legacy : [...legacy, user])) {
+      throw new Error("写入主人配置将改变其他 YAML 字段或引用。");
+    }
+
+    return { result: next.config, yaml };
+  }, isCurrent);
+}
+
+function configuredId(value: unknown): number | undefined {
+  const number = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
+  return isId(number) ? number : undefined;
+}
+
+export async function appendBlackUser(
+  root: URL, user: number, isCurrent: () => boolean,
+): Promise<"added" | "existing" | "protected"> {
+  if (!isId(user)) throw new Error("全局黑名单须指定有效的 QQ 账号。");
+  return editOtherConfig<"added" | "existing" | "protected">(root, ({ document, values, config }) => {
+    if (valuesOf(config.masterQQ).some(entry => configuredId(entry) === user) ||
+        valuesOf(config.master).some(entry => typeof entry === "string" && ownerPair.test(entry.trim()) &&
+          entry.trim().endsWith(`:${user}`))) {
+      return { result: "protected" };
+    }
+
+    const entries = valuesOf(config.blackUser);
+    if (!isDeepStrictEqual(values.get("blackUser"), config.blackUser) ||
+        !entries.every(entry => configuredId(entry) !== undefined)) {
+      throw new Error("other.yaml 的 blackUser 包含无效账号或引用。");
+    }
+    if (entries.some(entry => configuredId(entry) === user)) return { result: "existing" };
+
+    append(document, "blackUser", entries, user);
+    const yaml = document.toString();
+    const next = readDocument(yaml);
+    const otherFields = (map: Map<unknown, unknown>) => new Map([...map].filter(([key]) => key !== "blackUser"));
+    if (!isDeepStrictEqual(otherFields(values), otherFields(next.values)) ||
+        !isDeepStrictEqual(next.values.get("blackUser"), next.config.blackUser) ||
+        !isDeepStrictEqual(next.config.blackUser, [...entries, user])) {
+      throw new Error("写入全局黑名单将改变其他 YAML 字段或引用。");
+    }
+    return { result: "added", yaml };
+  }, isCurrent);
 }
