@@ -36,8 +36,8 @@ export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
-export type { ZzzDeadlyRoom, ZzzDeadlySnapshot } from "./zzz-deadly.ts";
-export type { ZzzShiyuDate, ZzzShiyuPortrait, ZzzShiyuSnapshot, ZzzShiyuTeam } from "./zzz-shiyu.ts";
+export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
+export { normalizeZzzShiyu, type ZzzShiyuDate, type ZzzShiyuPortrait, type ZzzShiyuSnapshot, type ZzzShiyuTeam } from "./zzz-shiyu.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
