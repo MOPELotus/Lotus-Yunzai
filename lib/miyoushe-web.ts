@@ -5,19 +5,17 @@ import { dirname, join } from "node:path";
 import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import type { CommandModule } from "./commands.ts";
 import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overview.ts";
+import { MiyousheShopError, type createMiyousheShopCatalog } from "./miyoushe-shop-catalog.ts";
 import { readPanelJson } from "./panel.ts";
 
-const prefix = "/miyoushe/";
-const ticketMs = 10 * 60_000;
-const sessionMs = 8 * 60 * 60_000;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
-const command = /^#(?:米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
+const command = /^#(米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
 const sessionName = "lotus_miyoushe";
 
 export function isMiyousheWebCommand(message: string) { return command.test(message); }
 const headers = {
   "Cache-Control": "no-store",
-  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src https://bbs-static.miyoushe.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY", "X-Robots-Tag": "noindex, nofollow, noarchive",
 };
@@ -34,6 +32,10 @@ interface Options {
   readonly signal: AbortSignal;
   readonly loginIdentity: (qq: string, profileId: number) => Promise<string>;
   readonly overview: (target: MiyousheOverviewTarget, signal?: AbortSignal, verifyLogin?: () => Promise<void>) => Promise<MiyousheOverview>;
+  readonly catalog?: ReturnType<typeof createMiyousheShopCatalog>;
+  readonly path?: string;
+  readonly ticketMinutes?: number;
+  readonly sessionHours?: number;
   readonly now?: () => number;
 }
 
@@ -46,11 +48,37 @@ function validOrigin(base: URL | undefined) {
   if (base.protocol === "https:" || (base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname))) return base;
 }
 
-function browserCookie(session: string, age: number, secure: boolean) {
-  return `${sessionName}=${session}; Path=${prefix}; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? "; Secure" : ""}`;
+function normalizedPath(value: unknown) {
+  return typeof value === "string" && /^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/?$/u.test(value) &&
+    !/^\/(?:Media|File|panel|captcha|OneBotv11|status)(?:\/|$)/u.test(value) ? value.replace(/\/$/u, "") : undefined;
 }
 
-export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, now = Date.now }: Options) {
+export function miyousheWebSettings(raw: unknown) {
+  const config = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const url = typeof config.public_url === "string" && config.public_url.trim() ? URL.parse(config.public_url.trim()) : null;
+  const origin = url && (url.protocol === "https:" || url.protocol === "http:") && !url.search && !url.hash && !url.username && !url.password
+    ? validOrigin(new URL(url.origin)) : undefined;
+  return {
+    enabled: config.enable !== false,
+    path: normalizedPath(config.path) ?? (origin ? normalizedPath(url?.pathname) : undefined), origin,
+    ticketMinutes: typeof config.ticket_minutes === "number" ? config.ticket_minutes : undefined,
+    sessionHours: typeof config.session_hours === "number" ? config.session_hours : undefined,
+  };
+}
+
+export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog,
+  path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours, now = Date.now }: Options) {
+  const mount = normalizedPath(path) ?? "/miyoushe";
+  const prefix = `${mount}/`;
+  const ticketMinutes = typeof configuredTicketMinutes === "number" && Number.isSafeInteger(configuredTicketMinutes) &&
+    configuredTicketMinutes >= 1 && Number.isSafeInteger(now() + configuredTicketMinutes * 60_000) ? configuredTicketMinutes : 10;
+  const sessionHours = typeof configuredSessionHours === "number" && configuredSessionHours * 3600 >= 1 &&
+    Number.isSafeInteger(now() + configuredSessionHours * 3_600_000) ? configuredSessionHours : 8;
+  const ticketMs = ticketMinutes * 60_000;
+  const sessionMs = sessionHours * 3_600_000;
+  function browserCookie(session: string, age: number, secure: boolean) {
+    return `${sessionName}=${session}; Path=${prefix}; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(age)}${secure ? "; Secure" : ""}`;
+  }
   let db: Database | undefined;
   function database() {
     if (db) return db;
@@ -92,7 +120,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       if (context.message_type !== "private") return "请私聊机器人发送 #米游社功能，获取专属登录链接。";
       const connection = context.privateCredentialSignal;
       if (!connection || connection.aborted || !context.user_id) return "请从当前连接的机器人好友私聊获取登录链接。";
-      const profileId = Number(match[1] ?? 1);
+      const profileId = Number(match[2] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       const base = validOrigin(origin());
       if (!base) return "米游社功能页尚未配置可用的访问地址。";
@@ -105,8 +133,8 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         const token = generateToken();
         insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMs });
         const link = new URL(prefix, base);
-        link.hash = `ticket=${token}`;
-        return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 10 分钟内有效，只能使用一次。浏览器登录后可使用 8 小时，请勿转发。`;
+        link.hash = `ticket=${token}${catalog && match[1] !== "米游社功能" ? "&tab=shop" : ""}`;
+        return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 ${ticketMinutes} 分钟内有效，只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch (failure) {
         if (signal.aborted || connection.aborted) return;
         if (failure instanceof ProfileError) return `请先扫码登录档案 ${profileId}。`;
@@ -116,15 +144,16 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
   };
 
   async function handle(request: Request): Promise<Response | undefined> {
-    const { pathname, search } = new URL(request.url);
-    if (pathname !== "/miyoushe" && !pathname.startsWith(prefix)) return;
+    const { pathname, search, searchParams } = new URL(request.url);
+    if (pathname !== mount && !pathname.startsWith(prefix)) return;
     const base = validOrigin(origin());
-    if (!base || search || signal.aborted) return error(404);
+    if (!base || (search && pathname !== `${prefix}api/catalog`) || signal.aborted) return error(404);
     const method = request.method;
     const isRead = method === "GET" || method === "HEAD";
     const secure = base.protocol === "https:";
-    if (pathname === "/miyoushe") return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: prefix } }) : error(405);
+    if (pathname === mount) return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: prefix } }) : error(405);
     const part = pathname.slice(prefix.length);
+    const goodsId = /^api\/goods\/([1-9]\d{0,19})$/u.exec(part)?.[1];
     if (part === "" || part === "style.css" || part === "app.js") {
       if (!isRead) return error(405);
       const asset = Bun.file(join(assetDirectory, part || "index.html"));
@@ -136,7 +165,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     if (part === "api/claim" || part === "api/logout") {
       if (method !== "POST") return error(405);
       if (request.headers.get("Origin") !== base.origin) return error(403);
-    } else if (part === "api/overview") {
+    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId))) {
       if (method !== "GET") return error(405);
       const fetchSite = request.headers.get("Sec-Fetch-Site");
       if (fetchSite && fetchSite !== "same-origin") return error(403);
@@ -185,11 +214,15 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         }
       }
       await verifyLogin();
-      const view = await overview({ qq: row.qq, profileId: row.profileId }, deadline, verifyLogin);
+      const target = { qq: row.qq, profileId: row.profileId };
+      const view = catalog && part === "api/catalog" ? await catalog.list(target, searchParams, deadline, verifyLogin)
+        : catalog && goodsId ? await catalog.detail(target, goodsId, deadline, verifyLogin)
+          : await overview(target, deadline, verifyLogin);
       await verifyLogin();
       return Response.json({ ...view, expiresAt: row.expiresAt }, { headers });
     } catch (failure) {
       if (failure instanceof ProfileError && failure.code === "changed") return error(401);
+      if (failure instanceof MiyousheShopError) return Response.json({ message: failure.message }, { status: failure.status, headers });
       return error(503);
     }
   }

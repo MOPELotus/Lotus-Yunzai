@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import type { MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
-import { createMiyousheWeb } from "../lib/miyoushe-web.ts";
+import { createMiyousheWeb, miyousheWebSettings } from "../lib/miyoushe-web.ts";
 
 const origin = new URL("https://miyoushe.example.org");
 const command = "#米游社功能2";
@@ -26,6 +26,14 @@ function claim(ticket: string, from = origin.origin) {
 function read(cookie: string, site = "same-origin") {
   return request("api/overview", { headers: { Cookie: cookie, "Sec-Fetch-Site": site } });
 }
+
+test("米游社网页沿用旧挂载地址、开关和网页登录有效期", () => {
+  const settings = miyousheWebSettings({ enable: false, path: "/lotus/coin-shop/", public_url: "https://miyoushe.example.org/lotus/coin-shop/",
+    ticket_minutes: 2, session_hours: 0.5 });
+  expect(settings).toMatchObject({ enabled: false, path: "/lotus/coin-shop", ticketMinutes: 2, sessionHours: 0.5 });
+  expect(settings.origin?.href).toBe("https://miyoushe.example.org/");
+  expect(miyousheWebSettings({ path: "/panel/account", public_url: "file:///tmp/shop" })).toMatchObject({ path: undefined, origin: undefined });
+});
 
 test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档案，会话重启后可用", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-web-"));

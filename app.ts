@@ -70,7 +70,8 @@ import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receip
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
-import { createMiyousheWeb, isMiyousheWebCommand } from "./lib/miyoushe-web.ts";
+import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./lib/miyoushe-web.ts";
+import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createCommandDelegation } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
@@ -774,14 +775,17 @@ if (import.meta.main) {
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
-    if (!probingUpdate) {
+    const shopSettings = miyousheWebSettings(globalConfig.coin_shop);
+    if (!probingUpdate && shopSettings.enabled) {
       const plans = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)));
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
       miyousheWeb = createMiyousheWeb({
-        origin: () => fileBase, signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
+        ...shopSettings, origin: () => shopSettings.origin ?? (fileBase && new URL(fileBase.origin)),
+        signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
+        catalog: createMiyousheShopCatalog({ profileDirectory }),
       });
       commands.registerModule(miyousheWeb.commands, "[Lotus-Plugin] Coin Shop");
     }

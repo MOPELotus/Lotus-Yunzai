@@ -36,9 +36,12 @@
         <article><h2>今日已领</h2><strong id="received">—</strong></article>
         <article><h2>今日任务总额</h2><strong id="today-total">—</strong></article>
       </section>
-      <section class="catalog" aria-labelledby="overview-title">
+      <section class="catalog" aria-label="米游社功能">
         <header class="section-head">
-          <h2 id="overview-title">米游社总览</h2>
+          <nav class="tabs" aria-label="页面">
+            <button id="tab-overview" type="button" aria-pressed="true">米游社总览</button>
+            <button id="tab-shop" type="button" aria-pressed="false">商品商城</button>
+          </nav>
           <button id="refresh" class="secondary" type="button">刷新数据</button>
         </header>
         <p id="notice" class="notice" role="status" hidden></p>
@@ -56,8 +59,36 @@
             <ul id="missions" class="rows" aria-label="任务进度"></ul>
           </article>
         </div>
+        <div id="shop-view" hidden>
+          <div class="shop-filters">
+            <label>游戏分区<select id="shop-game"><option value="">全部商品</option></select></label>
+            <label>商品状态<select id="shop-status">
+              <option value="all">全部状态</option>
+              <option value="scheduled">等待开放</option>
+              <option value="available">正在兑换</option>
+              <option value="sold_out">已兑完</option>
+              <option value="ended">已结束</option>
+              <option value="unknown">状态待确认</option>
+            </select></label>
+            <label class="shop-search">搜索商品<input id="shop-search" type="search" placeholder="搜索当前页商品"></label>
+          </div>
+          <p id="shop-note" class="muted" role="status"></p>
+          <div id="shop-goods" class="goods-grid"></div>
+          <div id="shop-pagination" class="shop-pagination" hidden>
+            <button id="shop-previous" type="button" class="secondary">上一页</button>
+            <span id="shop-page"></span>
+            <button id="shop-next" type="button" class="secondary">下一页</button>
+          </div>
+        </div>
       </section>
     </main>
   </div>
+  <dialog id="shop-detail" aria-labelledby="shop-detail-title">
+    <header class="section-head">
+      <h2 id="shop-detail-title">商品详情</h2>
+      <button id="shop-close" type="button" class="text-button" aria-label="关闭商品详情">关闭</button>
+    </header>
+    <div id="shop-detail-content" aria-live="polite"></div>
+  </dialog>
 </body>
 </html>
