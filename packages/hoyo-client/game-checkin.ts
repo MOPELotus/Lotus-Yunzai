@@ -8,6 +8,30 @@ interface GameCheckinOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface GameCheckinProof {
+  readonly challenge: string;
+  readonly validate: string;
+  readonly seccode: string;
+}
+
+interface GameCheckinSubmitOptions extends GameCheckinOptions {
+  readonly proof?: GameCheckinProof;
+}
+
+export interface GameCheckinChallenge {
+  readonly captchaVersion: 3;
+  readonly gt: string;
+  readonly challenge: string;
+  readonly success?: boolean | 0 | 1;
+  readonly new_captcha?: boolean | 0 | 1;
+}
+
+export class GameCheckinChallengeError extends GameRecordRequestError {
+  constructor(subject: string, status: number, readonly challenge: GameCheckinChallenge) {
+    super(subject, "risk", "api", status, 0);
+  }
+}
+
 export interface CnGameCheckinInfo {
   readonly signed: boolean;
   readonly firstBind: boolean;
@@ -37,6 +61,21 @@ function object(value: unknown): Json | undefined {
 function whole(value: unknown) {
   if (typeof value === "number" && Number.isSafeInteger(value)) return value;
   if (typeof value === "string" && /^-?\d{1,9}$/u.test(value)) return Number(value);
+}
+
+function proofField(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && /^[!-~]+$/u.test(value);
+}
+
+function passthroughFlag(value: unknown) {
+  if (value === true || value === false || value === 0 || value === 1) return value;
+}
+
+function getInlineChallenge(data: Json | undefined): GameCheckinChallenge | undefined {
+  const gt = data?.gt;
+  const challenge = data?.challenge;
+  if (!proofField(gt, 256) || !proofField(challenge, 1024)) return;
+  return { captchaVersion: 3, gt, challenge, success: passthroughFlag(data?.success), new_captcha: passthroughFlag(data?.new_captcha) };
 }
 
 function requestRole(source: ProfileRequestContext) {
@@ -88,18 +127,32 @@ function checkResponseRole(data: Json, uid: string, region: string, route: SignR
   if (Object.hasOwn(data, "game_biz") && data.game_biz !== route.biz) invalidResponse(route);
 }
 
+function checkDataRole(data: Json, uid: string, region: string, route: SignRoute) {
+  checkResponseRole(data, uid, region, route);
+  if (data.role != null) checkResponseRole(object(data.role) ?? invalidResponse(route), uid, region, route);
+}
+
 function invalidResponse(route: SignRoute): never {
   throw new HoyoRequestError("response", `官方${route.name}签到响应无效。`);
 }
 
 async function requestCheckin(source: ProfileRequestContext, transport: HoyoTransport, action: "info" | "sign",
-  { signal }: GameCheckinOptions, verifyProfile?: () => Promise<void>) {
+  { signal, proof }: GameCheckinSubmitOptions, verifyProfile?: () => Promise<void>) {
   const { route, uid, region } = requestRole(source);
   const url = new URL(`${route.endpoint}/${action}`);
   const params = { act_id: route.activity, uid, region, lang: "zh-cn" };
   const writing = action === "sign";
   if (!writing) url.search = new URLSearchParams(params).toString();
   const headers = headersFor(source, route);
+  if (proof) {
+    if (!writing || !proofField(proof.challenge, 1024) || !proofField(proof.validate, 2048) ||
+        proof.seccode !== `${proof.validate}|jordan`) {
+      throw new HoyoRequestError("invalid-input", "当前签到的人工验证结果格式无效。");
+    }
+    headers.set("x-rpc-challenge", proof.challenge);
+    headers.set("x-rpc-validate", proof.validate);
+    headers.set("x-rpc-seccode", proof.seccode);
+  }
   async function guard() {
     if (signal?.aborted) throw new HoyoRequestError("transport", `${route.name}签到已取消。`);
     await verifyProfile?.();
@@ -133,8 +186,16 @@ async function requestCheckin(source: ProfileRequestContext, transport: HoyoTran
   const retcode = whole(payload?.retcode);
   const data = object(payload?.data);
   const message = typeof payload?.message === "string" ? payload.message : "";
-  if (retcode === 1034 || retcode === 10035 || retcode === 10041 || /验证码|captcha|geetest|风控/iu.test(message) ||
-      (retcode === 0 && (data?.is_risk === true || (whole(data?.is_risk) ?? 0) > 0 || whole(data?.success) === 1))) {
+  const inlineRisk = retcode === 0 && (data?.is_risk === true || (whole(data?.is_risk) ?? 0) > 0 ||
+    whole(data?.risk_code) === 375 || whole(data?.success) === 1);
+  if (writing && !proof && response.ok && inlineRisk) {
+    const inline = getInlineChallenge(data);
+    if (inline && data) {
+      checkDataRole(data, uid, region, route);
+      throw new GameCheckinChallengeError(subject, status, inline);
+    }
+  }
+  if (retcode === 1034 || retcode === 10035 || retcode === 10041 || /验证码|captcha|geetest|风控/iu.test(message) || inlineRisk) {
     throw new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
   if (/频繁|too frequent|rate limit/iu.test(message)) {
@@ -145,12 +206,7 @@ async function requestCheckin(source: ProfileRequestContext, transport: HoyoTran
   if (writing && retcode === -5003) return { route, already: true as const };
   if (retcode === undefined || deadline.aborted) invalidResponse(route);
   if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
-  if (data) {
-    checkResponseRole(data, uid, region, route);
-    if (data.role !== undefined && data.role !== null) {
-      checkResponseRole(object(data.role) ?? invalidResponse(route), uid, region, route);
-    }
-  }
+  if (data) checkDataRole(data, uid, region, route);
   return { route, data };
 }
 
@@ -165,7 +221,7 @@ export async function readCnGameCheckinInfo(source: ProfileRequestContext, trans
 
 /** A POST acknowledgment is only evidence to proceed to the independent status check. */
 export async function submitCnGameCheckin(source: ProfileRequestContext, transport: HoyoTransport,
-  options: GameCheckinOptions = {}, verifyProfile?: () => Promise<void>) {
+  options: GameCheckinSubmitOptions = {}, verifyProfile?: () => Promise<void>) {
   const result = await requestCheckin(source, transport, "sign", options, verifyProfile);
   return result.already ? "already" as const : "accepted" as const;
 }

@@ -15,7 +15,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 export { createCredentialExchange };
 export { HoyoRequestError };
 export { GameRecordRequestError } from "./game-record.ts";
-export type { CnGameCheckinInfo } from "./game-checkin.ts";
+export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof, type CnGameCheckinInfo } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot } from "./genshin-backpack.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
@@ -308,7 +308,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readCnGameCheckinInfo,
         options.recoverCookie === false ? () => false : isGameRecordCookieExpired);
     },
-    submitCnGameCheckin(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+    submitCnGameCheckin(source: ProfileRequestContext, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
       return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { ProfileRequestContext } from "../packages/account/index.ts";
-import { createHoyoClient } from "../packages/hoyo-client/index.ts";
+import { createHoyoClient, GameCheckinChallengeError } from "../packages/hoyo-client/index.ts";
 import { readCnGameCheckinInfo, submitCnGameCheckin } from "../packages/hoyo-client/game-checkin.ts";
 
 const routes = [
@@ -100,4 +100,41 @@ test("只接受已校验的角色状态，过期、风险、限流和已经提�
   await expect(submitCnGameCheckin(source, async () => { calls++; throw new Error("connection lost"); }))
     .rejects.toMatchObject({ code: "transport" });
   expect(calls).toBe(1);
+});
+
+test("内联人工验证保留相同的活动和角色，只转发一次准确的 v3 证明头", async () => {
+  const source = fixture(routes[0]);
+  const challenge = { risk_code: 375, gt: "fixture-gt", challenge: "source-challenge", success: 0 };
+  const blocked = () => Response.json({ retcode: 0, data: challenge });
+  let attempt: unknown;
+  try {
+    await submitCnGameCheckin(source, async () => blocked());
+  } catch (error) {
+    attempt = error;
+  }
+  expect(attempt).toBeInstanceOf(GameCheckinChallengeError);
+  expect(attempt).toMatchObject({ reason: "risk", challenge: {
+    captchaVersion: 3, gt: "fixture-gt", challenge: "source-challenge", success: 0,
+  } });
+  expect((attempt as GameCheckinChallengeError).message).not.toContain("source-challenge");
+  await expect(readCnGameCheckinInfo(source, async () => blocked())).rejects.not.toBeInstanceOf(GameCheckinChallengeError);
+  await expect(submitCnGameCheckin(source, async () =>
+    Response.json({ retcode: 0, data: { ...challenge, uid: "100000016" } }))).rejects.toMatchObject({ code: "response" });
+  const proof = { challenge: "sdk-returned-challenge", validate: "sdk-validation", seccode: "sdk-validation|jordan" };
+  expect(await submitCnGameCheckin(source, async (url, request) => {
+    expect(url.href).toBe("https://api-takumi.mihoyo.com/event/luna/sign");
+    expect(JSON.parse(String(request.body))).toEqual({
+      act_id: routes[0][5], uid: source.role.uid, region: source.role.region, lang: "zh-cn",
+    });
+    const headers = new Headers(request.headers);
+    expect(headers.get("x-rpc-challenge")).toBe(proof.challenge);
+    expect(headers.get("x-rpc-validate")).toBe(proof.validate);
+    expect(headers.get("x-rpc-seccode")).toBe(proof.seccode);
+    return Response.json({ retcode: 0, data: { is_risk: false } });
+  }, { proof })).toBe("accepted");
+  await expect(submitCnGameCheckin(source, async () => blocked(), { proof })).rejects.not.toBeInstanceOf(GameCheckinChallengeError);
+  let calls = 0;
+  await expect(submitCnGameCheckin(source, async () => { calls++; return blocked(); },
+    { proof: { ...proof, seccode: "unrelated-fixture" } })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(calls).toBe(0);
 });
