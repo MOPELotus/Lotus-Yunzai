@@ -4,17 +4,19 @@ import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError, type GenshinGachaPool } from "@lotus-yunzai/hoyo-client";
 import { buildGenshinGachaDetail } from "./gacha-detail.ts";
 import { renderGenshinGachaDetail } from "./gacha-detail-card.ts";
-import { genshinGachaThemeDirectory, readGenshinGachaSources } from "./gacha-detail-source.ts";
+import { genshinGachaThemeDirectory, readGenshinGachaSources, readGenshinUigfItems } from "./gacha-detail-source.ts";
 import { renderGenshinGachaFailure, renderGenshinGachaResult } from "./gacha-result-card.ts";
 import { buildGenshinGachaSpecial } from "./gacha-special.ts";
 import { renderGenshinGachaSpecial } from "./gacha-special-card.ts";
 import { createGenshinGachaHistoryStore } from "./gacha-store.ts";
 import { createGenshinGachaSync } from "./gacha-sync.ts";
+import { exportGenshinUigf, type GenshinUigfExportOptions } from "./gacha-uigf.ts";
 import { buildGenshinGachaVersion, type GenshinGachaVersionOptions } from "./gacha-version.ts";
 import { renderGenshinGachaVersion } from "./gacha-version-card.ts";
 
 const updateCommand = /^#(?:原神)?更新抽卡记录([1-9]\d{0,2})?$/u;
 const miniappCommand = /^#?(?:获取|更新)(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)([1-9]\d{0,2})?$/u;
+const exportCommand = /^#?(?:原神)?(强制)?导出记录(?:json)?(v2|v4)?([1-9]\d{0,2})?$/u;
 const poolCommand = /^#(?:原神)?(?:喵喵)?(全部)?(抽卡|抽奖|角色|武器|常驻|集录|up)池?(全部)?(记录|祈愿|分析|统计)([1-9]\d{0,2})?$/u;
 const versionCommand = /^#(?:原神)?(?:喵喵)?(版本(?:全部)?|全部)统计([1-9]\d{0,2})?$/u;
 const specialCommand = /^#(?:原神)?(?:喵喵)?(?:(新手|全部新手)池?(?:全部)?(?:记录|祈愿|分析|统计)|全部(?:记录|祈愿|分析))([1-9]\d{0,2})?$/u;
@@ -32,6 +34,7 @@ const help = [
   "#更新小助手抽卡记录 可从提瓦特小助手导入历史。",
   "#抽卡记录、#武器记录、#常驻记录、#集录记录 可查看对应卡池。",
   "#新手记录 查看旧新手池记录，#全部记录 查看各池详情。",
+  "私聊 #导出记录 发送 UIGF 文件，可用 #导出记录jsonv2 选择旧格式。",
   "#版本统计 按期次查看角色和武器池，#全部统计 查看各池汇总。",
   "末尾加档案编号可选档案。单池可加「全部」查看各页，如 #角色全部记录2。",
 ].join("\n");
@@ -60,18 +63,51 @@ function matchGachaQuery(message: string): { profileId: number; view: GachaView;
 interface GachaContext {
   readonly normalizedMessage: string;
   readonly user_id?: number;
+  readonly message_type?: string;
+  readonly uploadFile?: (file: { readonly name: string; readonly bytes: Uint8Array }) => Promise<"confirmed" | "rejected" | "unknown">;
   reply(message: string): unknown;
 }
 
-export function createModule({ signal, lockFile }: {
+export function createModule({ signal, lockFile, runtimeVersion }: {
   signal: AbortSignal;
   lockFile: Parameters<typeof createGenshinGachaHistoryStore>[1];
+  runtimeVersion?: { readonly version?: string; readonly revision?: string };
 }) {
   const profiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const history = createGenshinGachaHistoryStore(historyDirectory, lockFile);
   const sync = createGenshinGachaSync(profiles, createProfileHoyoClient(profiles), history);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
   const miniappUpdate = createGachaUpdater((qq, profileId) => sync.syncMiniapp(qq, profileId, { signal }));
+
+  async function exportHistory(qq: string, profileId: number, version: GenshinUigfExportOptions["version"], context: GachaContext) {
+    if (!context.uploadFile) return "当前会话暂不支持发送抽卡文件。";
+    try {
+      const { uid } = await profiles.savedRole(qq, profileId, "gs");
+      const records = await history.read(qq, uid);
+      const resolveItem = await readGenshinUigfItems(genshinGachaThemeDirectory());
+      const document = exportGenshinUigf(records, {
+        uid, version, resolveItem, exportedAt: new Date(),
+        app: { name: "Lotus-Yunzai", version: runtimeVersion?.version ?? runtimeVersion?.revision ?? "dev" },
+      });
+      const file = { name: `${uid}.json`, bytes: Buffer.from(JSON.stringify(document, null, "\t") + "\n") };
+      const current = await profiles.savedRole(qq, profileId, "gs").catch(() => undefined);
+      if (signal.aborted) return;
+      if (current?.uid !== uid) return "原神档案角色已变化，请重新导出。";
+      const delivered = await context.uploadFile(file);
+      if (delivered === "rejected") return "导出文件发送失败，请检查网关是否支持发送文件。";
+      if (delivered !== "confirmed") return "文件发送结果未确认，请在当前会话核对。";
+      const count = "list" in document ? document.list.length : document.hk4e[0].list.length;
+      return `已导出 ${file.name}，共 ${count} 条抽卡记录。`;
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error instanceof ProfileError) {
+        if (error.code === "missing") return `[荷花插件]请先登录 profile ${profileId}。`;
+        if (error.code === "role-missing") return `[荷花插件]profile ${profileId} 没有同步原神 UID。`;
+      }
+      if (error instanceof TypeError && /^(?:UIGF|当前档案没有可导出的原神抽卡记录)/u.test(error.message)) return error.message;
+      return "原神抽卡记录导出失败，请检查本地历史文件。";
+    }
+  }
 
   async function importMiniapp(qq: string, profileId: number, context: GachaContext) {
     try {
@@ -165,15 +201,24 @@ export function createModule({ signal, lockFile }: {
       if (helpCommand.test(context.normalizedMessage)) return help;
       const matched = updateCommand.exec(context.normalizedMessage);
       const miniapp = miniappCommand.exec(context.normalizedMessage);
-      const query = matched || miniapp ? undefined : matchGachaQuery(context.normalizedMessage);
-      if (!matched && !miniapp && !query) return;
-      const profileId = query?.profileId ?? Number(matched?.[1] ?? miniapp?.[1] ?? 1);
+      const exportMatch = exportCommand.exec(context.normalizedMessage);
+      const query = matched || miniapp || exportMatch ? undefined : matchGachaQuery(context.normalizedMessage);
+      if (!matched && !miniapp && !exportMatch && !query) return;
+      const profileId = query?.profileId ?? Number(matched?.[1] ?? miniapp?.[1] ?? exportMatch?.[3] ?? 1);
       if (profileId > MAX_PROFILE_ID) return;
       const { user_id } = context;
       if (typeof user_id !== "number" || !Number.isSafeInteger(user_id) || user_id < 1) {
         return "请从登录档案对应的 QQ 会话使用原神抽卡记录。";
       }
       const qq = String(user_id);
+      if (exportMatch) {
+        const version = exportMatch[2] === "v2" ? "v2" : "v4";
+        if (context.message_type === "group" && !exportMatch[1]) {
+          const suffix = `${version === "v2" ? "jsonv2" : ""}${profileId === 1 ? "" : profileId}`;
+          return `建议私聊导出，若你确认要在此导出，请发送【#强制导出记录${suffix}】。`;
+        }
+        return exportHistory(qq, profileId, version, context);
+      }
       if (miniapp) return importMiniapp(qq, profileId, context);
       if (query) return view(qq, profileId, query.view, query.all);
       try {

@@ -4,12 +4,13 @@ import { fileURLToPath } from "node:url";
 import { readMiaoArrayExport } from "@lotus-yunzai/gacha/miao-data";
 import { resolveGenshinDetailPool, type GenshinGachaDetailOptions, type GenshinGachaDetailPeriod } from "./gacha-detail.ts";
 import type { GenshinPreviousGacha } from "./gacha-history.ts";
+import type { GenshinUigfItem, GenshinUigfItemResolver } from "./gacha-uigf.ts";
 import type { GenshinGachaVersionPeriod } from "./gacha-version.ts";
 
 const defaultTheme = fileURLToPath(new URL("../../data/genshin/miao-theme", import.meta.url));
 const weaponTypes = ["sword", "claymore", "polearm", "bow", "catalyst"] as const;
 type Resolver = NonNullable<GenshinGachaDetailOptions["resolveItem"]>;
-type Item = NonNullable<ReturnType<Resolver>>;
+type Item = NonNullable<ReturnType<Resolver>> & { readonly rank?: GenshinUigfItem["rank"] };
 
 export function genshinGachaThemeDirectory() {
   return Bun.env.LOTUS_GENSHIN_GACHA_THEME_DIR?.trim() || defaultTheme;
@@ -48,19 +49,23 @@ function metadata(id: unknown, name: unknown, abbr: unknown, limit: number): Omi
   return { id, name, abbr: typeof abbr === "string" && abbr && name.length > limit ? abbr : name };
 }
 
+function itemRank(value: unknown): Item["rank"] {
+  if (value === 3 || value === 4 || value === 5) return value;
+}
+
 async function readCharacters(root: string) {
   const rows = record(await readJson(join(root, "meta-gs", "character", "data.json")));
   const result = new Map<string, Item>();
   for (const [id, value] of Object.entries(rows ?? {})) {
     const row = record(value);
     const item = row && metadata(Number(id), row.name, row.abbr, 3);
-    if (item) result.set(item.name, { ...item, img: `/meta-gs/character/${item.name}/imgs/face.webp` });
+    if (row && item) result.set(item.name, { ...item, rank: itemRank(row.star), img: `/meta-gs/character/${item.name}/imgs/face.webp` });
   }
   return result;
 }
 
-async function readWeapons(root: string, pools: readonly unknown[]) {
-  const names = new Set(pools.flatMap((rows) => (Array.isArray(rows) ? rows : []).flatMap((value) => {
+async function readWeapons(root: string, pools?: readonly unknown[]) {
+  const names = pools && new Set(pools.flatMap((rows) => (Array.isArray(rows) ? rows : []).flatMap((value) => {
     const row = record(value);
     return row?.item_type === "武器" && safeSegment(row.name) ? [row.name] : [];
   })));
@@ -70,13 +75,28 @@ async function readWeapons(root: string, pools: readonly unknown[]) {
       if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
       return [];
     });
-    return Promise.all(children.filter((name) => names.has(name)).map(async (name) => {
+    return Promise.all(children.filter((name) => !names || names.has(name)).map(async (name) => {
       const row = record(await readJson(join(directory, name, "data.json")));
       const item = row && metadata(row.id, row.name, row.abbr, 4);
-      if (item?.name === name) return { ...item, img: `meta-gs/weapon/${type}/${name}/icon.webp` };
+      if (row && item?.name === name) return { ...item, rank: itemRank(row.star), img: `meta-gs/weapon/${type}/${name}/icon.webp` };
     }));
   }));
   return new Map(items.flat().filter((item) => item !== undefined).map((item) => [item.name, item]));
+}
+
+export async function readGenshinUigfItems(root: string): Promise<GenshinUigfItemResolver> {
+  const [characters, weapons] = await Promise.all([readCharacters(root), readWeapons(root)]);
+  const byId = new Map<string, GenshinUigfItem>();
+  const byName = new Map<string, GenshinUigfItem>();
+  for (const [items, itemType] of [[characters, "角色"], [weapons, "武器"]] as const) {
+    for (const { id, name, rank } of items.values()) {
+      if (rank === undefined) continue;
+      const item = { itemId: String(id), name, itemType, rank };
+      byId.set(item.itemId, item);
+      byName.set(name, item);
+    }
+  }
+  return ({ itemId, name }) => (itemId ? byId.get(itemId) : undefined) ?? (name ? byName.get(name) : undefined);
 }
 
 function period(value: unknown): value is GenshinGachaDetailPeriod {
