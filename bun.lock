@@ -90,6 +90,9 @@
     },
     "plugins/guides": {
       "name": "@lotus-yunzai/guides",
+      "dependencies": {
+        "node-schedule": "2.1.2",
+      },
     },
     "plugins/media": {
       "name": "@lotus-yunzai/media",

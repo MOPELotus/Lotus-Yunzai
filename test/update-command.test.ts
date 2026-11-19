@@ -54,6 +54,26 @@ test("单项更新兼容紧连目标、中文目录及包名，并保留日志�
   expect(replies).toEqual([]);
 });
 
+test("摩拉资源旧指令交给攻略模块，带空格的明确仓库目标仍由宿主更新", async () => {
+  const { dispatch, calls } = fixture();
+  for (const text of [" #更新摩拉资源 ", "#强制更新摩拉资源"]) {
+    expect(isUpdateCommand(text)).toBe(false);
+    expect(hasValidUpdateTarget(text)).toBe(false);
+    await dispatch(text);
+  }
+  expect(calls).toEqual([]);
+  for (const text of ["#更新 摩拉资源", "#强制更新 摩拉资源", "#更新其他资源"]) {
+    expect(isUpdateCommand(text)).toBe(true);
+    expect(hasValidUpdateTarget(text)).toBe(true);
+    await dispatch(text);
+  }
+  expect(calls.map(({ target, force }) => ({ target, force }))).toEqual([
+    { target: "摩拉资源", force: false },
+    { target: "摩拉资源", force: true },
+    { target: "其他资源", force: false },
+  ]);
+});
+
 test("全量更新传递 all 标志并拒绝插件后缀", async () => {
   const { dispatch, calls, replies } = fixture();
   for (const command of ["#全部更新", "#全部静更新", " #全部安静更新 "]) {

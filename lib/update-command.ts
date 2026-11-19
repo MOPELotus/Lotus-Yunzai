@@ -27,6 +27,7 @@ export function describeUpdateProgress(status: ManagedUpdateProgress): string {
 }
 
 function updatePrefix(message: string): RegExpExecArray | undefined {
+  if (/^#(?:强制)?更新摩拉资源$/u.test(message.trimEnd())) return;
   if (/^#更新(?:图鉴|抽卡记录(?:[1-9]\d{0,2})?|(?:全部|所有)抽卡记录)$/u.test(message.trimEnd())) return;
   if (/^#更新(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)(?:[1-9]\d{0,2})?$/u.test(message.trimEnd())) return;
   const match = command.exec(message);
