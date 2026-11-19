@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindMessageGroupActions } from "../lib/adapters/group-moderation.ts";
@@ -75,7 +75,11 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config/other.yaml"), 'master: ["100:51"]\nmasterQQ: [52]\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n");
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n");
+    const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
+    await mkdir(legacyDirectory, { recursive: true });
+    const legacyList = join(legacyDirectory, "groupAdmin.yaml");
+    await writeFile(legacyList, "# 原群管配置\nblackQQ: [52, 57]\nwhiteQQ: [59] # 白名单\nnoBan: false\n");
     await writeFile(join(root, "config/milky.yaml"),
       `enable: true\nhost: 127.0.0.1\nport: ${milky.port}\nconnection: webhook\naccess_token: ${token}\n`);
     disableMemberPrewarm(root);
@@ -206,6 +210,50 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       { group_id: group, user_id: 55, reject_add_request: true },
       { group_id: group, user_id: 44, reject_add_request: false },
     ]);
+    const list = async () => Bun.YAML.parse(await readFile(legacyList, "utf8"));
+    expect(await list()).toEqual({ blackQQ: [52, 57, 55], whiteQQ: [59], noBan: false });
+    expect(await readFile(legacyList, "utf8")).toContain("# 白名单");
+
+    send(oneBotMessage("#群管加黑名单58", 54));
+    expect(JSON.stringify((await oneBotReply(12)).params.message)).toContain("没有编辑群管黑名单的权限");
+    send(oneBotMessage("#群管加黑名单58"));
+    await oneBotReply(13);
+    expect(await list()).toEqual({ blackQQ: [52, 57, 55, 58], whiteQQ: [59], noBan: false });
+    const repeated = oneBotMessage("其他群发言", 55, 79);
+    send(repeated);
+    expect(JSON.stringify((await oneBotReply(14)).params.message)).toContain("已踢出黑名单用户55");
+    send(repeated);
+    send(oneBotMessage("受保护的旧主人", 52, 79));
+    send(oneBotMessage("本群关闭名单", 55, 80));
+
+    const oneBotApply = { post_type: "request", request_type: "group", sub_type: "add",
+      self_id: oneBotId, user_id: 57, group_id: 79, flag: "managed-list" };
+    client.send(JSON.stringify(oneBotApply));
+    client.send(JSON.stringify(oneBotApply));
+    const applied = await waitUntil(() => oneBotCalls.find(({ action }) => action === "set_group_add_request"),
+      "OneBot 未拒绝群管名单中的申请。");
+    expect(applied.params).toEqual({ flag: "managed-list", sub_type: "add", approve: false, reason: "" });
+    await webhook("group_member_increase", { group_id: 79, user_id: 58 });
+    expect(JSON.stringify((await milkyReply(10)).params.message)).toContain("检测到黑名单58入群");
+    const milkyApply = { group_id: 79, initiator_id: 57, notification_seq: 777, is_filtered: true };
+    await webhook("group_join_request", milkyApply);
+    await webhook("group_join_request", milkyApply);
+    expect((await waitUntil(() => milkyCalls.find(({ action }) => action === "reject_group_request"),
+      "Milky 未拒绝群管名单中的申请。")).params).toEqual({
+      group_id: 79, notification_seq: 777, is_filtered: true, notification_type: "join_request", reason: "",
+    });
+    send(oneBotMessage("#群管删黑名单55"));
+    await oneBotReply(15);
+    send(oneBotMessage("已从名单移除", 55, 79));
+    send(oneBotMessage("#解禁42"));
+    await oneBotReply(16);
+    expect(await list()).toEqual({ blackQQ: [52, 57, 58], whiteQQ: [59], noBan: false });
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_kick").map(({ params }) => params)).toEqual([
+      { group_id: group, user_id: 42, reject_add_request: false }, { group_id: 79, user_id: 55, reject_add_request: false },
+    ]);
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_add_request")).toHaveLength(1);
+    expect(milkyCalls.filter(({ action }) => action === "reject_group_request")).toHaveLength(1);
+    expect(milkyCalls.filter(({ action }) => action === "kick_group_member").at(-1)?.params).toEqual({ group_id: 79, user_id: 58 });
   } finally {
     socket?.close();
     host?.kill();

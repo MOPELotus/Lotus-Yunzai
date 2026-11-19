@@ -120,6 +120,7 @@ const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai/group"];
 const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
 const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yunzai/group"];
+const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -247,6 +248,9 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
+  let managedBlacklist: { policy: { blocked(userId: number): Promise<boolean> }; signal: AbortSignal } | undefined;
+  const managedModerationResults = new Map<string, boolean>();
+  const managedModerationPending = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
@@ -584,7 +588,59 @@ if (import.meta.main) {
       if (dispatchPower.paused || await handleLeaveBlacklist(event)) return;
       if (stopping || !handoff.accepting || dispatchPower.paused) return;
     }
+    if (await handleManagedBlacklist(event)) return;
     if (groupDispatch.admit(event)) await handleEvent(event);
+  }
+
+  async function handleManagedBlacklist(event: BotEvent): Promise<boolean> {
+    const registration = managedBlacklist;
+    if (event.post_type === "notice" && (event.notice_type !== "group" || event.sub_type !== "increase")) return false;
+    if (event.post_type === "request" && (event.request_type !== "group" || event.sub_type !== "add")) return false;
+    if (event.post_type === "message" && (event.message_type !== "group" || event.isDelegated)) return false;
+    if (!registration || stopping || !handoff.accepting || dispatchPower.paused ||
+        !groupDispatch.allowsGroupModeration(event) || !groupDispatch.allows(event, managedBlacklistNames)) return false;
+    const { self_id: bot, group_id: group, user_id: user } = event;
+    if (!group || !user || !bot || user === bot ||
+        masterPermissions.isMaster(bot, user) || masterPermissions.legacyMasterIds().includes(user)) return false;
+    const transport = groupModerationSession(event);
+    if (!transport?.act || !transport.canModerate) return false;
+    const id = event.post_type === "request" ? [event.groupRequestScope ?? "onebot", event.flag]
+      : event.post_type === "message" ? (event.message_id === undefined ? undefined : [event.adapter ?? "onebot", event.message_id])
+        : event.time;
+    if (id === undefined) return false;
+    const active = nativeOperationSignal(registration.signal, transport.signal);
+    const blocked = () => registration.policy.blocked(user).catch(() => false);
+    if (active.aborted || !await blocked() || active.aborted) return false;
+    const key = JSON.stringify([bot, group, user]);
+    const selection = JSON.stringify([key, event.post_type, id]);
+    const seen = managedModerationResults.get(selection);
+    if (seen !== undefined) return seen;
+    if (managedModerationPending.has(key)) return true;
+    managedModerationPending.add(key);
+    try {
+      if (!await transport.canModerate(active).catch(() => false) || active.aborted || !await blocked() || active.aborted ||
+          masterPermissions.isMaster(bot, user) || masterPermissions.legacyMasterIds().includes(user)) return false;
+      const result = await transport.act(active, "").catch(() => "unknown" as const);
+      const handled = result !== "rejected";
+      if (managedModerationResults.size >= 4096) managedModerationResults.delete(managedModerationResults.keys().next().value!);
+      managedModerationResults.set(selection, handled);
+      if (!handled || active.aborted) return handled;
+      if (event.post_type === "request") {
+        console.log(result === "confirmed" ? "[group] 已拒绝名单中的入群申请。" : "[group] 名单入群申请的处理结果未确认。");
+      } else {
+        const reply = result === "unknown" ? "群管理操作结果未确认，请在群内核对。"
+          : event.post_type === "notice" ? `⚠ 检测到黑名单${user}入群，已自动踢出`
+            : `⚠ 已踢出黑名单用户${user}`;
+        try {
+          await event.reply(reply);
+        } catch {
+          // The action receipt is already recorded, so a reply failure must not retry it.
+        }
+      }
+      return true;
+    } finally {
+      managedModerationPending.delete(key);
+    }
   }
 
   async function handleLeaveBlacklist(event: Exclude<BotEvent, MessageEvent>): Promise<boolean> {
@@ -1440,6 +1496,15 @@ if (import.meta.main) {
         async profileLikeImage(userId, outcome, signal) {
           if (signal.aborted || stopping || !handoff.accepting) return;
           return likeImageRenderer?.(userId, outcome, nativeOperationSignal(signal));
+        },
+        registerManagedBlacklist(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          managedBlacklist = registration;
+          return () => {
+            session.abort();
+            if (managedBlacklist === registration) managedBlacklist = undefined;
+          };
         },
         groupLeaveBlacklist: {
           register(policy) {

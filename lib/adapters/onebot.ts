@@ -4,7 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -189,7 +189,8 @@ async function dispatchRequest(
   const session = groupActionSignal(connection, self_id);
   if (session && sub_type === "add") bindGroupModeration(request, {
     signal: session,
-    act: signal => calls.declineGroupApplication(send, flag, signal),
+    canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id),
+    act: (signal, reason = "主动退群被拉黑") => calls.declineGroupApplication(send, flag, signal, reason),
   });
   await dispatch(request);
 }
@@ -274,6 +275,7 @@ async function dispatchGroupNotice(
   const session = groupActionSignal(connection, self_id);
   if (session) bindGroupModeration(notice, {
     signal: session,
+    canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id, user_id),
     act: sub_type === "increase" && self_id !== user_id
       ? signal => calls.kickGroupMember(send, group_id, user_id, signal) : undefined,
   });
@@ -362,7 +364,7 @@ async function dispatchMessage(
   } : undefined;
   const quotedId = oneBotMessageId(incoming.reply_id);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
-  await dispatch({
+  const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
     ...messageFields,
@@ -487,7 +489,15 @@ async function dispatchMessage(
       }
       return send({ action: "send_msg", params });
     },
-  });
+  };
+  if (likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous") {
+    bindGroupModeration(inbound, {
+      signal: likeSession,
+      canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, target.group_id, id, true, active), selfId, userId),
+      act: active => calls.kickGroupMember(send, target.group_id, userId, active),
+    });
+  }
+  await dispatch(inbound);
 }
 
 export function startOneBot(

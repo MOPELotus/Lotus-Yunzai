@@ -1,10 +1,11 @@
-import type { GroupNotice, GroupRequest } from "../messages.ts";
+import type { GroupNotice, GroupRequest, MessageEvent } from "../messages.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
 export type GroupMuteAction = (userId: number, seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
 export type GroupKickAction = (userId: number, block: boolean) => Promise<GroupMemberModerationResult>;
+export type GroupManageBlacklistAction = () => Promise<boolean>;
 
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
@@ -24,7 +25,10 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly mute: (userId: number, seconds: number) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
   readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
-}): { groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction } {
+}): {
+  groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
+  groupManageBlacklist: GroupManageBlacklistAction;
+} {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
     const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
@@ -71,21 +75,35 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (typeof block !== "boolean") return "rejected";
       return await protectedTarget(userId, true) ?? apply(() => kick(userId, block));
     },
+    async groupManageBlacklist() {
+      return active() && typeof await authorize() !== "string" && active();
+    },
   };
 }
 
 interface GroupModerationSession {
   readonly signal: AbortSignal;
-  readonly act?: (signal: AbortSignal) => Promise<GroupModerationResult>;
+  readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
+  readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
 }
 
-const sessions = new WeakMap<GroupNotice | GroupRequest, GroupModerationSession>();
+type GroupModerationEvent = GroupNotice | GroupRequest | MessageEvent;
+const sessions = new WeakMap<GroupModerationEvent, GroupModerationSession>();
 
-export function bindGroupModeration(event: GroupNotice | GroupRequest, session: GroupModerationSession): void {
+export function bindGroupModeration(event: GroupModerationEvent, session: GroupModerationSession): void {
   if (!session.signal.aborted) sessions.set(event, session);
 }
 
-export function groupModerationSession(event: GroupNotice | GroupRequest) {
+export function groupModerationSession(event: GroupModerationEvent) {
   const session = sessions.get(event);
   return session?.signal.aborted === false ? session : undefined;
+}
+
+export async function canModerateGroupSubject(
+  role: (userId: number) => Promise<Role | undefined>, bot: number, subject?: number,
+) {
+  if (bot === subject) return false;
+  const [botRole, subjectRole] = await Promise.all([role(bot), subject === undefined ? undefined : role(subject)]);
+  return (botRole === "owner" || botRole === "admin") &&
+    (subject === undefined || subjectRole === "member" || (botRole === "owner" && subjectRole === "admin"));
 }

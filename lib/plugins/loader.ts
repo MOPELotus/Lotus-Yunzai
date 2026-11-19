@@ -227,6 +227,7 @@ export async function loadPlugins(
       autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
       readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
       readonly profileLikeImage?: ProfileLikeImage;
+      registerManagedBlacklist?(policy: { blocked(userId: number): Promise<boolean> }): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;
         register(policy: GroupLeaveBlacklist): () => void;

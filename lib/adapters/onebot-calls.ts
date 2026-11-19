@@ -133,9 +133,9 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_whole_ban", { group_id, enable }, signal);
   }
 
-  declineGroupApplication(send: Send, flag: string, signal: AbortSignal) {
+  declineGroupApplication(send: Send, flag: string, signal: AbortSignal, reason: string) {
     return this.#moderateGroup(send, "set_group_add_request", {
-      flag, sub_type: "add", approve: false, reason: "主动退群被拉黑",
+      flag, sub_type: "add", approve: false, reason,
     }, signal);
   }
 

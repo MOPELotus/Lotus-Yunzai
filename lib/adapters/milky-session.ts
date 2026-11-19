@@ -2,7 +2,7 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, type GroupActionPolicy } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -86,6 +86,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted) return;
     if (event.post_type === "message") {
       event = { ...event, canManageProcess: positiveId(event.user_id) && isMaster(event.user_id) };
+      const { group_id, user_id } = event;
+      if (event.message_type === "group" && positiveId(group_id) && positiveId(user_id) && !event.attachmentOnly) {
+        bindGroupModeration(event, {
+          signal,
+          canModerate: () => canModerateGroupSubject(id => delegation.memberRole(group_id, id), account, user_id),
+          async act(active) { return (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status; },
+        });
+      }
     } else if (event.post_type === "notice" && event.notice_type === "friend") {
       event = { ...event, isMaster: isMaster(event.user_id) };
     }
@@ -281,10 +289,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           groupRequest = request;
           if (kind === "add") bindGroupModeration(request, {
             signal,
-            async act(active) {
+            canModerate: () => canModerateGroupSubject(id => delegation.memberRole(request.group_id, id), account),
+            async act(active, reason = "主动退群被拉黑") {
               if (active.aborted || signal.aborted) return "rejected";
               try {
-                return await groupReviews.review(account, request.flag, kind, false, "主动退群被拉黑",
+                return await groupReviews.review(account, request.flag, kind, false, reason,
                   (action, params) => call.confirmed(action, params, active)) ? "confirmed" : "rejected";
               } catch {
                 return "unknown";
@@ -357,6 +366,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const { group_id, user_id } = event;
       bindGroupModeration(event, {
         signal,
+        canModerate: () => canModerateGroupSubject(id => delegation.memberRole(group_id, id), account, user_id),
         act: event.sub_type === "increase" && user_id !== account
           ? async active => (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status
           : undefined,
