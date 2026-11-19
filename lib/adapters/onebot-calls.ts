@@ -137,6 +137,10 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_special_title", { group_id, user_id, special_title }, signal);
   }
 
+  setGroupAdmin(send: Send, group_id: number, user_id: number, enable: boolean, signal: AbortSignal) {
+    return this.#moderateGroup(send, "set_group_admin", { group_id, user_id, enable }, signal);
+  }
+
   declineGroupApplication(send: Send, flag: string, signal: AbortSignal, reason: string) {
     return this.#moderateGroup(send, "set_group_add_request", {
       flag, sub_type: "add", approve: false, reason,

@@ -9,6 +9,7 @@ export type GroupManageBlacklistAction = () => Promise<boolean>;
 export type GroupSpecialTitleAction = (
   userId: number, title: string, verify?: () => Promise<boolean>,
 ) => Promise<GroupMemberModerationResult>;
+export type GroupSetAdminAction = (userId: number, enabled: boolean) => Promise<GroupMemberModerationResult>;
 
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
@@ -35,7 +36,7 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
-export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title }: {
+export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -47,10 +48,12 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
   readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
   readonly title: (userId: number, text: string) => Promise<GroupModerationResult>;
+  readonly setAdmin: (userId: number, enabled: boolean) => Promise<GroupModerationResult>;
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
   groupSetSpecialTitle: GroupSpecialTitleAction;
+  groupSetAdmin: GroupSetAdminAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -86,6 +89,16 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     return typeof authority !== "string" && (param === "list" || authority.master) && active();
   }
 
+  async function groupOwnerTarget(userId: number, needsMaster: boolean) {
+    if (!active() || (needsMaster && !isMaster())) return "unavailable" as const;
+    if (userId === bot) return "protected" as const;
+    const [actorRole, botRole, otherRole] = await Promise.all([role(actor), role(bot), userId === actor ? undefined : role(userId)])
+      .catch(() => []);
+    const targetRole = userId === actor ? actorRole : otherRole;
+    if (!active() || !actorRole || !targetRole || botRole !== "owner" || (needsMaster && !isMaster())) return "unavailable" as const;
+    return targetRole === "owner" ? "protected" as const : targetRole;
+  }
+
   return {
     async groupMute(userId, seconds) {
       if (!active()) return "unavailable";
@@ -107,13 +120,9 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     groupManageBlacklist: () => canManage("list"),
     groupManageWhitelistAutoUnmute: () => canManage("automatic"),
     async groupSetSpecialTitle(userId, text, verify) {
-      if (!active()) return "unavailable";
       if (!Number.isSafeInteger(userId) || userId <= 0 || typeof text !== "string") return "rejected";
-      if (userId === bot) return "protected";
-      const [actorRole, botRole, targetRole] = await Promise.all([role(actor), role(bot), userId === actor ? undefined : role(userId)])
-        .catch(() => []);
-      if (!active() || !actorRole || botRole !== "owner" || (userId !== actor && (!targetRole || !isMaster()))) return "unavailable";
-      if (targetRole === "owner") return "protected";
+      const target = await groupOwnerTarget(userId, userId !== actor);
+      if (target === "unavailable" || target === "protected") return target;
       if (verify) {
         const permitted = await verify().catch(() => undefined);
         if (permitted === undefined) return "unavailable";
@@ -121,6 +130,14 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       }
       if (userId !== actor && !isMaster()) return "unavailable";
       return apply(() => title(userId, text));
+    },
+    async groupSetAdmin(userId, enabled) {
+      if (!Number.isSafeInteger(userId) || userId <= 0 || typeof enabled !== "boolean") return "rejected";
+      const target = await groupOwnerTarget(userId, true);
+      if (target === "unavailable" || target === "protected") return target;
+      if (!isMaster() || !active()) return "unavailable";
+      if ((target === "admin") === enabled) return "confirmed";
+      return apply(() => setAdmin(userId, enabled));
     },
   };
 }

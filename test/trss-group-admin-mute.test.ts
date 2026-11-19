@@ -42,6 +42,7 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
     async wholeMute() { sent++; return "confirmed"; },
     async kick() { sent++; return "confirmed"; },
     async title() { sent++; return "confirmed"; },
+    async setAdmin() { sent++; return "confirmed"; },
   });
   const held = actions.groupMute(42, 300);
   active = false;
@@ -53,6 +54,14 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
 test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
+  const rosterChanges = new Map<string, "admin" | "member">();
+  function member(params: Call["params"]) {
+    const baseline = liveMember(params);
+    return { ...baseline, role: rosterChanges.get(`${params.group_id}:${params.user_id}`) ?? baseline.role };
+  }
+  function updateRole(params: Call["params"], enabled: unknown) {
+    rosterChanges.set(`${params.group_id}:${params.user_id}`, enabled === true ? "admin" : "member");
+  }
   const milky = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request) {
@@ -62,9 +71,11 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       milkyCalls.push({ action, params });
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
           (action === "kick_group_member" && params.user_id === 44) ||
+          (action === "set_group_member_admin" && params.user_id === 60044) ||
           (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
+      if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
-        { member: liveMember(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length } : {};
+        { member: member(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length } : {};
       return Response.json({ status: "ok", retcode: 0, data });
     },
   });
@@ -112,8 +123,9 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
       oneBotCalls.push({ action, params });
+      if (action === "set_group_admin") updateRole(params, params.enable);
       if (echo) client.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: action === "get_group_member_info" ?
-        liveMember(params) : action === "send_msg" ? { message_id: oneBotCalls.length } : {} }));
+        member(params) : action === "send_msg" ? { message_id: oneBotCalls.length } : {} }));
     };
     await waitUntil(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 测试连接未就绪。");
 
@@ -377,6 +389,30 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     const titles = JSON.parse(await readFile(join(root, "data/group/banned-words/79.json"), "utf8"));
     expect(titles).toEqual({ ...JSON.parse(testRules), TitleBannedWords: ["云游"], TitleFilterModeChange: 1 });
     expect(await readFile(join(legacyRules, "79.json"), "utf8")).toBe(testRules);
+
+    const promote = oneBotMessage([text("#设置管理"), at(42), at(60042), at(42)], 52, 82);
+    send(promote);
+    await titleReply("60042");
+    send(promote);
+    const priorAdminReplies = oneBotReplies().length;
+    send(oneBotMessage("#设置管理60042", 52, 82));
+    await oneBotReply(priorAdminReplies + 1);
+    send(oneBotMessage("#取消管理60042", 51, 82));
+    await oneBotReply(priorAdminReplies + 2);
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_admin").map(({ params }) => params)).toEqual([
+      { group_id: 82, user_id: 42, enable: true }, { group_id: 82, user_id: 60042, enable: true },
+    ]);
+
+    const unknownAdmin = milkyTitle("#设置管理60044");
+    await webhook("message_receive", unknownAdmin);
+    expect(JSON.stringify((await milkyReply(23)).params.message)).toContain("未确认");
+    await webhook("message_receive", unknownAdmin);
+    const demote = milkyTitle("#取消管理");
+    await webhook("message_receive", { ...demote, segments: [...demote.segments, { type: "mention", data: { user_id: 53 } }] });
+    expect(JSON.stringify((await milkyReply(24)).params.message)).toContain("53");
+    expect(milkyCalls.filter(({ action }) => action === "set_group_member_admin").map(({ params }) => params)).toEqual([
+      { group_id: 79, user_id: 60044, is_set: true }, { group_id: 79, user_id: 53, is_set: false },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

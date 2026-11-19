@@ -410,6 +410,7 @@ async function dispatchMessage(
       wholeMute: enabled => calls.setGroupWholeMute(send, target.group_id, enabled, likeSession),
       kick: (id, block) => calls.kickGroupMember(send, target.group_id, id, likeSession, block),
       title: (id, text) => calls.setGroupSpecialTitle(send, target.group_id, id, text, likeSession),
+      setAdmin: (id, enabled) => calls.setGroupAdmin(send, target.group_id, id, enabled, likeSession),
     })),
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),

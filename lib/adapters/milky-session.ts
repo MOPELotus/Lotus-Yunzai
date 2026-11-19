@@ -367,6 +367,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         async title(user_id, special_title) {
           return (await call.confirmed("set_group_member_special_title", { group_id: groupId, user_id, special_title }, signal)).status;
         },
+        async setAdmin(user_id, is_set) {
+          return (await call.confirmed("set_group_member_admin", { group_id: groupId, user_id, is_set }, signal)).status;
+        },
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
