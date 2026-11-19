@@ -170,6 +170,12 @@ function applyCheckinSettings(document: Record<string, unknown>, change: Profile
   }
 }
 
+function updateCloudGame(document: Record<string, unknown>, game: "genshin" | "zzz", fields: Record<string, unknown>) {
+  const cloud = record(document.cloud_games);
+  const cn = record(cloud.cn);
+  return { ...document, cloud_games: { ...cloud, cn: { ...cn, [game]: { ...record(cn[game]), ...fields } } } };
+}
+
 export interface GameRole {
   readonly uid: string;
   readonly region: string;
@@ -777,6 +783,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           verified_account_id: verified.accountId, verified_realm: verified.realm,
           ...(verified.activityCookie && { verified_activity_cookie: verified.activityCookie }),
         } } };
+      }, signal);
+    },
+    async setCloudGameEnabled(qq: string, id: number, expectedRevision: string, game: "genshin" | "zzz", enabled: boolean) {
+      if ((game !== "genshin" && game !== "zzz") || typeof enabled !== "boolean") invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        return updateCloudGame(document, game, { enable: enabled });
+      });
+    },
+    async saveCloudGenshinToken(qq: string, id: number, expectedRevision: string, token: string, signal?: AbortSignal) {
+      if (typeof token !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(token)) invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        return updateCloudGame(document, "genshin", { token, enable: true });
       }, signal);
     },
     async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {

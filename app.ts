@@ -5,6 +5,7 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { bbsCheckinForums, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
+import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
@@ -523,8 +524,9 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
-    const protectedModule = isHoYoLabCookieInput(event.msg) || isHoYoLabCookieInput(event.raw_message)
-      ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
+    const originalMessage = [event.msg, event.raw_message];
+    const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
+      : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
       : isDeviceBindingInput(event.msg) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
@@ -688,14 +690,18 @@ if (import.meta.main) {
       return renderStatusCard(...args);
     });
     commands.registerModule(accounts);
+    const viewProfile = (id: number, { message_type, self_id, user_id, group_id, isMaster }: CommandContext) =>
+      accounts.commands[`#配置${id === 1 ? "" : id}`]!("", { message_type, self_id, user_id, group_id, isMaster });
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context)), "[Lotus-Plugin] Device");
+      viewProfile), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
-    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, {
-      viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile }), "[Lotus-Plugin] Profile Settings");
+    commands.registerModule(cloudProfileCommands({
+      signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
+      saveToken: (qq, id, revision, _game, token, signal) => checkinProfiles.saveCloudGenshinToken(qq, id, revision, token, signal),
     }), "[Lotus-Plugin] Profile Settings");
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit });
@@ -758,7 +764,7 @@ if (import.meta.main) {
         checkinRuntime = runtime;
         commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
-          viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+          viewProfile,
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinGroupRegistrationCommands({
           profiles: checkinProfiles, signal: lifecycle.signal, canRegister: canRegisterGroup,
@@ -771,7 +777,7 @@ if (import.meta.main) {
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinProfileCommands(profileDirectory, lifecycle.signal, {
           reconcilePlans: runtime.reconcileExistingPlans,
-          viewProfile: (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context),
+          viewProfile,
         }), "[Lotus-Plugin] Profile Settings");
         commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal,
           { canGenerate, canRunDue }), "[Lotus-Plugin] Scheduler");
