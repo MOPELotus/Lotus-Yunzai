@@ -3,6 +3,7 @@ import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
+import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
@@ -13,6 +14,8 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 export { createCredentialExchange };
 export { HoyoRequestError };
 export { GameRecordRequestError } from "./game-record.ts";
+export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
+  GenshinBackpackSnapshot } from "./genshin-backpack.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
@@ -294,6 +297,9 @@ export function createHoyoClient(
     },
     fetchGenshinWorldBoss(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readGenshinWorldBoss, isGameRecordCookieExpired);
+    },
+    fetchGenshinBackpack(source: ProfileRequestContext, options: GenshinBackpackOptions) {
+      return readForProfile(source, options, readGenshinBackpack, isGameRecordCookieExpired);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
