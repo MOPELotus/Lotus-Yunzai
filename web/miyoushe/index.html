@@ -41,6 +41,7 @@
           <nav class="tabs" aria-label="页面">
             <button id="tab-overview" type="button" aria-pressed="true">米游社总览</button>
             <button id="tab-shop" type="button" aria-pressed="false">商品商城</button>
+            <button id="tab-trackers" type="button" aria-pressed="false">持续追踪</button>
             <button id="tab-plans" type="button" aria-pressed="false">兑换记录</button>
           </nav>
           <button id="refresh" class="secondary" type="button">刷新数据</button>
@@ -85,6 +86,13 @@
           <p id="plans-note" class="muted" role="status"></p>
           <div id="shop-plans" aria-label="兑换记录"></div>
         </div>
+        <div id="trackers-view" hidden>
+          <div class="section-head">
+            <p id="trackers-note" class="muted" role="status"></p>
+            <button id="tracker-open" class="secondary" type="button" disabled>新增规则</button>
+          </div>
+          <div id="shop-trackers" aria-label="持续追踪规则"></div>
+        </div>
       </section>
     </main>
   </div>
@@ -94,6 +102,30 @@
       <button id="shop-close" type="button" class="text-button" aria-label="关闭商品详情">关闭</button>
     </header>
     <div id="shop-detail-content" aria-live="polite"></div>
+  </dialog>
+  <dialog id="tracker-dialog" aria-labelledby="tracker-title">
+    <header class="section-head">
+      <h2 id="tracker-title">新增追踪规则</h2>
+      <button id="tracker-close" type="button" class="text-button">关闭</button>
+    </header>
+    <form id="tracker-form" class="tracker-form">
+      <label>追踪方式 <select name="mode"><option value="category">某类商品</option><option value="goods">指定商品</option></select></label>
+      <label>游戏分区 <select name="game"></select></label>
+      <label>商品类型 <select name="itemType"><option value="2">游戏道具</option><option value="1">实物周边</option></select></label>
+      <label>兑换目标 <select name="destination" required></select></label>
+      <label id="tracker-keywords">名称关键词 <input name="keywords" placeholder="以逗号分隔，留空追踪此类全部"></label>
+      <label id="tracker-goods" hidden>商品编号 <input name="goodsIds" placeholder="以逗号分隔"></label>
+      <label id="tracker-follow" hidden><input name="followSameName" type="checkbox" checked> 跟随同名新商品</label>
+      <label>单件价格上限 <input name="maxPrice" type="number" min="0" step="1" placeholder="不限"></label>
+      <label>累计预算 <input name="spendLimit" type="number" min="0" step="1" placeholder="不限"></label>
+      <label>轮询间隔（分钟） <input name="pollMinutes" type="number" min="1" max="1440" value="30" required></label>
+      <label>开放前核验（秒） <input name="leadSeconds" type="number" min="0" max="30" value="5" required></label>
+      <label>开放期间检查间隔（毫秒） <input name="intervalMs" type="number" min="250" max="5000" value="500" required></label>
+      <label class="tracker-consent reservation-confirm"><input name="confirmed" type="checkbox" required>
+        使用当前档案的米游币持续兑换匹配商品，直到规则暂停或累计预算用完。</label>
+      <p id="tracker-form-note" class="muted" role="status"></p>
+      <button id="tracker-submit" type="submit" class="reservation-submit" disabled>开启追踪</button>
+    </form>
   </dialog>
 </body>
 </html>

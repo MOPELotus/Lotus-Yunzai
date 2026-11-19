@@ -84,7 +84,9 @@ function product(value: unknown, now: number) {
   else if (opensAt !== null) status = "scheduled";
   else if (stock === 0 && !missingStart) status = "sold_out";
   return {
-    id, name, price, icon: icon(raw.icon), type: count(raw.type), gameBiz: text(raw.game_biz, 32),
+    id, name, price, icon: icon(raw.icon), type: count(raw.type), gameBiz: text(raw.game_biz, 32), game: text(raw.game, 32),
+    limitCycle: text(raw.account_cycle_type, 32), roleCycle: text(raw.role_cycle_type, 32),
+    saleStartsAt: milliseconds(raw.sale_start_time), startsAt: milliseconds(raw.start),
     stock, unlimited, nextStock: count(raw.next_num), opensAt: status === "scheduled" ? opensAt : null, endsAt, status,
     serverNow, missingStart,
     accountLimit: raw.account_cycle_type === "not_limit" ? null : count(raw.account_cycle_limit),
@@ -128,6 +130,17 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
   }
 
   return {
+    async trackingRoles(target: MiyousheOverviewTarget, gameBiz: string, signal?: AbortSignal, verifyLogin?: () => Promise<void>) {
+      const game = gameKeys.get(gameBiz);
+      if (!game) return [];
+      await verifyLogin?.();
+      const account = await profiles.accountContext(target.qq, target.profileId);
+      await verifyLogin?.();
+      const catalog = await roleClient.fetchRoleCatalog(account, signal);
+      await verifyLogin?.();
+      return catalog[game].filter(role => role.gameBiz === gameBiz && /^[a-z0-9_]{1,32}$/iu.test(role.region))
+        .map(role => ({ uid: role.uid, region: role.region, gameBiz, nickname: redacted(role.nickname, account) }));
+    },
     async list(_target: MiyousheOverviewTarget, query: URLSearchParams, signal?: AbortSignal,
       verifyLogin?: () => Promise<void>) {
       const { page, game } = filters(query);

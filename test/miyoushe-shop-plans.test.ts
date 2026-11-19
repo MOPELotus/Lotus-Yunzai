@@ -22,6 +22,7 @@ async function fixture(run: (data: {
     await writeFile(join(root, `${qq}${id === 1 ? "" : `-${id}`}.yaml`), Bun.YAML.stringify({
       version: 1, user: { qq }, profile: { id }, account: {
         stuid: account, ltuid: account, cookie: "fake-cookie-for-tests", stoken: "fake-token-for-tests", updated_at: "2026-01-01",
+        current_uid: { gs: uid },
       }, device: { id: "fake-device-id", fp },
     }));
   }
@@ -222,5 +223,99 @@ test("官方改期后更新预约，取消核验中的计划不会提交，错�
     await service.scan();
     expect((await service.list(target)).plans.find(item => item.id === missed.id)).toMatchObject({ status: "missed", attempts: 0 });
     expect(submits).toBe(0);
+  });
+});
+
+const trackedGood = { ...mockGood, game: "hk4e", limitCycle: "day" };
+const trackingBody = { confirmed: true, game: "hk4e", itemType: 2, mode: "goods", goodsIds: ["27"], keywords: [],
+  followSameName: true, maxPrice: 300, spendLimit: 600, addressId: "", pollMinutes: 1, leadSeconds: 5, intervalMs: 500 };
+
+test("持续追踪按官方周期、同名选项和累计预算兑换，并在并行实例中只提交一次", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let now = startTime;
+    let favorite: MiyousheShopInspection["good"] = trackedGood;
+    const submits: string[] = [];
+    const options = { file, profileDirectory, now: () => now,
+      inspect: async (_target: unknown, id: string) => inspection({ ...favorite, id }),
+      tracking: { async catalog() { return [favorite, { ...favorite, id: "28", name: "其他商品" }]; },
+        async destinations() { return { roles: [planRole] }; } },
+      async submit(plan: { goodsId: string }) { submits.push(plan.goodsId); return "succeeded" as const; },
+    };
+    const service = createMiyousheShopPlans(options);
+    const parallel = createMiyousheShopPlans(options);
+    await expect(service.createTracker(target, { ...trackingBody, confirmed: false })).rejects.toMatchObject({ status: 400 });
+    const rule = await service.createTracker(target, trackingBody);
+    await expect(parallel.createTracker(target, trackingBody)).rejects.toMatchObject({ status: 409 });
+    await expect(parallel.setTracker(other, rule.id, false, undefined)).rejects.toMatchObject({ status: 404 });
+    expect((await service.listTrackers(other)).trackers).toEqual([]);
+    await Promise.all([service.scan(), parallel.scan()]);
+    expect(submits).toEqual(["27"]);
+    now += 60_000;
+    await service.scan();
+    expect(submits).toEqual(["27"]);
+    now += 86_400_000;
+    favorite = { ...trackedGood, id: "31" };
+    await service.scan();
+    expect(submits).toEqual(["27", "31"]);
+    now += 86_400_000;
+    await service.scan();
+    expect(submits).toEqual(["27", "31"]);
+    expect((await service.listTrackers(target)).trackers[0]).toMatchObject({ spent: 600, held: 0, successes: 2 });
+  });
+});
+
+test("旧规则仍显示预算和历史，未确认或遗留提交待核对时不兑换", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let posts = 0, polls = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(trackedGood),
+      tracking: { async catalog() { polls++; return [trackedGood]; }, async destinations() { return { roles: [planRole] }; } },
+      async submit() { posts++; return "succeeded" as const; },
+    };
+    const service = createMiyousheShopPlans(options);
+    await expect(service.cancel(target, "123456789abc")).rejects.toMatchObject({ status: 404 });
+    const old = { ...target, id: "aaaaaaaaaaaa", accountId: "123", botId: "7", mode: "goods", game: "hk4e", itemType: 2,
+      goodsIds: ["27"], names: [trackedGood.name], keywords: [], followSameName: true, maxPrice: 300, spendLimit: 600,
+      role: planRole, gameBiz: "hk4e_cn", addressId: "", addressLabel: "", pollMs: 1000, leadMs: 5000,
+      intervalMs: 500, afterMs: 83, enabled: true, createdAt: startTime, message: "旧记录", extra: "保留" };
+    const oldPlan = { ...target, id: "123456789abc", accountId: "123", botId: "7", trackingId: old.id, goodsId: "27",
+      goodsName: trackedGood.name, gameBiz: "hk4e_cn", type: 2, price: 300, role: planRole, addressId: "", addressLabel: "",
+      immediate: false, opensAt: startTime, createdAt: startTime, status: "submitting", message: "旧记录", attempts: 1 };
+    await writeFile(file, JSON.stringify({ version: 2, plans: [oldPlan], trackers: [old] }));
+    await service.scan();
+    expect(posts).toBe(0);
+    expect(polls).toBe(0);
+    expect((await service.listTrackers(target)).trackers[0]).toMatchObject({
+      id: old.id, needsConfirmation: true, enabled: false, held: 300, pollMs: 1_800_000,
+    });
+    await expect(service.setTracker(target, old.id, true, false)).rejects.toMatchObject({ status: 400 });
+    await expect(service.setTracker(target, old.id, true, true)).rejects.toMatchObject({ status: 409 });
+    await service.resolve(target, oldPlan.id, true);
+    expect(await service.setTracker(target, old.id, true, true)).toMatchObject({ enabled: true, spent: 300 });
+    await service.scan();
+    expect(polls).toBe(1);
+    expect(posts).toBe(0);
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    expect(saved.trackers[0]).toMatchObject({ pollUnit: "minutes", pollMs: 1_800_000, extra: "保留" });
+    expect(saved.trackers[0]).not.toHaveProperty("afterMs");
+  });
+});
+
+test("追踪提交结果不明后暂停账号规则，人工确认前重启不会继续换币", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let now = startTime, posts = 0;
+    const options = { file, profileDirectory, now: () => now, inspect: () => inspection(trackedGood),
+      tracking: { async catalog() { return [trackedGood]; }, async destinations() { return { roles: [planRole] }; } },
+      async submit() { posts++; return "unknown" as const; },
+    };
+    const service = createMiyousheShopPlans(options);
+    const rule = await service.createTracker(target, trackingBody);
+    await service.scan();
+    expect(posts).toBe(1);
+    const restarted = createMiyousheShopPlans(options);
+    now += 86_400_000;
+    await restarted.scan();
+    expect(posts).toBe(1);
+    expect((await restarted.listTrackers(target)).trackers[0]).toMatchObject({ enabled: false, held: 300 });
+    await expect(restarted.setTracker(target, rule.id, true, true)).rejects.toMatchObject({ status: 409 });
   });
 });

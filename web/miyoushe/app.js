@@ -20,6 +20,8 @@ let tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
 const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+const trackers = { generation: 0, targets: null, loading: false };
+const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿" };
 const planStatus = {
   scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
   failed: "未成功", cancelled: "已取消", missed: "已错过", unknown: "结果待确认",
@@ -126,7 +128,7 @@ function showOverview(data) {
 
 function switchTab(next) {
   tab = next;
-  for (const name of ["overview", "shop", "plans"]) {
+  for (const name of ["overview", "shop", "trackers", "plans"]) {
     get(name + "-view").hidden = name !== tab;
     get("tab-" + name).setAttribute("aria-pressed", String(name === tab));
   }
@@ -153,6 +155,13 @@ function resetShop() {
   plans.intents.clear();
   get("plans-note").textContent = "";
   get("shop-plans").replaceChildren();
+  trackers.generation++;
+  trackers.targets?.abort();
+  trackers.loading = false;
+  get("tracker-dialog").close();
+  get("tracker-open").disabled = true;
+  get("trackers-note").textContent = "";
+  get("shop-trackers").replaceChildren();
 }
 
 function shopTime(milliseconds) {
@@ -439,6 +448,137 @@ async function planFailure(response) {
   return "暂时无法完成操作，请稍后重试。";
 }
 
+async function trackingResponse(response) {
+  if (response.status === 401) {
+    showLogin(`登录已失效。${loginHelp}`, true);
+    throw new Error("登录已失效。");
+  }
+  if (!response.ok) throw new Error(await planFailure(response));
+  return response.json();
+}
+
+async function loadTrackers() {
+  if (trackers.loading) return;
+  const generation = trackers.generation;
+  const note = get("trackers-note");
+  trackers.loading = true;
+  try {
+    const data = await trackingResponse(await request("api/trackers"));
+    if (trackers.generation !== generation) return;
+    get("tracker-open").disabled = !data.canTrack;
+    note.textContent = data.canTrack ? "" : "暂时无法启动追踪规则。";
+    const rows = data.trackers.map(rule => {
+      const row = add("article", "plan-row", "");
+      const copy = add("div", "plan-copy", "");
+      const actions = add("div", "plan-actions", "");
+      const group = trackGames[rule.game] || rule.game;
+      const item = rule.itemType === 1 ? "实物周边" : "游戏道具";
+      const selection = rule.mode === "goods" ? (rule.names.length ? rule.names : rule.goodsIds).join("、")
+        : rule.keywords.join("、") || "全部商品";
+      const limit = rule.spendLimit === null ? "不限" : point(rule.spendLimit);
+      const destination = rule.role ? `UID ${rule.role.uid} · ${rule.role.region}` : rule.addressLabel;
+      copy.append(add("h3", "", `${group} · ${item}`), add("p", "", selection),
+        add("p", "muted", `${destination} · 已用 ${point(rule.spent)} / ${limit} · 待结算 ${point(rule.held)}`),
+        add("p", "muted", `${rule.enabled ? "追踪中" : "已暂停"} · ${rule.message}`));
+      if (rule.enabled && Number.isSafeInteger(rule.nextOpenAt)) copy.append(add("p", "muted", `下次开放 ${shopTime(rule.nextOpenAt)}`));
+      if (rule.enabled || data.canTrack) {
+        const toggle = add("button", "secondary", rule.enabled ? "暂停" : rule.needsConfirmation ? "确认并恢复" : "恢复");
+        toggle.type = "button";
+        toggle.addEventListener("click", async () => {
+          const action = rule.enabled ? "pause" : "resume";
+          if (!rule.enabled && !window.confirm(`确认使用当前档案的米游币继续兑换 ${group} · ${selection}？累计预算 ${limit}。`)) return;
+          toggle.disabled = true;
+          try {
+            await trackingResponse(await postPlan(`api/trackers/${rule.id}/${action}`, { confirmed: !rule.enabled }));
+            if (trackers.generation === generation) await loadTrackers();
+          } catch (error) {
+            if (trackers.generation === generation) note.textContent = error.message;
+          } finally { toggle.disabled = false; }
+        });
+        actions.append(toggle);
+      }
+      row.append(copy, actions);
+      return row;
+    });
+    get("shop-trackers").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无追踪规则。")]));
+  } catch (error) {
+    if (trackers.generation === generation) note.textContent = error.message;
+  } finally {
+    if (trackers.generation === generation) trackers.loading = false;
+  }
+}
+
+function trackerMode() {
+  const form = get("tracker-form").elements;
+  const specific = form.mode.value === "goods";
+  get("tracker-keywords").hidden = specific;
+  get("tracker-goods").hidden = !specific;
+  get("tracker-follow").hidden = !specific;
+  form.goodsIds.required = specific;
+}
+
+async function loadTrackerTargets() {
+  trackers.targets?.abort();
+  const controller = trackers.targets = new AbortController();
+  const form = get("tracker-form").elements;
+  const note = get("tracker-form-note");
+  const submit = get("tracker-submit");
+  const query = new URLSearchParams({ game: form.game.value, itemType: form.itemType.value });
+  submit.disabled = true;
+  form.confirmed.checked = false;
+  form.destination.replaceChildren();
+  note.textContent = "正在核验当前档案的兑换目标…";
+  try {
+    const data = await trackingResponse(await request("api/tracking-targets?" + query, { signal: controller.signal }));
+    if (controller.signal.aborted) return;
+    const options = data.items.map(item => data.type === "role" ? new Option(`UID ${item.uid} · ${item.region}`, item.uid)
+      : new Option(item.label || "已脱敏地址", item.id));
+    form.destination.replaceChildren(...options);
+    submit.disabled = !options.length;
+    note.textContent = options.length ? "" : "当前档案没有可用的兑换目标。";
+  } catch (error) {
+    if (!controller.signal.aborted) note.textContent = error.message;
+  }
+}
+
+function openTracker() {
+  const form = get("tracker-form");
+  form.reset();
+  form.elements.game.replaceChildren(...Object.entries(trackGames).map(([key, name]) => new Option(name, key)));
+  if (trackGames[shop.game]) form.elements.game.value = shop.game;
+  trackerMode();
+  get("tracker-dialog").showModal();
+  void loadTrackerTargets();
+}
+
+async function saveTracker(event) {
+  event.preventDefault();
+  const submit = get("tracker-submit");
+  if (submit.disabled) return;
+  const form = event.target.elements;
+  const generation = trackers.generation;
+  const split = field => field.value.split(/[,，]/u).map(item => item.trim()).filter(Boolean);
+  const amount = field => field.value === "" ? null : Number(field.value);
+  submit.disabled = true;
+  try {
+    await trackingResponse(await postPlan("api/trackers", {
+      confirmed: form.confirmed.checked, game: form.game.value, itemType: Number(form.itemType.value), mode: form.mode.value,
+      goodsIds: form.mode.value === "goods" ? split(form.goodsIds) : [],
+      keywords: form.mode.value === "category" ? split(form.keywords) : [],
+      followSameName: form.followSameName.checked, addressId: form.itemType.value === "1" ? form.destination.value : "",
+      maxPrice: amount(form.maxPrice), spendLimit: amount(form.spendLimit),
+      pollMinutes: Number(form.pollMinutes.value), leadSeconds: Number(form.leadSeconds.value), intervalMs: Number(form.intervalMs.value),
+    }));
+    if (generation !== trackers.generation) return;
+    get("tracker-dialog").close();
+    await loadTrackers();
+  } catch (error) {
+    if (generation === trackers.generation) get("tracker-form-note").textContent = error.message;
+  } finally {
+    if (generation === trackers.generation && get("tracker-dialog").open) submit.disabled = false;
+  }
+}
+
 async function changePlan(id, action, body) {
   const scope = plans.scope;
   plans.actions.add(id);
@@ -659,6 +799,7 @@ async function logout() {
 
 get("refresh").addEventListener("click", () => {
   if (tab === "shop") void loadCatalog();
+  else if (tab === "trackers") void loadTrackers();
   else if (tab === "plans") void loadPlans();
   else void refresh();
 });
@@ -669,6 +810,16 @@ get("tab-shop").addEventListener("click", () => {
   switchTab("shop");
   if (!shop.data && !shop.catalogRequest) void loadCatalog();
 });
+get("tab-trackers").addEventListener("click", () => {
+  switchTab("trackers");
+  void loadTrackers();
+});
+get("tracker-open").addEventListener("click", openTracker);
+get("tracker-close").addEventListener("click", () => get("tracker-dialog").close());
+get("tracker-dialog").addEventListener("close", () => trackers.targets?.abort());
+get("tracker-form").elements.mode.addEventListener("change", trackerMode);
+for (const name of ["game", "itemType"]) get("tracker-form").elements[name].addEventListener("change", () => void loadTrackerTargets());
+get("tracker-form").addEventListener("submit", event => void saveTracker(event));
 get("tab-plans").addEventListener("click", () => {
   switchTab("plans");
   void loadPlans();
@@ -688,6 +839,9 @@ setInterval(() => {
   if (!get("dashboard").hidden) get("clock").textContent = clock.format();
   if (tab === "shop") tickShop();
 }, 1000);
+setInterval(() => {
+  if (tab === "trackers" && !document.hidden && !get("tracker-dialog").open) void loadTrackers();
+}, 15_000);
 addEventListener("pageshow", event => {
   if (event.persisted) {
     showLogin("正在读取当前档案…");

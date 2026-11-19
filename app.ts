@@ -73,6 +73,7 @@ import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
 import { createMiyousheWeb, isMiyousheWebCommand, miyousheWebSettings } from "./lib/miyoushe-web.ts";
 import { createMiyousheShopCatalog } from "./lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans, MiyousheShopPlanError } from "./lib/miyoushe-shop-plans.ts";
+import { trackingGames } from "./lib/miyoushe-shop-tracking.ts";
 import { createCommandDelegation } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
@@ -785,6 +786,24 @@ if (import.meta.main) {
       const shopClient = createProfileHoyoClient(checkinProfiles);
       shopPlans = createMiyousheShopPlans({
         file: fileURLToPath(new URL("data/coinShop/plans.json", root)), profileDirectory,
+        tracking: {
+          async catalog(target, game, signal, verifyBinding) {
+            const result = [];
+            for (let page = 1; page <= 100; page++) {
+              signal?.throwIfAborted();
+              const catalogPage = await catalog.list(target, new URLSearchParams({ game, page: String(page) }), signal, verifyBinding);
+              result.push(...catalogPage.goods);
+              if (page >= catalogPage.totalPages) return result;
+            }
+            return result;
+          },
+          async destinations(target, game, itemType, signal, verifyBinding) {
+            if (itemType === 2) return { roles: await catalog.trackingRoles(target, trackingGames[game], signal, verifyBinding) };
+            await verifyBinding?.();
+            const account = await checkinProfiles.accountContext(target.qq, target.profileId);
+            return { addresses: await shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding }) };
+          },
+        },
         async inspect(target, goodsId, signal, verifyBinding) {
           await verifyBinding?.();
           const { good, roles } = await catalog.detail(target, goodsId, signal, verifyBinding);

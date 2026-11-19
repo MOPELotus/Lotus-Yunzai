@@ -4,9 +4,11 @@ import { mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createProfileStore } from "@lotus-yunzai/account";
-import type { MiyousheShopExchangeResult } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
+import { MiyousheExchangeError, type MiyousheShopExchangeResult } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import { lockFile } from "./file-lock.ts";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
+import { asTrackerRecord, confirmedTracker, matchesTrackingGood, readTrackingInput, trackingCycle, trackingGame, trackingGames,
+  trackingProfileGames, trackingRule, type ShopTracker, type TrackingGame, type TrackingGood, type TrackingRole } from "./miyoushe-shop-tracking.ts";
 
 const planId = /^[a-f0-9]{12}$/u;
 const numericId = /^[1-9]\d{0,19}$/u;
@@ -36,6 +38,17 @@ const details = {
   verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
   "rate-limited": "米游社商城请求频繁，请稍后重新预约。",
 } as const;
+const trackerMessages = {
+  start: "持续追踪已开启，等待符合条件的库存及场次。",
+  resume: "持续追踪已恢复，等待符合条件的库存及场次。",
+  pause: "持续追踪已暂停。",
+  booked: "已预约匹配商品，等待官方开放。",
+  watching: "等待符合条件的库存及场次。",
+  retry: "暂时无法核验官方商品状态，将在下次轮询重试。",
+  changed: "档案绑定已变更，请重新建立追踪。",
+  unknown: "有兑换结果待确认，请先核对米游社兑换记录。",
+} as const;
+const publicTrackerMessages = new Set<string>([...Object.values(trackerMessages), details.verification, details["rate-limited"], statusMessage.unknown]);
 const publicMessages = new Set([...Object.values(statusMessage), ...Object.values(details)]);
 type Status = keyof typeof statusMessage;
 type Role = { readonly uid: string; readonly region: string; readonly gameBiz: string };
@@ -55,6 +68,9 @@ export interface MiyousheShopPlan extends MiyousheOverviewTarget {
   readonly immediate: boolean;
   readonly createdAt: number;
   readonly trackingId?: string;
+  readonly cycleKey?: string;
+  readonly preStartMs?: number;
+  readonly retryIntervalMs?: number;
   readonly bindingStamp?: string;
   readonly intentId?: string;
   readonly intentFingerprint?: string;
@@ -66,11 +82,7 @@ export interface MiyousheShopPlan extends MiyousheOverviewTarget {
 }
 
 export interface MiyousheShopInspection {
-  readonly good: {
-    readonly id: string; readonly name: string; readonly type: number | null; readonly gameBiz: string;
-    readonly price: number; readonly status: "available" | "scheduled" | "ended" | "sold_out" | "unknown";
-    readonly opensAt: number | null;
-  };
+  readonly good: TrackingGood;
   readonly balance: number;
   readonly roles?: readonly { readonly uid: string; readonly region: string }[];
   readonly addresses?: readonly { readonly id: string; readonly label: string }[];
@@ -84,6 +96,14 @@ interface Options {
     verifyBinding?: () => Promise<void>) => Promise<MiyousheShopInspection>;
   readonly submit?: (plan: Readonly<MiyousheShopPlan>, signal?: AbortSignal,
     verifyBinding?: () => Promise<void>) => Promise<MiyousheShopExchangeResult>;
+  readonly tracking?: {
+    readonly catalog: (target: MiyousheOverviewTarget, game: TrackingGame, signal?: AbortSignal,
+      verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
+    readonly destinations: (target: MiyousheOverviewTarget, game: TrackingGame, itemType: 1 | 2, signal?: AbortSignal,
+      verifyBinding?: () => Promise<void>) => Promise<{
+        roles?: readonly TrackingRole[]; addresses?: readonly { readonly id: string; readonly label: string }[];
+      }>;
+  };
 }
 
 export class MiyousheShopPlanError extends Error {
@@ -215,13 +235,21 @@ function validateInspection({ good, balance }: MiyousheShopInspection, goodsId: 
   return { ...good, type: good.type as 1 | 2 };
 }
 
+function conflictsWithCycle(plan: MiyousheShopPlan, cycleKey: string | undefined) {
+  if (plan.status !== "succeeded") return false;
+  if (!plan.cycleKey || plan.cycleKey === cycleKey) return true;
+  // An older engine keyed some rules on the account's limit alone. Different
+  // period types cannot establish that its successful order is in a past period.
+  return !plan.bindingStamp && plan.cycleKey.split(":")[1] !== cycleKey?.split(":")[1];
+}
+
 function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   const plan = planId.test(id) && data.plans.find(item => item.id === id && item.qq === target.qq && item.profileId === target.profileId);
   if (!plan) throw new MiyousheShopPlanError(404, "未找到当前档案的兑换计划。");
   return plan;
 }
 
-export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now, inspect, submit }: Options) {
+export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now, inspect, submit, tracking }: Options) {
   const store = createStore(resolvePath(file));
   const profiles = createProfileStore(profileDirectory);
   type Verify = () => Promise<void>;
@@ -249,32 +277,231 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
     Object.assign(plan, { status, message, finishedAt: now() });
   }
 
-  async function update(id: string, expected: Status, edit: (plan: MiyousheShopPlan) => void) {
+  async function update(id: string, expected: Status, edit: (plan: MiyousheShopPlan, data: Store) => void) {
     return store.change(data => {
       const plan = data.plans.find(item => item.id === id && item.status === expected);
       if (!plan) return;
-      edit(plan);
+      edit(plan, data);
       return plan;
     });
+  }
+
+  function findTracker(data: Store, id: string) {
+    return (data.trackers ?? []).find(value => asTrackerRecord(value)?.id === id);
+  }
+
+  function trackerIsCurrent(data: Store, plan: MiyousheShopPlan) {
+    if (!plan.trackingId) return true;
+    const rule = trackingRule(findTracker(data, plan.trackingId));
+    return confirmedTracker(rule) && rule.enabled && rule.accountId === plan.accountId &&
+      rule.qq === plan.qq && rule.profileId === plan.profileId && rule.confirmation.bindingStamp === plan.bindingStamp &&
+      !data.plans.some(item => item.accountId === plan.accountId && (item.status === "unknown" ||
+        (item.id !== plan.id && item.goodsId === plan.goodsId && conflictsWithCycle(item, plan.cycleKey))));
+  }
+
+  function pauseTracks(data: Store, accountId: string, message: string, id?: string) {
+    for (const value of data.trackers ?? []) {
+      const rule = asTrackerRecord(value);
+      if (!rule || rule.accountId !== accountId || (id && rule.id !== id) || rule.enabled === false) continue;
+      rule.enabled = false;
+      rule.message = message;
+    }
+    for (const plan of data.plans) {
+      if (plan.accountId === accountId && plan.trackingId && (!id || plan.trackingId === id) &&
+          (plan.status === "scheduled" || plan.status === "preparing")) finish(plan, "cancelled");
+    }
   }
 
   async function recoverAccount(accountId: string) {
     await store.change(data => {
       const uncertain = new Set<string>();
+      let accountUncertain = false;
       for (const plan of data.plans) {
         if (plan.accountId !== accountId) continue;
         if (plan.status === "submitting") finish(plan, "unknown");
         if (plan.status === "preparing") Object.assign(plan, { status: "scheduled", message: statusMessage.scheduled });
-        if (plan.status === "unknown" && plan.trackingId) uncertain.add(plan.trackingId);
+        if (plan.status === "unknown") {
+          accountUncertain = true;
+          if (plan.trackingId) uncertain.add(plan.trackingId);
+        }
       }
       for (const value of data.trackers ?? []) {
         const rule = asRecord(value);
         if (typeof rule?.id === "string" && uncertain.has(rule.id) && rule.enabled !== false) {
           rule.enabled = false;
-          rule.message = "有兑换结果待确认，请先核对米游社兑换记录。";
+          rule.message = trackerMessages.unknown;
         }
       }
+      if (accountUncertain) pauseTracks(data, accountId, trackerMessages.unknown);
     });
+  }
+
+  function trackerUsage(data: Store, id: string) {
+    let spent = 0, held = 0, successes = 0;
+      for (const plan of data.plans) {
+      if (plan.trackingId !== id) continue;
+      if (plan.status === "succeeded") { spent += plan.price; successes++; }
+      else if (active(plan.status) || plan.status === "unknown") held += plan.price;
+    }
+    return { spent, held, successes };
+  }
+
+  function publicTracker(rule: ShopTracker, data: Store) {
+    const { id, profileId, mode, game, itemType, goodsIds, names, keywords, followSameName, maxPrice, spendLimit,
+      pollMs, leadMs, intervalMs } = rule;
+    const confirmed = confirmedTracker(rule);
+    return { id, profileId, mode, game, itemType, goodsIds, names, keywords, followSameName, maxPrice, spendLimit,
+      pollMs, leadMs, intervalMs, nextOpenAt: natural(rule.nextOpenAt) ? rule.nextOpenAt : undefined,
+      nextPollAt: natural(rule.nextPollAt) ? rule.nextPollAt : undefined,
+      lastPolledAt: natural(rule.lastPolledAt) ? rule.lastPolledAt : undefined,
+      matchedCount: natural(rule.matchedCount) ? rule.matchedCount : undefined, enabled: confirmed && rule.enabled,
+      needsConfirmation: !confirmed, role: rule.role && { uid: rule.role.uid, region: rule.role.region },
+      addressLabel: addressLabel(rule.addressLabel), ...trackerUsage(data, rule.id),
+      message: !confirmed ? "旧追踪规则，重新确认后才会兑换。" :
+        publicTrackerMessages.has(rule.message) ? rule.message : (rule.enabled ? trackerMessages.watching : trackerMessages.pause) };
+  }
+
+  function ownsTracker(data: Store, target: MiyousheOverviewTarget, id: string) {
+    const raw = asTrackerRecord(findTracker(data, id));
+    const rule = trackingRule(raw);
+    if (!raw || !rule || rule.qq !== target.qq || rule.profileId !== target.profileId) {
+      throw new MiyousheShopPlanError(404, "未找到当前档案的追踪规则。");
+    }
+    return { raw, rule };
+  }
+
+  async function verifyRole(target: MiyousheOverviewTarget, rule: Pick<ShopTracker, "game" | "role">) {
+    if (!rule.role) return;
+    const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[rule.game]);
+    if (selected !== rule.role.uid) conflict("当前档案的游戏 UID 已换绑，请重新建立追踪。");
+  }
+
+  async function verifyTrackerTarget(target: MiyousheOverviewTarget, rule: Pick<ShopTracker, "game" | "itemType" | "role" | "addressId">,
+    signal?: AbortSignal, verify?: Verify) {
+    const destinations = await tracking!.destinations(target, rule.game, rule.itemType, signal, verify);
+    if (rule.itemType === 2 ? !destinations.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region &&
+        role.gameBiz === rule.role.gameBiz) : !destinations.addresses?.some(address => address.id === rule.addressId)) {
+      conflict("原兑换目标不属于当前档案，请重新建立追踪。");
+    }
+    await verifyRole(target, rule);
+  }
+
+  async function pollRule(rule: ShopTracker & { confirmation: { bindingStamp: string; at: number } }, signal?: AbortSignal) {
+    const target = { qq: rule.qq, profileId: rule.profileId };
+    await store.withAccount(rule.accountId, async () => {
+      const ownsCurrent = (data: Store) => {
+        const raw = asTrackerRecord(findTracker(data, rule.id));
+        const current = trackingRule(raw);
+        if (raw && confirmedTracker(current) && current.enabled && current.confirmation.at === rule.confirmation.at &&
+          current.confirmation.bindingStamp === rule.confirmation.bindingStamp) return raw;
+      };
+      const started = await store.change(data => {
+        const current = ownsCurrent(data);
+        if (!current || (natural(current.nextPollAt) && current.nextPollAt > now())) return false;
+        if (data.plans.some(plan => plan.accountId === rule.accountId && plan.status === "unknown")) {
+          pauseTracks(data, rule.accountId, trackerMessages.unknown);
+          return false;
+        }
+        Object.assign(current, { lastPolledAt: now(), nextPollAt: now() + rule.pollMs, matchedCount: 0, nextOpenAt: null });
+        return true;
+      });
+      if (!started) return;
+      let phase: "binding" | "catalog" = "binding";
+      try {
+        const booked = await binding(target);
+        if (booked.accountId !== rule.accountId || booked.stamp !== rule.confirmation.bindingStamp) conflict(details.changed);
+        await verifyRole(target, rule);
+        phase = "catalog";
+        const verifyBinding = async () => {
+          signal?.throwIfAborted();
+          await verifyCurrent(target, booked);
+          signal?.throwIfAborted();
+        };
+        const goods = (await tracking!.catalog(target, rule.game, signal, verifyBinding))
+          .filter(good => matchesTrackingGood(rule, good));
+        let nearest: number | undefined;
+        for (const candidate of goods) {
+          signal?.throwIfAborted();
+          if (candidate.status !== "available" && candidate.status !== "scheduled") continue;
+          if (candidate.status === "scheduled" && candidate.opensAt !== null) {
+            nearest = Math.min(nearest ?? candidate.opensAt, candidate.opensAt);
+            if (candidate.opensAt > now() + Math.max(preparingLead, rule.leadMs + 10_000)) continue;
+          }
+          const snapshot = await inspect(target, candidate.id, signal, verifyBinding);
+          const { good, balance } = snapshot;
+          if (good.id !== candidate.id || !matchesTrackingGood(rule, good) || !natural(good.price) || !natural(balance) || balance < good.price ||
+            (good.status !== "available" && (good.status !== "scheduled" || !natural(good.opensAt))) ||
+            (rule.role ? !snapshot.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region)
+              : !snapshot.addresses?.some(address => address.id === rule.addressId))) continue;
+          const cycleKey = trackingCycle(good, now());
+          if (!cycleKey) continue;
+          const created = await store.change(async data => {
+            const current = ownsCurrent(data);
+            if (!current) return false;
+            const { spent, held } = trackerUsage(data, rule.id);
+            if ((rule.spendLimit !== null && spent + held + good.price > rule.spendLimit) ||
+                data.plans.some(item => item.accountId === rule.accountId && (item.status === "unknown" ||
+                  (item.goodsId === good.id && (active(item.status) || conflictsWithCycle(item, cycleKey)))))) return false;
+            const previous = data.plans.find(item => item.trackingId === rule.id && item.goodsId === good.id &&
+              item.status === "cancelled" && item.cycleKey === cycleKey);
+            if (previous) return false;
+            await verifyBinding();
+            await verifyRole(target, rule);
+            const createdAt = now();
+            const opensAt = good.status === "available" ? createdAt : good.opensAt!;
+            if (opensAt < createdAt) return false;
+            let id: string;
+            do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
+            data.plans.push({ id, ...target, accountId: rule.accountId, botId: "", bindingStamp: booked.stamp,
+              trackingId: rule.id, cycleKey, preStartMs: rule.leadMs, retryIntervalMs: rule.intervalMs,
+              goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz,
+              type: rule.itemType, price: good.price, role: rule.role, addressId: rule.addressId || "",
+              addressLabel: addressLabel(rule.addressLabel), immediate: false, createdAt, opensAt, status: "scheduled",
+              message: statusMessage.scheduled, attempts: 0 });
+            current.message = trackerMessages.booked;
+            current.matchedCount = goods.length;
+            return true;
+          });
+          if (created) return;
+        }
+        await store.change(data => {
+          const current = ownsCurrent(data);
+          if (!current) return;
+          current.matchedCount = goods.length;
+          current.message = trackerMessages.watching;
+          if (nearest !== undefined && nearest > now()) {
+            current.nextOpenAt = nearest;
+            current.nextPollAt = Math.min(now() + rule.pollMs, Math.max(now() + 1000, nearest - Math.max(preparingLead, rule.leadMs)));
+          }
+        });
+      } catch (error) {
+        if (signal?.aborted) return;
+        await store.change(data => {
+          if (!ownsCurrent(data)) return;
+          const reason = asRecord(error)?.reason;
+          if (reason === "verification" || reason === "rate-limited" || asRecord(error)?.status === 429) {
+            pauseTracks(data, rule.accountId, reason === "verification" ? details.verification : details["rate-limited"]);
+          } else if (phase === "binding" || (error instanceof MiyousheShopPlanError && error.message === details.changed)) {
+            pauseTracks(data, rule.accountId, trackerMessages.changed, rule.id);
+          } else {
+            const current = ownsCurrent(data)!;
+            current.message = trackerMessages.retry;
+          }
+        });
+      }
+    });
+  }
+
+  let polling: Promise<void> | undefined;
+  function poll(signal?: AbortSignal) {
+    return polling ??= (async () => {
+      if (!tracking || !submit || signal?.aborted) return;
+      for (const row of (await store.read()).trackers ?? []) {
+        if (signal?.aborted) return;
+        const rule = trackingRule(row);
+        if (confirmedTracker(rule) && rule.enabled && !(natural(rule.nextPollAt) && rule.nextPollAt > now())) await pollRule(rule, signal);
+      }
+    })().finally(() => { polling = undefined; });
   }
 
   async function recover(match: (plan: MiyousheShopPlan) => boolean) {
@@ -285,13 +512,14 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
   }
 
   async function run(plan: MiyousheShopPlan, signal?: AbortSignal) {
-    if (!submit || signal?.aborted || plan.trackingId) return;
+    if (!submit || signal?.aborted || (plan.trackingId && (!tracking || !plan.bindingStamp))) return;
     const target = { qq: plan.qq, profileId: plan.profileId };
     await store.withAccount(plan.accountId, async () => {
-      if (!await update(plan.id, "scheduled", current => {
-        current.status = "preparing";
-        current.message = statusMessage.preparing;
-      })) return;
+      const claimed = await update(plan.id, "scheduled", (current, data) => {
+        if (!trackerIsCurrent(data, current)) finish(current, "cancelled");
+        else Object.assign(current, { status: "preparing", message: statusMessage.preparing });
+      });
+      if (claimed?.status !== "preparing") return;
       let started = false;
       let submitting = false;
       let message: string = details.unavailable;
@@ -311,14 +539,22 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
         const verifyBinding = async () => {
           signal?.throwIfAborted();
           await verifyCurrent(target, booked);
+          if (plan.trackingId) {
+            const data = await store.read();
+            if (!trackerIsCurrent(data, plan)) conflict("持续追踪已暂停或当前商品已兑换。");
+            await verifyRole(target, trackingRule(findTracker(data, plan.trackingId))!);
+          }
           signal?.throwIfAborted();
         };
         const inspectCurrent = async () => {
           message = details.unavailable;
           const snapshot = await inspect(target, plan.goodsId, signal, verifyBinding);
           message = details.conditions;
-          const good = validateInspection(snapshot, plan.goodsId, plan.immediate);
+          const waitingForStock = Boolean(plan.trackingId) && snapshot.good.status === "unknown";
+          const good = waitingForStock ? snapshot.good : validateInspection(snapshot, plan.goodsId, plan.immediate);
           if (good.price !== plan.price || good.type !== plan.type || good.gameBiz !== plan.gameBiz ||
+            (plan.trackingId && (good.id !== plan.goodsId || !natural(snapshot.balance) || snapshot.balance < plan.price ||
+              (good.status !== "unknown" && trackingCycle(good, now()) !== plan.cycleKey))) ||
             (plan.role ? !snapshot.roles?.some(role => role.uid === plan.role?.uid && role.region === plan.role?.region)
               : !snapshot.addresses?.some(address => address.id === plan.addressId))) conflict(details.conditions);
           message = details.changed;
@@ -344,29 +580,43 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
             return;
           }
         }
+        while (plan.trackingId && good.status === "unknown" && now() < plan.opensAt + maxDelay) {
+          const interval = natural(plan.retryIntervalMs) ? Math.max(250, Math.min(5000, plan.retryIntervalMs)) : 500;
+          await delay(Math.min(interval, plan.opensAt + maxDelay - now()), undefined, { signal, ref: false });
+          if (!(await store.read()).plans.some(item => item.id === plan.id && item.status === "preparing")) return;
+          good = await inspectCurrent();
+        }
         if (good.status !== "available" || now() > plan.opensAt + maxDelay) {
           await update(plan.id, "preparing", current => finish(current, "missed"));
           return;
         }
-        const submitted = await update(plan.id, "preparing", current => {
-          current.status = "submitting";
-          current.message = statusMessage.submitting;
-          current.attempts++;
+        const submitted = await update(plan.id, "preparing", (current, data) => {
+          if (!trackerIsCurrent(data, current)) finish(current, "cancelled");
+          else Object.assign(current, { status: "submitting", message: statusMessage.submitting, attempts: current.attempts + 1 });
         });
-        if (!submitted) return;
+        if (submitted?.status !== "submitting") return;
         submitting = true;
         await verifyBinding();
         started = true;
         const result = await submit(Object.freeze(submitted), signal, verifyBinding);
-        await update(plan.id, "submitting", current => {
+        await update(plan.id, "submitting", (current, data) => {
           if (result === "verification" || result === "rate-limited") finish(current, "failed", details[result]);
           else finish(current, result === "succeeded" || result === "failed" ? result : "unknown");
+          if (current.status === "unknown" || result === "verification" || result === "rate-limited") {
+            pauseTracks(data, current.accountId, current.message);
+          }
         });
-      } catch {
-        await update(plan.id, submitting ? "submitting" : "preparing", current => {
-          if (started) finish(current, "unknown");
+      } catch (error) {
+        await update(plan.id, submitting ? "submitting" : "preparing", (current, data) => {
+          if (started) {
+            finish(current, "unknown");
+            pauseTracks(data, current.accountId, current.message);
+          }
           else if (signal?.aborted) {
             Object.assign(current, { status: "scheduled", message: statusMessage.scheduled });
+          } else if (error instanceof MiyousheExchangeError && (error.reason === "verification" || error.reason === "rate-limited")) {
+            finish(current, "failed", details[error.reason]);
+            pauseTracks(data, current.accountId, current.message);
           } else finish(current, "failed", message);
         });
       }
@@ -380,7 +630,8 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
       await recover(() => true);
       if (!submit || signal?.aborted) return [];
       for (const plan of (await store.read()).plans.sort((a, b) => a.opensAt - b.opensAt)) {
-        if (plan.status === "scheduled" && !plan.trackingId && plan.opensAt <= now() + preparingLead &&
+        if (plan.status === "scheduled" && (!plan.trackingId || (tracking && plan.bindingStamp)) &&
+            plan.opensAt <= now() + (plan.trackingId && natural(plan.preStartMs) ? Math.max(preparingLead, Math.min(30_000, plan.preStartMs)) : preparingLead) &&
             !running.has(plan.accountId)) {
           const job = run(plan, signal).finally(() => { running.delete(plan.accountId); });
           running.set(plan.accountId, job);
@@ -391,6 +642,7 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
   }
 
   async function scan(signal?: AbortSignal) {
+    await poll(signal);
     const results = await Promise.allSettled(await select(signal));
     const failed = results.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
@@ -401,12 +653,15 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
     start(signal: AbortSignal, onError?: (error: unknown) => void) {
       if (timer || signal.aborted) return;
       const seen = new WeakSet<Promise<void>>();
-      const tick = () => void select(signal).then(jobs => {
+      const tick = () => {
+        if (!polling) void poll(signal).catch(error => onError?.(error));
+        void select(signal).then(jobs => {
         for (const job of jobs) if (!seen.has(job)) {
           seen.add(job);
           void job.catch(error => onError?.(error));
         }
-      }).catch(error => onError?.(error));
+        }).catch(error => onError?.(error));
+      };
       if (submit) {
         timer = setInterval(tick, 1_000);
         timer.unref();
@@ -415,6 +670,115 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
       tick();
     },
     scan,
+    async trackerTargets(target: MiyousheOverviewTarget, game: unknown, itemType: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
+      if (!tracking) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
+      if (!trackingGame(game) || (itemType !== 1 && itemType !== 2)) bad("请选择游戏分区和商品类型。");
+      await verifyLogin?.();
+      const result = await tracking.destinations(target, game, itemType, signal, verifyLogin);
+      await verifyLogin?.();
+      if (itemType === 1) return { type: "address" as const,
+        items: (result.addresses ?? []).filter(item => matching(item.id, numericId)).map(item => ({ id: item.id, label: addressLabel(item.label) })) };
+      const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[game]);
+      return { type: "role" as const, items: (result.roles ?? []).filter(role => role.gameBiz === trackingGames[game] &&
+        role.uid === selected && matching(role.region, code)).map(role => ({ uid: role.uid, region: role.region })) };
+    },
+    async listTrackers(target: MiyousheOverviewTarget, verifyLogin?: Verify) {
+      await verifyLogin?.();
+      const belongs = (item: MiyousheOverviewTarget) => item.qq === target.qq && item.profileId === target.profileId;
+      await recover(belongs);
+      const data = await store.read();
+      await verifyLogin?.();
+      const trackers = (data.trackers ?? []).flatMap(row => {
+        const rule = trackingRule(row);
+        return rule && belongs(rule) ? [rule] : [];
+      }).sort((a, b) => b.createdAt - a.createdAt);
+      return { now: now(), canTrack: Boolean(tracking && submit), trackers: trackers.map(rule => publicTracker(rule, data)) };
+    },
+    async createTracker(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
+      if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
+      const input = readTrackingInput(value);
+      if (!input) bad("请核对追踪范围、预算并确认持续兑换。");
+      await verifyLogin?.();
+      const booked = await binding(target);
+      const verify = async () => {
+        signal?.throwIfAborted();
+        await verifyLogin?.();
+        await verifyCurrent(target, booked);
+      };
+      const destinations = await tracking.destinations(target, input.game, input.itemType, signal, verify);
+      const selected = input.itemType === 2 ? await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[input.game]) : undefined;
+      const role = destinations.roles?.find(role => role.uid === selected && role.gameBiz === trackingGames[input.game] &&
+        matching(role.region, code));
+      const address = destinations.addresses?.find(address => address.id === input.addressId);
+      if (input.itemType === 2 ? !role : !address) bad("未找到当前档案的兑换目标。");
+      const names: string[] = [];
+      for (const goodsId of input.goodsIds) {
+        const { good } = await inspect(target, goodsId, signal, verify);
+        if (good.id !== goodsId || !matchesTrackingGood({ ...input, names: [] }, good)) bad("所选商品不属于指定的分区和类型，或超过价格上限。");
+        names.push(clean(good.name, 240));
+      }
+      return store.change(async data => {
+        await verify();
+        if (data.plans.some(plan => plan.accountId === booked.accountId && plan.status === "unknown")) {
+          conflict("请先核对该账号待确认的兑换记录。");
+        }
+        const rows = data.trackers ??= [];
+        let id: string;
+        do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (findTracker(data, id));
+        const rule: ShopTracker = { ...input, ...target, id, accountId: booked.accountId, names,
+          role: role ? { uid: role.uid, region: role.region, gameBiz: role.gameBiz } : null,
+          gameBiz: role?.gameBiz ?? "", addressId: address?.id ?? "", addressLabel: addressLabel(address?.label),
+          enabled: true, createdAt: now(), confirmation: { bindingStamp: booked.stamp, at: now() },
+          message: "持续追踪已开启，等待符合条件的库存及场次。" };
+        await verifyRole(target, rule);
+        const exists = rows.map(trackingRule).some(item => item && item.qq === rule.qq && item.profileId === rule.profileId &&
+          item.accountId === rule.accountId && item.mode === rule.mode && item.game === rule.game && item.itemType === rule.itemType &&
+          JSON.stringify([...item.goodsIds].sort()) === JSON.stringify([...rule.goodsIds].sort()) &&
+          JSON.stringify([...item.keywords].sort()) === JSON.stringify([...rule.keywords].sort()) &&
+          item.addressId === rule.addressId && item.role?.uid === rule.role?.uid && item.maxPrice === rule.maxPrice &&
+          item.spendLimit === rule.spendLimit && item.followSameName === rule.followSameName);
+        if (exists) conflict("该档案已有相同追踪规则，请在列表中恢复或暂停。");
+        rows.push(rule);
+        return publicTracker(rule, data);
+      });
+    },
+    async setTracker(target: MiyousheOverviewTarget, id: string, enabled: boolean, confirmed: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
+      await verifyLogin?.();
+      if (!enabled) return store.change(async data => {
+        await verifyLogin?.();
+        const { raw, rule } = ownsTracker(data, target, id);
+        pauseTracks(data, rule.accountId, "持续追踪已暂停。", rule.id);
+        return publicTracker(trackingRule(raw)!, data);
+      });
+      if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
+      if (confirmed !== true) bad("请明确确认恢复持续兑换。");
+      const { rule } = ownsTracker(await store.read(), target, id);
+      const booked = await binding(target);
+      if (booked.accountId !== rule.accountId || (confirmedTracker(rule) && booked.stamp !== rule.confirmation.bindingStamp)) {
+        conflict("追踪规则的绑定已变化，请重新建立追踪。");
+      }
+      const verify = async () => {
+        signal?.throwIfAborted();
+        await verifyLogin?.();
+        await verifyCurrent(target, booked);
+      };
+      await verifyTrackerTarget(target, rule, signal, verify);
+      return store.change(async data => {
+        await verify();
+        if (data.plans.some(plan => plan.accountId === booked.accountId &&
+            (plan.status === "unknown" || plan.status === "submitting"))) conflict("请先核对该账号待确认的兑换记录。");
+        const { raw, rule: current } = ownsTracker(data, target, id);
+        if (raw.enabled && confirmedTracker(current)) return publicTracker(current, data);
+        Object.assign(raw, { enabled: true, confirmation: { bindingStamp: booked.stamp, at: now() },
+          message: "持续追踪已恢复，等待符合条件的库存及场次。", pollUnit: current.pollUnit, pollMs: current.pollMs,
+          leadMs: current.leadMs, intervalMs: current.intervalMs, nextPollAt: 0 });
+        delete raw.afterMs;
+        for (const plan of data.plans) {
+          if (plan.trackingId === id && !plan.bindingStamp && (plan.status === "scheduled" || plan.status === "preparing")) finish(plan, "cancelled");
+        }
+        return publicTracker(trackingRule(raw)!, data);
+      });
+    },
     async list(target: MiyousheOverviewTarget, verifyLogin?: Verify) {
       const matches = (plan: MiyousheShopPlan) => plan.qq === target.qq && plan.profileId === target.profileId;
       await verifyLogin?.();

@@ -674,6 +674,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
       return role;
     },
+    async selectedShopRoleUid(qq: string, id: number, game: "gs" | "sr" | "zzz" | "bh3" | "bh2" | "nxx") {
+      const { selected } = await readLoggedIn(qq, id);
+      return accountId(selected[game]);
+    },
     async listIds(qq: string): Promise<number[]> {
       profileFilename(qq, 1);
       return (await listSlots()).filter(slot => slot.qq === qq).map(slot => slot.profileId).sort((a, b) => a - b);

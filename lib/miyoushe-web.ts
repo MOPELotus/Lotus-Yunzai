@@ -152,7 +152,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     const { pathname, search, searchParams } = new URL(request.url);
     if (pathname !== mount && !pathname.startsWith(prefix)) return;
     const base = validOrigin(origin());
-    if (!base || (search && pathname !== `${prefix}api/catalog`) || signal.aborted) return error(404);
+    if (!base || (search && pathname !== `${prefix}api/catalog` && pathname !== `${prefix}api/tracking-targets`) || signal.aborted) return error(404);
     const method = request.method;
     const isRead = method === "GET" || method === "HEAD";
     const secure = base.protocol === "https:";
@@ -160,6 +160,9 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     const part = pathname.slice(prefix.length);
     const goodsId = /^api\/goods\/([1-9]\d{0,19})$/u.exec(part)?.[1];
     const planAction = /^api\/plans\/([a-f0-9]{12})\/(cancel|resolve)$/u.exec(part);
+    const trackingAction = /^api\/trackers\/([a-f0-9]{12})\/(pause|resume)$/u.exec(part);
+    const editingPlans = plans && (planAction || trackingAction ||
+      ((part === "api/plans" || part === "api/trackers") && method !== "GET"));
     if (part === "" || part === "style.css" || part === "app.js") {
       if (!isRead) return error(405);
       const asset = Bun.file(join(assetDirectory, part || "index.html"));
@@ -168,10 +171,11 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         ? new Response(method === "HEAD" ? null : asset, { headers: { ...headers, "Content-Type": `${contentType}; charset=utf-8` } })
         : error(404);
     }
-    if (part === "api/claim" || part === "api/logout" || (plans && (planAction || (part === "api/plans" && method !== "GET")))) {
+    if (part === "api/claim" || part === "api/logout" || editingPlans) {
       if (method !== "POST") return error(405);
       if (request.headers.get("Origin") !== base.origin) return error(403);
-    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId)) || (plans && part === "api/plans")) {
+    } else if (part === "api/overview" || (catalog && (part === "api/catalog" || goodsId)) ||
+      (plans && ["api/plans", "api/trackers", "api/tracking-targets"].includes(part))) {
       if (method !== "GET") return error(405);
       const fetchSite = request.headers.get("Sec-Fetch-Site");
       if (fetchSite && fetchSite !== "same-origin") return error(403);
@@ -221,6 +225,22 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       }
       await verifyLogin();
       const target = { qq: row.qq, profileId: row.profileId };
+      if (plans && part === "api/tracking-targets") {
+        if (searchParams.getAll("game").length !== 1 || searchParams.getAll("itemType").length !== 1 ||
+          [...searchParams.keys()].some(key => key !== "game" && key !== "itemType")) return error(400);
+        const result = await plans.trackerTargets(target, searchParams.get("game"), Number(searchParams.get("itemType")), deadline, verifyLogin);
+        await verifyLogin();
+        return Response.json(result, { headers });
+      }
+      if (plans && (part === "api/trackers" || trackingAction)) {
+        const body = method === "POST" ? await readPanelJson(request).catch(() => undefined) : undefined;
+        const confirmed = body && typeof body === "object" && "confirmed" in body ? body.confirmed : undefined;
+        const result = trackingAction ? await plans.setTracker(target, trackingAction[1]!, trackingAction[2] === "resume",
+          confirmed, deadline, verifyLogin) : method === "GET" ? await plans.listTrackers(target, verifyLogin)
+          : await plans.createTracker(target, body, deadline, verifyLogin);
+        await verifyLogin();
+        return Response.json(result, { headers });
+      }
       if (plans && part === "api/plans") {
         const result = method === "GET" ? await plans.list(target, verifyLogin) : await plans.reserve(target,
           await readPanelJson(request).catch(() => undefined), deadline, verifyLogin);
