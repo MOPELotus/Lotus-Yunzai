@@ -11,6 +11,7 @@
     "./genshin-world-boss": "./genshin-world-boss-card.ts",
     "./genshin-world-boss-ranking": "./genshin-world-boss-ranking-card.ts",
     "./gacha-detail": "./gacha-detail-card.ts",
+    "./gacha-pool": "./gacha-pool-card.ts",
     "./gacha-version": "./gacha-version-card.ts",
     "./passport-qr": "./passport-qr-card.ts",
     "./profile": "./profile-card.ts",
