@@ -774,10 +774,9 @@ if (import.meta.main) {
     const viewProfile = (id: number, { message_type, self_id, user_id, group_id, isMaster }: CommandContext) =>
       accounts.commands[`#配置${id === 1 ? "" : id}`]!("", { message_type, self_id, user_id, group_id, isMaster });
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      viewProfile), "[Lotus-Plugin] Device");
-    commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
-    commands.registerModule(redeemCodeCommands({ historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)) }),
-      "[Lotus-Plugin] Redeem Codes");
+      viewProfile));
+    commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
+    commands.registerModule(redeemCodeCommands({ historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)) }));
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
@@ -836,26 +835,25 @@ if (import.meta.main) {
           return shopClient.fetchMiyousheShopAddresses(account, { signal, verifyBinding });
         },
       });
-      commands.registerModule(miyousheWeb.commands, "[Lotus-Plugin] Coin Shop");
+      commands.registerModule(miyousheWeb.commands);
     }
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
-    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile, transport: hoyoTransport }), "[Lotus-Plugin] Profile Settings");
+    commands.registerModule(hoyoLabProfileCommands(profileDirectory, lifecycle.signal, { viewProfile, transport: hoyoTransport }));
     commands.registerModule(cloudProfileCommands({
       signal: lifecycle.signal, viewProfile, readProfile: checkinProfiles.checkinSettings, setEnabled: checkinProfiles.setCloudGameEnabled,
       saveToken: checkinProfiles.saveCloudToken,
-    }), "[Lotus-Plugin] Profile Settings");
+    }));
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
-    commands.registerModule(gameCheckin, "[Lotus-Plugin] Checkin");
-    commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal), "[Lotus-Plugin] Checkin Admin");
+    commands.registerModule(gameCheckin);
+    commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal));
     if (!probingUpdate) {
       commands.registerModule(checkinRosterCommands({
         profiles: checkinProfiles,
         listMembers: ({ listCheckinGroupMembers }) => listCheckinGroupMembers?.() ?? Promise.resolve(undefined),
         signal: lifecycle.signal,
-      }), "[Lotus-Plugin] Checkin Admin");
-      commands.registerModule(checkinBatchRefreshCommands({ profiles: checkinProfiles, signal: lifecycle.signal }),
-        "[Lotus-Plugin] Checkin Admin");
+      }));
+      commands.registerModule(checkinBatchRefreshCommands({ profiles: checkinProfiles, signal: lifecycle.signal }));
       const config = globalConfig.scheduler;
       if (config === undefined || (config !== null && typeof config === "object" && !Array.isArray(config) &&
           (!Object.hasOwn(config, "enable") || typeof (config as CheckinScheduleConfig).enable === "boolean"))) {
@@ -906,7 +904,7 @@ if (import.meta.main) {
         commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
           viewProfile,
-        }), "[Lotus-Plugin] Profile Settings");
+        }));
         commands.registerModule(checkinGroupRegistrationCommands({
           profiles: checkinProfiles, signal: lifecycle.signal, canRegister: canRegisterGroup,
           async addRegisteredProfile(qq, profileId, revision) {
@@ -915,22 +913,22 @@ if (import.meta.main) {
             if (current.revision !== revision) throw new Error("签到档案已变更。");
             await runtime.addRegisteredProfile({ qq, profileId, name: current.displayName, enabled: current.enabled, schedule: current.schedule });
           },
-        }), "[Lotus-Plugin] Profile Settings");
+        }));
         commands.registerModule(checkinProfileCommands(profileDirectory, lifecycle.signal, {
           reconcilePlans: runtime.reconcileExistingPlans,
           viewProfile,
-        }), "[Lotus-Plugin] Profile Settings");
+        }));
         commands.registerModule(checkinPlanCommands(checkinProfiles, runtime, lifecycle.signal,
-          { canGenerate, canRunDue }), "[Lotus-Plugin] Scheduler");
-        commands.registerModule(checkinScheduleSettingCommands(root, runtime, lifecycle.signal), "[Lotus-Plugin] Scheduler");
+          { canGenerate, canRunDue }));
+        commands.registerModule(checkinScheduleSettingCommands(root, runtime, lifecycle.signal));
       } else {
         console.warn("[签到计划] 全局 scheduler 配置无效。");
       }
     }
-    commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
+    commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
-    }, "[Lotus-Plugin] Gacha Log");
+    }, "[gacha] 抽卡记录");
     const { hostname, oneBot, https, panelToken } = network;
     const milkyOptions: MilkyTransportOptions = {
       signal: lifecycle.signal,

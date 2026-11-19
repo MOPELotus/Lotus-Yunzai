@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { ProfileError } from "@lotus-yunzai/account";
 import { mergeGenshinGachaHistory } from "../plugins/genshin/gacha-history.ts";
 import { createGenshinGachaImport, gachaImportCommand } from "../plugins/genshin/gacha-import.ts";
 
@@ -6,8 +7,14 @@ test("UIGF 导入只接受发起请求的可信账号和原会话，并在换角
   let uid = "100000002";
   let calls = 0;
   let reads = 0;
+  let profileError: "missing" | "role-missing" | undefined;
   const importFile = createGenshinGachaImport(
-    { async savedRole() { return { uid, nickname: "", region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true }; } },
+    {
+      async savedRole() {
+        if (profileError) throw new ProfileError(profileError, "测试档案不可用");
+        return { uid, nickname: "", region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true };
+      },
+    },
     {
       async merge(identity, snapshot, verifyProfile) {
         await verifyProfile();
@@ -21,6 +28,11 @@ test("UIGF 导入只接受发起请求的可信账号和原会话，并在换角
   const start = gachaImportCommand.exec("#强制导入记录2");
   expect(start).not.toBeNull();
   expect(await importFile({ ...context, canReadAttachments: false }, start)).toMatch(/暂不支持/);
+  profileError = "missing";
+  expect(await importFile(context, start)).toBe("[genshin] 请先登录 profile 2。");
+  profileError = "role-missing";
+  expect(await importFile(context, start)).toBe("[genshin] profile 2 没有同步原神 UID。");
+  profileError = undefined;
   const attachment = {
     name: "pulls.json",
     async read() {

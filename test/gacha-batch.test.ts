@@ -9,7 +9,7 @@ import { isUpdateCommand } from "../lib/update-command.ts";
 
 const command = "#更新全部抽卡记录";
 const alias = "#更新所有抽卡记录";
-const progress = "[荷花插件]开始批量更新所有 profile 的原神/星铁/绝区零抽卡记录。";
+const progress = "[gacha] 开始批量更新所有 profile 的原神/星铁/绝区零抽卡记录。";
 const image = Uint8Array.of(1, 2, 3);
 
 function context(normalizedMessage: string, replies: MessageReply[] = [], user_id: number | undefined = 42): MessageFallbackContext {
@@ -165,7 +165,7 @@ test("uses bounded forwarding nodes above 18 rows and keeps every profile visibl
 test("reports empty archives without starting work and stops on abort before later providers", async () => {
   const empty = createGachaBatch({ listIds: async () => [], signal: new AbortController().signal });
   const replies: MessageReply[] = [];
-  expect(await empty.fallback(command, context(command, replies))).toBe("[荷花插件]没有找到你的 profile。");
+  expect(await empty.fallback(command, context(command, replies))).toBe("[gacha] 没有找到你的 profile。");
   expect(replies).toEqual([]);
 
   const controller = new AbortController();

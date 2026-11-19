@@ -106,7 +106,7 @@ export function accountCommands(
       }
       const qq = String(context.user_id);
       const profile = await profiles.describe(qq, id).catch(() => undefined);
-      if (!profile?.loggedIn) return `[荷花插件]请先扫码登录 profile ${id}。`;
+      if (!profile?.loggedIn) return `[account] 请先扫码登录 profile ${id}。`;
       const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
         : profile.schedule.mode === "random" ? "随机" : "跟随全局";
       const device = profile.deviceBound ? profile.device.name || "已绑定" : profile.device.generated

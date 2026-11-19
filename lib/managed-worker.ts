@@ -70,12 +70,10 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
         return;
       }
       if (stopping) return;
-      if (message.type === "lotus-plugin-loading" && !ready) {
-        const wait = readPluginLoading(message, token, nextPluginIndex);
-        if (wait !== undefined) {
-          nextPluginIndex++;
-          watchStartup(wait);
-        }
+      const wait = ready ? undefined : readPluginLoading(message, token, nextPluginIndex);
+      if (wait !== undefined) {
+        nextPluginIndex++;
+        watchStartup(wait);
       } else if (message.type === "lotus-ready" && !ready) {
         const revision = "revision" in message ? message.revision : undefined;
         if (expectedRevision !== undefined && revision !== expectedRevision) {

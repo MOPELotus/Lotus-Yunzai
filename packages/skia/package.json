@@ -10,8 +10,8 @@
     "./genshin-gacha-special": "./genshin-gacha-special-card.ts",
     "./genshin-world-boss": "./genshin-world-boss-card.ts",
     "./genshin-world-boss-ranking": "./genshin-world-boss-ranking-card.ts",
-    "./miao-gacha-detail": "./miao-gacha-detail-card.ts",
-    "./miao-gacha-version": "./miao-gacha-version-card.ts",
+    "./gacha-detail": "./gacha-detail-card.ts",
+    "./gacha-version": "./gacha-version-card.ts",
     "./passport-qr": "./passport-qr-card.ts",
     "./profile": "./profile-card.ts",
     "./status-card": "./status-card.ts"

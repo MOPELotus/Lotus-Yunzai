@@ -74,7 +74,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           request = { profileId: id, revision: account.revision, expires: performance.now() + timeout };
         } catch {
           if (opening.get(scope) !== attempt) return [];
-          return `[荷花插件]请先扫码登录 profile ${id}。`;
+          return `[account] 请先扫码登录 profile ${id}。`;
         } finally {
           if (opening.get(scope) === attempt) opening.delete(scope);
         }
@@ -117,7 +117,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       try {
         return await showProfile(request.profileId, context);
       } catch {
-        return `[荷花插件]profile ${request.profileId} 设备已绑定。`;
+        return `[account] profile ${request.profileId} 设备已绑定。`;
       }
     },
   };

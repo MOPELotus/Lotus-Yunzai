@@ -5,7 +5,7 @@ import type { GachaLuck } from "@lotus-yunzai/gacha";
 import { renderPng } from "./index.ts";
 import { FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
-export interface MiaoGachaDetailOptions {
+export interface GachaDetailOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory: string;
@@ -20,7 +20,7 @@ const white = "#fff";
 const muted = "#aaa";
 const bodyFont = '"StarRailGachaNumber", "StarRailGachaHan", sans-serif';
 const titleFont = '"StarRailGachaNumber", "StarRailGachaTitle", "StarRailGachaHan", sans-serif';
-const miaoAssets = {
+const themeAssets = {
   sprite: "gacha/imgs/date-icon.webp",
   star: "common/item/bg5.png",
   empty: "gacha/imgs/no-avatar.webp",
@@ -51,7 +51,7 @@ interface Row {
 
 type Stat = typeof statLabels[number][0] | "upYs";
 
-interface MiaoGachaDetailModel {
+interface GachaDetailModel {
   readonly uid: string;
   readonly recordArchive?: true;
   readonly face: { readonly name: string; readonly face?: string; readonly banner?: string };
@@ -114,7 +114,7 @@ async function loadTheme(root: string, game: Game) {
       `common/bg/bg-${config.background}.webp`,
       `meta-${game}/character/${config.face}`,
       `meta-${game}/character/common/imgs/banner.webp`,
-      miaoAssets.sprite, miaoAssets.star, miaoAssets.empty,
+      themeAssets.sprite, themeAssets.star, themeAssets.empty,
     ].map((path) => themeImage(root, path)),
   );
   if (!background || !face || !banner || !sprite || !star || !empty) {
@@ -217,7 +217,7 @@ function inline(ctx: Context, parts: readonly Inline[], x: number, y: number, ce
   }
 }
 
-function paintBanner(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, face: Image, banner: Image, game: Game) {
+function paintBanner(ctx: Context, model: GachaDetailModel, theme: Theme, face: Image, banner: Image, game: Game) {
   const y = 25;
   ctx.save();
   round(ctx, frame, y, inner, 90, 50);
@@ -357,7 +357,7 @@ function paintNotice(ctx: Context, y: number, game: Game, recordArchive?: true) 
   inline(ctx, assets.map(([value, color]) => ({ value, color, size: 13, margin: color === gold ? 4 : 0 })), width / 2, y, true);
 }
 
-function paintPageHead(ctx: Context, model: MiaoGachaDetailModel, page: NonNullable<MiaoGachaDetailModel["pageInfo"]>, game: Game) {
+function paintPageHead(ctx: Context, model: GachaDetailModel, page: NonNullable<GachaDetailModel["pageInfo"]>, game: Game) {
   panel(ctx, frame, 25, inner, 44, 30, "rgba(0,0,0,.50)");
   const nameStyle = { size: 20, bold: true };
   const subtitle = `#${model.uid} · ${model.poolName}池抽卡记录`;
@@ -376,7 +376,7 @@ function hasDate(previous: Row | undefined, row: Row) {
   return !previous || previous.date !== row.date;
 }
 
-function paintRows(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, portraits: ReadonlyMap<string, Image>,
+function paintRows(ctx: Context, model: GachaDetailModel, theme: Theme, portraits: ReadonlyMap<string, Image>,
   top: number, height: number, more: string, game: Game) {
   ctx.save();
   ctx.shadowColor = "rgba(50,50,50,.80)";
@@ -459,7 +459,7 @@ function paintRows(ctx: Context, model: MiaoGachaDetailModel, theme: Theme, port
   ctx.stroke();
 }
 
-function pagingNote(model: MiaoGachaDetailModel, game: Game) {
+function pagingNote(model: GachaDetailModel, game: Game) {
   const { pageInfo, gacha, poolName = "角色" } = model;
   if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 条，共 ${pageInfo.count} 条五星记录`;
   return gacha.hiddenNum
@@ -471,9 +471,9 @@ function portraitPath(path: string, game: Game) {
   return /^\/?meta-(gs|sr)\/(?:character|weapon)\/.+\.(?:png|webp|jpe?g)$/iu.exec(path)?.[1]?.toLowerCase() === game;
 }
 
-export async function renderMiaoGachaDetail(
-  game: Game, model: MiaoGachaDetailModel,
-  { mode = "auto", scale = 1.4, themeDirectory }: MiaoGachaDetailOptions,
+export async function renderGachaDetail(
+  game: Game, model: GachaDetailModel,
+  { mode = "auto", scale = 1.4, themeDirectory }: GachaDetailOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
   const root = await realpath(themeDirectory).catch(() => undefined);
@@ -527,11 +527,7 @@ export async function renderMiaoGachaDetail(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     inline(ctx, [
-      { value: "Yunzai-Fork", color: "#ffd700", size: 14, bold: true },
-      { value: " & ", size: 14 },
-      { value: "Miao-Plugin-Fork", color: "#ffd700", size: 14, bold: true },
-      { value: " By ", size: 14 },
-      { value: "Lotus", color: "#90ee90", size: 14, bold: true },
+      { value: "Lotus-Yunzai", color: "#90ee90", size: 14, bold: true },
     ], 375, bottom + 19, true);
     ctx.restore();
   }, mode);

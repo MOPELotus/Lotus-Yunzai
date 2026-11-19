@@ -427,7 +427,7 @@ test("旧宿主未就绪仍按固定宽限停止，清理期间不接受延长",
   import { writeFileSync } from "node:fs";
   process.on("SIGTERM", () => {
     writeFileSync("stopped", "yes");
-    process.send({ type: "lotus-plugin-loading", token: process.env.LOTUS_MANAGED_TOKEN, index: 1, wait: 77 },
+    process.send({ type: "lotus-yunzai-plugin-loading", token: process.env.LOTUS_MANAGED_TOKEN, index: 1, wait: 77 },
       () => process.exit(0));
   });
   writeFileSync("booting", "yes");

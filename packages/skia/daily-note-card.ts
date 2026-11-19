@@ -228,7 +228,7 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
     bottom += panelHeight + 21;
     return { title, headingY, panelY, panelHeight, rows };
   }));
-  const footer = lines(ctx, `荷花插件${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
+  const footer = lines(ctx, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
   const height = Math.max(240, bottom + 50);
   const zoom = 1.5 * scale;
 

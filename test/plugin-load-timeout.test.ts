@@ -37,7 +37,7 @@ async function waitFor<T>(read: () => T | Promise<T>, accepts: (value: T) => boo
 }
 
 test("加载超时后继续启动，迟到的现代工厂和 V3 初始化不会留下注册", async () => {
-  const root = await mkdtemp(join(tmpdir(), "lotus-plugin-load-timeout-"));
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugin-load-timeout-"));
   try {
     await copyHost(root);
     await mkdir(join(root, "config"), { recursive: true });

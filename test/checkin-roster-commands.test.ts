@@ -59,7 +59,7 @@ test("主人读全局注册数并保留前 14 个档案，渲染成功返回图�
   const result = await invoke({ ...group, isMaster: true });
   expect(result).toEqual(segment.image(png));
   expect(trace).toEqual(["global", ...rows.slice(0, 14).map(row => `details ${row.qq}:1`)]);
-  expect(cards[0]).toMatchObject({ title: "签到名单", lead: "全局荷花插件 profiles · 16\n当前已注册 profile 如下。" });
+  expect(cards[0]).toMatchObject({ title: "签到名单", lead: "全局 Lotus-Yunzai 档案 · 16\n当前已注册 profile 如下。" });
   expect(cards[0]?.lines).toHaveLength(14);
 });
 

@@ -4,6 +4,33 @@ import type { BotEvent, MessageEvent } from "./messages.ts";
 
 const defaults = { groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"] };
 
+const legacyFeatureSelectors = new Map<string, readonly string[]>([
+  ["[Lotus-Plugin] Device", ["@lotus-yunzai/device"]],
+  ["[Lotus-Plugin] Daily Note", ["@lotus-yunzai/daily-note"]],
+  ["[Lotus-Plugin] Redeem Codes", ["@lotus-yunzai/redeem-codes"]],
+  ["[Lotus-Plugin] Coin Shop", ["@lotus-yunzai/miyoushe"]],
+  ["[Lotus-Plugin] Profile Settings", ["@lotus-yunzai/hoyolab-profile", "@lotus-yunzai/cloud-profile",
+    "@lotus-yunzai/checkin-registration", "@lotus-yunzai/checkin-group-registration", "@lotus-yunzai/checkin-profile"]],
+  ["[Lotus-Plugin] Checkin", ["@lotus-yunzai/checkin"]],
+  ["[Lotus-Plugin] Checkin Admin", ["@lotus-yunzai/checkin-admin", "@lotus-yunzai/checkin-roster", "@lotus-yunzai/checkin-batch-refresh"]],
+  ["[Lotus-Plugin] Scheduler", ["@lotus-yunzai/checkin-plan", "@lotus-yunzai/checkin-schedule-settings"]],
+  ["[Lotus-Plugin] Login", ["@lotus-yunzai/passport-login"]],
+  ["[Lotus-Plugin] Gacha Log", ["[gacha] 抽卡记录"]],
+  ["[Lotus-Plugin] Music", ["[media] 点歌"]],
+  ["[Lotus-Plugin] Bilibili", ["[media] B 站解析"]],
+  ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
+  ["椰奶小助手", ["[group] 群名片"]],
+  ["椰奶状态", ["[system] 状态"]],
+  ["状态统计", ["[system] 状态", "[system] 消息统计"]],
+  ["meme-plugin", ["[meme] 表情合成"]],
+  ["清语表情", ["[meme] 表情合成"]],
+  ["清语表情:表情包生成", ["[meme] 表情合成"]],
+]);
+
+function featureSelectors(names: readonly string[]): string[] {
+  return names.flatMap(name => legacyFeatureSelectors.get(name) ?? [name]);
+}
+
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown> : {};
@@ -158,10 +185,11 @@ export async function readGroupDispatch(root: URL) {
   function allows(event: BotEvent, names: readonly string[]): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     const config = groupConfig(event);
-    const disabled = strings(config.disable);
-    const enabled = strings(config.enable);
-    return !names.some((name) => disabled.includes(name)) &&
-      (enabled.length === 0 || names.some((name) => enabled.includes(name)));
+    const disabled = featureSelectors(strings(config.disable));
+    const enabled = featureSelectors(strings(config.enable));
+    const features = featureSelectors(names);
+    return !features.some((name) => disabled.includes(name)) &&
+      (enabled.length === 0 || features.some((name) => enabled.includes(name)));
   }
 
   function keywordSettings(event: MessageEvent, groupId?: number) {

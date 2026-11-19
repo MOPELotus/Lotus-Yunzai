@@ -62,7 +62,7 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
       const deadlineSignal = AbortSignal.any([signal, session.cancel.signal]);
       try {
         const slot = await profiles.openLoginSlot(qq, profileId);
-        if (await context.reply(`[荷花插件]正在为 profile ${profileId} 创建米游社登录二维码。`) === false) return [];
+        if (await context.reply(`[account] 正在为 profile ${profileId} 创建米游社登录二维码。`) === false) return [];
         async function verifyProfile() {
           deadlineSignal.throwIfAborted();
           await profiles.verifyLoginSlot(slot);
@@ -110,8 +110,8 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           session.saving = true;
           const saved = await profiles.saveLogin(slot, { stuid, stoken, mid, credentials, roles: directory }, deadlineSignal);
           if (signal.aborted) return [];
-          return saved.rolesSynced ? `[荷花插件]profile ${profileId} 扫码登录完成，已保存登录信息。`
-            : `[荷花插件]profile ${profileId} 登录信息已保存，角色暂未同步，可用 #同步角色${profileId === 1 ? "" : profileId} 重试。`;
+          return saved.rolesSynced ? `[account] profile ${profileId} 扫码登录完成，已保存登录信息。`
+            : `[account] profile ${profileId} 登录信息已保存，角色暂未同步，可用 #同步角色${profileId === 1 ? "" : profileId} 重试。`;
         }
         return "登录二维码已过期，请重新发送扫码指令。";
       } catch (error) {

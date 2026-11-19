@@ -289,8 +289,8 @@ onBeforeUnmount(() => {
 
     <div v-if="plugins.length" class="filters">
       <div>
-        <label for="guoba-plugin">插件</label>
-        <select id="guoba-plugin" :value="selected" :disabled="Boolean(busy) || Boolean(pending)" @change="changePlugin">
+        <label for="guoba-module">插件</label>
+        <select id="guoba-module" :value="selected" :disabled="Boolean(busy) || Boolean(pending)" @change="changePlugin">
           <option disabled value="">请选择插件</option>
           <option v-for="plugin in plugins" :key="plugin" :value="plugin">{{ plugin }}</option>
         </select>

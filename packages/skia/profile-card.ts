@@ -258,7 +258,7 @@ export async function renderProfileCard(model: ProfileCardModel,
   layout.log("账号状态", [model.summary ?? "", ...fieldTexts(model.account)]);
   layout.log("签到设置", fieldTexts(model.settings));
   if (model.warnings?.length) layout.log("提示", model.warnings);
-  layout.text(`荷花插件${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, 15, layout.y + 15, width - 30, 12, white,
+  layout.text(`Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, 15, layout.y + 15, width - 30, 12, white,
     { center: true, shadow: true, leading: 18 });
 
   const height = Math.max(240, layout.y + 50);

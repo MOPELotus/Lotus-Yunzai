@@ -82,13 +82,13 @@ test("仅接受真实逐抽，清楚拒绝整份旧 Lotus 镜像及所有已知�
     row({ time: "1970-01-01 00:00:00" }),
   ]) {
     const rows = [row({ gacha_id: undefined, item_id: undefined }), fake, row({ id: nextId })];
-    expect(() => selectStarRailUigf(v4(rows), { uid })).toThrow("Lotus 显示占位");
-    expect(() => selectStarRailUigf(srgf(rows), { uid })).toThrow("Lotus 显示占位");
+    expect(() => selectStarRailUigf(v4(rows), { uid })).toThrow("显示占位记录");
+    expect(() => selectStarRailUigf(srgf(rows), { uid })).toThrow("显示占位记录");
   }
   const archive = selectStarRailUigf(v4([row()]), { uid });
   expect(() => exportStarRailUigf({ ...archive, records: [
     ...archive.records, { ...archive.records[0]!, id: "lotus-1-1" },
-  ] }, options)).toThrow("Lotus 显示占位");
+  ] }, options)).toThrow("显示占位记录");
   expect(() => selectStarRailUigf(v4([row({ gacha_id: undefined })]), { uid })).toThrow("活动卡池编号");
   expect(() => selectStarRailUigf(v4([row({ item_id: undefined })]), { uid })).toThrow("物品编号");
   expect(() => selectStarRailUigf(v4([]), { uid })).toThrow("没有可转换");

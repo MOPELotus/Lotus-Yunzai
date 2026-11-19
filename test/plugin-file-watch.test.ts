@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { watchLegacyFiles } from "../lib/plugins/file-watch.ts";
 
 async function fixture(run: (temporary: string, root: string) => Promise<void>) {
-  const temporary = await mkdtemp(join(tmpdir(), "lotus-plugin-watch-"));
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugin-watch-"));
   const root = join(temporary, "plugins");
   try {
     await mkdir(root);

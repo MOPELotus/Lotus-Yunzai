@@ -146,7 +146,7 @@ test("旧抽卡开关只标记抽卡档案命令和 JSON 入站，原神面板�
   try {
     const attachment = { name: "UIGF.json", async read() { return undefined; } };
     const context = (normalizedMessage: string) => ({ normalizedMessage, reply() {} });
-    const gachaFeature = ["[Lotus-Plugin] Gacha Log"];
+    const gachaFeature = ["[gacha] 抽卡记录"];
     for (const raw of ["#抽卡记录2", "#更新抽卡记录", "#强制导出记录", "#更新小助手抽卡记录", "#抽卡帮助", "#导入记录"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual(gachaFeature);
     }

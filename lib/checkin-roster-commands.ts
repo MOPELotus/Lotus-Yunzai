@@ -119,7 +119,7 @@ export function checkinRosterCommands({ profiles, listMembers, signal, render = 
             const label = owner ? `QQ ${row.qq} · P${row.profileId}` : `P${row.profileId} · ${row.name || "profile"}`;
             contents.push(`${label}\n${await describe(row)}`);
           }
-          if (owner) return card("签到名单", "全局荷花插件 profiles", String(rows.length),
+          if (owner) return card("签到名单", "全局 Lotus-Yunzai 档案", String(rows.length),
             rows.length ? "当前已注册 profile 如下。" : "当前没有已注册 profile。", contents);
           return card("我的签到名单", `QQ ${qq}`, String(rows.length),
             rows.length ? "你已注册的 profile 如下。" : "你还没有注册自动签到 profile。", contents);

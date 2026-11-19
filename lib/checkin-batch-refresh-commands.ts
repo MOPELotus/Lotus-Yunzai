@@ -69,7 +69,7 @@ export function checkinBatchRefreshCommands({
         const message = targets.length
           ? `已按 profile 刷新登录信息，角色已同步 ${synced} 个档案。`
           : "暂无可刷新的档案。";
-        const lead = `荷花插件 profiles · Cookie 已刷新 ${refreshed}/${targets.length}\n${message}`;
+        const lead = `Lotus-Yunzai 档案 · Cookie 已刷新 ${refreshed}/${targets.length}\n${message}`;
         try {
           const { png } = await render(title, lead, contents, new Date(), {
             themeDirectory: Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || undefined, timeZone: "Asia/Shanghai",

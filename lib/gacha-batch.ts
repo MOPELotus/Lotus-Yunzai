@@ -85,15 +85,15 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
       return "请从登录档案对应的 QQ 会话更新全部抽卡记录。";
     }
     const qq = String(user_id);
-    if (active.has(qq)) return "[荷花插件]正在批量更新你的抽卡记录，请稍后再试。";
+    if (active.has(qq)) return "[gacha] 正在批量更新你的抽卡记录，请稍后再试。";
     active.add(qq);
     try {
       const ids = await listIds(qq).catch(() => undefined);
       if (signal.aborted) return;
-      if (!ids) return "[荷花插件]读取档案列表失败，请稍后再试。";
-      if (!ids.length) return "[荷花插件]没有找到你的 profile。";
+      if (!ids) return "[gacha] 读取档案列表失败，请稍后再试。";
+      if (!ids.length) return "[gacha] 没有找到你的 profile。";
 
-      await context.reply("[荷花插件]开始批量更新所有 profile 的原神/星铁/绝区零抽卡记录。");
+      await context.reply("[gacha] 开始批量更新所有 profile 的原神/星铁/绝区零抽卡记录。");
       const counts = { done: 0, skipped: 0, failed: 0 };
       const rows: string[] = [];
       for (const profileId of ids) {

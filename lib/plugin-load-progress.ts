@@ -2,6 +2,7 @@ export const pluginStartupGraceMs = 10_000;
 export const maxPluginLoadMs = 2_147_483_647 - pluginStartupGraceMs;
 export const pluginProbeTokenEnvironment = "LOTUS_PROBE_STARTUP_TOKEN";
 export const defaultPluginLoadMs = 60_000;
+const pluginLoadingType = "lotus-yunzai-plugin-loading";
 const decimal = /^(?:\d+(?:\.\d*)?|\.\d+)$/u;
 
 export function parsePluginLoadMilliseconds(value: unknown): number | undefined {
@@ -15,7 +16,7 @@ export function parsePluginLoadMilliseconds(value: unknown): number | undefined 
 export function readPluginLoading(message: unknown, token: string, nextIndex: number): number | undefined {
   if (typeof message !== "object" || message === null) return;
   const { type, token: source, index, wait } = message as Record<string, unknown>;
-  if (type === "lotus-plugin-loading" && source === token && index === nextIndex &&
+  if ((type === pluginLoadingType || type === "lotus-plugin-loading") && source === token && index === nextIndex &&
       typeof wait === "number" && Number.isSafeInteger(wait) && wait >= 0 && wait <= maxPluginLoadMs) return wait;
 }
 
@@ -28,7 +29,7 @@ export function createPluginLoadingReporter() {
   return (wait: number) => {
     if (process.connected !== true) return;
     try {
-      send({ type: "lotus-plugin-loading", token, index: ++index, wait });
+      send({ type: pluginLoadingType, token, index: ++index, wait });
     } catch {
       // A launcher can disconnect during shutdown.
     }

@@ -158,7 +158,7 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
   const detailHeight = message ? detailHeader + message.length * 22 + 8 + 20 : 0;
   const footerTop = detailTop + (message ? detailHeight + 10 : 0);
   metrics.font = small;
-  const footer = wrapText(metrics, `荷花插件${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30);
+  const footer = wrapText(metrics, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30);
   const height = Math.max(240, footerTop + 50 + (footer.length - 1) * 18);
   const zoom = (720 / width) * scale;
   const pixelWidth = Math.round(width * zoom);

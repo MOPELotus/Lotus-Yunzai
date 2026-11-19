@@ -119,7 +119,7 @@ test("UIGF 逐条校验最低物品字段，v2 历史完整中文条目可兼容
 test("UIGF 日期按明确偏移跨日调整，显式旧 Miao 模式保留原国服时间", () => {
   const doc = v4([full({ time: "2024-02-29 23:45:00" })], 0);
   expect(selectGenshinUigf(doc, { uid }).pools[0]!.records[0]?.time).toBe("2024-03-01 07:45:00");
-  expect(selectGenshinUigf(doc, { uid, legacyMiaoServerTime: true }).pools[0]!.records[0]?.time)
+  expect(selectGenshinUigf(doc, { uid, legacyServerTime: true }).pools[0]!.records[0]?.time)
     .toBe("2024-02-29 23:45:00");
   expect(selectGenshinUigf(v4([full({ time: "2023-12-31 12:30:00" })], -5), { uid }).pools[0]!.records[0]?.time)
     .toBe("2024-01-01 01:30:00");
@@ -128,7 +128,7 @@ test("UIGF 日期按明确偏移跨日调整，显式旧 Miao 模式保留原国
   expect(selectGenshinUigf({ ...oldWithZone, info: { ...oldWithZone.info, uigf_version: "v2.4", region_time_zone: 1 } },
     { uid }).pools[0]!.records[0]?.time).toBe("2023-10-20 19:17:00");
   for (const offset of [-13, 15, 5.5, Number.NaN]) {
-    expect(() => selectGenshinUigf(v4([full()], offset), { uid, legacyMiaoServerTime: true })).toThrow("时区");
+    expect(() => selectGenshinUigf(v4([full()], offset), { uid, legacyServerTime: true })).toThrow("时区");
   }
   for (const bad of ["2023-02-29 12:17:00", "2023-10-20 24:00:00", "2023-10-20T12:17:00Z"]) {
     expect(() => selectGenshinUigf(v4([full({ time: bad })]), { uid })).toThrow("时间");

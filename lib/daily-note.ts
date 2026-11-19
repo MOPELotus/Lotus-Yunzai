@@ -135,12 +135,12 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
       if (!user_id || !Number.isSafeInteger(user_id) || user_id < 1) return "请从登录档案对应的 QQ 会话查询体力。";
       const qq = String(user_id);
       await context.reply(profileId
-        ? `[荷花插件]正在查询 profile ${profileId} 的体力。`
-        : "[荷花插件]正在查询当前 QQ 的所有 profile 体力。");
+        ? `[account] 正在查询 profile ${profileId} 的体力。`
+        : "[account] 正在查询当前 QQ 的所有 profile 体力。");
       const ids = profileId ? [profileId] : await profiles.listIds(qq).catch(() => undefined);
       if (signal.aborted) return;
       if (!ids) return "无法读取档案列表，请稍后再试。";
-      if (!ids.length) return "[荷花插件]没有找到可查询的 profile，请先扫码登录并同步 UID。";
+      if (!ids.length) return "[account] 没有找到可查询的 profile，请先扫码登录并同步 UID。";
 
       const groups: DailyNoteCardModel["groups"][number][] = [];
       for (const id of ids) {
@@ -163,7 +163,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
           if (signal.aborted) return;
           if ((error instanceof HoyoRequestError && error.code === "profile-changed") ||
               (error instanceof ProfileError && error.code === "changed")) {
-            return "[荷花插件]登录状态已变化，本次体力查询已停止，请重新发送原指令。";
+            return "[account] 登录状态已变化，本次体力查询已停止，请重新发送原指令。";
           }
           items.push({ ok: false, error: failure(error) });
         }

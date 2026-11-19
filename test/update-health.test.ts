@@ -171,7 +171,7 @@ test("隔离探测逐入口延长启动预算，HTTP 验证开始后忽略 IPC �
     assert.notEqual(token, process.env.LOTUS_HTTP_TOKEN);
     assert.equal(process.env.LOTUS_MANAGED_TOKEN, undefined);
     function report(index, wait, source = token) {
-      process.send({ type: "lotus-plugin-loading", token: source, index, wait });
+      process.send({ type: "lotus-yunzai-plugin-loading", token: source, index, wait });
     }
     await Bun.write("pid", String(process.pid));
     report(1, 391, "wrong-token");

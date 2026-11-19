@@ -81,9 +81,9 @@ function commandContext(context: CommandContext): CommandContext {
   };
 }
 
-function legacyFeatureNames(module: string, command: string): readonly string[] {
-  if (module === "@lotus-yunzai/system" && command === "#状态") return ["状态统计", "椰奶状态"];
-  if (module === "@lotus-yunzai/system" && command === "#统计") return ["状态统计"];
+function commandFeatureNames(module: string, command: string): readonly string[] {
+  if (module === "@lotus-yunzai/system" && /^#(?:椰奶)?状态(?:pro)?$/u.test(command)) return ["[system] 状态"];
+  if (module === "@lotus-yunzai/system" && command === "#统计") return ["[system] 消息统计"];
   if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];
   return [];
 }
@@ -119,7 +119,7 @@ export class CommandRegistry {
       if (typeof handler !== "function") {
         throw new Error(`模块 ${name} 的指令 ${command} 缺少处理函数。`);
       }
-      local.set(command, { handler, names: [name, label, ...legacyFeatureNames(name, command)] });
+      local.set(command, { handler, names: [name, label, ...commandFeatureNames(name, command)] });
     }
 
     for (const [alias, target] of Object.entries(module.aliases ?? {})) {
@@ -138,9 +138,9 @@ export class CommandRegistry {
     }
     if (fallback) {
       const names = [name, label];
-      if (name === "@lotus-yunzai/meme") names.push("meme-plugin", "清语表情", "清语表情:表情包生成");
+      if (name === "@lotus-yunzai/meme") names.push("[meme] 表情合成");
       if (!fallbackFeatures && ["@lotus-yunzai/genshin", "@lotus-yunzai/starrail", "@lotus-yunzai/zzz"].includes(name)) {
-        names.push("[Lotus-Plugin] Gacha Log");
+        names.push("[gacha] 抽卡记录");
       }
       this.#fallbacks.set(name, { handler: fallback, names, features: fallbackFeatures });
     }

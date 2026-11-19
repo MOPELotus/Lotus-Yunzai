@@ -148,7 +148,7 @@ export async function renderPassportQrCard(model: PassportQrCardModel,
   const title = lines(metrics, model.title || "扫码登录", textWidth, 50, titleFont);
   const subtitle = lines(metrics, model.subtitle || `profile ${model.profileId || 1}`, textWidth, 16, textFont);
   const notice = lines(metrics, model.notice || "请使用对应 App 扫码确认。", textWidth, 16, textFont);
-  const footer = lines(metrics, `荷花插件${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
+  const footer = lines(metrics, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
 
   const headerHeight = title.length * 60 + subtitle.length * 24 + 41;
   const panelTop = 38 + headerHeight;

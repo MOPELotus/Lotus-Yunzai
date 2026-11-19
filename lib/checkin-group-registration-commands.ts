@@ -51,7 +51,7 @@ export function checkinGroupRegistrationCommands({
 }: CheckinGroupRegistrationOptions): CommandModule {
   async function card(badge: string, message: string, lines: readonly string[]) {
     if (signal.aborted) return;
-    const lead = `荷花插件签到 · ${badge}\n${message}`;
+    const lead = `Lotus-Yunzai 签到 · ${badge}\n${message}`;
     try {
       const { png } = await render(title, lead, lines, new Date(), {
         themeDirectory: Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || undefined, timeZone: "Asia/Shanghai",

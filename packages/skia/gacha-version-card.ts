@@ -4,7 +4,7 @@ import { join, sep } from "node:path";
 import { renderPng } from "./index.ts";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
-export interface MiaoGachaVersionOptions {
+export interface GachaVersionOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory: string;
@@ -49,7 +49,7 @@ interface Group {
   readonly stats: Stats<typeof groupStats[number][0]>;
   readonly unassigned?: true;
 }
-interface MiaoGachaVersionModel {
+interface GachaVersionModel {
   readonly uid: string;
   readonly recordArchive?: true;
   readonly face: { readonly name: string; readonly face?: string; readonly banner?: string };
@@ -185,7 +185,7 @@ function richLine(ctx: Context, parts: readonly (readonly [string, string])[], x
   }
 }
 
-function drawBanner(ctx: Context, model: MiaoGachaVersionModel, theme: Theme, assets: ReadonlyMap<string, Image>, game: Game) {
+function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme, assets: ReadonlyMap<string, Image>, game: Game) {
   const hero = (model.face.banner && assets.get(model.face.banner)) || theme.banner;
   const icon = (model.face.face && assets.get(model.face.face)) || theme.face;
   ctx.save();
@@ -239,7 +239,7 @@ function drawBanner(ctx: Context, model: MiaoGachaVersionModel, theme: Theme, as
   ctx.restore();
 }
 
-function drawPageHead(ctx: Context, model: MiaoGachaVersionModel, page: NonNullable<MiaoGachaVersionModel["pageInfo"]>, game: Game) {
+function drawPageHead(ctx: Context, model: GachaVersionModel, page: NonNullable<GachaVersionModel["pageInfo"]>, game: Game) {
   rect(ctx, margin, 25, panelWidth, 45, 30, "rgba(0,0,0,.50)");
   const mid = `#${model.uid} · ${model.poolName}统计`;
   const marker = `第 ${page.page}/${page.total} 张`;
@@ -253,7 +253,7 @@ function drawPageHead(ctx: Context, model: MiaoGachaVersionModel, page: NonNulla
   text(ctx, marker, 705, 47, 16, "#ffd484", "right");
 }
 
-function cardName(model: MiaoGachaVersionModel, { id }: ItemCount) {
+function cardName(model: GachaVersionModel, { id }: ItemCount) {
   const item = model.gacha.itemMap[id];
   const name = item?.name || "未知";
   return name.length > 4 ? item?.abbr || name : name;
@@ -273,7 +273,7 @@ function wrapCardName(ctx: Context, name: string, width: number) {
   return lines;
 }
 
-function layoutGroup(group: Group, model: MiaoGachaVersionModel, game: Game, measure: Context | undefined) {
+function layoutGroup(group: Group, model: GachaVersionModel, game: Game, measure: Context | undefined) {
   const { columns, cardWidth } = games[game];
   const items = group.items.filter(({ star }) => star === 4 || star === 5);
   const cards = [];
@@ -291,7 +291,7 @@ function layoutGroup(group: Group, model: MiaoGachaVersionModel, game: Game, mea
 }
 type GroupLayout = ReturnType<typeof layoutGroup>;
 
-function drawGroup(ctx: Context, group: Group, model: MiaoGachaVersionModel, theme: Theme,
+function drawGroup(ctx: Context, group: Group, model: GachaVersionModel, theme: Theme,
   images: ReadonlyMap<string, Image>, layout: GroupLayout, y: number, game: Game) {
   const h = layout.height;
   const side = games[game].cardWidth;
@@ -425,7 +425,7 @@ function drawNotice(ctx: Context, game: Game, recordArchive?: true, poolName?: s
   ], width / 2, 128, 13);
 }
 
-function unassignedNotice(model: MiaoGachaVersionModel) {
+function unassignedNotice(model: GachaVersionModel) {
   const { unassignedDraws, unclassifiedDraws, totalNum } = model.gacha.totalStat;
   const notes = [];
   if (unassignedDraws > 0) notes.push(`累计 ${totalNum} 抽 · 分期可确认 ${totalNum - unassignedDraws} 抽 · ${unassignedDraws} 抽未能归至期次`);
@@ -433,7 +433,7 @@ function unassignedNotice(model: MiaoGachaVersionModel) {
   return notes.join(" · ");
 }
 
-function pagingNote(model: MiaoGachaVersionModel, game: Game) {
+function pagingNote(model: GachaVersionModel, game: Game) {
   const { pageInfo, gacha, poolName } = model;
   if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 期，共 ${pageInfo.count} 期卡池`;
   return gacha.hiddenNum
@@ -441,9 +441,9 @@ function pagingNote(model: MiaoGachaVersionModel, game: Game) {
     : "";
 }
 
-export async function renderMiaoGachaVersion(
-  game: Game, model: MiaoGachaVersionModel,
-  { mode = "auto", scale = 1.4, themeDirectory }: MiaoGachaVersionOptions,
+export async function renderGachaVersion(
+  game: Game, model: GachaVersionModel,
+  { mode = "auto", scale = 1.4, themeDirectory }: GachaVersionOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("版本统计缩放比例须在 1 至 4 之间。");
   const config = games[game];
@@ -507,7 +507,7 @@ export async function renderMiaoGachaVersion(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     richLine(ctx, [
-      ["Yunzai-Fork", "#ffd700"], [" & ", white], ["Miao-Plugin-Fork", "#ffd700"], [" By ", white], ["Lotus", "#90ee90"],
+      ["Lotus-Yunzai", "#90ee90"],
     ], 375, footer + 8.5, 14, true);
     ctx.restore();
   }, mode);

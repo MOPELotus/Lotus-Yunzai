@@ -37,7 +37,7 @@ export function checkinScheduleSettingCommands(root: URL,
       const saved = await next;
       const detail = change.type === "plan-cron" ? "已更新明日签到计划生成时间。"
         : change.mode === "random" ? "全局签到已切换到随机模式。" : "全局签到已切换到固定模式。";
-      return statusMessage("调度配置", `荷花插件调度 · 已保存\n${detail}`, [
+      return statusMessage("调度配置", `Lotus-Yunzai 调度 · 已保存\n${detail}`, [
         `模式：${saved.mode ?? "fixed"}`, `固定时间：${saved.fixed_time ?? "04:30"}`,
         `计划生成：${saved.plan_generate_cron ?? "0 0 0 * * ? *"}`, `到期扫描：${saved.run_due_cron ?? "0 * * * * *"}`,
       ], signal);
