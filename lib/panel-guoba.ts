@@ -85,9 +85,11 @@ function getValue(values: Record<string, unknown>, field: string, parts: readonl
 
 function normaliseField(schema: unknown): GuobaField | undefined {
   if (!record(schema)) throw new Error();
-  const component = components.find((name) => name === schema.component);
+  const group = schema.component === "SOFT_GROUP_BEGIN";
+  const component = group ? "Divider" : components.find((name) => name === schema.component);
   if (!component) return undefined;
   const { field, label, bottomHelpMessage } = schema;
+  if (group && (label === undefined || label === null || label === "")) return undefined;
   if (typeof label !== "string") throw new Error();
   if (component === "Divider") return { component, label };
   if (typeof field !== "string" || !field) throw new Error();

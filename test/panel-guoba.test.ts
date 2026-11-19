@@ -119,6 +119,41 @@ test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改�
   }
 });
 
+test("锅巴 Next 分组标题沿用原顺序且不加入可写字段", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-group-"));
+  try {
+    await writeFile(join(directory, "guoba.support.js"), `
+      let settings = { enabled: false, account: { retries: 2 } };
+      export const supportGuoba = () => ({ configInfo: {
+        schemas: [
+          { component: "SOFT_GROUP_BEGIN", label: "基础配置", field: "heading" },
+          { component: "Switch", label: "启用", field: "enabled" },
+          { component: "SOFT_GROUP_BEGIN", label: "多账号配置" },
+          { component: "InputNumber", label: "重试次数", field: "account.retries", componentProps: { min: 0 } },
+          { component: "SOFT_GROUP_BEGIN" }
+        ],
+        getConfigData: () => settings,
+        setConfigData(data, { Result }) { settings = data; return Result.ok(); }
+      } });
+    `);
+    const form = await loadGuobaForm(directory);
+    if (!form) throw new Error("表单未加载。");
+    expect(form.schemas).toEqual([
+      { component: "Divider", label: "基础配置" },
+      { component: "Switch", label: "启用", field: "enabled" },
+      { component: "Divider", label: "多账号配置" },
+      { component: "InputNumber", label: "重试次数", field: "account.retries", componentProps: { min: 0 } },
+    ]);
+    expect(await form.save({ heading: "伪造分组" })).toMatchObject({ ok: false, status: 400 });
+    expect(await form.save({ account: { retries: 0 } })).toMatchObject({ ok: true });
+    expect(await (await loadGuobaForm(directory))?.read()).toEqual({
+      values: { enabled: false, "account.retries": 0 }, configuredPasswords: [],
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("锅巴适配拒绝目录外文件并屏蔽导入和读取异常", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-boundary-"));
   try {
