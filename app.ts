@@ -579,12 +579,13 @@ if (import.meta.main) {
       }
     }
     const statusCard = /^#(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
-    const bareStatus = /^(?:椰奶)?状态$/u.test(event.msg);
+    const bareStatus = /^(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
     const statusMonitor = /^#(?:椰奶)?监控$/u.test(event.msg);
     const statusPhoto = /^#?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
-    const milkyDiagnostics = milky && event.message_type === "private" && (event.msg === "#诊断" || statusCard) && isMilkyOwnerSession(event);
+    const milkyDiagnostics = milky && event.message_type === "private" &&
+      (event.msg === "#诊断" || statusCard || (bareStatus && event.msg.endsWith("pro"))) && isMilkyOwnerSession(event);
     const runtimeStatusScope = (statusCard || bareStatus || statusPhoto || statusMonitor) && !event.isDelegated ?
       event.message_type === "terminal" && event.isMaster ? "terminal" : milky ? "milky" : event.boundAccount ? "onebot" : undefined : undefined;
     const originalMessage = [event.msg, event.raw_message];
@@ -722,7 +723,9 @@ if (import.meta.main) {
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
       return;
     }
-    const fallbackEvent = bareStatus && runtimeStatusScope ? { ...event, runtimeStatusScope } : event;
+    const fallbackEvent = bareStatus && runtimeStatusScope ? {
+      ...event, runtimeStatusScope, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" as const : undefined,
+    } : event;
     const fallback = await commands.dispatchFallback(fallbackEvent,
       (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (fallback !== undefined) {
