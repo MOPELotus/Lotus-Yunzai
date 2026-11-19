@@ -22,3 +22,6 @@
 [submodule "plugins/media"]
 	path = plugins/media
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Media.git
+[submodule "plugins/genshin"]
+	path = plugins/genshin
+	url = https://github.com/MOPELotus/Lotus-Yunzai-Genshin.git
