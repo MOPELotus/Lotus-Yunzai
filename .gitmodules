@@ -25,3 +25,9 @@
 [submodule "plugins/genshin"]
 	path = plugins/genshin
 	url = https://github.com/MOPELotus/Lotus-Yunzai-Genshin.git
+[submodule "plugins/starrail"]
+	path = plugins/starrail
+	url = https://github.com/MOPELotus/Lotus-Yunzai-StarRail.git
+[submodule "plugins/zzz"]
+	path = plugins/zzz
+	url = https://github.com/MOPELotus/Lotus-Yunzai-ZZZ.git

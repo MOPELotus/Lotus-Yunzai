@@ -28,6 +28,12 @@ const records = {
 };
 const expiredCodes = new Set([-100, 10001, 10101, 10102, 10103]);
 const riskCodes = new Set([1034, 10035, 10041]);
+const zzzCardPaths = {
+  "zzz-index": "index",
+  "zzz-avatar": "avatar/basic",
+  "zzz-buddy": "buddy/info",
+} as const;
+type RecordKind = "daily-note" | "genshin-index" | keyof typeof zzzCardPaths;
 type Json = Record<string, unknown>;
 
 function object(value: unknown): Json | undefined {
@@ -113,20 +119,23 @@ export function genshinCnRecordRegion({ uid, region, gameBiz }: ProfileRequestCo
 }
 
 export async function readCnGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
-  { kind, signal }: { readonly kind: "daily-note" | "genshin-index"; readonly signal?: AbortSignal },
+  { kind, signal }: { readonly kind: RecordKind; readonly signal?: AbortSignal },
   verifyProfile?: () => Promise<void>) {
   const { game, role: { uid, gameBiz } } = source;
   const forNote = kind === "daily-note";
-  const label = forNote ? "体力" : "原神战绩";
+  const forZzz = kind !== "daily-note" && kind !== "genshin-index";
+  const label = forNote ? "体力" : forZzz ? "绝区零战绩" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
     source.role.region.trim() || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
-  if ((!forNote && game !== "gs") || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
+  if ((!forNote && game !== (forZzz ? "zzz" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
   }
-  const endpoint = new URL(forNote ? route.path : "/game_record/app/genshin/api/index", origin);
+  const path = forNote ? route.path : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind]}` : "/game_record/app/genshin/api/index";
+  const endpoint = new URL(path, origin);
+  if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
   endpoint.searchParams.set("role_id", uid);
   endpoint.searchParams.set("server", region);
   const headers = requestHeaders(source, endpoint.search.slice(1));

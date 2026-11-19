@@ -16,8 +16,10 @@ import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-back
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
+import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
+import { readZzzGameRecord } from "./zzz-game-record.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { createCredentialExchange };
@@ -27,6 +29,7 @@ export { HoyoRequestError };
 export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { GameRecordRequestError } from "./game-record.ts";
+export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
@@ -36,6 +39,7 @@ export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
 export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
+export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
 export { isZzzGachaLinkMessage, parseZzzGachaLink, readZzzGachaLink, resolveZzzGachaLinkRole, ZzzGachaLinkError,
@@ -387,6 +391,9 @@ export function createHoyoClient(
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
     },
+    fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
+      return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
+    },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
       return readForProfile(source, options, readStarRailGacha);
     },
@@ -395,6 +402,9 @@ export function createHoyoClient(
     },
     fetchZzzGachaAuthKey(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGachaAuthKey, isZzzGachaAuthExpired);
+    },
+    fetchZzzGameRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readZzzGameRecord, isGameRecordCookieExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);
