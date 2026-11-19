@@ -217,6 +217,21 @@ function opaqueFileField(value: unknown): string | undefined {
   if (field && field.isWellFormed() && !/\s/u.test(field)) return field;
 }
 
+function decodeImage(data: Record<string, unknown>, url: string | undefined, call: MilkyCall): InboundSegment {
+  const image = decodeMedia("image", data, url);
+  const resourceId = opaqueFileField(data.resource_id);
+  if (!resourceId || url) return image;
+  let downloadUrl: Promise<string | undefined> | undefined;
+  async function resolveUrl() {
+    try {
+      return mediaLink((await call("get_resource_temp_url", { resource_id: resourceId }))?.url);
+    } catch {
+      return undefined;
+    }
+  }
+  return { ...image, getDownloadUrl: () => downloadUrl ??= resolveUrl() };
+}
+
 function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCall): InboundSegment | undefined {
   const file = opaqueFileField(data.file_id);
   const name = mediaText(data.file_name);
@@ -300,7 +315,7 @@ function decodeSegments(value: unknown, selfId: number, target: Target, call: Mi
       case "video": {
         const kind = type === "audio" ? "record" : type;
         const url = mediaLink(data.temp_url);
-        message.push(decodeMedia(kind, data, url));
+        message.push(kind === "image" ? decodeImage(data, url, call) : decodeMedia(kind, data, url));
         if (kind === "image" && url) img.push(url);
         raw.push(`[${kind}]`);
         break;

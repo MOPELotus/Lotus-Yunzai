@@ -110,6 +110,24 @@ test("Milky 只查询本会话的有效引用并核对返回的聊天身份", as
   expect(milkyMessage(incoming(), selfId, privateResult.call)?.lookupReply).toBeUndefined();
 });
 
+test("Milky 用当前图片资源 ID 按需查询临时链接", async () => {
+  const segments = [{ type: "image", data: { resource_id: "current-image" } }];
+  const url = "https://example.invalid/current.png";
+  const valid = fixture({ url });
+  const event = milkyMessage(incoming({ segments }), selfId, valid.call);
+  const image = Array.isArray(event?.message) ? event.message[0] : undefined;
+  expect(valid.calls).toEqual([]);
+  const read = image?.getDownloadUrl;
+  expect(typeof read).toBe("function");
+  if (typeof read !== "function") throw new Error("Milky 图片缺少按需下载入口");
+  expect(await Promise.all([read(), read()])).toEqual([url, url]);
+  expect(valid.calls).toEqual([{ action: "get_resource_temp_url", params: { resource_id: "current-image" } }]);
+  const bad = fixture({ url: "file:///tmp/test.png" });
+  const invalid = milkyMessage(incoming({ segments }), selfId, bad.call);
+  const invalidRead = (Array.isArray(invalid?.message) ? invalid.message[0] : undefined)?.getDownloadUrl;
+  expect(typeof invalidRead === "function" && await invalidRead()).toBeUndefined();
+});
+
 test("Milky 回复按会话发出文本、提及和消息序号引用", async () => {
   const { calls, call } = fixture();
   const group = milkyMessage(incoming({ message_scene: "group", peer_id: groupId }), selfId, call);
