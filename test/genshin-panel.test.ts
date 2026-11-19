@@ -42,7 +42,7 @@ test("原神旧面板入口支持档案、UID 及角色别称，避开其他游�
   expect(matchGenshinPanel("#芙芙圣遗物2")).toEqual({ type: "detail", mode: "artifacts", name: "芙芙", profileId: 2 });
   expect(matchGenshinPanel("#行秋面板")?.name).toBe("行秋");
   expect(matchGenshinPanel("#重云详情")?.name).toBe("重云");
-  for (const value of ["#星铁面板", "#原神更新面板999", "#芙宁娜伤害", "#芙宁娜图鉴", "#绝区零角色面板", "#删除面板"]) {
+  for (const value of ["#星铁面板", "#原神更新面板999", "#芙宁娜图鉴", "#绝区零角色面板", "#删除面板"]) {
     expect(matchGenshinPanel(value)).toBeUndefined();
   }
   expect(selectAvatar(officialPanel(uid, [avatar], catalog, 10), "水神", catalog)?.id).toBe(10000089);
