@@ -1,4 +1,5 @@
 import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
+import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 
 export interface MessageEvent {
   readonly msg: string;
@@ -35,6 +36,8 @@ export interface MessageEvent {
   readonly listCheckinGroupMembers?: () => Promise<readonly { id: number; name?: string }[] | undefined>;
   readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
+  readonly deliverMedia?: (file: MediaDelivery) => Promise<ChatFileResult>;
+  readonly [sendSessionMedia]?: SendSessionMedia;
   readonly attachment?: IncomingChatFile;
   readonly canReadAttachments?: boolean;
   readonly attachmentOnly?: boolean;

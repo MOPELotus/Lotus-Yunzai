@@ -68,6 +68,7 @@ import { readAccountRefreshPermission, readAccountScopePermission, readMasterPer
 import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
+import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
@@ -104,6 +105,7 @@ if (import.meta.main) {
   const handoff = createManagedHandoff();
   const legacy = new LegacyPlugins(() => handoff.accepting);
   const publicFiles = createPublicFiles();
+  let fileBase: URL | undefined;
   const groups = new OneBotGroups();
   const pending = new Set<Promise<void>>();
   const boundDeliveries = new Map<string, Promise<void>>();
@@ -129,6 +131,7 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
+  const mediaDelivery = createMediaDelivery(fileURLToPath(new URL("data", root)), () => stopping ? undefined : fileBase);
   const processReceipts = createProcessReceipts(root);
   type ProcessAction = {
     readonly kind: "stop" | "restart";
@@ -601,6 +604,10 @@ if (import.meta.main) {
       await sendCommandReply(event, redeemReply);
       return;
     }
+    const sendMedia = command[sendSessionMedia];
+    if (sendMedia) Object.defineProperty(command, "deliverMedia", {
+      value: (file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia),
+    });
     if (await legacy.dispatch(command, allowed)) return;
 
     if (isInstallCommand(command.msg)) {
@@ -835,7 +842,6 @@ if (import.meta.main) {
     let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
     const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
     const listenerMessages: string[] = [];
-    let fileBase: URL | undefined;
     function httpHandler(auth: Headers) {
       const statusRoute = httpStatus(auth, runtimeVersion);
       return async (request: Request) => {
@@ -929,7 +935,7 @@ if (import.meta.main) {
         (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
-        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ??
+        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ??
         await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
@@ -999,6 +1005,7 @@ if (import.meta.main) {
       legacy.stopContexts();
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
         stopMilky?.(), checkinRuntime?.stop()]);
+      await mediaDelivery.close();
       await plugins?.dispose();
     } finally {
       try {

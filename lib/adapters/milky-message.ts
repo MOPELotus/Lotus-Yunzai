@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
+import { sendSessionMedia } from "../media-delivery.ts";
 import type { InboundSegment, MessageEvent, MessageReply, QuotedMessage, ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
@@ -414,20 +415,23 @@ function replyToMilky(target: Target, call: MilkyCall, {
   };
 }
 
-function uploadToMilky(target: Target, confirm: MilkyConfirmedCall): NonNullable<MessageEvent["uploadFile"]> {
+async function uploadMilkyFile(target: Target, confirm: MilkyConfirmedCall, file_uri: string, file_name: string) {
   const group = "group_id" in target;
   const action = group ? "upload_group_file" : "upload_private_file";
   const destination = group ? { ...target, parent_folder_id: "/" } : target;
+  try {
+    const result = await confirm(action, { ...destination, file_uri, file_name });
+    if (result.status === "rejected") return "rejected";
+    return result.status === "confirmed" && opaqueFileField(result.data.file_id) ? "confirmed" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function uploadToMilky(target: Target, confirm: MilkyConfirmedCall): NonNullable<MessageEvent["uploadFile"]> {
   return async (file) => {
     const file_uri = encodeChatFile(file);
-    if (!file_uri) return "rejected";
-    try {
-      const result = await confirm(action, { ...destination, file_uri, file_name: file.name });
-      if (result.status === "rejected") return "rejected";
-      return result.status === "confirmed" && opaqueFileField(result.data.file_id) ? "confirmed" : "unknown";
-    } catch {
-      return "unknown";
-    }
+    return file_uri ? uploadMilkyFile(target, confirm, file_uri, file.name) : "rejected";
   };
 }
 
@@ -524,6 +528,16 @@ export function milkyMessage(
       return true;
     }),
     uploadFile: uploadCall && uploadToMilky(target, uploadCall),
+    [sendSessionMedia]: uploadCall && forwardCall && (async (url, name, type) => {
+      if (type === "file") return uploadMilkyFile(target, uploadCall, url, name);
+      try {
+        const result = await forwardCall(action, { ...target, message: [{ type, data: { uri: url } }] });
+        if (!result) return "rejected";
+        return isSequence(result.message_seq) ? "confirmed" : "unknown";
+      } catch {
+        return "unknown";
+      }
+    }),
     canReadAttachments: true,
     reply: replyToMilky(target, call, { messageId, groupSender: isGroup ? userId : undefined, scheduleRecall }),
   };

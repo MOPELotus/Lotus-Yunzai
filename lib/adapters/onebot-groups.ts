@@ -74,7 +74,7 @@ export class OneBotGroups implements GroupTransport {
       const deliver = async (target: { user_id: number } | { group_id: number }, reply: MessageReply) => {
         const message = encodeOneBotReply(reply);
         if (!active() || message === undefined) return "rejected" as const;
-        return calls.sendCheckinNotification(send, target, message);
+        return calls.sendConfirmed(send, target, message);
       };
       return [{
         isFriend: async (userId: number) => active() && await calls.isFriend(send, userId) && active(),
