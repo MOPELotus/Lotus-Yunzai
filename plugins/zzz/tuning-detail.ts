@@ -43,6 +43,7 @@ export interface ZzzTuningDetailPool {
   readonly name: Pool["name"];
   readonly timeRange: string;
   readonly lastFive: number | "-";
+  readonly pityLabel?: string;
   readonly fiveStars: number;
   readonly upCount: number;
   readonly totalCount: number;

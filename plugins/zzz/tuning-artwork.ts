@@ -4,6 +4,7 @@ import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAtlasRuntimeCatalog, type AtlasEntry } from "@lotus-yunzai/atlas/catalog";
 import type { ZzzTuningSnapshot } from "@lotus-yunzai/hoyo-client";
+import type { ZzzLegacyGachaDraw } from "./gacha-legacy.ts";
 
 const atlasRoot = fileURLToPath(new URL("../../data/atlas/", import.meta.url));
 const maxBytes = 8 * 1024 * 1024;
@@ -13,7 +14,8 @@ const iconHosts = new Set([
 ]);
 const avatarKey = "qq-avatar";
 type Pool = ZzzTuningSnapshot["pools"][number];
-type Record = Pool["records"][number];
+type TuningRecord = Pool["records"][number];
+type ArtRecord = { readonly itemId: string; readonly name: string; readonly icon?: string };
 type Kind = "character" | "equipment" | "bangboo";
 type ArtworkTransport = (url: URL, init: RequestInit) => Promise<Response>;
 
@@ -85,16 +87,36 @@ function officialIcon(value: string) {
 export function createZzzTuningArtwork(
   stats: ZzzTuningSnapshot, qq: string, signal?: AbortSignal, transport: ArtworkTransport = fetch,
 ) {
-  const catalog = createAtlasRuntimeCatalog(atlasRoot, Bun.env.LOTUS_ATLAS_DATA_DIR);
-  const poolOf = new Map<Record, Kind>();
+  const poolOf = new Map<TuningRecord, Kind>();
   for (const pool of stats.pools) {
     const kind = kindOf(pool);
     for (const record of pool.records) poolOf.set(record, kind);
   }
-  const sources = new Map<string, { record: Record; kind: Kind }>();
+  return createArtwork<TuningRecord>({ qq, signal, transport, kindOfRecord: (record) => poolOf.get(record) });
+}
 
-  function resolveIcon(record: Record) {
-    const kind = poolOf.get(record);
+export function createZzzLegacyGachaArtwork(
+  qq: string, signal?: AbortSignal, transport: ArtworkTransport = fetch,
+) {
+  return createArtwork<ZzzLegacyGachaDraw>({
+    qq, signal, transport,
+    kindOfRecord: (draw) => draw.itemType === "代理人" ? "character" : draw.itemType === "音擎" ? "equipment" : "bangboo",
+  });
+}
+
+function createArtwork<T extends ArtRecord>({
+  qq, signal, transport, kindOfRecord,
+}: {
+  qq: string;
+  signal?: AbortSignal;
+  transport: ArtworkTransport;
+  kindOfRecord: (record: T) => Kind | undefined;
+}) {
+  const catalog = createAtlasRuntimeCatalog(atlasRoot, Bun.env.LOTUS_ATLAS_DATA_DIR);
+  const sources = new Map<string, { record: T; kind: Kind }>();
+
+  function resolveIcon(record: T) {
+    const kind = kindOfRecord(record);
     if (!kind) return;
     const key = `${kind}/${record.itemId}`;
     if (!sources.has(key)) sources.set(key, { record, kind });
@@ -117,7 +139,7 @@ export function createZzzTuningArtwork(
     const source = sources.get(key);
     if (!source) return;
     const { record, kind } = source;
-    const official = officialIcon(record.icon);
+    const official = record.icon && officialIcon(record.icon);
     if (official) {
       const image = await fetchArtwork(official, transport, signal);
       if (image) return image;

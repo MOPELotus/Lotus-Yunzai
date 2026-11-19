@@ -1,8 +1,10 @@
 import { fileURLToPath } from "node:url";
-import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { createProfileStore, MAX_PROFILE_ID, ProfileError, type GameRole } from "@lotus-yunzai/account";
 import { createGachaUpdater } from "@lotus-yunzai/gacha/update";
 import { createProfileHoyoClient, HoyoRequestError, resolveZzzTuningRegion, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
-import { createZzzTuningArtwork } from "./tuning-artwork.ts";
+import { readZzzLegacyGacha, ZzzLegacyGachaError } from "./gacha-legacy.ts";
+import { buildZzzLegacyDetail } from "./gacha-legacy-detail.ts";
+import { createZzzLegacyGachaArtwork, createZzzTuningArtwork } from "./tuning-artwork.ts";
 import { buildZzzTuningDetail, buildZzzTuningInventoryReply } from "./tuning-detail.ts";
 import { renderZzzTuningDetail } from "./tuning-detail-card.ts";
 import { renderZzzTuningFailure, renderZzzTuningResult } from "./tuning-result-card.ts";
@@ -16,9 +18,20 @@ const help = [
   "绝区零抽卡记录",
   "%更新抽卡记录 同步国服米游社的六个频段。",
   "%抽卡记录 查看调频记录，当前登录可用时另发实时库存。",
+  "国际服绑定档案可查看已有的旧调频记录。",
   "命令末尾可加档案编号，例如 %抽卡记录2。",
 ].join("\n");
 const historyDirectory = fileURLToPath(new URL("../../data/zzzTuningStats/", import.meta.url));
+const legacyHistoryDirectory = fileURLToPath(new URL("../../data/zzzGachaJson/", import.meta.url));
+const overseasRegions = new Map([
+  ["10", "prod_gf_us"], ["13", "prod_gf_jp"], ["15", "prod_gf_eu"], ["17", "prod_gf_sg"],
+]);
+
+function overseasRegion({ uid, region, gameBiz }: GameRole) {
+  if (!/^\d{10}$/u.test(uid) || (gameBiz && gameBiz !== "nap_global")) return;
+  const expected = overseasRegions.get(uid.slice(0, 2));
+  return expected && (!region || region === expected) ? expected : undefined;
+}
 
 interface GachaContext {
   readonly normalizedMessage: string;
@@ -35,33 +48,47 @@ export function createModule({ signal, lockFile }: {
   const client = createProfileHoyoClient(profiles);
   const sync = createZzzTuningSync(profiles, client, historyDirectory, lockFile);
   const gachaUpdate = createGachaUpdater((qq, profileId) => sync.sync(qq, profileId, { signal }));
+  const legacyHistory = Bun.env.LOTUS_ZZZ_LEGACY_HISTORY_DIR || legacyHistoryDirectory;
 
   async function view(qq: string, profileId: number, context: GachaContext) {
     try {
       const role = await profiles.savedRole(qq, profileId, "zzz");
       const { uid } = role;
-      const region = resolveZzzTuningRegion({ game: "zzz", role });
-      const cached = await sync.read(qq, { uid, region });
-      const stats = cached ?? await client.fetchZzzTuning(await profiles.requestContext(qq, profileId, "zzz", uid), { signal });
+      const overseas = overseasRegion(role);
+      const domestic = overseas ? undefined : resolveZzzTuningRegion({ game: "zzz", role });
+      const region = overseas ?? domestic;
 
       async function roleMatches() {
         try {
           const current = await profiles.savedRole(qq, profileId, "zzz");
-          return current.uid === uid && resolveZzzTuningRegion({ game: "zzz", role: current }) === region;
+          return current.uid === uid && (overseasRegion(current) ??
+            resolveZzzTuningRegion({ game: "zzz", role: current })) === region;
         } catch {
           return false;
         }
       }
 
-      const { avatar, resolveIcon, loadArtwork } = createZzzTuningArtwork(stats, qq, signal);
-      const model = buildZzzTuningDetail({ stats, player: { nickname: role.nickname || "绳匠", avatar }, resolveIcon });
+      const nickname = role.nickname || "绳匠";
       const level = role.level === undefined ? undefined : Number(role.level);
-      const { png } = await renderZzzTuningDetail(model, {
-        loadArtwork, level: Number.isFinite(level) ? level : undefined, regionName: role.regionName || region,
-      });
+      const display = { level: Number.isFinite(level) ? level : undefined, regionName: role.regionName || region };
+      let png: Uint8Array;
+      if (domestic) {
+        const cached = await sync.read(qq, { uid, region: domestic });
+        const stats = cached ?? await client.fetchZzzTuning(await profiles.requestContext(qq, profileId, "zzz", uid), { signal });
+        const { avatar, resolveIcon, loadArtwork } = createZzzTuningArtwork(stats, qq, signal);
+        const model = buildZzzTuningDetail({ stats, player: { nickname, avatar }, resolveIcon });
+        ({ png } = await renderZzzTuningDetail(model, { ...display, loadArtwork }));
+      } else {
+        const stats = await readZzzLegacyGacha(legacyHistory, qq, uid);
+        if (!stats) return "该角色还没有绝区零旧调频记录。";
+        const { avatar, resolveIcon, loadArtwork } = createZzzLegacyGachaArtwork(qq, signal);
+        const model = buildZzzLegacyDetail({ stats, player: { nickname, avatar }, resolveIcon });
+        ({ png } = await renderZzzTuningDetail(model, { ...display, loadArtwork }));
+      }
       if (signal.aborted) return [];
       if (!await roleMatches()) return "绝区零档案角色已变化，请重新查询。";
       if (await context.reply({ type: "image", file: png }) === false) return [];
+      if (!domestic) return [];
 
       const live = await profiles.requestContext(qq, profileId, "zzz", uid)
         .then((current) => client.fetchZzzTuningInventory(current, { signal })).catch(() => undefined);
@@ -77,6 +104,7 @@ export function createModule({ signal, lockFile }: {
       if (error instanceof HoyoRequestError && error.code === "invalid-input") return error.message;
       if (error instanceof HoyoRequestError && error.code === "profile-changed") return "绝区零档案角色已变化，请重新查询。";
       if (error instanceof ZzzTuningRateLimitError) return "访问过于频繁，请稍后再试。";
+      if (error instanceof ZzzLegacyGachaError) return error.message;
       return "绝区零抽卡记录暂时无法查看。";
     }
   }

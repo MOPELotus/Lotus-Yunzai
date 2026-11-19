@@ -235,7 +235,7 @@ function drawTitle(ctx: Context, pool: ZzzTuningDetailPool, top: number, backgro
   ctx.restore();
   ctx.font = `36px ${font}`;
   const statusX = x + ctx.measureText(pool.name).width + 2.4;
-  const statusParts = ["已", String(pool.lastFive), "抽未出S级"] as const;
+  const statusParts = pool.pityLabel ? [pool.pityLabel] : ["已", String(pool.lastFive), "抽未出S级"];
   ctx.font = `19.2px ${font}`;
   const lengths = statusParts.map((part) => ctx.measureText(part).width);
   const pillWidth = 23 + lengths.reduce((sum, part) => sum + part, 0);
