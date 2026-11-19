@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { ZzzPanelAvatar } from "../packages/hoyo-client/zzz-panel.ts";
 import type { DamageData } from "../plugins/zzz/damage-engine/types.ts";
 import { zzzPanelCommand } from "../plugins/zzz/panel-command.ts";
+import { panelDamageSections } from "../plugins/zzz/panel-damage-card.ts";
 import { calculatePanelDamage, createPanelDamageReader, ZzzDamageUnavailable } from "../plugins/zzz/panel-damage.ts";
 
 const numericFixture: DamageData = {
@@ -174,4 +175,54 @@ test("本的二影格挡附加防御伤害仍归入原来的技能序号", () =>
   expect(second.skills.map(row => row.skill.type)).toEqual(first.skills.map(row => row.skill.type));
   expect(second.selected.skill.type).toBe("EQG1");
   expect(second.selected.result.expectDMG).toBeGreaterThan(first.selected.result.expectDMG);
+});
+
+test("薇薇安六影将五护羽异放写入自己的序号，保留普通异放", () => {
+  const vivian = { ...avatar, id: 1331, name_mi18n: "薇薇安", element_type: 205, avatar_profession: 3 };
+  const data: DamageData = {
+    ...numericFixture,
+    character: { skill: Object.fromEntries(["TY205", "AP4", "AT", "AX", "AH", "CF", "EQ", "RL", "RZ"].map(name => [name, [1]])) },
+    anomaly: [{
+      ...numericFixture.anomaly[0]!, name: "侵蚀", element_type: 205, discover: { multiplier: 0.2, fixed_multiplier: 0.2 },
+    }],
+  };
+  const zero = calculatePanelDamage(vivian, data, noGear, 4);
+  expect(zero.selected.skill.type).toBe("AP4");
+  const six = calculatePanelDamage({ ...vivian, rank: 6 }, data, noGear, 4);
+  expect(six.skills).toHaveLength(zero.skills.length + 1);
+  expect(six.selected.skill.name).toBe("6影特殊异放·5护羽");
+  expect(six.selected.result.expectDMG).toBeCloseTo(5 * six.skills[2]!.result.expectDMG, 8);
+});
+
+test("波可娜的追加攻击条件在六影前后按原规则生效", () => {
+  const pulchra = { ...avatar, id: 1351, name_mi18n: "波可娜", element_type: 200 };
+  const data: DamageData = {
+    ...numericFixture,
+    character: { skill: Object.fromEntries(["AP3", "AX", "CF", "EPLP", "EPLZ", "EQ", "RL", "RZ"].map(name => [name, [1]])) },
+  };
+  const zero = calculatePanelDamage(pulchra, data, noGear, 4);
+  expect(zero.skills[0]!.areas.BoostArea).toBeCloseTo(1.3);
+  expect(zero.selected.areas.BoostArea).toBeCloseTo(1.6);
+  const six = calculatePanelDamage({ ...pulchra, rank: 6 }, data, noGear, 4);
+  expect(six.skills[0]!.areas.BoostArea).toBeCloseTo(1.3);
+  expect(six.selected.areas.BoostArea).toBeCloseTo(1.45);
+});
+
+test("柏妮思六影保留原版能计算的技能，并说明未产出结果的旧分支", () => {
+  const burnice = { ...avatar, id: 1171, name_mi18n: "柏妮思", element_type: 201, avatar_profession: 3, rank: 6 };
+  const entries = ["TY", "AX0", "AX", "CF", "EQP0", "EQP", "EQS0", "EQS", "RL", "RZ"].map(name => [name, [1]]);
+  const data: DamageData = {
+    ...numericFixture,
+    character: { skill: Object.fromEntries(entries) },
+    anomaly: [{
+      ...numericFixture.anomaly[0]!, name: "灼烧", element_type: 201, discover: { multiplier: 0.2, fixed_multiplier: 0.2 },
+    }],
+  };
+  const actual = calculatePanelDamage(burnice, data, noGear, 10);
+  expect(actual.selected.skill.type).toBe("Y6Y");
+  expect(actual.skills).toHaveLength(12);
+  expect(actual.unavailableSkills).toEqual(["6影强化E双份额外灼烧"]);
+  expect(panelDamageSections(actual, "柏妮思", 30, 1)[0]?.notes).toContain("6影强化E双份额外灼烧暂无原版计算结果。");
+  const incomplete = { ...data, character: { skill: Object.fromEntries(entries.filter(([name]) => name !== "EQP")) } };
+  expect(() => calculatePanelDamage(burnice, incomplete, noGear)).toThrow(/无法完整核验/u);
 });
