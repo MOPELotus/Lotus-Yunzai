@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "../packages/account/index.ts";
@@ -104,5 +104,25 @@ test("自动签到开关与 Cookie/角色写入共享 revision 锁，冲突后�
       enabled: false,
       account: { ...refreshed, game_roles: { gs: [{ uid: "100000001" }] }, current_uid: { gs: "100000001" } },
     });
+  });
+});
+
+test("签到计划只读取同路径身份的实际档案及其非敏感设置", async () => {
+  await withProfile(async (store, path, root) => {
+    await writeFile(join(root, `${qq}.yaml`), Bun.YAML.stringify({
+      ...fixture, enabled: true, profile: { id: 1, name: "fixture-private" },
+      schedule: { mode: "fixed", fixed_time: "4:30", allow_random: false },
+    }));
+    await writeFile(join(root, "100008.yaml"), Bun.YAML.stringify(fixture));
+    await writeFile(join(root, `${qq}-1.yaml`), Bun.YAML.stringify(fixture));
+    await symlink(path, join(root, "100009-2.yaml"));
+    expect(await store.listCheckinProfiles()).toEqual([
+      { qq, profileId: 1, enabled: true, loggedIn: true, name: "",
+        schedule: { mode: "fixed", fixedTime: "04:30", allowRandom: false } },
+      { qq, profileId: 2, enabled: false, loggedIn: true, name: "另一个档案",
+        schedule: { mode: "fixed", fixedTime: "08:00", allowRandom: true } },
+    ]);
+    expect(await store.listIds(qq)).toEqual([1, 2]);
+    expect(await createProfileStore(join(root, "missing")).listCheckinProfiles()).toEqual([]);
   });
 });

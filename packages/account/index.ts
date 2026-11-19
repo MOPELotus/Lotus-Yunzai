@@ -42,6 +42,16 @@ function profileFilename(qq: string, id: number): string {
   return `${qq}${id === 1 ? "" : `-${id}`}.yaml`;
 }
 
+const profileFilenamePattern = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u;
+
+function profileSchedule(value: unknown) {
+  const raw = record(value);
+  const mode = raw.mode === "fixed" || raw.mode === "random" ? raw.mode : "inherit";
+  const time = text(raw.fixed_time);
+  const fixedTime = /^(?:[01]?\d|2[0-3]):[0-5]\d$/u.test(time) ? time.padStart(5, "0") : undefined;
+  return { mode, fixedTime, allowRandom: raw.allow_random !== false } as const;
+}
+
 export interface GameRole {
   readonly uid: string;
   readonly region: string;
@@ -110,6 +120,14 @@ function readIdentity(value: unknown, qq: string, id: number) {
 }
 
 export type ProfileSummary = Readonly<ReturnType<typeof readIdentity>["summary"]>;
+
+function checkinLabel(state: ReturnType<typeof readIdentity>, value: string, fallback: string) {
+  const { cookie, stoken, stokenCookie, ltoken, mid } = state.account;
+  const { id, fp } = state.device;
+  const secrets = [cookie, stoken, stokenCookie, ltoken, mid, id, fp];
+  if (secrets.some(secret => secret && value.includes(secret))) return fallback;
+  return value.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 80) || fallback;
+}
 
 async function readFileSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -284,6 +302,23 @@ function hasLegacyGameCookie(account: ReturnType<typeof readIdentity>["account"]
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
+
+  async function listSlots() {
+    try {
+      const files = await readdir(root, { withFileTypes: true });
+      return files.flatMap(file => {
+        if (!file.isFile()) return [];
+        const match = profileFilenamePattern.exec(file.name);
+        const qq = match?.[1];
+        const profileId = Number(match?.[2] ?? 1);
+        if (!qq || profileId > MAX_PROFILE_ID || profileFilename(qq, profileId) !== file.name) return [];
+        return [{ qq, profileId }];
+      });
+    } catch (error) {
+      if (record(error).code === "ENOENT") return [];
+      throw new ProfileError("invalid", "无法读取档案目录。");
+    }
+  }
 
   async function readDocument(qq: string, id: number, path = join(root, profileFilename(qq, id))) {
     try {
@@ -496,20 +531,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return role;
     },
     async listIds(qq: string): Promise<number[]> {
-      const base = profileFilename(qq, 1);
-      try {
-        const files = await readdir(root, { withFileTypes: true });
-        const numbered = new RegExp(`^${qq}-([1-9]\\d{0,2})\\.yaml$`, "u");
-        return files.flatMap((file) => {
-          if (!file.isFile()) return [];
-          if (file.name === base) return [1];
-          const id = Number(numbered.exec(file.name)?.[1]);
-          return id >= 2 && id <= MAX_PROFILE_ID ? [id] : [];
-        }).sort((a, b) => a - b);
-      } catch (error) {
-        if (record(error).code === "ENOENT") return [];
-        throw new ProfileError("invalid", "无法读取档案目录。");
+      profileFilename(qq, 1);
+      return (await listSlots()).filter(slot => slot.qq === qq).map(slot => slot.profileId).sort((a, b) => a - b);
+    },
+    async listCheckinProfiles() {
+      const targets = [];
+      for (const { qq, profileId } of await listSlots()) {
+        if (!/^[1-9]\d{0,18}$/u.test(qq)) continue;
+        const profile = await readDocument(qq, profileId).catch(() => undefined);
+        if (!profile) continue;
+        targets.push({
+          qq, profileId, enabled: profile.state.summary.enabled, loggedIn: profile.state.summary.loggedIn,
+          name: checkinLabel(profile.state, profile.state.summary.name, ""),
+          schedule: profileSchedule(profile.document.schedule),
+        });
       }
+      return targets.sort((left, right) => left.qq.localeCompare(right.qq) || left.profileId - right.profileId);
     },
     async accountContext(qq: string, id = 1) {
       const { account, device, revision } = await readLoggedIn(qq, id);
@@ -520,10 +557,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const cn = record(record(document.games).cn);
       const community = record(document.mihoyobbs);
       const communityEnabled = community.enable === true && record(community.tasks ?? community).checkin === true;
-      const name = text(record(document.user).nickname) || `QQ ${qq}`;
-      const sensitive = [state.account.cookie, state.account.ltoken, state.account.stoken, state.account.stokenCookie,
-        state.account.mid, state.device.id, state.device.fp].filter(Boolean);
-      const displayName = sensitive.some(secret => name.includes(secret)) ? "档案" : name.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 80) || "档案";
+      const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
       const games = Object.fromEntries(["genshin", "honkai2", "honkai3rd", "tears_of_themis", "honkai_sr", "zzz", "hna"].map(key => {
         const game = record(cn[key]);
         const defaultEnabled = key === "genshin" || key === "honkai_sr" || key === "zzz";
@@ -532,7 +566,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }));
       const communityForums = communityEnabled && Array.isArray(community.checkin_list)
         ? community.checkin_list.map(accountId).filter(Boolean) : [];
-      return { revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums };
+      return {
+        revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
+        schedule: profileSchedule(document.schedule),
+      };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       const filename = profileFilename(qq, id);
@@ -631,7 +668,7 @@ export async function importProfiles(source: string, destination: string, apply 
   if (apply) await mkdir(into, { recursive: true, mode: 0o700 });
 
   for (const file of files) {
-    const match = /^(\d+)(?:-([1-9]\d{0,2}))?\.yaml$/u.exec(file.name);
+    const match = profileFilenamePattern.exec(file.name);
     const qq = match?.[1];
     if (!qq) continue;
     const id = Number(match?.[2] ?? 1);
