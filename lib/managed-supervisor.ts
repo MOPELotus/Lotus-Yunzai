@@ -193,7 +193,10 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     const oldExit = await previousWorker.stop();
     const pausedAt = previousWorker.pausedAt;
     if (stopped) return "stopped" as const;
-    if (oldExit !== 143 && oldExit !== 0) return restartPrevious(notify, pausedAt);
+    if (oldExit !== 143 && oldExit !== 0) {
+      console.warn(`[更新] 原宿主以 ${oldExit} 退出，正在重新启动原版本。`);
+      return restartPrevious(notify, pausedAt);
+    }
 
     const git = createLocalGit();
     const original = await git?.(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
@@ -226,6 +229,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       current = candidate;
       return "updated" as const;
     } catch {
+      if (!stopped) {
+        console.warn(candidate ? "[更新] 候选宿主未能完成交接，正在恢复原版本。" : "[更新] 文件切换失败，正在恢复原版本。");
+      }
       await candidate?.stop(stopped);
       try {
         if (activated && !stopped) await activateUpdate(root, activated.previous, async () => {}, activated.state);

@@ -404,8 +404,13 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       }
 
       await supervisor.stop();
-      if (fail) expect(await supervisor.stderr).toContain(liveFailure);
-      else expect(await supervisor.stderr).not.toContain(liveFailure);
+      const stderr = await supervisor.stderr;
+      if (fail) {
+        expect(stderr).toContain(liveFailure);
+        expect(stderr).toContain("候选宿主未能完成交接");
+      } else {
+        expect(stderr).not.toContain(liveFailure);
+      }
     } finally {
       await supervisor.close();
     }
