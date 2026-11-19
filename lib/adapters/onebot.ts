@@ -412,6 +412,10 @@ async function dispatchMessage(
       title: (id, text) => calls.setGroupSpecialTitle(send, target.group_id, id, text, likeSession),
       setAdmin: (id, enabled) => calls.setGroupAdmin(send, target.group_id, id, enabled, likeSession),
     })),
+    groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
+      if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
+      return calls.listMutedMembers(send, target.group_id, likeSession);
+    } : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId

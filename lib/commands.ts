@@ -6,7 +6,7 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
-    "groupSetSpecialTitle" | "groupSetAdmin"
+    "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
   atlasMaintenance?: true;
@@ -89,7 +89,8 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupWholeMute, groupKick,
-    groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, profileLikeImageSignal, isFriend, reviewGroupRequest,
+    groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
+    profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
     attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
@@ -105,6 +106,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupManageWhitelistAutoUnmute ? { groupManageWhitelistAutoUnmute } : {}),
     ...(message_type === "group" && !isDelegated && groupSetSpecialTitle ? { groupSetSpecialTitle } : {}),
     ...(message_type === "group" && !isDelegated && groupSetAdmin ? { groupSetAdmin } : {}),
+    ...(message_type === "group" && !isDelegated && groupMuteRoster ? { groupMuteRoster } : {}),
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),

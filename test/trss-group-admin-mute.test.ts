@@ -51,7 +51,7 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
   expect(sent).toBe(0);
 });
 
-test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员", async () => {
+test("双协议群管理复核名单、成员权限和各项网关回执", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
   const rosterChanges = new Map<string, "admin" | "member">();
@@ -120,12 +120,20 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
       Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(oneBotId),
     } });
     const oneBotCalls: Call[] = [];
+    const nowSeconds = () => Math.floor(Date.now() / 1000);
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
       oneBotCalls.push({ action, params });
       if (action === "set_group_admin") updateRole(params, params.enable);
-      if (echo) client.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: action === "get_group_member_info" ?
-        member(params) : action === "send_msg" ? { message_id: oneBotCalls.length } : {} }));
+      const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
+      const reply = action === "get_group_member_info" ? member(params)
+        : action === "send_msg" ? { message_id: oneBotCalls.length }
+        : action === "get_group_shut_list" ? [
+          { uin: "43", cardName: "合成群名片", nick: "合成昵称", role: 2, shutUpTime: nowSeconds() + 81 },
+          { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
+          { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
+        ] : {};
+      if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied ? 100 : 0, data: reply }));
     };
     await waitUntil(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 测试连接未就绪。");
 
@@ -351,16 +359,16 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.duration === 45)).toHaveLength(1);
     expect(await readFile(join(legacyRules, "79.json"), "utf8")).toBe(testRules);
 
-    const titleReply = (value: string) => waitUntil(() => oneBotReplies().find(({ params }) =>
-      JSON.stringify(params.message).includes(value)), "OneBot 未回复群头衔指令。");
+    const groupReplyWith = (value: string) => waitUntil(() => oneBotReplies().find(({ params }) =>
+      JSON.stringify(params.message).includes(value)), `OneBot 未回复预期的群管理结果：${value}`);
     send(oneBotMessage("#申请头衔旅人", 42, 82));
-    await titleReply("已将你的头衔更换为「旅人」");
+    await groupReplyWith("已将你的头衔更换为「旅人」");
     send(oneBotMessage("#申请头衔不能设置", 42, 79));
-    await titleReply("请核对群成员和群主权限");
+    await groupReplyWith("请核对群成员和群主权限");
     send(oneBotMessage([text("#修改头衔不能代改"), at(42)], 51, 82));
-    await titleReply("没有设置该群头衔的权限");
+    await groupReplyWith("没有设置该群头衔的权限");
     send(oneBotMessage([text("#设置头衔同行者"), at(42)], 52, 82));
-    await titleReply("同行者");
+    await groupReplyWith("同行者");
     expect(oneBotCalls.filter(({ action }) => action === "set_group_special_title").map(({ params }) => params)).toEqual([
       { group_id: 82, user_id: 42, special_title: "旅人" }, { group_id: 82, user_id: 42, special_title: "同行者" },
     ]);
@@ -392,7 +400,7 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
 
     const promote = oneBotMessage([text("#设置管理"), at(42), at(60042), at(42)], 52, 82);
     send(promote);
-    await titleReply("60042");
+    await groupReplyWith("60042");
     send(promote);
     const priorAdminReplies = oneBotReplies().length;
     send(oneBotMessage("#设置管理60042", 52, 82));
@@ -412,6 +420,34 @@ test("旧禁言指令在 OneBot 与 Milky 只操作当前已复核的群成员",
     expect(JSON.stringify((await milkyReply(24)).params.message)).toContain("53");
     expect(milkyCalls.filter(({ action }) => action === "set_group_member_admin").map(({ params }) => params)).toEqual([
       { group_id: 79, user_id: 60044, is_set: true }, { group_id: 79, user_id: 53, is_set: false },
+    ]);
+
+    send(oneBotMessage("#查看禁言列表", 54, 82));
+    const firstList = await waitUntil(() => oneBotCalls.find(({ action }) => action === "send_group_forward_msg"),
+      "OneBot 禁言列表未转发。");
+    expect(firstList.params.group_id).toBe(82);
+    const forwarded = JSON.stringify(firstList.params.messages);
+    expect(forwarded).toContain("https://q1.qlogo.cn/g?b=qq&s=100&nk=43");
+    expect(forwarded).toContain("合成群名片");
+    expect(forwarded).toContain("禁言剩余时间");
+    expect(forwarded).toContain("禁言到期时间");
+    expect(forwarded).not.toContain("已过期");
+
+    send(oneBotMessage("#解除全部禁言", 54, 82));
+    await groupReplyWith("没有解除群禁言的权限");
+    const unmuteMany = oneBotMessage("#解除全部禁言", 52, 82);
+    send(unmuteMany);
+    const unmuteReply = await groupReplyWith("已解除 1 人的禁言");
+    expect(JSON.stringify(unmuteReply.params.message)).toContain("1 人的解禁被协议端拒绝");
+    send(unmuteMany);
+    await webhook("message_receive", milkyTitle("#获取禁言列表"));
+    expect(JSON.stringify((await milkyReply(25)).params.message)).toContain("禁言列表");
+    expect(oneBotMuted().filter(({ group_id }) => group_id === 82)).toEqual([
+      { group_id: 82, user_id: 43, duration: 0 },
+      { group_id: 82, user_id: 44, duration: 0 },
+    ]);
+    expect(oneBotCalls.filter(({ action }) => action === "get_group_shut_list").map(({ params }) => params)).toEqual([
+      { group_id: 82 }, { group_id: 82 },
     ]);
   } finally {
     socket?.close();

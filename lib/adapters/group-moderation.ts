@@ -11,6 +11,13 @@ export type GroupSpecialTitleAction = (
 ) => Promise<GroupMemberModerationResult>;
 export type GroupSetAdminAction = (userId: number, enabled: boolean) => Promise<GroupMemberModerationResult>;
 
+export interface MutedGroupMember {
+  readonly userId: number;
+  readonly name?: string;
+  readonly role?: Role;
+  readonly until: number;
+}
+
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;

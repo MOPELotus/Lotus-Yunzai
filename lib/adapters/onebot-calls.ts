@@ -1,7 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
-import type { GroupModerationResult } from "./group-moderation.ts";
+import type { GroupModerationResult, MutedGroupMember } from "./group-moderation.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -224,6 +224,28 @@ export class OneBotCalls {
       if (!isRecord(result) || (verifyIds && (result.group_id !== groupId || result.user_id !== userId))) return;
       const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") return role;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async listMutedMembers(send: Send, groupId: number, signal: AbortSignal): Promise<readonly MutedGroupMember[] | undefined> {
+    try {
+      const payload = await this.#request(send, "get_group_shut_list", { group_id: groupId }, signal);
+      if (signal.aborted || !Array.isArray(payload) || payload.length > 10_000) return;
+      const members: MutedGroupMember[] = [];
+      const seen = new Set<number>();
+      for (const row of payload as unknown[]) {
+        if (!isRecord(row) || ("group_id" in row && row.group_id !== groupId)) return;
+        const id = typeof row.uin === "string" && /^[1-9]\d*$/u.test(row.uin) ? Number(row.uin) : row.uin;
+        const until = row.shutUpTime;
+        if (!isPositiveInteger(id) || seen.has(id) || typeof until !== "number" || !Number.isSafeInteger(until) || until < 0) return;
+        seen.add(id);
+        if (row.isDelete === true || until <= Date.now() / 1000) continue;
+        const role = row.role === 2 ? "member" : row.role === 3 ? "admin" : row.role === 4 ? "owner" : undefined;
+        members.push({ userId: id, until, role, name: memberDisplayName(row.cardName) ?? memberDisplayName(row.nick) });
+      }
+      return members;
     } catch {
       return undefined;
     }
