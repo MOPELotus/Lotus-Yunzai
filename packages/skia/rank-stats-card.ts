@@ -30,9 +30,12 @@ function block(ctx: Context, x: number, y: number, width: number, height: number
 const imageLimit = 12 * 1024 * 1024;
 const pngHeader = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-async function readBackground(themeDirectory: string) {
+const gameBackgrounds = { gs: "bg-hydro.webp", sr: "bg-sr.webp" } as const;
+type Game = keyof typeof gameBackgrounds;
+
+async function readBackground(game: Game, themeDirectory: string) {
   try {
-    const path = join(themeDirectory, "graph", "background.png");
+    const path = join(themeDirectory, "common", "bg", gameBackgrounds[game]);
     const info = await stat(path);
     if (!info.isFile() || info.size > imageLimit) return;
     const data = await readFile(path);
@@ -45,10 +48,14 @@ async function readBackground(themeDirectory: string) {
   }
 }
 
-export async function renderDamageRankStatsCard(name: string, stats: DamageRankStats, {
-  mode = "auto", now = new Date(), themeDirectory, footer = "Lotus-Yunzai",
-}: { readonly mode?: RenderMode; readonly now?: Date; readonly themeDirectory?: string; readonly footer?: string } = {}) {
-  const background = themeDirectory && await readBackground(themeDirectory);
+export async function renderDamageRankStatsCard(game: Game, name: string, stats: DamageRankStats, {
+  mode = "auto", now = new Date(), themeDirectories = [], footer = "Lotus-Yunzai",
+}: { readonly mode?: RenderMode; readonly now?: Date; readonly themeDirectories?: readonly string[]; readonly footer?: string } = {}) {
+  let background: Awaited<ReturnType<typeof readBackground>>;
+  for (const directory of new Set(themeDirectories)) {
+    background = await readBackground(game, directory);
+    if (background) break;
+  }
   const width = 1200;
   const height = 793;
   const scale = 1.4;
