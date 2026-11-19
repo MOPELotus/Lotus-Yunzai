@@ -148,6 +148,12 @@ if (import.meta.main) {
   const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
   const pendingModuleTasks = new Set<() => void>();
   let moduleTasksActive = false;
+  function whenModuleTasksActive(start: () => void) {
+    if (moduleTasksActive && handoff.accepting && !lifecycle.signal.aborted) start();
+    else if (!lifecycle.signal.aborted) pendingModuleTasks.add(start);
+    return () => pendingModuleTasks.delete(start);
+  }
+
   function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
     const owner = new HandlerScope();
     let startup: Promise<void> | undefined;
@@ -167,10 +173,9 @@ if (import.meta.main) {
         void finished.finally(() => pending.delete(finished));
       }
     };
-    if (moduleTasksActive && handoff.accepting && !lifecycle.signal.aborted) start();
-    else if (!lifecycle.signal.aborted) pendingModuleTasks.add(start);
+    const cancelStart = whenModuleTasksActive(start);
     return async () => {
-      pendingModuleTasks.delete(start);
+      cancelStart();
       await Promise.all([moduleTasks.cancel(new Set([owner])), startup]);
     };
   }
@@ -1313,6 +1318,7 @@ if (import.meta.main) {
         },
         registerTask: (cron, type, run) => registerModuleTask(`[guides] 定时日历 ${type}`, cron, run),
         targets: scheduledCalendarTargets,
+        whenReady: whenModuleTasksActive,
       },
       atlasUpdate: probingUpdate ? undefined : {
         config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {

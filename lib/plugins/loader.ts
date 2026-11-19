@@ -233,6 +233,7 @@ export async function loadPlugins(
       register(policy: CalendarSchedule): () => void;
       registerTask: CalendarScheduleOptions["register"];
       targets: CalendarScheduleOptions["targets"];
+      whenReady(start: () => void): () => void;
     };
     readonly atlasUpdate?: {
       readonly config: unknown;
