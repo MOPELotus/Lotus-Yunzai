@@ -4,8 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore, type ProfileRequestContext } from "../packages/account/index.ts";
-import { createHoyoClient, type GenshinBackpackProbe } from "../packages/hoyo-client/index.ts";
-import { readGenshinBackpack } from "../packages/hoyo-client/genshin-backpack.ts";
+import { createHoyoClient, type GenshinBackpackProbe, type GenshinGrowthItem } from "../packages/hoyo-client/index.ts";
+import { readGenshinBackpack, readGenshinGrowth } from "../packages/hoyo-client/genshin-backpack.ts";
 
 const uid = "512345678";
 const region = "cn_qd01";
@@ -212,6 +212,89 @@ device: { bound: true, id: fixture-id, fp: fixture-fp }
     await expect(client.fetchGenshinBackpack(latest, options)).rejects.toMatchObject({ reason: "expired" });
     expect(cookies).toEqual(["cookie_token=fixture-new", "cookie_token=fixture-newer"]);
     expect(exchangeCount).toBe(2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("养成计算只发送单目标配方并保留官方明确的材料缺口", async () => {
+  const item = { weapon: { id: 14515, level_current: 81, level_target: 90 } } as const;
+  let calls = 0;
+  const output = await readGenshinGrowth(source, async (url, init) => {
+    calls++;
+    expect(url.href).toBe(endpoint);
+    expect(init).toMatchObject({ method: "POST", credentials: "omit", redirect: "error" });
+    expect(JSON.parse(String(init.body))).toEqual({ items: [item], uid, region });
+    const headers = new Headers(init.headers);
+    expect(headers.get("cookie")).toBe(cookie);
+    expect(headers.get("x-rpc-device_fp")).toBe("fixture-fp");
+    return answer({ overall_consume: [row, { id: 20, name: "经验", num: 5, lack_num: -2 }] });
+  }, { item: { ...item, uid: "123456789" } as GenshinGrowthItem });
+  expect(output).toEqual({ uid, region, items: [
+    { id: "202", name: "摩拉", total: 100, lack: 40 },
+    { id: "20", name: "经验", total: 5, lack: 0 },
+  ] });
+  for (const invalid of [
+    { ...item, avatar_id: 10000015 },
+    { ...item, weapon: { ...item.weapon, level_target: 80 } },
+    { avatar_id: 10000015, avatar_level_current: 80, avatar_level_target: 90,
+      skill_list: [{ id: 1531, level_current: 1, level_target: 10 }, { id: 1531, level_current: 2, level_target: 3 }] },
+  ]) {
+    await expect(readGenshinGrowth(source, async () => { calls++; return answer(); }, { item: invalid }))
+      .rejects.toMatchObject({ code: "invalid-input" });
+  }
+  expect(calls).toBe(1);
+  for (const data of [
+    { has_user_info: false, overall_consume: [row] },
+    { overall_consume: [{ id: 202, name: "摩拉", num: 100 }] },
+    { uid: "512345679", overall_consume: [row] },
+  ]) {
+    await expect(readGenshinGrowth(source, async () => answer(data), { item })).rejects.toMatchObject({ code: "response" });
+  }
+});
+
+test("养成计算遇到 Cookie 过期时沿用本人同一档案与配方续期一次", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-growth-reader-"));
+  try {
+    const profile = (id: number, credentials: string) => `
+version: 1
+user: { qq: "42" }
+profile: { id: ${id} }
+account:
+  ltuid: "8080"
+  cookie: "${credentials}"
+  stoken: fixture-stoken
+  game_roles: { gs: [{ uid: "${uid}", region: ${region}, game_biz: hk4e_cn }] }
+  current_uid: { gs: "${uid}" }
+device: { bound: true, id: fixture-id, fp: fixture-fp }
+`;
+    await writeFile(join(directory, "42-2.yaml"), profile(2, cookie));
+    await writeFile(join(directory, "42.yaml"), profile(1, "cookie_token=fixture-other-profile"));
+    const profiles = createProfileStore(directory);
+    const selected = await profiles.requestContext("42", 2, "gs");
+    const other = await profiles.requestContext("42", 1, "gs");
+    const item = { avatar_id: 10000015, avatar_level_current: 80, avatar_level_target: 90,
+      skill_list: [{ id: 1531, level_current: 1, level_target: 10 }] };
+    let exchanges = 0;
+    const cookies: (string | null)[] = [];
+    const client = createHoyoClient(async (_url, init) => {
+      cookies.push(new Headers(init.headers).get("cookie"));
+      expect(JSON.parse(String(init.body))).toEqual({ items: [item], uid, region });
+      return cookies.length === 1 ? Response.json({ retcode: -100 }) : answer();
+    }, {
+      profiles,
+      async exchange(context) {
+        exchanges++;
+        expect([context.qq, context.profileId, context.revision]).toEqual(["42", 2, selected.revision]);
+        return { ltoken: "fixture-ltoken", cookie: "cookie_token=fixture-growth-new" };
+      },
+    });
+    const result = await client.fetchGenshinGrowth(selected, { item });
+    const latest = await profiles.requestContext("42", 2, "gs");
+    expect(result).toMatchObject({ uid, region, revision: latest.revision, refreshedCookie: true, items: [{ lack: 40 }] });
+    expect(cookies).toEqual([cookie, "cookie_token=fixture-growth-new"]);
+    expect(exchanges).toBe(1);
+    expect((await profiles.requestContext("42", 1, "gs")).revision).toBe(other.revision);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -14,7 +14,7 @@ import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type 
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder } from "./miyoushe-exchange.ts";
-import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
+import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
@@ -43,7 +43,7 @@ export { normalizeZzzShiyu, type ZzzShiyuDate, type ZzzShiyuPortrait, type ZzzSh
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
-  GenshinBackpackSnapshot } from "./genshin-backpack.ts";
+  GenshinBackpackSnapshot, GenshinGrowthItem, GenshinGrowthOptions, GenshinGrowthSnapshot } from "./genshin-backpack.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
@@ -378,6 +378,9 @@ export function createHoyoClient(
     },
     fetchGenshinBackpack(source: ProfileRequestContext, options: GenshinBackpackOptions) {
       return readForProfile(source, options, readGenshinBackpack, isGameRecordCookieExpired);
+    },
+    fetchGenshinGrowth(source: ProfileRequestContext, options: GenshinGrowthOptions) {
+      return readForProfile(source, options, readGenshinGrowth, isGameRecordCookieExpired);
     },
     fetchCnGameCheckinInfo(source: CnGameCheckinSource,
       options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean } = {}) {
