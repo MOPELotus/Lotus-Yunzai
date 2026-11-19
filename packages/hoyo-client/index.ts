@@ -2,10 +2,12 @@ import { normalizeGameRoles, profileGames, type Game, type GameRole, type Profil
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
+import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { createCredentialExchange };
 export { HoyoRequestError };
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
+export { zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
 
 const gameBiz: Record<Game, string> = {
   gs: "hk4e_cn",
@@ -18,6 +20,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const expired = new Set([-100, 10001, 10101, 10102, 10103]);
+
+function isCookieExpired(error: unknown): boolean {
+  return error instanceof HoyoRequestError && error.code === "api" &&
+    error.retcode !== undefined && expired.has(error.retcode);
+}
 
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">;
@@ -135,6 +142,7 @@ export function createHoyoClient(
     context: ProfileAccountContext,
     attempt: (profile: ProfileAccountContext) => Promise<Data>,
     signal?: AbortSignal,
+    isExpired = isCookieExpired,
   ) {
     if (!recovery) return { context, data: await attempt(context) };
     const key = keyFor(context);
@@ -144,8 +152,7 @@ export function createHoyoClient(
       try {
         return { context, data: await attempt(context) };
       } catch (error) {
-        if (signal?.aborted || !(error instanceof HoyoRequestError) ||
-            error.code !== "api" || error.retcode === undefined || !expired.has(error.retcode)) throw error;
+        if (signal?.aborted || !isExpired(error)) throw error;
       }
 
       let refreshed: ProfileAccountContext;
@@ -161,6 +168,23 @@ export function createHoyoClient(
       entry.requests--;
       release(key, entry);
     }
+  }
+
+  async function readForProfile<Options extends { readonly signal?: AbortSignal }, Data extends object>(
+    source: ProfileRequestContext,
+    options: Options,
+    reader: (source: ProfileRequestContext, transport: HoyoTransport, options: Options, guard?: () => Promise<void>) => Promise<Data>,
+    isExpired?: (error: unknown) => boolean,
+  ) {
+    const { context, data } = await retrieve(source, async (profile) => {
+      const guard = recovery && (async () => {
+        const changed = new HoyoRequestError("profile-changed", "游戏档案已变更，请重新发起请求。");
+        const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
+        if (latest.revision !== profile.revision) throw changed;
+      });
+      return reader({ ...source, ...profile }, transport, options, guard);
+    }, options.signal, isExpired);
+    return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
   }
 
   async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
@@ -198,16 +222,14 @@ export function createHoyoClient(
     async listRoles(context: ProfileAccountContext, game: Game, signal?: AbortSignal): Promise<GameRole[]> {
       return rolesFor((await retrieve(context, (profile) => list(profile, game, signal), signal)).data, game);
     },
-    async fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
-      const { context, data } = await retrieve(source, async (profile) => {
-        const guard = recovery && (async () => {
-          const changed = new HoyoRequestError("profile-changed", "星铁档案已变更，请重新发起请求。");
-          const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
-          if (latest.revision !== profile.revision) throw changed;
-        });
-        return readStarRailGacha({ ...source, ...profile }, transport, options, guard);
-      }, options.signal);
-      return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
+    fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
+      return readForProfile(source, options, readStarRailGacha);
+    },
+    fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
+      return readForProfile(source, options, readZzzTuning, isZzzTuningCookieExpired);
+    },
+    fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
+      return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);
     },
   };
 
