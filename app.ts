@@ -5,6 +5,8 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { isZzzGachaLinkMessage } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands } from "./lib/account-commands.ts";
+import { createCheckinAudit } from "./lib/checkin-audit.ts";
+import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
@@ -671,8 +673,10 @@ if (import.meta.main) {
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context)), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
+    const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     commands.registerModule(gameCheckinCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      undefined, undefined, () => manualCaptcha), "[Lotus-Plugin] Checkin");
+      { manualRelay: () => manualCaptcha, audit: checkinAudit }), "[Lotus-Plugin] Checkin");
+    commands.registerModule(checkinAuditCommands(checkinAudit, lifecycle.signal), "[Lotus-Plugin] Checkin Admin");
     commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,

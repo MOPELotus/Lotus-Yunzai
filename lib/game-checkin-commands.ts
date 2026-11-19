@@ -3,6 +3,7 @@ import { createProfileStore, MAX_PROFILE_ID, ProfileError, type Game, type Profi
   type ProfileRequestContext } from "@lotus-yunzai/account";
 import { createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
+import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
@@ -50,7 +51,12 @@ function outcome(rows: readonly GameCheckinResult[]) {
 }
 
 export function gameCheckinCommands(directory: string | undefined, signal: AbortSignal,
-  makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard, manualRelay?: () => ManualRelay | undefined): CommandModule {
+  { makeClient = createProfileHoyoClient, renderReceipt = renderCheckinReceiptCard, manualRelay, audit }: {
+    readonly makeClient?: typeof createProfileHoyoClient;
+    readonly renderReceipt?: typeof renderCheckinReceiptCard;
+    readonly manualRelay?: () => ManualRelay | undefined;
+    readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
+  } = {}): CommandModule {
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
   const active = new Set<string>();
@@ -106,6 +112,16 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话发送签到指令。";
       const qq = String(context.user_id);
+      const counts: Partial<Record<GameCheckinResult["status"] | "skipped", number>> = {};
+      const auditResult = async (stage: CheckinAuditEntry["stage"], ok: boolean) => {
+        if (signal.aborted) return;
+        try {
+          await audit?.append({ qq, profileId, stage, ok, source: "manual", counts });
+        } catch {
+          console.warn("[签到] 无法保存签到审计。");
+        }
+      };
+      const count = (status: keyof typeof counts) => { counts[status] = (counts[status] ?? 0) + 1; };
       const startedDay = gameDay.format(Date.now());
       let account: ProfileAccountContext;
       let settings: Settings;
@@ -115,6 +131,7 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
         if (account.revision !== settings.revision) return changed;
       } catch (error) {
         if (signal.aborted) return;
+        await auditResult("precheck", false);
         if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
           return `请先登录 profile ${profileId}。`;
         }
@@ -144,6 +161,7 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
             await verifyCurrent();
           } catch {
             await verifyCurrent();
+            await auditResult("refresh", false);
             const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"]);
             await verifyCurrent();
             return reply;
@@ -157,17 +175,20 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
               const eligible = roles[game].filter(role => !blacklist.has(role.uid));
               if (!eligible.length) {
                 row.game = "跳过";
+                count("skipped");
                 continue;
               }
               const results: GameCheckinResult[] = [];
               for (const role of eligible) {
                 const source = { ...account, game, role };
-                results.push(await runGameCheckinSequence({
+                const result = await runGameCheckinSequence({
                   signal, verifyCurrent,
                   readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
                   submit: () => submit(source, verifyCurrent,
                     context.message_type === "private" ? message => context.reply(message) : undefined, row.label),
-                }));
+                });
+                results.push(result);
+                count(result.status);
               }
               const finished = outcome(results);
               row.game = finished.label;
@@ -177,10 +198,15 @@ export function gameCheckinCommands(directory: string | undefined, signal: Abort
             if (error instanceof ProfileError ||
               (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
             await verifyCurrent();
-            for (const row of gameRows.filter(row => row.game === "未执行")) row.game = "失败";
+            for (const row of gameRows.filter(row => row.game === "未执行")) {
+              row.game = "失败";
+              count("failed");
+            }
             notes.push("米游社角色查询未完成。");
           }
         }
+        await verifyCurrent();
+        await auditResult("checkin", !(counts.failed || counts["first-bind"] || counts.unconfirmed));
         await verifyCurrent();
         const reply = await receipt(settings, profileId, rows, notes);
         await verifyCurrent();
