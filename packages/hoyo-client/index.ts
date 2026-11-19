@@ -2,6 +2,7 @@ import { normalizeGameRoles, profileGames, type Game, type GameRole, type Profil
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { readCnGameCheckinInfo, submitCnGameCheckin } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { readGenshinBackpack, type GenshinBackpackOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
@@ -14,6 +15,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 export { createCredentialExchange };
 export { HoyoRequestError };
 export { GameRecordRequestError } from "./game-record.ts";
+export type { CnGameCheckinInfo } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot } from "./genshin-backpack.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
@@ -300,6 +302,14 @@ export function createHoyoClient(
     },
     fetchGenshinBackpack(source: ProfileRequestContext, options: GenshinBackpackOptions) {
       return readForProfile(source, options, readGenshinBackpack, isGameRecordCookieExpired);
+    },
+    fetchCnGameCheckinInfo(source: ProfileRequestContext,
+      options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean } = {}) {
+      return readForProfile(source, options, readCnGameCheckinInfo,
+        options.recoverCookie === false ? () => false : isGameRecordCookieExpired);
+    },
+    submitCnGameCheckin(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);

@@ -61,7 +61,7 @@ function requestHeaders(source: ProfileRequestContext, query: string): Headers {
   return headers;
 }
 
-async function readPayload(response: Response, limit: number, signal: AbortSignal): Promise<Json | undefined> {
+export async function readGameRecordPayload(response: Response, limit: number, signal: AbortSignal): Promise<Json | undefined> {
   if (!response.body) return;
   if (Number(response.headers.get("Content-Length")) > limit) {
     await response.body.cancel().catch(() => undefined);
@@ -157,7 +157,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  const payload = await readPayload(response, forNote ? 64 * 1024 : 2 * 1024 * 1024, deadline);
+  const payload = await readGameRecordPayload(response, forNote ? 64 * 1024 : 2 * 1024 * 1024, deadline);
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   const retcode = whole(payload?.retcode);
