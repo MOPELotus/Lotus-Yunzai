@@ -11,10 +11,12 @@ const botId = 99;
 const owner = 51;
 const applicant = 42;
 const secondApplicant = 43;
+const reconnectingApplicant = 44;
 const time = 1_700_000_000;
 const restricted = "请使用账户入口";
 const invalid = "申请或验证码无效，或已过期。请重新申请。";
 const granted = "已设置为当前机器人的主人。";
+const granting = "主人设置正在处理。";
 
 function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -43,7 +45,10 @@ function replyQueue<T>(adapter: string) {
 
 function milkyGateway() {
   const frames = replyQueue<{ user_id: number; message: { type: "text"; data: { text: string } }[] }>("Milky");
+  const relogin = Promise.withResolvers<void>();
+  const releaseRelogin = Promise.withResolvers<void>();
   let sequence = 100;
+  let logins = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request) {
@@ -52,6 +57,10 @@ function milkyGateway() {
       }
       const path = new URL(request.url).pathname;
       if (path === "/api/get_login_info") {
+        if (++logins > 1) {
+          relogin.resolve();
+          await releaseRelogin.promise;
+        }
         return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "主人授权夹具" } });
       }
       if (path !== "/api/send_private_message") return new Response(null, { status: 404 });
@@ -60,7 +69,7 @@ function milkyGateway() {
     },
   });
   return {
-    server, frames: frames.frames,
+    server, frames: frames.frames, relogin, releaseRelogin,
     async reply(user_id: number) {
       const actual = await frames.next();
       const text = actual.message[0]?.data.text;
@@ -161,6 +170,12 @@ function milkyWebhook(endpoint: URL) {
       });
       expect(result.status).toBe(200);
     },
+    async offline() {
+      expect((await deliver("bot_offline", { reason: "夹具切换会话" })).status).toBe(200);
+    },
+    async expectOffline() {
+      expect((await deliver("fixture_unsupported", {})).status).toBe(503);
+    },
   };
 }
 
@@ -185,6 +200,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
     const directory = join(root, "config", "config");
     await mkdir(directory, { recursive: true });
     const configFile = join(directory, "other.yaml");
+    const lockFilePath = join(directory, ".other.yaml.lotus-master.sqlite");
     const original = [
       "# 主人配置注释", 'master: ["99:51", "100:61"]', "masterQQ: [51, 61]",
       "disablePrivate: true", `disableMsg: ${restricted}`, "foreign: { enabled: false }", "",
@@ -192,7 +208,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
     await writeFile(configFile, original);
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${gateway.server.url.port}`,
-      "connection: webhook", `access_token: ${milkyToken}`,
+      "connection: webhook", `access_token: ${milkyToken}`, "ws:", "  reconnect_interval: 0.05",
     ].join("\n") + "\n");
     disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
@@ -242,7 +258,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       oneBot.command(`#设置主人验证码 ${second}`, owner);
       const secondCode = verification(await oneBot.reply(owner));
       codes.push(secondCode);
-      const lock = await lockFile(join(directory, ".other.yaml.lotus-master.sqlite"), "测试主人配置");
+      const lock = await lockFile(lockFilePath, "测试主人配置");
       try {
         oneBot.command(`#设置主人 ${secondCode}`, secondApplicant);
         await milky.command(`#设置主人 ${milkyCode}`, applicant);
@@ -267,10 +283,62 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
         masterQQ: expect.arrayContaining([51, 61, 42, 43]),
         disablePrivate: true, disableMsg: restricted, foreign: { enabled: false },
       });
-      for (const code of codes) expect(saved).not.toContain(code);
+
+      await milky.command("#设置主人", reconnectingApplicant);
+      const pending = application(await gateway.reply(reconnectingApplicant));
+      await milky.command(`#设置主人验证码 ${pending}`, owner);
+      const staleCode = verification(await gateway.reply(owner));
+      codes.push(staleCode);
+      const reconnectLock = await lockFile(lockFilePath, "测试下线时主人配置");
+      try {
+        await milky.command(`#设置主人 ${staleCode}`, reconnectingApplicant);
+        await milky.command("#设置主人", reconnectingApplicant);
+        expect(await gateway.reply(reconnectingApplicant)).toBe(granting);
+        await milky.offline();
+        await deadline(gateway.relogin.promise, "Milky 夹具下线后未重新查询登录。");
+        await milky.expectOffline();
+        expect(await readFile(configFile, "utf8")).toBe(saved);
+      } finally {
+        reconnectLock.close();
+      }
+      gateway.releaseRelogin.resolve();
+      await milky.bind();
+      const stopAt = performance.now() + 2_000;
+      for (;;) {
+        await milky.command(`#设置主人 ${staleCode}`, reconnectingApplicant);
+        const reply = await gateway.reply(reconnectingApplicant);
+        if (reply !== granting || performance.now() >= stopAt) {
+          expect(reply).toBe(invalid);
+          break;
+        }
+        await Bun.sleep(25);
+      }
+      await milky.command("#诊断", reconnectingApplicant);
+      expect(await gateway.reply(reconnectingApplicant)).toBe(restricted);
+      expect(await readFile(configFile, "utf8")).toBe(saved);
+      await milky.command("#诊断", applicant);
+      expect(await gateway.reply(applicant)).toMatch(/账号在线时长\n99　Milky　\d+ 秒/u);
+      oneBot.command("#诊断", secondApplicant);
+      expect(await oneBot.reply(secondApplicant)).toMatch(/账号在线时长\n99　\d+ 秒/u);
+
+      await milky.command("#设置主人", reconnectingApplicant);
+      const fresh = application(await gateway.reply(reconnectingApplicant));
+      expect(fresh).not.toBe(pending);
+      await milky.command(`#设置主人验证码 ${fresh}`, owner);
+      const freshCode = verification(await gateway.reply(owner));
+      codes.push(freshCode);
+      await milky.command(`#设置主人 ${freshCode}`, reconnectingApplicant);
+      expect(await gateway.reply(reconnectingApplicant)).toBe(granted);
+      const savedAfterReconnect = await readFile(configFile, "utf8");
+      expect(Bun.YAML.parse(savedAfterReconnect)).toMatchObject({
+        master: expect.arrayContaining(["99:51", "100:61", "99:42", "99:43", "99:44"]),
+        masterQQ: expect.arrayContaining([51, 61, 42, 43, 44]),
+      });
+      for (const code of codes) expect(savedAfterReconnect).not.toContain(code);
       expect(gateway.frames).toEqual([]);
       expect(oneBot.frames).toEqual([]);
     } finally {
+      gateway.releaseRelogin.resolve();
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;
     }
