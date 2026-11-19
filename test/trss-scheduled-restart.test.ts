@@ -63,6 +63,7 @@ type Gateway = ReturnType<typeof gateway>;
 async function withHost(botConfig: string, preload: string | undefined, run: (fixture: {
   pid: number;
   nextBoot(): Promise<string>;
+  waitForMilkyReceipts(count: number): Promise<void>;
   open(endpoint: string, botId: number, acknowledge?: boolean): Promise<Gateway>;
   disposals(): Promise<string>;
 }) => Promise<void>, milkyPort?: number) {
@@ -102,23 +103,32 @@ async function withHost(botConfig: string, preload: string | undefined, run: (fi
     const reader = host.stdout.getReader();
     const decoder = new TextDecoder();
     let output = "";
-    async function readBoot() {
+    async function readOutput(pattern: RegExp) {
       while (true) {
-        const match = /fixture-restart-pid (\d+)\n[\s\S]*?(ws:\/\/127\.0\.0\.1:\d+\/OneBotv11)/u.exec(output);
+        const match = pattern.exec(output);
         if (match) {
           output = output.slice(match.index + match[0].length);
-          expect(Number(match[1])).toBe(host.pid);
-          return match[2]!;
+          return match;
         }
         const chunk = await reader.read();
-        if (chunk.done) throw new Error(`未看到下一次定时重启的宿主启动。\n${output}\n${await stderr}`);
+        if (chunk.done) throw new Error(`宿主未输出 ${pattern}。\n${output}\n${await stderr}`);
         output += decoder.decode(chunk.value, { stream: true });
       }
     }
     try {
       await run({
         pid: host.pid,
-        nextBoot: () => deadline(readBoot(), "定时重启宿主启动超时。"),
+        async nextBoot() {
+          const pattern = /fixture-restart-pid (\d+)\n[\s\S]*?(ws:\/\/127\.0\.0\.1:\d+\/OneBotv11)/u;
+          const match = await deadline(readOutput(pattern), "定时重启宿主启动超时。");
+          expect(Number(match[1])).toBe(host.pid);
+          return match[2]!;
+        },
+        async waitForMilkyReceipts(count) {
+          for (let received = 0; received < count; received++) {
+            await deadline(readOutput(/fixture-milky-send-confirmed\n/u), "宿主未处理 Milky 发送回执。");
+          }
+        },
         async open(endpoint, botId, acknowledge = true) {
           const client = gateway(endpoint, botId, acknowledge);
           clients.push(client);
@@ -286,10 +296,25 @@ function milkyGateway(botId: number) {
   };
 }
 
+// The gateway sees the request before the host reads its HTTP confirmation.
+// Wait past the host's response handlers before terminating it in the test.
+const milkyReceiptObserver = `
+  const responseJson = Response.prototype.json;
+  Response.prototype.json = async function () {
+    const body = await responseJson.call(this);
+    if (this.url.endsWith("/api/send_private_message") && body.status === "ok") {
+      setImmediate(() => console.log("fixture-milky-send-confirmed"));
+    }
+    return body;
+  };
+`;
+
 test.skipIf(process.platform !== "linux")("定时重启向触发时仅 Milky 在线的账号回执，同号 OneBot 先上线也不丢失", async () => {
   const milky = milkyGateway(99);
   try {
-    await withHost('restart_cron: "0 0 13 * * *"\n', cronClock, async ({ pid, nextBoot, open, disposals }) => {
+    await withHost('restart_cron: "0 0 13 * * *"\n', cronClock + milkyReceiptObserver, async ({
+      pid, nextBoot, open, disposals, waitForMilkyReceipts,
+    }) => {
       const original = await nextBoot();
       const another = await open(original, 100);
       await deadline(milky.initial.promise, "触发前 Milky 未上线。");
@@ -308,6 +333,7 @@ test.skipIf(process.platform !== "linux")("定时重启向触发时仅 Milky 在
 
       await deadline(milky.resumed.promise, "重启后的 Milky 未上线。");
       await milky.expectNotifications([51, 54], /^重启成功，用时/u);
+      await waitForMilkyReceipts(2);
       expect(sameAccount.frames).toEqual([]);
       expect(milky.replies).toEqual([]);
     }, milky.server.port);
