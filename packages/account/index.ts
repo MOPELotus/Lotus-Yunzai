@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { DeviceBinding } from "./device-binding.ts";
+export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
 
 export const profileGames = ["gs", "sr", "zzz"] as const;
 export type Game = typeof profileGames[number];
@@ -397,6 +399,26 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return { rolesSynced: result.roles !== undefined };
       });
     },
+    async saveBoundDevice(qq: string, profileId: number, expected: string, binding: DeviceBinding, signal?: AbortSignal) {
+      const filename = profileFilename(qq, profileId);
+      const path = join(await realpath(root), filename);
+      return serializeWrite(path, async () => {
+        signal?.throwIfAborted();
+        const snapshot = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
+        if (revisionOf(snapshot) !== expected) throw changedProfile();
+        const value: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
+        if (!readIdentity(value, qq, profileId).summary.loggedIn) {
+          throw new ProfileError("login-required", "档案尚未登录。");
+        }
+        const { id, fp, name, model, androidVersion } = binding;
+        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u.test(id) || !/^[0-9a-f]{13}$/iu.test(fp)) {
+          throw new ProfileError("invalid", "请在同一份设备信息中提供设备 ID 和 FP。");
+        }
+        const device = { bound: true, generated: false, id, fp, name: name ?? "", model: model ?? "",
+          android_version: androidVersion ?? "", updated_at: new Date().toISOString() };
+        await writeProfileDocument(path, { ...record(value), device }, expected, signal);
+      });
+    },
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
     },
@@ -411,6 +433,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const community = record(document.mihoyobbs);
       const cloud = record(record(document.cloud_games).cn);
       const aid = state.account.ltuid || state.account.stuid;
+      const deviceSecrets = [state.device.id, state.device.fp].filter(Boolean).map((value) => value.toLowerCase());
+      const deviceName = [state.device.name, state.device.model].find((value) =>
+        value && !deviceSecrets.some((secret) => value.toLowerCase().includes(secret)));
       const dayTime = text(schedule.fixed_time);
       const roles = {
         gs: normalizeGameRoles(state.roles.gs), sr: normalizeGameRoles(state.roles.sr), zzz: normalizeGameRoles(state.roles.zzz),
@@ -426,7 +451,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         legacyCookie: !state.summary.loggedIn && hasLegacyGameCookie(state.account),
         passport: aid ? (aid.length > 6 ? `${aid.slice(0, 2)}***${aid.slice(-2)}` : "已绑定") : "未绑定",
         device: {
-          name: (state.device.name || state.device.model).slice(0, 80),
+          name: (deviceName || "").slice(0, 80),
           generated: device.generated === true || (device.bound !== true && Boolean(state.device.id)),
           hasFingerprint: Boolean(state.device.id && state.device.fp),
         },

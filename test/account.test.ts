@@ -27,7 +27,7 @@ account:
   game_roles:
     gs: [{ game_uid: "800001", region: cn_gf01 }, { uid: "800002", is_chosen: true }]
   current_uid: { gs: "800001" }
-device: { id: fixture-device-one, fp: fixture-fp-one, bound: true }
+device: { id: fixture-device-one, fp: fixture-fp-one, name: "Device FIXTURE-FP-ONE", model: "Fixture Model", bound: true }
 `);
     await writeFile(second, `
 user: { qq: 100001 }
@@ -57,7 +57,7 @@ device:
     const view = await profiles.describe(qq);
     expect(view).toMatchObject({
       id: 1, hasCookie: true, hasStoken: true, passport: "已绑定",
-      device: { hasFingerprint: true }, activeRoles: { gs: "800001" },
+      device: { hasFingerprint: true, name: "Fixture Model" }, activeRoles: { gs: "800001" },
     });
     for (const secret of ["fixture-cookie-one", "fixture-token-one", "fixture-device-one", "fixture-fp-one", "400001"]) {
       expect(JSON.stringify(view)).not.toContain(secret);
@@ -196,6 +196,16 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
     expect(same.device.id).toBe(first.device.id);
     expect(await profiles.saveLogin(same, credentials("8001"))).toEqual({ rolesSynced: false });
     expect(await profiles.savedRole("42", 2, "gs")).toMatchObject({ uid: "123456789" });
+    const inFlight = await profiles.openLoginSlot("42", 2);
+    const latest = await profiles.accountContext("42", 2);
+    await profiles.saveBoundDevice("42", 2, latest.revision, { id: "fixture-bound-device", fp: "dc00112233445" });
+    await expect(profiles.verifyLoginSlot(inFlight)).rejects.toMatchObject({ code: "changed" });
+    await expect(profiles.saveBoundDevice("42", 2, latest.revision, {
+      id: "fixture-second-device", fp: "abcdef0123456",
+    })).rejects.toMatchObject({ code: "changed" });
+    expect((await profiles.accountContext("42", 2)).device).toMatchObject({
+      id: "fixture-bound-device", fp: "dc00112233445", name: "", model: "",
+    });
     const next = await profiles.openLoginSlot("42", 2);
     const inconsistent = credentials("8002");
     await expect(profiles.saveLogin(next, { ...inconsistent,
@@ -204,7 +214,7 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
     expect((await profiles.accountContext("42", 2)).account.stuid).toBe("8001");
     expect(await profiles.saveLogin(next, credentials("8002"))).toEqual({ rolesSynced: false });
     await expect(profiles.savedRole("42", 2, "gs")).rejects.toMatchObject({ code: "role-missing" });
-    expect((await profiles.accountContext("42", 2)).device.id).toBe(first.device.id);
+    expect((await profiles.accountContext("42", 2)).device.id).toBe("fixture-bound-device");
 
     const pending = await profiles.openLoginSlot("42", 2);
     await profiles.clearLogin("42", 2);

@@ -171,6 +171,7 @@ export function accountCommands(
     for (const alias of ["c", "ck", "Cookie"]) aliases[`#刷新${alias}${suffix}`] = command;
     const cardCommand = `#配置${suffix}`;
     accountActions[cardCommand] = describe(id || 1);
+    for (const prefix of ["", "原神", "星铁", "绝区零", "zzz", "ZZZ"]) aliases[`#${prefix}设备信息${suffix}`] = cardCommand;
     for (const prefix of ["", "Lotus", "荷花"]) {
       for (const label of ["配置", "资料", "资料卡", "我的配置"]) {
         const alias = `#${prefix}${label}${suffix}`;

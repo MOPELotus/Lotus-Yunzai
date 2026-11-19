@@ -18,6 +18,7 @@ import { isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
+import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
@@ -505,9 +506,11 @@ if (import.meta.main) {
     const milkyPrivate = event.adapter === "milky" && event.message_type === "private";
     const milkyDiagnostics = milkyPrivate && (event.msg === "#诊断" || event.msg === "#状态") &&
       isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id;
-    if (isPassportLoginInput(event.msg)) {
+    const protectedModule = isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
+      : isDeviceBindingInput(event.msg) ? "@lotus-yunzai/device" : undefined;
+    if (protectedModule) {
       if (allowNew) {
-        const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/passport-login" && allowed(names),
+        const reply = await commands.dispatchFallback(event, (names) => names[0] === protectedModule && allowed(names),
           (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
@@ -527,6 +530,14 @@ if (import.meta.main) {
         }
       }
       if (tuningLink || tuningLinkEntry) return;
+    }
+    if (event.isPrivate && event.msg.trim() === "取消") {
+      const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/device" && allowed(names),
+        (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
     }
     if (await privateAccess.blocked(event)) return;
     if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {
@@ -645,7 +656,7 @@ if (import.meta.main) {
       globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
     }
-    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
+    const accounts = accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       if (args[0] === "登录列表") {
         const themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || fileURLToPath(new URL("./data/atlas/theme/", root));
@@ -653,7 +664,10 @@ if (import.meta.main) {
         return renderStatusCard(...args, { themeDirectory });
       }
       return renderStatusCard(...args);
-    }));
+    });
+    commands.registerModule(accounts);
+    commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
+      (id, context) => accounts.commands[`#配置${id === 1 ? "" : id}`]!("", context)), "[Lotus-Plugin] Device");
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Daily Note");
     commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal), "[Lotus-Plugin] Login");
     commands.registerModule({
