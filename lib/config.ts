@@ -1,4 +1,8 @@
 export async function readLocalConfig(root: URL, name: string): Promise<Record<string, unknown>> {
+  return await readOptionalLocalConfig(root, name) ?? {};
+}
+
+export async function readOptionalLocalConfig(root: URL, name: string): Promise<Record<string, unknown> | undefined> {
   for (const path of [`config/${name}.yaml`, `config/config/${name}.yaml`]) {
     const file = Bun.file(new URL(path, root));
     if (!await file.exists()) continue;
@@ -12,5 +16,4 @@ export async function readLocalConfig(root: URL, name: string): Promise<Record<s
       throw new Error(`无法读取 ${path}。`);
     }
   }
-  return {};
 }

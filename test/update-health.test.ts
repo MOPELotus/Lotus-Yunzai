@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pluginProbeTokenEnvironment, pluginStartupGraceMs } from "../lib/plugin-load-progress.ts";
@@ -61,10 +61,10 @@ test("隔离目录启动真实宿主，检查完整提交和状态后等待插�
     return result.stdout.toString().trim();
   };
   await copyHost(root);
-  await writeFile(join(root, ".env"), "LOTUS_VALKEY_URL=http://127.0.0.1:1\nLOTUS_LISTEN_HOST=bad-hostname.invalid\n");
   await writeFile(join(root, "plugins", "health-fixture.js"), `
     export default class extends plugin {
       async init() {
+        if (globalThis.redis !== undefined) throw new Error("health probe opened fixture storage");
         await Bun.write("pid", String(process.pid));
         this.addCleanup(async () => { await Bun.write("stopped", "clean"); });
       }
@@ -75,7 +75,25 @@ test("隔离目录启动真实宿主，检查完整提交和状态后等待插�
   git("commit", "--quiet", "-m", "candidate fixture");
   const actual = git("rev-parse", "HEAD");
 
-  await verifyUpdateHealth(root, actual);
+  let storageConnections = 0;
+  const storage = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: {
+    open(socket) { storageConnections++; socket.end(); },
+    data() {},
+  } });
+  const storageUrl = `redis://127.0.0.1:${storage.port}/3`;
+  const previousUrl = process.env.LOTUS_VALKEY_URL;
+  try {
+    await mkdir(join(root, "config"));
+    await writeFile(join(root, "config", "redis.yaml"), `host: 127.0.0.1\nport: ${storage.port}\ndb: 3\n`);
+    await writeFile(join(root, ".env"), `LOTUS_VALKEY_URL=${storageUrl}\nLOTUS_LISTEN_HOST=bad-hostname.invalid\n`);
+    process.env.LOTUS_VALKEY_URL = storageUrl;
+    await verifyUpdateHealth(root, actual);
+    expect(storageConnections).toBe(0);
+  } finally {
+    if (previousUrl === undefined) delete process.env.LOTUS_VALKEY_URL;
+    else process.env.LOTUS_VALKEY_URL = previousUrl;
+    storage.stop(true);
+  }
   expect(await readFile(join(root, "stopped"), "utf8")).toBe("clean");
   await expectReaped(root);
 }));

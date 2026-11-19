@@ -57,6 +57,7 @@ import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUp
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
+import { readStorageConnection } from "./lib/valkey-config.ts";
 
 declare global {
   var redis: Awaited<ReturnType<typeof connectStorage>> | undefined;
@@ -586,13 +587,13 @@ if (import.meta.main) {
       isMaster: permissions.isMaster, masterIds: permissions.masterIds,
       isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
     });
-    const valkeyUrl = Bun.env.LOTUS_VALKEY_URL;
+    const valkey = probingUpdate ? undefined : await readStorageConnection(root, Bun.env.LOTUS_VALKEY_URL);
     const segmentCounts = botConfig.msg_type_count;
     onlineCooldown = onlineNoticeSeconds(botConfig.online_msg_exp);
     onlineVersion = runtimeVersion.version;
     counts = createMessageCounts(() => globalThis.redis, segmentCounts === true || segmentCounts === 1 || segmentCounts === "1");
-    if (valkeyUrl !== undefined) {
-      globalThis.redis = await connectStorage(valkeyUrl);
+    if (valkey !== undefined) {
+      globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
     }
     commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
@@ -633,7 +634,7 @@ if (import.meta.main) {
         prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
         accepting: acceptingPublic,
         onBind: queueStartupMessages,
-        onSent: valkeyUrl === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
+        onSent: valkey === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
         http: fetch,
         tls,
       });

@@ -7,6 +7,19 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const valkeyServer = Bun.which("valkey-server");
 
+async function runStorageHost(root: string, input: string, storageUrl?: string) {
+  const host = Bun.spawn([process.execPath, "app.ts"], {
+    cwd: root,
+    env: { PATH: process.env.PATH, ...(storageUrl === undefined ? {} : { LOTUS_VALKEY_URL: storageUrl }) },
+    stdin: new Blob([input]), stdout: "pipe", stderr: "pipe",
+    timeout: 4_000, killSignal: "SIGKILL",
+  });
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
+  ]);
+  return { stdout, stderr, exit };
+}
+
 async function verifyNoticePush(root: string, storageUrl: string) {
   const config = join(root, "config", "config");
   await mkdir(config, { recursive: true });
@@ -210,31 +223,65 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
         }
       };
     `);
-    const host = Bun.spawn([process.execPath, "app.ts"], {
-      cwd: root,
-      env: { PATH: process.env.PATH, LOTUS_VALKEY_URL: url },
-      stdin: new Blob(["#状态\n#公告\n#发布公告 未授权\n"]),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const hostTimeout = setTimeout(() => host.kill("SIGKILL"), 4_000);
-    try {
-      const [stdout, stderr, exit] = await Promise.all([
-        new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
-      ]);
-      expect(exit).toBe(0);
-      expect(stderr).toBe("");
-      expect(stdout).toContain("[存储] Valkey 已连接。");
-      expect(stdout).toContain("Lotus-Yunzai 正在运行");
-      expect(stdout).toContain("插件读取：旧版/原神");
-      expect(stdout).toContain("清理时可连接：PONG");
-      expect(stdout).toContain("旧公告 [CQ:at,qq=all]");
-      expect(stdout).toContain("仅机器人主人可管理公告");
-      expect(await legacy.get("notice:current")).toBe("00001ABC");
-      expect(stdout).not.toContain(password);
-    } finally {
-      clearTimeout(hostTimeout);
+    const username = "fixture@acl:%";
+    const aclPassword = 'yaml:/?#@%+=夹具"密码';
+    expect(await legacy.sendCommand(["ACL", "SETUSER", username, "on", `>${aclPassword}`, "~*", "+@all"])).toBe("OK");
+    await legacy.select(4);
+    await legacy.set("shared", "优先配置");
+    await legacy.set("lotus-yunzai:genshin:shared", "四号库");
+    await legacy.select(3);
+
+    const config = join(root, "config");
+    await mkdir(join(config, "config"), { recursive: true });
+    const marker = join(root, "redis-path-executed");
+    const redisPath = join(root, "redis-path-fixture");
+    await writeFile(redisPath, '#!/bin/sh\ntouch redis-path-executed\n', { mode: 0o700 });
+    const yaml = (db: number, credential = aclPassword) => [
+      "host: 127.0.0.1", `port: ${port}`, `username: ${JSON.stringify(username)}`,
+      `password: ${JSON.stringify(credential)}`, `db: ${db}`, `path: ${JSON.stringify(redisPath)}`, "",
+    ].join("\n");
+    const flat = join(config, "redis.yaml");
+    await writeFile(join(config, "config", "redis.yaml"), yaml(3));
+    const nested = await runStorageHost(root, "#状态\n");
+    expect(nested.exit).toBe(0);
+    expect(nested.stderr).toBe("");
+    expect(nested.stdout).toContain("插件读取：旧版/原神");
+
+    await writeFile(flat, yaml(4));
+    const flattened = await runStorageHost(root, "#状态\n");
+    expect(flattened.exit).toBe(0);
+    expect(flattened.stderr).toBe("");
+    expect(flattened.stdout).toContain("插件读取：优先配置/四号库");
+
+    const { stdout, stderr, exit } = await runStorageHost(root, "#状态\n#公告\n#发布公告 未授权\n", url);
+    expect(exit).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("[存储] Valkey 已连接。");
+    expect(stdout).toContain("Lotus-Yunzai 正在运行");
+    expect(stdout).toContain("插件读取：旧版/原神");
+    expect(stdout).toContain("清理时可连接：PONG");
+    expect(stdout).toContain("旧公告 [CQ:at,qq=all]");
+    expect(stdout).toContain("仅机器人主人可管理公告");
+    expect(await legacy.get("notice:current")).toBe("00001ABC");
+    expect(stdout).not.toContain(password);
+
+    const invalidUrl = `http://${encodeURIComponent(username)}:${encodeURIComponent(aclPassword)}@127.0.0.1:${port}/3`;
+    const rejected = await runStorageHost(root, "#状态\n", invalidUrl);
+    expect(rejected.exit).toBe(1);
+    expect(rejected.stderr).toContain("LOTUS_VALKEY_URL");
+    expect(rejected.stdout).not.toContain("Valkey 已连接");
+    const badPassword = `${aclPassword}-wrong`;
+    await writeFile(flat, yaml(4, badPassword));
+    const denied = await runStorageHost(root, "#状态\n");
+    expect(denied.exit).toBe(1);
+    expect(denied.stderr).toContain("Valkey 连接失败");
+    expect(denied.stdout).not.toContain("Valkey 已连接");
+    for (const output of [nested.stdout, flattened.stdout, rejected.stdout + rejected.stderr, denied.stdout + denied.stderr]) {
+      for (const secret of [username, aclPassword, badPassword, encodeURIComponent(username), encodeURIComponent(aclPassword)]) {
+        expect(output).not.toContain(secret);
+      }
     }
+    expect(await Bun.file(marker).exists()).toBe(false);
 
     await legacy.sAdd("notice:whitelist", "77");
     await verifyNoticePush(root, url);
