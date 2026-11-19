@@ -65,7 +65,7 @@ async function withHost(botConfig: string, preload: string | undefined, run: (fi
   nextBoot(): Promise<string>;
   open(endpoint: string, botId: number, acknowledge?: boolean): Promise<Gateway>;
   disposals(): Promise<string>;
-}) => Promise<void>) {
+}) => Promise<void>, milkyPort?: number) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-scheduled-restart-"));
   const clients: Gateway[] = [];
   try {
@@ -87,6 +87,10 @@ async function withHost(botConfig: string, preload: string | undefined, run: (fi
         };
       `),
       ...(preload === undefined ? [] : [writeFile(join(root, "fixture-clock.js"), preload)]),
+      ...(milkyPort === undefined ? [] : [writeFile(join(root, "config/milky.yaml"), [
+        "enable: true", "host: 127.0.0.1", `port: ${milkyPort}`, `access_token: ${token}`,
+        "ws:", "  reconnect_interval: 0.05", "",
+      ].join("\n"))]),
     ]);
     disableMemberPrewarm(root);
     const args = preload === undefined ? ["app.ts"] : ["--preload", "./fixture-clock.js", "app.ts"];
@@ -231,3 +235,84 @@ test.skipIf(process.platform !== "linux")("定时重启保留软关机的时间�
     expect((await secondAgain.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
   });
 }, 15_000);
+
+function milkyGateway(botId: number) {
+  const initial = Promise.withResolvers<void>();
+  const resumed = Promise.withResolvers<void>();
+  const oldClosed = Promise.withResolvers<void>();
+  const allowReconnect = Promise.withResolvers<void>();
+  const replies: { user_id: number; message: { type: string; data: { text: string } }[] }[] = [];
+  let available = Promise.withResolvers<void>();
+  let connections = 0;
+  let sequence = 0;
+  const server = Bun.serve<number>({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(request, listener) {
+      if (request.headers.get("Authorization") !== `Bearer ${token}`) return new Response(null, { status: 401 });
+      const { pathname } = new URL(request.url);
+      if (request.method === "GET" && pathname === "/event") {
+        if (listener.upgrade(request, { data: connections++ })) return;
+        return new Response(null, { status: 426 });
+      }
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      if (pathname === "/api/get_login_info") {
+        if (connections) await allowReconnect.promise;
+        return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "定时重启夹具" } });
+      }
+      if (pathname !== "/api/send_private_message") return new Response(null, { status: 404 });
+      replies.push(await request.json() as typeof replies[number]);
+      available.resolve();
+      return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++sequence } });
+    },
+    websocket: {
+      open(socket) { (socket.data === 0 ? initial : resumed).resolve(); },
+      message() {},
+      close(socket) { if (socket.data === 0) oldClosed.resolve(); },
+    },
+  });
+  return {
+    server, initial, resumed, oldClosed, allowReconnect, replies,
+    async expectNotifications(userIds: readonly number[], prefix: RegExp) {
+      const notified: number[] = [];
+      for (const _user of userIds) {
+        if (!replies.length) await deadline(available.promise, `Milky 未发送 ${prefix}。`);
+        const reply = replies.shift()!;
+        if (!replies.length) available = Promise.withResolvers<void>();
+        expect(reply.message).toEqual([{ type: "text", data: { text: expect.stringMatching(prefix) } }]);
+        notified.push(reply.user_id);
+      }
+      expect(notified.sort()).toEqual([...userIds].sort());
+    },
+  };
+}
+
+test.skipIf(process.platform !== "linux")("定时重启向触发时仅 Milky 在线的账号回执，同号 OneBot 先上线也不丢失", async () => {
+  const milky = milkyGateway(99);
+  try {
+    await withHost('restart_cron: "0 0 13 * * *"\n', cronClock, async ({ pid, nextBoot, open, disposals }) => {
+      const original = await nextBoot();
+      const another = await open(original, 100);
+      await deadline(milky.initial.promise, "触发前 Milky 未上线。");
+      await Promise.all([
+        milky.expectNotifications([51, 54], /^开始重启/u), expectNotifications(another, [52], /^开始重启/u),
+      ]);
+      const [replacement] = await Promise.all([nextBoot(), deadline(milky.oldClosed.promise, "旧 Milky 连接没有关闭。")]);
+      expect(await disposals()).toBe(`${pid}\n`);
+
+      const sameAccount = await open(replacement, 99);
+      sameAccount.command("#状态", 51);
+      expect((await sameAccount.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
+      const oneBotAgain = await open(replacement, 100);
+      await expectNotifications(oneBotAgain, [52], /^重启成功，用时/u);
+      milky.allowReconnect.resolve();
+
+      await deadline(milky.resumed.promise, "重启后的 Milky 未上线。");
+      await milky.expectNotifications([51, 54], /^重启成功，用时/u);
+      expect(sameAccount.frames).toEqual([]);
+      expect(milky.replies).toEqual([]);
+    }, milky.server.port);
+  } finally {
+    milky.allowReconnect.resolve();
+    milky.server.stop(true);
+  }
+}, 18_000);

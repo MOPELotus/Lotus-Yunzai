@@ -6,6 +6,7 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const oneBotToken = "scheduled-power-onebot-fixture";
 const httpToken = "scheduled-power-http-fixture";
+const milkyToken = "scheduled-power-milky-fixture";
 
 interface Frame {
   readonly action: string;
@@ -47,14 +48,57 @@ function connect(url: string, id?: number) {
   };
 }
 
-test("五段字符串定时关机和六段数组定时开机只通知当前在线机器人的主人", async () => {
+function milkyGateway(botId: number) {
+  let client: Bun.ServerWebSocket<undefined> | undefined;
+  const frames: { readonly user_id: number; readonly message: readonly { type: string; data: { text: string } }[] }[] = [];
+  let replySeq = 0;
+  const server = Bun.serve<undefined>({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(request, gateway) {
+      if (request.headers.get("Authorization") !== `Bearer ${milkyToken}`) return new Response(null, { status: 401 });
+      const { pathname } = new URL(request.url);
+      if (request.method === "GET" && pathname === "/event" && gateway.upgrade(request)) return;
+      if (request.method === "POST" && pathname === "/api/get_login_info") {
+        return Response.json({ status: "ok", retcode: 0, data: { uin: botId } });
+      }
+      if (request.method === "POST" && pathname === "/api/send_private_message") {
+        frames.push(await request.json() as typeof frames[number]);
+        return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++replySeq } });
+      }
+      return new Response(null, { status: 404 });
+    },
+    websocket: { open(socket) { client = socket; }, message() {} },
+  });
+  let messageSeq = 0;
+  return {
+    port: server.port, frames, close: () => server.stop(true),
+    async probe() {
+      const socket = await waitFor(() => client, "定时开关机的 Milky 网关未连接。");
+      socket.send(JSON.stringify({ event_type: "message_receive", self_id: botId, data: {
+        message_scene: "friend", peer_id: 42, sender_id: 42, message_seq: ++messageSeq,
+        segments: [{ type: "text", data: { text: "#状态" } }],
+      } }));
+    },
+    async expectMessage(owner: number, prefix: RegExp) {
+      const frame = await waitFor(() => frames.shift(), "未收到定时开关机的 Milky 回复。", 6_000);
+      expect(frame.user_id).toBe(owner);
+      expect(frame.message).toEqual([{ type: "text", data: { text: expect.stringMatching(prefix) } }]);
+    },
+  };
+}
+
+async function exerciseScheduledPower(milkyId: 100 | 104) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-scheduled-power-"));
   const clients: ReturnType<typeof connect>[] = [];
+  const milky = milkyGateway(milkyId);
   try {
     await copyHost(root);
     await mkdir(join(root, "config/config"), { recursive: true });
     await Promise.all([
-      writeFile(join(root, "config/config/other.yaml"), 'master: ["99:51", "100:52", "101:53"]\n'),
+      writeFile(join(root, "config/config/other.yaml"), 'master: ["99:51", "100:52", "101:53", "104:54"]\n'),
+      writeFile(join(root, "config/milky.yaml"), [
+        "enable: true", "host: 127.0.0.1", `port: ${milky.port}`, `access_token: ${milkyToken}`, "",
+      ].join("\n")),
       writeFile(join(root, "config/config/bot.yaml"), [
         'stop_cron: "0 13 * * *"',
         'start_cron: ["2 0 13 * * *", "15 13 * * *"]',
@@ -103,6 +147,8 @@ test("五段字符串定时关机和六段数组定时开机只通知当前在�
 
       first.probe(42);
       expect((await first.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
+      await milky.probe();
+      await milky.expectMessage(42, /^Lotus-Yunzai 正在运行/u);
 
       async function expectNotification(client: typeof first, owner: number, prefix: RegExp) {
         const frame = await client.next();
@@ -113,7 +159,15 @@ test("五段字符串定时关机和六段数组定时开机只通知当前在�
         expect(frame.params.message).toMatch(prefix);
       }
 
-      await Promise.all([expectNotification(first, 51, /^关机成功/u), expectNotification(second, 52, /^关机成功/u)]);
+      async function expectScheduledNotification(prefix: RegExp) {
+        await Promise.all([
+          expectNotification(first, 51, prefix), expectNotification(second, 52, prefix),
+          ...(milkyId === 104 ? [milky.expectMessage(54, prefix)] : []),
+        ]);
+        expect(milky.frames).toEqual([]);
+      }
+
+      await expectScheduledNotification(/^关机成功/u);
       const response = await fetch(new URL("/status", endpoint.replace(/^ws/u, "http")), {
         headers: { Authorization: `Bearer ${httpToken}` }, signal: AbortSignal.timeout(1_000),
       });
@@ -122,9 +176,12 @@ test("五段字符串定时关机和六段数组定时开机只通知当前在�
       first.probe(42);
       second.probe(52);
 
-      await Promise.all([expectNotification(first, 51, /^开机成功/u), expectNotification(second, 52, /^开机成功/u)]);
+      await expectScheduledNotification(/^开机成功/u);
       second.probe(42);
       expect((await second.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
+      await milky.probe();
+      await milky.expectMessage(42, /^Lotus-Yunzai 正在运行/u);
+      expect(milky.frames).toEqual([]);
       expect(unbound.frames).toEqual([]);
       expect(first.frames).toEqual([]);
       expect(second.frames).toEqual([]);
@@ -142,6 +199,10 @@ test("五段字符串定时关机和六段数组定时开机只通知当前在�
       reader.releaseLock();
     }
   } finally {
+    milky.close();
     await rm(root, { recursive: true, force: true });
   }
-}, 14_000);
+}
+
+test("五段字符串定时关机和六段数组定时开机通知仅 Milky 在线账号的主人", () => exerciseScheduledPower(104), 14_000);
+test("同 QQ 的 OneBot 和 Milky 同时在线时只由 OneBot 发定时开关机通知", () => exerciseScheduledPower(100), 14_000);

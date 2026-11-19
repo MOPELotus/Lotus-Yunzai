@@ -320,6 +320,22 @@ if (import.meta.main) {
     if (event.boundAccount === true && botId && id) return { type, botId, id };
   }
 
+  type OwnerTarget = Extract<ProcessReceipt["target"], { type: "masters" }>;
+
+  function onlineMilkyBotId() {
+    return milkyOnline?.signal.aborted === false ? milkyOnline.id : undefined;
+  }
+
+  function processOwnerTargets(botIds?: readonly number[]): OwnerTarget[] {
+    const oneBot = new Set(groups.onlineBots());
+    const milky = onlineMilkyBotId();
+    const milkyOnly = milky !== undefined && !oneBot.has(milky) ? milky : undefined;
+    const recipients = botIds ?? (milkyOnly === undefined ? [...oneBot] : [...oneBot, milkyOnly]);
+    return recipients.map((botId) => botId === milkyOnly
+      ? { type: "masters", botId, adapter: "milky" }
+      : { type: "masters", botId });
+  }
+
   async function controlProcess(event: MessageEvent, kind: ProcessAction["kind"]) {
     if (!isProcessMaster(event)) {
       await event.reply("暂无权限，只有主人才能操作");
@@ -344,8 +360,10 @@ if (import.meta.main) {
       const elapsed = formatElapsed(process.uptime() * 1000);
       const operation = kind === "restart" ? "重启" : "停止";
       const online = new Set(groups.onlineBots());
+      const milky = onlineMilkyBotId();
       const outcomes = await Promise.all(targets
-        .filter((target) => target.type !== "masters" || online.has(target.botId))
+        .filter((target) => target.type !== "masters" ||
+          (target.adapter === "milky" ? target.botId === milky : online.has(target.botId)))
         .map((target) => sendProcessMessage(target, `开始${operation}，本次运行时长${elapsed}`)));
       if (outcomes.includes(false)) console.warn("[进程管理] 未确认进程操作开始通知。");
     }
@@ -688,15 +706,14 @@ if (import.meta.main) {
         const reply = dispatchPower.setPaused(paused);
         if (reply === undefined) return;
         console.log(`[进程管理] ${reply}`);
-        const notifications = await Promise.all(groups.onlineBots()
-          .map((botId) => sendProcessMessage({ type: "masters", botId }, reply)));
+        const notifications = await Promise.all(processOwnerTargets().map((target) => sendProcessMessage(target, reply)));
         if (notifications.includes(false)) {
           console.warn("[进程管理] 部分主人未收到定时开关机通知。");
         }
       });
       if (handoff.managed || canRestartHost()) {
         stopRestartSchedule = scheduleProcessRestart(botConfig, () => {
-          const targets: ProcessReceipt["target"][] = permissions.botIds().map((botId) => ({ type: "masters", botId }));
+          const targets: ProcessReceipt["target"][] = processOwnerTargets(permissions.botIds());
           if (permissions.terminal) targets.push({ type: "terminal" });
           return startProcessAction("restart", targets);
         });
