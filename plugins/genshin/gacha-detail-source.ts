@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { readMiaoArrayExport } from "@lotus-yunzai/gacha/miao-data";
 import { resolveGenshinDetailPool, type GenshinGachaDetailOptions, type GenshinGachaDetailPeriod } from "./gacha-detail.ts";
 import type { GenshinPreviousGacha } from "./gacha-history.ts";
+import type { GenshinGachaVersionPeriod } from "./gacha-version.ts";
 
 const defaultTheme = fileURLToPath(new URL("../../data/genshin/miao-theme", import.meta.url));
 const weaponTypes = ["sword", "claymore", "polearm", "bow", "catalyst"] as const;
@@ -85,12 +86,24 @@ function period(value: unknown): value is GenshinGachaDetailPeriod {
     Array.isArray(row.weapon5) && row.weapon5.every((name) => typeof name === "string");
 }
 
+function versionPeriod(entry: GenshinGachaDetailPeriod): entry is GenshinGachaVersionPeriod {
+  return "version" in entry && typeof entry.version === "string" && "half" in entry && typeof entry.half === "string";
+}
+
 export async function readGenshinGachaSources(root: string, records: GenshinPreviousGacha) {
   const [characters, weapons, calendar] = await Promise.all([
     readCharacters(root), readWeapons(root, records), readOptional(join(root, "meta-gs", "info", "pool.js")),
   ]);
   const resolveItem: Resolver = ({ name, itemType }) => (itemType === "char" ? characters : weapons).get(name);
+  const named = (entry: GenshinGachaVersionPeriod): GenshinGachaVersionPeriod => ({
+    ...entry, name: entry.char5.map((name) => characters.get(name)?.abbr ?? name).join(" / "),
+  });
   const regular = readMiaoArrayExport(calendar, "poolDetail").filter(period);
-  const chronicle = readMiaoArrayExport(calendar, "mixPoolDetail").filter(period);
-  return { resolveItem, resolvePool: resolveGenshinDetailPool(regular, chronicle) };
+  const mixed = readMiaoArrayExport(calendar, "mixPoolDetail").filter(period);
+  return {
+    resolveItem,
+    schedule: regular.filter(versionPeriod).map(named),
+    mixedSchedule: mixed.filter(versionPeriod).map(named),
+    resolvePool: resolveGenshinDetailPool(regular, mixed),
+  };
 }

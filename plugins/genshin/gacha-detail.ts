@@ -106,7 +106,7 @@ function decimal(value: unknown): string | undefined {
   return typeof value === "string" && /^\d{1,40}$/u.test(value) ? value.replace(/^0+/u, "") || undefined : undefined;
 }
 
-function timestamp(raw: string): number | undefined {
+export function genshinGachaTimestamp(raw: string): number | undefined {
   if (!/^\d{4}-\d{2}-\d{2}[ T](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})?$/u.test(raw)) return;
   const [year, month, day] = raw.slice(0, 10).split("-").map(Number) as [number, number, number];
   if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return;
@@ -119,8 +119,8 @@ export function resolveGenshinDetailPool(
   schedule: readonly GenshinGachaDetailPeriod[], mixed: readonly GenshinGachaDetailPeriod[],
 ): NonNullable<GenshinGachaDetailOptions["resolvePool"]> {
   const periods = (rows: readonly GenshinGachaDetailPeriod[]) => rows.flatMap((row) => {
-    const from = timestamp(row.from);
-    const to = timestamp(row.to);
+    const from = genshinGachaTimestamp(row.from);
+    const to = genshinGachaTimestamp(row.to);
     // An invalid theme date cannot classify a pull or hide history from the valid periods.
     return from === undefined || to === undefined || from >= to ? [] : [{ ...row, from, to }];
   });
@@ -142,7 +142,7 @@ function dateAt(at: number | undefined): string {
 
 type SavedPull = GenshinGachaPull & { readonly isUp?: boolean };
 
-function parseRows(value: unknown, uid: string, pool: GenshinGachaPool): SavedPull[] {
+export function parseGenshinGachaRows(value: unknown, uid: string, pool: GenshinGachaPool): SavedPull[] {
   if (!Array.isArray(value)) throw new TypeError("原神抽卡历史须为逐抽数组。");
   const rows = new Map<string, SavedPull>();
   for (const item of value as readonly unknown[]) {
@@ -166,7 +166,7 @@ function parseRows(value: unknown, uid: string, pool: GenshinGachaPool): SavedPu
     }
     const time = typeof source.time === "string" ? source.time.trim() : "";
     const itemId = decimal(source.item_id);
-    rows.set(id, { id, ...(itemId ? { itemId } : {}), name, star: Number(rank) as Star, itemType, pool, time, at: timestamp(time),
+    rows.set(id, { id, ...(itemId ? { itemId } : {}), name, star: Number(rank) as Star, itemType, pool, time, at: genshinGachaTimestamp(time),
       ...(typeof source.is_up === "boolean" ? { isUp: source.is_up } : {}) });
   }
   const pulls = [...rows.values()];
@@ -184,7 +184,7 @@ export function buildGenshinGachaDetail({
     throw new RangeError("原神抽卡详情分页参数无效。");
   }
   const model = poolModels[pool];
-  const pulls = parseRows(records[pool] ?? [], uid, pool);
+  const pulls = parseGenshinGachaRows(records[pool] ?? [], uid, pool);
   const allNum = pulls.length;
   if (!allNum) return;
 

@@ -5,6 +5,7 @@
   "exports": {
     ".": "./index.ts",
     "./miao-gacha-detail": "./miao-gacha-detail-card.ts",
+    "./miao-gacha-version": "./miao-gacha-version-card.ts",
     "./status-card": "./status-card.ts"
   },
   "dependencies": {
