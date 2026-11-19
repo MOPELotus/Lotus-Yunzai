@@ -107,6 +107,9 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
 
 test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规则优先级和权限", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-v3-"));
+  const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => Response.json({
+    accept: request.headers.get("Accept"),
+  }) });
   let host: ReturnType<typeof Bun.spawn> | undefined;
   let socket: WebSocket | undefined;
   try {
@@ -201,15 +204,22 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
       };
     `);
     await writeFile(join(plugins, "example", "legacy.js"), `
+      import fetch, { Headers } from "node-fetch";
       export class Legacy extends plugin {
         constructor() {
           super({ priority: 20, rule: [
             { reg: /^#优先$/g, fnc: "replyLower" },
             { reg: "^#管理$", fnc: "replyLower", permission: "master" },
+            { reg: "^#旧 HTTP 查询$", fnc: "lookup" },
           ] });
         }
         replyLower(e) {
           return e.reply("收到 " + e.msg + " " + e.user_id);
+        }
+        async lookup(e) {
+          const headers = new Headers({ Accept: "application/json" });
+          const response = await fetch(${JSON.stringify(upstream.url.href)}, { headers });
+          return e.reply((await response.json()).accept);
         }
       }
     `);
@@ -437,6 +447,7 @@ failsMsg: 协议拒绝
     expect(await send("#私聊", { message_type: "private", sub_type: "friend" })).toMatchObject({
       user_id: 42, message: "私聊可用",
     });
+    expect(await send("#旧 HTTP 查询")).toMatchObject({ group_id: 77, message: "application/json" });
     const context = await send("#会话 999 无关编号", { sender: { role: "admin" } });
     expect(context).toMatchObject({
       group_id: 77,
@@ -724,6 +735,7 @@ failsMsg: 协议拒绝
     expect(stderr).not.toContain("被拒载的旧入口已执行");
     expect(stderr).toContain("OneBot 插件已清理");
   } finally {
+    upstream.stop(true);
     socket?.close();
     host?.kill();
     await host?.exited;
