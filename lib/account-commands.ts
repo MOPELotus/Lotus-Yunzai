@@ -1,11 +1,16 @@
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
+import { segment } from "./messages.ts";
+
+type RenderRefreshCard = (title: string, lead: string, contents: readonly string[], at: Date) =>
+  Promise<{ readonly png: Uint8Array }>;
 
 export function accountCommands(
   directory: string | undefined,
   canRefresh: (context: CommandContext) => boolean,
   makeClient = createProfileHoyoClient,
+  renderRefreshCard?: RenderRefreshCard,
 ): CommandModule {
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles);
@@ -19,16 +24,33 @@ export function accountCommands(
       const qq = String(context.user_id);
       const ids = profileId === undefined ? await profiles.listIds(qq) : [profileId];
       if (!ids.length) return "当前 QQ 尚未创建档案。";
-      const lines = ["Cookie 刷新"];
+      const title = "Cookie 刷新";
+      const outcomes: { id: number; message: string }[] = [];
+      let refreshed = 0;
       for (const id of ids) {
         try {
           const { rolesSynced } = await client.refreshProfile(await profiles.accountContext(qq, id));
-          lines.push(`档案 ${id} · 刷新成功${rolesSynced ? "" : "，角色同步失败"}`);
+          refreshed++;
+          outcomes.push({ id, message: rolesSynced ? "刷新成功" : "刷新成功，角色同步失败" });
         } catch {
-          lines.push(`档案 ${id} · 刷新失败，请确认登录状态后重试`);
+          outcomes.push({ id, message: "刷新失败，请确认登录状态后重试" });
         }
       }
-      return lines.join("\n");
+      if (renderRefreshCard) {
+        const message = profileId === undefined
+          ? (refreshed === ids.length
+            ? "已按 profile 粒度刷新当前 QQ 的登录信息。"
+            : `已按 profile 粒度处理当前 QQ 的登录信息，刷新成功 ${refreshed}/${ids.length}。`)
+          : (refreshed ? `已刷新 profile ${profileId} 的登录信息。` : `profile ${profileId} 的登录信息未能刷新。`);
+        try {
+          const contents = outcomes.map(({ id, message }) => `Profile ${id}：${message}`);
+          const { png } = await renderRefreshCard(title, `QQ ${qq}\n${message}`, contents, new Date());
+          if (png.byteLength) return segment.image(png);
+        } catch {
+          // The refresh results stay available if the optional card cannot be drawn.
+        }
+      }
+      return [title, ...outcomes.map(({ id, message }) => `档案 ${id} · ${message}`)].join("\n");
     };
   }
 

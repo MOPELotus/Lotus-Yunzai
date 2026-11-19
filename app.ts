@@ -610,7 +610,10 @@ if (import.meta.main) {
       globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
     }
-    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh));
+    commands.registerModule(accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
+      const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
+      return renderStatusCard(...args);
+    }));
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[Lotus-Plugin] Gacha Log");

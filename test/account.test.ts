@@ -365,3 +365,58 @@ permissions:
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("刷新回执保留逐档状态，绘制失败时返回同一批操作的文字结果", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-refresh-card-"));
+  try {
+    for (const name of ["42", "42-2", "42-3", "51"]) {
+      await writeFile(join(root, name + ".yaml"), "account: { cookie: fixture, stuid: '71', stoken: fixture }\n");
+    }
+    const png = Uint8Array.of(137, 80, 78, 71);
+    const completed: number[] = [];
+    const cards: { title: string; lead: string; contents: readonly string[] }[] = [];
+    let renderFailure = false;
+    const registry = new CommandRegistry();
+    registry.registerModule(accountCommands(root, ({ isMaster }) => isMaster, (profiles) => ({
+      ...createProfileHoyoClient(profiles),
+      async refreshProfile({ qq, profileId }) {
+        expect(qq).toBe("42");
+        completed.push(profileId);
+        if (profileId === 3) throw new Error("private-upstream-fixture");
+        return { rolesSynced: profileId === 1 };
+      },
+    }), async (title, lead, contents) => {
+      cards.push({ title, lead, contents });
+      if (renderFailure) throw new Error("fixture draw failed");
+      return { png };
+    }));
+    const owner = { user_id: 42, message_type: "private", isMaster: true } as const;
+    expect(await registry.dispatch("#刷新cookie", { ...owner, isMaster: false })).toContain("当前不允许");
+    expect(await registry.dispatch("#刷新c", { ...owner, user_id: 999 })).toContain("尚未创建档案");
+    expect(await registry.dispatch("#刷新ck", { ...owner, user_id: undefined })).toContain("请从 QQ 会话");
+    expect(cards).toEqual([]);
+    expect(completed).toEqual([]);
+
+    expect(await registry.dispatch("#刷新Cookie", owner)).toEqual({ type: "image", file: png });
+    expect(completed).toEqual([1, 2, 3]);
+    expect(cards[0]).toEqual({
+      title: "Cookie 刷新",
+      lead: "QQ 42\n已按 profile 粒度处理当前 QQ 的登录信息，刷新成功 2/3。",
+      contents: ["Profile 1：刷新成功", "Profile 2：刷新成功，角色同步失败", "Profile 3：刷新失败，请确认登录状态后重试"],
+    });
+
+    expect(await registry.dispatch("#刷新自动签到2", owner)).toEqual({ type: "image", file: png });
+    expect(cards[1]).toEqual({
+      title: "Cookie 刷新",
+      lead: "QQ 42\n已刷新 profile 2 的登录信息。",
+      contents: ["Profile 2：刷新成功，角色同步失败"],
+    });
+
+    renderFailure = true;
+    expect(await registry.dispatch("#刷新ck3", owner)).toBe("Cookie 刷新\n档案 3 · 刷新失败，请确认登录状态后重试");
+    expect(cards[2]?.lead).toBe("QQ 42\nprofile 3 的登录信息未能刷新。");
+    expect(completed).toEqual([1, 2, 3, 2, 3]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
