@@ -46,6 +46,7 @@ export interface CheckinScheduleEntry {
   readonly time: string;
   readonly mode: EntryMode;
   readonly notified: boolean;
+  readonly noticeAttemptedAt?: string;
   readonly done: boolean;
   readonly late?: true;
   readonly lateRegisteredAt?: string;
@@ -250,10 +251,11 @@ export function generateCheckinSchedulePlan({ date, profiles = [], config, now, 
 }
 
 function entryPriority(entry: CheckinScheduleEntry) {
-  if (entry.done) return 4;
-  if (entry.runningAt) return 3;
-  if (entry.communityRetry) return 2;
-  return entry.notified ? 1 : 0;
+  if (entry.done) return 5;
+  if (entry.runningAt) return 4;
+  if (entry.communityRetry) return 3;
+  if (entry.notified) return 2;
+  return entry.noticeAttemptedAt ? 1 : 0;
 }
 
 function entryIndex(entries: readonly CheckinScheduleEntry[]) {
@@ -344,17 +346,18 @@ function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | un
 function parseEntry(value: unknown): CheckinScheduleEntry {
   const entry = record(value);
   if (!entry) invalid();
-  const { qq, profileId = 1, name = "", time, mode, notified = false, done = false,
+  const { qq, profileId = 1, name = "", time, mode, notified = false, noticeAttemptedAt, done = false,
     ok, stage, message, late, lateRegisteredAt, runningAt, doneAt } = entry;
   if (typeof qq !== "string" || !validIdentity(qq, profileId) || (mode !== "late_random" && !isMode(mode)) ||
       typeof time !== "string" || !Number.isInteger(checkinScheduleMinute(time)) ||
       typeof name !== "string" || typeof notified !== "boolean" || typeof done !== "boolean" ||
+      (noticeAttemptedAt !== undefined && !isTimestamp(noticeAttemptedAt)) ||
       (ok !== undefined && typeof ok !== "boolean") || (stage !== undefined && typeof stage !== "string") ||
       (message !== undefined && typeof message !== "string") || (late !== undefined && late !== true) ||
       (lateRegisteredAt !== undefined && !isTimestamp(lateRegisteredAt)) ||
       (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt))) invalid();
   const communityRetry = parseCommunityRetry(entry.communityRetry);
-  return { qq, profileId, name, time, mode, notified, done, ...(late && { late }),
+  return { qq, profileId, name, time, mode, notified, ...(noticeAttemptedAt && { noticeAttemptedAt }), done, ...(late && { late }),
     ...(lateRegisteredAt && { lateRegisteredAt }), ...(runningAt && { runningAt }), ...(doneAt && { doneAt }),
     ...(ok !== undefined && { ok }), ...(stage !== undefined && { stage }), ...(message !== undefined && { message }),
     ...(communityRetry && { communityRetry }) };
