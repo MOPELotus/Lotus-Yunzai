@@ -59,6 +59,8 @@ const lifetimeSeconds = 3600;
 const noticeRetention = lifetimeSeconds + 60;
 const maxEntries = 4096;
 
+export const isGroupJoinReviewInput = (message: string) => /^#?(?:同意|拒绝)$/u.test(message);
+
 function truthyId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }

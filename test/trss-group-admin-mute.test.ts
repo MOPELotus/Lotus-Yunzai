@@ -692,8 +692,12 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     send(oneBotMessage([quote(originalReceipt), text("#同意")], 54, 82));
     await groupReplyWith("当前无法核实并处理这条加群申请");
     expect(originalJoinChecked).toBe(false);
-    send(oneBotMessage([quote(originalReceipt), text("#同意")], operator, 84));
-    send(oneBotMessage([quote(originalReceipt), text("#同意")], operator, 82));
+    const quotedJoin = (groupId: number) => ({ ...oneBotMessage([quote(originalReceipt), text("#同意")], operator, groupId),
+      raw_message: `[CQ:reply,id=${originalReceipt}]#同意` });
+    send(quotedJoin(84));
+    const originalDecision = quotedJoin(82);
+    send(originalDecision);
+    send(originalDecision);
     await groupReplyWith("已同意合成申请人(70)的加群申请");
     send(oneBotMessage([quote(originalReceipt), text("拒绝")], operator, 82));
     await groupReplyWith("找不到原消息了，手动拒绝");

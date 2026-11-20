@@ -1,5 +1,6 @@
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
+import { isGroupJoinReviewInput } from "./group-join-review.ts";
 import type { BotEvent, MessageEvent } from "./messages.ts";
 
 const defaults = { groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"] };
@@ -173,9 +174,14 @@ export async function readGroupDispatch(root: URL) {
     if (user && cooldown(config.singleCD) && memberCooldowns.active(`${group}:${user}`, now)) return false;
 
     const bot = id(event.self_id) ?? "";
-    const duplicate = event.adapter === "milky" && event.file && event.message_id !== undefined
-      ? `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`
-      : `${bot}:${user ?? ""}:${event.raw_message}`;
+    let duplicate = `${bot}:${user ?? ""}:${event.raw_message}`;
+    if (event.message_id !== undefined) {
+      if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
+        duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      } else if (event.adapter === "milky" && event.file) {
+        duplicate = `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      }
+    }
     if (duplicates.active(duplicate, now)) return false;
     duplicates.set(duplicate, now, 1_000);
     return true;

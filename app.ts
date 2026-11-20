@@ -109,7 +109,7 @@ import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
 import type { GroupAddNotice } from "./plugins/group/index.ts";
-import { createGroupJoinReview } from "./lib/group-join-review.ts";
+import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -1029,7 +1029,7 @@ if (import.meta.main) {
         return;
       }
     }
-    if (!event.isDelegated && event.message_type === "group" && event.reply_id !== undefined && /^#?(?:同意|拒绝)$/u.test(event.msg)) {
+    if (!event.isDelegated && event.message_type === "group" && event.reply_id !== undefined && isGroupJoinReviewInput(event.msg)) {
       const reply = await commands.dispatchFallback(event,
         names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 引用加群审核") && allowed(names),
         user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
