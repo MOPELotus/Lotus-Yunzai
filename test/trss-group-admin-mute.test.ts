@@ -1389,6 +1389,34 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const richMilkyDelivery = await milkyOwnerReply(43, "原媒体后的文字");
     expect(richMilkyDelivery.params.message).toEqual([{ type: "face", data: { face_id: "14", is_large: true } },
       { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } }, text("原媒体后的文字")]);
+
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { privateMessage: false }\n"bot:99": { privateMessage: true }\n"bot:100": { privateMessage: true }\n');
+    const oneBotFriendText = { ...oneBotPrivate("给当前账号的好友留言", 42), sender: { nickname: "合成好友昵称" } };
+    client.send(JSON.stringify(oneBotFriendText));
+    client.send(JSON.stringify(oneBotFriendText));
+    const forwardedFriend = await ownerReplyWith("给当前账号的好友留言");
+    const forwardedText = JSON.stringify(forwardedFriend.params.message);
+    expect(forwardedText).toContain("[消息(99) - 好友消息]");
+    expect(forwardedText).toContain("合成好友昵称");
+    expect(forwardedText).toContain("可发送：回复 42 <内容>");
+    expect(forwardedText).not.toContain("引用该消息");
+    client.send(JSON.stringify(oneBotPrivate("再次给当前账号的好友留言", 42)));
+    const secondFriend = await ownerReplyWith("再次给当前账号的好友留言");
+    expect(JSON.stringify(secondFriend.params.message)).not.toContain("可发送：回复");
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("[消息(99) - 好友消息]"))).toHaveLength(2);
+
+    client.send(JSON.stringify(oneBotPrivate("stoken=synthetic-secret-for-scope-test", 42)));
+    client.send(JSON.stringify({ ...oneBotPrivate("合成临时会话勿转发", 42), sub_type: "group" }));
+    await webhook("message_receive", milkyPrivate("给 Milky 账号的好友留言", 42));
+    const opposite = await milkyOwnerReply(operator, "给 Milky 账号的好友留言");
+    const oppositeText = JSON.stringify(opposite.params.message);
+    expect(oppositeText).toContain("[消息(100) - 好友消息]");
+    expect(oppositeText).toContain("可发送：回复 42 <内容>");
+    expect(oneBotReplies().some(({ params }) => params.user_id === 52 &&
+      /synthetic-secret-for-scope-test|合成临时会话勿转发|Milky 账号的好友留言/u.test(JSON.stringify(params.message)))).toBe(false);
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && params.user_id === 52 &&
+      JSON.stringify(params.message).includes("给 Milky 账号的好友留言"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

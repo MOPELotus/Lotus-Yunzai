@@ -1,6 +1,7 @@
 import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
+import { friendMessageNoticeSession } from "../friend-message-notice.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
@@ -137,6 +138,14 @@ function sentMessage(frame: OneBotAction, source: MessageIdentity, record: (iden
   else if (frame.action === "send_group_forward_msg" || frame.action === "send_private_forward_msg") record(identity, messages);
 }
 
+async function notifyOwnerReplies(calls: OneBotCalls, send: Send, bot: number, owners: readonly number[], reply: MessageReply, signal: AbortSignal) {
+  const message = encodeOneBotReply(reply);
+  if (signal.aborted || message === undefined) return 0;
+  const recipients = [...new Set(owners)].filter(id => isId(id) && id !== bot);
+  const deliveries = await Promise.all(recipients.map(user_id => calls.sendConfirmed(send, { user_id }, message, signal)));
+  return deliveries.filter(result => result === "confirmed").length;
+}
+
 async function dispatchRequest(
   dispatch: (event: FriendRequest | GroupRequest) => Promise<void>,
   send: Send,
@@ -178,15 +187,8 @@ async function dispatchRequest(
     await dispatch({
       ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
       nickname, source,
-      notifyOwners: session ? async (reply, workflow) => {
-        const active = AbortSignal.any([session, workflow]);
-        const message = encodeOneBotReply(reply);
-        if (active.aborted || message === undefined) return 0;
-        const deliveries = await Promise.all(permissions.masterIds(self_id).filter(id => id !== self_id).map(
-          id => calls.sendConfirmed(send, { user_id: id }, message, active),
-        ));
-        return deliveries.filter(result => result === "confirmed").length;
-      } : undefined,
+      notifyOwners: session ? (reply, workflow) => notifyOwnerReplies(calls, send, self_id, permissions.masterIds(self_id), reply,
+        AbortSignal.any([session, workflow])) : undefined,
       approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
       reply: replyToApplicant,
     });
@@ -357,7 +359,7 @@ async function dispatchMessage(
   isMaster: (bot: number, user: number) => boolean,
   connection?: ConnectionData,
   noticeAttachment?: IncomingChatFile,
-  groupActions?: GroupActionPolicy,
+  groupActions?: GroupActionPolicy & { masterIds?: (bot: number) => readonly number[] },
 ): Promise<void> {
   const { mutes, botId: connectedBotId, display, attachmentSession } = connection ?? {};
   const userId = event.user_id;
@@ -436,6 +438,12 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: owner,
     boundAccount,
+    [friendMessageNoticeSession]: boundAccount && selfId !== undefined && attachmentSession && !noticeAttachment &&
+      messageType === "private" && event.sub_type === "friend" ? {
+        signal: attachmentSession.signal,
+        notifyOwners: (reply, workflow) => notifyOwnerReplies(calls, send, selfId, groupActions?.masterIds?.(selfId) ?? [], reply,
+          AbortSignal.any([attachmentSession.signal, workflow])),
+      } : undefined,
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
       ? attachmentSession?.signal : undefined,
     ...(privateGroupSignal && attachmentSession && selfId !== undefined && groupActions?.canModeratePrivateGroup &&

@@ -1,5 +1,6 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
+import { friendMessageNoticeSession } from "../friend-message-notice.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
@@ -275,6 +276,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (!hasMessageSequence(result.data.message_seq)) return "unknown";
     confirmSent(target, result.data, message);
     return "confirmed";
+  }
+
+  async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal) {
+    const active = AbortSignal.any([signal, workflow]);
+    if (active.aborted) return 0;
+    const recipients = [...new Set(options.masterIds?.(account))].filter(id => id !== account && isMaster(id));
+    const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active)));
+    return deliveries.filter(result => result === "confirmed").length;
   }
 
   const checkinNotify: CheckinNotifyTransport = {
@@ -624,16 +633,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const incomingFriend = body.event_type === "friend_request"
       ? milkyFriendRequest(body, account, approveFriendRequest, (user_id, reply) => sendReply({ user_id }, reply), options.masterIds?.(account) ?? [])
       : undefined;
-    const friendRequest = incomingFriend && {
-      ...incomingFriend,
-      async notifyOwners(reply: MessageReply, workflow: AbortSignal) {
-        const active = AbortSignal.any([signal, workflow]);
-        if (active.aborted) return 0;
-        const recipients = options.masterIds?.(account).filter(id => id !== account) ?? [];
-        const deliveries = await Promise.all(recipients.map(id => sendConfirmed({ user_id: id }, reply, undefined, active)));
-        return deliveries.filter(result => result === "confirmed").length;
-      },
-    };
+    const friendRequest = incomingFriend && { ...incomingFriend, notifyOwners: notifyOwnerReplies };
     let groupRequest;
     if (body.event_type === "group_invitation" || body.event_type === "group_join_request" || body.event_type === "group_invited_join_request") {
       const kind = body.event_type === "group_invitation" ? "invite" : "add";
@@ -690,6 +690,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      [friendMessageNoticeSession]: message.sub_type === "friend" && !message.attachmentOnly ? { signal, notifyOwners: notifyOwnerReplies } : undefined,
       listPendingGroupInvitations: privateGroupSignal && positiveId(cardOwner) ? async () => {
         if (!signal.aborted && !privateGroupSignal.aborted && isMaster(cardOwner)) return groupReviews.listObservedInvitations(account);
       } : undefined,

@@ -51,6 +51,7 @@ import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
+import { friendMessageNoticeSession, type FriendMessageNoticeSession } from "./lib/friend-message-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -110,7 +111,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { FriendRequestNotice, GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
+import type { FriendMessageNotice, FriendRequestNotice, GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
@@ -132,6 +133,8 @@ const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/grou
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
 const friendRequestNoticeNames = ["[group] 好友申请通知", "group", "@lotus-yunzai/group"];
+const friendMessageNoticeNames = ["[group] 好友消息通知", "group", "@lotus-yunzai/group"];
+const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
@@ -285,7 +288,11 @@ if (import.meta.main) {
   let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
   let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
   let friendRequestNotice: { policy: FriendRequestNotice; signal: AbortSignal } | undefined;
+  let friendMessageNotice: { policy: FriendMessageNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
+  const notifiedFriendMessages = new Set<string>();
+  const pendingFriendNotices = new Set<string>();
+  const friendNoticeHints = new Map<string, number>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
   function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review") {
     const redis = globalThis.redis;
@@ -887,7 +894,15 @@ if (import.meta.main) {
   }
 
   async function handleEvent(event: BotEvent) {
-    if (event.post_type === "message") return dispatchMessage(event);
+    if (event.post_type === "message") {
+      const transport = event[friendMessageNoticeSession];
+      if (transport && friendMessageNotice) {
+        const notice = forwardFriendMessage(event, transport).catch(() => {});
+        pending.add(notice);
+        void notice.then(() => pending.delete(notice));
+      }
+      return dispatchMessage(event);
+    }
     if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "increase") {
       await handleGroupVerificationNotice(event);
     }
@@ -949,6 +964,45 @@ if (import.meta.main) {
         event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"]) &&
         await autoQuit(event, lifecycle.signal)) {
       console.log(`[自动退群] 已退出群 ${event.group_id}。`);
+    }
+  }
+
+  async function forwardFriendMessage(event: MessageEvent, transport: FriendMessageNoticeSession) {
+    const registration = friendMessageNotice;
+    const { self_id: botId, user_id: userId, message_id: messageId, message, sender } = event;
+    if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
+        botId === userId || messageId === undefined || !masterPermissions.masterIds(botId).length || masterPermissions.isMaster(botId, userId) ||
+        masterPermissions.legacyMasterIds().includes(userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, transport.signal);
+    if (signal.aborted || typeof message === "string" || !message.length || message.some(part => part.type !== "text" || typeof part.text !== "string")) return;
+    const text = message.map(part => part.text).join("");
+    if (privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
+        isDeviceBindingInput(text) || isZzzGachaLinkMessage(text)) return;
+
+    const peer = `${event.adapter ?? "onebot"}:${botId}:${userId}`;
+    const key = `${peer}:${messageId}`;
+    if (pendingFriendNotices.has(key) || notifiedFriendMessages.has(key)) return;
+    pendingFriendNotices.add(key);
+    try {
+      const reply = await registration.policy({ botId, userId, text, nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
+        async showHint() {
+          if (signal.aborted) return false;
+          const redis = globalThis.redis;
+          if (redis) return await redis.set(`lotus-yunzai:friend-message-notice:hint:${peer}`, "1", { EX: 600, NX: true }) === "OK";
+          const now = performance.now();
+          if ((friendNoticeHints.get(peer) ?? 0) > now) return false;
+          friendNoticeHints.delete(peer);
+          friendNoticeHints.set(peer, now + 600_000);
+          if (friendNoticeHints.size > 4096) friendNoticeHints.delete(friendNoticeHints.keys().next().value!);
+          return true;
+        },
+      }, signal);
+      if (!reply || signal.aborted) return;
+      notifiedFriendMessages.add(key);
+      if (notifiedFriendMessages.size > 4096) notifiedFriendMessages.delete(notifiedFriendMessages.values().next().value!);
+      await transport.notifyOwners(reply, signal);
+    } finally {
+      pendingFriendNotices.delete(key);
     }
   }
 
@@ -1862,6 +1916,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (friendRequestNotice === registration) friendRequestNotice = undefined;
+          };
+        },
+        registerFriendMessageNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          friendMessageNotice = registration;
+          return () => {
+            session.abort();
+            if (friendMessageNotice === registration) friendMessageNotice = undefined;
           };
         },
         registerGroupVerification(policy) {

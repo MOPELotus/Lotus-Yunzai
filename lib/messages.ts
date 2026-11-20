@@ -7,6 +7,7 @@ import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/o
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationDecision, PendingGroupInvitationList, QuotedGroupInvitationDecision } from "./group-invitations.ts";
 import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
+import { friendMessageNoticeSession, type FriendMessageNoticeSession } from "./friend-message-notice.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
@@ -53,6 +54,7 @@ export interface MessageEvent {
   readonly isOwnerEnrollmentSession?: () => boolean;
   readonly canManageProcess?: boolean;
   readonly [delegationSession]?: DelegationSession;
+  readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly canDelegate?: boolean;
   readonly delegationSignal?: AbortSignal;
   readonly isDelegated?: boolean;
