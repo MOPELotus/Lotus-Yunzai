@@ -45,6 +45,7 @@ export interface GuobaField {
     addonAfter?: string;
     schemas?: readonly GuobaField[];
     title?: string;
+    multiple?: boolean;
     lengthMin?: number;
     lengthMax?: number;
   }>;
@@ -129,14 +130,18 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
   const props: { -readonly [Key in keyof ComponentProps]: ComponentProps[Key] } = {};
   if (component === "GSubForm") {
     const raw = schema.componentProps;
-    if (child || !record(raw) || raw.multiple !== true || !Array.isArray(raw.schemas)) return undefined;
+    if (child || !record(raw) || !Array.isArray(raw.schemas) ||
+        (raw.multiple !== undefined && typeof raw.multiple !== "boolean")) return undefined;
+    props.multiple = raw.multiple === true;
     props.schemas = raw.schemas.map(item => normaliseField(item, true)).filter(item => item !== undefined);
     if (!props.schemas.some(item => item.field !== undefined)) return undefined;
     compile(props.schemas);
     if (record(raw.modalProps) && typeof raw.modalProps.title === "string") props.title = raw.modalProps.title;
-    for (const key of ["lengthMin", "lengthMax"] as const) {
-      const value = raw[key];
-      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) props[key] = value;
+    if (props.multiple) {
+      for (const key of ["lengthMin", "lengthMax"] as const) {
+        const value = raw[key];
+        if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) props[key] = value;
+      }
     }
   } else if (component !== "InputPassword" && record(schema.componentProps)) {
     const { placeholder, rows, min, max, step, options, mode, defaultValue, addonAfter } = schema.componentProps;
@@ -158,6 +163,10 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
           ...(typeof disabled === "boolean" ? { disabled } : {}) }];
       });
     }
+  }
+  if (child && component !== "InputPassword" &&
+      (scalar(schema.defaultValue) || (Array.isArray(schema.defaultValue) && schema.defaultValue.every(scalar)))) {
+    props.defaultValue = schema.defaultValue;
   }
   return {
     component, field, label,
@@ -219,8 +228,12 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   return value;
 }
 
-function readRows(value: unknown): Record<string, unknown>[] {
+function readRows(schema: ValueField, value: unknown): Record<string, unknown>[] {
   if (value == null) return [];
+  if (schema.componentProps?.multiple === false) {
+    if (!record(value)) throw new Error();
+    return [value];
+  }
   if (!Array.isArray(value) || !value.every(record)) throw new Error();
   return value;
 }
@@ -250,7 +263,8 @@ function parseSubformEdit(schema: ValueField, input: unknown): GuobaSubformEdit 
   if (!record(input) || Object.keys(input).length !== 2 || typeof input.revision !== "string" ||
       !/^[0-9a-f]{64}$/u.test(input.revision) || !Array.isArray(input.rows)) throw new Error();
   const props = schema.componentProps;
-  if ((props?.lengthMin !== undefined && input.rows.length < props.lengthMin) ||
+  if ((props?.multiple === false && input.rows.length !== 1) ||
+      (props?.lengthMin !== undefined && input.rows.length < props.lengthMin) ||
       (props?.lengthMax !== undefined && input.rows.length > props.lengthMax)) throw new Error();
   const children = compile(props?.schemas ?? []);
   const indexes = new Set<number>();
@@ -273,13 +287,20 @@ function parseSubformEdit(schema: ValueField, input: unknown): GuobaSubformEdit 
 
 function mergeSubform(file: string, schema: ValueField, current: readonly Record<string, unknown>[], edit: GuobaSubformEdit) {
   if (subformRevision(file, schema.field, current) !== edit.revision) throw new SubformConflict();
-  return edit.rows.map(({ index, values }) => {
+  const single = schema.componentProps?.multiple === false;
+  const fields = schema.componentProps?.schemas ?? [];
+  const rows = edit.rows.map(({ index, values }) => {
     const existing = index === null ? undefined : current[index];
-    if (index !== null && !existing) throw new SubformInputError();
+    if ((index !== null && !existing) || (single && index === null && current.length !== 0)) {
+      throw new SubformInputError();
+    }
     const row = { ...existing, ...values };
     const changed = index === null || Object.keys(values).length > 0;
-    for (const child of schema.componentProps?.schemas ?? []) {
+    for (const child of fields) {
       if (!child.field) continue;
+      if (single && changed && row[child.field] === undefined && child.componentProps?.defaultValue !== undefined) {
+        row[child.field] = child.componentProps.defaultValue;
+      }
       if (child.component === "InputPassword" && row[child.field] === "") {
         row[child.field] = existing?.[child.field] ?? "";
       }
@@ -289,6 +310,7 @@ function mergeSubform(file: string, schema: ValueField, current: readonly Record
     }
     return row;
   });
+  return single ? rows[0] : rows;
 }
 
 function submitted(data: unknown, compiled: ReturnType<typeof compile>): Record<string, GuobaEdit> {
@@ -389,7 +411,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
             if (schema.component === "InputPassword") {
               if (typeof value === "string" && value.length > 0) configuredPasswords.push(field);
             } else if (schema.component === "GSubForm") {
-              subforms[field] = subformSnapshot(file, schema, readRows(value));
+              subforms[field] = subformSnapshot(file, schema, readRows(schema, value));
             } else if (value !== undefined) {
               values[field] = inputValue(schema, value);
             }
@@ -417,9 +439,9 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
                 current ??= await readData();
                 const existing = getValue(current, field, parts);
                 if (Object.hasOwn(values, field)) {
-                  values[field] = mergeSubform(file, schema, readRows(existing), values[field] as GuobaSubformEdit);
+                  values[field] = mergeSubform(file, schema, readRows(schema, existing), values[field] as GuobaSubformEdit);
                 } else if (existing !== undefined) {
-                  values[field] = readRows(existing);
+                  values[field] = schema.componentProps?.multiple === false ? existing : readRows(schema, existing);
                 }
                 continue;
               }

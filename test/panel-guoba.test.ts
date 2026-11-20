@@ -263,3 +263,56 @@ test("重复子表单保存按旧行合并，屏蔽密码并拒绝陈旧或歧�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("单对象子表单保留缺值与原对象形状，只保存当前版本的声明字段", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-object-"));
+  try {
+    await writeFile(join(directory, "guoba.support.js"), `
+      const saved = new URL("saved.json", import.meta.url);
+      let values = { active: false, existing: { host: "old", password: "secret-test-value", extra: "keep" }, empty: null };
+      const schemas = [
+        { component: "Input", field: "host", label: "地址", required: true },
+        { component: "InputPassword", field: "password", label: "密码", defaultValue: "secret-test-default" },
+        { component: "InputNumber", field: "port", label: "端口", defaultValue: 8000 }
+      ];
+      export function supportGuoba() { return { configInfo: {
+        schemas: [
+          { component: "Switch", field: "active", label: "启用" },
+          { component: "GSubForm", field: "existing", label: "现有对象", componentProps: { multiple: false, schemas } },
+          { component: "GSubForm", field: "missing", label: "缺失对象", componentProps: { schemas } },
+          { component: "GSubForm", field: "empty", label: "空对象值", componentProps: { schemas } }
+        ],
+        getConfigData() { return values; },
+        async setConfigData(data, { Result }) { values = data; await Bun.write(saved, JSON.stringify(data)); return Result.ok(); }
+      } }; }
+    `);
+    const form = await loadGuobaForm(directory);
+    if (!form) throw new Error("子表单未加载。");
+    const fields = (await form.read()).subforms!;
+    expect(fields.existing?.rows).toEqual([{ values: { host: "old" }, configuredPasswords: ["password"] }]);
+    expect(fields.missing?.rows).toEqual([]);
+    expect(fields.empty?.rows).toEqual([]);
+    expect(JSON.stringify([fields, form.schemas])).not.toContain("secret-test-");
+    const save = (field: string, index: number | null, values: unknown) => form.save({
+      [field]: { revision: fields[field]!.revision, rows: [{ index, values }] },
+    });
+    const read = async () => JSON.parse(await readFile(join(directory, "saved.json"), "utf8"));
+
+    expect(await form.save({ active: true })).toMatchObject({ status: 200 });
+    expect(await read()).toEqual({
+      active: true, existing: { host: "old", password: "secret-test-value", extra: "keep" }, empty: null,
+    });
+    expect(await save("existing", null, { host: "wrong identity" })).toMatchObject({ status: 400 });
+    expect(await save("missing", null, { port: 9000 })).toMatchObject({ status: 400 });
+    expect(await form.save({ existing: { revision: fields.existing!.revision, rows: [] } })).toMatchObject({ status: 400 });
+    expect(await save("existing", 0, { host: "updated", password: "" })).toMatchObject({ status: 200 });
+    expect(await save("existing", 0, { host: "stale" })).toMatchObject({ status: 409 });
+    expect(await save("missing", null, { host: "new" })).toMatchObject({ status: 200 });
+    expect(await read()).toEqual({
+      active: true, existing: { host: "updated", password: "secret-test-value", extra: "keep", port: 8000 },
+      missing: { host: "new", port: 8000 }, empty: null,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

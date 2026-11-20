@@ -7,23 +7,42 @@ type Row = GuobaSubformEdit["rows"][number];
 type Field = GuobaField & { field: string };
 const props = defineProps<{ id: string; schema: GuobaField; saved: GuobaSubformSnapshot; edited?: GuobaSubformEdit }>();
 const emit = defineEmits<{ update: [value: GuobaSubformEdit | undefined] }>();
-const editor = ref<HTMLDialogElement>();
+const editor = ref<HTMLElement>();
 const position = ref<number | null>(null);
 const draft = shallowRef<Record<string, GuobaInput>>({});
 const pendingRemove = ref<number>();
 const error = ref("");
+const single = computed(() => props.schema.componentProps?.multiple === false);
+const dialog = () => editor.value instanceof HTMLDialogElement ? editor.value : undefined;
 const heading = computed(() => props.schema.componentProps?.title ?? props.schema.label);
 const fields = computed(() => (props.schema.componentProps?.schemas ?? []).filter((item): item is Field => item.field !== undefined));
 const summaries = computed(() => fields.value.filter(item => item.component !== "InputPassword").slice(0, 3));
 const rows = computed<readonly Row[]>(() => props.edited?.rows ?? props.saved.rows.map((_, index) => ({ index, values: {} })));
-const target = computed(() => position.value === null ? undefined : rows.value[position.value]);
+const target = computed(() => single.value ? rows.value[0] : position.value === null ? undefined : rows.value[position.value]);
 const stored = computed(() => target.value?.index == null ? undefined : props.saved.rows[target.value.index]);
 const limits = computed(() => props.schema.componentProps ?? {});
-const value = (field: string) => Object.hasOwn(draft.value, field) ? draft.value[field] : stored.value?.values[field];
+const fieldEdits = computed(() => single.value ? props.edited?.rows[0]?.values ?? {} : draft.value);
+function savedValue(field: string) {
+  const current = stored.value?.values[field];
+  return current === undefined && single.value
+    ? fields.value.find(item => item.field === field)?.componentProps?.defaultValue : current;
+}
+const value = (field: string) => Object.hasOwn(fieldEdits.value, field) ? fieldEdits.value[field] : savedValue(field);
+const required = (item: Field) => single.value && Boolean(props.edited) && item.required;
+
+function updateEdits(edits: Record<string, GuobaInput>) {
+  if (single.value) {
+    emit("update", Object.keys(edits).length ? {
+      revision: props.saved.revision, rows: [{ index: target.value?.index ?? null, values: edits }],
+    } : undefined);
+  } else {
+    draft.value = edits;
+  }
+}
 
 watch(() => props.saved.revision, () => {
   pendingRemove.value = undefined;
-  if (editor.value?.open) editor.value.close();
+  if (dialog()?.open) dialog()?.close();
 });
 
 function open(index: number | null) {
@@ -33,17 +52,17 @@ function open(index: number | null) {
     .filter(item => item.componentProps?.defaultValue !== undefined)
     .map(item => [item.field, item.componentProps!.defaultValue!]));
   error.value = "";
-  editor.value?.showModal();
+  dialog()?.showModal();
 }
 
 function edit(field: string, next: GuobaInput) {
-  const before = stored.value?.values[field];
+  const before = savedValue(field);
   const same = Array.isArray(before) && Array.isArray(next)
     ? before.length === next.length && before.every((item, index) => item === next[index]) : before === next;
-  const edits = { ...draft.value };
+  const edits = { ...fieldEdits.value };
   if (same) delete edits[field];
   else edits[field] = next;
-  draft.value = edits;
+  updateEdits(edits);
   error.value = "";
 }
 
@@ -56,13 +75,13 @@ function password(field: string, event: Event) {
 }
 
 function keepPassword(field: string) {
-  const edits = { ...draft.value };
+  const edits = { ...fieldEdits.value };
   delete edits[field];
-  draft.value = edits;
+  updateEdits(edits);
 }
 
 function preventOuterSubmit(event: KeyboardEvent) {
-  if (event.target instanceof HTMLInputElement && event.target.type !== "checkbox") event.preventDefault();
+  if (!single.value && event.target instanceof HTMLInputElement && event.target.type !== "checkbox") event.preventDefault();
 }
 
 function text(event: Event) {
@@ -130,7 +149,7 @@ function confirm() {
   }
   const row = { index: target.value?.index ?? null, values: draft.value };
   publish(position.value === null ? [...rows.value, row] : rows.value.map((old, index) => index === position.value ? row : old));
-  editor.value?.close();
+  dialog()?.close();
 }
 </script>
 
@@ -138,40 +157,44 @@ function confirm() {
   <section class="subform" :aria-labelledby="`${id}-title`">
     <h3 :id="`${id}-title`">{{ schema.label }}</h3>
     <p v-if="schema.bottomHelpMessage" class="subform-help">{{ schema.bottomHelpMessage }}</p>
-    <p v-if="!rows.length" class="subform-help">暂无数据</p>
-    <ul v-else class="subform-rows">
-      <li v-for="(row, index) in rows" :key="row.index ?? `new-${index}`">
-        <dl>
-          <div v-for="field in summaries" :key="field.field">
-            <dt>{{ field.label }}</dt><dd>{{ rowText(row, field) }}</dd>
+    <template v-if="!single">
+      <p v-if="!rows.length" class="subform-help">暂无数据</p>
+      <ul v-else class="subform-rows">
+        <li v-for="(row, index) in rows" :key="row.index ?? `new-${index}`">
+          <dl>
+            <div v-for="field in summaries" :key="field.field">
+              <dt>{{ field.label }}</dt><dd>{{ rowText(row, field) }}</dd>
+            </div>
+          </dl>
+          <div class="subform-actions">
+            <ElButton :aria-label="`编辑第 ${index + 1} 条`" @click="open(index)">编辑</ElButton>
+            <template v-if="pendingRemove === index">
+              <ElButton @click="pendingRemove = undefined">取消</ElButton>
+              <ElButton type="danger" @click="publish(rows.filter((_, at) => at !== index)); pendingRemove = undefined">
+                确认删除
+              </ElButton>
+            </template>
+            <ElButton v-else :disabled="rows.length <= (limits.lengthMin ?? 0)"
+              :aria-label="`删除第 ${index + 1} 条`" @click="pendingRemove = index">删除</ElButton>
           </div>
-        </dl>
-        <div class="subform-actions">
-          <ElButton :aria-label="`编辑第 ${index + 1} 条`" @click="open(index)">编辑</ElButton>
-          <template v-if="pendingRemove === index">
-            <ElButton @click="pendingRemove = undefined">取消</ElButton>
-            <ElButton type="danger" @click="publish(rows.filter((_, at) => at !== index)); pendingRemove = undefined">
-              确认删除
-            </ElButton>
-          </template>
-          <ElButton v-else :disabled="rows.length <= (limits.lengthMin ?? 0)"
-            :aria-label="`删除第 ${index + 1} 条`" @click="pendingRemove = index">删除</ElButton>
-        </div>
-      </li>
-    </ul>
-    <ElButton :disabled="limits.lengthMax !== undefined && rows.length >= limits.lengthMax" @click="open(null)">新增</ElButton>
+        </li>
+      </ul>
+      <ElButton :disabled="limits.lengthMax !== undefined && rows.length >= limits.lengthMax" @click="open(null)">新增</ElButton>
+    </template>
 
-    <dialog ref="editor" class="subform-editor" :aria-labelledby="`${id}-editor-title`"
+    <component :is="single ? 'div' : 'dialog'" ref="editor" :class="{ 'subform-editor': !single }"
+      :aria-labelledby="single ? undefined : `${id}-editor-title`"
       @keydown.enter="preventOuterSubmit">
-      <h3 :id="`${id}-editor-title`">{{ position === null ? "新增" : "编辑" }}{{ heading }}</h3>
+      <h3 v-if="!single" :id="`${id}-editor-title`">{{ position === null ? "新增" : "编辑" }}{{ heading }}</h3>
       <div class="subform-editor-fields">
         <div v-for="(item, index) in fields" :key="item.field" class="subform-field">
           <label :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
           <template v-if="item.component === 'InputPassword'">
             <input :id="`${id}-child-${index}`" type="password" autocomplete="new-password"
-              :value="display(draft[item.field])" :disabled="draft[item.field] === null" placeholder="留空保留现有密码"
+              :value="display(fieldEdits[item.field])" :disabled="fieldEdits[item.field] === null" placeholder="留空保留现有密码"
+                :required="required(item) && !stored?.configuredPasswords.includes(item.field)"
               @input="password(item.field, $event)" />
-            <ElButton v-if="draft[item.field] === null" @click="keepPassword(item.field)">撤销清除</ElButton>
+            <ElButton v-if="fieldEdits[item.field] === null" @click="keepPassword(item.field)">撤销清除</ElButton>
             <ElButton v-else-if="stored?.configuredPasswords.includes(item.field)" @click="edit(item.field, null)">清除密码</ElButton>
           </template>
           <input v-else-if="item.component === 'Switch'" :id="`${id}-child-${index}`" type="checkbox"
@@ -179,14 +202,14 @@ function confirm() {
           <div v-else-if="item.component === 'InputNumber'" class="subform-number">
             <input :id="`${id}-child-${index}`" type="number" :value="display(value(item.field))"
               :min="item.componentProps?.min" :max="item.componentProps?.max" :step="item.componentProps?.step ?? 'any'"
-              :placeholder="item.componentProps?.placeholder" @input="updateNumber(item.field, $event)" />
+              :placeholder="item.componentProps?.placeholder" :required="required(item)" @input="updateNumber(item.field, $event)" />
             <span v-if="item.componentProps?.addonAfter">{{ item.componentProps.addonAfter }}</span>
           </div>
           <textarea v-else-if="item.component === 'Select' && item.componentProps?.mode === 'tags'"
-            :id="`${id}-child-${index}`" :value="display(value(item.field))" rows="3" placeholder="每行一个标签"
+            :id="`${id}-child-${index}`" :value="display(value(item.field))" rows="3" placeholder="每行一个标签" :required="required(item)"
             @change="tags(item, $event)" />
           <select v-else-if="item.component === 'Select'" :id="`${id}-child-${index}`"
-            :multiple="item.componentProps?.mode === 'multiple'" @change="select(item, $event)">
+            :multiple="item.componentProps?.mode === 'multiple'" :required="required(item)" @change="select(item, $event)">
             <option v-if="item.componentProps?.mode !== 'multiple'" value="" disabled
               :selected="!item.componentProps?.options?.some(option => selected(item, option.value))">请选择</option>
             <option v-for="(option, at) in item.componentProps?.options" :key="at" :value="at"
@@ -194,18 +217,18 @@ function confirm() {
           </select>
           <textarea v-else-if="item.component === 'InputTextArea'" :id="`${id}-child-${index}`"
             :value="display(value(item.field))" :rows="item.componentProps?.rows ?? 3"
-            :placeholder="item.componentProps?.placeholder" @input="edit(item.field, text($event))" />
+            :placeholder="item.componentProps?.placeholder" :required="required(item)" @input="edit(item.field, text($event))" />
           <input v-else :id="`${id}-child-${index}`" :value="display(value(item.field))"
-            :placeholder="item.componentProps?.placeholder" @input="edit(item.field, text($event))" />
+            :placeholder="item.componentProps?.placeholder" :required="required(item)" @input="edit(item.field, text($event))" />
           <p v-if="item.bottomHelpMessage" class="subform-help">{{ item.bottomHelpMessage }}</p>
         </div>
       </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <div class="subform-actions">
-        <ElButton @click="editor?.close()">取消</ElButton>
+      <div v-if="!single" class="subform-actions">
+        <ElButton @click="dialog()?.close()">取消</ElButton>
         <ElButton type="primary" @click="confirm">确定</ElButton>
       </div>
-    </dialog>
+    </component>
   </section>
 </template>
 
