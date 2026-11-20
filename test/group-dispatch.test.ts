@@ -57,6 +57,15 @@ test("Lotus 平面点赞设置不启用旧群路由，也不遮挡旧目录的�
   expect(both.allows(event, ["主页"])).toBe(false);
 });
 
+test.each(["# 旧空配置\n", "{}\n"])("裁剪为空的旧群配置仍启用默认群冷却和别名 %s", async (legacy) => {
+  const policy = await fixture({ "group.yaml": "enable: false\ncount: 3\n", "config/group.yaml": legacy });
+  const first = message({ msg: "云崽#状态", raw_message: "云崽#状态" });
+  expect(policy.admit(first)).toBe(true);
+  expect(policy.prepare(first).event.msg).toBe("#状态");
+  expect(policy.admit(message({ user_id: 31 }))).toBe(false);
+  expect(policy.admit(message({ group_id: 21 }))).toBe(true);
+});
+
 test("全局名单兼容字符串和数字，黑名单优先且主人也受限，终端独立", async () => {
   const policy = await fixture({
     "config/other.yaml": 'whiteUser: ["30", 31]\nblackUser: ["31"]\nwhiteGroup: ["20", 21]\nblackGroup: [21]\n',
