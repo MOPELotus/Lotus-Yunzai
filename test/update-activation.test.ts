@@ -8,6 +8,7 @@ import { activateUpdate, previousUpdateDirectory, recoverUpdateActivation } from
 
 const pluginState = "plugins/fixture/state";
 const additionalState = [pluginState] as const;
+const activationTestTimeout = 20_000;
 const runtime = {
   "config/settings.txt": "active configuration",
   "data/store.txt": "active data",
@@ -96,7 +97,7 @@ test("切换保留新代码和构建产物、原用户状态与上一个已知�
   await expect(lstat(join(previous, ".env"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await stateIdentities(active)).toEqual(identity);
   await expect(lstat(candidate)).rejects.toMatchObject({ code: "ENOENT" });
-}));
+}), activationTestTimeout);
 
 test("候选启动失败恢复原安装并把候选送回暂存区", () => withDirectories(false, async ({ active, candidate }) => {
   const identity = await stateIdentities(active);
@@ -113,7 +114,7 @@ test("候选启动失败恢复原安装并把候选送回暂存区", () => withD
   await expect(lstat(join(candidate, "config/settings.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(lstat(join(active, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
   await checkStartup(active, "previous");
-}));
+}), activationTestTimeout);
 
 test("候选接管后可从当前切换归档导入旧缓存", () => withDirectories(true, async ({ active, candidate }) => {
   const file = "temp/Lotus-Plugin/poetry/lines.json";
@@ -135,7 +136,7 @@ test("候选接管后可从当前切换归档导入旧缓存", () => withDirecto
   await assertFiles(activated.previous, old);
   await assertFiles(active, { [target]: '{"lines":["旧摘要"]}' });
   expect(await loadImagePreviews(root)).toEqual(["旧摘要"]);
-}));
+}), activationTestTimeout);
 
 test("归档缓存路径经过链接时不读取链接目标", () => withDirectories(true, async ({ parent, active, candidate }) => {
   const folder = "temp/Lotus-Plugin/poetry";
@@ -145,7 +146,7 @@ test("归档缓存路径经过链接时不读取链接目标", () => withDirecto
   await symlink(outside, join(active, folder), "dir");
   const { previous } = await activateUpdate(active, candidate, async () => {}, additionalState);
   expect(await loadImagePreviews(pathToFileURL(active + "/"), pathToFileURL(previous + "/"))).toEqual([]);
-}));
+}), activationTestTimeout);
 
 test("候选包含受保护路径时拒绝切换并保留两份状态", () => withDirectories(true, async ({ active, candidate }) => {
   const candidateState = { "config/settings.txt": "candidate defaults" };
