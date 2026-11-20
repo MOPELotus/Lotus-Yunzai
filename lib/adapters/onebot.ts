@@ -549,9 +549,12 @@ async function dispatchMessage(
     } : undefined,
     sendOwnerFriendReply: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment
       ? bindOwnerFriendReply({ account: selfId, signal: AbortSignal.any([privateGroupSignal, attachmentSession.signal]),
-        isOwner: () => isMaster(selfId, userId),
+        isOwner: () => isMaster(selfId, userId), source: incoming.message,
         isFriend: (target, active) => calls.isFriend(send, target, active),
-        send: (target, text, active) => calls.sendConfirmed(send, { user_id: target }, [{ type: "text", data: { text } }], active),
+        async send(target, reply, active) {
+          const encoded = encodeOneBotReply(typeof reply === "string" ? [reply] : reply);
+          return encoded === undefined ? "rejected" : calls.sendConfirmed(send, { user_id: target }, encoded, active);
+        },
       }) : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),

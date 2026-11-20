@@ -1,21 +1,60 @@
-export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable";
+import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
+import type { MessageEvent, MessageReply } from "../messages.ts";
+
+export type OwnerFriendReplyBody = string | readonly (string | { readonly sourceIndex: number })[];
+export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable" | "unsupported";
 
 interface OwnerFriendReplySession {
   readonly account: number;
   readonly signal: AbortSignal;
   readonly isOwner: () => boolean;
+  readonly source: MessageEvent["message"];
   isFriend(userId: number, signal: AbortSignal): Promise<boolean | undefined>;
-  send(userId: number, text: string, signal: AbortSignal): Promise<"confirmed" | "rejected" | "unknown">;
+  send(userId: number, message: MessageReply, signal: AbortSignal): Promise<"confirmed" | "rejected" | "unknown">;
+}
+
+async function readReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"], signal: AbortSignal) {
+  if (typeof source === "string" || !Array.isArray(body) || !body.length || body.length > 128) return;
+  const parts: Exclude<MessageReply, readonly unknown[]>[] = [];
+  let imageBytes = 0;
+  for (const value of body) {
+    if (signal.aborted) return;
+    if (typeof value === "string") { parts.push(value); continue; }
+    if (!value || !Number.isSafeInteger(value.sourceIndex) || value.sourceIndex < 0) return;
+    const part = source[value.sourceIndex];
+    if (part?.type === "face") {
+      const { id, is_large } = part;
+      if ((typeof id !== "string" && typeof id !== "number") || !/^\d+$/u.test(String(id)) || !Number.isSafeInteger(Number(id))) return;
+      parts.push({ type: "face", data: { id, ...(typeof is_large === "boolean" ? { is_large } : {}) } });
+    } else if (part?.type === "image") {
+      const bytes = await readQqMessageSegmentMedia(part, signal).catch(() => undefined);
+      if (!bytes) return;
+      imageBytes += bytes.byteLength;
+      if (imageBytes > maxChatFileBytes) return;
+      parts.push({ type: "image", file: bytes });
+    } else return;
+  }
+  return parts;
 }
 
 export function bindOwnerFriendReply(session: OwnerFriendReplySession) {
   const { account, signal, isOwner } = session;
   const active = () => !signal.aborted && isOwner();
-  return async (userId: number, text: string): Promise<OwnerFriendReplyOutcome> => {
-    if (!Number.isSafeInteger(userId) || userId < 1 || userId === account || typeof text !== "string" || !text.trim() || !active()) return "unavailable";
-    const friend = await session.isFriend(userId, signal).catch(() => undefined);
+  return async (userId: number, body: OwnerFriendReplyBody): Promise<OwnerFriendReplyOutcome> => {
+    if (!Number.isSafeInteger(userId) || userId < 1 || userId === account || !active()) return "unavailable";
+    const lookup = () => session.isFriend(userId, signal).catch(() => undefined);
+    const friend = await lookup();
     if (!active() || friend === undefined) return "unavailable";
     if (!friend) return "not-friend";
-    return session.send(userId, text, signal).catch(() => "unknown");
+    if (typeof body === "string") {
+      return body.trim() ? session.send(userId, body, signal).catch(() => "unknown") : "unsupported";
+    }
+    const parts = await readReplyParts(body, session.source, signal);
+    if (!active()) return "unavailable";
+    if (!parts) return "unsupported";
+    const stillFriend = await lookup();
+    if (!active() || stillFriend === undefined) return "unavailable";
+    if (!stillFriend) return "not-friend";
+    return session.send(userId, parts, signal).catch(() => "unknown");
   };
 }

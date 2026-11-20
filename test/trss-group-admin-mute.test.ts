@@ -1364,6 +1364,31 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", unknownOwnerReply);
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === 43 &&
       JSON.stringify(params.message).includes("合成 Milky 未知回复"))).toHaveLength(1);
+
+    const richOneBotReply = oneBotPrivate("#回复42 图前");
+    client.send(JSON.stringify({ ...richOneBotReply, message: [text(richOneBotReply.raw_message), embeddedImage,
+      { type: "face", data: { id: "14" } }, text("\n图后")],
+    }));
+    const richOneBotDelivery = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 &&
+      JSON.stringify(params.message).includes("图后")), "OneBot 好友回复未发送原图与表情。");
+    expect(richOneBotDelivery.params.message).toEqual([text("图前"), { type: "image", data: { file: `base64://${noticeImageBase64}` } },
+      { type: "face", data: { id: "14" } }, text("\n图后")]);
+
+    const brokenReply = oneBotPrivate("#回复42 不能只发这段");
+    client.send(JSON.stringify({ ...brokenReply, message: [text(brokenReply.raw_message),
+      { type: "image", data: { file: "/tmp/untrusted-private-reply.png" } }],
+    }));
+    await ownerReplyWith("整条消息未发送");
+    expect(oneBotReplies().some(({ params }) => params.user_id === 42 && JSON.stringify(params.message).includes("不能只发这段"))).toBe(false);
+
+    const richMilkyReply = milkyPrivate("回复43");
+    await webhook("message_receive", { ...richMilkyReply, segments: [...richMilkyReply.segments,
+      { type: "face", data: { face_id: "14", is_large: true } }, { type: "image", data: { resource_id: "matched-picture" } },
+      text("原媒体后的文字"),
+    ] });
+    const richMilkyDelivery = await milkyOwnerReply(43, "原媒体后的文字");
+    expect(richMilkyDelivery.params.message).toEqual([{ type: "face", data: { face_id: "14", is_large: true } },
+      { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } }, text("原媒体后的文字")]);
   } finally {
     socket?.close();
     host?.kill();

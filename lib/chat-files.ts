@@ -65,6 +65,13 @@ export async function readQqMessageMedia(value: unknown, signal?: AbortSignal): 
   if (!/^\s*(?:<!doctype html|<html\b|<\?xml|\{|\[)/iu.test(prefix)) return bytes;
 }
 
+export async function readQqMessageSegmentMedia(part: Readonly<Record<string, unknown>>, signal: AbortSignal) {
+  if (signal.aborted) return;
+  const url = typeof part.url === "string" ? part.url
+    : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
+  return readQqMessageMedia(url, signal);
+}
+
 async function readQqResource(url: URL, size?: number, signal?: AbortSignal, media = false) {
   const timeout = AbortSignal.timeout(30_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;

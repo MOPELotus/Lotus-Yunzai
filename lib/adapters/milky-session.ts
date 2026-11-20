@@ -708,14 +708,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       reviewPendingFriendRequest: privateGroupSignal && positiveId(cardOwner) ? (user: number, approve: boolean) =>
         reviewCurrentFriendRequest(cardOwner, user, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
       sendOwnerFriendReply: privateGroupSignal && positiveId(cardOwner) ? bindOwnerFriendReply({
-        account, signal: AbortSignal.any([signal, privateGroupSignal]), isOwner: () => isMaster(cardOwner),
+        account, signal: AbortSignal.any([signal, privateGroupSignal]), isOwner: () => isMaster(cardOwner), source: message.message,
         async isFriend(userId, active) {
           const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
           const friends = result.status === "confirmed" ? result.data.friends : undefined;
           if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
           return friends.some(friend => friend.user_id === userId);
         },
-        send: (user_id, text, active) => sendConfirmed({ user_id }, text, undefined, active),
+        send: (user_id, reply, active) => sendConfirmed({ user_id }, reply, undefined, active),
       }) : undefined,
       ...(privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup &&
         bindPrivateGroupActions({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),

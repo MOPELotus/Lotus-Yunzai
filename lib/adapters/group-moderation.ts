@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { maxChatFileBytes, readQqMessageMedia } from "../chat-files.ts";
+import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
 import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
 
@@ -334,15 +334,9 @@ export async function runTimedWholeMute(binding: TimedGroupMuteBinding, session:
 
 const noticeMedia = new Set(["image", "record", "video"]);
 
-async function readMessageMedia(part: InboundSegment, signal: AbortSignal) {
-  const url = typeof part.url === "string" ? part.url
-    : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
-  return readQqMessageMedia(url, signal);
-}
-
 function readGroupImageDigest(image: InboundSegment) {
   return async (signal: AbortSignal) => {
-    const bytes = await readMessageMedia(image, signal);
+    const bytes = await readQqMessageSegmentMedia(image, signal);
     if (bytes && !signal.aborted) return createHash("md5").update(bytes).digest("hex");
   };
 }
@@ -411,7 +405,7 @@ async function buildGroupNotice(parts: readonly InboundSegment[], source: Messag
       reply.push({ type, data: { id: String(part.id), ...(part.is_large === true && { is_large: true }) } });
     } else if ((type === "image" || type === "record" || type === "video") &&
         typeof source !== "string" && source.includes(part)) {
-      const bytes = await readMessageMedia(part, signal);
+      const bytes = await readQqMessageSegmentMedia(part, signal);
       if (!bytes || (mediaBytes += bytes.byteLength) > maxChatFileBytes) return;
       reply.push({ type, data: { file: bytes,
         ...(type === "image" && typeof part.summary === "string" && { summary: part.summary }) } });
@@ -608,7 +602,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (typeof text !== "string" || !text.trim()) return "rejected";
       if (!await canManage("list") || announcement.available && !await announcement.available() || !active()) return "unavailable";
       const image = typeof announcement.source === "string" ? undefined : announcement.source.find(part => part.type === "image");
-      const bytes = image && await readMessageMedia(image, signal).catch(() => undefined);
+      const bytes = image && await readQqMessageSegmentMedia(image, signal).catch(() => undefined);
       if (!active()) return "unavailable";
       if (image && !bytes) return "invalid-image";
       if ((announcement.available || image) && !await canManage("list")) return "unavailable";
