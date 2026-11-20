@@ -504,11 +504,11 @@ export async function loadPlugins(
           if (published.apps === null || typeof published.apps !== "object") {
             throw new Error("apps 须导出 V3 插件类。");
           }
-          await legacy.register(published, label, packageName, signal);
+          await legacy.register(published, label, packageName, signal, directory);
         }
         return "loaded" as const;
       }
-      return legacy.register(published, label, packageName, signal);
+      return legacy.register(published, label, packageName, signal, directory);
     })().catch(async (error: unknown) => {
       cancel();
       await disposeEntry();
@@ -614,7 +614,7 @@ export async function loadPlugins(
         // Bun keeps the query for absolute paths. Converting to file: would reuse the old module.
         const published = await import(`${entry}?lotus-reload=${crypto.randomUUID()}`);
         loading.throwIfAborted();
-        const result = await legacy.replace(published, label, watch.packageName, loading, unchanged);
+        const result = await legacy.replace(published, label, watch.packageName, loading, unchanged, directory);
         if (result === "loaded") {
           clearEntry(label);
           recordLoaded(label, start, directory, watch.packageName);

@@ -1,8 +1,11 @@
 import { addAbortListener } from "node:events";
+import { realpath } from "node:fs/promises";
+import { basename } from "node:path";
 import { isMilkyOwnerSession } from "../command-permissions.ts";
 import { sendCommandReply, type CommandForward } from "../commands.ts";
 import common, { isLegacyForward } from "../common/common.js";
 import { segment, type BotEvent, type MessageEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
+import { legacyTemplateRender } from "../renderer/legacy-template.ts";
 import { PluginContexts } from "./contexts.ts";
 import Handler, { HandlerScope, type HandlerCallback } from "./handler.ts";
 import { LegacyHttpRoutes } from "./legacy-http.ts";
@@ -12,7 +15,6 @@ import { LegacyTasks } from "./tasks.ts";
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
 type PluginEvent = BotEvent;
 type PluginClass = new (event?: PluginEvent) => PluginInstance;
-const legacyMessages = new WeakMap<MessageEvent, MessageEvent>();
 const legacyRuntime = Object.freeze({
   common, handler: Object.freeze({ has: Handler.has, call: Handler.call, callAll: Handler.callAll }),
 });
@@ -24,7 +26,8 @@ const legacyLogger = Object.freeze({
   error: (...args: unknown[]) => console.error(...args),
 });
 
-function legacyMessage(event: MessageEvent): MessageEvent {
+function legacyMessage(event: MessageEvent, legacyMessages: WeakMap<MessageEvent, MessageEvent>,
+  resolveTemplates: (plugin: string) => string | undefined): MessageEvent {
   const existing = legacyMessages.get(event);
   if (existing) return existing;
   const reply = event.reply.bind(event);
@@ -35,7 +38,8 @@ function legacyMessage(event: MessageEvent): MessageEvent {
   };
   const access = {
     reply: { value: compatibleReply, enumerable: true, configurable: true, writable: true },
-    runtime: { value: legacyRuntime, configurable: true, writable: true },
+    runtime: { value: Object.freeze({ ...legacyRuntime, render: legacyTemplateRender(compatibleReply, resolveTemplates) }),
+      configurable: true, writable: true },
   };
   const milkyOwner = isMilkyOwnerSession(event);
   const legacy: MessageEvent = milkyOwner || !Object.isExtensible(event) ||
@@ -67,6 +71,7 @@ interface App {
   readonly priority: number;
   readonly event: string;
   readonly names: readonly string[];
+  readonly templates?: { readonly name: string; readonly directory: string };
   published: boolean;
 }
 
@@ -138,32 +143,33 @@ export class LegacyPlugins {
   readonly httpRoutes = new LegacyHttpRoutes();
   #apps: App[] = [];
   #initializers: App[] = [];
+  readonly #messages = new WeakMap<MessageEvent, MessageEvent>();
   readonly #tasks: LegacyTasks;
   readonly #preparing = new Map<string, AbortController>();
   readonly #retiring = new Set<Promise<void>>();
   #disposal?: Promise<void>;
 
-  constructor(acceptingTasks?: () => boolean) {
+  constructor(private readonly acceptingTasks?: () => boolean) {
     this.#tasks = new LegacyTasks(acceptingTasks);
     Object.assign(globalThis, { plugin: Plugin, segment, logger: legacyLogger });
   }
 
   register(
-    exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal,
+    exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal, directory?: string,
   ): Promise<Registration> {
-    return this.#install(exports, label, packageName, false, signal);
+    return this.#install(exports, label, packageName, false, signal, undefined, directory);
   }
 
   replace(
     exports: Record<string, unknown>, label: string, packageName = label, signal?: AbortSignal,
-    validate?: () => Promise<boolean>,
+    validate?: () => Promise<boolean>, directory?: string,
   ): Promise<Registration> {
-    return this.#install(exports, label, packageName, true, signal, validate);
+    return this.#install(exports, label, packageName, true, signal, validate, directory);
   }
 
   async #install(
     exports: Record<string, unknown>, label: string, packageName: string, replace: boolean,
-    externalSignal?: AbortSignal, validate?: () => Promise<boolean>,
+    externalSignal?: AbortSignal, validate?: () => Promise<boolean>, directory?: string,
   ): Promise<Registration> {
     externalSignal?.throwIfAborted();
     if (this.#disposal) throw new Error("插件加载器已关闭。");
@@ -201,6 +207,7 @@ export class LegacyPlugins {
     try {
       const published = exports.apps ?? exports;
       if (typeof published !== "object" || published === null) return "empty";
+      const templates = directory ? { name: basename(directory), directory: await realpath(directory) } : undefined;
       for (const value of new Set(Object.values(published))) {
         signal.throwIfAborted();
         if (typeof value !== "function" || !(value.prototype instanceof Plugin)) continue;
@@ -224,7 +231,7 @@ export class LegacyPlugins {
         staged.push({
           label, create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
           priority, event, names: typeof name === "string" ? [name, label, packageName] : [label, packageName],
-          published: false,
+          templates, published: false,
         });
       }
 
@@ -320,8 +327,17 @@ export class LegacyPlugins {
     for (const app of this.#apps) app.contexts.close();
   }
 
+  #message(incoming: MessageEvent): MessageEvent {
+    return legacyMessage(incoming, this.#messages, plugin => {
+      if (this.#disposal || this.acceptingTasks?.() === false) return;
+      const scope = HandlerScope.current();
+      if (scope && !this.#apps.some(app => app.published && app.scope === scope)) return;
+      return this.#apps.find(app => app.published && app.templates?.name === plugin)?.templates?.directory;
+    });
+  }
+
   async dispatchContext(incoming: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
-    const event = legacyMessage(incoming);
+    const event = this.#message(incoming);
     for (const app of this.#apps) {
       if (!app.published || !app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
       if (app.contexts.resolve(event)) return true;
@@ -367,7 +383,7 @@ export class LegacyPlugins {
   }
 
   async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
-    const event = incoming.post_type === "message" ? legacyMessage(incoming) : incoming;
+    const event = incoming.post_type === "message" ? this.#message(incoming) : incoming;
     const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {
       if (!app.published || typeof app.initializer.accept !== "function") continue;
