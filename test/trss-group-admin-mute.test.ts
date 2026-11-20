@@ -1706,6 +1706,28 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("新增群管理员"))).toHaveLength(1);
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
       /被操作群号：[\d]+/u.test(JSON.stringify(params.message)) && !JSON.stringify(params.message).includes("被操作群号：90"))).toBe(false);
+
+    await writeFile(noticeFile, 'default: { botBeenBanned: true }\n"bot:100:91": { botBeenBanned: false }\n');
+    const oneBotBan = { post_type: "notice", notice_type: "group_ban", sub_type: "ban", self_id: oneBotId,
+      group_id: 90, user_id: oneBotId, operator_id: 67, time: 1_700_000_026, duration: 3665 };
+    for (const event of [
+      { ...oneBotBan, duration: 0 }, { ...oneBotBan, user_id: 0, duration: -1 }, { ...oneBotBan, operator_id: 0 },
+      { ...oneBotBan, user_id: 68 }, oneBotBan, oneBotBan,
+    ]) client.send(JSON.stringify(event));
+    const botBan = JSON.stringify((await ownerReplyWith("机器人被禁言")).params.message);
+    expect(botBan).toContain("禁言人账号：67");
+    expect(botBan).toContain("禁言群号：90");
+    expect(botBan).toContain("禁言时长：01小时01分05秒");
+    await webhook("group_mute", { group_id: 90, user_id: milkyId, operator_id: 69, duration: 0 });
+    const botUnmute = JSON.stringify((await milkyOwnerReply(operator, "机器人被解除禁言")).params.message);
+    expect(botUnmute).toContain("处理人账号：69");
+    expect(botUnmute).toContain("处理群号：90");
+    await webhook("group_mute", { group_id: 91, user_id: milkyId, operator_id: 69, duration: 30 });
+    await webhook("group_whole_mute_change", { group_id: 90, operator_id: 69, is_mute: true });
+    await Bun.sleep(100);
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("机器人被禁言"))).toHaveLength(1);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("机器人被禁言"))).toHaveLength(0);
   } finally {
     socket?.close();
     host?.kill();

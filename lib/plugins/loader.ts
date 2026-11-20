@@ -13,6 +13,7 @@ import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendR
   TemporaryMessageNotice } from "../../plugins/group/index.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
 import type { GroupOwnerAdminNotice } from "../../plugins/group/group-owner-admin-notice.ts";
+import type { GroupOwnerBanNotice } from "../../plugins/group/group-owner-ban-notice.ts";
 import type { GroupOwnerMemberNotice } from "../../plugins/group/group-owner-member-notice.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
@@ -255,6 +256,7 @@ export async function loadPlugins(
       registerGroupRecallNotice?(policy: GroupRecallNotice): () => void;
       registerGroupOwnerMemberNotice?(policy: GroupOwnerMemberNotice): () => void;
       registerGroupOwnerAdminNotice?(policy: GroupOwnerAdminNotice): () => void;
+      registerGroupOwnerBanNotice?(policy: GroupOwnerBanNotice): () => void;
       registerGroupVerification?(policy: GroupVerification): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;

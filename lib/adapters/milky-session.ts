@@ -719,12 +719,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return true;
     }
 
-    if (body.event_type === "group_mute" && options.onMemberMute) {
+    if (body.event_type === "group_mute" && (options.onMemberMute || options.onGroupOwnerBanNotice)) {
       const { time } = body;
       const { group_id, user_id, operator_id, duration } = body.data;
       if (positiveId(group_id) && positiveId(user_id) && positiveId(operator_id) && positiveId(time) &&
           isMemberMuteDuration(duration)) {
-        options.onMemberMute({ self_id: account, group_id, user_id, operator_id, time, duration, signal,
+        if (user_id === account) {
+          options.onGroupOwnerBanNotice?.({ adapter: "milky", botId: account, groupId: group_id, userId: user_id,
+            operatorId: operator_id, time, duration, signal, notifyOwners: notifyVerifiedOwnerReplies,
+          });
+        }
+        options.onMemberMute?.({ self_id: account, group_id, user_id, operator_id, time, duration, signal,
           canModerate: active => canModerateGroupSubject(id => memberRole(group_id, id, active), account, user_id),
           async unmute(active) {
             return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration: 0 }, active)).status;

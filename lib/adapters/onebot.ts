@@ -967,14 +967,21 @@ export function startOneBot(
             } else if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
                 isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
               socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
-            } else if (message.notice_type === "group_ban" && options.onMemberMute) {
+            } else if (message.notice_type === "group_ban" && (options.onMemberMute || options.onGroupOwnerBanNotice)) {
               const { self_id, group_id, user_id, operator_id, time, duration, sub_type } = message;
               if (!isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(operator_id) ||
                   !isId(time) || !isMemberMuteDuration(duration) ||
                   (sub_type !== "ban" && sub_type !== "lift_ban") || (sub_type === "ban") !== (duration > 0)) return;
               const signal = groupActionSignal(socket.data, self_id);
               if (!signal) return;
-              options.onMemberMute({ self_id, group_id, user_id, operator_id, time, duration, signal,
+              if (user_id === self_id) {
+                options.onGroupOwnerBanNotice?.({ adapter: "onebot", botId: self_id, groupId: group_id, userId: user_id,
+                  operatorId: operator_id, time, duration, signal,
+                  notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
+                    () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([signal, active])),
+                });
+              }
+              options.onMemberMute?.({ self_id, group_id, user_id, operator_id, time, duration, signal,
                 canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id, user_id),
                 unmute: active => calls.setGroupMute(send, group_id, user_id, 0, active),
                 async reply(reply) {
