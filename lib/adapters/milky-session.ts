@@ -1,7 +1,7 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
-import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
+import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
@@ -329,26 +329,56 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }, active)).status;
   }
 
+  function groupJoinAuthority(groupId: number, actor: number, combined: AbortSignal) {
+    const active = () => !combined.aborted && options.canModerateGroups?.() !== false;
+    const authorized = () => groupOperatorAuthority(id => memberRole(groupId, id, combined), account, actor, () => isMaster(actor), active);
+    return { active, authorized };
+  }
+
+  async function reviewExactGroupJoin(origin: MilkyJoinOrigin, approve: boolean, combined: AbortSignal,
+    authority: ReturnType<typeof groupJoinAuthority>) {
+    if (!joinReview || !authority.active() || origin.userId === account) return "unavailable" as const;
+    const pending = await verifyPendingGroupJoin(origin, combined);
+    if (pending !== "pending") return pending;
+    return joinReview.once(origin, async () => {
+      if (!await authority.authorized() || !authority.active()) return "unavailable";
+      return submitGroupJoin(origin, approve, combined);
+    });
+  }
+
   async function reviewPendingGroupJoin(groupId: number, actor: number, user: number, approve: boolean,
     combined: AbortSignal): Promise<PendingGroupJoinDecision> {
     if (!joinReview || !positiveId(user) || user === account || typeof approve !== "boolean") return { status: "unavailable" };
-    const active = () => !combined.aborted && options.canModerateGroups?.() !== false;
-    const authorized = () => groupOperatorAuthority(id => memberRole(groupId, id, combined), account, actor, () => isMaster(actor), active);
-    if (!await authorized()) return { status: "unavailable" };
+    const authority = groupJoinAuthority(groupId, actor, combined);
+    if (!await authority.authorized()) return { status: "unavailable" };
     const list = await readPendingGroupJoins(groupId, combined);
-    if (!active() || !list?.complete) return { status: "unavailable" };
+    if (!authority.active() || !list?.complete) return { status: "unavailable" };
     const matches = list.entries.filter(entry => entry.userId === user);
     if (!matches.length) return { status: "not-found" };
     if (matches.some(entry => entry.risk)) return { status: "risk" };
     const [selected] = matches;
     if (matches.length !== 1 || !selected) return { status: "ambiguous" };
-    const pending = await verifyPendingGroupJoin(selected.origin, combined);
-    if (pending !== "pending") return { status: pending };
-    const status = await joinReview.once(selected.origin, async () => {
-      if (!await authorized() || !active()) return "unavailable";
-      return submitGroupJoin(selected.origin, approve, combined);
-    });
+    const status = await reviewExactGroupJoin(selected.origin, approve, combined, authority);
     return { status, nickname: selected.nickname };
+  }
+
+  async function reviewAllPendingGroupJoins(groupId: number, actor: number, approve: boolean,
+    combined: AbortSignal): Promise<PendingGroupJoinBatch> {
+    if (!joinReview || typeof approve !== "boolean") return { status: "unavailable" };
+    const authority = groupJoinAuthority(groupId, actor, combined);
+    if (!await authority.authorized()) return { status: "unavailable" };
+    const list = await readPendingGroupJoins(groupId, combined);
+    if (!authority.active() || !list?.complete) return { status: "unavailable" };
+    if (!list.entries.length) return { status: "not-found" };
+    const entries: NonNullable<PendingGroupJoinBatch["entries"]>[number][] = [];
+    let continuing = true;
+    for (const entry of list.entries) {
+      if (entry.risk) { entries.push({ userId: entry.userId, status: "risk" }); continue; }
+      continuing = continuing && authority.active() && !!await authority.authorized();
+      const status = continuing ? await reviewExactGroupJoin(entry.origin, approve, combined, authority) : "unavailable";
+      entries.push({ userId: entry.userId, status });
+    }
+    return { status: "processed", entries };
   }
 
   async function memberRole(group_id: number, user_id: number, active = signal) {
@@ -587,6 +617,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       } : undefined,
       groupReviewPendingJoin: workflowSignal && joinReview && positiveId(groupId) && positiveId(cardOwner)
         ? (userId: number, approve: boolean) => reviewPendingGroupJoin(groupId, cardOwner, userId, approve, AbortSignal.any([workflowSignal, signal]))
+        : undefined,
+      groupReviewAllPendingJoins: workflowSignal && joinReview && positiveId(groupId) && positiveId(cardOwner)
+        ? (approve: boolean) => reviewAllPendingGroupJoins(groupId, cardOwner, approve, AbortSignal.any([workflowSignal, signal]))
         : undefined,
       groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
         ? (approve: boolean) => {

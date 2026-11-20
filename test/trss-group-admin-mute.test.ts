@@ -1188,6 +1188,20 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       [887, 888, 889, 903, 991].includes(Number(params.notification_seq))).map(({ action, params }) => ({ action, params }))).toEqual([
       { action: "accept_group_request", params: { group_id: 79, notification_seq: 889, notification_type: "join_request", is_filtered: false } },
     ]);
+    const batchDecision = milkyTitle("#拒绝全部加群申请", operator);
+    await webhook("message_receive", batchDecision);
+    const reviewedBatch = await announcementReply("本次共核对 5 条加群申请");
+    const outcomes = JSON.stringify(reviewedBatch.params.message);
+    expect(outcomes).toContain("已拒绝：3 条");
+    expect(outcomes).toContain("风险：1 条");
+    expect(outcomes).toContain("结果未知：1 条");
+    await webhook("message_receive", batchDecision);
+    expect(milkyCalls.filter(({ action, params }) => action === "reject_group_request" &&
+      [887, 888, 889, 903, 991].includes(Number(params.notification_seq))).map(({ params }) => params)).toEqual([
+      { group_id: 79, notification_seq: 903, notification_type: "invited_join_request", is_filtered: false },
+      { group_id: 79, notification_seq: 888, notification_type: "join_request", is_filtered: false },
+      { group_id: 79, notification_seq: 887, notification_type: "join_request", is_filtered: false },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

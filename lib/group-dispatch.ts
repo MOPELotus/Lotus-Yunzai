@@ -187,11 +187,13 @@ export async function readGroupDispatch(root: URL) {
     let duplicate = `${bot}:${user ?? ""}:${event.raw_message}`;
     if (event.message_id !== undefined) {
       const member = groupModerationSession(event)?.memberMessage;
-      if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
+      const input = normalizePrefix(event.msg);
+      const quotedReview = event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(input);
+      const pendingReview = (event.groupReviewPendingJoin || event.groupReviewAllPendingJoins) &&
+        /^#?(?:同意|拒绝)(?:全部(?:加|入)?群申请|(?:加|入)?群申请\d+)$/u.test(input);
+      if (quotedReview || pendingReview) {
         duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
-      } else if (event.groupReviewPendingJoin && /^#?(?:同意|拒绝)(?:加|入)?群申请\d+$/u.test(normalizePrefix(event.msg))) {
-        duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
-      } else if (event.groupVote && /^#(?:(?:发起)?投票(?:禁言|踢人)|(?:支持|反对)投票)/u.test(normalizePrefix(event.msg))) {
+      } else if (event.groupVote && /^#(?:(?:发起)?投票(?:禁言|踢人)|(?:支持|反对)投票)/u.test(input)) {
         duplicate = `${event.adapter ?? "onebot"}:group-vote:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (member?.readImageMd5 || member?.mixedImageParts) {
         duplicate = `${event.adapter ?? "onebot"}:image:${bot}:${group}:${user ?? ""}:${event.message_id}`;

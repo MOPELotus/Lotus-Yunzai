@@ -26,6 +26,11 @@ export interface PendingGroupJoinDecision {
   readonly nickname?: string;
 }
 
+export interface PendingGroupJoinBatch {
+  readonly status: "processed" | "unavailable" | "not-found";
+  readonly entries?: readonly { readonly userId: number; readonly status: JoinReviewOutcome | "risk" | "expired" }[];
+}
+
 interface JoinReviewKey {
   readonly adapter: Adapter;
   readonly botId: number;
