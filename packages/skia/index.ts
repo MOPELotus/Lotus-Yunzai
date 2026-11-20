@@ -40,7 +40,7 @@ async function render(width: number, height: number, draw: Draw, mode: "gpu" | "
 
   let png: Buffer;
   try {
-    png = await canvas.toBuffer("png");
+    png = await canvas.toBuffer("png", { filters: "auto" });
   } catch (error) {
     throw new BackendError(`Skia ${mode.toUpperCase()} 编码 PNG 失败。`, { cause: error });
   }
