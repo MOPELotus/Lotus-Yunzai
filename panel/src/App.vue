@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
     <div class="header-inner">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>荷花管理面板</span>
+        <span>Lotus-Yunzai 管理面板</span>
       </div>
       <ElButton v-if="snapshot" class="sign-out" @click="reset">退出登录</ElButton>
     </div>

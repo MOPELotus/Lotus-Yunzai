@@ -127,7 +127,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect((await fetch(home)).status).toBe(503);
       const dist = join(root, "panel", "dist");
       await mkdir(join(dist, "assets"), { recursive: true });
-      await writeFile(join(dist, "index.html"), '<html lang="zh-CN"><title>荷花管理面板</title></html>');
+      await writeFile(join(dist, "index.html"), '<html lang="zh-CN"><title>Lotus-Yunzai 管理面板</title></html>');
       await writeFile(join(dist, "assets", "main-fixture.js"), 'console.log("panel");');
       await symlink(broken, join(dist, "assets", "outside.js"));
       const redirect = await fetch(new URL("/panel", statusUrl), { redirect: "manual" });
@@ -137,7 +137,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       expect(page.status).toBe(200);
       expect(page.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
       expect(page.headers.get("Cache-Control")).toBe("no-store");
-      expect(await page.text()).toContain("荷花管理面板");
+      expect(await page.text()).toContain("Lotus-Yunzai 管理面板");
       const script = new URL("assets/main-fixture.js", home);
       expect(await (await fetch(script)).text()).toContain('console.log("panel")');
       expect(await (await fetch(script, { method: "HEAD" })).text()).toBe("");
