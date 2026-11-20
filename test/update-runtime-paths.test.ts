@@ -7,6 +7,7 @@ import { activateUpdate, previousUpdateDirectory } from "../lib/update-activatio
 import { createFileToUrl, createImageToUrl } from "../lib/file-to-url.ts";
 import { createPublicFiles } from "../lib/public-files.ts";
 import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-runtime-paths.ts";
+import { createProfileStore } from "../packages/account/index.ts";
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
 
 test("受管切换按 Bun 的显式路径移动独立图鉴和档案，失败后还原", async () => {
@@ -301,6 +302,47 @@ test.skipIf(process.platform === "win32")("安装树外的多级别名保留其�
     const rootScope = { PATH: process.env.PATH, LOTUS_PUBLIC_IMAGE_DIR: alias };
     expect(await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), rootScope)).toEqual([]);
     await activateUpdate(active, candidate, verify, state);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(process.platform === "win32")("外部档案别名在旧主管回退和新版切换后继续读写原档案", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-profile-alias-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const profiles = join(dir, "profiles");
+  const env = { PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles };
+  const store = createProfileStore(profiles);
+  const qq = "100001";
+  const id = 2;
+  const filename = join(profiles, `${qq}-${id}.yaml`);
+  const verify = async (root: string) => {
+    const previous = await previousUpdateDirectory(root);
+    if (!previous) throw new Error("测试候选缺少旧目录记录。");
+    await verifyMovedRuntimePaths(root, previous, env);
+    const { revision } = await store.checkinSettings(qq, id);
+    await store.setProfileCheckinSettings(qq, id, revision, { type: "game", game: "gs", enabled: true });
+  };
+  try {
+    await mkdir(candidate);
+    await mkdir(join(active, "custom/profiles"), { recursive: true });
+    await symlink("active/custom", join(dir, "state"));
+    await symlink("state/profiles", profiles);
+    await writeFile(filename, Bun.YAML.stringify({
+      version: 1, user: { qq }, profile: { id, name: "旧档案" },
+      games: { cn: { enable: true, genshin: { checkin: false } } },
+      account: { cookie: "cookie_token=fixture", stoken: "fixture", current_uid: { gs: "100000001" }, game_roles: { gs: ["100000001"] } },
+    }));
+    const before = await readFile(filename);
+    await expect(activateUpdate(active, candidate, verify)).rejects.toThrow("仍留在旧版本");
+    expect(await readFile(filename)).toEqual(before);
+
+    const state = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), env);
+    expect(state).toEqual(["custom/profiles"]);
+    const result = await activateUpdate(active, candidate, verify, state);
+    expect((await store.checkinSettings(qq, id)).games.genshin?.enabled).toBe(true);
+    expect(await Bun.file(join(result.previous, "custom/profiles", `${qq}-${id}.yaml`)).exists()).toBe(false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -2,7 +2,7 @@ import { lstat, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
-import { findLinkedPath } from "./update-linked-path.ts";
+import { readPathLink, resolveLinkedPath } from "./update-linked-path.ts";
 
 const pathKeys = [
   "LOTUS_ATLAS_DATA_DIR", "LOTUS_PROFILE_DIR", "LOTUS_ZZZ_PANEL_DIR", "LOTUS_ZZZ_SHOWCASE_DIR",
@@ -66,20 +66,55 @@ function persistentPath(path: string): boolean {
   return alreadyPersistent.has(first!) || first === ".env" || first?.startsWith(".env.") === true;
 }
 
-function configuredRuntimePaths(root: string, env: RuntimePaths): string[] {
+async function installedLocation(root: string, value: string): Promise<string | undefined> {
+  const absolute = resolve(root, value);
+  return within(root, absolute) ? absolute : resolveLinkedPath(absolute, { match: path => within(root, path) });
+}
+
+const sqliteSidecars = ["-wal", "-shm", "-journal"];
+
+async function configuredRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
   const theme = env.LOTUS_ATLAS_THEME_DIR?.trim();
   const adjacentFont = theme ? join(dirname(resolve(root, theme)), "fonts", "MiSans-VF.ttf") : undefined;
   const db = env.LOTUS_MEME_DB;
-  const sidecars = db ? ["-wal", "-shm", "-journal"].map(suffix => resolve(root, db) + suffix) : [];
-  const configured = [...pathKeys.map(key => env[key]), ...trimmedPathKeys.map(key => env[key]?.trim()), adjacentFont, ...sidecars];
-  const paths = configured.flatMap(value => {
-    if (!value) return [];
-    const absolute = resolve(root, value);
+  // The usage database is named from the configured catalog spelling. SQLite's own
+  // companions are named from the resolved file for each of these two databases.
+  const usage = db ? `${db}.usage.sqlite` : undefined;
+  const configured = [...pathKeys.map(key => env[key]), ...trimmedPathKeys.map(key => env[key]?.trim()), adjacentFont, usage];
+  const paths: string[] = [];
+  const add = (absolute: string) => {
+    if (!within(root, absolute)) return;
     const path = relative(root, absolute);
     if (!path) throw new Error("运行数据配置使用宿主根目录，无法安全切换版本。");
-    if (!within(root, absolute) || persistentPath(path)) return [];
-    return [path.split(sep).join("/")];
-  });
+    if (!persistentPath(path)) paths.push(path.split(sep).join("/"));
+  };
+  const resolveState = async (absolute: string) => {
+    const physical = await resolveLinkedPath(absolute, {
+      onLink: add,
+      async readLink(path) {
+        if (source !== root && within(root, path)) {
+          // Persistent ancestors may have moved to the new tree while a custom target stayed in the archive.
+          try {
+            return await readPathLink(join(source, relative(root, path)));
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+          }
+        }
+        return readPathLink(path);
+      },
+    });
+    if (physical) add(physical);
+    return physical;
+  };
+  for (const value of new Set(configured)) {
+    if (!value) continue;
+    const absolute = resolve(root, value);
+    const physical = await resolveState(absolute);
+    if (value === db || value === usage) {
+      for (const suffix of sqliteSidecars) await resolveState((physical ?? absolute) + suffix);
+    }
+  }
   return paths;
 }
 
@@ -111,8 +146,7 @@ async function archivedAssetLink(root: string, archive: string, asset: string): 
 }
 
 async function existingAssetPath(root: string, source: string, value: string, allowRoot = false): Promise<string | undefined> {
-  const absolute = resolve(root, value);
-  const installedPath = within(root, absolute) ? absolute : await findLinkedPath(absolute, path => within(root, path));
+  const installedPath = await installedLocation(root, value);
   if (!installedPath) return;
   const asset = relative(root, installedPath);
   if (!asset) {
@@ -143,16 +177,18 @@ async function existingAssetPath(root: string, source: string, value: string, al
 }
 
 async function findRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
+  const installed = await realpath(root);
+  const snapshot = root === source ? installed : source;
   const selected: (string | undefined)[] = [];
   const publicImages = env.LOTUS_PUBLIC_IMAGE_DIR?.trim();
   // The checkout itself can be the access boundary without being a dedicated image directory to move.
-  if (publicImages) selected.push(await existingAssetPath(root, source, publicImages, true));
+  if (publicImages) selected.push(await existingAssetPath(installed, snapshot, publicImages, true));
   for (const value of new Set(configuredAssetPaths(env))) {
-    selected.push(await existingAssetPath(root, source, value));
+    selected.push(await existingAssetPath(installed, snapshot, value));
   }
   const assets = selected.flatMap(path => path && !persistentPath(path) ? [path.split(sep).join("/")] : []);
-  const paths = [...configuredRuntimePaths(root, env), ...assets];
-  return existingPaths(source, [...new Set(paths)].sort().filter(path => !paths.some(parent => path.startsWith(parent + "/"))));
+  const paths = [...await configuredRuntimePaths(installed, snapshot, env), ...assets];
+  return existingPaths(snapshot, [...new Set(paths)].sort().filter(path => !paths.some(parent => path.startsWith(parent + "/"))));
 }
 
 async function existingPaths(root: string, paths: readonly string[]): Promise<string[]> {

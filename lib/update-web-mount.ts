@@ -2,7 +2,7 @@ import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readServerWebMount, type WebMountSettings } from "./server.ts";
-import { findLinkedPath } from "./update-linked-path.ts";
+import { resolveLinkedPath } from "./update-linked-path.ts";
 
 const persistent = new Set(["config", "data", "logs", "internal"]);
 const sourceError = "端口挂载的原版目录须位于 Lotus-Yunzai 安装目录外，才能安全切换版本。";
@@ -34,10 +34,13 @@ async function physical(path: string) {
 }
 
 async function retainedInArchive(root: string, previous: string, directory: string): Promise<boolean> {
-  return Boolean(await findLinkedPath(directory, async target => {
-    const installed = installedPath(root, target);
-    return installed !== undefined && Boolean(await info(join(previous, installed)));
-  }));
+  const found = await resolveLinkedPath(directory, {
+    async match(target) {
+      const installed = installedPath(root, target);
+      return installed !== undefined && Boolean(await info(join(previous, installed)));
+    },
+  });
+  return found !== undefined;
 }
 
 async function verifySource(root: string, directory: string, previous?: string) {
