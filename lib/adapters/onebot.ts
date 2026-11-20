@@ -15,6 +15,7 @@ import { OneBotMemberDisplay } from "./onebot-member-display.ts";
 import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
+import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -546,6 +547,12 @@ async function dispatchMessage(
     listPendingFriendRequests: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment ? async () => {
       if (!privateGroupSignal.aborted && !attachmentSession.signal.aborted && isMaster(selfId, userId)) return calls.listObservedFriendRequests();
     } : undefined,
+    sendOwnerFriendReply: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment
+      ? bindOwnerFriendReply({ account: selfId, signal: AbortSignal.any([privateGroupSignal, attachmentSession.signal]),
+        isOwner: () => isMaster(selfId, userId),
+        isFriend: (target, active) => calls.isFriend(send, target, active),
+        send: (target, text, active) => calls.sendConfirmed(send, { user_id: target }, [{ type: "text", data: { text } }], active),
+      }) : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId

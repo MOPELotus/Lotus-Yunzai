@@ -201,6 +201,9 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if (action === "reject_group_request" && params.notification_seq === 901) milkyJoinState = "rejected";
       if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_sender") regularFriendReadback = "accepted";
       if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_unknown") return new Response(null, { status: 503 });
+      if (action === "send_private_message" && params.user_id === 43 && JSON.stringify(params.message).includes("合成 Milky 未知回复")) {
+        return new Response(null, { status: 503 });
+      }
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
           (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_member_admin" && params.user_id === 60044) ||
@@ -216,6 +219,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? milkyJoinNotifications(params)
         : action === "get_friend_requests" ? milkyFriendNotifications(params.is_filtered)
+        : action === "get_friend_list" ? { friends: [{ user_id: 43 }] }
         : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
@@ -303,6 +307,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
       const reply = action === "get_group_member_info" ? member(params)
         : action === "send_msg" ? { message_id: oneBotCalls.length }
+        : action === "get_friend_list" ? [{ user_id: 42 }]
         : action === "get_group_shut_list" ? [
           { uin: "43", cardName: "合成群名片", nick: "合成昵称", role: 2, shutUpTime: nowSeconds() + 81 },
           { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
@@ -1335,6 +1340,30 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { action: "reject_friend_request", params: { initiator_uid: "milky_fixture_stale", is_filtered: false } },
       { action: "accept_friend_request", params: { initiator_uid: "milky_fixture_unknown", is_filtered: false } },
     ]);
+
+    const privateText = "合成 OneBot 纯文本 [CQ:at,qq=all]\n第二行";
+    const nativeOwnerReply = oneBotPrivate(`#回复42 ${privateText}`);
+    client.send(JSON.stringify({ ...nativeOwnerReply, message: [text(nativeOwnerReply.raw_message)] }));
+    const delivery = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 &&
+      JSON.stringify(params.message).includes("合成 OneBot 纯文本")), "当前好友未收到 OneBot 主人的文字回复。");
+    expect(delivery.params).toEqual({ user_id: 42, message_type: "private", message: [text(privateText)], auto_escape: true });
+    await ownerReplyWith("已把消息发给它了哦");
+    client.send(JSON.stringify(oneBotPrivate("#回复 43 不能向同名另一账号的好友送出")));
+    await ownerReplyWith("好友列表查无此人");
+    expect(oneBotReplies().some(({ params }) => params.user_id === 43 && JSON.stringify(params.message).includes("不能向同名"))).toBe(false);
+
+    await webhook("message_receive", milkyPrivate("回复 43 合成 Milky 文字", operator));
+    const milkyDelivery = await milkyOwnerReply(43, "合成 Milky 文字");
+    expect(milkyDelivery.params.message).toEqual([text("合成 Milky 文字")]);
+    await milkyOwnerReply(operator, "已把消息发给它了哦");
+    await webhook("message_receive", milkyPrivate("#回复 42 不能用到 OneBot 好友"));
+    await milkyOwnerReply(operator, "好友列表查无此人");
+    const unknownOwnerReply = milkyPrivate("#回复43 合成 Milky 未知回复");
+    await webhook("message_receive", unknownOwnerReply);
+    await milkyOwnerReply(operator, "好友消息发送结果未确认");
+    await webhook("message_receive", unknownOwnerReply);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === 43 &&
+      JSON.stringify(params.message).includes("合成 Milky 未知回复"))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

@@ -3,6 +3,7 @@ import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./m
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
+import type { OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationDecision, PendingGroupInvitationList, QuotedGroupInvitationDecision } from "./group-invitations.ts";
 import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
@@ -78,6 +79,7 @@ export interface MessageEvent {
   readonly reviewQuotedGroupInvitation?: (approve: boolean) => Promise<QuotedGroupInvitationDecision>;
   readonly listPendingFriendRequests?: () => Promise<PendingFriendRequestList | undefined>;
   readonly reviewPendingFriendRequest?: (userId: number, approve: boolean) => Promise<PendingFriendRequestDecision>;
+  readonly sendOwnerFriendReply?: (userId: number, text: string) => Promise<OwnerFriendReplyOutcome>;
   readonly groupReviewPendingJoin?: (userId: number, approve: boolean) => Promise<PendingGroupJoinDecision>;
   readonly groupReviewAllPendingJoins?: (approve: boolean) => Promise<PendingGroupJoinBatch>;
   readonly groupListAnnouncements?: () => Promise<readonly GroupAnnouncement[] | undefined>;
