@@ -1,6 +1,7 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
-import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
+import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
+  type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
@@ -852,7 +853,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
-      [friendMessageNoticeSession]: message.sub_type === "friend" && !message.attachmentOnly ? { signal, notifyOwners: notifyOwnerReplies } : undefined,
+      [friendMessageNoticeSession]: message.sub_type === "friend" && !message.attachmentOnly ? {
+        signal,
+        async notifyOwners(reply, workflow, onDelivered, delivery) {
+          const active = AbortSignal.any([signal, workflow]);
+          const friends = delivery?.verifyRecipients ? await listCurrentFriends(active) : undefined;
+          if (active.aborted || (delivery?.verifyRecipients && !friends)) return 0;
+          return notifyOwnerReplies(reply, active, onDelivered, friends, delivery?.followup);
+        },
+      } satisfies FriendMessageNoticeSession : undefined,
       listPendingGroupInvitations: privateGroupSignal && positiveId(cardOwner) ? async () => {
         if (!signal.aborted && !privateGroupSignal.aborted && isMaster(cardOwner)) return groupReviews.listObservedInvitations(account);
       } : undefined,

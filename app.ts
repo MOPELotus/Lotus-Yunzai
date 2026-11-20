@@ -121,7 +121,7 @@ import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendR
   TemporaryMessageNotice } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
-import { readOriginalQqVoice } from "./lib/qq-voice.ts";
+import { readOriginalQqVoice, standaloneVoicePart } from "./lib/qq-voice.ts";
 import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { GroupMessageNotice } from "./plugins/group/group-message-notice.ts";
@@ -1093,7 +1093,14 @@ if (import.meta.main) {
     if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const body = readMessageNoticeBody(message, signal);
+    const voice = standaloneVoicePart(message);
+    let followup: MessageReply | undefined;
+    const body = voice ? { async readParts() {
+      const original = await readOriginalQqVoice(voice, signal);
+      if (!original) return ["[语音]（原音不可用）"];
+      followup = { type: "record", file: original };
+      return ["[语音]"];
+    } } : readMessageNoticeBody(message, signal);
     if (!body) return;
 
     const peer = `${event.adapter ?? "onebot"}:${botId}:${userId}`;
@@ -1119,7 +1126,7 @@ if (import.meta.main) {
         if (!signal.aborted && masterPermissions.isMaster(botId, owner)) {
           await friendNoticeReceipts.record({ adapter: event.adapter ?? "onebot", account: botId, owner, message }, userId, noticeText);
         }
-      });
+      }, voice ? { verifyRecipients: true, followup } : undefined);
     });
   }
 
@@ -1208,7 +1215,7 @@ if (import.meta.main) {
     const scope = { self_id: botId, group_id: groupId, user_id: userId };
     const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
     if (!signal) return;
-    const voice = typeof message !== "string" && message.length === 1 && message[0]?.type === "record" ? message[0] : undefined;
+    const voice = standaloneVoicePart(message);
     const body = voice ? { text: "[语音]" } : readMessageNoticeBody(message, signal);
     if (!body) return;
     await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {

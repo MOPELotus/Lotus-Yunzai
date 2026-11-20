@@ -147,7 +147,8 @@ function sentMessage(frame: OneBotAction, source: MessageIdentity, record: (iden
 }
 
 async function notifyOwnerReplies(calls: OneBotCalls, send: Send, bot: number, owners: readonly number[], reply: MessageReply,
-  signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>, followup?: MessageReply) {
+  signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>, followup?: MessageReply,
+  allowFollowup?: (owner: number) => boolean) {
   const message = encodeOneBotReply(reply);
   const next = followup === undefined ? undefined : encodeOneBotReply(followup);
   if (signal.aborted || message === undefined || (followup !== undefined && next === undefined)) return 0;
@@ -155,7 +156,9 @@ async function notifyOwnerReplies(calls: OneBotCalls, send: Send, bot: number, o
   const deliveries = await Promise.all(recipients.map(async user_id => {
     const target = { user_id };
     const status = await calls.sendConfirmed(send, target, message, signal, onDelivered ? id => onDelivered(user_id, id) : undefined);
-    if (status === "confirmed" && next !== undefined && !signal.aborted) await calls.sendConfirmed(send, target, next, signal);
+    if (status === "confirmed" && next !== undefined && !signal.aborted && allowFollowup?.(user_id) !== false) {
+      await calls.sendConfirmed(send, target, next, signal);
+    }
     return status;
   }));
   return deliveries.filter(result => result === "confirmed").length;
@@ -557,9 +560,15 @@ async function dispatchMessage(
     [friendMessageNoticeSession]: boundAccount && selfId !== undefined && attachmentSession && !noticeAttachment &&
       messageType === "private" && event.sub_type === "friend" ? {
         signal: attachmentSession.signal,
-        async notifyOwners(reply, workflow, onDelivered) {
+        async notifyOwners(reply, workflow, onDelivered, delivery) {
           const active = AbortSignal.any([attachmentSession.signal, workflow]);
-          return notifyOwnerReplies(calls, send, selfId, await selectNoticeOwners(groupActions, selfId, active, isMaster), reply, active, onDelivered);
+          let owners = await selectNoticeOwners(groupActions, selfId, active, isMaster);
+          if (delivery?.verifyRecipients && owners.length && !active.aborted) {
+            const friends = new Set((await calls.listFriendProfiles(send, active).catch(() => [])).map(profile => String(profile.user_id)));
+            owners = owners.filter(id => friends.has(String(id)) && isMaster(selfId, id));
+          }
+          return notifyOwnerReplies(calls, send, selfId, owners, reply, active, onDelivered, delivery?.followup,
+            owner => isMaster(selfId, owner));
         },
       } : undefined,
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"

@@ -139,6 +139,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let regularFriendReadback = "pending";
   let changingFriendReads = 0;
   let includeNoticeOwnersInFriendList = false;
+  let omitFriendVoiceReceipt = false;
   let includeNewFriendProfile = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
@@ -214,6 +215,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       milkyCalls.push({ action, params });
       if (action === "send_private_message") milkyPrivateHistory.set(milkyCalls.length, params);
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") &&
+          JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
+      if (action === "send_private_message" && omitFriendVoiceReceipt && JSON.stringify(params.message).includes("好友账号：43") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
         milkyJoinReceipt = milkyCalls.length;
@@ -1981,6 +1984,38 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
     expect(milkyCalls.some(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "disabled-voice")).toBe(false);
+
+    await writeFile(noticeFile, 'default: { privateMessage: true }\n');
+    const initialOneBotVoice = oneBotCalls.length;
+    const friendVoice = { ...oneBotPrivate("", 42), message: oneBotVoice.message };
+    client.send(JSON.stringify(friendVoice));
+    client.send(JSON.stringify(friendVoice));
+    const friendVoiceHeader = await waitUntil(() => oneBotCalls.slice(initialOneBotVoice).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("[语音]")), "OneBot 没有发送好友原音摘要。");
+    const friendVoiceOriginal = await waitUntil(() => oneBotCalls.slice(initialOneBotVoice).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64)), "OneBot 没有发送好友原音。");
+    expect(oneBotCalls.indexOf(friendVoiceOriginal)).toBeGreaterThan(oneBotCalls.indexOf(friendVoiceHeader));
+    const voiceHeaderId = oneBotCalls.indexOf(friendVoiceHeader) + 1;
+    const replyToVoice = "确认回复原语音好友";
+    client.send(JSON.stringify({ ...oneBotPrivate(`#回复 ${replyToVoice}`), message: [quote(voiceHeaderId), text(`#回复 ${replyToVoice}`)] }));
+    await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 && JSON.stringify(params.message).includes(replyToVoice)),
+      "OneBot 好友语音摘要引用未回复原好友。");
+
+    const friendAudioEvent = () => ({ ...milkyPrivate("", 43), segments: audioEvent(95, "original-voice").segments });
+    const baselineMilkyVoice = milkyCalls.length;
+    const goodMilkyVoice = friendAudioEvent();
+    await webhook("message_receive", goodMilkyVoice);
+    await webhook("message_receive", goodMilkyVoice);
+    await waitUntil(() => milkyCalls.slice(baselineMilkyVoice).find(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64)), "Milky 好友原语音未送达主人。");
+    omitFriendVoiceReceipt = true;
+    const missingSummaryId = milkyCalls.length;
+    await webhook("message_receive", friendAudioEvent());
+    await waitUntil(() => milkyCalls.slice(missingSummaryId).find(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes("[语音]")), "Milky 缺消息编号夹具未发出好友摘要。");
+    await Bun.sleep(100);
+    expect(milkyCalls.slice(baselineMilkyVoice).filter(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

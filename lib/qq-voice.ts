@@ -1,8 +1,12 @@
 import { readQqMessageMedia, readQqMessageSegmentMedia } from "./chat-files.ts";
-import type { InboundSegment } from "./messages.ts";
+import type { InboundSegment, MessageEvent } from "./messages.ts";
 
 const silkHeader = new TextEncoder().encode("#!SILK_V3");
 const maxSilkPacket = 1024 * 5;
+
+export function standaloneVoicePart(message: MessageEvent["message"]): InboundSegment | undefined {
+  if (typeof message !== "string" && message.length === 1 && message[0]?.type === "record") return message[0];
+}
 
 export function hasSilkVoicePackets(bytes: Uint8Array): boolean {
   let offset = bytes[0] === 2 ? 1 : 0;

@@ -5,9 +5,15 @@ import { createPrivateNoticeReceipts, hashPrivateNotice, privateNoticeText,
 
 export const friendMessageNoticeSession = Symbol("friend-message-notice-session");
 
+interface FriendNoticeDeliveryOptions {
+  readonly verifyRecipients?: true;
+  readonly followup?: MessageReply;
+}
+
 export interface FriendMessageNoticeSession {
   readonly signal: AbortSignal;
-  notifyOwners(message: MessageReply, signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>): Promise<number>;
+  notifyOwners(message: MessageReply, signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>,
+    options?: FriendNoticeDeliveryOptions): Promise<number>;
 }
 
 export interface NativeFriendRelationshipNotice extends FriendMessageNoticeSession {
