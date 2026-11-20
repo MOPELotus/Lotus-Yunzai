@@ -36,12 +36,32 @@ let active: AbortController | undefined;
 const dirty = computed(() => edits.size > 0);
 const rows = computed(() => {
   const needle = query.value.trim().toLowerCase();
-  return (snapshot.value?.schemas ?? []).map((schema, index) => ({
+  const allRows = (snapshot.value?.schemas ?? []).map((schema, index) => ({
     schema,
     field: schema.field,
     id: `plugin-field-${index}`,
-  })).filter(({ schema, field }) => !needle || [schema.label, field, schema.bottomHelpMessage]
-    .some((text) => text?.toLowerCase().includes(needle)));
+  }));
+  if (!needle) return allRows;
+
+  const matches = (text: string | undefined) => text?.toLowerCase().includes(needle) === true;
+  const visible: typeof allRows = [];
+  let heading: (typeof allRows)[number] | undefined;
+  let groupMatches = false;
+  for (const row of allRows) {
+    const { schema, field } = row;
+    if (schema.component === "Divider") {
+      heading = row;
+      groupMatches = matches(schema.label);
+      continue;
+    }
+    if (!groupMatches && ![schema.label, field, schema.bottomHelpMessage].some(matches)) continue;
+    if (heading) {
+      visible.push(heading);
+      heading = undefined;
+    }
+    visible.push(row);
+  }
+  return visible;
 });
 watch(dirty, (value) => {
   emit("dirty-change", value);
@@ -297,7 +317,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="snapshot">
         <label for="plugin-field-search">查找配置项</label>
-        <ElInput id="plugin-field-search" v-model="query" placeholder="标签、字段名或说明" />
+        <ElInput id="plugin-field-search" v-model="query" placeholder="分组、标签、字段名或说明" />
       </div>
     </div>
     <div v-if="pending" class="plugin-feedback" role="alert">
