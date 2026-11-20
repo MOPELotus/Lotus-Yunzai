@@ -1,5 +1,5 @@
 import { lstat, readdir, readlink, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readServerWebMount, type WebMountSettings } from "./server.ts";
 
@@ -17,7 +17,7 @@ function installedPath(root: string, value: string): string | undefined {
 
 function missing(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
-  return code === "ENOENT" || code === "ENOTDIR";
+  return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
 }
 
 async function info(path: string) {
@@ -33,15 +33,26 @@ async function physical(path: string) {
 }
 
 async function retainedInArchive(root: string, previous: string, directory: string): Promise<boolean> {
-  const path = installedPath(root, directory);
-  if (path !== undefined) return Boolean(await info(join(previous, path)));
-
-  // The old supervisor may have left an externally configured alias dangling at the old active path.
-  for (let ancestor = directory; dirname(ancestor) !== ancestor; ancestor = dirname(ancestor)) {
-    if (!(await info(ancestor))?.isSymbolicLink()) continue;
-    const target = resolve(dirname(ancestor), await readlink(ancestor), relative(ancestor, directory));
+  const followed = new Set<string>();
+  let target = resolve(directory);
+  for (let depth = 0; depth <= 40 && !followed.has(target); depth++) {
+    followed.add(target);
     const installed = installedPath(root, target);
     if (installed !== undefined && await info(join(previous, installed))) return true;
+
+    // Resolve one component at a time so dangling chains retain their link targets during the old supervisor's rename.
+    let link = parse(target).root;
+    let next: string | undefined;
+    for (const part of relative(link, target).split(sep)) {
+      link = join(link, part);
+      const entry = await info(link);
+      if (!entry) return false;
+      if (!entry.isSymbolicLink()) continue;
+      next = resolve(dirname(link), await readlink(link), relative(link, target));
+      break;
+    }
+    if (!next) return false;
+    target = next;
   }
   return false;
 }

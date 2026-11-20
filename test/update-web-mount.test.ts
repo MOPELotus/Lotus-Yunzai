@@ -78,6 +78,15 @@ test.skipIf(process.platform === "win32")("rejects an archived socket parent and
     const dangling = join(work, "external-alias");
     await symlink(directory, dangling);
     await expect(verifyMovedWebMount(root, previous, { directory: dangling, socket })).rejects.toThrow("原版目录须位于");
+    const outer = join(work, "outer-alias");
+    await symlink("external-alias", outer);
+    await expect(verifyMovedWebMount(root, previous, { directory: outer, socket })).rejects.toThrow("原版目录须位于");
+    await symlink(".", join(work, "same-directory"));
+    const repeated = join(work, "same-directory", "same-directory", "outer-alias");
+    await expect(verifyMovedWebMount(root, previous, { directory: repeated, socket })).rejects.toThrow("原版目录须位于");
+    await symlink("loop-b", join(work, "loop-a"));
+    await symlink("loop-a", join(work, "loop-b"));
+    await verifyMovedWebMount(root, previous, { directory: join(work, "loop-a"), socket });
     await symlink(join(previous, "data", "external-node"), join(root, "source-alias"));
     await expect(verifyMovedWebMount(root, previous, { directory: join(root, "source-alias"), socket })).rejects.toThrow("原版目录须位于");
 
