@@ -2117,6 +2117,31 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.user_id === operator && /临时图文下|整条勿转/u.test(JSON.stringify(params.message)))).toHaveLength(1);
     expect(oneBotCalls.slice(tempImagesStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
       params.user_id === 52 && JSON.stringify(params.message).includes(noticeImageBase64))).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { PrivateRecall: true, groupRecall: true }\n');
+    const oneBotRecallPictureStart = oneBotCalls.length;
+    const oneBotPicture = { ...oneBotPrivate("", 42), message: tempOneBotImage.message };
+    client.send(JSON.stringify(oneBotPicture));
+    client.send(JSON.stringify({ ...oneBotRecall, message_id: oneBotPicture.message_id }));
+    const oneBotRecalledPicture = await waitUntil(() => oneBotCalls.slice(oneBotRecallPictureStart).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("好友撤回消息") &&
+      JSON.stringify(params.message).includes(noticeImageBase64)), "好友独立原图撤回后没有随摘要送达。");
+    expect((oneBotRecalledPicture.params.message as unknown[]).at(-1)).toEqual({
+      type: "image", data: { file: `base64://${noticeImageBase64}` },
+    });
+
+    const milkyRecallPictureStart = milkyCalls.length;
+    const milkyPicture = { ...milkyTitle("", 54), segments: [tempImage("matched-picture", expiredNoticeImageUrl)] };
+    await webhook("message_receive", milkyPicture);
+    await webhook("message_recall", { ...milkyGroupRecall, message_seq: milkyPicture.message_seq });
+    const milkyRecalledPicture = await waitUntil(() => milkyCalls.slice(milkyRecallPictureStart).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeImageBase64)),
+      "原群独立图片没有按真实原发送人合并转发。");
+    expect(milkyRecalledPicture.params.message).toMatchObject([{ type: "forward", data: {
+      messages: [{ user_id: 54, segments: [{ type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } }] }],
+    } }]);
+    expect(milkyCalls.slice(milkyRecallPictureStart).filter(({ action, params }) =>
+      action === "get_resource_temp_url" && params.resource_id === "matched-picture")).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

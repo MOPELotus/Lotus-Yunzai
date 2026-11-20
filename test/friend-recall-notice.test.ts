@@ -103,3 +103,44 @@ test("标准 QQ 表情按原顺序持久化，过期、伪造媒体及超长片�
   now += 600_001;
   expect(await restarted.take(scope, signal)).toBeUndefined();
 });
+
+test("独立原图通过生效留存才读取，消费后原图字节不可重放", async () => {
+  const scope: FriendRecallScope = { adapter: "milky", botId: 99, userId: 42, messageId: 53 };
+  const signal = new AbortController().signal;
+  const file = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=", "base64");
+  const reads = Promise.withResolvers<void>();
+  const body = [{ type: "image", file }] as const;
+  const store = {
+    value: null as string | null,
+    async has() { return this.value !== null; },
+    async save(_key: string, value: string, ttl: number, withImage: boolean) {
+      expect(ttl).toBe(60);
+      expect(withImage).toBe(true);
+      this.value ??= value;
+    },
+    async take() { const value = this.value; this.value = "null"; return value; },
+  };
+  let readCount = 0;
+  const read = async () => {
+    readCount++;
+    await reads.promise;
+    return body;
+  };
+  const now = () => 1_700_000_000_000;
+  const cache = createMessageRecallCache(() => store, now);
+  await cache.capture(scope, read, async () => undefined, signal);
+  expect(readCount).toBe(0);
+  const first = cache.capture(scope, read, async () => 60, signal);
+  expect(cache.capture(scope, read, async () => 60, signal)).toBe(first);
+  reads.resolve();
+  await first;
+  expect(store.value && JSON.parse(store.value)).toEqual({
+    parts: [{ type: "image", bytes: file.toString("base64") }], expires: now() + 60_000,
+  });
+  const restarted = createMessageRecallCache(() => store, now);
+  expect(await restarted.take(scope, signal)).toEqual(body);
+  expect(store.value).toBe("null");
+  await restarted.capture(scope, read, async () => 60, signal);
+  expect(readCount).toBe(1);
+  expect(await restarted.take(scope, signal)).toBeUndefined();
+});

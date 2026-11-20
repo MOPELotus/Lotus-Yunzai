@@ -1,4 +1,5 @@
 import type { FriendMessageNoticeSession } from "./friend-message-notice.ts";
+import { decodeChatFileBytes, maxChatFileBytes } from "./chat-files.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 
 export interface FriendRecallScope {
@@ -24,28 +25,34 @@ export interface NativeGroupRecallNotice extends GroupRecallScope {
   notifyOwners(summary: MessageReply, body: RecallBody, nickname: string | undefined, signal: AbortSignal): Promise<void>;
 }
 
-type RecallPart = string | { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };
+type RecallFace = { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };
+type RecallImage = { readonly type: "image"; readonly file: Uint8Array };
+type RecallPart = string | RecallFace | RecallImage;
 export type RecallBody = string | readonly RecallPart[];
 
 interface RecallRecord {
   body?: RecallBody;
+  retainedBytes: number;
   readonly expires: number;
 }
 
 interface RecallStore {
-  save(key: string, value: string, ttl: number): Promise<void>;
+  has?(key: string): Promise<boolean>;
+  save(key: string, value: string, ttl: number, withImage: boolean): Promise<void>;
   take(key: string): Promise<string | null>;
 }
 
 const maxMessages = 4096;
 const maxTextLength = 8192;
 const maxParts = 128;
+export const maxRecallImageCacheBytes = 64 * 1024 * 1024;
+export const maxRecallImageCacheEntries = 1024;
 
 function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function face(id: unknown, large: unknown): Exclude<RecallPart, string> | undefined {
+function face(id: unknown, large: unknown): RecallFace | undefined {
   const value = typeof id === "string" && /^\d{1,16}$/u.test(id) ? Number(id) : id;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 ||
       (large !== undefined && typeof large !== "boolean")) return;
@@ -69,27 +76,40 @@ export function readRecallBody(source: MessageEvent["message"]): RecallBody | un
   if (parts.length <= maxParts) return parts;
 }
 
-function copyRecallParts(parts: readonly unknown[], truncate: boolean): RecallPart[] | undefined {
+function copyRecallParts(parts: readonly unknown[], fromStorage: boolean): RecallPart[] | undefined {
   if (!parts.length || parts.length > maxParts) return;
   let remaining = maxTextLength;
-  let hasFace = false;
+  let imageBytes = 0;
+  let hasSegment = false;
   const copy: RecallPart[] = [];
   for (const part of parts) {
     if (typeof part === "string") {
-      if (!truncate && part.length > remaining) return;
+      if (fromStorage && part.length > remaining) return;
       const text = part.slice(0, remaining).toWellFormed();
       remaining -= text.length;
       if (text) copy.push(text);
       continue;
     }
-    if (!part || typeof part !== "object" || !("type" in part) || part.type !== "face" || !("data" in part) ||
+    if (!part || typeof part !== "object" || !("type" in part)) return;
+    if (part.type === "image") {
+      const file = fromStorage
+        ? ("bytes" in part ? decodeChatFileBytes(part.bytes) : undefined)
+        : ("file" in part && part.file instanceof Uint8Array ? part.file : undefined);
+      if (!file?.byteLength) return;
+      imageBytes += file.byteLength;
+      if (imageBytes > maxChatFileBytes) return;
+      copy.push({ type: "image", file });
+      hasSegment = true;
+      continue;
+    }
+    if (part.type !== "face" || !("data" in part) ||
         !part.data || typeof part.data !== "object" || !("id" in part.data)) return;
     const formatted = face(part.data.id, "is_large" in part.data ? part.data.is_large : undefined);
     if (!formatted) return;
     copy.push(formatted);
-    hasFace = true;
+    hasSegment = true;
   }
-  if (hasFace) return copy;
+  if (hasSegment) return copy;
 }
 
 function messageKey(scope: FriendRecallScope | GroupRecallScope): string | undefined {
@@ -103,10 +123,22 @@ function messageKey(scope: FriendRecallScope | GroupRecallScope): string | undef
 export function createMessageRecallCache(getStorage: () => RecallStore | undefined, now = Date.now) {
   const pending = new Map<string, Promise<void>>();
   const records = new Map<string, RecallRecord & { expiry: ReturnType<typeof setTimeout> }>();
+  let retainedImageBytes = 0;
+  let retainedImages = 0;
+
+  function releaseImageBudget(entry: RecallRecord) {
+    if (entry.retainedBytes === 0) return;
+    retainedImageBytes -= entry.retainedBytes;
+    retainedImages--;
+    entry.retainedBytes = 0;
+  }
 
   function remove(key: string) {
     const entry = records.get(key);
-    if (entry) clearTimeout(entry.expiry);
+    if (entry) {
+      clearTimeout(entry.expiry);
+      releaseImageBudget(entry);
+    }
     records.delete(key);
     return entry;
   }
@@ -123,11 +155,10 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
   }
 
   return {
-    capture(scope: FriendRecallScope | GroupRecallScope, content: RecallBody, retention: () => Promise<number | undefined>, signal: AbortSignal) {
+    capture(scope: FriendRecallScope | GroupRecallScope, content: RecallBody | (() => Promise<RecallBody | undefined>),
+      retention: () => Promise<number | undefined>, signal: AbortSignal) {
       const key = messageKey(scope);
       if (!key || signal.aborted) return;
-      const body = typeof content === "string" ? content.slice(0, maxTextLength).toWellFormed() : copyRecallParts(content, true);
-      if (!body || (typeof body === "string" && !body.trim())) return;
       const existing = pending.get(key);
       if (existing) return existing;
       if (pending.size >= maxMessages) return;
@@ -137,14 +168,29 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
         const expires = now() + ttl * 1000;
         if (!Number.isSafeInteger(expires)) return;
         const storage = getStorage();
+        if (typeof content === "function" && ((records.get(key)?.expires ?? 0) > now() || await storage?.has?.(key))) return;
+        if (signal.aborted) return;
+        const original = typeof content === "function" ? await content() : content;
+        if (original === undefined || signal.aborted || expires <= now()) return;
+        const body = typeof original === "string" ? original.slice(0, maxTextLength).toWellFormed() : copyRecallParts(original, false);
+        if (!body || (typeof body === "string" && !body.trim())) return;
+        const imageBytes = typeof body === "string" ? 0 : body.reduce((total, part) =>
+          total + (typeof part !== "string" && part.type === "image" ? part.file.byteLength : 0), 0);
         if (storage) {
-          const record = typeof body === "string" ? { text: body, expires } : { parts: body, expires };
-          await storage.save(key, JSON.stringify(record), ttl);
+          const record = typeof body === "string" ? { text: body, expires } : { parts: body.map(part =>
+            typeof part !== "string" && part.type === "image" ? { type: "image", bytes: Buffer.from(part.file).toString("base64") } : part), expires };
+          await storage.save(key, JSON.stringify(record), Math.ceil((expires - now()) / 1000), imageBytes > 0);
         }
         else if ((records.get(key)?.expires ?? 0) <= now()) {
           remove(key);
+          if (imageBytes && (retainedImages >= maxRecallImageCacheEntries ||
+            retainedImageBytes + imageBytes > maxRecallImageCacheBytes)) return;
           if (records.size >= maxMessages) remove(records.keys().next().value!);
-          records.set(key, { body, expires, expiry: scheduleExpiry(key, expires) });
+          records.set(key, { body, expires, retainedBytes: imageBytes, expiry: scheduleExpiry(key, expires) });
+          if (imageBytes) {
+            retainedImageBytes += imageBytes;
+            retainedImages++;
+          }
         }
       })().catch(() => {}).finally(() => pending.delete(key));
       pending.set(key, handling);
@@ -162,7 +208,7 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
           const entry: unknown = saved && JSON.parse(saved);
           if (signal.aborted || !entry || typeof entry !== "object" || !("expires" in entry) ||
               !positiveId(entry.expires) || entry.expires <= now()) return;
-          if ("parts" in entry) return Array.isArray(entry.parts) ? copyRecallParts(entry.parts, false) : undefined;
+          if ("parts" in entry) return Array.isArray(entry.parts) ? copyRecallParts(entry.parts, true) : undefined;
           if ("text" in entry && typeof entry.text === "string" && entry.text.length <= maxTextLength) return entry.text;
         } catch { return; }
         return;
@@ -171,6 +217,7 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
       if (entry && entry.expires > now()) {
         const body = entry.body;
         delete entry.body;
+        releaseImageBudget(entry);
         return body;
       }
     },

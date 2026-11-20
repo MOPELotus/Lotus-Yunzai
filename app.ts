@@ -11,7 +11,7 @@ import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
-import { readQqMessageMedia } from "./lib/chat-files.ts";
+import { readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -56,7 +56,8 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
-import { createMessageRecallCache, readRecallBody, type NativeFriendRecallNotice, type NativeGroupRecallNotice,
+import { createMessageRecallCache, maxRecallImageCacheBytes, maxRecallImageCacheEntries, readRecallBody,
+  type NativeFriendRecallNotice, type NativeGroupRecallNotice,
   type RecallBody } from "./lib/message-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
@@ -367,15 +368,44 @@ if (import.meta.main) {
       const redis = globalThis.redis;
       if (!redis) return;
       const prefix = `lotus-yunzai:${feature}-recall-notice:`;
+      const imageExpirations = prefix + "image-expirations";
+      const imageSizes = prefix + "image-sizes";
       return {
-        async save(key, value, ttl) { await redis.set(prefix + key, value, { EX: ttl, NX: true }); },
+        async has(key) { return await redis.exists(prefix + key) !== 0; },
+        async save(key, value, ttl, withImage) {
+          if (!withImage) {
+            await redis.set(prefix + key, value, { EX: ttl, NX: true });
+            return;
+          }
+          await redis.eval(`
+            if redis.call('EXISTS', KEYS[1]) ~= 0 then return 0 end
+            local time = redis.call('TIME')
+            local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+            for _, expired in ipairs(redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now)) do
+              redis.call('HDEL', KEYS[3], expired)
+              redis.call('ZREM', KEYS[2], expired)
+            end
+            if redis.call('ZCARD', KEYS[2]) >= tonumber(ARGV[4]) then return 0 end
+            local size = string.len(ARGV[1])
+            local used = size
+            for _, saved in ipairs(redis.call('HVALS', KEYS[3])) do used = used + tonumber(saved) end
+            if used > tonumber(ARGV[3]) then return 0 end
+            redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+            redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]) * 1000, KEYS[1])
+            redis.call('HSET', KEYS[3], KEYS[1], size)
+            return 1
+          `, { keys: [prefix + key, imageExpirations, imageSizes],
+            arguments: [value, String(ttl), String(maxRecallImageCacheBytes), String(maxRecallImageCacheEntries)] });
+        },
         async take(key) {
           const result = await redis.eval(`
             local value = redis.call('GET', KEYS[1]);
             if not value or value == 'null' then return nil; end;
             redis.call('SET', KEYS[1], 'null', 'KEEPTTL');
+            redis.call('ZREM', KEYS[2], KEYS[1]);
+            redis.call('HDEL', KEYS[3], KEYS[1]);
             return value;
-          `, { keys: [prefix + key], arguments: [] });
+          `, { keys: [prefix + key, imageExpirations, imageSizes], arguments: [] });
           return typeof result === "string" ? result : null;
         },
       };
@@ -383,6 +413,7 @@ if (import.meta.main) {
   }
   const friendRecallCache = recallCache("friend");
   const groupRecallCache = recallCache("group");
+  let activeRecallImageReads = 0;
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1192,8 +1223,8 @@ if (import.meta.main) {
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendRecallNoticeNames) ||
         typeof message === "string" || !message.length) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const body = readRecallBody(message);
-    if (body === undefined || signal.aborted || isPrivateCredentialMessage(recallNoticeInput(body).text)) return;
+    const body = recallCaptureContent(message, signal);
+    if (body === undefined || signal.aborted) return;
     return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, body,
       () => registration.policy.retention(botId, signal), signal);
   }
@@ -1206,10 +1237,28 @@ if (import.meta.main) {
         !groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, groupRecallNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, source.signal);
     if (signal.aborted) return;
-    const body = readRecallBody(message);
-    if (body === undefined || isPrivateCredentialMessage(recallNoticeInput(body).text)) return;
+    const body = recallCaptureContent(message, signal);
+    if (body === undefined) return;
     return groupRecallCache.capture(source, body,
       () => registration.policy.retention(botId, groupId, signal), signal);
+  }
+
+  function recallCaptureContent(message: MessageEvent["message"], signal: AbortSignal) {
+    if (typeof message !== "string" && message.length === 1 && message[0]?.type === "image") {
+      const image = message[0];
+      return async (): Promise<RecallBody | undefined> => {
+        if (signal.aborted || activeRecallImageReads >= 4) return;
+        activeRecallImageReads++;
+        try {
+          const file = await readQqMessageSegmentMedia(image, signal);
+          if (file && !signal.aborted) return [{ type: "image", file }];
+        } finally {
+          activeRecallImageReads--;
+        }
+      };
+    }
+    const body = readRecallBody(message);
+    if (body !== undefined && !isPrivateCredentialMessage(recallNoticeInput(body).text)) return body;
   }
 
   function recallNoticeInput(body: RecallBody) {
