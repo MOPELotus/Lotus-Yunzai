@@ -1,6 +1,6 @@
 # Lotus-Yunzai
 
-基于 Bun 和 TypeScript 的云崽机器人宿主，支持终端和 OneBot 11。
+基于 Bun 和 TypeScript 的云崽机器人宿主，支持终端、OneBot 11 和 Milky。
 
 ## 快速开始
 
