@@ -172,7 +172,7 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     await book("#星穹铁道卡芙卡星魂图鉴", kafka);
     await book("%艾莲影画", ellen);
     await book("#绝区零艾莲影画", ellen);
-    await book("荷花图鉴 绝区零 艾莲", ellen, false);
+    await book("图鉴 绝区零 艾莲", ellen, false);
     await book("*卡芙卡星魂", kafka, true, 1);
     expect(await next("未确认回执")).toMatchObject({ action: "send_msg", params: {
       group_id: 77, message: "合并转发结果未确认，请在聊天中核对。",

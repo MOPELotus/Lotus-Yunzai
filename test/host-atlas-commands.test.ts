@@ -8,7 +8,9 @@ const token = "atlas-command-fixture";
 const excludedCommands = [
   "#未知样例图鉴", "#西风图鉴", "#101图鉴", "%锋镝图鉴",
   "#西风剑攻略", "*锋镝练度", "#我的深渊战绩",
-  "#图鉴西风", "荷花图鉴未知样例", "#图鉴西风剑攻略", "#Lotus图鉴重置",
+  "#图鉴西风", "#图鉴西风剑攻略", "#Lotus图鉴重置",
+  "#荷花图鉴 西风剑", "#Lotus图鉴 西风剑", "lotus图鉴 西风剑", "荷花图鉴西风剑",
+  "#荷花图鉴状态", "lotus图鉴状态", "#Lotus图鉴帮助", "荷花图鉴更新", "#Lotus检查图鉴更新",
 ];
 
 async function writeCatalog(directory: string) {
@@ -132,9 +134,7 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       const starRail = "星铁 · 光锥 · 锋镝 · 三星 · 巡猎 · ID 201";
       const zenless = "绝区零 · 音擎 · 深海访客 · B级 · 锋御 · ID 301";
       for (const [commands, reply] of [
-        [["#图鉴 西风剑", "#荷花图鉴 西风剑", "#Lotus图鉴 西风剑", "#lotus图鉴 西风剑",
-          "图鉴 西风剑", "荷花图鉴 西风剑", "Lotus图鉴 西风剑", "lotus图鉴 西风剑",
-          "#图鉴西风剑", "荷花图鉴西风剑",
+        [["#图鉴 西风剑", "图鉴 西风剑", "#图鉴西风剑",
           "#西风剑图鉴", "#武器图鉴 原神 西风剑"], genshin],
         [["*锋镝图鉴", "＊锋镝图鉴", "#星穹铁道锋镝图鉴", "#光锥图鉴 锋镝"], starRail],
         [["%深海访客图鉴", "％深海访客图鉴", "#绝区零深海访客图鉴", "#音擎图鉴 深海访客"], zenless],
@@ -154,11 +154,9 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
 
       const status = await query("#图鉴状态");
       expect(status).toContain("原神 · 武器 · 1 · 3 个条目");
-      for (const command of ["图鉴状态", "#荷花图鉴状态", "荷花图鉴状态", "#Lotus图鉴状态", "lotus图鉴状态"]) {
-        expect(await query(command)).toBe(status);
-      }
-      expect(await query("荷花图鉴 更新")).toBe("原神 · 武器 · 更新 · 四星 · 单手剑 · ID 104");
-      for (const command of ["荷花图鉴更新", "#更新图鉴", "#Lotus检查图鉴更新"]) {
+      expect(await query("图鉴状态")).toBe(status);
+      expect(await query("图鉴 更新")).toBe("原神 · 武器 · 更新 · 四星 · 单手剑 · ID 104");
+      for (const command of ["图鉴更新", "#更新图鉴", "#检查图鉴更新"]) {
         expect(await query(command)).toBe("只有 bot 主人可以操作图鉴更新。");
       }
 
