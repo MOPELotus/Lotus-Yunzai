@@ -4,6 +4,8 @@ import type { RequestDecisionOutcome } from "../request-claim.ts";
 
 export type OwnerFriendReplyBody = string | readonly (string | { readonly sourceIndex: number })[];
 export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable" | "unsupported";
+type FriendReplyPart = string | { readonly type: "image"; readonly file: Uint8Array } |
+  { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };
 
 interface OwnerFriendReplySession {
   readonly account: number;
@@ -15,9 +17,9 @@ interface OwnerFriendReplySession {
   send(userId: number, message: MessageReply, signal: AbortSignal): Promise<"confirmed" | "rejected" | "unknown">;
 }
 
-async function readReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"], signal: AbortSignal) {
+export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"], signal: AbortSignal) {
   if (typeof source === "string" || !Array.isArray(body) || !body.length || body.length > 128) return;
-  const parts: Exclude<MessageReply, readonly unknown[]>[] = [];
+  const parts: FriendReplyPart[] = [];
   let imageBytes = 0;
   for (const value of body) {
     if (signal.aborted) return;
@@ -56,7 +58,7 @@ export function bindOwnerFriendReply(session: OwnerFriendReplySession) {
     if (typeof body === "string") {
       return body.trim() ? deliver(body) : "unsupported";
     }
-    const parts = await readReplyParts(body, session.source, signal);
+    const parts = await readFriendReplyParts(body, session.source, signal);
     if (!active()) return "unavailable";
     if (!parts) return "unsupported";
     const stillFriend = await lookup();

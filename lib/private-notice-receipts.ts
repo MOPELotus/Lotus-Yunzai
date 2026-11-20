@@ -25,12 +25,12 @@ export function hashPrivateNotice(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export function privateNoticeText(source: QuotedMessage["message"], allowImage: boolean) {
+export function privateNoticeText(source: QuotedMessage["message"], allowAttachments: boolean) {
   if (typeof source === "string") return source;
   const text: string[] = [];
   for (const part of source) {
     if (part.type === "text" && typeof part.text === "string") text.push(part.text);
-    else if (!allowImage || part.type !== "image") return;
+    else if (!allowAttachments || (part.type !== "image" && part.type !== "face")) return;
   }
   return text.join("");
 }

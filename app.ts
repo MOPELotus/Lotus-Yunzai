@@ -31,6 +31,7 @@ import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
 import { createMilkyInvitationReceipts } from "./lib/adapters/milky-invitation-receipts.ts";
+import { readFriendReplyParts } from "./lib/adapters/owner-friend-reply.ts";
 import type { MilkySession, MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
 import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
@@ -976,8 +977,14 @@ if (import.meta.main) {
         botId === userId || messageId === undefined || !masterPermissions.masterIds(botId).length || masterPermissions.isMaster(botId, userId) ||
         masterPermissions.legacyMasterIds().includes(userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    if (signal.aborted || typeof message === "string" || !message.length || message.some(part => part.type !== "text" || typeof part.text !== "string")) return;
-    const text = message.map(part => part.text).join("");
+    if (signal.aborted || typeof message === "string" || !message.length) return;
+    const parts: (string | { sourceIndex: number })[] = [];
+    for (const [sourceIndex, part] of message.entries()) {
+      if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
+      else if (part.type === "image" || part.type === "face") parts.push({ sourceIndex });
+      else return;
+    }
+    const text = parts.filter(part => typeof part === "string").join("");
     if (privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
         isDeviceBindingInput(text) || isZzzGachaLinkMessage(text)) return;
 
@@ -986,7 +993,8 @@ if (import.meta.main) {
     if (pendingFriendNotices.has(key) || notifiedFriendMessages.has(key)) return;
     pendingFriendNotices.add(key);
     try {
-      const reply = await registration.policy({ botId, userId, text, canQuote: true,
+      const readParts = parts.some(part => typeof part !== "string") ? () => readFriendReplyParts(parts, message, signal) : undefined;
+      const reply = await registration.policy({ botId, userId, text, readParts, canQuote: true,
         nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
         async showHint() {
           if (signal.aborted) return false;

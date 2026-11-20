@@ -1456,6 +1456,26 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", { ...milkyQuote, segments: [{ type: "reply", data: { message_seq: milkyReceipt } }, ...milkyQuote.segments] });
     const quotedMilky = await milkyOwnerReply(43, "开头仍是原好友的正文");
     expect(quotedMilky.params.message).toEqual([text("42 开头仍是原好友的正文")]);
+
+    client.send(JSON.stringify({ ...oneBotPrivate("", 42), message: [embeddedImage] }));
+    const pureImageNotice = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("[消息(99) - 好友消息]") && JSON.stringify(params.message).includes(noticeImageBase64)),
+      "主人没有收到 OneBot 好友原图通知。");
+    expect(JSON.stringify(pureImageNotice.params.message)).toContain(`base64://${noticeImageBase64}`);
+
+    const renderSource = milkyPrivate("合成原文在前", 43);
+    await webhook("message_receive", { ...renderSource, segments: [...renderSource.segments,
+      { type: "face", data: { face_id: "14", is_large: true } }, { type: "image", data: { resource_id: "matched-picture" } }, text("合成原文在后"),
+    ] });
+    const richNotice = await milkyOwnerReply(operator, "合成原文在后");
+    expect((richNotice.params.message as readonly unknown[]).slice(-4)).toEqual([
+      text("合成原文在前"), { type: "face", data: { face_id: "14", is_large: true } },
+      { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } }, text("合成原文在后"),
+    ]);
+    const richReceipt = milkyCalls.indexOf(richNotice) + 1;
+    const richQuote = milkyPrivate("#回复 混排来源仍可准确绑定");
+    await webhook("message_receive", { ...richQuote, segments: [{ type: "reply", data: { message_seq: richReceipt } }, ...richQuote.segments] });
+    await milkyOwnerReply(43, "混排来源仍可准确绑定");
   } finally {
     socket?.close();
     host?.kill();
