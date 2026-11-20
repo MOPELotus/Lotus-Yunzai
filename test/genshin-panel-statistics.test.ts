@@ -39,7 +39,8 @@ test("原神练度统计兼容旧命令，档案与 UID 不混淆", () => {
   expect(matchGenshinPanel("#练度统计")).toEqual({ type: "statistics", profileId: 1 });
   expect(matchGenshinPanel("#原神面板练度统计 档案2")).toEqual({ type: "statistics", profileId: 2 });
   expect(matchGenshinPanel(`#面板练度统计${uid}`)).toEqual({ type: "statistics", profileId: 1, uid });
-  for (const message of ["#星铁练度统计", "#202611剧诗练度统计", "#练度统计256", "#角色统计", "#芙芙排名统计"]) {
+  expect(matchGenshinPanel("#202611剧诗练度统计")).toEqual({ type: "statistics", profileId: 1, theaterMonth: "202611" });
+  for (const message of ["#星铁练度统计", "#练度统计256", "#角色统计", "#芙芙排名统计"]) {
     expect(matchGenshinPanel(message)).toBeUndefined();
   }
 });
