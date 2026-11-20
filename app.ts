@@ -183,7 +183,7 @@ const processFeatureNames = ["进程管理", "system", systemModuleName];
 const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
-const atlasMaintenanceCommand = /^#?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新)$/u;
+const atlasMaintenanceCommand = /^#?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新|重置图鉴|图鉴重置|清空图鉴)$/u;
 
 function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
   return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
