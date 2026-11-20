@@ -199,6 +199,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const key = `${params.group_id}:${params.user_id}`;
     return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key),
       last_sent_time: memberLastSentTimes.get(key), ...(key === "88:55" ? { card: "合成私聊名片" } : {}),
+      ...(key === `${group}:42` ? { card: "合成踢出名片", nickname: "旧昵称" } : {}),
+      ...(key === `${group}:55` ? { nickname: "合成踢黑昵称" } : {}),
+      ...(key === `${group}:44` ? { nickname: "合成未确认昵称" } : {}),
+      ...(key === "88:59" ? { card: "合成私聊踢出名片" } : {}),
+      ...(key === "88:67" ? { nickname: "合成私聊踢出昵称" } : {}),
       ...(key === "88:52" ? { group_id: 89 } : {}) };
   }
   function updateRole(params: Call["params"], enabled: unknown) {
@@ -511,8 +516,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { group_id: group, is_mute: true }, { group_id: group, is_mute: false },
     ]);
 
+    const oneBotBeforeKick = oneBotCalls.length;
     send(oneBotMessage("#踢42"));
-    expect(JSON.stringify((await oneBotReply(9)).params.message)).toContain("42");
+    const oneBotKickReply = JSON.stringify((await oneBotReply(9)).params.message);
+    expect(oneBotKickReply).toContain("合成踢出名片（42）");
+    expect(oneBotKickReply).not.toContain("旧昵称");
+    expect(oneBotCalls.slice(oneBotBeforeKick).filter(({ action, params }) =>
+      action === "get_group_member_info" && params.group_id === group && params.user_id === 42)).toHaveLength(1);
     send(oneBotMessage("#踢黑53"));
     await oneBotReply(10);
     send(oneBotMessage("#踢黑52"));
@@ -520,11 +530,16 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(oneBotCalls.filter(({ action }) => action === "set_group_kick").map(({ params }) => params)).toEqual([
       { group_id: group, user_id: 42, reject_add_request: false },
     ]);
+    const milkyBeforeKick = milkyCalls.length;
     await webhook("message_receive", milkyMessage("#踢黑55"));
-    expect(JSON.stringify((await milkyReply(7)).params.message)).toContain("55");
+    expect(JSON.stringify((await milkyReply(7)).params.message)).toContain("合成踢黑昵称（55）");
+    expect(milkyCalls.slice(milkyBeforeKick).filter(({ action, params }) =>
+      action === "get_group_member_info" && params.group_id === group && params.user_id === 55)).toHaveLength(1);
     const kickUnknown = milkyMessage("#踢44");
     await webhook("message_receive", kickUnknown);
-    expect(JSON.stringify((await milkyReply(8)).params.message)).toContain("未确认");
+    const unknownKickReply = JSON.stringify((await milkyReply(8)).params.message);
+    expect(unknownKickReply).toContain("未确认");
+    expect(unknownKickReply).not.toContain("合成未确认昵称");
     await webhook("message_receive", kickUnknown);
     await webhook("message_receive", milkyMessage("#解禁56"));
     await milkyReply(9);
@@ -1257,13 +1272,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_whole_mute" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, is_mute: false }]);
     client.send(JSON.stringify(oneBotPrivate("#踢 88 59")));
-    await ownerReplyWith("已将「59」踢出群聊（群 88）");
+    await ownerReplyWith("已将「合成私聊踢出名片（59）」踢出群聊（群 88）");
     expect(oneBotCalls.filter(({ action, params }) => action === "set_group_kick" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, user_id: 59, reject_add_request: false }]);
     await webhook("message_receive", milkyPrivate("#踢 88 52"));
     await milkyOwnerReply(operator, "52 受群");
     await webhook("message_receive", milkyPrivate("#踢 88 67"));
-    await milkyOwnerReply(operator, "已将「67」踢出群聊（群 88）");
+    await milkyOwnerReply(operator, "已将「合成私聊踢出昵称（67）」踢出群聊（群 88）");
     expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, user_id: 67, reject_add_request: false }]);
 

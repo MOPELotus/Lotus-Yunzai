@@ -604,7 +604,11 @@ async function dispatchMessage(
       accepting: groupActions?.canModerateGroups,
       isMaster: () => isMaster(selfId, userId),
       isProtected: id => (groupActions?.isProtectedMaster ?? isMaster)(selfId, id),
-      role: id => calls.getGroupRole(send, target.group_id, id, true, likeSession),
+      async role(id, onName) {
+        const member = await calls.getLiveGroupMember(send, target.group_id, id, true, likeSession);
+        if (member?.name) onName?.(member.name);
+        return member?.role;
+      },
       mute: (id, seconds, active = likeSession) => calls.setGroupMute(send, target.group_id, id, seconds, active),
       wholeMute: enabled => calls.setGroupWholeMute(send, target.group_id, enabled, likeSession),
       kick: (id, block, active = likeSession) => calls.kickGroupMember(send, target.group_id, id, active, block),

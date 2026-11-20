@@ -1011,7 +1011,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         accepting: options.canModerateGroups,
         isMaster: () => isMaster(cardOwner),
         isProtected: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
-        role: id => delegation.memberRole(groupId, id),
+        async role(id, onName) {
+          const member = await liveGroupMember(groupId, id);
+          if (member?.name) onName?.(member.name);
+          return member?.role;
+        },
         async mute(user_id, duration, active = signal) {
           return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, active)).status;
         },

@@ -10,7 +10,7 @@ type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavai
 export type GroupMuteAction = (userId: number, seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupMuteSelfAction = (seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
-export type GroupKickAction = (userId: number, block: boolean) => Promise<GroupMemberModerationResult>;
+export type GroupKickAction = (userId: number, block: boolean, onConfirmedName?: (name: string) => void) => Promise<GroupMemberModerationResult>;
 export type GroupManageBlacklistAction = () => Promise<boolean>;
 export type GroupSpecialTitleAction = (
   userId: number, title: string, verify?: () => Promise<boolean>,
@@ -479,7 +479,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly accepting?: () => boolean;
   readonly isMaster: () => boolean;
   readonly isProtected: (userId: number) => boolean;
-  readonly role: (userId: number) => Promise<Role | undefined>;
+  readonly role: (userId: number, onName?: (name: string) => void) => Promise<Role | undefined>;
   readonly mute: (userId: number, seconds: number, active?: AbortSignal) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
   readonly kick: (userId: number, block: boolean, active?: AbortSignal) => Promise<GroupModerationResult>;
@@ -531,11 +531,11 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     }
   }
 
-  async function protectedTarget(userId: number, protectMasters: boolean) {
+  async function protectedTarget(userId: number, protectMasters: boolean, onName?: (name: string) => void) {
     if (!Number.isSafeInteger(userId) || userId <= 0) return "rejected" as const;
     const authority = await authorize();
     if (typeof authority === "string") return authority;
-    const target = await role(userId).catch(() => undefined);
+    const target = await role(userId, onName).catch(() => undefined);
     if (!active() || !target) return "unavailable" as const;
     if (userId === bot || target === "owner" || (protectMasters && isProtected(userId)) ||
         (target === "admin" && (authority.botRole !== "owner" || !authority.master))) return "protected" as const;
@@ -604,10 +604,17 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (typeof authority === "string") return authority;
       return apply(() => wholeMute(enabled));
     },
-    async groupKick(userId, block) {
+    async groupKick(userId, block, onConfirmedName) {
       if (!active()) return "unavailable";
       if (typeof block !== "boolean") return "rejected";
-      return await protectedTarget(userId, true) ?? apply(() => kick(userId, block));
+      let name: string | undefined;
+      const protection = await protectedTarget(userId, true, onConfirmedName && (value => { name = value; }));
+      if (protection) return protection;
+      const result = await apply(() => kick(userId, block));
+      if (result === "confirmed" && name && onConfirmedName) {
+        try { onConfirmedName(name); } catch { /* A receipt callback cannot change the confirmed result. */ }
+      }
+      return result;
     },
     groupManageBlacklist: () => canManage("list"),
     groupManageWhitelistAutoUnmute: () => canManage("automatic"),
