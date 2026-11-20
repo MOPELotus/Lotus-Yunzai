@@ -166,6 +166,7 @@ export interface GroupRequest {
   readonly groupRequestScope?: "milky";
   readonly inviter_id?: number;
   readonly comment?: string;
+  readonly nickname?: string;
   readonly group_name?: string;
   readonly isGroup: true;
   readonly isPrivate: false;

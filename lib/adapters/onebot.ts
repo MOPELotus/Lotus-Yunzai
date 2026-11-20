@@ -178,6 +178,8 @@ async function dispatchRequest(
   const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
     group_name: stringField(event.group_name),
+    nickname: stringField(event.nickname),
+    inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
     approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
     replyToApplicant,
     reply(reply) {

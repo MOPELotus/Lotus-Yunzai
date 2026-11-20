@@ -108,6 +108,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
+import type { GroupAddNotice } from "./plugins/group/index.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -125,6 +126,7 @@ const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunza
 const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunzai/group"];
 const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
+const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -274,6 +276,7 @@ if (import.meta.main) {
   const managedModerationPending = new Set<string>();
   const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
   let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
+  let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -797,6 +800,22 @@ if (import.meta.main) {
     if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "invite") {
       await dispatchGroupInvitation(event, allowed);
       return;
+    }
+    if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "add" && allowed(groupAddNoticeNames)) {
+      const registration = groupAddNotice;
+      const transport = groupModerationSession(event);
+      const authorize = transport?.canModerate;
+      if (registration && transport && authorize) {
+        const signal = nativeOperationSignal(registration.signal, transport.signal);
+        const { sub_type, self_id, group_id, user_id, groupRequestScope, flag, nickname, comment, inviter_id } = event;
+        if (!signal.aborted) await registration.policy.receive({
+          sub_type, self_id, group_id, user_id, groupRequestScope, flag, nickname, comment, inviter_id, signal,
+          async notifyGroup(parts) {
+            if (signal.aborted || !await authorize(signal) || signal.aborted) return false;
+            return (await event.reply(parts)) === true;
+          },
+        }).catch(() => {});
+      }
     }
     if (event.post_type === "request" && event.request_type === "friend") {
       let reviewed = false;
@@ -1692,6 +1711,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupBannedWords === registration) groupBannedWords = undefined;
+          };
+        },
+        registerGroupAddNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupAddNotice = registration;
+          return () => {
+            session.abort();
+            if (groupAddNotice === registration) groupAddNotice = undefined;
           };
         },
         groupLeaveBlacklist: {

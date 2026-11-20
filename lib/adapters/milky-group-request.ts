@@ -62,6 +62,7 @@ export function milkyGroupRequest(
     self_id: selfId, user_id: userId, group_id: groupId, flag, groupRequestScope: "milky",
     inviter_id: invitation || thirdParty ? initiatorId : undefined,
     comment: type === "group_join_request" && typeof data.comment === "string" ? data.comment : undefined,
+    nickname: typeof data.nickname === "string" ? data.nickname : undefined,
     isGroup: true, isPrivate: false, isMaster: invitation && callbacks.isMaster(initiatorId) === true,
     decision,
     async approve(accept = true, reason) {
