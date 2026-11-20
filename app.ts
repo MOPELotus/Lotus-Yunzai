@@ -34,7 +34,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
-import { groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice } from "./lib/adapters/group-moderation.ts";
+import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice } from "./lib/adapters/group-moderation.ts";
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -658,25 +658,9 @@ if (import.meta.main) {
     const active = () => !signal.aborted && groupDispatch.allowsGroupModeration(event) && groupDispatch.allows(event, groupVerificationNames);
     const protectedTarget = () => userId === botId || masterPermissions.isMaster(botId, userId) || masterPermissions.legacyMasterIds().includes(userId);
     if (!act || time === undefined || !active() || protectedTarget()) return;
-    await registration.policy.join({ ...scope, time, inviterId,
-      async inspect() {
-        if (!active()) return;
-        const [bot, member, inviter] = await Promise.all([gate.member(botId, signal), gate.member(userId, signal),
-          inviterId && inviterId !== userId ? gate.member(inviterId, signal) : undefined]);
-        if (active() && bot && member) return { botRole: bot.role, targetRole: member.role, targetJoinTime: member.joinTime,
-          inviterRole: inviter?.role, protectedTarget: protectedTarget() };
-      },
-      reply: async parts => active() && await gate.send(parts, signal) && active(),
-      async kick(request, expectedJoinTime) {
-        if (!active() || request.aborted) return "unavailable";
-        const running = AbortSignal.any([request, signal]);
-        const [bot, member] = await Promise.all([gate.member(botId, running), gate.member(userId, running)]);
-        if (!active() || running.aborted || !bot || bot.role === "member" || !member ||
-            (expectedJoinTime !== undefined && member.joinTime !== expectedJoinTime)) return "unavailable";
-        if (protectedTarget() || member.role !== "member") return "protected";
-        return act(running);
-      },
-    }).catch(() => {});
+    const subject = bindGroupVerificationSubject({ ...scope, time, inviterId, active,
+      isProtected: protectedTarget, transport: gate, kick: running => act(running) });
+    await registration.policy.join(subject).catch(() => {});
   }
 
   async function handleGroupVerificationAnswer(event: MessageEvent) {

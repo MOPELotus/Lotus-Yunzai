@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bindMessageGroupActions } from "../lib/adapters/group-moderation.ts";
+import { bindGroupVerificationScope, bindMessageGroupActions } from "../lib/adapters/group-moderation.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const group = 77;
@@ -87,6 +87,30 @@ test("群投票终局复核当前角色、目标保护和暂停信号，网关�
   expect(await vote.execute(55, "mute", 30, true)).toBe("unavailable");
   expect(await vote.reply(["原群"])).toBe(false);
   expect(writes).toEqual([55]);
+});
+
+test("管理员手动重验在超时写出前再次核对发令者权限和成员入群时间", async () => {
+  const controller = new AbortController();
+  let actorRole: "member" | "admin" = "admin";
+  let joined = 101;
+  let kicks = 0;
+  const scope = bindGroupVerificationScope({ connection: controller.signal, workflow: controller.signal,
+    botId: 99, groupId: 82, actorId: 51, accepting: () => true, isMaster: () => false, isProtected: () => false,
+    transport: { adapter: "onebot", async member(id) {
+      if (id === 99) return { role: "owner" };
+      if (id === 51) return { role: actorRole };
+      return { role: "member", joinTime: joined };
+    }, async send() { return true; } },
+    async kick() { kicks++; return "confirmed"; },
+  });
+  const subject = (await scope.prepare(54))!;
+  expect(await subject.inspect()).toMatchObject({ targetRole: "member", targetJoinTime: 101 });
+  actorRole = "member";
+  expect(await subject.kick(controller.signal, 101)).toBe("unavailable");
+  actorRole = "admin";
+  joined = 102;
+  expect(await subject.kick(controller.signal, 101)).toBe("unavailable");
+  expect(kicks).toBe(0);
 });
 
 test("双协议群管理复核名单、成员权限和各项网关回执", async () => {
@@ -1014,6 +1038,23 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await announcementReply("已将验证超时时间设置为7秒");
     expect(await readFile(legacyList, "utf8")).toBe(originalVerificationConfig.replace("\n  mode: 精确\n", "\n  mode: 模糊\n")
       .replace("\n  time: 2\n", "\n  time: 7\n"));
+
+    updateRole({ group_id: 79, user_id: operator }, true);
+    updateRole({ group_id: 79, user_id: milkyId }, true);
+    const manualVerification = milkyTitle("#重新验证", operator);
+    await webhook("message_receive", { ...manualVerification, segments: [...manualVerification.segments,
+      { type: "mention", data: { user_id: 59 } },
+    ] });
+    const manualPrompt = await promptTo(59);
+    const manualExpression = /「(\d+) ([+-]) (\d+)」/u.exec(JSON.stringify(manualPrompt.params.message));
+    expect(manualExpression).not.toBeNull();
+    const [, manualLeft, manualOp, manualRight] = manualExpression!;
+    const manualAnswer = manualOp === "+" ? Number(manualLeft) + Number(manualRight) : Number(manualLeft) - Number(manualRight);
+    const successes = milkyCalls.filter(({ action, params }) => action === "send_group_message" &&
+      JSON.stringify(params.message).includes("合成入群验证成功")).length;
+    await webhook("message_receive", milkyTitle(`答案 ${manualAnswer}`, 59));
+    await waitUntil(() => milkyCalls.filter(({ action, params }) => action === "send_group_message" &&
+      JSON.stringify(params.message).includes("合成入群验证成功")).at(successes), "Milky 管理员附真实 @ 发出的重验未通过。");
   } finally {
     socket?.close();
     host?.kill();

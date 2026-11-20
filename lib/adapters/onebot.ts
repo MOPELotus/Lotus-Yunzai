@@ -467,8 +467,20 @@ async function dispatchMessage(
       } : undefined,
     })),
     groupVerification: workflowSignal && likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
-      ? bindGroupVerificationScope(likeSession, workflowSignal, () => userId !== selfId && groupActions?.canModerateGroups?.() !== false,
-        () => isMaster(selfId, userId), active => calls.getGroupRole(send, target.group_id, userId, true, active)) : undefined,
+      ? bindGroupVerificationScope({ connection: likeSession, workflow: workflowSignal,
+        botId: selfId, groupId: target.group_id, actorId: userId,
+        accepting: () => groupActions?.canModerateGroups?.() !== false,
+        isMaster: () => isMaster(selfId, userId), isProtected: id => groupActions?.isProtectedMaster?.(selfId, id) ?? isMaster(selfId, id),
+        transport: {
+          adapter: "onebot",
+          member: (id, active) => calls.getLiveGroupMember(send, target.group_id, id, true, active),
+          async send(reply, active) {
+            const message = encodeOneBotReply(reply);
+            return message !== undefined && await calls.sendConfirmed(send, target, message, active) === "confirmed";
+          },
+        },
+        kick: (id, active) => calls.kickGroupMember(send, target.group_id, id, active),
+      }) : undefined,
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
       return calls.listMutedMembers(send, target.group_id, likeSession);

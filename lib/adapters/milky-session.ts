@@ -435,8 +435,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,
       groupVerification: workflowSignal && positiveId(groupId) && positiveId(cardOwner)
-        ? bindGroupVerificationScope(signal, workflowSignal, () => cardOwner !== account && options.canModerateGroups?.() !== false,
-          () => isMaster(cardOwner), active => memberRole(groupId, cardOwner, active)) : undefined,
+        ? bindGroupVerificationScope({ connection: signal, workflow: workflowSignal,
+          botId: account, groupId, actorId: cardOwner, accepting: () => options.canModerateGroups?.() !== false,
+          isMaster: () => isMaster(cardOwner), isProtected: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
+          transport: {
+            adapter: "milky",
+            member: (id, active) => liveGroupMember(groupId, id, active),
+            async send(reply, active) { return await sendConfirmed({ group_id: groupId }, reply, undefined, active) === "confirmed"; },
+          },
+          async kick(user_id, active) {
+            return (await call.confirmed("kick_group_member", { group_id: groupId, user_id }, active)).status;
+          },
+        }) : undefined,
       groupRuleImageDigest: positiveId(groupId) && positiveId(cardOwner)
         ? bindGroupRuleImageDigest(message.message, account, signal, options.canModerateGroups, active => memberRole(groupId, cardOwner, active))
         : undefined,

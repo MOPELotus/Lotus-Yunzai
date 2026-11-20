@@ -104,17 +104,95 @@ export interface GroupVerificationScope {
   readonly connection: AbortSignal;
   readonly signal: AbortSignal;
   canConfigure(): Promise<boolean>;
+  prepare(target: number): Promise<GroupVerificationSubject | undefined>;
+}
+
+interface GroupVerificationTransport {
+  readonly adapter: "onebot" | "milky";
+  member(user: number, signal: AbortSignal): Promise<LiveGroupMember | undefined>;
+  send(reply: MessageReply, signal: AbortSignal): Promise<boolean>;
+}
+
+interface GroupVerificationSubject {
+  readonly adapter: GroupVerificationTransport["adapter"];
+  readonly botId: number;
+  readonly groupId: number;
+  readonly userId: number;
+  readonly time: number;
+  readonly inviterId?: number;
+  readonly connection: AbortSignal;
+  readonly signal: AbortSignal;
+  inspect(): Promise<{ readonly botRole: Role; readonly targetRole: Role; readonly targetJoinTime?: number;
+    readonly inviterRole?: Role; readonly protectedTarget: boolean } | undefined>;
+  reply(parts: MessageReply): Promise<boolean>;
+  kick(signal: AbortSignal, expectedJoinTime?: number): Promise<GroupModerationResult | "unavailable" | "protected">;
 }
 
 async function groupOwnerCanConfigure(active: () => boolean, isMaster: () => boolean, role: () => Promise<Role | undefined>) {
   return active() && isMaster() && !!await role().catch(() => undefined) && active() && isMaster();
 }
 
-export function bindGroupVerificationScope(connection: AbortSignal, workflow: AbortSignal, accepting: () => boolean,
-  isMaster: () => boolean, role: (signal: AbortSignal) => Promise<Role | undefined>): GroupVerificationScope {
+export function bindGroupVerificationScope({ connection, workflow, accepting, isMaster, isProtected, transport, botId, groupId,
+  actorId, kick }: {
+  connection: AbortSignal;
+  workflow: AbortSignal;
+  accepting: () => boolean;
+  isMaster: () => boolean;
+  isProtected: (user: number) => boolean;
+  transport: GroupVerificationTransport;
+  botId: number;
+  groupId: number;
+  actorId: number;
+  kick: (user: number, signal: AbortSignal) => Promise<GroupModerationResult>;
+}): GroupVerificationScope {
   const signal = AbortSignal.any([connection, workflow]);
-  const active = () => !signal.aborted && accepting();
-  return { connection, signal, canConfigure: () => groupOwnerCanConfigure(active, isMaster, () => role(signal)) };
+  const active = () => !signal.aborted && actorId !== botId && accepting();
+  return { connection, signal,
+    canConfigure: () => groupOwnerCanConfigure(active, isMaster, async () => (await transport.member(actorId, signal))?.role),
+    async prepare(userId) {
+      if (!active() || !Number.isSafeInteger(userId) || userId <= 0 || userId === botId) return;
+      return bindGroupVerificationSubject({ botId, groupId, userId, time: Math.floor(Date.now() / 1000), connection, signal, active,
+        isProtected: () => isProtected(userId), transport, actor: { id: actorId, isMaster }, kick: running => kick(userId, running) });
+    },
+  };
+}
+
+export function bindGroupVerificationSubject({ botId, groupId, userId, time, inviterId, connection, signal, active, isProtected,
+  transport, actor, kick }: {
+  botId: number; groupId: number; userId: number; time: number; inviterId?: number;
+  connection: AbortSignal; signal: AbortSignal; active: () => boolean; isProtected: () => boolean;
+  transport: GroupVerificationTransport;
+  actor?: { id: number; isMaster: () => boolean };
+  kick: (signal: AbortSignal) => Promise<GroupModerationResult>;
+}): GroupVerificationSubject {
+  async function readRoles(running: AbortSignal, readInviter = false) {
+    if (!active() || running.aborted) return;
+    const [bot, member, inviter, issuer] = await Promise.all([transport.member(botId, running), transport.member(userId, running),
+      readInviter && inviterId && inviterId !== userId ? transport.member(inviterId, running) : undefined,
+      actor && transport.member(actor.id, running)]);
+    if (!active() || running.aborted || !bot || !member ||
+        (actor && (!issuer || (issuer.role === "member" && !actor.isMaster())))) return;
+    return { bot, member, inviter };
+  }
+
+  return {
+    adapter: transport.adapter, botId, groupId, userId, time, inviterId, connection, signal,
+    async inspect() {
+      const roles = await readRoles(signal, true);
+      if (roles) return { botRole: roles.bot.role, targetRole: roles.member.role, targetJoinTime: roles.member.joinTime,
+        inviterRole: roles.inviter?.role, protectedTarget: isProtected() };
+    },
+    async reply(parts) { return active() && await transport.send(parts, signal) && active(); },
+    async kick(request, expectedJoinTime) {
+      const running = AbortSignal.any([request, signal]);
+      const roles = await readRoles(running);
+      if (!roles || roles.bot.role === "member" || (expectedJoinTime !== undefined && roles.member.joinTime !== expectedJoinTime)) {
+        return "unavailable";
+      }
+      if (isProtected() || roles.member.role !== "member") return "protected";
+      return kick(running);
+    },
+  };
 }
 
 type GroupVoteReply = readonly (string | { readonly type: "at"; readonly qq: number })[];
@@ -485,11 +563,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
 interface GroupModerationSession {
   readonly signal: AbortSignal;
   readonly joinRequestOrigin?: JoinRequestOrigin;
-  readonly groupVerification?: {
-    readonly adapter: "onebot" | "milky";
-    member(user: number, signal: AbortSignal): Promise<LiveGroupMember | undefined>;
-    send(reply: MessageReply, signal: AbortSignal): Promise<boolean>;
-  };
+  readonly groupVerification?: GroupVerificationTransport;
   readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
   readonly memberMessage?: {
