@@ -12,6 +12,7 @@ const role = { uid: "100000042", region: "cn_gf01" };
 const codes = ["CODEABC", "星际列车", "CODEDEF"];
 const activity = { game: "gs", status: "available", actId: "e202610010000", version: "7.2",
   expiry: { ms: stamp + 10 * 60_000 }, codes: codes.map(code => ({ code })) };
+const withoutExpiry = { ...activity, startAt: stamp, expiry: null };
 const confirmed = { status: "succeeded" } as const;
 const key = (accountId: string, uid: string) => createHash("sha256")
   .update(JSON.stringify([accountId, "gs", "7.2", uid])).digest("hex");
@@ -163,7 +164,7 @@ test("进程在首个请求期间被杀，重启保留 started 并跳过同一�
   });
 });
 
-test("只处理当期已发布且明确未到期的完整兑换码，拒绝重复、错误游戏和含歧义角色", async () => {
+test("只处理当期已发布的完整兑换码，拒绝错误有效期、重复、错误游戏和歧义角色", async () => {
   await fixture(async paths => {
     let lookups = 0, profiles = 0, posted = 0;
     let preview: unknown;
@@ -172,17 +173,80 @@ test("只处理当期已发布且明确未到期的完整兑换码，拒绝重�
       async readRoles() { profiles++; return { accountId: "121", selectedUid: "",
         roles: [role, { ...role, uid: "100000043" }], async submit() { posted++; return confirmed; } }; },
     };
-    for (const value of [{ ...activity, codes: activity.codes.slice(0, 2) }, { ...activity, game: "sr" },
+    const rejected = [{ ...activity, codes: activity.codes.slice(0, 2) }, { ...activity, game: "sr" },
       { ...activity, expiry: { ms: stamp } }, { ...activity, status: "unreleased" },
       { ...activity, startAt: stamp + 60_000 },
-      { ...activity, codes: ["DUP", "dup", "other"].map(code => ({ code })) }, activity]) {
+      { ...activity, codes: ["DUP", "dup", "other"].map(code => ({ code })) },
+      { ...withoutExpiry, codes: withoutExpiry.codes.slice(0, 2) }, { ...withoutExpiry, status: "unreleased" },
+      { ...withoutExpiry, status: "expired" }, { ...withoutExpiry, startAt: stamp + 1 },
+      { ...withoutExpiry, startAt: undefined }, { ...withoutExpiry, startAt: 0 }, { ...withoutExpiry, startAt: String(stamp) },
+      { ...withoutExpiry, expiry: undefined }, { ...withoutExpiry, expiry: {} },
+      { ...withoutExpiry, expiry: { ms: NaN } }, { ...withoutExpiry, expiry: { ms: String(stamp + 30_000) } },
+    ];
+    for (const value of [...rejected, activity]) {
       preview = value;
       await createPreviewRedeemRunner(options).scan();
     }
-    expect(lookups).toBe(7);
+    expect(lookups).toBe(rejected.length + 1);
     expect(profiles).toBe(1);
     expect(posted).toBe(0);
   });
+});
+
+test("官宣已开播且官方发齐后，无明确截止也按旧账本键提交完整批次一次", async () => {
+  await fixture(async paths => {
+    const mailed: string[] = [];
+    const posted: string[] = [];
+    const options = { ...paths, now: () => stamp, lookup: async () => withoutExpiry,
+      listProfiles: async () => [profile],
+      async readRoles() { return { accountId: "143", selectedUid: role.uid, roles: [role],
+        async submit(code: string, actual: typeof role, request?: AbortSignal) {
+          expect(actual).toEqual(role);
+          expect(request?.aborted).toBe(false);
+          const saved = JSON.parse(await readFile(paths.journal, "utf8"));
+          expect(saved[key("143", role.uid)]).toEqual({ time: stamp, status: "started" });
+          posted.push(code);
+          return confirmed;
+        },
+        async notify(reply: string) { mailed.push(reply); },
+      }; },
+    };
+    await createPreviewRedeemRunner(options).scan();
+    await createPreviewRedeemRunner(options).scan();
+    expect(posted).toEqual(codes);
+    expect(mailed).toHaveLength(1);
+    expect(mailed[0]).toContain("CODEDEF：使用成功");
+    const saved = JSON.parse(await readFile(paths.journal, "utf8"));
+    expect(saved[key("143", role.uid)]).toEqual({ time: stamp, status: "finished" });
+  });
+});
+
+test("无明确截止的活动也会在提交结果未知或任务取消时停止，并保留账本去重", async () => {
+  for (const abort of [false, true]) {
+    await fixture(async paths => {
+      const controller = new AbortController();
+      let sent = 0;
+      let requestAborted = false;
+      const options = { ...paths, now: () => stamp, lookup: async () => withoutExpiry, listProfiles: async () => [profile],
+        async readRoles() { return { accountId: "144", selectedUid: role.uid, roles: [role],
+          async submit(_code: string, _role: typeof role, request?: AbortSignal) {
+            sent++;
+            if (abort) {
+              controller.abort();
+              requestAborted = request?.aborted === true;
+            }
+            return { status: "unknown" } as const;
+          },
+        }; },
+      };
+      await createPreviewRedeemRunner(options).scan(controller.signal);
+      await createPreviewRedeemRunner(options).scan();
+      expect(sent).toBe(1);
+      expect(requestAborted).toBe(abort);
+      const saved = JSON.parse(await readFile(paths.journal, "utf8"));
+      expect(saved[key("144", role.uid)]).toEqual({ time: stamp, status: abort ? "started" : "finished" });
+    });
+  }
 });
 
 test("选择同档国服角色，明确失败可继续，活动到期后停止剩余请求", async () => {

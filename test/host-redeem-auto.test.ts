@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
-test("旧注册在实际宿主续期同档案，首次提交前记账，明确风控停止本批", async () => {
+test.each([
+  { label: "官方注明截止时间", template: { codeTipText: "兑换码将于2032年4月15日12:00:00过期。" } },
+  { label: "官方未注明截止时间", template: {} },
+])("$label 时续期同档案，首次提交前记账，明确风控停止本批", async ({ template }) => {
   const root = await mkdtemp(join(tmpdir(), "lotus-redeem-auto-"));
   const botToken = "fixture-redeem-onebot";
   const original = "profile: {id: 1}\naccount: {stuid: '72', cookie: 'account_id=72;cookie_token=other;'}\n";
@@ -51,7 +54,7 @@ test("旧注册在实际宿主续期同档案，首次提交前记账，明确�
           case "/post/wapi/searchPosts": return reply({posts:[]});
           case "/event/miyolive/index":
             return reply({streamer:{aid:"75276539"},live:{title:"原神7.2前瞻",start:"2032-04-14 19:00:00",remain:0,code_ver:"fixture"},
-              template:{codeTipText:"兑换码将于2032年4月15日12:00:00过期。"}});
+              template:${JSON.stringify(template)}});
           case "/event/miyolive/refreshCode": return reply({code_list:codes.map(code=>({code,to_get_time:0}))});
           case "/binding/api/getUserGameRolesByCookie":
             appendFileSync("fixture-calls", "roles\\n");

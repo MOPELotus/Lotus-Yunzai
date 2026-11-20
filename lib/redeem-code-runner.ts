@@ -52,6 +52,7 @@ interface Options {
 
 const maxQuietLookup = 60 * 60_000;
 const expiryBackoff = 30 * 60_000;
+const submissionTimeout = 20_000;
 const identity = /^\d{1,20}$/u;
 const codePattern = /^[\p{L}\p{N}_-]{1,64}$/u;
 type Journal = Record<string, unknown>;
@@ -60,14 +61,21 @@ function record(value: unknown): Journal | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Journal : undefined;
 }
 
+function isExpired(expiry: number | null, now: number) {
+  return expiry !== null && now >= expiry;
+}
+
 function batch(result: unknown, game: PreviewGame, now: number) {
   const row = record(result);
-  const expiry = record(row?.expiry)?.ms;
   if (!row || row.status !== "available" || row.game !== game || typeof row.version !== "string" ||
     !/^\d+\.\d+$/u.test(row.version) || typeof row.actId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/u.test(row.actId) ||
     (typeof row.startAt === "number" && row.startAt > now) ||
-    typeof expiry !== "number" || !Number.isSafeInteger(expiry) || expiry <= now ||
     !Array.isArray(row.codes) || row.codes.length < redeemGames[game].count) return;
+  const expiry = row.expiry === null ? null : record(row.expiry)?.ms;
+  if (expiry === null) {
+    // Without an official deadline, require a valid broadcast start from the provider.
+    if (typeof row.startAt !== "number" || !Number.isSafeInteger(row.startAt) || row.startAt <= 0) return;
+  } else if (typeof expiry !== "number" || !Number.isSafeInteger(expiry) || isExpired(expiry, now)) return;
   const codes: string[] = [];
   const seen = new Set<string>();
   for (const item of row.codes) {
@@ -184,20 +192,20 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
   let running: Promise<void> | undefined;
 
   async function redeem(profile: PreviewProfile, game: PreviewGame, current: NonNullable<ReturnType<typeof batch>>, signal?: AbortSignal) {
-    if (signal?.aborted || now() >= current.expiry) return;
+    if (signal?.aborted || isExpired(current.expiry, now())) return;
     const access = await readRoles(profile, game, signal);
     if (!access || typeof access.accountId !== "string" || !identity.test(access.accountId)) return;
     const role = selectRole(access, game);
     if (!role) return;
     const keys = legacyBatchKeys(access.accountId, game, current.version, role.uid, Boolean(access.selectedUid));
     const time = now();
-    if (signal?.aborted || time >= current.expiry || !await store.claim(keys, time, profile)) return;
+    if (signal?.aborted || isExpired(current.expiry, time) || !await store.claim(keys, time, profile)) return;
 
     const lines: string[] = [];
     let stopped = false;
     for (const code of current.codes) {
       if (signal?.aborted) return;
-      const remaining = current.expiry - now();
+      const remaining = current.expiry === null ? submissionTimeout : current.expiry - now();
       if (stopped || remaining <= 0) {
         lines.push(`${code}：未提交`);
         continue;
@@ -240,7 +248,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
         const current = batch(value, game, checked);
         if (!current) continue;
         for (const profile of subscribers) {
-          if (signal?.aborted || now() >= current.expiry) break;
+          if (signal?.aborted || isExpired(current.expiry, now())) break;
           try { await redeem(profile, game, current, signal); }
           catch { if (!signal?.aborted) onError?.(); }
         }
