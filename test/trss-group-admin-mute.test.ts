@@ -1659,26 +1659,33 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const noticeFile = join(legacyDirectory, "notice.yaml");
     const originalSettings = "# 原通知设置\ndefault: { groupRecall: true, msgSaveDeltime: 600 } # 保留\n";
     await writeFile(noticeFile, originalSettings);
-    client.send(JSON.stringify(oneBotPrivate("#椰奶通知设置好友消息开启")));
+    const oldSettingsStart = { oneBot: oneBotReplies().length, milky: milkyCalls.length };
+    client.send(JSON.stringify(oneBotPrivate("#椰奶通知设置好友消息bot单独开启")));
+    await webhook("message_receive", milkyPrivate("#椰奶启用全部通知"));
+    await Bun.sleep(100);
+    expect(oneBotReplies()).toHaveLength(oldSettingsStart.oneBot);
+    expect(milkyCalls.slice(oldSettingsStart.milky).some(({ action }) => action === "send_private_message")).toBe(false);
+    expect(await readFile(noticeFile, "utf8")).toBe(originalSettings);
+    client.send(JSON.stringify(oneBotPrivate("#通知设置好友消息开启")));
     await ownerReplyWith("当前会话没有修改此通知设置的权限");
     expect(await readFile(noticeFile, "utf8")).toBe(originalSettings);
 
-    client.send(JSON.stringify(oneBotPrivate("#椰奶通知设置好友消息bot单独开启")));
+    client.send(JSON.stringify(oneBotPrivate("#通知设置好友消息bot单独开启")));
     const oneBotSettings = await ownerReplyWith("好友消息：开启");
     expect(JSON.stringify(oneBotSettings.params.message)).toContain("已保存通知设置");
     expect(await readFile(noticeFile, "utf8")).toContain(originalSettings);
 
-    await webhook("message_receive", milkyPrivate("#椰奶通知设置"));
+    await webhook("message_receive", milkyPrivate("#通知设置"));
     const milkySettings = await milkyOwnerReply(operator, "好友消息：关闭");
     expect(JSON.stringify(milkySettings.params.message)).toContain("删除缓存时间：600 秒");
-    await webhook("message_receive", milkyTitle("#椰奶通知设置群撤回bot群单独关闭", operator));
+    await webhook("message_receive", milkyTitle("#通知设置群撤回bot群单独关闭", operator));
     await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" && params.group_id === 79 &&
       JSON.stringify(params.message).includes("群撤回：关闭")), "Milky 当前群未回读自己的通知覆盖。");
     const savedSettings = await readFile(noticeFile, "utf8");
     expect(Bun.YAML.parse(savedSettings)).toMatchObject({ default: { groupRecall: true }, "bot:99": { privateMessage: true },
       "bot:100:79": { groupRecall: false } });
     const previousSettingsReplies = oneBotReplies().filter(({ params }) => params.group_id === 89).length;
-    send(oneBotMessage("#椰奶通知设置", 52, 89));
+    send(oneBotMessage("#通知设置", 52, 89));
     await Bun.sleep(100);
     expect(oneBotReplies().filter(({ params }) => params.group_id === 89)).toHaveLength(previousSettingsReplies);
     expect(await readFile(noticeFile, "utf8")).toBe(savedSettings);
@@ -1924,7 +1931,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
 
     const beforeBulkConfig = await readFile(noticeFile, "utf8");
     const previousOwnerReplies = oneBotReplies().length;
-    client.send(JSON.stringify(oneBotPrivate("#椰奶禁用全部通知")));
+    client.send(JSON.stringify(oneBotPrivate("#禁用全部通知")));
     await waitUntil(() => oneBotReplies().slice(previousOwnerReplies).find(({ params }) => params.user_id === 52 &&
       JSON.stringify(params.message).includes("当前会话没有修改此通知设置的权限")), "仅当前机器人主人不可关闭其他账号的默认通知。");
     expect(await readFile(noticeFile, "utf8")).toBe(beforeBulkConfig);

@@ -1659,7 +1659,7 @@ if (import.meta.main) {
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
       return;
     }
-    if (/^#椰奶(?:通知设置|(?:启用|禁用)全部通知$)/u.test(command.msg)) {
+    if (/^#(?:通知设置|(?:启用|禁用)全部通知$)/u.test(command.msg)) {
       if (!allowed(noticeSettingsNames)) return;
       const session = event[delegationSession]?.signal;
       const userId = event.user_id;
