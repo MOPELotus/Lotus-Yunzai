@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,9 +7,49 @@ import { checkinScheduleClock, generateCheckinSchedulePlan } from "../lib/checki
 import { createCheckinScheduleRuntime } from "../lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 
+function observePlanWrites(directory: string) {
+  const underlying = createCheckinScheduleStore(directory);
+  let observed: { day: string; committed: PromiseWithResolvers<void> } | undefined;
+  const store: typeof underlying = {
+    ...underlying,
+    async update(day, change) {
+      const watching = observed?.day === day ? observed : undefined;
+      let writesPlan = false;
+      try {
+        const result = await underlying.update(day, async previous => {
+          const update = await change(previous);
+          writesPlan = update.plan !== undefined;
+          return update;
+        });
+        if (watching && observed === watching && writesPlan) {
+          observed = undefined;
+          watching.committed.resolve();
+        }
+        return result;
+      } catch (error) {
+        if (watching && observed === watching) {
+          observed = undefined;
+          watching.committed.reject(error);
+        }
+        throw error;
+      }
+    },
+  };
+  return {
+    store,
+    nextCommit(day: string) {
+      // Job.invoke() starts the async callback without waiting for the plan write.
+      const committed = Promise.withResolvers<void>();
+      void committed.promise.catch(() => undefined);
+      observed = { day, committed };
+      return committed.promise;
+    },
+  };
+}
+
 test("旧七段 cron 以中国时区执行，注册时只补计划而不提前跑定制时间", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-clock-"));
-  const store = createCheckinScheduleStore(directory);
+  const { store, nextCommit } = observePlanWrites(directory);
   const { tomorrow, time, date } = checkinScheduleClock();
   const hour = (Number(time.slice(0, 2)) + 1) % 24;
   const active = { qq: "10001", profileId: 2, enabled: true };
@@ -24,6 +64,7 @@ test("旧七段 cron 以中国时区执行，注册时只补计划而不提前�
   });
   const keys = () => Object.keys(scheduledJobs)
     .filter(name => !known.has(name) && name.startsWith("lotus-checkin-"));
+  const committed = nextCommit(tomorrow);
   try {
     runtime.start();
     expect(keys()).toHaveLength(4);
@@ -33,7 +74,7 @@ test("旧七段 cron 以中国时区执行，注册时只补计划而不提前�
     const next = checkinScheduleClock(new Date(String(dateOfNextRun)));
     expect(next.time).toBe(`${String(hour).padStart(2, "0")}:17`);
     await runtime.addRegisteredProfile(active);
-    for (let attempt = 0; attempt < 50 && !await store.read(tomorrow); attempt++) await Bun.sleep(10);
+    await committed;
     expect((await store.read(tomorrow))?.entries).toMatchObject([{ qq: "10001", profileId: 2, time: "00:00" }]);
     expect(await store.read(date)).toBeUndefined();
     expect(runs).toBe(0);
@@ -79,17 +120,9 @@ test("主人手动生成计划可在关闭自动签到时确认通知，自动�
   }
 });
 
-async function until(check: () => Promise<boolean>) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  expect(await check()).toBe(true);
-}
-
 test("固定生成时刻不被启动、补偿或补登提前，热换只替换明日生成任务", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-hot-cron-"));
-  const store = createCheckinScheduleStore(directory);
+  const { store, nextCommit } = observePlanWrites(directory);
   const signal = new AbortController();
   const known = new Set(Object.keys(scheduledJobs));
   const active = { qq: "10001", profileId: 2, enabled: true };
@@ -130,17 +163,29 @@ test("固定生成时刻不被启动、补偿或补登提前，热换只替换�
     expect(enumerated).toBe(0);
 
     clock = Date.parse("2026-11-19T08:02:00+08:00");
+    const catchUpCommit = nextCommit(tomorrow);
     catchUp.invoke();
-    await until(async () => (await store.read(tomorrow))?.entries[0]?.time === "04:45");
+    await catchUpCommit;
     const previousPlan = await store.read(tomorrow);
+    expect(previousPlan?.entries[0]?.time).toBe("04:45");
     runtime.updateConfig({ ...update, fixed_time: "05:05" });
     expect(job("明日计划")).toBe(current);
-    catchUp.invoke();
-    await Bun.sleep(20);
+    const read = spyOn(store, "read");
+    try {
+      catchUp.invoke();
+      expect(read).toHaveBeenCalledWith(tomorrow);
+      await read.mock.results[0]?.value;
+    } finally {
+      read.mockRestore();
+    }
+    expect(enumerated).toBe(1);
     expect(await store.read(tomorrow)).toEqual(previousPlan);
+    const scheduledCommit = nextCommit(tomorrow);
     current.invoke();
-    await until(async () => (await store.read(tomorrow))?.entries[0]?.time === "05:05");
-    expect((await store.read(tomorrow))?.generatedAt).toBe(previousPlan?.generatedAt);
+    await scheduledCommit;
+    const currentPlan = await store.read(tomorrow);
+    expect(currentPlan?.entries[0]?.time).toBe("05:05");
+    expect(currentPlan?.generatedAt).toBe(previousPlan?.generatedAt);
   } finally {
     signal.abort();
     await runtime.stop();
@@ -192,7 +237,7 @@ test("今日运行期间保留已捕获的配置，后续对账使用新配置�
 
 test("复杂 cron 仍交给中国时区 Job，自动补偿不猜测应触发的日期", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-hot-arbitrary-"));
-  const store = createCheckinScheduleStore(directory);
+  const { store, nextCommit } = observePlanWrites(directory);
   const signal = new AbortController();
   const clock = Date.parse("2026-11-19T08:00:00+08:00");
   const { tomorrow } = checkinScheduleClock(clock);
@@ -217,9 +262,11 @@ test("复杂 cron 仍交给中国时区 Job，自动补偿不猜测应触发的�
     expect(calls).toBe(0);
     expect(await store.read(tomorrow)).toBeUndefined();
 
+    const committed = nextCommit(tomorrow);
     planned.invoke();
-    await until(async () => (await store.read(tomorrow))?.entries[0]?.qq === "10001");
+    await committed;
     expect(calls).toBe(1);
+    expect((await store.read(tomorrow))?.entries).toMatchObject([{ qq: "10001", profileId: 2 }]);
   } finally {
     signal.abort();
     await runtime.stop();
@@ -240,6 +287,7 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
   const accountKey = "a".repeat(64);
   const ready = { forums: ["6"], attempts: 2, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true } as const;
   const calls: string[] = [];
+  const completed = Promise.withResolvers<string>();
   const runtime = createCheckinScheduleRuntime({
     store, config, signal: signal.signal, now: () => at,
     listProfiles: async () => profiles,
@@ -249,6 +297,7 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
       expect(context.communityRetryForums).toEqual(["6"]);
       return { status: "complete", ok: true, stage: "checkin" };
     },
+    onComplete(entry) { completed.resolve(entry.qq); },
   });
   try {
     await store.update(date, () => ({
@@ -259,9 +308,11 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
     const final = Object.entries(scheduledJobs).find(([name]) => !known.has(name) && name.includes("社区补跑"))?.[1]!;
     expect(["23:50", "23:59"]).toContain(checkinScheduleClock(new Date(String(final.nextInvocation()))).time);
     final.invoke();
-    await until(async () => (await store.read(date))?.entries.some(entry => entry.qq === "10001" && entry.done) === true);
+    expect(await completed.promise).toBe("10001");
     expect(calls).toEqual(["10001"]);
-    expect((await store.read(date))?.entries.find(entry => entry.qq === "10002")?.done).toBe(false);
+    expect((await store.read(date))?.entries).toMatchObject([
+      { qq: "10001", done: true }, { qq: "10002", done: false },
+    ]);
   } finally {
     signal.abort();
     await runtime.stop();
