@@ -1535,6 +1535,24 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       JSON.stringify(params.message).includes("合成新增好友昵称"))).toHaveLength(1);
     expect(oneBotReplies().some(({ params }) => params.user_id === 52 &&
       /好友账号：48|好友减少/u.test(JSON.stringify(params.message)))).toBe(false);
+
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { privateMessage: true }\n');
+    const oneBotPoke = { post_type: "notice", notice_type: "notify", sub_type: "poke", self_id: oneBotId,
+      target_id: oneBotId, user_id: 42, operator_id: 42, time: 1_700_000_010,
+    };
+    client.send(JSON.stringify(oneBotPoke));
+    client.send(JSON.stringify(oneBotPoke));
+    client.send(JSON.stringify({ ...oneBotPoke, user_id: 47, operator_id: 47 }));
+    const pokeNotice = JSON.stringify((await ownerReplyWith("[消息(99) - 戳一戳]")).params.message);
+    expect(pokeNotice).toContain("来源账号：42");
+    expect(pokeNotice).not.toContain("回复");
+    await webhook("friend_nudge", { user_id: 42, is_self_send: true, is_self_receive: false });
+    await webhook("friend_nudge", { user_id: 43, is_self_send: false, is_self_receive: true });
+    const milkyPoke = JSON.stringify((await milkyOwnerReply(operator, "[消息(100) - 戳一戳]")).params.message);
+    expect(milkyPoke).toContain("来源账号：43");
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("[消息(99) - 戳一戳]")))
+      .toHaveLength(1);
+    expect(milkyCalls.filter(({ action }) => action === "send_friend_nudge")).toHaveLength(0);
   } finally {
     socket?.close();
     host?.kill();

@@ -138,7 +138,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         });
       }
     } else if (event.post_type === "notice" && event.notice_type === "friend") {
-      event = { ...event, isMaster: isMaster(event.user_id) };
+      const userId = event.user_id;
+      event = { ...event, adapter: "milky", isMaster: isMaster(userId), [friendMessageNoticeSession]: {
+        signal,
+        async notifyOwners(reply, workflow) {
+          const active = AbortSignal.any([signal, workflow]);
+          const friends = await listCurrentFriends(active);
+          return friends?.has(userId) ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+        },
+      } };
     }
     await dispatch(event);
   }

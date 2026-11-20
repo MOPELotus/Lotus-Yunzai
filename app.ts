@@ -72,7 +72,7 @@ import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-en
 import { appendBlackUser } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import { setImagePreviews, type BotEvent, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
+import { setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -113,7 +113,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { FriendMessageNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
+import type { FriendMessageNotice, FriendPokeNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
   TemporaryMessageNotice } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
@@ -140,6 +140,7 @@ const friendRequestNoticeNames = ["[group] 好友申请通知", "group", "@lotus
 const friendMessageNoticeNames = ["[group] 好友消息通知", "group", "@lotus-yunzai/group"];
 const temporaryMessageNoticeNames = ["[group] 群临时消息通知", "group", "@lotus-yunzai/group"];
 const friendRelationshipNoticeNames = ["[group] 好友增减通知", "group", "@lotus-yunzai/group"];
+const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
 function isPrivateCredentialMessage(text: string): boolean {
@@ -302,6 +303,7 @@ if (import.meta.main) {
   let friendMessageNotice: { policy: FriendMessageNotice; signal: AbortSignal } | undefined;
   let temporaryMessageNotice: { policy: TemporaryMessageNotice; signal: AbortSignal } | undefined;
   let friendRelationshipNotice: { policy: FriendRelationshipNotice; signal: AbortSignal } | undefined;
+  let friendPokeNotice: { policy: FriendPokeNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   const notifiedPrivateMessages = new Set<string>();
   const pendingPrivateNotices = new Set<string>();
@@ -921,7 +923,15 @@ if (import.meta.main) {
     if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "increase") {
       await handleGroupVerificationNotice(event);
     }
-    if (event.post_type === "notice" && event.notice_type === "friend" && await privateAccess.blockedPoke(event)) return;
+    if (event.post_type === "notice" && event.notice_type === "friend") {
+      const transport = event[friendMessageNoticeSession];
+      if (friendPokeNotice && transport) {
+        const notice = forwardFriendPoke(event, transport).catch(() => {});
+        pending.add(notice);
+        void notice.then(() => pending.delete(notice));
+      }
+      if (await privateAccess.blockedPoke(event)) return;
+    }
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "invite") {
       await dispatchGroupInvitation(event, allowed);
@@ -1073,6 +1083,20 @@ if (import.meta.main) {
       if (!reply || signal.aborted) return;
       mark();
       await notice.notifyOwners(reply, signal);
+    });
+  }
+
+  async function forwardFriendPoke(event: FriendPoke, transport: FriendMessageNoticeSession) {
+    const registration = friendPokeNotice;
+    const { self_id: botId, user_id: userId, time } = event;
+    if (!registration || time === undefined || !masterPermissions.masterIds(botId).length || !groupDispatch.allows(event, friendPokeNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, transport.signal);
+    if (signal.aborted) return;
+    await deliverPrivateNoticeOnce(`poke:${event.adapter ?? "onebot"}:${botId}:${userId}:${time}`, async mark => {
+      const reply = await registration.policy({ botId, userId }, signal);
+      if (!reply || signal.aborted) return;
+      mark();
+      await transport.notifyOwners(reply, signal);
     });
   }
 
@@ -2035,6 +2059,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (friendRelationshipNotice === registration) friendRelationshipNotice = undefined;
+          };
+        },
+        registerFriendPokeNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          friendPokeNotice = registration;
+          return () => {
+            session.abort();
+            if (friendPokeNotice === registration) friendPokeNotice = undefined;
           };
         },
         registerGroupVerification(policy) {

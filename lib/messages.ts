@@ -230,10 +230,13 @@ export interface FriendPoke {
   readonly post_type: "notice";
   readonly notice_type: "friend";
   readonly sub_type: "poke";
+  readonly adapter?: "milky";
   readonly self_id: number;
   readonly user_id: number;
   readonly operator_id: number;
   readonly target_id: number;
+  readonly time?: number;
+  readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly isGroup: false;
   readonly isPrivate: true;
   readonly isMaster: boolean;

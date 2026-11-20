@@ -343,15 +343,29 @@ async function dispatchFriendPoke(
   dispatch: (event: FriendPoke) => Promise<void>,
   send: Send,
   event: Record<string, unknown>,
-  isMaster: (bot: number, user: number) => boolean,
+  connection: ConnectionData,
+  permissions: { isMaster: (bot: number, user: number) => boolean; masterIds: (bot: number) => readonly number[] },
 ): Promise<void> {
-  const { self_id, target_id } = event;
+  const { self_id, target_id, time } = event;
   const user_id = event.user_id ?? event.operator_id;
   if (!isId(self_id) || target_id !== self_id || !isId(user_id) || user_id === self_id) return;
+  const signal = groupActionSignal(connection, self_id);
   await dispatch({
     post_type: "notice", notice_type: "friend", sub_type: "poke",
     self_id, user_id, operator_id: user_id, target_id,
-    isGroup: false, isPrivate: true, isMaster: isMaster(self_id, user_id),
+    time: isId(time) ? time : undefined,
+    [friendMessageNoticeSession]: signal ? {
+      signal,
+      async notifyOwners(reply, workflow) {
+        const active = AbortSignal.any([signal, workflow]);
+        const profiles = await connection.calls.listFriendProfiles(send, active).catch(() => []);
+        const peers = new Set(profiles.map(profile => String(profile.user_id)));
+        if (!peers.has(String(user_id))) return 0;
+        const owners = permissions.masterIds(self_id).filter(id => peers.has(String(id)) && permissions.isMaster(self_id, id));
+        return notifyOwnerReplies(connection.calls, send, self_id, owners, reply, active);
+      },
+    } : undefined,
+    isGroup: false, isPrivate: true, isMaster: permissions.isMaster(self_id, user_id),
     reply(reply) {
       const message = encodeOneBotReply(reply);
       return message !== undefined && send({
@@ -914,7 +928,7 @@ export function startOneBot(
                 message: [{ type: "file", data: message.file }],
               }, calls, options.isMaster, undefined, attachment);
             } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
-              await dispatchFriendPoke(dispatch, send, message, options.isMaster);
+              await dispatchFriendPoke(dispatch, send, message, socket.data, options);
             } else {
               await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, socket.data);
             }

@@ -25,6 +25,7 @@ export function milkyNotice(
     return {
       post_type: "notice", notice_type: "friend", sub_type: "poke",
       self_id: selfId, user_id, operator_id: user_id, target_id: selfId,
+      time: isId(time) ? time : undefined,
       isGroup: false, isPrivate: true, isMaster: false,
       reply: (reply) => sendReply({ user_id }, reply),
     };
