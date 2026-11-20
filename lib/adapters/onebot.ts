@@ -382,6 +382,7 @@ async function dispatchMessage(
     (messageType === "group" || event.sub_type === "friend")
     ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
   const joinReview = groupActions?.joinReview;
+  const voteSignal = likeSession ? groupActions?.groupVoteSignal?.() : undefined;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -424,9 +425,9 @@ async function dispatchMessage(
       isMaster: () => isMaster(selfId, userId),
       isProtected: id => (groupActions?.isProtectedMaster ?? isMaster)(selfId, id),
       role: id => calls.getGroupRole(send, target.group_id, id, true, likeSession),
-      mute: (id, seconds) => calls.setGroupMute(send, target.group_id, id, seconds, likeSession),
+      mute: (id, seconds, active = likeSession) => calls.setGroupMute(send, target.group_id, id, seconds, active),
       wholeMute: enabled => calls.setGroupWholeMute(send, target.group_id, enabled, likeSession),
-      kick: (id, block) => calls.kickGroupMember(send, target.group_id, id, likeSession, block),
+      kick: (id, block, active = likeSession) => calls.kickGroupMember(send, target.group_id, id, active, block),
       title: (id, text) => calls.setGroupSpecialTitle(send, target.group_id, id, text, likeSession),
       setAdmin: (id, enabled) => calls.setGroupAdmin(send, target.group_id, id, enabled, likeSession),
       essence: lookupReply && quotedId !== undefined ? {
@@ -448,6 +449,13 @@ async function dispatchMessage(
         remove: id => calls.deleteGroupAnnouncement(send, target.group_id, id, likeSession),
         confirmRemovalByList: true,
       },
+      vote: voteSignal ? {
+        signal: voteSignal,
+        async reply(parts, quote, active) {
+          const message = encodeOneBotReply(parts, quote ? messageId : undefined);
+          return message !== undefined && await calls.sendConfirmed(send, target, message, active) === "confirmed";
+        },
+      } : undefined,
     })),
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;

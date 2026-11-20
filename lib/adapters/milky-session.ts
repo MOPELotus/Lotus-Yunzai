@@ -148,12 +148,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return result.status === "confirmed";
   }
 
-  async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<CheckinNotifyDelivery> {
+  async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply, quoted?: number,
+    active = signal): Promise<CheckinNotifyDelivery> {
     const group = "group_id" in target;
-    if (signal.aborted || !positiveId(group ? target.group_id : target.user_id)) return "rejected";
-    const message = encodeMilkyReply(reply);
+    if (signal.aborted || active.aborted || !positiveId(group ? target.group_id : target.user_id)) return "rejected";
+    const message = encodeMilkyReply(reply, quoted);
     if (!message) return "rejected";
-    const result = await call.confirmed(group ? "send_group_message" : "send_private_message", { ...target, message });
+    const result = await call.confirmed(group ? "send_group_message" : "send_private_message", { ...target, message }, active);
     if (result.status !== "confirmed") return result.status;
     if (!hasMessageSequence(result.data.message_seq)) return "unknown";
     confirmSent(target, result.data, message);
@@ -417,6 +418,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const cardOwner = message?.user_id;
     const quoted = typeof message?.reply_id === "string" ? Number(message.reply_id) : message?.reply_id;
     const lookupReply = message?.lookupReply;
+    const voteSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupVoteSignal?.() : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
@@ -464,14 +466,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         isMaster: () => isMaster(cardOwner),
         isProtected: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
         role: id => delegation.memberRole(groupId, id),
-        async mute(user_id, duration) {
-          return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, signal)).status;
+        async mute(user_id, duration, active = signal) {
+          return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, active)).status;
         },
         async wholeMute(is_mute) {
           return (await call.confirmed("set_group_whole_mute", { group_id: groupId, is_mute }, signal)).status;
         },
-        async kick(user_id, reject_add_request) {
-          return (await call.confirmed("kick_group_member", { group_id: groupId, user_id, reject_add_request }, signal)).status;
+        async kick(user_id, reject_add_request, active = signal) {
+          return (await call.confirmed("kick_group_member", { group_id: groupId, user_id, reject_add_request }, active)).status;
         },
         async title(user_id, special_title) {
           return (await call.confirmed("set_group_member_special_title", { group_id: groupId, user_id, special_title }, signal)).status;
@@ -501,6 +503,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             return (await call.confirmed("delete_group_announcement", { group_id: groupId, announcement_id }, signal)).status;
           },
         },
+        vote: voteSignal ? {
+          signal: voteSignal,
+          async reply(parts, quote, active) {
+            return await sendConfirmed({ group_id: groupId }, parts, quote ? message.message_id : undefined, active) === "confirmed";
+          },
+        } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")

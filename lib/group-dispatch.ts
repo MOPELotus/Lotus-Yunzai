@@ -29,6 +29,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶群管-黑白名单", ["[group] 群管黑名单", "[group] 群管白名单"]],
   ["椰奶群管-违禁词", ["[group] 违禁词", "[group] 头衔屏蔽词"]],
   ["椰奶群管-群公告", ["[group] 群公告"]],
+  ["椰奶群管-投票", ["[group] 群投票"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
@@ -180,6 +181,8 @@ export async function readGroupDispatch(root: URL) {
       const member = groupModerationSession(event)?.memberMessage;
       if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
         duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      } else if (event.groupVote && /^#(?:(?:发起)?投票(?:禁言|踢人)|(?:支持|反对)投票)/u.test(normalizePrefix(event.msg))) {
+        duplicate = `${event.adapter ?? "onebot"}:group-vote:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (member?.readImageMd5 || member?.mixedImageParts) {
         duplicate = `${event.adapter ?? "onebot"}:image:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (event.adapter === "milky" && event.file) {

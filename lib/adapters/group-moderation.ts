@@ -74,6 +74,7 @@ export interface GroupActionPolicy {
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
+  readonly groupVoteSignal?: () => AbortSignal;
 }
 
 export interface MemberMuteNotice {
@@ -94,6 +95,18 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 }
 
 type Role = "member" | "admin" | "owner";
+type GroupVoteReply = readonly (string | { readonly type: "at"; readonly qq: number })[];
+
+export interface GroupVoteAccess {
+  readonly connection: AbortSignal;
+  readonly signal: AbortSignal;
+  inspect(target: number): Promise<{ readonly actor: Role; readonly bot: Role; readonly target: Role;
+    readonly protectedTarget: boolean } | undefined>;
+  execute(target: number, action: "mute" | "kick", seconds: number, allowAdmin: boolean,
+    requireActorAdmin?: boolean): Promise<GroupModerationResult | "unavailable" | "protected">;
+  canConfigure(): Promise<boolean>;
+  reply(parts: GroupVoteReply, quote?: boolean): Promise<boolean>;
+}
 
 export interface GroupAnnouncement {
   readonly id: string;
@@ -232,7 +245,7 @@ async function buildGroupNotice(parts: readonly InboundSegment[], source: Messag
 }
 
 export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
-  essence, notice, announcement }: {
+  essence, notice, announcement, vote }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -240,9 +253,9 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly isMaster: () => boolean;
   readonly isProtected: (userId: number) => boolean;
   readonly role: (userId: number) => Promise<Role | undefined>;
-  readonly mute: (userId: number, seconds: number) => Promise<GroupModerationResult>;
+  readonly mute: (userId: number, seconds: number, active?: AbortSignal) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
-  readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
+  readonly kick: (userId: number, block: boolean, active?: AbortSignal) => Promise<GroupModerationResult>;
   readonly title: (userId: number, text: string) => Promise<GroupModerationResult>;
   readonly setAdmin: (userId: number, enabled: boolean) => Promise<GroupModerationResult>;
   readonly essence?: {
@@ -261,6 +274,10 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     remove(id: string): Promise<GroupModerationResult>;
     readonly confirmRemovalByList?: boolean;
   };
+  readonly vote?: {
+    readonly signal: AbortSignal;
+    reply(parts: GroupVoteReply, quote: boolean | undefined, signal: AbortSignal): Promise<boolean>;
+  };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
@@ -271,6 +288,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   groupNotifyAll?: GroupNotifyAllAction;
   groupPublishAnnouncement?: GroupPublishAnnouncement;
   groupDeleteAnnouncement?: GroupDeleteAnnouncement;
+  groupVote?: GroupVoteAccess;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -310,6 +328,42 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     const targetRole = userId === actor ? actorRole : otherRole;
     if (!active() || !actorRole || !targetRole || botRole !== "owner" || (needsMaster && !isMaster())) return "unavailable" as const;
     return targetRole === "owner" ? "protected" as const : targetRole;
+  }
+
+  function bindVote(access: NonNullable<typeof vote>): GroupVoteAccess {
+    const voteSignal = AbortSignal.any([signal, access.signal]);
+    const voting = () => actor !== bot && !voteSignal.aborted && active();
+    const protectedVoteTarget = (target: number) => target === actor || target === bot || isProtected(target);
+    return {
+      connection: signal,
+      signal: voteSignal,
+      async inspect(target) {
+        if (!voting() || !Number.isSafeInteger(target) || target < 1) return;
+        const [actorRole, botRole, targetRole] = await Promise.all([role(actor), role(bot), role(target)]).catch(() => []);
+        if (!voting() || !actorRole || !botRole || !targetRole) return;
+        return { actor: actorRole, bot: botRole, target: targetRole, protectedTarget: protectedVoteTarget(target) };
+      },
+      async execute(target, action, seconds, allowAdmin, requireActorAdmin) {
+        if (!Number.isSafeInteger(target) || target < 1 || (action !== "mute" && action !== "kick") ||
+            (action === "mute" && (!isMemberMuteDuration(seconds) || !seconds))) return "rejected";
+        if (!voting()) return "unavailable";
+        if (protectedVoteTarget(target)) return "protected";
+        const [botRole, targetRole, actorRole] = await Promise.all([role(bot), role(target),
+          requireActorAdmin ? role(actor) : undefined]).catch(() => []);
+        if (!voting() || !botRole || botRole === "member" || !targetRole ||
+            (requireActorAdmin && actorRole !== "owner" && actorRole !== "admin")) return "unavailable";
+        if (protectedVoteTarget(target) || targetRole === "owner" || (targetRole === "admin" && (!allowAdmin || botRole !== "owner"))) {
+          return "protected";
+        }
+        return apply(() => action === "mute" ? mute(target, seconds, voteSignal) : kick(target, false, voteSignal));
+      },
+      async canConfigure() {
+        return voting() && isMaster() && !!await role(actor).catch(() => undefined) && voting() && isMaster();
+      },
+      async reply(parts, quote) {
+        return voting() && await access.reply(parts, quote, voteSignal).catch(() => false) && voting();
+      },
+    };
   }
 
   return {
@@ -404,6 +458,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       }
       return { status: "confirmed", text: selected.text };
     } : undefined,
+    groupVote: vote && bindVote(vote),
   };
 }
 

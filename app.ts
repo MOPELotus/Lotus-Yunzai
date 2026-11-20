@@ -1555,6 +1555,7 @@ if (import.meta.main) {
     const groupActions = {
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       joinReview: probingUpdate ? undefined : groupJoinReview,
+      groupVoteSignal: probingUpdate ? undefined : () => nativeOperationSignal(),
       isProtectedMaster: (bot: number, user: number) =>
         permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
       onMemberMute(notice: MemberMuteNotice) {

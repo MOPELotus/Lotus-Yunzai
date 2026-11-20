@@ -55,6 +55,40 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
   expect(sent).toBe(0);
 });
 
+test("群投票终局复核当前角色、目标保护和暂停信号，网关确认的回复才可计时", async () => {
+  const connection = new AbortController();
+  const power = new AbortController();
+  const roles = new Map<number, "member" | "admin" | "owner">([[99, "admin"], [54, "member"], [55, "member"], [56, "admin"]]);
+  const writes: number[] = [];
+  let confirmed = false;
+  const vote = bindMessageGroupActions({
+    bot: 99, actor: 54, signal: connection.signal, isMaster: () => false, isProtected: id => id === 56,
+    role: async id => roles.get(id),
+    async mute(id) { writes.push(id); return "confirmed"; },
+    async kick(id) { writes.push(id); return "confirmed"; },
+    async wholeMute() { return "confirmed"; },
+    async title() { return "confirmed"; },
+    async setAdmin() { return "confirmed"; },
+    vote: { signal: power.signal, async reply() { return confirmed; } },
+  }).groupVote!;
+  expect(vote.connection).toBe(connection.signal);
+  expect(await vote.inspect(55)).toEqual({ actor: "member", bot: "admin", target: "member", protectedTarget: false });
+  expect(await vote.reply(["原群"])).toBe(false);
+  confirmed = true;
+  expect(await vote.reply(["原群"])).toBe(true);
+  expect(await vote.execute(55, "mute", 30, false, true)).toBe("unavailable");
+  expect(await vote.execute(56, "kick", 0, true)).toBe("protected");
+  roles.set(55, "admin");
+  expect(await vote.execute(55, "mute", 30, true)).toBe("protected");
+  roles.set(99, "owner");
+  expect(await vote.execute(55, "mute", 30, true)).toBe("confirmed");
+  power.abort();
+  expect(vote.signal.aborted).toBe(true);
+  expect(await vote.execute(55, "mute", 30, true)).toBe("unavailable");
+  expect(await vote.reply(["原群"])).toBe(false);
+  expect(writes).toEqual([55]);
+});
+
 test("双协议群管理复核名单、成员权限和各项网关回执", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
@@ -911,6 +945,24 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", substringMedia);
     await waitUntil(() => milkyCalls.find(({ action, params }) => action === "recall_group_message" && params.message_seq === substringMedia.message_seq),
       "Milky 未命中收到的原图与前后文本子串。");
+
+    await writeFile(legacyList, savedGroupAdmin + "VoteBan: true\nVoteKick: true\noutTime: 1\nminNum: 2\nBanTime: 35\nveto: true\nvoteAdmin: false\n");
+    send(oneBotMessage("#发起投票禁言55", 54, 82));
+    await groupReplyWith("的禁言投票已发起");
+    send(oneBotMessage("#支持投票55", 56, 82));
+    await waitUntil(() => oneBotMuted().find(({ group_id, user_id, duration }) => group_id === 82 && user_id === 55 && duration === 35),
+      "OneBot 普通成员发起的多数票未执行。");
+    await groupReplyWith("投票结束");
+
+    await webhook("message_receive", milkyTitle("#投票踢人60", 54));
+    await announcementReply("的踢出投票已发起");
+    const wrongGroupBallot = milkyTitle("#支持投票60", operator);
+    await webhook("message_receive", { ...wrongGroupBallot, peer_id: 84, group_member: { ...wrongGroupBallot.group_member, group_id: 84 } });
+    await webhook("message_receive", milkyTitle("#支持投票60", operator));
+    const enactedVote = await waitUntil(() => milkyCalls.find(({ action, params }) =>
+      action === "kick_group_member" && params.user_id === 60), "Milky 群管理员一票终决未执行。");
+    expect(enactedVote.params).toEqual({ group_id: 79, user_id: 60, reject_add_request: false });
+    await announcementReply("管理员介入");
   } finally {
     socket?.close();
     host?.kill();

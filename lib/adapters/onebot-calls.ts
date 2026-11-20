@@ -97,11 +97,11 @@ export class OneBotCalls {
     }
   }
 
-  async sendConfirmed(send: Send, target: { user_id: number } | { group_id: number }, message: unknown) {
+  async sendConfirmed(send: Send, target: { user_id: number } | { group_id: number }, message: unknown, signal?: AbortSignal) {
     try {
       const result = await this.#request(send, "send_msg", {
         ...target, message, message_type: "group_id" in target ? "group" : "private", auto_escape: true,
-      });
+      }, signal);
       return this.#messageId(result) === undefined ? "unknown" as const : "confirmed" as const;
     } catch (error) {
       return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" as const : "unknown" as const;
