@@ -1276,6 +1276,23 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { group_id: 79, notification_seq: 888, notification_type: "join_request", is_filtered: false },
       { group_id: 79, notification_seq: 887, notification_type: "join_request", is_filtered: false },
     ]);
+
+    client.send(JSON.stringify(oneBotPrivate("#查看全部请求")));
+    const privateOverview = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("以下为暂未处理的请求")), "主人私聊未收到请求总览。");
+    const privateRows = JSON.stringify(privateOverview.params.messages);
+    expect(privateRows).toContain("好友申请：本次查到 1 条");
+    expect(privateRows).toContain("群邀请：本次查询范围内未发现");
+    expect(privateRows).toContain("单向好友：未核实");
+    expect(privateRows).not.toContain("当前群申请");
+
+    const accountListReads = milkyCalls.filter(({ action }) => action === "get_friend_requests").length;
+    await webhook("message_receive", milkyTitle("#查看全部请求", operator));
+    const groupRows = JSON.stringify((await announcementReply("当前群申请：5 条")).params.message);
+    expect(groupRows).toContain("#查看加群申请");
+    expect(groupRows).not.toContain("好友申请");
+    expect(groupRows).not.toContain("群邀请");
+    expect(milkyCalls.filter(({ action }) => action === "get_friend_requests")).toHaveLength(accountListReads);
   } finally {
     socket?.close();
     host?.kill();
