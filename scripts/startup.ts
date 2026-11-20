@@ -1,5 +1,5 @@
-import { mkdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AtlasChannel } from "../lib/atlas-channel.ts";
@@ -31,24 +31,25 @@ function missing(error: unknown) {
 
 async function atlasReady(directory: string): Promise<boolean> {
   const override = Bun.env.LOTUS_ATLAS_DATA_DIR;
-  if (override) {
-    if (!await stat(join(override, "map.json")).then((entry) => entry.isFile()).catch((error: unknown) => {
-      if (!missing(error)) throw error;
-      return false;
-    })) throw new Error("LOTUS_ATLAS_DATA_DIR 指定的目录缺少可读取的 map.json。");
-    return true;
+  if (!override) {
+    const { discoverRuntimeAtlasDataDirectory } = await import("../plugins/atlas/legacy-atlas-directory.ts");
+    const { AtlasSnapshotReset } = await import("../plugins/atlas/snapshot-pointer.ts");
+    try {
+      await discoverRuntimeAtlasDataDirectory(directory);
+    } catch (error) {
+      if (missing(error) || error instanceof AtlasSnapshotReset) return false;
+      throw error;
+    }
   }
 
-  const { discoverRuntimeAtlasDataDirectory } = await import("../plugins/atlas/legacy-atlas-directory.ts");
-  const { AtlasSnapshotReset } = await import("../plugins/atlas/snapshot-pointer.ts");
-  let root: string;
+  const { createAtlasRuntimeCatalog } = await import("../plugins/atlas/catalog.ts");
+  const data = override ? resolve(directory, "../..", override) : undefined;
   try {
-    ({ root } = await discoverRuntimeAtlasDataDirectory(directory));
-  } catch (error) {
-    if (missing(error) || error instanceof AtlasSnapshotReset) return false;
-    throw error;
+    await createAtlasRuntimeCatalog(directory, data).read();
+  } catch (cause) {
+    throw new Error(override ? "LOTUS_ATLAS_DATA_DIR 指定的图鉴索引不可用，请检查该目录的 map.json。"
+      : "图鉴索引不可用，请检查 data/atlas 或旧部署中的 map.json。", { cause });
   }
-  if (!(await stat(join(root, "map.json"))).isFile()) throw new Error("图鉴目录缺少可读取的 map.json。");
   return true;
 }
 

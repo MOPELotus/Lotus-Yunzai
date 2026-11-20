@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const roots = new Set<string>();
 const source = fileURLToPath(new URL("../", import.meta.url));
+const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: {
+  version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
+} } } } } } });
 
 afterEach(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true });
@@ -24,6 +27,8 @@ async function fixture() {
       copyFile(join(source, path), join(cwd, path))),
     ...["atlas-channel", "file-lock", "managed-exit"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
+    writeFile(join(cwd, "plugins/atlas/catalog.ts"),
+      `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
     writeFile(join(cwd, "scripts/run-managed.ts"),
       'export async function runManaged() { console.log("fixture host ready"); return 0; }\n'),
     writeFile(join(cwd, "plugins/atlas/initialize-atlas.ts"), `
@@ -39,7 +44,7 @@ async function fixture() {
         while (!await Bun.file("allow-publication").exists()) await Bun.sleep(20);
       }
       await mkdir(join(root, "snapshots/52/data"), { recursive: true });
-      await writeFile(join(root, "snapshots/52/data/map.json"), "{}");
+      await writeFile(join(root, "snapshots/52/data/map.json"), ${JSON.stringify(index)});
       await symlink("snapshots/52/data", join(root, "current"), "dir");
     `),
   ]);
@@ -68,7 +73,7 @@ test("an already prepared installation starts without choosing a channel and rej
   const { cwd, config, attempts, start } = await fixture();
   const atlas = join(cwd, "data/atlas/data");
   await mkdir(atlas, { recursive: true });
-  await writeFile(join(atlas, "map.json"), "{}");
+  await writeFile(join(atlas, "map.json"), index);
   const [code, output, warning] = await start(["start"]);
   expect(code).toBe(0);
   expect(output).toContain("fixture host ready");
@@ -79,6 +84,36 @@ test("an already prepared installation starts without choosing a channel and rej
   const [invalid, , error] = await start(["start"]);
   expect(invalid).toBe(1);
   expect(error).toContain("无法读取 config/global.yaml");
+  expect(await Bun.file(attempts).exists()).toBe(false);
+});
+
+test("an existing unusable index prevents startup without replacing legacy or explicit data", async () => {
+  const { cwd, config, attempts, start } = await fixture();
+  const atlas = join(cwd, "data/atlas/data");
+  const override = join(cwd, "custom-atlas");
+  await mkdir(atlas, { recursive: true });
+  await mkdir(override);
+  const invalid = "{}";
+  await writeFile(join(atlas, "map.json"), invalid);
+  await writeFile(join(override, "map.json"), "{");
+
+  const [code, output, error] = await start(["start"]);
+  expect(code).toBe(1);
+  expect(output).not.toContain("fixture host ready");
+  expect(error).toContain("图鉴索引不可用");
+  const [customCode, customOutput, customError] = await start(["init", "live"], { LOTUS_ATLAS_DATA_DIR: override });
+  expect(customCode).toBe(1);
+  expect(customOutput).not.toContain("已就绪");
+  expect(customError).toContain("LOTUS_ATLAS_DATA_DIR");
+  expect(await Bun.file(config).exists()).toBe(false);
+  expect(await Bun.file(attempts).exists()).toBe(false);
+  expect(await readFile(join(atlas, "map.json"), "utf8")).toBe(invalid);
+  expect(await readFile(join(override, "map.json"), "utf8")).toBe("{");
+
+  await writeFile(join(override, "map.json"), index);
+  const [repairedCode, repairedOutput] = await start(["start"], { LOTUS_ATLAS_DATA_DIR: "custom-atlas" });
+  expect(repairedCode).toBe(0);
+  expect(repairedOutput).toContain("fixture host ready");
   expect(await Bun.file(attempts).exists()).toBe(false);
 });
 
