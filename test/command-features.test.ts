@@ -22,6 +22,25 @@ test("引用回复沿用原消息并将撤回选项交给当前协议", async ()
   expect(sent).toEqual([["保留", true], ["稍后撤回", true, { recallMsg: 20 }]]);
 });
 
+test("合并转发按指定批次和署名发送，结果未知时停止后续批次", async () => {
+  const sent: { nodes: readonly unknown[]; senderName: string | undefined }[] = [];
+  const fallback: unknown[] = [];
+  await sendCommandReply({
+    async forward(nodes, senderName) {
+      sent.push({ nodes, senderName });
+      if (sent.length === 3) throw new Error("未取得协议回执");
+      return sent.length === 1;
+    },
+    reply(message) { fallback.push(message); return true; },
+  }, { type: "forward", nodes: ["一", "二", "三", "四", "五", "六", "七"], batchSize: 2, senderName: "历史公告" });
+  expect(sent).toEqual([
+    { nodes: ["一", "二"], senderName: "历史公告" },
+    { nodes: ["三", "四"], senderName: "历史公告" },
+    { nodes: ["五", "六"], senderName: "历史公告" },
+  ]);
+  expect(fallback).toEqual(["三", "四", "合并转发结果未确认，请在聊天中核对。"]);
+});
+
 test("需要回执的模块回复只交给当前协议确认", async () => {
   const registry = new CommandRegistry();
   const delivered: number[] = [];

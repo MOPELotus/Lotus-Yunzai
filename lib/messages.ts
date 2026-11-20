@@ -101,7 +101,7 @@ export interface MessageEvent {
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
-  readonly forward?: (nodes: readonly MessageReply[]) => Promise<boolean>;
+  readonly forward?: (nodes: readonly MessageReply[], senderName?: string) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly deliverMedia?: (file: MediaDelivery) => Promise<ChatFileResult>;
   readonly sendMusicCard?: (card: MusicCard) => Promise<ChatFileResult>;

@@ -714,8 +714,8 @@ async function dispatchMessage(
     listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
     [ownGroupCardSession]: boundAccount && owner && !noticeAttachment && (messageType === "group" || event.sub_type === "friend")
       ? () => connection?.ownGroupCardAccount?.(() => isMaster(selfId, userId)) : undefined,
-    forward: selfId === undefined ? undefined : async (nodes) => {
-      const messages = encodeOneBotForward(nodes, selfId);
+    forward: selfId === undefined ? undefined : async (nodes, senderName) => {
+      const messages = encodeOneBotForward(nodes, selfId, senderName);
       return messages ? calls.sendForward(send, target, messages) : false;
     },
     uploadFile: boundAccount && attachmentSession && display?.closed === false

@@ -531,8 +531,8 @@ export function milkyMessage(
       const result = await call("send_profile_like", { user_id: userId, count });
       return result === undefined ? 0 : count;
     },
-    forward: forwardCall && (async (nodes) => {
-      const messages = encodeMilkyForward(nodes, selfId);
+    forward: forwardCall && (async (nodes, senderName) => {
+      const messages = encodeMilkyForward(nodes, selfId, senderName);
       if (!messages) return false;
       const result = await forwardCall(action, { ...target, message: [{ type: "forward", data: { messages } }] });
       if (result === undefined) return false;

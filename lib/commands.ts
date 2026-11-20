@@ -31,6 +31,8 @@ export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent
 export interface CommandForward {
   readonly type: "forward";
   readonly nodes: readonly MessageReply[];
+  readonly batchSize?: number;
+  readonly senderName?: string;
 }
 
 export interface QuotedCommandReply {
@@ -71,15 +73,21 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
     return;
   }
   if (!Array.isArray(reply.nodes) || !reply.nodes.length) return;
-  if (event.forward) {
-    try {
-      if (await event.forward(reply.nodes)) return;
-    } catch {
-      await event.reply("合并转发结果未确认，请在聊天中核对。");
-      return;
+  const count = typeof reply.batchSize === "number" && Number.isSafeInteger(reply.batchSize) && reply.batchSize > 0
+    ? reply.batchSize
+    : reply.nodes.length;
+  for (let start = 0; start < reply.nodes.length; start += count) {
+    const nodes = reply.nodes.slice(start, start + count);
+    if (event.forward) {
+      try {
+        if (await event.forward(nodes, reply.senderName)) continue;
+      } catch {
+        await event.reply("合并转发结果未确认，请在聊天中核对。");
+        return;
+      }
     }
+    for (const node of nodes) await event.reply(node);
   }
-  for (const node of reply.nodes) await event.reply(node);
 }
 
 export interface CommandModule {
