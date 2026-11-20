@@ -237,6 +237,7 @@ async function dispatchRequest(
   const reviewKey = { adapter: "onebot" as const, botId: self_id, flag };
   const joinReview = sub_type === "add" ? permissions.joinReview : undefined;
   const session = groupActionSignal(connection, self_id);
+  if (sub_type === "invite" && !session) return;
 
   const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
@@ -245,8 +246,9 @@ async function dispatchRequest(
     inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
     notifyOwners: session ? (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
       scope => selectNoticeOwners(permissions, self_id, scope, permissions.isMaster), reply, AbortSignal.any([session, active])) : undefined,
-    approve: (approve = true, reason) => confirmJoinReview(joinReview, reviewKey,
-      () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
+    approve: (approve = true, reason) => sub_type === "invite" && session?.aborted
+      ? Promise.resolve(false)
+      : confirmJoinReview(joinReview, reviewKey, () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
     replyToApplicant,
     reply(reply, _quote, options) {
       const message = encodeOneBotReply(reply);

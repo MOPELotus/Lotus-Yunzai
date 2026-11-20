@@ -1465,6 +1465,10 @@ if (import.meta.main) {
   }
 
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
+    const session = groupModerationSession(event)?.signal;
+    if (!session || !reviewInvitation.admits(event)) return;
+    const active = nativeOperationSignal(session);
+    if (active.aborted) return;
     let reviewed = false;
     let reviewManually: (() => Promise<void>) | undefined;
     const consumed = await legacy.dispatch({
@@ -1477,16 +1481,16 @@ if (import.meta.main) {
         reviewManually = review;
       },
     }, allowed);
-    if (reviewed || consumed || lifecycle.signal.aborted) return;
+    if (reviewed || consumed || active.aborted) return;
 
-    const result = allowed(["invite"]) ? await reviewInvitation(event, lifecycle.signal) : "skip";
+    const result = allowed(["invite"]) ? await reviewInvitation.review(event, active) : "skip";
     if (result === "skip" || result === "rejected") {
-      if (!lifecycle.signal.aborted) await reviewManually?.();
+      if (!active.aborted) await reviewManually?.();
     } else if (result === "confirmed") {
       const group = event.group_name?.trim() || event.group_id;
-      await event.replyToApplicant?.(`已同意加群：${group}`);
+      if (!active.aborted) await event.replyToApplicant?.(`已同意加群：${group}`);
     } else if (result === "unknown") {
-      const delivered = await event.notifyMasters(`群 ${event.group_id} 的邀请审批结果未确认，请先在 QQ 核对。`);
+      const delivered = active.aborted ? 0 : await event.notifyMasters(`群 ${event.group_id} 的邀请审批结果未确认，请先在 QQ 核对。`);
       if (delivered === 0) console.warn("[群邀请] 自动审批结果未确认，未能通知主人。");
     }
   }

@@ -20,11 +20,11 @@ function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
   });
 }
 
-async function connect(endpoint: string, botId = 99) {
+async function connect(endpoint: string, botId: number | null = 99) {
   const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
-  const socket = new BunWebSocket(endpoint, {
-    headers: { Authorization: "Bearer group-invitations-fixture", "X-Client-Role": "Universal", "X-Self-ID": String(botId) },
-  });
+  const headers: Record<string, string> = { Authorization: "Bearer group-invitations-fixture", "X-Client-Role": "Universal" };
+  if (botId !== null) headers["X-Self-ID"] = String(botId);
+  const socket = new BunWebSocket(endpoint, { headers });
   const closed = new Promise<void>((resolve) => socket.addEventListener("close", () => resolve(), { once: true }));
   const frames: Frame[] = [];
   let frameReady = Promise.withResolvers<void>();
@@ -43,7 +43,7 @@ async function connect(endpoint: string, botId = 99) {
   }
 
   function send(value: object) {
-    socket.send(JSON.stringify({ self_id: botId, ...value }));
+    socket.send(JSON.stringify({ self_id: botId ?? 99, ...value }));
   }
   async function take() {
     if (!frames.length) await deadline(frameReady.promise, "没有收到预期的 OneBot 动作。");
@@ -88,7 +88,8 @@ async function endpointOf(host: Bun.Subprocess<"ignore", "pipe", "pipe">) {
   }
 }
 
-async function withHost(autoGroup: 0 | 1 | undefined, run: (connectGateway: () => Promise<Gateway>) => Promise<void>) {
+async function withHost(config: { legacy?: string; primary?: string },
+  run: (connectGateway: (botId?: number | null) => Promise<Gateway>) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-group-invitations-"));
   const gateways: Gateway[] = [];
   try {
@@ -97,8 +98,10 @@ async function withHost(autoGroup: 0 | 1 | undefined, run: (connectGateway: () =
       recursive: true, filter: (path) => !path.endsWith("/.git"),
     });
     await mkdir(join(root, "config/config"), { recursive: true });
-    const option = autoGroup === undefined ? "" : `\nautoGroup: ${autoGroup}`;
-    await writeFile(join(root, "config/config/other.yaml"), `master: ["99:${owner}"]${option}\n`);
+    const masters = `master: ["99:${owner}"]\n`;
+    if (config.legacy !== undefined) await writeFile(join(root, "config/config/other.yaml"), masters + config.legacy);
+    if (config.primary !== undefined) await writeFile(join(root, "config/other.yaml"), masters + config.primary);
+    await writeFile(join(root, "config/group.yaml"), '70110: {disable: [invite]}\n');
     await writeFile(join(root, "plugins/invitation-fixture.js"), `
       export default class InvitationFixture extends plugin {
         constructor() { super({ event: "request.group.invite", priority: 1 }); }
@@ -118,8 +121,8 @@ async function withHost(autoGroup: 0 | 1 | undefined, run: (connectGateway: () =
     const stderr = new Response(host.stderr).text();
     try {
       const endpoint = await deadline(endpointOf(host), "测试宿主启动超时。");
-      await run(async () => {
-        const gateway = await connect(endpoint);
+      await run(async (botId) => {
+        const gateway = await connect(endpoint, botId);
         gateways.push(gateway);
         return gateway;
       });
@@ -179,43 +182,53 @@ async function takeConfirmation(gateway: Gateway, groupId: number, recipient: nu
   if (frame.echo !== undefined) gateway.receipt(frame);
 }
 
-test("autoGroup 缺省保留手审，显式设为 0 只自动同意主人邀请", async () => {
-  for (const autoGroup of [undefined, 0] as const) {
-    await withHost(autoGroup, async (connectGateway) => {
-      const gateway = await connectGateway();
-      gateway.send(groupRequest("other-manual-invite", 70001));
-      const inviteId = await takeManual(gateway, 70001, "other-manual-invite");
+test.each([
+  { label: "新配置保留手审", primary: "", approvesOwner: false },
+  { label: "旧配置缺省只同意主人", legacy: "", approvesOwner: true },
+  { label: "旧字符串 1 只同意主人", legacy: "autoGroup: '1'\n", approvesOwner: true },
+  { label: "主配置可显式关闭旧默认", primary: "autoGroup: false\n", legacy: "autoGroup: 1\n", approvesOwner: false },
+])("autoGroup $label", async ({ approvesOwner, ...config }) => {
+  await withHost(config, async (connectGateway) => {
+    const gateway = await connectGateway();
+    gateway.send(groupRequest("other-manual-invite", 70001));
+    const inviteId = await takeManual(gateway, 70001, "other-manual-invite");
 
-      gateway.send(groupRequest("owner-member-application", 70002, owner, "add"));
-      const addId = await takeManual(gateway, 70002, "owner-member-application");
-      const initial = privateText(await gateway.command("#入群申请"));
-      expect(initial).toContain(inviteId);
-      expect(initial).toContain(addId);
-      expect(initial).toContain("成员申请入群");
+    gateway.send(groupRequest("owner-member-application", 70002, owner, "add"));
+    const addId = await takeManual(gateway, 70002, "owner-member-application");
+    const initial = privateText(await gateway.command("#入群申请"));
+    expect(initial).toContain(inviteId);
+    expect(initial).toContain(addId);
+    expect(initial).toContain("成员申请入群");
 
-      const invitation = groupRequest("owner-approved-invite", 70003, owner);
-      gateway.send(invitation);
-      if (autoGroup === undefined) {
-        await takeManual(gateway, 70003, invitation.flag);
-        return;
-      }
-      const action = await gateway.take();
-      approval(action, invitation.flag);
-      gateway.send(invitation);
-      gateway.receipt(action);
-      await takeConfirmation(gateway, 70003, owner, invitation.flag);
-      gateway.send(invitation);
-      const pending = privateText(await gateway.command("#入群申请"));
-      expect(pending).toContain(inviteId);
-      expect(pending).toContain(addId);
-      expect(pending).not.toContain("70003");
-    });
-  }
+    const invitation = groupRequest("owner-approved-invite", 70003, owner);
+    gateway.send(invitation);
+    if (!approvesOwner) {
+      await takeManual(gateway, 70003, invitation.flag);
+      return;
+    }
+    const action = await gateway.take();
+    approval(action, invitation.flag);
+    gateway.send(invitation);
+    gateway.receipt(action);
+    await takeConfirmation(gateway, 70003, owner, invitation.flag);
+    gateway.send(invitation);
+    const pending = privateText(await gateway.command("#入群申请"));
+    expect(pending).toContain(inviteId);
+    expect(pending).toContain(addId);
+    expect(pending).not.toContain("70003");
+  });
 }, 9_000);
 
 test("autoGroup 开启后按回执确认、转手审或提示风险，重复邀请不会重发", async () => {
-  const diagnostics = await withHost(1, async (connectGateway) => {
+  const diagnostics = await withHost({ primary: "disablePrivate: false\n", legacy: "autoGroup: 1\nblackGroup: [70108]\nblackUser: [44]\n" }, async (connectGateway) => {
     const gateway = await connectGateway();
+    const unbound = await connectGateway(null);
+    unbound.send(groupRequest("unbound", 70106, owner));
+    gateway.send({ ...groupRequest("different-bot", 70111, owner), self_id: 100 });
+    gateway.send(groupRequest("blocked-user", 70107, 44));
+    gateway.send(groupRequest("blocked-group", 70108, owner));
+    gateway.send(groupRequest("disabled-automatic-feature", 70110));
+    await takeManual(gateway, 70110, "disabled-automatic-feature");
     const legacy = groupRequest("legacy-resolved-invite", 70100);
     gateway.send({ ...legacy, comment: "由旧插件处理" });
     const takeover = await gateway.take();
@@ -223,7 +236,9 @@ test("autoGroup 开启后按回执确认、转手审或提示风险，重复邀�
       flag: legacy.flag, sub_type: "invite", approve: false, reason: "拒绝样本",
     } });
     gateway.receipt(takeover);
-    expect(privateText(await gateway.command("#入群申请"))).toBe("当前没有待审核的群请求。");
+    const pendingAfterPlugin = privateText(await gateway.command("#入群申请"));
+    expect(pendingAfterPlugin).toContain("70110");
+    expect(pendingAfterPlugin).not.toMatch(/70100|70106|70107|70108|70111/u);
 
     const confirmed = groupRequest("ordinary-approved-invite", 70101);
     gateway.send(confirmed);
