@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mdiLanConnect, mdiPuzzleOutline } from "@mdi/js";
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 interface ExtensionPage {
@@ -19,6 +20,9 @@ interface Catalog {
   issues: Issue[];
 }
 
+const extensionIconPaths = new Map([
+  ["mdi:lan-connect", mdiLanConnect],
+]);
 const issueLabels = {
   invalid: "页面注册失败或资源无效",
   "duplicate-id": "页面 ID 重复",
@@ -195,7 +199,13 @@ onBeforeUnmount(() => {
           :aria-current="selected?.id === page.id ? 'page' : undefined"
           @click="load(page)"
         >
-          <span>{{ page.title }}</span>
+          <span v-if="page.icon" class="extension-icon" aria-hidden="true">
+            <svg v-if="page.icon.includes(':')" viewBox="0 0 24 24" focusable="false">
+              <path :d="extensionIconPaths.get(page.icon) ?? mdiPuzzleOutline" />
+            </svg>
+            <template v-else>{{ page.icon }}</template>
+          </span>
+          <span class="extension-title">{{ page.title }}</span>
           <small>{{ page.plugin }}</small>
         </button>
       </nav>
@@ -249,7 +259,9 @@ onBeforeUnmount(() => {
 .extension-nav button {
   display: grid;
   width: 100%;
-  gap: 3px;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 7px;
+  row-gap: 3px;
   padding: 8px 9px;
   border: 0;
   border-radius: 6px;
@@ -263,7 +275,19 @@ onBeforeUnmount(() => {
 .extension-nav button:hover:not(:disabled), .extension-nav button[aria-current] { background: #e5f1e8; }
 .extension-nav button:focus-visible { outline: 2px solid var(--accent); }
 .extension-nav button:disabled { opacity: .65; cursor: wait; }
-.extension-nav button > span { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.extension-nav button:has(.extension-icon) { grid-template-columns: 18px minmax(0, 1fr); }
+.extension-icon {
+  grid-row: 1 / span 2;
+  align-self: start;
+  overflow: hidden;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+}
+.extension-icon svg { display: block; width: 18px; height: 20px; fill: currentColor; }
+.extension-title { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
 .extension-nav small { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
 
 .extension-view { overflow: hidden; }
