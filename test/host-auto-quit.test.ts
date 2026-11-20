@@ -95,11 +95,7 @@ async function withHost(run: (open: (botId?: number) => Promise<Gateway>) => Pro
   try {
     await copyHost(root);
     await mkdir(join(root, "config/config"), { recursive: true });
-    await writeFile(join(root, "config/config/other.yaml"), `
-autoQuit: 2
-masterQQ: [52]
-master: ["99:51", "100:53"]
-`);
+    await writeFile(join(root, "config/config/other.yaml"), 'masterQQ: [52]\nmaster: ["99:51", "100:53"]\n');
     disableMemberPrewarm(root);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
@@ -149,7 +145,7 @@ function member(groupId: number, userId: number, role = "member") {
 }
 
 async function members(gateway: Gateway, groupId: number, list: readonly object[]) {
-  const frame = await gateway.request("get_group_member_list", { group_id: groupId });
+  const frame = await gateway.request("get_group_member_list", { group_id: groupId, no_cache: true });
   gateway.receipt(frame, list);
 }
 
@@ -159,8 +155,12 @@ async function botRole(gateway: Gateway, groupId: number, botId: number, role: s
 }
 
 async function snapshot(gateway: Gateway, groupId: number, botId: number, otherId: number, lastCount = 2) {
-  await groupCount(gateway, groupId, 2);
-  await members(gateway, groupId, [member(groupId, botId), member(groupId, otherId)]);
+  return snapshotMembers(gateway, groupId, botId, [botId, otherId], lastCount);
+}
+
+async function snapshotMembers(gateway: Gateway, groupId: number, botId: number, ids: readonly number[], lastCount = ids.length) {
+  await groupCount(gateway, groupId, ids.length);
+  await members(gateway, groupId, ids.map(id => member(groupId, id)));
   await botRole(gateway, groupId, botId, "member");
   await groupCount(gateway, groupId, lastCount);
 }
@@ -174,6 +174,10 @@ test("自动退群按真实入群和临界人数判断，并保护主人、群�
   await unbound.expectNoLeave();
   gateway.send({ ...joined(72001, now), user_id: 44 });
   gateway.send(joined(72002, now, 100));
+  await gateway.expectNoLeave();
+
+  gateway.send(joined(72011, now));
+  await groupCount(gateway, 72011, 51);
   await gateway.expectNoLeave();
 
   for (const [groupId, owner] of [[72003, 52], [72004, 51]] as const) {
@@ -211,7 +215,7 @@ test("自动退群按真实入群和临界人数判断，并保护主人、群�
 
   const eligible = joined(72008, now);
   gateway.send(eligible);
-  await snapshot(gateway, eligible.group_id, 99, 53);
+  await snapshotMembers(gateway, eligible.group_id, 99, [99, 53, ...Array.from({ length: 48 }, (_, index) => 1000 + index)]);
   const leave = await gateway.request("set_group_leave", { group_id: eligible.group_id, is_dismiss: false });
   gateway.send(eligible);
   gateway.receipt(leave);
@@ -222,17 +226,29 @@ test("自动退群按真实入群和临界人数判断，并保护主人、群�
   secondBot.send(joined(eligible.group_id, now, 100));
   await snapshot(secondBot, eligible.group_id, 100, 53);
   await secondBot.expectNoLeave();
+
+  const interrupted = joined(72012, now);
+  gateway.send(interrupted);
+  const pendingCount = await gateway.request("get_group_info", { group_id: interrupted.group_id, no_cache: true });
+  const replacement = await open(99);
+  await replacement.expectNoLeave();
+  gateway.receipt(pendingCount, { group_id: interrupted.group_id, member_count: 2 });
+  replacement.send(interrupted);
+  await replacement.expectNoLeave();
+  gateway.assertNoPendingFrames();
 }), 12_000);
 
 test("退群回执未知时不重发，后续真实重新入群可重新判断", async () => {
   const diagnostics = await withHost(async (open) => {
-    const gateway = await open(99);
+    let gateway = await open(99);
     const time = Math.floor(Date.now() / 1000) - 2;
     const notice = joined(72101, time);
     gateway.send(notice);
     await snapshot(gateway, notice.group_id, 99, 42);
-    const first = await gateway.request("set_group_leave", { group_id: notice.group_id, is_dismiss: false });
-    gateway.receipt(first, null, "async", 1);
+    await gateway.request("set_group_leave", { group_id: notice.group_id, is_dismiss: false });
+    gateway.close();
+    await deadline(gateway.closed, "退群提交后未检测到旧连接关闭。");
+    gateway = await open(99);
     gateway.send(notice);
     await gateway.expectNoLeave();
 

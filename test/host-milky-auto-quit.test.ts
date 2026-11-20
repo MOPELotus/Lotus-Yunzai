@@ -135,8 +135,12 @@ async function selfMembership(mock: Gateway, groupId: number, role: string, time
 }
 
 async function snapshot(mock: Gateway, groupId: number, other: number, time: number, lastCount = 2) {
-  await groupCount(mock, groupId, 2);
-  await members(mock, groupId, [member(groupId, botId), member(groupId, other)]);
+  return snapshotMembers(mock, groupId, [botId, other], time, lastCount);
+}
+
+async function snapshotMembers(mock: Gateway, groupId: number, ids: readonly number[], time: number, lastCount = ids.length) {
+  await groupCount(mock, groupId, ids.length);
+  await members(mock, groupId, ids.map(id => member(groupId, id)));
   await selfMembership(mock, groupId, "member", time);
   await groupCount(mock, groupId, lastCount);
 }
@@ -162,11 +166,11 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
     await copyHost(root);
     await mkdir(join(root, "config", "config"), { recursive: true });
     await writeFile(join(root, "config", "config", "other.yaml"), [
-      "autoQuit: 2", "masterQQ: [52]", 'master: ["99:51", "100:53"]',
+      "masterQQ: [52]", 'master: ["99:51", "100:53"]',
     ].join("\n") + "\n");
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
-      "connection: webhook", `access_token: ${token}`,
+      "connection: webhook", `access_token: ${token}`, "ws:", "  reconnect_interval: 0.05",
     ].join("\n") + "\n");
     await writeFile(join(root, "plugins", "auto-quit-fixture.js"), `
       export default class extends plugin {
@@ -184,10 +188,12 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
     const stderr = collectWarnings(host.stderr, unknown.resolve);
     try {
       const endpoint = await deadline(startup(host.stdout), "Milky 退群测试宿主启动超时。");
-      (await mock.next("get_login_info", {})).respond(accepted({ uin: botId, nickname: "退群夹具" }));
-      await waitForBind(endpoint);
       const time = Math.floor(Date.now() / 1_000) - 5;
       const joinEvent = (group_id: number) => ({ group_id, user_id: botId, invitor_id: userId });
+      const login = await mock.next("get_login_info", {});
+      expect((await webhook(endpoint, "group_member_increase", joinEvent(72012), time)).status).toBe(503);
+      login.respond(accepted({ uin: botId, nickname: "退群夹具" }));
+      await waitForBind(endpoint);
       async function joined(groupId: number, at = time) {
         expect((await webhook(endpoint, "group_member_increase", joinEvent(groupId), at)).status).toBe(200);
       }
@@ -200,7 +206,7 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
 
       const overThreshold = 72011;
       await joined(overThreshold);
-      await groupCount(mock, overThreshold, 3);
+      await groupCount(mock, overThreshold, 51);
       await expectNoLeave(endpoint, mock, time);
 
       for (const [groupId, owner] of [[72005, 51], [72006, 52]] as const) {
@@ -229,7 +235,7 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
 
       const eligible = 72010;
       await joined(eligible);
-      await snapshot(mock, eligible, 53, time);
+      await snapshotMembers(mock, eligible, [botId, 53, ...Array.from({ length: 48 }, (_, index) => 1000 + index)], time);
       const first = await mock.next("quit_group", { group_id: eligible });
       await joined(eligible);
       await expectNoLeave(endpoint, mock, time);
@@ -244,6 +250,16 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
       (await mock.next("quit_group", { group_id: eligible })).respond(accepted());
       await joined(eligible, time + 2);
       await expectNoLeave(endpoint, mock, time + 2);
+
+      await joined(72013);
+      const staleCount = await mock.next("get_group_info", { group_id: 72013, no_cache: true });
+      expect((await webhook(endpoint, "bot_offline", {}, time)).status).toBe(200);
+      const relogin = await mock.next("get_login_info", {});
+      staleCount.respond(accepted({ group: { group_id: 72013, member_count: 2 } }));
+      relogin.respond(accepted({ uin: botId, nickname: "重新绑定的退群夹具" }));
+      await waitForBind(endpoint);
+      await joined(72013);
+      await expectNoLeave(endpoint, mock, time);
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;

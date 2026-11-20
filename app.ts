@@ -1077,9 +1077,11 @@ if (import.meta.main) {
       ? withGroupOwnerJoinNotice(event) : event;
     const consumed = await legacy.dispatch(dispatchedEvent, allowed);
     if (!consumed && event.post_type === "notice" && event.notice_type === "group" &&
-        event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"]) &&
-        await autoQuit(event, lifecycle.signal)) {
-      console.log(`[自动退群] 已退出群 ${event.group_id}。`);
+        event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"])) {
+      const session = groupModerationSession(event)?.signal;
+      if (session && await autoQuit(event, nativeOperationSignal(session))) {
+        console.log(`[自动退群] 已退出群 ${event.group_id}。`);
+      }
     }
   }
 

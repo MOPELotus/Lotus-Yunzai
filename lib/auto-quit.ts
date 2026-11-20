@@ -1,5 +1,6 @@
-import { readLocalConfig } from "./config.ts";
+import { configuredIds, readLocalConfig, readOtherSetting } from "./config.ts";
 import type { GroupNotice } from "./messages.ts";
+import { readOwnerSnapshot } from "./permissions.ts";
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -11,10 +12,25 @@ function configuredNumber(value: unknown): number | undefined {
 }
 
 export async function readAutoQuit(root: URL, masterIds: (bot: number) => readonly number[], legacyMasterIds?: () => readonly number[]) {
-  const { autoQuit, masterQQ } = await readLocalConfig(root, "other");
-  const threshold = configuredNumber(autoQuit);
-  const legacyMasters = new Set((Array.isArray(masterQQ) ? masterQQ : [masterQQ])
-    .map(configuredNumber).filter((id) => id !== undefined));
+  const config = await readOtherSetting(root, "autoQuit");
+  const primary = config && "primary" in config ? config.primary : undefined;
+  const legacy = config && "legacy" in config ? config.legacy : undefined;
+  let threshold = configuredNumber(legacy ? (Object.hasOwn(legacy, "autoQuit") ? legacy.autoQuit : 50) : primary);
+  let inheritedOwners: ReturnType<typeof readOwnerSnapshot> | undefined;
+  if (legacy && threshold !== undefined) {
+    try {
+      inheritedOwners = readOwnerSnapshot(legacy);
+    } catch {
+      // An unreadable owner roster cannot support an inherited departure policy.
+      threshold = undefined;
+    }
+  }
+  const fallbackMasters = !legacy && !legacyMasterIds && threshold !== undefined
+    ? configuredIds((await readLocalConfig(root, "other")).masterQQ) : undefined;
+  const blackGroups = configuredIds(legacy?.blackGroup);
+  const whiteGroups = configuredIds(legacy?.whiteGroup);
+  const blackUsers = configuredIds(legacy?.blackUser);
+  const whiteUsers = configuredIds(legacy?.whiteUser);
   const latest = new Map<string, number>();
   const inFlight = new Map<string, Promise<void>>();
 
@@ -23,6 +39,8 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
     if (threshold === undefined || signal?.aborted || sub_type !== "increase" || self_id !== user_id ||
         !isPositiveInteger(self_id) || !isPositiveInteger(group_id) || !isPositiveInteger(time) ||
         typeof inspectAutoQuit !== "function" || typeof leaveGroup !== "function") return false;
+    if (blackGroups.has(group_id) || (whiteGroups.size > 0 && !whiteGroups.has(group_id)) ||
+        blackUsers.has(self_id) || (whiteUsers.size > 0 && !whiteUsers.has(self_id))) return false;
 
     const key = `${self_id}:${group_id}`;
     const last = latest.get(key);
@@ -36,15 +54,17 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
     const { promise, resolve } = Promise.withResolvers<void>();
     inFlight.set(key, promise);
     try {
-      const snapshot = await inspectAutoQuit(threshold);
+      const snapshot = await inspectAutoQuit(threshold, signal);
       if (signal?.aborted || !snapshot || (snapshot.botRole !== "member" && snapshot.botRole !== "admin")) return false;
 
       const { memberIds } = snapshot;
       if (!Array.isArray(memberIds) || memberIds.length > threshold) return false;
       const members = new Set(memberIds);
+      const inheritedBotOwners = inheritedOwners?.owners.get(String(self_id));
       if (members.size !== memberIds.length || !members.has(self_id) || ![...members].every(isPositiveInteger) ||
-          (legacyMasterIds ? legacyMasterIds().some((id) => members.has(id)) : memberIds.some((id) => legacyMasters.has(id))) ||
-          masterIds(self_id).some((id) => members.has(id))) return false;
+          inheritedOwners?.globalMasters.some(id => members.has(id)) ||
+          memberIds.some(id => inheritedBotOwners?.has(String(id)) || fallbackMasters?.has(id)) ||
+          legacyMasterIds?.().some(id => members.has(id)) || masterIds(self_id).some(id => members.has(id))) return false;
 
       if (signal?.aborted || latest.get(key) !== time) return false;
       try {

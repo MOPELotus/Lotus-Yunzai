@@ -351,8 +351,10 @@ async function dispatchGroupNotice(
     operator_id: isId(operator_id) ? operator_id : undefined,
     group_name: stringField(event.group_name),
     getGroupName: () => calls.getGroupName(send, group_id),
-    inspectAutoQuit: selfJoined && isId(time) ? (maxMembers) => calls.inspectAutoQuit(send, group_id, self_id, time, maxMembers) : undefined,
-    leaveGroup: selfJoined && isId(time) ? async () => {
+    inspectAutoQuit: selfJoined && session && isId(time) ? (maxMembers, active) =>
+      calls.inspectAutoQuit(send, group_id, self_id, time, maxMembers, active ? AbortSignal.any([session, active]) : session) : undefined,
+    leaveGroup: selfJoined && session && isId(time) ? async () => {
+      if (session.aborted) return false;
       const accepted = await calls.leaveGroup(send, group_id);
       left ||= accepted;
       if (accepted && join && joins?.get(group_id) === join) display?.forget(group_id);

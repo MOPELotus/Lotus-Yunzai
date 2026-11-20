@@ -53,8 +53,8 @@ export function createMilkyApi(settings: MilkySettings, signal: AbortSignal) {
     return { status: "unknown" };
   }
 
-  return Object.assign(async (action: string, params: Record<string, unknown>) => {
-    const result = await confirmed(action, params);
+  return Object.assign(async (action: string, params: Record<string, unknown>, operation?: AbortSignal) => {
+    const result = await confirmed(action, params, operation);
     return result.status === "confirmed" ? result.data : undefined;
   }, { confirmed });
 }

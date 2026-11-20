@@ -1,7 +1,6 @@
 import type { FriendPoke, GroupNotice, MessageReply } from "../messages.ts";
-import { inspectMilkyAutoQuit } from "./milky-auto-quit.ts";
+import { inspectMilkyAutoQuit, type MilkyAutoQuitCall } from "./milky-auto-quit.ts";
 
-type MilkyCall = (action: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
 type SendReply = (target: { group_id: number } | { user_id: number }, reply: MessageReply) => Promise<boolean>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -13,7 +12,7 @@ function isId(value: unknown): value is number {
 }
 
 export function milkyNotice(
-  value: unknown, selfId: number, call: MilkyCall, sendReply: SendReply, leaveGroup?: (groupId: number) => Promise<boolean>,
+  value: unknown, selfId: number, call: MilkyAutoQuitCall, sendReply: SendReply, leaveGroup?: (groupId: number) => Promise<boolean>,
 ): GroupNotice | FriendPoke | undefined {
   if (!isId(selfId) || !isRecord(value) || value.self_id !== selfId || !isRecord(value.data)) return;
   const { event_type: type, time, data } = value;
@@ -50,7 +49,7 @@ export function milkyNotice(
     action_sub_type: action, increase_type: increase ? action : undefined, decrease_type: increase ? undefined : action,
     dismiss: !increase && typeof data.dismiss === "boolean" ? data.dismiss : undefined,
     isGroup: true, isPrivate: false, isMaster: false,
-    inspectAutoQuit: ownJoin ? (maxMembers) => inspectMilkyAutoQuit(call, group_id, selfId, time, maxMembers) : undefined,
+    inspectAutoQuit: ownJoin ? (maxMembers, active) => inspectMilkyAutoQuit(call, group_id, selfId, time, maxMembers, active) : undefined,
     leaveGroup: ownJoin ? () => leaveGroup(group_id) : undefined,
     async getGroupName() {
       try {
