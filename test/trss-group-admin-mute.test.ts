@@ -121,7 +121,9 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let wrongMilkyAnnouncementGroup = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
+  const memberLastSentTimes = new Map<string, number>();
   let cleanupRosterChanged = false;
+  let batchRoster = false;
   const activity = (group_id: number, bot: number) => {
     const joined = 1_700_000_000;
     return [
@@ -130,6 +132,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { group_id, user_id: 42, role: "member", card: "从未发言夹具", join_time: joined,
         last_sent_time: group_id === 86 && cleanupRosterChanged ? joined + 60 : joined },
       { group_id, user_id: 54, role: "member", card: "已有活动夹具", join_time: joined + 5, last_sent_time: joined + 10 },
+      ...(group_id === 79 && batchRoster ? [{ group_id, user_id: 77, role: "member", join_time: joined + 3, last_sent_time: joined + 3 }] : []),
       ...(group_id === 86 ? [{ group_id, user_id: 62, role: "member", join_time: joined + 1, last_sent_time: joined + 1 }] : []),
       ...(group_id === 86 && cleanupRosterChanged ? [
         { group_id, user_id: 63, role: "member", join_time: joined + 12, last_sent_time: joined + 12 },
@@ -140,7 +143,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   function member(params: Call["params"]) {
     const baseline = liveMember(params);
     const key = `${params.group_id}:${params.user_id}`;
-    return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key) };
+    return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key),
+      last_sent_time: memberLastSentTimes.get(key) };
   }
   function updateRole(params: Call["params"], enabled: unknown) {
     rosterChanges.set(`${params.group_id}:${params.user_id}`, enabled === true ? "admin" : "member");
@@ -1055,6 +1059,19 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", milkyTitle(`答案 ${manualAnswer}`, 59));
     await waitUntil(() => milkyCalls.filter(({ action, params }) => action === "send_group_message" &&
       JSON.stringify(params.message).includes("合成入群验证成功")).at(successes), "Milky 管理员附真实 @ 发出的重验未通过。");
+
+    batchRoster = true;
+    memberJoinTimes.set("79:42", 1_700_000_000);
+    memberLastSentTimes.set("79:42", 1_700_000_000);
+    memberJoinTimes.set("79:77", 1_700_000_003);
+    memberLastSentTimes.set("79:77", 1_700_000_004);
+    await webhook("message_receive", milkyTitle("#重新验证从未发言的人", operator));
+    await promptTo(42);
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "get_group_member_info" && params.user_id === 77),
+      "Milky 批量重验没有按原间隔复查下一位实际成员。");
+    await announcementReply("批量验证结束，已确认向 1 人发送题目");
+    expect(milkyCalls.some(({ action, params }) => action === "send_group_message" &&
+      JSON.stringify(params.message).includes('"user_id":77') && JSON.stringify(params.message).includes("欢迎！"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

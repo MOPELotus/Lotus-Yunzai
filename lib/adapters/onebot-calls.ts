@@ -282,7 +282,9 @@ export class OneBotCalls {
       if (!isRecord(result) || (verifyIds && (result.group_id !== groupId || result.user_id !== userId))) return;
       const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") {
-        return { role, joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined };
+        const last = result.last_sent_time;
+        return { role, joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined,
+          lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
       }
     } catch {
       return undefined;

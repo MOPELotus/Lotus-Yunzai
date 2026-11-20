@@ -264,7 +264,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const member = result.status === "confirmed" ? result.data.member : undefined;
     if (signal.aborted || active.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
     if (member.role === "member" || member.role === "admin" || member.role === "owner") {
-      return { role: member.role, joinTime: positiveId(member.join_time) ? member.join_time : undefined };
+      const last = member.last_sent_time;
+      return { role: member.role, joinTime: positiveId(member.join_time) ? member.join_time : undefined,
+        lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
     }
   }
 
