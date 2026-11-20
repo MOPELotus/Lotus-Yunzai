@@ -1,6 +1,6 @@
 import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
-import type { ManagedTlsListener } from "./managed-handoff.ts";
+import type { ManagedEndpoints } from "./managed-handoff.ts";
 import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
   type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
@@ -11,7 +11,7 @@ interface ManagedWorkerOptions {
   readonly held?: boolean;
   readonly expectedRevision?: string;
   readonly expectedPlugins?: readonly string[];
-  readonly expectedTls?: ManagedTlsListener;
+  readonly expectedEndpoints?: ManagedEndpoints;
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
   readonly onRestart?: (pausedAt?: number) => void;
@@ -21,14 +21,14 @@ interface ManagedWorkerOptions {
 const gracefulStopTimeout = 10_000;
 const startupStopTimeout = 1_000;
 
-export class ManagedTlsUnavailableError extends Error {}
+export class ManagedEndpointUnavailableError extends Error {}
 
 function validPause(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
-  const { expectedRevision, expectedPlugins = [], expectedTls, held, onRestart, onUpdate } = options;
+  const { expectedRevision, expectedPlugins = [], expectedEndpoints = {}, held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
     throw new Error("宿主启动检查需要完整的 Git 提交号。");
   }
@@ -43,7 +43,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "1",
   };
   let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
-  let tls: ManagedTlsListener | undefined;
+  let endpoints: ManagedEndpoints = {};
   if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
   else delete env.LOTUS_MANAGED_PAUSED_AT;
   const readiness = Promise.withResolvers<void>();
@@ -92,10 +92,19 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             void stop();
             return;
           }
-          const listener = "tls" in message ? message.tls : undefined;
-          tls = listener === "https" || listener === "wss" ? listener : undefined;
-          if (expectedTls && (!tls || (expectedTls === "wss" && tls !== "wss"))) {
-            startupError = new ManagedTlsUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
+          const tls = "tls" in message ? message.tls : undefined;
+          const milky = "milky" in message ? message.milky : undefined;
+          endpoints = {
+            tls: tls === "https" || tls === "wss" ? tls : undefined,
+            milky: milky === "webhook" || milky === "ws" ? milky : undefined,
+          };
+          if (expectedEndpoints.tls && (!endpoints.tls || (expectedEndpoints.tls === "wss" && endpoints.tls !== "wss"))) {
+            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
+            void stop();
+            return;
+          }
+          if (expectedEndpoints.milky && endpoints.milky !== expectedEndpoints.milky) {
+            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Milky 入口。");
             void stop();
             return;
           }
@@ -209,7 +218,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     ready: readiness.promise,
     exited,
     get pausedAt() { return pausedAt; },
-    get tls() { return tls; },
+    get endpoints() { return endpoints; },
     activate() {
       if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");
       if (active) return;

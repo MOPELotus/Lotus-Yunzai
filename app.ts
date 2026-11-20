@@ -2839,7 +2839,9 @@ if (import.meta.main) {
         await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
-      await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, tlsListener);
+      await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
+        tls: tlsListener, milky: milkyTransport && milky?.connection,
+      });
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();
       pendingModuleTasks.clear();

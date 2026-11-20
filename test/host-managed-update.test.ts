@@ -618,12 +618,23 @@ async function configureMilkyUpdate(active: string, port: string, accessToken: s
   ].join("\n") + "\n");
 }
 
-async function exerciseMilkyUpdate(fail: boolean) {
+async function exerciseMilkyUpdate(fault?: "startup" | "config") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-milky-managed-update-"));
   const milkyToken = "managed-update-milky-fixture";
   const mock = milkyUpdateGateway(milkyToken, 99);
   try {
-    const { active, old, candidate } = await fixtureRepository(temporary, fail);
+    const { active, old, candidate, writer } = await fixtureRepository(temporary, fault === "startup");
+    if (fault === "config") {
+      const app = join(writer, "app.ts");
+      const source = await readFile(app, "utf8");
+      const readSettings = "readMilkySettings(root).catch(";
+      expect(source).toContain(readSettings);
+      await writeFile(app, source.replace(readSettings,
+        "(handoff.accepting ? readMilkySettings(root) : Promise.reject(new Error('fixture Milky config failure'))).catch("));
+      git(writer, "add", "app.ts");
+      git(writer, "commit", "--quiet", "-m", "Fixture Milky config failure during handoff");
+      git(writer, "push", "--quiet", "origin", "main");
+    }
     await writeFile(join(active, "config/config/other.yaml"), [
       'master: ["99:51", "100:52"]', "disablePrivate: true", "disableMsg: 私聊限制夹具",
       "disableAdopt: ['^#诊断$', '^#版本$']",
@@ -651,7 +662,7 @@ async function exerciseMilkyUpdate(fail: boolean) {
         deadline(supervisor.nextEndpoint(), "Milky 更新后托管宿主未启动。", 16_000),
         deadline(mock.firstClosed.promise, "Milky 更新时未关闭原事件连接。", 16_000),
       ]);
-      const expected = fail ? old : candidate;
+      const expected = fault ? old : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
       const sameOneBot = await supervisor.open(replacement, 99);
       await expectVersion(sameOneBot, expected);
@@ -662,8 +673,8 @@ async function exerciseMilkyUpdate(fail: boolean) {
 
       mock.releaseReplacement.resolve();
       const updated = await mock.open(1);
-      const receipt = await mock.next({ user_id: 51 }, fail ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
-      if (!fail) expect(receipt).toContain(candidate.slice(0, 12));
+      const receipt = await mock.next({ user_id: 51 }, fault ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
+      if (!fault) expect(receipt).toContain(candidate.slice(0, 12));
       updated("#版本", 51);
       const version = await mock.next({ user_id: 51 }, /^Lotus-Yunzai 版本/u);
       expect(version).toContain(expected.slice(0, 12));
@@ -671,7 +682,8 @@ async function exerciseMilkyUpdate(fail: boolean) {
       expect(mock.frames).toEqual([]);
       await supervisor.stop();
       const diagnosticsAfterStop = await supervisor.stderr;
-      if (fail) expect(diagnosticsAfterStop).toContain(liveFailure);
+      if (fault === "startup") expect(diagnosticsAfterStop).toContain(liveFailure);
+      else if (fault === "config") expect(diagnosticsAfterStop).toContain("候选宿主未能接回原版本的 Milky 入口");
       else expect(diagnosticsAfterStop).not.toContain(liveFailure);
     } finally {
       mock.releaseReplacement.resolve();
@@ -684,9 +696,11 @@ async function exerciseMilkyUpdate(fail: boolean) {
 }
 
 test.skipIf(!Bun.which("git"))("Milky 主人可在限制私聊时触发真实托管更新，回执仅返回原 Milky 私聊",
-  () => exerciseMilkyUpdate(false), 35_000);
+  () => exerciseMilkyUpdate(), 35_000);
 test.skipIf(!Bun.which("git"))("Milky 托管更新在活动环境失败后回滚，回执仅返回原 Milky 私聊",
-  () => exerciseMilkyUpdate(true), 35_000);
+  () => exerciseMilkyUpdate("startup"), 35_000);
+test.skipIf(!Bun.which("git"))("Milky 托管更新在候选仍运行但适配器配置读取失败时回滚",
+  () => exerciseMilkyUpdate("config"), 35_000);
 
 async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-trss-scheduled-update-"));

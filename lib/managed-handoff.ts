@@ -4,13 +4,17 @@ import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdatePr
   type ManagedUpdateWireRequest } from "./managed-update-protocol.ts";
 
 export type ManagedTlsListener = "https" | "wss";
+export interface ManagedEndpoints {
+  readonly tls?: ManagedTlsListener;
+  readonly milky?: "webhook" | "ws";
+}
 
 interface ManagedHandoff {
   readonly managed: boolean;
   readonly accepting: boolean;
   readonly supportsAdapterReceipts: boolean;
   readonly pausedAt?: number;
-  ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], tls?: ManagedTlsListener): Promise<void>;
+  ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints): Promise<void>;
   restart(pausedAt?: number): boolean;
   reportPower(pausedAt?: number): boolean;
   update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
@@ -18,9 +22,11 @@ interface ManagedHandoff {
   onDisconnect(handler: () => void): () => void;
 }
 
-type Notice = { type: "lotus-ready"; revision?: string; plugins?: readonly string[]; tls?: ManagedTlsListener } | { type: "lotus-restart"; pausedAt?: number } |
-  { type: "lotus-power"; pausedAt?: number } |
-  { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
+type Notice =
+  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[] } & ManagedEndpoints)
+  | { type: "lotus-restart"; pausedAt?: number }
+  | { type: "lotus-power"; pausedAt?: number }
+  | { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const failed = () => new Error("受管进程未能完成启动交接。");
@@ -93,13 +99,13 @@ export function createManagedHandoff(): ManagedHandoff {
     }
   }
 
-  async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], tls?: ManagedTlsListener) {
+  async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints) {
     if (signal.aborted || !connected() || (held && revision === undefined) ||
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
     const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
     const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }),
-      ...(plugins === undefined ? {} : { plugins }), ...(tls === undefined ? {} : { tls }) } as const;
+      ...(plugins === undefined ? {} : { plugins }), ...endpoints } as const;
     if (!held) {
       if (!notify(message)) throw failed();
       activated = true;
@@ -172,8 +178,8 @@ export function createManagedHandoff(): ManagedHandoff {
     supportsAdapterReceipts: adapterReceipts,
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     get accepting() { return accepting && connected(); },
-    ready(revision, signal, loadedPlugins, tls) {
-      return readiness ??= reportReady(revision, signal, loadedPlugins, tls);
+    ready(revision, signal, loadedPlugins, endpoints) {
+      return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints);
     },
     restart(pausedAt) {
       if (!accepting || restarting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;
