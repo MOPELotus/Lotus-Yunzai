@@ -111,7 +111,7 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
     accept: request.headers.get("Accept"),
   }) });
   let host: ReturnType<typeof Bun.spawn> | undefined;
-  let socket: WebSocket | undefined;
+  const sockets: WebSocket[] = [];
   try {
     await copyHost(root);
     const plugins = join(root, "plugins");
@@ -356,24 +356,39 @@ failsMsg: 协议拒绝
 
     // Bun accepts HTTP headers in the client constructor.
     const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
-    const client = new BunWebSocket(endpoint, {
-      headers: { ...authorizedHeaders, "X-Client-Role": "Universal" },
-    });
-    socket = client;
-    await new Promise<void>((ok, fail) => {
-      client.addEventListener("open", () => ok(), { once: true });
-      client.addEventListener("error", fail, { once: true });
-    });
+    async function connect(botId: number) {
+      const gateway = new BunWebSocket(endpoint!, {
+        headers: { ...authorizedHeaders, "X-Client-Role": "Universal", "X-Self-ID": String(botId) },
+      });
+      sockets.push(gateway);
+      const prewarmed = Promise.withResolvers<void>();
+      gateway.addEventListener("message", (event) => {
+        const { action, echo } = JSON.parse(event.data);
+        const list = action === "get_group_list" || action === "get_group_member_list";
+        if (!list && action !== "get_login_info") return;
+        event.stopImmediatePropagation();
+        const data = list ? [] : { user_id: botId, nickname: "V3 夹具" };
+        gateway.send(JSON.stringify({ echo, status: "ok", retcode: 0, data }));
+        if (action === "get_group_list") prewarmed.resolve();
+      });
+      await new Promise<void>((ok, fail) => {
+        gateway.addEventListener("open", () => ok(), { once: true });
+        gateway.addEventListener("error", fail, { once: true });
+      });
+      await prewarmed.promise;
+      return gateway;
+    }
+    const client = await connect(99);
 
     const event = {
       post_type: "message", message_type: "group", sub_type: "normal",
       self_id: 99, user_id: 42, group_id: 77, message_id: 123,
     };
-    async function send(message: string | object[], fields: Record<string, unknown> = {}) {
+    async function send(message: string | object[], fields: Record<string, unknown> = {}, gateway = client) {
       const reply = new Promise<Record<string, unknown>>((ok) => {
-        client.addEventListener("message", ({ data }) => ok(JSON.parse(data).params), { once: true });
+        gateway.addEventListener("message", ({ data }) => ok(JSON.parse(data).params), { once: true });
       });
-      client.send(JSON.stringify({ ...event, message, ...fields }));
+      gateway.send(JSON.stringify({ ...event, message, ...fields }));
       return reply;
     }
 
@@ -486,8 +501,10 @@ failsMsg: 协议拒绝
     expect(await send("#管理", { message_type: "private", user_id: 51 })).toMatchObject({
       user_id: 51, message: "收到 #管理 51",
     });
-    expect(await send("#管理", { message_type: "private", user_id: 51, self_id: 98, isMaster: true }))
+    const otherBot = await connect(98);
+    expect(await send("#管理", { message_type: "private", user_id: 51, self_id: 98, isMaster: true }, otherBot))
       .toMatchObject({ user_id: 51, message: "暂无权限执行此指令。" });
+    otherBot.close();
     expect(await send("#登录列表")).toMatchObject({
       group_id: 77, message: "登录列表\n档案 1 · 已登录\n档案 2 · 未登录\n档案 3 · 无法读取",
     });
@@ -765,7 +782,7 @@ failsMsg: 协议拒绝
     expect(logs.join("\n")).toContain("[INFO] V3 夹具查询完成");
   } finally {
     upstream.stop(true);
-    socket?.close();
+    for (const gateway of sockets) gateway.close();
     host?.kill();
     await host?.exited;
     await rm(root, { recursive: true, force: true });
