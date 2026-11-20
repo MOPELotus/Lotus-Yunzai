@@ -111,6 +111,31 @@ test("真实 HTTP 同一监听器保留预配置域，凭证票据只属于创�
   }
 });
 
+test("反代剥去公开前缀时保留页内资源、同源登记与验证回调", async () => {
+  const external = "/bots/my%20lotus";
+  const relay = createManualCaptchaRelay({ publicUrl: origin + external + "/" });
+  try {
+    const reg = await required(relay.register(v4));
+    const { pathname } = new URL(reg.link);
+    expect(pathname).toStartWith(external + prefix + "/GTest/");
+    expect(await relay.handlePublic(new Request(reg.link))).toBeUndefined();
+    const internal = pathname.slice(external.length);
+    const page = await get(relay, internal);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain(`href="${external}${prefix}/verify.css"`);
+    expect(html).toContain(`src="${external}${prefix}/verify.js"`);
+    for (const name of ["verify.js", "verify.css"]) expect((await get(relay, `${prefix}/${name}`)).status).toBe(200);
+    const claim = await get(relay, path(reg, "register"));
+    expect(await claim.json()).toEqual(v4);
+    const submitted = await required(relay.handlePublic(post(path(reg, "validate"), proof4)));
+    expect(submitted.status).toBe(200);
+    expect(await relay.readResult(reg.ticket)).toEqual({ status: "complete", result: proof4 });
+  } finally {
+    relay.close();
+  }
+});
+
 test("验证票随发起会话失效，取消在途提交也不影响其他会话", async () => {
   const relay = createManualCaptchaRelay({ publicUrl: origin });
   const first = new AbortController();
@@ -226,7 +251,9 @@ test("释放过期/失败票据、关闭期间中止读取并禁止旧实例复�
 
 test("公开地址与前缀在启动时固定校验", async () => {
   for (const publicUrl of ["http://public.example.invalid", "https://user@host.invalid", "https://a.invalid/a/..",
-    "https://a.invalid?x=1", "https://a.invalid#f", " https://a.invalid", "https://a.invalid:0", "ftp://a.invalid"]) {
+    "https://a.invalid?x=1", "https://a.invalid#f", " https://a.invalid", "https://a.invalid:0", "ftp://a.invalid",
+    "https://a.invalid/a/%2e%2e", "https://a.invalid/a//b", "https://a.invalid/%2fadmin", "https://a.invalid/%5cadmin",
+    "https://a.invalid/%invalid", "https://a.invalid/%0a", "https://a.invalid/a&quote;", "https://a.invalid/a$'", "https://a.invalid/a\n"]) {
     expect(() => createManualCaptchaRelay({ publicUrl })).toThrow();
   }
   for (const basePath of ["/", "/captcha/../relay", "/captcha//relay", "captcha/manual", "/captcha/manual/"]) {

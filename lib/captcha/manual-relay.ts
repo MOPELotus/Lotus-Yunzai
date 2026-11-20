@@ -60,12 +60,24 @@ const protectedHeaders = {
   "X-Robots-Tag": "noindex, nofollow, noarchive",
 };
 
-function publicOrigin(raw: string): URL {
-  if (typeof raw !== "string" || !/^https?:\/\/[^\s/?#@\\]+\/?$/u.test(raw)) throw new Error("人工验证公开地址无效。");
+function publicBase(raw: string): URL {
+  const match = typeof raw === "string" && /^https?:\/\/[^\s/?#@\\]+(\/[^\s?#\\]*)?$/iu.exec(raw);
+  if (!match || match[0] !== raw) throw new Error("人工验证公开地址无效。");
   const parsed = URL.parse(raw);
-  if (!parsed || parsed.username || parsed.password || parsed.port === "0" || parsed.pathname !== "/" ||
+  if (!parsed || parsed.username || parsed.password || parsed.port === "0" ||
       (parsed.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname))) {
     throw new Error("人工验证公开地址须使用 HTTPS 或本机回环 HTTP。");
+  }
+  const path = match[1]?.replace(/\/$/u, "") ?? "";
+  try {
+    if (path && path.slice(1).split("/").some((segment) => {
+      const decoded = decodeURIComponent(segment);
+      return !decoded || decoded === "." || decoded === ".." || /[/\\\u0000-\u001f\u007f]/u.test(decoded);
+    })) throw new Error();
+    // GT-Manual uses the path in both HTML attributes and string replacement templates.
+    if (!/^[\w/.~@+!()'*,;=:%-]+$/u.test(parsed.pathname)) throw new Error();
+  } catch {
+    throw new Error("人工验证公开路径无效。");
   }
   return parsed;
 }
@@ -123,12 +135,13 @@ async function readSubmission(request: Request, closed: AbortSignal, scope?: Abo
 export function createManualCaptchaRelay({
   publicUrl, basePath = manualCaptchaBasePath, ttlMs = 180_000, resultTtlMs = 30_000, maxTasks = 1000, now,
 }: ManualCaptchaRelayOptions) {
-  const origin = publicOrigin(publicUrl);
+  const origin = publicBase(publicUrl);
   if (!/^(?:\/[A-Za-z0-9_-]+)+$/u.test(basePath) || basePath.length > 160) throw new Error("人工验证路径配置无效。");
+  const publicPath = origin.pathname.replace(/\/$/u, "") + basePath;
   const registerKey = randomBytes(32).toString("base64url");
   const stopped = new AbortController();
   const vendorOptions = { now, config: {
-    basePath, publicAddress: origin.origin, allowedOrigins: [origin.origin], registerKey,
+    basePath: publicPath, publicAddress: origin.origin, allowedOrigins: [origin.origin], registerKey,
     ttlMs: positive(ttlMs, 3_600_000), resultTtlMs: positive(resultTtlMs, 3_600_000), maxTasks: positive(maxTasks, 1000),
   } };
   const handler = createVerificationHandler(vendorOptions);
@@ -152,7 +165,7 @@ export function createManualCaptchaRelay({
         if (value !== undefined) payload = typeof value === "string" ? value : new Uint8Array(value);
       },
     };
-    await handler({ method, url: basePath + path, headers: { host: origin.host, origin: origin.origin,
+    await handler({ method, url: publicPath + path, headers: { host: origin.host, origin: origin.origin,
       ...(body && { "content-type": "application/json" }) }, socket: { encrypted: origin.protocol === "https:" }, body }, reply);
     return new Response(payload, { status, headers });
   }
@@ -209,7 +222,7 @@ export function createManualCaptchaRelay({
     }
     const ticket = Object.freeze({}) as ManualCaptchaTicket;
     tickets.set(ticket, id);
-    return { link: `${origin.origin}${basePath}/GTest/${id}`, expiresAt: data.expires_at, ticket };
+    return { link: `${origin.origin}${publicPath}/GTest/${id}`, expiresAt: data.expires_at, ticket };
   }
 
   async function readResult(ticket: ManualCaptchaTicket): Promise<ManualCaptchaResult> {
