@@ -39,7 +39,7 @@ export function panelApi(
   };
 }
 
-export async function readPanelJson(request: Request): Promise<unknown> {
+export async function readPanelJson(request: Pick<Request, "headers" | "body">, maxBytes = 65_536): Promise<unknown> {
   if (request.headers.get("Content-Type")?.split(";", 1)[0]?.trim() !== "application/json" || !request.body) {
     throw new Error("请求须为 JSON。");
   }
@@ -52,7 +52,7 @@ export async function readPanelJson(request: Request): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > 65_536) throw new Error("请求内容过大。");
+      if (bytes > maxBytes) throw new Error("请求内容过大。");
       body += decoder.decode(value, { stream: true });
     }
     return JSON.parse(body + decoder.decode()) as unknown;

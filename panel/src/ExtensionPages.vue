@@ -8,6 +8,7 @@ interface ExtensionPage {
   title: string;
   icon?: string;
   priority: number;
+  servicePreview?: boolean;
 }
 interface Issue {
   plugin: string;
@@ -49,7 +50,8 @@ function isPage(value: unknown): value is ExtensionPage {
   return isRecord(value) && typeof value.id === "string" && /^[A-Za-z0-9_-]+$/u.test(value.id) &&
     typeof value.plugin === "string" && typeof value.title === "string" &&
     typeof value.priority === "number" && Number.isFinite(value.priority) &&
-    (value.icon === undefined || typeof value.icon === "string");
+    (value.icon === undefined || typeof value.icon === "string") &&
+    (value.servicePreview === undefined || value.servicePreview === true);
 }
 
 function isIssue(value: unknown): value is Issue {
@@ -70,6 +72,9 @@ function scopedUrl(value: unknown, pageId: string): string | undefined {
     const api = `${panelRoot}extensions-api/${pageId}`;
     if (frame.searchParams.get("__apiBase") === api) {
       frame.searchParams.set("__apiBase", new URL(api.slice(panelRoot.length), panel).pathname);
+    }
+    if (frame.searchParams.get("__webBase") === "/guoba") {
+      frame.searchParams.set("__webBase", new URL("../guoba", panel).pathname);
     }
     frame.hash = url.hash;
     return frame.pathname + frame.search + frame.hash;
@@ -267,7 +272,8 @@ onBeforeUnmount(() => {
           <h2 id="extension-current-title">{{ selected.title }}</h2>
           <ElButton :loading="busy === 'open'" :disabled="Boolean(busy)" @click="load(selected)">刷新页面</ElButton>
         </div>
-        <iframe v-if="frameUrl" ref="frame" :src="frameUrl" :title="selected.title" sandbox="allow-scripts allow-forms"
+        <iframe v-if="frameUrl" ref="frame" :src="frameUrl" :title="selected.title"
+          :sandbox="selected.servicePreview ? 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox' : 'allow-scripts allow-forms'"
           referrerpolicy="no-referrer" />
         <p v-else-if="busy === 'open'" class="extension-note" role="status">正在打开页面…</p>
       </div>

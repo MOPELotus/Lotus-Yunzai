@@ -87,6 +87,7 @@ import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
+import { webMountPage } from "./lib/panel-web-mount.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
@@ -2816,7 +2817,8 @@ if (import.meta.main) {
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
       ]);
       const guoba = panelGuobaRoutes(plugins.directories);
-      const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories);
+      const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories,
+        network.webMount && webMountPage(network.webMount, lifecycle.signal));
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));

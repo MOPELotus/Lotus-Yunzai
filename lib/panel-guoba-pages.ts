@@ -46,6 +46,14 @@ export interface GuobaPages {
   resolveAsset(pageId: string, resource: string): Promise<GuobaAsset | undefined>;
 }
 
+export interface ExternalGuobaPage {
+  readonly plugin: string;
+  readonly directory: string;
+  readonly definition: Omit<GuobaPage, "plugin" | "usePluginIcon">;
+  readonly apis: readonly GuobaApiDefinition[];
+  readonly servicePreview?: boolean;
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -206,18 +214,23 @@ async function loadDescriptor(plugin: string, directory: string, descriptor: str
   return { definitions, registeredApis: [...registeredApis.values()] };
 }
 
-export async function loadGuobaPages(pluginDirectories: ReadonlyMap<string, string>, reload = false): Promise<GuobaPages> {
+export async function loadGuobaPages(
+  pluginDirectories: ReadonlyMap<string, string>, reload = false, external?: ExternalGuobaPage,
+): Promise<GuobaPages> {
   const registry = new Map<string, { page: GuobaPage; directory: string }>();
   const apis = new Map<string, readonly GuobaApiDefinition[]>();
   const issues: GuobaPageIssue[] = [];
-  for (const [plugin, pluginDirectory] of pluginDirectories) {
+  const sources = external ? new Map(pluginDirectories).set(external.plugin, external.directory) : pluginDirectories;
+  for (const [plugin, pluginDirectory] of sources) {
     let descriptor: typeof descriptorFiles[number] | undefined;
     try {
       const directory = await findPageDirectory(pluginDirectory);
       if (directory === undefined) continue;
-      descriptor = await findDescriptor(directory);
-      if (descriptor === undefined) continue;
-      const { definitions, registeredApis } = await loadDescriptor(plugin, directory, descriptor, reload);
+      const selected = external?.plugin === plugin ? external : undefined;
+      descriptor = selected ? undefined : await findDescriptor(directory);
+      if (!selected && !descriptor) continue;
+      const { definitions, registeredApis } = selected ? { definitions: [selected.definition], registeredApis: selected.apis }
+        : await loadDescriptor(plugin, directory, descriptor!, reload);
       const staged: GuobaPage[] = [];
       for (const definition of definitions) {
         try {

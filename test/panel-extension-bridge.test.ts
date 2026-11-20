@@ -106,10 +106,10 @@ test("扩展脚本在反代前缀内转发当前和旧锅巴 API，并只发送�
     URL, URLSearchParams, Request, Headers,
   });
   expect(window.__GUOBA__).toMatchObject({ apiBase: prefix + current, token: "page-ticket" });
-  for (const route of [current, legacy, prefix + current, "/guoba/api"]) {
+  for (const route of [current, legacy, prefix + current, prefix + legacy, "/guoba/api", prefix + "/guoba/api"]) {
     await window.fetch(`${origin}${route}/data?item=one`);
   }
-  expect(calls.map(({ url }) => url)).toEqual(Array(4).fill(`${origin}${prefix}${current}/data?item=one`));
+  expect(calls.map(({ url }) => url)).toEqual(Array(6).fill(`${origin}${prefix}${current}/data?item=one`));
   for (const call of calls) {
     expect(new Headers(call.init?.headers).get("guoba-access-token")).toBe("page-ticket");
     expect(call.init?.credentials).toBe("omit");

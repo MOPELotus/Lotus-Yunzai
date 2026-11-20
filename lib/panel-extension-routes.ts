@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { attachExtensionBridge, extensionBridge, extensionTicketLifetimeMs, extensionTokenHeader } from "./panel-extension-bridge.ts";
 import { dispatchGuobaApi } from "./panel-guoba-http.ts";
-import { loadGuobaPages, type GuobaPages } from "./panel-guoba-pages.ts";
+import { loadGuobaPages, type ExternalGuobaPage, type GuobaPage, type GuobaPages } from "./panel-guoba-pages.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
 // Allow submit handlers to run inside the frame. CSP still blocks native form requests.
@@ -10,6 +10,8 @@ const framePolicy = [
   "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "font-src 'self'",
   "form-action 'none'", "frame-ancestors 'self'", "base-uri 'none'",
 ].join("; ");
+const serviceFramePolicy = framePolicy.replace("sandbox allow-scripts allow-forms",
+  "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox") + "; frame-src 'self'";
 const frameHeaders = {
   "Cache-Control": "no-store",
   "Content-Security-Policy": framePolicy,
@@ -30,11 +32,11 @@ function escapedPath(name: string): string {
   return name.split("/").map((part) => encodeURIComponent(part)).join("/");
 }
 
-export function panelExtensionRoutes(directories: PluginLoadReport["directories"]) {
+export function panelExtensionRoutes(directories: PluginLoadReport["directories"], external?: ExternalGuobaPage) {
   const secret = randomBytes(32);
   const sources = new Map([...directories].map(([name, { path }]) => [name, path]));
   function snapshot(reload = false) {
-    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload) };
+    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload, external) };
   }
   let current = snapshot();
   let scanning: Promise<GuobaPages> | undefined;
@@ -51,10 +53,15 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
   const validTicket = (generation: string, use: TicketUse, id: string, value: string) =>
     ticketExpiry(generation, use, id, value) > Date.now();
   const nextExpiry = () => String(Date.now() + extensionTicketLifetimeMs);
+  const servicePreview = ({ id, plugin }: GuobaPage) => external?.servicePreview === true &&
+    id === external.definition.id && plugin === external.plugin;
 
   function catalog({ pages, issues }: GuobaPages): Response {
     return Response.json({
-      pages: pages.map(({ id, plugin, title, icon, priority }) => ({ id, plugin, title, icon, priority })),
+      pages: pages.map((page) => ({
+        id: page.id, plugin: page.plugin, title: page.title, icon: page.icon, priority: page.priority,
+        ...(servicePreview(page) && { servicePreview: true }),
+      })),
       issues,
     });
   }
@@ -151,6 +158,7 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     }
     const headers = { ...frameHeaders, "Content-Type": type };
     if (isFrame) {
+      if (servicePreview(page)) headers["Content-Security-Policy"] = serviceFramePolicy;
       if (apis.get(page.plugin)?.length) headers["Content-Security-Policy"] += "; connect-src 'self'";
       if (request.method !== "HEAD") {
         const parents = "../".repeat(resource ? resource.split("/").length + 2 : 3);

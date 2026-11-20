@@ -52,7 +52,9 @@ export function extensionBridge(api?: { apiBase: string; relativeApi: string; le
     if (!config) return;
     let token = new URLSearchParams(location.search).get("token") || "";
     const { apiBase: internalApi, relativeApi, legacyApiBase, tokenKey } = config;
-    const apiBase = new URL("../../" + relativeApi, document.currentScript.src).pathname;
+    const script = document.currentScript.src;
+    const apiBase = new URL("../../" + relativeApi, script).pathname;
+    const publicRoot = new URL("../../../", script).pathname.slice(0, -1);
     window.__GUOBA__ = { apiBase, token, tokenKey };
     const refreshAfterMs = ${extensionTicketLifetimeMs - 30_000};
     let renewAt = Date.now() + refreshAfterMs;
@@ -86,10 +88,12 @@ export function extensionBridge(api?: { apiBase: string; relativeApi: string; le
       const source = new Request(input, init);
       const target = new URL(source.url);
       if (target.origin !== location.origin) return original(source);
-      if (includesPath(target.pathname, legacyApiBase)) {
-        target.pathname = apiBase + target.pathname.slice(legacyApiBase.length);
-      } else if (includesPath(target.pathname, legacy) && !includesPath(target.pathname, legacy + "/custom")) {
-        target.pathname = apiBase + target.pathname.slice(legacy.length);
+      const path = publicRoot && includesPath(target.pathname, publicRoot + legacy)
+        ? target.pathname.slice(publicRoot.length) : target.pathname;
+      if (includesPath(path, legacyApiBase)) {
+        target.pathname = apiBase + path.slice(legacyApiBase.length);
+      } else if (includesPath(path, legacy) && !includesPath(path, legacy + "/custom")) {
+        target.pathname = apiBase + path.slice(legacy.length);
       } else if (includesPath(target.pathname, internalApi)) {
         target.pathname = apiBase + target.pathname.slice(internalApi.length);
       } else if (!includesPath(target.pathname, apiBase)) {

@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { readLocalConfig } from "./config.ts";
 import { isReservedServerPath, readServerRedirect } from "./server-redirect.ts";
 
@@ -25,10 +26,26 @@ export interface ServerSettings {
   readonly publicUrl?: URL;
   readonly manualCaptchaUrl?: string;
   readonly redirect?: string;
+  readonly webMount?: WebMountSettings;
+}
+
+export interface WebMountSettings {
+  readonly directory: string;
+  readonly socket: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function webMountSettings(value: unknown): WebMountSettings | undefined {
+  if (value === undefined || value === null || value === false) return;
+  const { directory, socket } = record(value) ? value : {};
+  if (typeof directory !== "string" || typeof socket !== "string" ||
+      !isAbsolute(directory) || !isAbsolute(socket) || /[\u0000-\u001f]/u.test(directory + socket)) {
+    throw new Error("config/server.yaml 的 web_mount.directory 和 web_mount.socket 须为绝对路径。");
+  }
+  return { directory, socket };
 }
 
 function port(value: unknown, source: string): number | undefined {
@@ -131,6 +148,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
     publicUrl: publicHttpUrl(config.url),
     manualCaptchaUrl: manualCaptchaUrl?.trim() || undefined,
     redirect: readServerRedirect(config.redirect),
+    webMount: webMountSettings(config.web_mount),
     ...httpsSettings(config.https, httpAuth, wsPort === undefined ? undefined : wsAuth),
   };
 }
