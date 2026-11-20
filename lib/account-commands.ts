@@ -110,7 +110,7 @@ export function accountCommands(
       const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
         : profile.schedule.mode === "random" ? "随机" : "跟随全局";
       const device = profile.deviceBound ? profile.device.name || "已绑定" : profile.device.generated
-        ? [`自动设备 · ${profile.device.name || "Lotus"}`, !profile.device.hasFingerprint && "FP 待获取"].filter(Boolean).join(" · ")
+        ? [`自动设备 · ${profile.device.name || "Lotus-Yunzai"}`, !profile.device.hasFingerprint && "FP 待获取"].filter(Boolean).join(" · ")
         : "未绑定";
       const settings: { label: string; value: string }[] = checkinItems.map(([label, game, forum]) => ({
         label, value: `游戏 ${game ? switchState(profile.gameCheckin[game] === true) : "无"} · 社区 ${switchState(profile.communityCheckin.includes(forum))}`,
@@ -184,11 +184,8 @@ export function accountCommands(
     const cardCommand = `#配置${suffix}`;
     accountActions[cardCommand] = describe(id || 1);
     for (const prefix of ["", "原神", "星铁", "绝区零", "zzz", "ZZZ"]) aliases[`#${prefix}设备信息${suffix}`] = cardCommand;
-    for (const prefix of ["", "Lotus", "荷花"]) {
-      for (const label of ["配置", "资料", "资料卡", "我的配置"]) {
-        const alias = `#${prefix}${label}${suffix}`;
-        if (alias !== cardCommand) aliases[alias] = cardCommand;
-      }
+    for (const label of ["资料", "资料卡", "我的配置"]) {
+      aliases[`#${label}${suffix}`] = cardCommand;
     }
   }
 

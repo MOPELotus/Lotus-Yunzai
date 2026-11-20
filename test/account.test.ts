@@ -439,6 +439,11 @@ permissions:
       })));
     const user = { user_id: 42, message_type: "private", isMaster: false } as const;
     const owner = { ...user, isMaster: true };
+    for (const command of ["#配置2", "#资料2", "#绝区零设备信息2"]) {
+      expect(await registry.dispatch(`${command} 多余参数`, user)).toBe("用法：#配置 或 #配置2");
+    }
+    expect(await registry.dispatch("#Lotus配置2", user)).toBeUndefined();
+    expect(await registry.dispatch("#荷花资料卡2", user)).toBeUndefined();
     expect(await registry.dispatch("#刷新cookie2", user)).toContain("当前不允许");
     expect(await registry.dispatch("#刷新cookie", { ...owner, user_id: 51 })).toContain("当前不允许");
     expect(seen).toEqual([]);

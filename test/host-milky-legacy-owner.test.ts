@@ -153,7 +153,7 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
     await writeFile(join(atlas, "index.ts"), `
       export default {
         commands: { "#检查图鉴更新": (_args, ctx) => "图鉴维护 " + (ctx.atlasMaintenance === true) },
-        aliases: { "荷花图鉴检查更新": "#检查图鉴更新" },
+        aliases: { "图鉴检查更新": "#检查图鉴更新", "荷花图鉴检查更新": "#检查图鉴更新" },
       };
     `);
     await writeFile(join(root, "plugins", "milky-owner-fixture.js"), `
@@ -225,6 +225,8 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
       await command("#统计 机器人 99");
       await mock.reply({ user_id: owner }, "仅当前机器人的主人可以指定统计对象。");
       await command("荷花图鉴检查更新");
+      await mock.reply({ user_id: owner }, "图鉴维护 false");
+      await command("图鉴检查更新");
       await mock.reply({ user_id: owner }, "图鉴维护 true");
       await command("#检查图鉴更新", owner, group);
       await mock.reply({ group_id: group }, "图鉴维护 true");
