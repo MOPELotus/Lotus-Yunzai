@@ -1761,6 +1761,40 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("group_disband", { group_id: 97, operator_id: 69 });
     await Bun.sleep(100);
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && JSON.stringify(params.message).includes("群号：97"))).toBe(false);
+
+    await writeFile(noticeFile, 'default: { addGroupApplication: false }\n94: { addGroupApplication: true }\n');
+    const oneBotJoinRequest = { post_type: "request", request_type: "group", sub_type: "add", self_id: oneBotId,
+      group_id: 94, user_id: 82, flag: "owner-join-format", group_name: "合成原群名", nickname: "合成申请人", comment: "合成旧申请附言" };
+    client.send(JSON.stringify(oneBotJoinRequest));
+    client.send(JSON.stringify(oneBotJoinRequest));
+    const richJoin = JSON.stringify((await ownerReplyWith("合成旧申请附言")).params.message);
+    expect(richJoin).toContain("[通知(99) - 加群申请]");
+    expect(richJoin).toContain("https://p.qlogo.cn/gh/94/94/0");
+    expect(richJoin).toContain("群名：合成原群名");
+    expect(richJoin).toContain("昵称：合成申请人");
+    expect(richJoin).not.toContain("待审核群请求");
+    const joinId = /#同意入群 ([a-f0-9]{12})/u.exec(richJoin)?.[1];
+    expect(joinId).toBeDefined();
+    expect(richJoin).toContain(`#拒绝入群 ${joinId}`);
+    client.send(JSON.stringify(oneBotPrivate(`#拒绝入群 ${joinId} 合成当前拒绝原因`)));
+    await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "set_group_add_request" && params.flag === oneBotJoinRequest.flag &&
+      params.approve === false && params.reason === "合成当前拒绝原因"), "原编号未绑定真正的 OneBot 申请。");
+
+    const milkyJoinEvent = { group_id: 94, initiator_id: 83, notification_seq: 1730, is_filtered: false, comment: "合成 Milky 原申请" };
+    await webhook("group_join_request", milkyJoinEvent);
+    await webhook("group_join_request", milkyJoinEvent);
+    const richMilkyJoin = JSON.stringify((await milkyOwnerReply(operator, "合成 Milky 原申请")).params.message);
+    expect(richMilkyJoin).toContain("[通知(100) - 加群申请]");
+    expect(richMilkyJoin).toContain("账号：83");
+    expect(richMilkyJoin).not.toContain("引用");
+    await webhook("group_join_request", { ...milkyJoinEvent, group_id: 97, notification_seq: 1731, comment: "合成关闭旧格式申请" });
+    const ordinaryJoin = JSON.stringify((await milkyOwnerReply(operator, "合成关闭旧格式申请")).params.message);
+    expect(ordinaryJoin).toContain("待审核群请求");
+    expect(ordinaryJoin).not.toContain("p.qlogo.cn");
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("合成旧申请附言")))
+      .toHaveLength(1);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("合成 Milky 原申请"))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

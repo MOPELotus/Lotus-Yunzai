@@ -203,6 +203,8 @@ export interface GroupRequest {
   readonly deferManualReview?: (review: () => Promise<void>) => void;
   readonly notifyMasters: (message: string) => Promise<number>;
   readonly notifyRequestOwners?: (message: string) => Promise<number>;
+  readonly notifyOwners?: (reply: MessageReply, signal: AbortSignal) => Promise<number>;
+  readonly notifyJoinRequestOwners?: (ordinaryMessage: string, actions: string) => Promise<number>;
   readonly reply: MessageEvent["reply"];
 }
 

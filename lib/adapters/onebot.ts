@@ -216,12 +216,15 @@ async function dispatchRequest(
   if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") || !isId(group_id)) return;
   const reviewKey = { adapter: "onebot" as const, botId: self_id, flag };
   const joinReview = sub_type === "add" ? permissions.joinReview : undefined;
+  const session = groupActionSignal(connection, self_id);
 
   const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
     group_name: stringField(event.group_name),
     nickname: stringField(event.nickname),
     inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
+    notifyOwners: session && sub_type === "add" ? (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
+      () => permissions.masterIds(self_id).filter(id => permissions.isMaster(self_id, id)), reply, AbortSignal.any([session, active])) : undefined,
     approve: (approve = true, reason) => confirmJoinReview(joinReview, reviewKey,
       () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
     replyToApplicant,
@@ -233,7 +236,6 @@ async function dispatchRequest(
         : calls.replyWithConfirmation(send, params);
     },
   };
-  const session = groupActionSignal(connection, self_id);
   if (session && sub_type === "add") bindGroupModeration(request, {
     signal: session,
     joinRequestOrigin: { ...reviewKey, groupId: group_id, userId: user_id, nickname: request.nickname },

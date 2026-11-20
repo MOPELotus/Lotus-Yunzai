@@ -785,8 +785,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
               }, active)));
               return delivered.filter(outcome => outcome.status === "fulfilled" && outcome.value).length;
             },
-          } : request;
-          if (kind === "add") bindGroupModeration(request, {
+          } : kind === "add" ? { ...request, notifyOwners: notifyVerifiedOwnerReplies } : request;
+          if (kind === "add") bindGroupModeration(groupRequest, {
             signal,
             joinRequestOrigin,
             canModerate: () => canModerateGroupSubject(id => delegation.memberRole(request.group_id, id), account),
