@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { activateUpdate, previousUpdateDirectory } from "../lib/update-activation.ts";
+import { createFileToUrl, createImageToUrl } from "../lib/file-to-url.ts";
+import { createPublicFiles } from "../lib/public-files.ts";
 import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-runtime-paths.ts";
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
 
@@ -226,6 +228,43 @@ test.skipIf(process.platform === "win32")("候选拒绝旧主管遗留的相对�
     await activateUpdate(active, candidate, verify, state);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("受管更新保留显式生成图目录，继续按原范围分享本地图像", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-public-images-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const gallery = "generated images";
+  const picture = "原图.png";
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64");
+  const processEnv = { PATH: process.env.PATH, LOTUS_PUBLIC_IMAGE_DIR: `  ${gallery}  ` };
+  const files = createPublicFiles();
+  const getPaths = (path: string) => readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), {
+    ...processEnv, LOTUS_PUBLIC_IMAGE_DIR: path,
+  });
+  try {
+    await mkdir(join(active, gallery), { recursive: true });
+    await mkdir(candidate);
+    await writeFile(join(active, gallery, picture), png);
+    await writeFile(join(candidate, "outside.png"), png);
+    const state = await getPaths(processEnv.LOTUS_PUBLIC_IMAGE_DIR);
+    expect(state).toEqual([gallery]);
+    expect(await getPaths(".")).toEqual([]);
+    expect(await getPaths(dir)).toEqual([]);
+    const { previous } = await activateUpdate(active, candidate, async (root) => {
+      const share = createImageToUrl(createFileToUrl(files, {}, () => new URL("http://127.0.0.1:8080/")), join(root, gallery));
+      const link = new URL(await share(join(root, gallery, picture)));
+      const response = await files.handle(new Request(link));
+      expect(response?.status).toBe(200);
+      expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+      await expect(share(join(root, "outside.png"))).rejects.toThrow("不在允许分享的目录");
+    }, state);
+    await expect(verifyMovedRuntimePaths(active, previous, processEnv)).resolves.toBeUndefined();
+    expect(await Bun.file(join(previous, gallery, picture)).exists()).toBe(false);
+  } finally {
+    files.close();
+    await rm(dir, { force: true, recursive: true });
   }
 });
 

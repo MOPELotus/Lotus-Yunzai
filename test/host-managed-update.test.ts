@@ -420,6 +420,48 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
 }
 
 test.skipIf(!Bun.which("git"))("托管 #更新 应用宿主候选并只向原私聊发送一次成功回执", () => exerciseUpdate(false), 35_000);
+test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定义目录中的原图", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-public-images-"));
+  try {
+    const { active, candidate } = await fixtureRepository(temporary, false);
+    const directory = "generated images";
+    const picture = "原图.png";
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64");
+    await mkdir(join(active, directory));
+    await writeFile(join(active, directory, picture), png);
+    await writeFile(join(active, "plugins", "public-image-fixture.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message.private", rule: [{ reg: "^#分享原图$", fnc: "share" }] }); }
+        async share(event) { return event.reply(String(await Bot.imageToUrl(${JSON.stringify(join(directory, picture))}))); }
+      }
+    `);
+    const supervisor = bootSupervisor(active, { LOTUS_HTTP_PORT: "0", LOTUS_PUBLIC_IMAGE_DIR: directory });
+    async function checkPicture(client: Gateway) {
+      client.command("#分享原图", 51);
+      const frame = await client.next();
+      expectText(frame, { user_id: 51 }, /^http:\/\/127\.0\.0\.1:\d+\/File\//u);
+      const response = await fetch(frame.params.message, { proxy: false, signal: AbortSignal.timeout(3_000) });
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
+    }
+    try {
+      const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "图像测试宿主未启动。"), 99);
+      await checkPicture(first);
+      first.command("#更新", 51);
+      expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
+      const endpoint = await deadline(supervisor.nextEndpoint(), "图像测试候选未接管。", 16_000)
+        .catch(async error => { await supervisor.stop(); throw new Error(await supervisor.stderr, { cause: error }); });
+      const replacement = await supervisor.open(endpoint, 99);
+      expectText(await replacement.next(), { user_id: 51 }, /^更新成功/u);
+      expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
+      await checkPicture(replacement);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 35_000);
 test.skipIf(!Bun.which("git"))("托管 #更新 在活动环境失败时恢复旧 HEAD 并回复原群", () => exerciseUpdate(true), 35_000);
 test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回报插件提交", () => exerciseUpdate(false, "plugin"), 35_000);
 test.skipIf(!Bun.which("git"))("目标插件在实际环境拒绝加载时回退，宿主就绪不能掩盖失败", () => exerciseUpdate(true, "plugin"), 35_000);

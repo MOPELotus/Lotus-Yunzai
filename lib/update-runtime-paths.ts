@@ -12,7 +12,7 @@ const trimmedPathKeys = [
   "LOTUS_GENSHIN_WISH_STATE_DIR", "LOTUS_STAR_RAIL_WARP_STATE_DIR", "LOTUS_GUIDES_ROLE_DIR",
 ] as const;
 const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
-  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES"];
+  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set(["config", "data", "logs", "internal"]);
 const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
@@ -36,7 +36,7 @@ const dailyNoteAssets = [
   ...["树脂", "洞天宝钱", "委托", "派遣", "周本", "参量质变仪"].map(icon => `source-templates/genshin/note-icons/gs/${icon}.png`),
 ];
 
-function configuredAssetPaths(env: RuntimePaths): string[] {
+function configuredAssetPaths(root: string, env: RuntimePaths): string[] {
   const assets = configuredGameResourcePaths(env);
   const donor = env.LOTUS_ATLAS_THEME_SOURCE_DIR?.trim();
   if (donor && !env.LOTUS_ATLAS_THEME_DIR?.trim()) {
@@ -52,6 +52,9 @@ function configuredAssetPaths(env: RuntimePaths): string[] {
   if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
   if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
+  const publicImages = env.LOTUS_PUBLIC_IMAGE_DIR?.trim();
+  // The checkout itself can be the access boundary, in which case there is no dedicated image directory to move.
+  if (publicImages && relative(root, resolve(root, publicImages))) assets.push(publicImages);
   return assets;
 }
 
@@ -139,7 +142,7 @@ async function existingAssetPath(root: string, source: string, value: string): P
 
 async function findRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
   const assets: string[] = [];
-  for (const value of new Set(configuredAssetPaths(env))) {
+  for (const value of new Set(configuredAssetPaths(root, env))) {
     const path = await existingAssetPath(root, source, value);
     if (path && !persistentPath(path)) assets.push(path.split(sep).join("/"));
   }
