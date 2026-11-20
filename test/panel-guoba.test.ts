@@ -189,3 +189,77 @@ test("锅巴适配拒绝目录外文件并屏蔽导入和读取异常", async ()
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("重复子表单保存按旧行合并，屏蔽密码并拒绝陈旧或歧义的行引用", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-rows-"));
+  try {
+    await writeFile(join(directory, "guoba.support.js"), `
+      const saved = new URL("saved.json", import.meta.url);
+      let config = {
+        bots: [
+          { id: "42", token: "fixture-password-first", enabled: true, unlisted: "fixture-row-first" },
+          { id: "43", token: "fixture-password-second", enabled: true, unlisted: "fixture-row-second" }
+        ],
+        unrelated: true
+      };
+      export function supportGuoba() {
+        return { configInfo: {
+          schemas: [
+            { component: "Switch", field: "unrelated", label: "其他设置" },
+            { component: "GSubForm", field: "bots", label: "账号", componentProps: {
+              multiple: true, modalProps: { title: "账号连接" }, lengthMax: 3, schemas: [
+                { component: "Input", field: "id", label: "QQ", required: true },
+                { component: "Switch", field: "enabled", label: "启用", componentProps: { defaultValue: true } },
+                { component: "InputPassword", field: "token", label: "凭据", componentProps: { defaultValue: "fixture-prop" } }
+              ]
+            } }
+          ],
+          getConfigData() { return config; },
+          async setConfigData(data, { Result }) {
+            config = data;
+            await Bun.write(saved, JSON.stringify(data));
+            return Result.ok();
+          }
+        } };
+      }
+    `);
+    const form = await loadGuobaForm(directory);
+    if (!form) throw new Error("子表单未加载。");
+    const first = await form.read();
+    const snapshot = first.subforms?.bots;
+    if (!snapshot) throw new Error("子表单快照无效。");
+    expect(snapshot.rows).toEqual([
+      { values: { id: "42", enabled: true }, configuredPasswords: ["token"] },
+      { values: { id: "43", enabled: true }, configuredPasswords: ["token"] },
+    ]);
+    expect(form.schemas[1]?.componentProps).toMatchObject({ title: "账号连接", lengthMax: 3 });
+    expect(JSON.stringify([first, form.schemas])).not.toContain("fixture-");
+    const update = (rows: unknown, revision = snapshot.revision) => form.save({ bots: { revision, rows } });
+    for (const rows of [
+      [{ index: 0, values: {} }, { index: 0, values: {} }],
+      [{ index: 3, values: {} }],
+      [{ index: 1, values: { unlisted: "无权设置" } }],
+      [{ index: null, values: { enabled: false } }],
+      [{ index: null, values: { id: "44", token: false } }],
+    ]) expect(await update(rows)).toMatchObject({ status: 400 });
+    expect(await Bun.file(join(directory, "saved.json")).exists()).toBe(false);
+
+    expect(await update([{ index: 1, values: { enabled: false } }, { index: null, values: { id: "44" } }]))
+      .toMatchObject({ status: 200 });
+    expect(JSON.parse(await readFile(join(directory, "saved.json"), "utf8"))).toEqual({
+      bots: [
+        { id: "43", token: "fixture-password-second", enabled: false, unlisted: "fixture-row-second" },
+        { id: "44" }
+      ],
+      unrelated: true,
+    });
+    expect(await update([])).toMatchObject({ status: 409 });
+    const next = await form.read();
+    expect(JSON.stringify(next)).not.toContain("fixture-");
+    expect(await update([{ index: 0, values: { token: null } }, { index: 1, values: {} }], next.subforms!.bots!.revision))
+      .toMatchObject({ status: 200 });
+    expect((await form.read()).subforms?.bots?.rows[0]?.configuredPasswords).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

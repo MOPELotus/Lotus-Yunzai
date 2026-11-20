@@ -1,19 +1,38 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const components = [
-  "Divider", "Input", "InputPassword", "InputTextArea", "InputNumber", "Switch", "Select", "EasyCron",
+  "Divider", "Input", "InputPassword", "InputTextArea", "InputNumber", "Switch", "Select", "EasyCron", "GSubForm",
 ] as const;
 type Component = typeof components[number];
 type Scalar = string | number | boolean | null;
 export type GuobaInput = Scalar | Scalar[];
+
+export interface GuobaSubformRow {
+  readonly values: Readonly<Record<string, GuobaInput>>;
+  readonly configuredPasswords: readonly string[];
+}
+
+export interface GuobaSubformSnapshot {
+  readonly revision: string;
+  readonly rows: readonly GuobaSubformRow[];
+}
+
+export interface GuobaSubformEdit {
+  readonly revision: string;
+  readonly rows: readonly { index: number | null; values: Record<string, GuobaInput> }[];
+}
+
+export type GuobaEdit = GuobaInput | GuobaSubformEdit;
 
 export interface GuobaField {
   readonly component: Component;
   readonly field?: string;
   readonly label: string;
   readonly bottomHelpMessage?: string;
+  readonly required?: true;
   readonly componentProps?: Readonly<{
     placeholder?: string;
     rows?: number;
@@ -22,12 +41,19 @@ export interface GuobaField {
     step?: number;
     mode?: "multiple" | "tags";
     options?: readonly { label: string; value: Scalar; disabled?: boolean }[];
+    defaultValue?: GuobaInput;
+    addonAfter?: string;
+    schemas?: readonly GuobaField[];
+    title?: string;
+    lengthMin?: number;
+    lengthMax?: number;
   }>;
 }
 
 interface GuobaValues {
   values: Record<string, GuobaInput>;
   configuredPasswords: string[];
+  subforms?: Record<string, GuobaSubformSnapshot>;
 }
 
 interface GuobaSaveResult {
@@ -51,6 +77,10 @@ interface PathNode {
 
 const deniedKeys = new Set(["__proto__", "constructor", "prototype"]);
 const saveQueues = new Map<string, Promise<GuobaSaveResult>>();
+const subformSecret = randomBytes(32);
+
+class SubformConflict extends Error {}
+class SubformInputError extends Error {}
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -83,7 +113,7 @@ function getValue(values: Record<string, unknown>, field: string, parts: readonl
   return value;
 }
 
-function normaliseField(schema: unknown): GuobaField | undefined {
+function normaliseField(schema: unknown, child = false): GuobaField | undefined {
   if (!record(schema)) throw new Error();
   const group = schema.component === "SOFT_GROUP_BEGIN";
   const component = group ? "Divider" : components.find((name) => name === schema.component);
@@ -93,27 +123,45 @@ function normaliseField(schema: unknown): GuobaField | undefined {
   if (typeof label !== "string") throw new Error();
   if (component === "Divider") return { component, label };
   if (typeof field !== "string" || !field) throw new Error();
+  if (child && pathParts(field).length !== 1) return undefined;
 
   type ComponentProps = NonNullable<GuobaField["componentProps"]>;
   const props: { -readonly [Key in keyof ComponentProps]: ComponentProps[Key] } = {};
-  if (component !== "InputPassword" && record(schema.componentProps)) {
-    const { placeholder, rows, min, max, step, options, mode } = schema.componentProps;
+  if (component === "GSubForm") {
+    const raw = schema.componentProps;
+    if (child || !record(raw) || raw.multiple !== true || !Array.isArray(raw.schemas)) return undefined;
+    props.schemas = raw.schemas.map(item => normaliseField(item, true)).filter(item => item !== undefined);
+    if (!props.schemas.some(item => item.field !== undefined)) return undefined;
+    compile(props.schemas);
+    if (record(raw.modalProps) && typeof raw.modalProps.title === "string") props.title = raw.modalProps.title;
+    for (const key of ["lengthMin", "lengthMax"] as const) {
+      const value = raw[key];
+      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) props[key] = value;
+    }
+  } else if (component !== "InputPassword" && record(schema.componentProps)) {
+    const { placeholder, rows, min, max, step, options, mode, defaultValue, addonAfter } = schema.componentProps;
     if (typeof placeholder === "string") props.placeholder = placeholder;
     if (typeof rows === "number" && Number.isSafeInteger(rows) && rows > 0) props.rows = rows;
     if (typeof min === "number" && Number.isFinite(min)) props.min = min;
     if (typeof max === "number" && Number.isFinite(max)) props.max = max;
     if (typeof step === "number" && Number.isFinite(step) && step > 0) props.step = step;
     if (mode === "multiple" || mode === "tags") props.mode = mode;
+    if (child && typeof addonAfter === "string") props.addonAfter = addonAfter;
+    if (child && (scalar(defaultValue) || (Array.isArray(defaultValue) && defaultValue.every(scalar)))) {
+      props.defaultValue = defaultValue;
+    }
     if (Array.isArray(options)) {
       props.options = options.flatMap((option: unknown) => {
-        if (!record(option) || typeof option.label !== "string" || !scalar(option.value)) return [];
+        if (!record(option) || !scalar(option.value) || (!child && typeof option.label !== "string")) return [];
         const { label: optionLabel, value, disabled } = option;
-        return [{ label: optionLabel, value, ...(typeof disabled === "boolean" ? { disabled } : {}) }];
+        return [{ label: typeof optionLabel === "string" ? optionLabel : String(value), value,
+          ...(typeof disabled === "boolean" ? { disabled } : {}) }];
       });
     }
   }
   return {
     component, field, label,
+    ...(child && schema.required === true ? { required: true as const } : {}),
     ...(typeof bottomHelpMessage === "string" ? { bottomHelpMessage } : {}),
     ...(Object.keys(props).length ? { componentProps: props } : {}),
   };
@@ -171,7 +219,79 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   return value;
 }
 
-function submitted(data: unknown, compiled: ReturnType<typeof compile>): Record<string, GuobaInput> {
+function readRows(value: unknown): Record<string, unknown>[] {
+  if (value == null) return [];
+  if (!Array.isArray(value) || !value.every(record)) throw new Error();
+  return value;
+}
+
+function subformRevision(file: string, field: string, rows: readonly unknown[]): string {
+  return createHmac("sha256", subformSecret).update(JSON.stringify([file, field, rows])).digest("hex");
+}
+
+function subformSnapshot(file: string, schema: ValueField, rows: readonly Record<string, unknown>[]): GuobaSubformSnapshot {
+  return { revision: subformRevision(file, schema.field, rows), rows: rows.map(row => {
+    const values: Record<string, GuobaInput> = Object.create(null);
+    const configuredPasswords: string[] = [];
+    for (const child of schema.componentProps?.schemas ?? []) {
+      if (!child.field || !Object.hasOwn(row, child.field)) continue;
+      const value = row[child.field];
+      if (child.component === "InputPassword") {
+        if (typeof value === "string" && value.length) configuredPasswords.push(child.field);
+      } else if (value !== undefined) {
+        values[child.field] = inputValue({ ...child, field: child.field }, value);
+      }
+    }
+    return { values, configuredPasswords };
+  }) };
+}
+
+function parseSubformEdit(schema: ValueField, input: unknown): GuobaSubformEdit {
+  if (!record(input) || Object.keys(input).length !== 2 || typeof input.revision !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(input.revision) || !Array.isArray(input.rows)) throw new Error();
+  const props = schema.componentProps;
+  if ((props?.lengthMin !== undefined && input.rows.length < props.lengthMin) ||
+      (props?.lengthMax !== undefined && input.rows.length > props.lengthMax)) throw new Error();
+  const children = compile(props?.schemas ?? []);
+  const indexes = new Set<number>();
+  const rows = input.rows.map((row: unknown) => {
+    if (!record(row) || Object.keys(row).length !== 2 || !record(row.values)) throw new Error();
+    const { index } = row;
+    if (index !== null) {
+      if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || indexes.has(index)) throw new Error();
+      indexes.add(index);
+    }
+    const entries = Object.entries(row.values).map(([field, value]) => {
+      const child = children.fields.get(field);
+      if (!child) throw new Error();
+      return [field, submittedValue(child.schema, value)] as const;
+    });
+    return { index, values: Object.fromEntries(entries) };
+  });
+  return { revision: input.revision, rows };
+}
+
+function mergeSubform(file: string, schema: ValueField, current: readonly Record<string, unknown>[], edit: GuobaSubformEdit) {
+  if (subformRevision(file, schema.field, current) !== edit.revision) throw new SubformConflict();
+  return edit.rows.map(({ index, values }) => {
+    const existing = index === null ? undefined : current[index];
+    if (index !== null && !existing) throw new SubformInputError();
+    const row = { ...existing, ...values };
+    const changed = index === null || Object.keys(values).length > 0;
+    for (const child of schema.componentProps?.schemas ?? []) {
+      if (!child.field) continue;
+      if (child.component === "InputPassword" && row[child.field] === "") {
+        row[child.field] = existing?.[child.field] ?? "";
+      }
+      const value = row[child.field];
+      if (changed && child.required && (value == null || value === "" ||
+          (Array.isArray(value) && value.length === 0))) throw new SubformInputError();
+    }
+    return row;
+  });
+}
+
+function submitted(data: unknown, compiled: ReturnType<typeof compile>): Record<string, GuobaEdit> {
   if (!record(data)) throw new Error();
   const nested = new Map<ValueField, unknown>();
   const explicit = new Map<ValueField, unknown>();
@@ -192,7 +312,8 @@ function submitted(data: unknown, compiled: ReturnType<typeof compile>): Record<
     else visit(compiled.root.children.get(name), value);
   }
   return Object.fromEntries([...new Map([...nested, ...explicit])]
-    .map(([field, value]) => [field.field, submittedValue(field, value)]));
+    .map(([field, value]) => [field.field, field.component === "GSubForm"
+      ? parseSubformEdit(field, value) : submittedValue(field, value)]));
 }
 
 class Result {
@@ -244,7 +365,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
     if (!record(configInfo)) throw new Error();
     const { schemas: raw, getConfigData, setConfigData } = configInfo;
     if (!Array.isArray(raw) || typeof getConfigData !== "function") throw new Error();
-    const schemas = raw.map(normaliseField).filter((field) => field !== undefined);
+    const schemas = raw.map(item => normaliseField(item)).filter((field) => field !== undefined);
     const compiled = compile(schemas);
     if (!compiled.fields.size) return;
 
@@ -262,22 +383,25 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
           const data = await readData();
           const values: Record<string, GuobaInput> = Object.create(null);
           const configuredPasswords: string[] = [];
+          const subforms: Record<string, GuobaSubformSnapshot> = Object.create(null);
           for (const [field, { schema, parts }] of compiled.fields) {
             const value = getValue(data, field, parts);
             if (schema.component === "InputPassword") {
               if (typeof value === "string" && value.length > 0) configuredPasswords.push(field);
+            } else if (schema.component === "GSubForm") {
+              subforms[field] = subformSnapshot(file, schema, readRows(value));
             } else if (value !== undefined) {
               values[field] = inputValue(schema, value);
             }
           }
-          return { values, configuredPasswords };
+          return { values, configuredPasswords, ...(Object.keys(subforms).length ? { subforms } : {}) };
         } catch {
           throw new Error("无法读取插件配置。");
         }
       },
       async save(data) {
         if (typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
-        let values: Record<string, GuobaInput>;
+        let values: Record<string, unknown>;
         try {
           values = submitted(data, compiled);
         } catch {
@@ -289,6 +413,16 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
           try {
             let current: Record<string, unknown> | undefined;
             for (const [field, { schema, parts }] of compiled.fields) {
+              if (schema.component === "GSubForm") {
+                current ??= await readData();
+                const existing = getValue(current, field, parts);
+                if (Object.hasOwn(values, field)) {
+                  values[field] = mergeSubform(file, schema, readRows(existing), values[field] as GuobaSubformEdit);
+                } else if (existing !== undefined) {
+                  values[field] = readRows(existing);
+                }
+                continue;
+              }
               if (Object.hasOwn(values, field) && !(schema.component === "InputPassword" && values[field] === "")) continue;
               delete values[field];
               current ??= await readData();
@@ -302,7 +436,9 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
                 message: "插件拒绝保存配置。" };
             }
             return { ok: true, status: 200, message: "配置已保存。" };
-          } catch {
+          } catch (error) {
+            if (error instanceof SubformConflict) return { ok: false, status: 409, message: "子表单已变更，请重新读取。" };
+            if (error instanceof SubformInputError) return { ok: false, status: 400, message: "子表单包含无效或缺少必填的值。" };
             return { ok: false, status: 500, message: "无法保存插件配置。" };
           }
         });

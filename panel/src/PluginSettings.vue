@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
-import type { GuobaField, GuobaInput } from "../../lib/panel-guoba.ts";
+import GuobaSubform from "./GuobaSubform.vue";
+import type { GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
 
 const props = defineProps<{ token: string }>();
 const emit = defineEmits<{
@@ -13,6 +14,7 @@ interface Snapshot {
   schemas: GuobaField[];
   values: Record<string, GuobaInput>;
   configuredPasswords: string[];
+  subforms?: Record<string, GuobaSubformSnapshot>;
   writable?: boolean;
 }
 type Operation = { kind: "list" } | { kind: "read"; plugin: string } | { kind: "save" };
@@ -22,7 +24,7 @@ const endpoint = `${import.meta.env.BASE_URL}api/guoba`;
 const plugins = shallowRef<string[]>([]);
 const selected = ref("");
 const snapshot = shallowRef<Snapshot>();
-const edits = reactive(new Map<string, GuobaInput>());
+const edits = reactive(new Map<string, GuobaEdit>());
 const tagDrafts = reactive(new Map<string, string>());
 const readOnly = ref(false);
 const query = ref("");
@@ -88,7 +90,7 @@ function isSchema(value: unknown): value is GuobaField {
     (value.bottomHelpMessage === undefined || typeof value.bottomHelpMessage === "string");
 }
 
-async function request(path: string, signal: AbortSignal, body?: Record<string, GuobaInput>): Promise<unknown> {
+async function request(path: string, signal: AbortSignal, body?: Record<string, GuobaEdit>): Promise<unknown> {
   const headers = new Headers({ Authorization: `Bearer ${props.token}` });
   if (body) headers.set("Content-Type", "application/json");
   const response = await fetch(path, {
@@ -98,6 +100,7 @@ async function request(path: string, signal: AbortSignal, body?: Record<string, 
   if (!response.ok) {
     const messages: Record<number, string> = {
       404: "此插件没有可用的配置表单。",
+      409: "子表单已在其他会话更改，请重新读取。",
       405: "此配置表单只读。",
       400: "配置值无效，或插件拒绝保存。",
       422: "插件拒绝保存，请检查配置值。",
@@ -117,6 +120,7 @@ async function read(plugin: string, signal: AbortSignal): Promise<Snapshot> {
     schemas: data.schemas,
     values: data.values as Snapshot["values"],
     configuredPasswords: data.configuredPasswords,
+    subforms: isRecord(data.subforms) ? data.subforms as Snapshot["subforms"] : undefined,
     writable: typeof data.writable === "boolean" ? data.writable : undefined,
   };
 }
@@ -208,7 +212,7 @@ function changePlugin(event: Event) {
 }
 
 function fieldValue(field: string): GuobaInput | undefined {
-  return edits.has(field) ? edits.get(field) : savedValue(field);
+  return edits.has(field) ? edits.get(field) as GuobaInput : savedValue(field);
 }
 
 function savedValue(field: string): GuobaInput | undefined {
@@ -337,12 +341,15 @@ onBeforeUnmount(() => {
       <fieldset :disabled="Boolean(busy) || readOnly" class="schema-grid" aria-label="插件配置项">
         <template v-for="{ schema, field, id } in rows" :key="id">
           <h2 v-if="schema.component === 'Divider'" class="schema-divider">{{ schema.label }}</h2>
+          <GuobaSubform v-else-if="schema.component === 'GSubForm' && field && snapshot.subforms?.[field]"
+            :id="id" :schema="schema" :saved="snapshot.subforms[field]" :edited="edits.get(field) as GuobaSubformEdit | undefined"
+            @update="value => value ? edits.set(field, value) : edits.delete(field)" />
           <div v-else-if="field" class="plugin-field">
             <label :for="id">{{ schema.label }}</label>
             <template v-if="schema.component === 'InputPassword'">
               <ElInput
                 :id="id" type="password" autocomplete="new-password"
-                :model-value="displayText(edits.get(field))"
+                :model-value="displayText(edits.get(field) as GuobaInput | undefined)"
                 :disabled="Boolean(busy) || readOnly || edits.get(field) === null"
                 placeholder="留空保留现有密码"
                 @update:model-value="changePassword(field, $event)"
