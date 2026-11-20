@@ -2,12 +2,17 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Runtime, type ScreenshotOptions } from "@pixel.js/shotium";
+import { Runtime, type PageGotoParams, type ScreenshotOptions } from "@pixel.js/shotium";
 
 const template = require("art-template") as {
   compile(source: string, options: { filename: string }): (data: object) => string;
 };
 const runtime = new Runtime();
+
+interface LegacyPageGotoParams {
+  readonly waitUntil?: string | readonly string[];
+  readonly timeout?: number | string;
+}
 
 interface TemplateData extends Record<string, unknown> {
   tplFile?: string;
@@ -16,9 +21,20 @@ interface TemplateData extends Record<string, unknown> {
   omitBackground?: boolean;
   viewport?: ScreenshotOptions["viewport"];
   scale?: number;
-  pageGotoParams?: ScreenshotOptions["pageGotoParams"];
+  pageGotoParams?: LegacyPageGotoParams;
   multiPage?: boolean;
   multiPageHeight?: number;
+}
+
+export function staticPageGotoParams(input: LegacyPageGotoParams | undefined): PageGotoParams | undefined {
+  if (!input) return;
+  const waits = Array.isArray(input.waitUntil) ? input.waitUntil : [input.waitUntil];
+  const networkIdle = waits.some(wait => wait === "networkidle" || wait === "networkidle0" || wait === "networkidle2");
+  const timeout = typeof input.timeout === "number" || typeof input.timeout === "string" ? Number(input.timeout) : 0;
+  return {
+    waitUntil: networkIdle ? "networkidle" : "load",
+    timeout: Number.isSafeInteger(timeout) && timeout > 0 ? timeout : undefined,
+  };
 }
 
 function baseFor(html: string, directory: string): string {
@@ -63,7 +79,7 @@ export async function renderTemplate(data: TemplateData): Promise<Buffer[] | fal
       viewport: data.viewport,
       quality: data.quality,
       scale: data.scale,
-      pageGotoParams: data.pageGotoParams,
+      pageGotoParams: staticPageGotoParams(data.pageGotoParams),
       cache: "no-store",
       allowFileAccess: true,
     };

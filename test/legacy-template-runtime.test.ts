@@ -5,6 +5,18 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type MessageReply, segment } from "../lib/messages.ts";
 import { legacyTemplateRender } from "../lib/renderer/legacy-template.ts";
+import { staticPageGotoParams } from "../lib/renderer/shotium.ts";
+
+test("旧静态模板导航参数沿用等待网络空闲，非法超时使用引擎默认值", () => {
+  expect(staticPageGotoParams(undefined)).toBeUndefined();
+  expect(staticPageGotoParams({ waitUntil: "networkidle0", timeout: "15000" })).toEqual({ waitUntil: "networkidle", timeout: 15000 });
+  expect(staticPageGotoParams({ waitUntil: ["load", "networkidle2"], timeout: 800 })).toEqual({ waitUntil: "networkidle", timeout: 800 });
+  expect(staticPageGotoParams({ waitUntil: "networkidle" })).toMatchObject({ waitUntil: "networkidle" });
+  expect(staticPageGotoParams({ waitUntil: ["domcontentloaded"], timeout: Number.POSITIVE_INFINITY })).toEqual({
+    waitUntil: "load", timeout: undefined,
+  });
+  expect(staticPageGotoParams({ waitUntil: "load", timeout: 0 })).toEqual({ waitUntil: "load", timeout: undefined });
+});
 
 test("V3 静态模板按插件资源定位，并保留旧回调与两个图片发送模式", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-legacy-render-"));
