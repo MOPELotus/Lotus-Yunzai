@@ -364,6 +364,9 @@ async function dispatchMessage(
   } : undefined;
   const quotedId = oneBotMessageId(incoming.reply_id);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
+  const lookupReply = quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
+    (messageType === "group" || event.sub_type === "friend")
+    ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -411,6 +414,10 @@ async function dispatchMessage(
       kick: (id, block) => calls.kickGroupMember(send, target.group_id, id, likeSession, block),
       title: (id, text) => calls.setGroupSpecialTitle(send, target.group_id, id, text, likeSession),
       setAdmin: (id, enabled) => calls.setGroupAdmin(send, target.group_id, id, enabled, likeSession),
+      essence: lookupReply && quotedId !== undefined ? {
+        async verifyQuote() { return await lookupReply() !== undefined; },
+        write: enabled => calls.setQuotedEssence(send, quotedId, enabled, likeSession),
+      } : undefined,
     })),
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
@@ -476,10 +483,7 @@ async function dispatchMessage(
       const ids = new Set([oneBotMessageId(messageId), quotedId].filter((id) => id !== undefined));
       return Promise.all([...ids].map((id) => calls.recallMessage(send, id)));
     } : undefined,
-    lookupReply: quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
-      (messageType === "group" || event.sub_type === "friend")
-      ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target)
-      : undefined,
+    lookupReply,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
       const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))

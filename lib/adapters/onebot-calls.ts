@@ -141,6 +141,10 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_admin", { group_id, user_id, enable }, signal);
   }
 
+  setQuotedEssence(send: Send, message_id: number, enabled: boolean, signal: AbortSignal) {
+    return this.#moderateGroup(send, enabled ? "set_essence_msg" : "delete_essence_msg", { message_id }, signal);
+  }
+
   declineGroupApplication(send: Send, flag: string, signal: AbortSignal, reason: string) {
     return this.#moderateGroup(send, "set_group_add_request", {
       flag, sub_type: "add", approve: false, reason,

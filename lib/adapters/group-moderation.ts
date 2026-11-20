@@ -10,6 +10,9 @@ export type GroupSpecialTitleAction = (
   userId: number, title: string, verify?: () => Promise<boolean>,
 ) => Promise<GroupMemberModerationResult>;
 export type GroupSetAdminAction = (userId: number, enabled: boolean) => Promise<GroupMemberModerationResult>;
+export type GroupSetQuotedEssenceAction = (
+  enabled: boolean,
+) => Promise<GroupModerationResult | "unavailable" | "invalid-quote">;
 
 export interface MutedGroupMember {
   readonly userId: number;
@@ -76,7 +79,8 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
-export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin }: {
+export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
+  essence }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -89,11 +93,16 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly kick: (userId: number, block: boolean) => Promise<GroupModerationResult>;
   readonly title: (userId: number, text: string) => Promise<GroupModerationResult>;
   readonly setAdmin: (userId: number, enabled: boolean) => Promise<GroupModerationResult>;
+  readonly essence?: {
+    verifyQuote(): Promise<boolean>;
+    write(enabled: boolean): Promise<GroupModerationResult>;
+  };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
   groupSetSpecialTitle: GroupSpecialTitleAction;
   groupSetAdmin: GroupSetAdminAction;
+  groupSetQuotedEssence?: GroupSetQuotedEssenceAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -179,6 +188,13 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if ((target === "admin") === enabled) return "confirmed";
       return apply(() => setAdmin(userId, enabled));
     },
+    groupSetQuotedEssence: essence ? async enabled => {
+      if (typeof enabled !== "boolean") return "rejected";
+      if (!await canManage("list")) return "unavailable";
+      if (!await essence.verifyQuote().catch(() => false)) return "invalid-quote";
+      if (!await canManage("list")) return "unavailable";
+      return apply(() => essence.write(enabled));
+    } : undefined,
   };
 }
 

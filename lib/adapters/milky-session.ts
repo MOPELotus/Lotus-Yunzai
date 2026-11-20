@@ -46,7 +46,7 @@ function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function hasMessageSequence(value: unknown): boolean {
+function hasMessageSequence(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
@@ -354,6 +354,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       ? mentionedProfileId(message.message, account, message.user_id) : undefined;
     const listCurrentGroupMembers = positiveId(groupId) ? () => listGroupMembers(groupId) : undefined;
     const cardOwner = message?.user_id;
+    const quoted = typeof message?.reply_id === "string" ? Number(message.reply_id) : message?.reply_id;
+    const lookupReply = message?.lookupReply;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
@@ -388,6 +390,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         async setAdmin(user_id, is_set) {
           return (await call.confirmed("set_group_member_admin", { group_id: groupId, user_id, is_set }, signal)).status;
         },
+        essence: lookupReply && hasMessageSequence(quoted) ? {
+          async verifyQuote() { return await lookupReply() !== undefined; },
+          async write(is_set) {
+            return (await call.confirmed("set_group_essence_message", { group_id: groupId, message_seq: quoted, is_set }, signal)).status;
+          },
+        } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")

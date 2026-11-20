@@ -88,12 +88,17 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
           (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_member_admin" && params.user_id === 60044) ||
+          (action === "set_group_essence_message" && params.is_set === false) ||
           (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
       if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
         { member: member(params) } : action === "send_group_message" ? { message_seq: milkyCalls.length }
         : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId) } }
-        : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) } : {};
+        : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
+        : action === "get_message" ? { message: {
+          message_scene: "group", peer_id: params.peer_id, message_seq: params.message_seq, sender_id: 42,
+          segments: [{ type: "text", data: { text: "被引用的合成消息" } }],
+        } } : {};
       return Response.json({ status: "ok", retcode: 0, data });
     },
   });
@@ -151,7 +156,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
           { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
         ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
-        : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId) : {};
+        : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId)
+        : action === "get_msg" ? {
+          message_id: params.message_id, self_id: oneBotId, group_id: params.message_id === 104 ? 84 : 82,
+          message_type: "group", sender: { user_id: 42 }, message: [{ type: "text", data: { text: "原群引用内容" } }],
+        } : {};
       if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied ? 100 : 0, data: reply }));
     };
     await waitUntil(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 测试连接未就绪。");
@@ -526,6 +535,34 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.group_id === 84 && JSON.stringify(params.message).includes("从未发言夹具") &&
       JSON.stringify(params.message).includes("已有活动夹具")), "Milky 未回复旧按时长查询。");
     expect(JSON.stringify(timedMilky.params.message)).toContain("最后发言时间");
+
+    const quote = (id: number) => ({ type: "reply", data: { id: String(id) } });
+    const essence = oneBotMessage([quote(103), text("#加精")], operator, 82);
+    send(essence);
+    await groupReplyWith("已加精。");
+    send(essence);
+    send(oneBotMessage([quote(103), text("#移精")], operator, 82));
+    await groupReplyWith("已移精。");
+    send(oneBotMessage([quote(104), text("#设精")], operator, 82));
+    await groupReplyWith("请引用本群要加精的消息。");
+    expect(oneBotCalls.filter(({ action }) => action === "set_essence_msg" || action === "delete_essence_msg")).toMatchObject([
+      { action: "set_essence_msg", params: { message_id: 103 } }, { action: "delete_essence_msg", params: { message_id: 103 } },
+    ]);
+
+    const milkyEssence = (msg: string) => {
+      const source = milkyTitle(msg);
+      return { ...source, segments: [{ type: "reply", data: { message_seq: 402 } }, ...source.segments] };
+    };
+    const milkyHistoricReplies = milkyCalls.filter(({ action }) => action === "send_group_message").length;
+    await webhook("message_receive", milkyEssence("设精"));
+    expect(JSON.stringify((await milkyReply(milkyHistoricReplies + 1)).params.message)).toContain("已加精。");
+    const unknownEssence = milkyEssence("#移精");
+    await webhook("message_receive", unknownEssence);
+    expect(JSON.stringify((await milkyReply(milkyHistoricReplies + 2)).params.message)).toContain("未确认");
+    await webhook("message_receive", unknownEssence);
+    expect(milkyCalls.filter(({ action }) => action === "set_group_essence_message").map(({ params }) => params)).toEqual([
+      { group_id: 79, message_seq: 402, is_set: true }, { group_id: 79, message_seq: 402, is_set: false },
+    ]);
   } finally {
     socket?.close();
     host?.kill();
