@@ -104,7 +104,7 @@ import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
 import { createCommandDelegation, delegationSession } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
-import { attachRuntimeLog } from "./lib/runtime-log-writer.ts";
+import { attachRuntimeLog, createPluginLog } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { createRuntimeStatus } from "./lib/runtime-status.ts";
@@ -2313,7 +2313,8 @@ if (import.meta.main) {
     }
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
-    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl, express: legacy.httpRoutes.express }) });
+    const makeLog = createPluginLog(botConfig, runtimeLog?.writePluginLog);
+    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl, makeLog, express: legacy.httpRoutes.express }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     const storedLikeAssets = new URL("data/group/like-assets/", root);

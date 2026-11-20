@@ -360,3 +360,76 @@ test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文�
     await rm(root, { recursive: true, force: true });
   }
 }, 12_000);
+
+test("宿主兼容插件日志格式、原 ID 对齐和选项，不影响普通日志入口", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-plugin-log-format-"));
+  try {
+    await copyHost(root);
+    await mkdir(join(root, "config/config"), { recursive: true });
+    const config = join(root, "config/config/bot.yaml");
+    await writeFile(join(root, "plugins/format-log-fixture.js"), `
+      const data = { visible: 'structure-visible' };
+      Object.defineProperty(data, 'invisible', { value: 'hidden-property-value' });
+      Object.defineProperty(data, 'computed', { enumerable: true, get() {
+        console.error('unexpected-getter-execution');
+        return 'computed-value';
+      } });
+      data[Symbol.for('nodejs.util.inspect.custom')] = () => 'custom-inspect-executed';
+      Bot.makeLog('info', ['literal %o', data, new Error('fixture-native-error')], '42');
+      Bot.makeLog('info', 'fixture-no-id', false);
+      Bot.makeLog('info', 'fixture-no-align', 'long-identity', true);
+      Bot.makeLog('info', 'fixture-align', 'long-identity');
+      Bot.makeLog('info', 'fixture-default');
+      Bot.makeLog('debug', 'suppressed-plugin-log');
+      Bot.makeLog('error', 'fixture-direct token=never-output-fixture-secret');
+      Bot.makeLog('mark', 'fixture-plugin-mark', false);
+      Bot.makeLog('fatal', 'fixture-plugin-fatal', false);
+      Bot.makeLog('info', '0123456789abcdefghijklmnopqrstuvwxyz', false);
+      console.info('fixture-ordinary-log');
+      export default class extends plugin {}
+    `);
+    disableMemberPrewarm(root);
+    for (const [configuration, expected] of [
+      ['log_object: false\nlog_align: abcde\n', ["[  42 ]", "[long.] fixture-align", "[abcde] fixture-default", "[object Object]"]],
+      ['log_object: { depth: 2, length: 32 }\nlog_align: "  TRSSYz  "\n',
+        ["[    42    ]", "[long-iden.] fixture-align", "[  Lotus-Yunzai  ] fixture-default", "structure-visible"]],
+    ] as const) {
+      await writeFile(config, configuration);
+      const host = Bun.spawn([process.execPath, "app.ts"], {
+        cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+        env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+      });
+      const stdout = new Response(host.stdout).text();
+      const stderr = new Response(host.stderr).text();
+      const day = new Date().toISOString().slice(0, 10);
+      const runtime = join(root, "logs", `command.${day}.log`);
+      try {
+        const log = await until(async () => {
+          const content = await readFile(runtime, "utf8").catch(() => "");
+          return content.includes("fixture-ordinary-log") && content.includes("Lotus-Yunzai 已启动") ? content : undefined;
+        }, "宿主没有写入原插件日志和启动完成行。");
+        for (const value of expected) expect(log).toContain(value);
+        expect(log).toContain("literal %o");
+        expect(log).toContain("fixture-native-error");
+        expect(log).toContain(" [INFO] fixture-no-id\n");
+        expect(log).toContain("[long-identity] fixture-no-align");
+        expect(log).toContain("fixture-direct token=[已隐藏]");
+        expect(log).toContain("[MARK] fixture-plugin-mark");
+        expect(log).toContain("[FATAL] fixture-plugin-fatal");
+        expect(log).not.toMatch(/never-output-fixture-secret|unexpected-getter-execution|hidden-property-value|custom-inspect-executed|suppressed-plugin-log/u);
+        if (configuration.includes("length: 32")) expect(log).toContain("0123456789abcdefghijklmnopqrstu…");
+        const errors = await readFile(join(root, "logs/error.log"), "utf8");
+        expect(errors).toContain("token=[已隐藏]");
+        expect(errors).toContain("[FATAL] fixture-plugin-fatal");
+      } finally {
+        host.kill("SIGTERM");
+        await host.exited;
+      }
+      expect(await stdout).toContain("ws://127.0.0.1:");
+      expect(await stderr).not.toContain("never-output-fixture-secret");
+      await rm(join(root, "logs"), { recursive: true });
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
