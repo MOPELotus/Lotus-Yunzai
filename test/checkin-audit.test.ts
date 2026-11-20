@@ -69,6 +69,26 @@ test("新记录只保存结构化字段，追加时隔开旧半行，新目录�
   await expect(audit.append({ ...entry, counts: { signed: -1 } })).rejects.toThrow("记录无效");
 }));
 
+test("从两处旧安装合并签到审计副本，按用户过滤，当前历史只追加到主目录", () => workspace(async directory => {
+  const file = join(directory, "checkin.jsonl");
+  const history = [join(directory, "first.jsonl"), join(directory, "second.jsonl")];
+  const old = { ...entry, time: timestamp, message: "stoken=old-secret" };
+  const newer = { ...old, qq: "43", time: "2026-01-03T04:35:00.000Z" };
+  const earlier = { ...old, profileId: 3, time: "2026-01-03T04:30:00.000Z" };
+  const bytes = [`${JSON.stringify(earlier)}\r\n${JSON.stringify(old)}\r\n`,
+    `${JSON.stringify(old)}\n${JSON.stringify(newer)}\n`];
+  await Promise.all(history.map((path, index) => writeFile(path, bytes[index]!)));
+  const audit = createCheckinAudit(file, () => new Date("2026-01-03T04:34:59.000Z"), history);
+  expect((await audit.read({ qq })).map(row => row.profileId)).toEqual([1, 3]);
+  expect(await Bun.file(file).exists()).toBe(false);
+  await audit.append({ ...entry, profileId: 2 });
+  expect((await audit.read({ qq })).map(row => row.profileId)).toEqual([2, 1, 3]);
+  const all = await audit.read({ owner: true });
+  expect(all.map(row => [row.qq, row.profileId])).toEqual([["43", 1], ["42", 2], ["42", 1], ["42", 3]]);
+  expect(JSON.stringify(all)).not.toContain("old-secret");
+  expect(await Promise.all(history.map(path => readFile(path, "utf8")))).toEqual(bytes);
+}));
+
 test("多个写者并发追加时，每条记录完整且各 QQ 不会相互串读", () => workspace(async (directory) => {
   const file = join(directory, "concurrent", "logs", "checkin.jsonl");
   const [first, second] = [createCheckinAudit(file), createCheckinAudit(file)];

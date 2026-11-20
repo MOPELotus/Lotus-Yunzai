@@ -1897,7 +1897,8 @@ if (import.meta.main) {
       viewProfile));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));
-    const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
+    const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)), undefined,
+      legacyLotusDirectories.map(id => fileURLToPath(new URL(`plugins/${id}/data/audit/checkin.jsonl`, root))));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),

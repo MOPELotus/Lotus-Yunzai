@@ -186,9 +186,20 @@ async function readRecent(handle: FileHandle, qq: string | undefined): Promise<r
   return rows;
 }
 
-export function createCheckinAudit(path: string, now = () => new Date()) {
+export function createCheckinAudit(path: string, now = () => new Date(), history: readonly string[] = []) {
   if (typeof path !== "string" || !path.trim()) throw new TypeError("须指定签到审计文件。");
   const file = resolve(path);
+  const sources = [...new Set([file, ...history.map(input => resolve(input))])];
+
+  async function readFile(input: string, qq: string | undefined) {
+    const handle = await openAudit(input, false);
+    if (!handle) return [];
+    try {
+      return await readRecent(handle, qq);
+    } finally {
+      await handle.close();
+    }
+  }
   return {
     async append(input: CheckinAuditEntry): Promise<void> {
       const entry = normalizeEntry(input);
@@ -211,13 +222,20 @@ export function createCheckinAudit(path: string, now = () => new Date()) {
       if (!(validQq(qq) && scope.owner === undefined) && !(scope?.owner === true && qq === undefined)) {
         throw new TypeError("须指定签到审计所属 QQ 或明确请求全局记录。");
       }
-      const handle = await openAudit(file, false);
-      if (!handle) return [];
-      try {
-        return await readRecent(handle, qq);
-      } finally {
-        await handle.close();
+      const batches = (await Promise.all(sources.map(input => readFile(input, qq)))).filter(batch => batch.length);
+      if (batches.length <= 1) return batches[0] ?? [];
+      const rows: CheckinAuditRow[] = [];
+      const seen = new Set<string>();
+      for (const batch of batches) {
+        const thisFile = new Set<string>();
+        for (const row of batch) {
+          const key = JSON.stringify(row);
+          if (!seen.has(key)) rows.push(row);
+          thisFile.add(key);
+        }
+        for (const key of thisFile) seen.add(key);
       }
+      return rows.sort((a, b) => Date.parse(b.time) - Date.parse(a.time)).slice(0, limit);
     },
   };
 }
