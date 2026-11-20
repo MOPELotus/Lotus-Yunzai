@@ -1,11 +1,12 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
-import { friendMessageNoticeSession } from "../friend-message-notice.ts";
+import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
 import type { PendingGroupInvitationDecision, QuotedGroupInvitationDecision } from "../group-invitations.ts";
 import { createRequestClaim } from "../request-claim.ts";
+import { hashPrivateNotice, privateNoticeText } from "../private-notice-receipts.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
@@ -19,7 +20,7 @@ import { milkyFriendRequest, milkyFriendRequestLimit, milkyFriendRequestState, m
   selectCurrentMilkyFriendRequest } from "./milky-friend-request.ts";
 import { milkyGroupRequest, milkyGroupRequestFlag } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
-import { milkyInvitationNoticeHash, type createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
+import type { createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
@@ -39,6 +40,7 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly friendReview?: ReturnType<typeof createRequestClaim>;
   readonly invitationReview?: ReturnType<typeof createRequestClaim>;
   readonly invitationReceipts?: ReturnType<typeof createMilkyInvitationReceipts>;
+  readonly friendNoticeReceipts?: FriendMessageReceipts;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
@@ -247,9 +249,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (!receipt || !active()) return { status: "unrelated" };
     const source = await lookupReply();
     if (source?.user_id !== account || !active()) return { status: "unrelated" };
-    const text = typeof source.message === "string" ? source.message :
-      source.message.every(part => part.type === "text" && typeof part.text === "string") ? source.message.map(part => part.text).join("") : "";
-    if (!text || milkyInvitationNoticeHash(text) !== receipt.noticeHash) return { status: "unrelated" };
+    const text = privateNoticeText(source.message, false);
+    if (!text || hashPrivateNotice(text) !== receipt.noticeHash) return { status: "unrelated" };
     if (receipt.expires <= Date.now()) return { status: "expired" };
     const { groupId, inviterId, sequence } = receipt.origin;
     const flag = milkyGroupRequestFlag(account, "group_invitation", groupId, sequence, false);
@@ -266,7 +267,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply, quoted?: number,
-    active = signal): Promise<CheckinNotifyDelivery> {
+    active = signal, onDelivered?: ReplyOptions["onDelivered"]): Promise<CheckinNotifyDelivery> {
     const group = "group_id" in target;
     if (signal.aborted || active.aborted || !positiveId(group ? target.group_id : target.user_id)) return "rejected";
     const message = encodeMilkyReply(reply, quoted);
@@ -275,14 +276,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (result.status !== "confirmed") return result.status;
     if (!hasMessageSequence(result.data.message_seq)) return "unknown";
     confirmSent(target, result.data, message);
+    await notifyReplyDelivery(onDelivered, result.data.message_seq);
     return "confirmed";
   }
 
-  async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal) {
+  async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>) {
     const active = AbortSignal.any([signal, workflow]);
     if (active.aborted) return 0;
     const recipients = [...new Set(options.masterIds?.(account))].filter(id => id !== account && isMaster(id));
-    const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active)));
+    const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active,
+      onDelivered ? id => onDelivered(user_id, id) : undefined)));
     return deliveries.filter(result => result === "confirmed").length;
   }
 
@@ -687,6 +690,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const lookupReply = message?.lookupReply;
     const workflowSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
     const privateGroupSignal = canReview && message?.sub_type === "friend" && !message.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
+    const ownerSignal = privateGroupSignal && AbortSignal.any([signal, privateGroupSignal]);
+    const ownerFriendReply = ownerSignal && message && positiveId(cardOwner) ? bindOwnerFriendReply({
+      account, signal: ownerSignal, isOwner: () => isMaster(cardOwner), source: message.message,
+      async isFriend(userId, active) {
+        const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
+        const friends = result.status === "confirmed" ? result.data.friends : undefined;
+        if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
+        return friends.some(friend => friend.user_id === userId);
+      },
+      send: (user_id, reply, active) => sendConfirmed({ user_id }, reply, undefined, active),
+    }) : undefined;
+    const { friendNoticeReceipts } = options;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
@@ -708,16 +723,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       } : undefined,
       reviewPendingFriendRequest: privateGroupSignal && positiveId(cardOwner) ? (user: number, approve: boolean) =>
         reviewCurrentFriendRequest(cardOwner, user, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
-      sendOwnerFriendReply: privateGroupSignal && positiveId(cardOwner) ? bindOwnerFriendReply({
-        account, signal: AbortSignal.any([signal, privateGroupSignal]), isOwner: () => isMaster(cardOwner), source: message.message,
-        async isFriend(userId, active) {
-          const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
-          const friends = result.status === "confirmed" ? result.data.friends : undefined;
-          if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
-          return friends.some(friend => friend.user_id === userId);
-        },
-        send: (user_id, reply, active) => sendConfirmed({ user_id }, reply, undefined, active),
-      }) : undefined,
+      sendOwnerFriendReply: ownerFriendReply,
+      sendQuotedOwnerFriendReply: friendNoticeReceipts && ownerSignal && ownerFriendReply && positiveId(cardOwner) && lookupReply && hasMessageSequence(quoted)
+        ? bindQuotedOwnerFriendReply(friendNoticeReceipts, { adapter: "milky", account, owner: cardOwner, message: quoted },
+          () => !ownerSignal.aborted && isMaster(cardOwner), lookupReply, ownerFriendReply) : undefined,
       ...(privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup &&
         bindPrivateGroupActions({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
           master: () => isMaster(cardOwner), protectedMember: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),

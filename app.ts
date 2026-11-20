@@ -51,7 +51,7 @@ import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
-import { friendMessageNoticeSession, type FriendMessageNoticeSession } from "./lib/friend-message-notice.ts";
+import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession } from "./lib/friend-message-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -294,7 +294,7 @@ if (import.meta.main) {
   const pendingFriendNotices = new Set<string>();
   const friendNoticeHints = new Map<string, number>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
-  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review") {
+  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice") {
     const redis = globalThis.redis;
     if (!redis) return;
     const namespace = (key: string) => `lotus-yunzai:${feature}:${key}`;
@@ -312,6 +312,7 @@ if (import.meta.main) {
   const friendReview = createRequestClaim(() => requestStorage("friend-review"));
   const invitationReview = createRequestClaim(() => requestStorage("group-invitation-review"));
   const invitationReceipts = createMilkyInvitationReceipts(() => requestStorage("group-invitation-review"));
+  const friendNoticeReceipts = createFriendMessageReceipts(() => requestStorage("friend-message-notice"));
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -984,7 +985,8 @@ if (import.meta.main) {
     if (pendingFriendNotices.has(key) || notifiedFriendMessages.has(key)) return;
     pendingFriendNotices.add(key);
     try {
-      const reply = await registration.policy({ botId, userId, text, nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
+      const reply = await registration.policy({ botId, userId, text, canQuote: true,
+        nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
         async showHint() {
           if (signal.aborted) return false;
           const redis = globalThis.redis;
@@ -1000,7 +1002,12 @@ if (import.meta.main) {
       if (!reply || signal.aborted) return;
       notifiedFriendMessages.add(key);
       if (notifiedFriendMessages.size > 4096) notifiedFriendMessages.delete(notifiedFriendMessages.values().next().value!);
-      await transport.notifyOwners(reply, signal);
+      const noticeText = reply.filter(part => typeof part === "string").join("");
+      await transport.notifyOwners(reply, signal, async (owner, message) => {
+        if (!signal.aborted && masterPermissions.isMaster(botId, owner)) {
+          await friendNoticeReceipts.record({ adapter: event.adapter ?? "onebot", account: botId, owner, message }, userId, noticeText);
+        }
+      });
     } finally {
       pendingFriendNotices.delete(key);
     }
@@ -1179,6 +1186,16 @@ if (import.meta.main) {
       }
     }
     const quotedInvitation = event.message_type === "private" && event.reviewQuotedGroupInvitation !== undefined;
+    const quotedFriend = event.message_type === "private" && event.sendQuotedOwnerFriendReply !== undefined && /^#?回复(?:\s|$)/u.test(event.msg);
+    if (!event.isDelegated && quotedFriend && event.reply_id !== undefined) {
+      const reply = await commands.dispatchFallback(event,
+        names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 主人回复好友") && allowed(names),
+        user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
+    }
     if (!event.isDelegated && (event.message_type === "group" || quotedInvitation) && event.reply_id !== undefined && isGroupJoinReviewInput(event.msg)) {
       const feature = quotedInvitation ? "[group] 群邀请审核" : "[group] 引用加群审核";
       const reply = await commands.dispatchFallback(event,
@@ -1685,6 +1702,7 @@ if (import.meta.main) {
     }, "[gacha] 抽卡记录");
     const { hostname, oneBot, https, panelToken } = network;
     const groupActions = {
+      friendNoticeReceipts: probingUpdate ? undefined : friendNoticeReceipts,
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       canModeratePrivateGroup: (bot: number, group: number) => !stopping && handoff.accepting && !dispatchPower.paused &&
         groupDispatch.allowsScheduledGroup(bot, group, privateGroupNames),

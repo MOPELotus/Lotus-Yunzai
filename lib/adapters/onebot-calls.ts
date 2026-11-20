@@ -100,15 +100,29 @@ export class OneBotCalls {
     }
   }
 
-  async sendConfirmed(send: Send, target: { user_id: number } | { group_id: number }, message: unknown, signal?: AbortSignal) {
+  async sendConfirmed(send: Send, target: { user_id: number } | { group_id: number }, message: unknown, signal?: AbortSignal,
+    onDelivered?: ReplyOptions["onDelivered"]) {
     try {
       const result = await this.#request(send, "send_msg", {
         ...target, message, message_type: "group_id" in target ? "group" : "private", auto_escape: true,
       }, signal);
-      return this.#messageId(result) === undefined ? "unknown" as const : "confirmed" as const;
+      const id = this.#messageId(result);
+      if (id === undefined) return "unknown" as const;
+      await notifyReplyDelivery(onDelivered, id);
+      return "confirmed" as const;
     } catch (error) {
       return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" as const : "unknown" as const;
     }
+  }
+
+  async readPrivateHistoryMessage(send: Send, owner: number, messageId: number, signal: AbortSignal) {
+    try {
+      const result = await this.#request(send, "get_friend_msg_history", { user_id: owner, message_seq: messageId,
+        count: 10, disable_get_url: true, parse_mult_msg: false }, signal);
+      if (!isRecord(result) || !Array.isArray(result.messages)) return;
+      const matches = result.messages.filter(row => isRecord(row) && row.message_id === messageId);
+      if (matches.length === 1 && isRecord(matches[0])) return matches[0];
+    } catch { return; }
   }
 
   async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {

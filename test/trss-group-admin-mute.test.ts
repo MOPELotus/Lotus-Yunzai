@@ -116,6 +116,7 @@ test("管理员手动重验在超时写出前再次核对发令者权限和成�
 test("双协议群管理复核名单、成员权限和各项网关回执", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
+  const milkyPrivateHistory = new Map<number, Call["params"]>();
   let milkyJoinState: "pending" | "rejected" = "pending";
   let milkyJoinReceipt: number | undefined;
   let wrongMilkyAnnouncementGroup = false;
@@ -195,6 +196,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const action = new URL(request.url).pathname.split("/").at(-1)!;
       const params = await request.json() as Call["params"];
       milkyCalls.push({ action, params });
+      if (action === "send_private_message") milkyPrivateHistory.set(milkyCalls.length, params);
       if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
         milkyJoinReceipt = milkyCalls.length;
       }
@@ -225,6 +227,10 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
           content: "合成 Milky 公告 👩‍👩‍👧‍👧", image_url: "https://example.test/image",
         }] }
+        : action === "get_message" && params.message_scene === "friend" ? { message: {
+          message_scene: "friend", peer_id: milkyPrivateHistory.get(Number(params.message_seq))?.user_id, message_seq: params.message_seq,
+          sender_id: milkyId, segments: milkyPrivateHistory.get(Number(params.message_seq))?.message,
+        } }
         : action === "get_message" ? { message: {
           message_scene: "group", peer_id: params.peer_id, message_seq: params.message_seq,
           sender_id: params.message_seq === milkyJoinReceipt ? milkyId : 42,
@@ -289,6 +295,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(oneBotId),
     } });
     const oneBotCalls: Call[] = [];
+    const oneBotPrivateHistory = new Map<number, Call["params"]>();
+    const oneBotChangedNotices = new Set<number>();
     const oneBotJoinReceipts = new Set<number>();
     const removedOneBotAnnouncements = new Set<string>();
     let originalJoinChecked = false;
@@ -298,6 +306,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
       oneBotCalls.push({ action, params });
+      if (action === "send_msg" && params.message_type === "private") oneBotPrivateHistory.set(oneBotCalls.length, params);
       if (action === "send_msg" && params.group_id === 82 && JSON.stringify(params.message).includes("合成入群提醒")) {
         oneBotJoinReceipts.add(oneBotCalls.length);
       }
@@ -308,6 +317,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const reply = action === "get_group_member_info" ? member(params)
         : action === "send_msg" ? { message_id: oneBotCalls.length }
         : action === "get_friend_list" ? [{ user_id: 42 }]
+        : action === "get_friend_msg_history" ? { messages: [...oneBotPrivateHistory].flatMap(([message_id, stored]) =>
+          message_id === params.message_seq && stored.user_id === params.user_id ? [{
+            message_id, self_id: oneBotId, user_id: oneBotId, sender: { user_id: oneBotId }, message_type: "private", sub_type: "friend",
+            message: oneBotChangedNotices.has(message_id) ? [{ type: "text", data: { text: "同一回执上的别的好友内容" } }] : stored.message,
+          }] : []) }
         : action === "get_group_shut_list" ? [
           { uin: "43", cardName: "合成群名片", nick: "合成昵称", role: 2, shutUpTime: nowSeconds() + 81 },
           { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
@@ -1399,7 +1413,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(forwardedText).toContain("[消息(99) - 好友消息]");
     expect(forwardedText).toContain("合成好友昵称");
     expect(forwardedText).toContain("可发送：回复 42 <内容>");
-    expect(forwardedText).not.toContain("引用该消息");
+    expect(forwardedText).toContain("引用该消息：回复 <内容>");
     client.send(JSON.stringify(oneBotPrivate("再次给当前账号的好友留言", 42)));
     const secondFriend = await ownerReplyWith("再次给当前账号的好友留言");
     expect(JSON.stringify(secondFriend.params.message)).not.toContain("可发送：回复");
@@ -1417,6 +1431,31 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       /synthetic-secret-for-scope-test|合成临时会话勿转发|Milky 账号的好友留言/u.test(JSON.stringify(params.message)))).toBe(false);
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && params.user_id === 52 &&
       JSON.stringify(params.message).includes("给 Milky 账号的好友留言"))).toBe(false);
+
+    const oneBotReceipt = oneBotCalls.indexOf(forwardedFriend) + 1;
+    const quoteFriend = (content: string) => ({ ...oneBotPrivate(content), message: [quote(oneBotReceipt), text(content)] });
+    oneBotChangedNotices.add(oneBotReceipt);
+    client.send(JSON.stringify(quoteFriend("#回复 同序号但更改正文不应发送")));
+    await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "get_friend_msg_history" && params.message_seq === oneBotReceipt),
+      "OneBot 未以原收件人查找好友历史。");
+    oneBotChangedNotices.delete(oneBotReceipt);
+    client.send(JSON.stringify(quoteFriend("#回复 43 仅为真正好友正文")));
+    const quotedOneBot = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 &&
+      JSON.stringify(params.message).includes("43 仅为真正好友正文")), "原 OneBot 好友未收到引用回复。");
+    expect(quotedOneBot.params.message).toEqual([text("43 仅为真正好友正文")]);
+    expect(oneBotCalls.filter(({ action }) => action === "get_friend_msg_history").map(({ params }) => params)).toEqual([
+      { user_id: 52, message_seq: oneBotReceipt, count: 10, disable_get_url: true, parse_mult_msg: false },
+      { user_id: 52, message_seq: oneBotReceipt, count: 10, disable_get_url: true, parse_mult_msg: false },
+    ]);
+    expect(oneBotReplies().some(({ params }) => params.user_id === 42 && JSON.stringify(params.message).includes("同序号但更改正文不应发送"))).toBe(false);
+
+    await webhook("message_receive", milkyPrivate("实际 Milky 好友的第二条留言", 43));
+    const milkyForward = await milkyOwnerReply(operator, "实际 Milky 好友的第二条留言");
+    const milkyReceipt = milkyCalls.indexOf(milkyForward) + 1;
+    const milkyQuote = milkyPrivate("回复 42 开头仍是原好友的正文");
+    await webhook("message_receive", { ...milkyQuote, segments: [{ type: "reply", data: { message_seq: milkyReceipt } }, ...milkyQuote.segments] });
+    const quotedMilky = await milkyOwnerReply(43, "开头仍是原好友的正文");
+    expect(quotedMilky.params.message).toEqual([text("42 开头仍是原好友的正文")]);
   } finally {
     socket?.close();
     host?.kill();

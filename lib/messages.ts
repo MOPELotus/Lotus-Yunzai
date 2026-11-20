@@ -7,7 +7,7 @@ import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/o
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationDecision, PendingGroupInvitationList, QuotedGroupInvitationDecision } from "./group-invitations.ts";
 import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
-import { friendMessageNoticeSession, type FriendMessageNoticeSession } from "./friend-message-notice.ts";
+import { friendMessageNoticeSession, type FriendMessageNoticeSession, type QuotedOwnerFriendReplyOutcome } from "./friend-message-notice.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
@@ -82,6 +82,7 @@ export interface MessageEvent {
   readonly listPendingFriendRequests?: () => Promise<PendingFriendRequestList | undefined>;
   readonly reviewPendingFriendRequest?: (userId: number, approve: boolean) => Promise<PendingFriendRequestDecision>;
   readonly sendOwnerFriendReply?: (userId: number, body: OwnerFriendReplyBody) => Promise<OwnerFriendReplyOutcome>;
+  readonly sendQuotedOwnerFriendReply?: (body: OwnerFriendReplyBody) => Promise<QuotedOwnerFriendReplyOutcome>;
   readonly groupReviewPendingJoin?: (userId: number, approve: boolean) => Promise<PendingGroupJoinDecision>;
   readonly groupReviewAllPendingJoins?: (approve: boolean) => Promise<PendingGroupJoinBatch>;
   readonly groupListAnnouncements?: () => Promise<readonly GroupAnnouncement[] | undefined>;
