@@ -1505,7 +1505,7 @@ if (import.meta.main) {
         (event.message_type !== "terminal" && (event.message_type !== "private" || event.sub_type !== "friend" ||
           event[delegationSession]?.signal.aborted !== false)))) return;
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
-        /^(?:#?代|#(?:执行|execute)(?:\s|$))/iu.test(event.msg) ||
+        (await import("./plugins/execute/index.ts")).isNestedExecution(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || zzzLinkEntry.test(event.msg) ||
