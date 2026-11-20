@@ -111,6 +111,32 @@ test("真实 HTTP 同一监听器保留预配置域，凭证票据只属于创�
   }
 });
 
+test("验证票随发起会话失效，取消在途提交也不影响其他会话", async () => {
+  const relay = createManualCaptchaRelay({ publicUrl: origin });
+  const first = new AbortController();
+  const other = new AbortController();
+  try {
+    const claimed = await required(relay.register(v3, first.signal));
+    const independent = await required(relay.register(v3, other.signal));
+    expect((await get(relay, path(claimed, "register"))).status).toBe(200);
+    expect((await get(relay, path(independent, "register"))).status).toBe(200);
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } });
+    const uploading = required(relay.handlePublic(post(path(claimed, "validate"), undefined, { body })));
+    first.abort();
+    expect((await uploading).status).toBe(404);
+    expect(cancelled).toBe(true);
+    expect((await get(relay, path(claimed))).status).toBe(404);
+    expect((await required(relay.handlePublic(post(path(claimed, "validate"), proof3)))).status).toBe(404);
+    expect(await relay.readResult(claimed.ticket)).toEqual({ status: "unavailable" });
+    expect(await relay.register(v3, first.signal)).toBeUndefined();
+    expect((await required(relay.handlePublic(post(path(independent, "validate"), proof3)))).status).toBe(200);
+    expect(await relay.readResult(independent.ticket)).toEqual({ status: "complete", result: proof3 });
+  } finally {
+    relay.close();
+  }
+});
+
 test("提交只接受固定 HTTPS Origin 和 Host，拒绝非法媒体、超限流和已断开请求", async () => {
   const relay = createManualCaptchaRelay({ publicUrl: origin });
   try {

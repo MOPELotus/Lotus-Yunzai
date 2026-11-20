@@ -129,7 +129,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const relay = notify && error instanceof GameCheckinChallengeError ? manualRelay?.() : undefined;
       if (!relay || !notify || !(error instanceof GameCheckinChallengeError)) throw error;
       await verifyCurrent();
-      const registration = await relay.register(error.challenge);
+      const registration = await relay.register(error.challenge, signal);
       if (!registration) throw error;
       await verifyCurrent();
       if (await notify(`请打开链接完成${label}签到的人工验证。链接只可使用一次。\n${registration.link}`) === false) throw error;
@@ -528,8 +528,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const profileId = Number(match[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话发送签到指令。";
+      const connection = context.privateCredentialSignal;
       const result = await runProfile(String(context.user_id), profileId, {
-        source: "manual", signal: lifecycleSignal,
+        source: "manual", signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
         notify: context.message_type === "private" ? message => context.reply(message) : undefined,
       });
       return result.reply;

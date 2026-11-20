@@ -79,7 +79,7 @@ function publicError(status: number): Response {
   return new Response(null, { status, headers: protectedHeaders });
 }
 
-async function readSubmission(request: Request, closed: AbortSignal): Promise<{ body: object } | { status: number }> {
+async function readSubmission(request: Request, closed: AbortSignal, scope?: AbortSignal): Promise<{ body: object } | { status: number }> {
   const contentType = request.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (contentType !== "application/json") return { status: 415 };
   if (!request.body || request.bodyUsed || request.body.locked) return { status: 400 };
@@ -91,10 +91,10 @@ async function readSubmission(request: Request, closed: AbortSignal): Promise<{ 
   }
 
   const timeout = AbortSignal.timeout(bodyDeadline);
-  const signal = AbortSignal.any([request.signal, closed, timeout]);
+  const signal = AbortSignal.any([request.signal, closed, timeout, ...(scope ? [scope] : [])]);
   const reader = request.body.getReader();
   const cancel = () => { void reader.cancel().catch(() => undefined); };
-  const abortStatus = () => closed.aborted ? 503 : timeout.aborted ? 408 : 400;
+  const abortStatus = () => closed.aborted ? 503 : scope?.aborted ? 404 : timeout.aborted ? 408 : 400;
   signal.addEventListener("abort", cancel, { once: true });
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let bytes = 0;
@@ -133,6 +133,8 @@ export function createManualCaptchaRelay({
   } };
   const handler = createVerificationHandler(vendorOptions);
   let tickets = new WeakMap<ManualCaptchaTicket, string>();
+  const scopes = new Map<string, { signal: AbortSignal; expiresAt: number }>();
+  const clock = now ?? Date.now;
 
   async function dispatch(method: string, path: string, body?: object): Promise<Response> {
     const headers = new Headers(protectedHeaders);
@@ -167,22 +169,30 @@ export function createManualCaptchaRelay({
     if ((!get && !post) || (url.protocol !== "http:" && url.protocol !== "https:") || url.search ||
         authority.toLowerCase() !== origin.host || url.host !== origin.host) return publicError(404);
     if (stopped.signal.aborted) return publicError(503);
+    const scope = scopes.get(path.slice(path.lastIndexOf("/") + 1))?.signal;
+    if (scope?.aborted) return publicError(404);
     const suppliedOrigin = request.headers.get("Origin");
     if ((post || suppliedOrigin !== null) && suppliedOrigin !== origin.origin) return publicError(403);
     const fetchSite = request.headers.get("Sec-Fetch-Site");
     if (claimRoute.test(path) && fetchSite !== null && fetchSite !== "same-origin") return publicError(403);
     if (request.signal.aborted) return publicError(400);
-    if (!post) return dispatch("GET", path);
-    const submission = await readSubmission(request, stopped.signal);
+    if (!post) {
+      const response = await dispatch("GET", path);
+      return scope?.aborted ? publicError(404) : response;
+    }
+    const submission = await readSubmission(request, stopped.signal, scope);
     if ("status" in submission) return publicError(submission.status);
     if (stopped.signal.aborted) return publicError(503);
     if (request.signal.aborted) return publicError(400);
+    if (scope?.aborted) return publicError(404);
     const response = await dispatch("POST", path, submission.body);
-    return stopped.signal.aborted ? publicError(503) : response;
+    return stopped.signal.aborted ? publicError(503) : scope?.aborted ? publicError(404) : response;
   }
 
-  async function register(challenge: ManualCaptchaChallenge): Promise<ManualCaptchaRegistration | undefined> {
-    if (stopped.signal.aborted) return;
+  async function register(challenge: ManualCaptchaChallenge, signal?: AbortSignal): Promise<ManualCaptchaRegistration | undefined> {
+    if (stopped.signal.aborted || signal?.aborted) return;
+    const time = clock();
+    for (const [id, scope] of scopes) if (scope.expiresAt <= time) scopes.delete(id);
     const response = await dispatch("POST", "/GTest/register", { ...challenge, key: registerKey });
     if (stopped.signal.aborted) {
       handler.close();
@@ -193,6 +203,10 @@ export function createManualCaptchaRelay({
     if (stopped.signal.aborted) return;
     const id = data.link.slice(data.link.lastIndexOf("/") + 1);
     if (!idPattern.test(id)) return;
+    if (signal) {
+      scopes.set(id, { signal, expiresAt: data.expires_at });
+      if (signal.aborted) return;
+    }
     const ticket = Object.freeze({}) as ManualCaptchaTicket;
     tickets.set(ticket, id);
     return { link: `${origin.origin}${basePath}/GTest/${id}`, expiresAt: data.expires_at, ticket };
@@ -200,9 +214,9 @@ export function createManualCaptchaRelay({
 
   async function readResult(ticket: ManualCaptchaTicket): Promise<ManualCaptchaResult> {
     const id = tickets.get(ticket);
-    if (!id || stopped.signal.aborted) return { status: "unavailable" };
+    if (!id || stopped.signal.aborted || scopes.get(id)?.signal.aborted) return { status: "unavailable" };
     const response = await dispatch("GET", `/GTest/validate/${id}`);
-    if (stopped.signal.aborted) return { status: "unavailable" };
+    if (stopped.signal.aborted || scopes.get(id)?.signal.aborted) return { status: "unavailable" };
     if (!response.ok) {
       tickets.delete(ticket);
       return { status: "unavailable" };
@@ -220,6 +234,7 @@ export function createManualCaptchaRelay({
       if (stopped.signal.aborted) return;
       stopped.abort();
       tickets = new WeakMap();
+      scopes.clear();
       handler.close();
     },
   };
