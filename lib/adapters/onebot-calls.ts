@@ -572,7 +572,7 @@ export class OneBotCalls {
   #messageId(result: unknown): number | undefined {
     const id = typeof result === "object" && result !== null && "message_id" in result
       ? result.message_id : undefined;
-    return typeof id === "number" && Number.isSafeInteger(id) ? id : undefined;
+    if (typeof id === "number" && Number.isInteger(id) && id !== 0 && id >= -2_147_483_648 && id <= 2_147_483_647) return id;
   }
 
   async replyWithReceipt(send: Send, params: object, seconds?: number, original?: number,

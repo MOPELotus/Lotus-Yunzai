@@ -89,6 +89,22 @@ test("需要回执的 OneBot 回复仅记录已确认的消息编号", async () 
   expect(observed).toEqual([-49]);
 });
 
+test("OneBot 只有有效的有符号非零消息编号才确认发送", async () => {
+  const { calls, send, frames } = connection();
+  const delivered: number[] = [];
+  const confirm = async (id: unknown) => {
+    const result = calls.sendConfirmed(send, { user_id: 42 }, "摘要", undefined, messageId => { delivered.push(messageId); });
+    calls.receive({ echo: frames.at(-1)!.echo, status: "ok", retcode: 0, data: { message_id: id } });
+    return result;
+  };
+  for (const id of [undefined, 0, -0, 2_147_483_648, -2_147_483_649, 1.5]) {
+    expect(await confirm(id)).toBe("unknown");
+  }
+  expect(await confirm(-2_147_483_648)).toBe("confirmed");
+  expect(await confirm(2_147_483_647)).toBe("confirmed");
+  expect(delivered).toEqual([-2_147_483_648, 2_147_483_647]);
+});
+
 test("好友申请窗口只显示当前连接观察到且未提交的普通申请", async () => {
   const { calls, send, frames, confirm } = connection();
   const entry = { userId: 42, comment: "原始附言" };
