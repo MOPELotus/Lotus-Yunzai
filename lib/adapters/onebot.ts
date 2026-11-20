@@ -3,7 +3,6 @@ import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
-import { standaloneVoicePart } from "../qq-voice.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
@@ -497,14 +496,12 @@ async function dispatchMessage(
       messageType === "private" && event.sub_type === "group" && temporaryMessageId !== undefined) {
     const signal = attachmentSession.signal;
     const reportedGroupId = isId(event.group_id) && event.group_id !== 284840486 ? event.group_id : undefined;
-    const voice = standaloneVoicePart(incoming.message);
-    if (voice || (text.trim() && incoming.message.every(part => part.type === "text"))) {
-      groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId, text, voice, reportedGroupId, signal,
-        notifyOwners: (reply, workflow, followup) => notifyVerifiedFriendOwners(calls, send, selfId,
-          scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, workflow]),
-          { followup, allowFollowup: id => isMaster(selfId, id) }),
-      });
-    }
+    groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId,
+      message: incoming.message, reportedGroupId, signal,
+      notifyOwners: (reply, workflow, followup) => notifyVerifiedFriendOwners(calls, send, selfId,
+        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, workflow]),
+        { followup, allowFollowup: id => isMaster(selfId, id) }),
+    });
   }
   const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
     const closed = () => display.closed || attachmentSession?.signal.aborted;

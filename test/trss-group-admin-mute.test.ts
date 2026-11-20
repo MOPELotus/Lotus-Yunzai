@@ -17,6 +17,7 @@ const noticeImageUrl = "https://gchat.qpic.cn/download?fixture=notice";
 const noticeImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR42mNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==";
 const imageDigest = createHash("md5").update(Buffer.from(noticeImageBase64, "base64")).digest("hex");
 const noticeVoiceUrl = "https://gchat.qpic.cn/download?fixture=voice";
+const expiredNoticeImageUrl = "https://gchat.qpic.cn/download?fixture=expired-notice-image";
 const expiredVoiceUrl = "https://gchat.qpic.cn/download?fixture=expired-voice";
 // 100 ms of a synthetic tone, encoded and decoded in isolation with silk-wasm 3.7.1.
 const noticeVoiceBase64 = "AiMhU0lMS19WMykA5xnesogJCj5c0HBrA2eDcv9K2Lyl8UoOJzlv+cgP5cMTIhN6rgKF139EALulD7zBNLWTjwjMQhrQHv2bTr3CYfe1BdK216zrnhuiZlSutyJHHRFRSR7G9nDItKk0TscVuhC5mw4zD8L+7nJ9hl9/MwC7peuE42QyS8bukipI3OFXDV6ML3JPHUqPiMwzSk6oOUJmn3c51fqJ4JNyosIixI6cLw85ALul64deVJG868zDHOYYAjmlZwXZpAZ8+SYDbLMQF2Dmc4gUydZhOsYNoEmB7uEV/FPRjDvOG8khv0UAu6XlLj+c96H7Wbn+BZ3JVjC3ujcUQQfPeutWYWWEGLZrL0eyn5GRUW8HEFGJR+hzn7qxwT6wcs2D7KDKo5aBxN7QqAky";
@@ -298,6 +299,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
             headers: { "Content-Type": "image/png" }
           }));
         }
+        if (url.href === ${JSON.stringify(expiredNoticeImageUrl)}) return Promise.resolve(new Response(null, { status: 404 }));
         if (url.href === ${JSON.stringify(noticeVoiceUrl)}) {
           return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeVoiceBase64)}, "base64"), {
             headers: { "Content-Type": "application/octet-stream" }
@@ -2069,6 +2071,45 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     ]);
     expect(oneBotCalls.slice(tempOneBotStart).filter(({ action, params }) =>
       action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+
+    const tempImagesStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const tempOneBotImage = { ...oneBotPrivate("", 42), sub_type: "group", group_id: 86,
+      message: [{ type: "image", data: { url: noticeImageUrl, file: "original-temp-image" } }] };
+    client.send(JSON.stringify(tempOneBotImage));
+    client.send(JSON.stringify(tempOneBotImage));
+    const privateImageNotice = await waitUntil(() => oneBotCalls.slice(tempImagesStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeImageBase64)),
+      "OneBot 群临时纯图未给主人送出原图。");
+    expect((privateImageNotice.params.message as unknown[]).at(-1)).toEqual({
+      type: "image", data: { file: `base64://${noticeImageBase64}` },
+    });
+    expect(JSON.stringify(privateImageNotice.params.message)).toContain("未核实（协议报告 86）");
+
+    const tempBody = (group: number, parts: unknown[]) => ({ ...temporaryMilky("", group), segments: parts });
+    const tempImage = (id: string, url?: string) => ({ type: "image", data: { resource_id: id, temp_url: url } });
+    const tempText = (value: string) => ({ type: "text", data: { text: value } });
+    const tempFace = { type: "face", data: { face_id: "14", is_large: true } };
+    const tempImageBody = tempBody(79, [tempText("临时图文上"), tempFace, tempImage("matched-picture", expiredNoticeImageUrl), tempText("临时图文下")]);
+    await webhook("message_receive", tempImageBody);
+    await webhook("message_receive", tempImageBody);
+    const mixedImageNotice = await milkyOwnerReply(operator, "临时图文下");
+    expect((mixedImageNotice.params.message as unknown[]).slice(-4)).toEqual([
+      tempText("临时图文上"), tempFace, { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } },
+      tempText("临时图文下"),
+    ]);
+    await webhook("message_receive", tempBody(88, [tempImage("closed-temp-image")]));
+    await webhook("message_receive", tempBody(79, [tempText("authkey="), tempFace, tempImage("sensitive-temp-image"), tempText("fixture-secret")]));
+    await webhook("message_receive", tempBody(79, [tempImage("unavailable-temp-image"), tempText("图不全，整条勿转")]));
+    await waitUntil(() => milkyCalls.slice(tempImagesStart.milky).find(({ action, params }) =>
+      action === "get_resource_temp_url" && params.resource_id === "unavailable-temp-image"), "缺失原图用例未发资源查询。");
+    await webhook("message_receive", tempBody(79, [tempText("临时图文验收结束")]));
+    await milkyOwnerReply(operator, "临时图文验收结束");
+    expect(milkyCalls.slice(tempImagesStart.milky).filter(({ action }) => action === "get_resource_temp_url")
+      .map(({ params }) => params.resource_id)).toEqual(["matched-picture", "unavailable-temp-image"]);
+    expect(milkyCalls.slice(tempImagesStart.milky).filter(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && /临时图文下|整条勿转/u.test(JSON.stringify(params.message)))).toHaveLength(1);
+    expect(oneBotCalls.slice(tempImagesStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
+      params.user_id === 52 && JSON.stringify(params.message).includes(noticeImageBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

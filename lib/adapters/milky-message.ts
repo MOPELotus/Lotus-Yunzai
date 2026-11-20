@@ -240,14 +240,6 @@ function decodeResource(kind: "image" | "record" | "video", data: Record<string,
   return { ...media, getDownloadUrl: () => downloadUrl ??= resolveUrl() };
 }
 
-export function decodeMilkyTemporaryVoice(segments: unknown, call: MilkyCall): InboundSegment | undefined {
-  if (!Array.isArray(segments) || segments.length !== 1) return;
-  const [part] = segments;
-  if (isRecord(part) && part.type === "record" && isRecord(part.data)) {
-    return decodeResource("record", part.data, mediaLink(part.data.temp_url), call);
-  }
-}
-
 function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCall): InboundSegment | undefined {
   const file = opaqueFileField(data.file_id);
   const name = mediaText(data.file_name);
@@ -371,6 +363,13 @@ function decodeSegments(value: unknown, selfId: number, target: Target, call: Mi
   }
 
   return { message, text: text.join(""), raw: raw.join(""), atBot, at, replyId, img: img.length ? img : undefined };
+}
+
+export function decodeMilkyTemporaryMessage(segments: unknown, account: number, userId: number, call: MilkyCall) {
+  if (!Array.isArray(segments) || !segments.every(part => isRecord(part) &&
+    (part.type === "text" || part.type === "image" || part.type === "face" || part.type === "face_incoming" ||
+      (part.type === "record" && segments.length === 1)))) return;
+  return decodeSegments(segments, account, { user_id: userId }, call)?.message;
 }
 
 function matchingProfile(value: unknown, userId: number, groupId?: number) {

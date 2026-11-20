@@ -67,9 +67,19 @@ export async function readQqMessageMedia(value: unknown, signal?: AbortSignal): 
 
 export async function readQqMessageSegmentMedia(part: Readonly<Record<string, unknown>>, signal: AbortSignal) {
   if (signal.aborted) return;
-  const url = typeof part.url === "string" ? part.url
-    : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
-  return readQqMessageMedia(url, signal);
+  const original = typeof part.url === "string" ? part.url : undefined;
+  if (original !== undefined) {
+    const bytes = await readQqMessageMedia(original, signal);
+    if (bytes || signal.aborted) return bytes;
+  }
+  if (typeof part.getDownloadUrl !== "function") {
+    if (original === undefined) return readQqMessageMedia(part.file, signal);
+    return;
+  }
+  try {
+    const refreshed: unknown = await part.getDownloadUrl();
+    if (refreshed !== original && !signal.aborted) return readQqMessageMedia(refreshed, signal);
+  } catch { return; }
 }
 
 async function readQqResource(url: URL, size?: number, signal?: AbortSignal, media = false) {

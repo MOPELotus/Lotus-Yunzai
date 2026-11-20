@@ -1,4 +1,4 @@
-import { readQqMessageMedia, readQqMessageSegmentMedia } from "./chat-files.ts";
+import { readQqMessageSegmentMedia } from "./chat-files.ts";
 import type { InboundSegment, MessageEvent } from "./messages.ts";
 
 const silkHeader = new TextEncoder().encode("#!SILK_V3");
@@ -28,13 +28,6 @@ export function hasSilkVoicePackets(bytes: Uint8Array): boolean {
 
 export async function readOriginalQqVoice(part: InboundSegment, signal: AbortSignal): Promise<Uint8Array | undefined> {
   if (part.type !== "record" || signal.aborted) return;
-  let bytes = await readQqMessageSegmentMedia(part, signal).catch(() => undefined);
-  const renew = part.getDownloadUrl;
-  if (!bytes && !signal.aborted && typeof part.url === "string" && typeof renew === "function") {
-    try {
-      const fresh = await renew();
-      if (typeof fresh === "string" && fresh !== part.url) bytes = await readQqMessageMedia(fresh, signal);
-    } catch { return; }
-  }
+  const bytes = await readQqMessageSegmentMedia(part, signal);
   if (bytes && !signal.aborted && hasSilkVoicePackets(bytes)) return bytes;
 }
