@@ -1462,15 +1462,15 @@ if (import.meta.main) {
         return;
       }
     }
-    const statusCard = /^#(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
-    const bareStatus = /^(?:椰奶)?状态(?:pro)?$/u.test(event.msg);
-    const statusMonitor = /^#(?:椰奶)?监控$/u.test(event.msg);
+    const statusCard = /^#状态(?:[Pp]ro)?$/u.test(event.msg);
+    const bareStatus = /^状态(?:[Pp]ro)?$/u.test(event.msg);
+    const statusMonitor = event.msg === "#监控";
     const statusPhoto = /^#?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
     const atlasMaintenance = atlasCommand && canManagePackages(event) && (event.adapter !== "milky" || milky) ? true as const : undefined;
     const milkyDiagnostics = milky && event.message_type === "private" &&
-      (event.msg === "#诊断" || statusCard || (bareStatus && event.msg.endsWith("pro"))) && isMilkyOwnerSession(event);
+      (event.msg === "#诊断" || statusCard || (bareStatus && /[Pp]ro$/u.test(event.msg))) && isMilkyOwnerSession(event);
     const runtimeStatusScope = (statusCard || bareStatus || statusPhoto || statusMonitor) && !event.isDelegated ?
       event.message_type === "terminal" && event.isMaster ? "terminal" : milky ? "milky" : event.boundAccount ? "onebot" : undefined : undefined;
     const originalMessage = [event.msg, event.raw_message];

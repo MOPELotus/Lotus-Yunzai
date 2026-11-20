@@ -158,7 +158,7 @@ function commandFeatureNames(module: string, command: string): readonly string[]
       /^#(?:全部赞我|(?:我要|给我)?(?:资料卡)?点赞|[赞超操草抄吵炒](?:我|他|她|它|ta))$/iu.test(command)) {
     return ["[group] 资料卡点赞"];
   }
-  if (module === "@lotus-yunzai/system" && /^#(?:椰奶)?状态(?:pro)?$/u.test(command)) return ["[system] 状态"];
+  if (module === "@lotus-yunzai/system" && /^#状态(?:[Pp]ro)?$/u.test(command)) return ["[system] 状态"];
   if (module === "@lotus-yunzai/system" && command === "#统计") return ["[system] 消息统计"];
   if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];
   if (module === "@lotus-yunzai/group" && command === "#更新群名片") return ["自动群名片"];
