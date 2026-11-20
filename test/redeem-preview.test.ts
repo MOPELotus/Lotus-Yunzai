@@ -131,6 +131,21 @@ function message(msg: string, reply: MessageEvent["reply"] = () => true): Messag
     isGroup: true, isPrivate: false, isMaster: false, self_id: 99, user_id: 42, group_id: 77, reply };
 }
 
+test("官方明确给出无效期限时暂停取码，仍可采用同版本官帖核实的期限", async () => {
+  const codeTip = "兑换码有效期为2026年10月23日20:00:00至2026年11月31日12:00:00。";
+  const incomplete = officialMock({ codeTip, posts: [] });
+  const service = new RedeemCodeService({ fetch: incomplete.fetch, now: () => start + 1_000 });
+  expect(await service.query("gs")).toMatchObject({ status: "expiry-unconfirmed", expiry: null,
+    reason: "官方公布的兑换码有效期无法识别，请查看官方活动页。" });
+  expect(incomplete.calls.some(url => url.pathname.endsWith("/refreshCode"))).toBe(false);
+
+  const verified = officialMock({ codeTip });
+  const withRecap = new RedeemCodeService({ fetch: verified.fetch, now: () => start + 1_000 });
+  expect(await withRecap.query("gs")).toMatchObject({ status: "available", expiry: { ms: expiry },
+    expirySource: "https://www.miyoushe.com/ys/article/101" });
+  expect(verified.calls.some(url => url.pathname.endsWith("/refreshCode"))).toBe(true);
+});
+
 test("原神旧别名匿名查询，中文码和奖励分别发送，同次并发共享查询", async () => {
   const mock = officialMock();
   const commands = new CommandRegistry();

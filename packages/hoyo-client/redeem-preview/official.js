@@ -29,26 +29,31 @@ function stripHtml(text) {
 }
 
 // to_get_time is the release time; never use it to guess an expiry.
+// null means no dated deadline was published; undefined means the dated claim did not validate.
 export function parseExpiry(text, referenceMs) {
   const datePattern = /(?:(\d{4})\s*[年\-/]\s*)?(\d{1,2})\s*[月\-/]\s*(\d{1,2})\s*日?\s*(\d{1,2})\s*[:：点时]\s*(\d{1,2})?\s*(?:[:：分]\s*(\d{1,2})\s*秒?)?/g
+  let invalid = false
   // Scope to sentences mentioning codes and expiry, to exclude launch and broadcast dates.
   for (const sentence of plainText(text).split(/[\n。！？]/)) {
     if (!/兑换码/.test(sentence) || !/失效|过期|截止|有效期|有效至|有效时间/.test(sentence)) continue
     // If an official validity range is given, its last date is the deadline.
-    for (const match of [...sentence.matchAll(datePattern)].reverse()) {
-      const reference = new Date(referenceMs + 8 * 3600000)
-      let year = Number(match[1] || reference.getUTCFullYear())
-      const month = Number(match[2]), day = Number(match[3]), hour = Number(match[4])
-      const minute = Number(match[5] || 0), second = Number(match[6] || 0)
-      if (!match[1] && reference.getUTCMonth() === 11 && month === 1) year++
-      if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) continue
-      const ms = Date.UTC(year, month - 1, day, hour - 8, minute, second)
-      const check = new Date(ms + 8 * 3600000)
-      if (check.getUTCDate() !== day) continue
-      return { ms, text: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}` }
+    const match = [...sentence.matchAll(datePattern)].at(-1)
+    if (!match) continue
+    const reference = new Date(referenceMs + 8 * 3600000)
+    let year = Number(match[1] || reference.getUTCFullYear())
+    const month = Number(match[2]), day = Number(match[3]), hour = Number(match[4])
+    const minute = Number(match[5] || 0), second = Number(match[6] || 0)
+    if (!match[1] && reference.getUTCMonth() === 11 && month === 1) year++
+    const ms = Date.UTC(year, month - 1, day, hour - 8, minute, second)
+    const check = new Date(ms + 8 * 3600000)
+    if (check.getUTCFullYear() !== year || check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day ||
+        hour > 23 || minute > 59 || second > 59) {
+      invalid = true
+      continue
     }
+    return { ms, text: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}` }
   }
-  return null
+  return invalid ? undefined : null
 }
 
 export function previewAnnouncement(posts, newestVersion, includeUnversioned = false) {

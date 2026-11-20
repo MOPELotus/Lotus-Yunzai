@@ -68,16 +68,21 @@ export class RedeemCodeService {
       const reference = startMs || this.now()
       const pageUrl = `https://webstatic.mihoyo.com/bbs/event/live/index.html?act_id=${activity.actId}`
       let expiry = parseExpiry(template.codeTipText || "", reference)
+      let invalidExpiry = expiry === undefined
       let expirySource = expiry ? pageUrl : ""
       if (!expiry && version) {
         for (const post of posts.filter(p => versionOf(p.subject) === version).sort((a, b) => b.created_at - a.created_at)) {
           expiry = parseExpiry(post.structured_content || post.content, reference)
+          invalidExpiry ||= expiry === undefined
           if (expiry) { expirySource = `https://www.miyoushe.com/${game.community}/article/${post.post_id}`; break }
         }
       }
-      const result = { ...base, title: activity.live.title, version, actId: activity.actId, codeVersion: activity.live.code_ver, source: pageUrl, expiry, expirySource, startAt: startMs }
+      const result = { ...base, title: activity.live.title, version, actId: activity.actId, codeVersion: activity.live.code_ver, source: pageUrl, expiry: expiry ?? null, expirySource, startAt: startMs }
       if (startMs > this.now() || Number(activity.live.remain) > 0) return { ...result, status: "unreleased", reason: "前瞻尚未开始，兑换码尚未发放" }
       if (expiry && expiry.ms <= this.now()) return { ...result, status: "expired" }
+      if (!expiry && invalidExpiry) {
+        return { ...result, status: "expiry-unconfirmed", reason: "官方公布的兑换码有效期无法识别，请查看官方活动页。" }
+      }
       if (!expiry && game.requireExpiry) {
         const endAt = parseOfficialDate(activity.live.end)
         const reason = "暂未找到官方公布的兑换码有效期，请查看官方活动页。"
