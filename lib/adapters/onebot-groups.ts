@@ -61,6 +61,10 @@ export class OneBotGroups implements GroupTransport {
     return [...this.#connected.keys()].sort((left, right) => left - right);
   }
 
+  onlineBindings(): { id: number; startedAt: number }[] {
+    return Array.from(this.#connected, ([id, { startedAt }]) => ({ id, startedAt }));
+  }
+
   ownGroupCardAccounts(): readonly OwnGroupCardAccount[] {
     return [...this.#connected.values()].flatMap(({ connection }) => {
       const account = connection.ownGroupCardAccount;
@@ -83,9 +87,8 @@ export class OneBotGroups implements GroupTransport {
 
   onlineAccounts(): readonly { readonly id: number; readonly seconds: number }[] {
     const now = this.#now();
-    return [...this.#connected].sort(([left], [right]) => left - right).map(([id, account]) => ({
-      id,
-      seconds: Math.max(0, Math.floor((now - account.startedAt) / 1_000)),
+    return this.onlineBindings().sort((left, right) => left.id - right.id).map(({ id, startedAt }) => ({
+      id, seconds: Math.max(0, Math.floor((now - startedAt) / 1_000)),
     }));
   }
 

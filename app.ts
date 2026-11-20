@@ -2360,7 +2360,16 @@ if (import.meta.main) {
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
     const makeLog = createPluginLog(botConfig, runtimeLog?.writePluginLog);
-    Object.assign(globalThis, { Bot: Object.freeze({ fileToUrl, makeLog, express: legacy.httpRoutes.express }) });
+    Object.assign(globalThis, { Bot: Object.freeze({
+      fileToUrl, makeLog, express: legacy.httpRoutes.express,
+      get uin() {
+        const sessions = groups.onlineBindings();
+        const milky = milkyOnline;
+        if (milky && !milky.signal.aborted) sessions.push({ id: milky.id, startedAt: milky.startedAt });
+        sessions.sort((left, right) => left.startedAt - right.startedAt);
+        return Object.freeze([...new Set(sessions.map(({ id }) => id))]);
+      },
+    }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     const storedLikeAssets = new URL("data/group/like-assets/", root);
