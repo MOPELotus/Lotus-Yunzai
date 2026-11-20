@@ -2290,6 +2290,7 @@ if (import.meta.main) {
       loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
       hostReplacementModules: [gachaExpectationModuleName],
       groupServices: probingUpdate ? undefined : {
+        noticeSettingsThemeDirectory: Bun.env.LOTUS_GROUP_NOTICE_THEME_DIR?.trim() || fileURLToPath(new URL("data/group/notice-theme/", root)),
         ownGroupCardAccounts() {
           const accounts = groups.ownGroupCardAccounts();
           const milky = milkyOnline?.ownGroupCardAccount;
