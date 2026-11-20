@@ -42,7 +42,7 @@ export interface PreviewRoleAccess {
 
 interface Options {
   readonly journal: string;
-  readonly legacyJournal?: string;
+  readonly legacyJournal?: string | readonly string[];
   readonly lookup: (game: PreviewGame, signal?: AbortSignal) => Promise<unknown>;
   readonly listProfiles: (signal?: AbortSignal) => Promise<readonly PreviewProfile[]>;
   readonly readRoles: (profile: PreviewProfile, game: PreviewGame, signal?: AbortSignal) => Promise<PreviewRoleAccess | undefined>;
@@ -120,7 +120,7 @@ function legacyBatchKeys(accountId: string, game: PreviewGame, version: string, 
 
 const createdJournal = "__lotusPreviewJournalVersion";
 
-function createJournal(file: string, legacy: string | undefined, requireExisting: boolean) {
+function createJournal(file: string, legacy: readonly string[], requireExisting: boolean) {
   const directory = dirname(file);
   async function read(inputPath: string): Promise<Journal | undefined> {
     try {
@@ -140,12 +140,13 @@ function createJournal(file: string, legacy: string | undefined, requireExisting
   }
 
   async function sources() {
-    const [primary, historical] = await Promise.all([read(file), legacy && legacy !== file ? read(legacy) : undefined]);
-    return { primary, historical };
+    const [primary, ...historical] = await Promise.all([file, ...legacy].map(read));
+    return { primary, historical: historical.filter(journal => journal !== undefined) };
   }
 
   function hasHistory({ primary, historical }: Awaited<ReturnType<typeof sources>>) {
-    return Boolean((historical && !Object.hasOwn(historical, createdJournal)) || (primary && !Object.hasOwn(primary, createdJournal)));
+    return Boolean((primary && !Object.hasOwn(primary, createdJournal)) ||
+      historical.some(journal => !Object.hasOwn(journal, createdJournal)));
   }
 
   function canUse(source: Awaited<ReturnType<typeof sources>>, profile: PreviewProfile) {
@@ -183,7 +184,7 @@ function createJournal(file: string, legacy: string | undefined, requireExisting
     claim(keys: readonly string[], time: number, profile: PreviewProfile) {
       return edit((data, source) => {
         if (!canUse(source, profile) ||
-          keys.some(key => Object.hasOwn(data, key) || (source.historical && Object.hasOwn(source.historical, key)))) return false;
+          keys.some(key => Object.hasOwn(data, key) || source.historical.some(journal => Object.hasOwn(journal, key)))) return false;
         for (const key of keys) data[key] = { time, status: "started" };
         return true;
       });
@@ -203,7 +204,10 @@ function createJournal(file: string, legacy: string | undefined, requireExisting
 
 export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, listProfiles, readRoles, notify, now = Date.now,
   requireExistingJournal = false }: Options) {
-  const store = createJournal(resolve(journal), legacyJournal && resolve(legacyJournal), requireExistingJournal);
+  const journalPath = resolve(journal);
+  const historicalPaths = new Set((typeof legacyJournal === "string" ? [legacyJournal] : legacyJournal ?? []).map(path => resolve(path)));
+  historicalPaths.delete(journalPath);
+  const store = createJournal(journalPath, [...historicalPaths], requireExistingJournal);
   const nextLookup = new Map<PreviewGame, number>();
   let running: Promise<void> | undefined;
 

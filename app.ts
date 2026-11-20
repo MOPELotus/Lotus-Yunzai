@@ -183,10 +183,11 @@ const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
 const atlasMaintenanceCommand = /^#?(?:Lotus|lotus|荷花)?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新)$/u;
+const legacyLotusDirectories = ["Lotus-Plugin", "Lotus-ReFactor"];
 
 async function readAtlasUpdateConfig(root: URL, globalConfig: Record<string, unknown>) {
   if (Object.hasOwn(globalConfig, "atlas")) return globalConfig.atlas;
-  for (const directory of ["Lotus-Plugin", "Lotus-ReFactor"]) {
+  for (const directory of legacyLotusDirectories) {
     const config = await readOptionalLocalConfig(new URL(`plugins/${directory}/`, root), "global");
     if (config && Object.hasOwn(config, "atlas")) return config.atlas;
   }
@@ -1912,7 +1913,8 @@ if (import.meta.main) {
       const previewClient = createProfileHoyoClient(checkinProfiles);
       const preview = createPreviewRedeemRunner({
         journal: fileURLToPath(new URL("data/redeemCodes/auto.json", root)),
-        legacyJournal: fileURLToPath(new URL("plugins/Lotus-Plugin/data/redeemCodes/auto.json", root)),
+        legacyJournal: legacyLotusDirectories.map(name =>
+          fileURLToPath(new URL(`plugins/${name}/data/redeemCodes/auto.json`, root))),
         lookup: game => publicPreview.query(game),
         listProfiles: checkinProfiles.listPreviewRedeemProfiles,
         async readRoles({ qq, profileId }, game, signal) {

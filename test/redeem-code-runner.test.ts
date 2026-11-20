@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { createPreviewRedeemRunner, type PreviewGame, type PreviewProfile } from "../lib/redeem-code-runner.ts";
 
@@ -84,6 +84,30 @@ test("旧 journal 两个路径的 started、finished 与隐式角色键均阻止
     expect(await readFile(paths.legacyJournal, "utf8")).toBe(historicalBytes);
     const updated = JSON.parse(await readFile(paths.journal, "utf8"));
     expect(updated).toEqual({ ...primary, [key("103", role.uid)]: { time: stamp, status: "finished" } });
+  });
+});
+
+test("两个旧安装目录的前瞻账本共同去重，并保持原记录只读", async () => {
+  await fixture(async paths => {
+    const renamedJournal = join(dirname(paths.journal), "renamed.json");
+    const old = JSON.stringify({ [key("101", role.uid)]: { time: 1, status: "finished" } }) + "\n";
+    const renamed = JSON.stringify({ [key("102", role.uid)]: { time: 2, status: "started" } }) + "\r\n";
+    await writeFile(paths.legacyJournal, old);
+    await writeFile(renamedJournal, renamed);
+    const submitted: string[] = [];
+    const runner = createPreviewRedeemRunner({ ...paths, legacyJournal: [paths.legacyJournal, renamedJournal],
+      now: () => stamp, lookup: async () => activity,
+      listProfiles: async () => [1, 2, 3].map(profileId => ({ ...oldProfile, profileId })),
+      async readRoles({ profileId }) {
+        const accountId = String(100 + profileId);
+        return { accountId, roles: [role], selectedUid: role.uid,
+          async submit(code) { submitted.push(`${accountId}:${code}`); return confirmed; } };
+      },
+    });
+    await runner.scan();
+    expect(submitted).toEqual(codes.map(code => `103:${code}`));
+    expect(await readFile(paths.legacyJournal, "utf8")).toBe(old);
+    expect(await readFile(renamedJournal, "utf8")).toBe(renamed);
   });
 });
 
