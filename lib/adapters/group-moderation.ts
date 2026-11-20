@@ -81,16 +81,28 @@ export interface GroupActionPolicy {
   readonly onGroupRecall?: (notice: NativeGroupRecallNotice) => void;
   readonly onGroupRecallSource?: (source: NativeGroupRecallSource) => void;
   readonly onGroupOwnerMemberNotice?: (notice: NativeGroupOwnerMemberNotice) => void;
+  readonly onGroupOwnerAdminNotice?: (notice: NativeGroupOwnerAdminNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
   readonly groupWorkflowSignal?: () => AbortSignal;
 }
 
-export interface NativeGroupOwnerMemberNotice {
+interface GroupOwnerNoticeSession {
   readonly adapter: "onebot" | "milky";
-  readonly event: GroupNotice;
   readonly signal: AbortSignal;
-  describe(signal: AbortSignal): Promise<{ groupName?: string; nickname?: string; card?: string }>;
   notifyOwners(reply: MessageReply, signal: AbortSignal): Promise<number>;
+}
+
+export interface NativeGroupOwnerMemberNotice extends GroupOwnerNoticeSession {
+  readonly event: GroupNotice;
+  describe(signal: AbortSignal): Promise<{ groupName?: string; nickname?: string; card?: string }>;
+}
+
+export interface NativeGroupOwnerAdminNotice extends GroupOwnerNoticeSession {
+  readonly botId: number;
+  readonly groupId: number;
+  readonly userId: number;
+  readonly set: boolean;
+  readonly time: number;
 }
 
 export interface MemberMuteNotice {

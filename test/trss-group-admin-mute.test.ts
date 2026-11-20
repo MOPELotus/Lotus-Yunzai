@@ -1682,6 +1682,30 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(oneBotReplies().some(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("群号：92"))).toBe(false);
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
       JSON.stringify(params.message).includes("群号：91"))).toBe(false);
+
+    await writeFile(noticeFile, 'default: { groupAdminChange: true }\n"bot:100:91": { groupAdminChange: false }\n');
+    const oneBotAdmin = { post_type: "notice", notice_type: "group_admin", sub_type: "set", self_id: oneBotId,
+      group_id: 90, user_id: 66, operator_id: 67, time: 1_700_000_025 };
+    client.send(JSON.stringify({ ...oneBotAdmin, self_id: 101 }));
+    client.send(JSON.stringify({ ...oneBotAdmin, sub_type: "anything" }));
+    client.send(JSON.stringify(oneBotAdmin));
+    client.send(JSON.stringify(oneBotAdmin));
+    const adminGranted = JSON.stringify((await ownerReplyWith("新增群管理员")).params.message);
+    expect(adminGranted).toContain("被操作账号：66");
+    expect(adminGranted).toContain("被操作群号：90");
+    expect(adminGranted).not.toContain("操作人");
+    expect(adminGranted).toContain("https://p.qlogo.cn/gh/90/90/100");
+    await webhook("group_admin_change", { group_id: 90, user_id: milkyId, operator_id: 69, is_set: false });
+    const adminRevoked = JSON.stringify((await milkyOwnerReply(operator, "机器人被取消管理")).params.message);
+    expect(adminRevoked).toContain("被操作群号：90");
+    expect(adminRevoked).not.toContain("被操作账号");
+    expect(adminRevoked).not.toContain("操作人");
+    await webhook("group_admin_change", { group_id: 91, user_id: 71, is_set: true });
+    await webhook("group_admin_change", { group_id: 92, user_id: 72, is_set: "true" });
+    await Bun.sleep(100);
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("新增群管理员"))).toHaveLength(1);
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
+      /被操作群号：[\d]+/u.test(JSON.stringify(params.message)) && !JSON.stringify(params.message).includes("被操作群号：90"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

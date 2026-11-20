@@ -306,6 +306,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return deliveries.filter(result => result === "confirmed").length;
   }
 
+  async function notifyVerifiedOwnerReplies(reply: MessageReply, workflow: AbortSignal) {
+    const active = AbortSignal.any([signal, workflow]);
+    const friends = await listCurrentFriends(active);
+    return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+  }
+
   const checkinNotify: CheckinNotifyTransport = {
     async isFriend(user_id) {
       if (signal.aborted || !positiveId(user_id)) return false;
@@ -605,6 +611,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.event_type === "bot_offline") return "offline";
     groupMute.observe(body);
 
+    if (body.event_type === "group_admin_change") {
+      const { group_id, user_id, is_set } = body.data;
+      if (options.onGroupOwnerAdminNotice && positiveId(group_id) && positiveId(user_id) && typeof is_set === "boolean" && positiveId(body.time)) {
+        options.onGroupOwnerAdminNotice({ adapter: "milky", botId: account, groupId: group_id, userId: user_id, set: is_set, time: body.time, signal,
+          notifyOwners: notifyVerifiedOwnerReplies,
+        });
+      }
+      return "accepted";
+    }
+
     if (body.event_type === "friend_file_upload") {
       const upload = milkyFriendFileUpload(body, account, async (action, params) => {
         return confirmSent(upload, await call(action, params), params.message);
@@ -618,11 +634,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (options.onFriendRecall && positiveId(sender_id) && sender_id === peer_id && sender_id === operator_id && sender_id !== account &&
           positiveId(body.time) && hasMessageSequence(message_seq)) {
         options.onFriendRecall({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, time: body.time, signal,
-          async notifyOwners(reply, workflow) {
-            const active = AbortSignal.any([signal, workflow]);
-            const friends = await listCurrentFriends(active);
-            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
-          },
+          notifyOwners: notifyVerifiedOwnerReplies,
         });
       }
       return "accepted";
@@ -674,11 +686,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         const text = segments.map(part => part.data.text).join("");
         const groupId = record(group) && positiveId(group.group_id) ? group.group_id : undefined;
         options.onTemporaryMessage({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, text, groupId, signal,
-          async notifyOwners(reply, workflow) {
-            const active = AbortSignal.any([signal, workflow]);
-            const friends = await listCurrentFriends(active);
-            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
-          },
+          notifyOwners: notifyVerifiedOwnerReplies,
         });
       }
       return "accepted";
@@ -989,11 +997,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             const groupName = record(group) && group.group_id === group_id ? memberDisplayName(group.group_name) : undefined;
             return { groupName, nickname: member?.nickname, card: member?.card };
           },
-          async notifyOwners(reply, workflow) {
-            const active = AbortSignal.any([signal, workflow]);
-            const friends = await listCurrentFriends(active);
-            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
-          },
+          notifyOwners: notifyVerifiedOwnerReplies,
         });
       }
       bindGroupModeration(event, {

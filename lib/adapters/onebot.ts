@@ -888,7 +888,18 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
-            if (message.notice_type === "group_recall" && options.onGroupRecall) {
+            if (message.notice_type === "group_admin") {
+              const { self_id, group_id, user_id, sub_type, time } = message;
+              if (!options.onGroupOwnerAdminNotice || !isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(time) ||
+                  (sub_type !== "set" && sub_type !== "unset")) return;
+              const signal = groupActionSignal(socket.data, self_id);
+              if (!signal) return;
+              options.onGroupOwnerAdminNotice({ adapter: "onebot", botId: self_id, groupId: group_id, userId: user_id, time,
+                set: sub_type === "set", signal,
+                notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
+                  () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([signal, active])),
+              });
+            } else if (message.notice_type === "group_recall" && options.onGroupRecall) {
               const { self_id, user_id, operator_id, group_id, time } = message;
               const messageId = oneBotMessageId(message.message_id);
               if (!isId(self_id) || !isId(user_id) || !isId(operator_id) || !isId(group_id) || !isId(time) || messageId === undefined ||

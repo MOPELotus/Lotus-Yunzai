@@ -38,7 +38,7 @@ import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice,
-  type NativeGroupOwnerMemberNotice } from "./lib/adapters/group-moderation.ts";
+  type NativeGroupOwnerAdminNotice, type NativeGroupOwnerMemberNotice } from "./lib/adapters/group-moderation.ts";
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
@@ -122,6 +122,7 @@ import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-
 import { createRequestClaim } from "./lib/request-claim.ts";
 import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
+import type { GroupOwnerAdminNotice } from "./plugins/group/group-owner-admin-notice.ts";
 import type { GroupOwnerMemberNotice } from "./plugins/group/group-owner-member-notice.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -148,6 +149,7 @@ const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus
 const friendRecallNoticeNames = ["[group] 好友撤回通知", "group", "@lotus-yunzai/group"];
 const groupRecallNoticeNames = ["[group] 群撤回通知", "group", "@lotus-yunzai/group"];
 const groupOwnerMemberNoticeNames = ["[group] 群成员变动通知", "group", "@lotus-yunzai/group"];
+const groupOwnerAdminNoticeNames = ["[group] 群管理变动通知", "group", "@lotus-yunzai/group"];
 const noticeSettingsNames = ["[group] 通知设置", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
@@ -315,6 +317,7 @@ if (import.meta.main) {
   let friendRecallNotice: { policy: FriendRecallNotice; signal: AbortSignal } | undefined;
   let groupRecallNotice: { policy: GroupRecallNotice; signal: AbortSignal } | undefined;
   let groupOwnerMemberNotice: { policy: GroupOwnerMemberNotice; signal: AbortSignal } | undefined;
+  let groupOwnerAdminNotice: { policy: GroupOwnerAdminNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   const notifiedPrivateMessages = new Set<string>();
   const pendingPrivateNotices = new Set<string>();
@@ -1213,6 +1216,22 @@ if (import.meta.main) {
     });
   }
 
+  async function forwardGroupOwnerAdminNotice(notice: NativeGroupOwnerAdminNotice) {
+    const registration = groupOwnerAdminNotice;
+    const { adapter, botId, groupId, userId, set, time } = notice;
+    const scope = { self_id: botId, group_id: groupId, user_id: userId };
+    if (!registration || stopping || !handoff.accepting || !masterPermissions.masterIds(botId).length ||
+        !groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, groupOwnerAdminNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, notice.signal);
+    if (signal.aborted) return;
+    await deliverPrivateNoticeOnce(`group-admin:${adapter}:${botId}:${groupId}:${userId}:${set}:${time}`, async mark => {
+      const reply = await registration.policy({ botId, groupId, userId, set }, signal);
+      if (!reply || signal.aborted) return;
+      mark();
+      await notice.notifyOwners(reply, signal);
+    });
+  }
+
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
     let reviewed = false;
     let reviewManually: (() => Promise<void>) | undefined;
@@ -1967,6 +1986,11 @@ if (import.meta.main) {
         pending.add(handling);
         void handling.then(() => pending.delete(handling));
       },
+      onGroupOwnerAdminNotice(notice: NativeGroupOwnerAdminNotice) {
+        const handling = forwardGroupOwnerAdminNotice(notice).catch(() => {});
+        pending.add(handling);
+        void handling.then(() => pending.delete(handling));
+      },
     };
     const milkyOptions: MilkyTransportOptions = {
       ...groupActions,
@@ -2254,6 +2278,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupOwnerMemberNotice === registration) groupOwnerMemberNotice = undefined;
+          };
+        },
+        registerGroupOwnerAdminNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupOwnerAdminNotice = registration;
+          return () => {
+            session.abort();
+            if (groupOwnerAdminNotice === registration) groupOwnerAdminNotice = undefined;
           };
         },
         registerGroupVerification(policy) {
