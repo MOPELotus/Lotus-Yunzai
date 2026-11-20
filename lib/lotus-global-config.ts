@@ -22,7 +22,9 @@ function normalizeLotusGlobalConfig(raw: Readonly<Config>): Config {
   const normalized = { ...raw };
   if (typeof raw.schedule === "string") {
     const fields = raw.schedule.trim().split(/\s+/u);
-    const [minute, hour] = fields.slice(fields.length >= 6 ? 1 : 0).map(Number);
+    const offset = fields.length >= 6 ? 1 : 0;
+    const minute = Number(fields[offset]);
+    const hour = Number(fields[offset + 1]);
     if (fields.length >= 5 && Number.isInteger(minute) && minute >= 0 && minute <= 59 &&
         Number.isInteger(hour) && hour >= 0 && hour <= 23) {
       const scheduler = section(raw.scheduler) ?? {};
