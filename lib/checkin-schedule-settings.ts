@@ -1,12 +1,7 @@
-import { constants, linkSync, renameSync, type Stats } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, type Node, type YAMLMap } from "yaml";
 import { checkinScheduleMinute, type CheckinScheduleConfig } from "./checkin-schedule-plan.ts";
-import { lockFile } from "./file-lock.ts";
-import { inheritLotusGlobalConfig } from "./lotus-global-config.ts";
+import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 
 export type CheckinScheduleSettingsChange =
   | { readonly type: "mode"; readonly mode: "random" }
@@ -50,64 +45,6 @@ function patchFor(change: CheckinScheduleSettingsChange): SchedulePatch {
   if (!Number.isInteger(minute)) error("invalid-input");
   return change.type === "mode" ? { mode: "fixed", fixed_time: time } :
     { plan_generate_cron: `0 ${minute % 60} ${Math.floor(minute / 60)} * * ? *` };
-}
-
-function errno(cause: unknown) {
-  return (cause as NodeJS.ErrnoException | undefined)?.code;
-}
-
-async function named(file: string) {
-  return lstat(file).catch((cause: unknown) => {
-    if (errno(cause) !== "ENOENT") throw cause;
-    return undefined;
-  });
-}
-
-interface Location {
-  readonly source: string;
-  readonly file: string;
-  readonly exists: boolean;
-}
-
-async function effectiveFile(root: URL): Promise<Location> {
-  const primary = fileURLToPath(new URL("config/global.yaml", root));
-  const legacy = fileURLToPath(new URL("config/config/global.yaml", root));
-  for (const source of [primary, legacy]) {
-    const state = await named(source);
-    if (!state) continue;
-    if (!state.isFile() && !state.isSymbolicLink()) error("config");
-    const file = await realpath(source);
-    if (!(await named(file))?.isFile()) error("config");
-    return { source, file, exists: true };
-  }
-  const parent = await named(dirname(primary));
-  const directory = parent ? await realpath(dirname(primary)) : join(await realpath(fileURLToPath(root)), "config");
-  if (parent && !(await named(directory))?.isDirectory()) error("config");
-  return { source: primary, file: join(directory, "global.yaml"), exists: false };
-}
-
-function sameLocation(a: Location, b: Location) {
-  return a.source === b.source && a.file === b.file;
-}
-
-function sameState(a: Stats, b: Stats | undefined) {
-  return b?.dev === a.dev && b.ino === a.ino && b.size === a.size && b.ctimeMs === a.ctimeMs && b.mtimeMs === a.mtimeMs &&
-    b.mode === a.mode && b.uid === a.uid && b.gid === a.gid;
-}
-
-async function snapshot(location: Location) {
-  if (!location.exists) return;
-  const file = location.file;
-  const input = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const stat = await input.stat();
-    if (!stat.isFile() || stat.nlink !== 1) error("config");
-    const bytes = await input.readFile();
-    if (!sameState(stat, await input.stat()) || !sameState(stat, await named(file))) error("conflict");
-    return { stat, bytes };
-  } finally {
-    await input.close();
-  }
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -245,81 +182,25 @@ function applyPatch(current: ReturnType<typeof readDocument>, patch: SchedulePat
 export async function persistCheckinScheduleSettings(root: URL, change: CheckinScheduleSettingsChange,
   { canWrite, signal }: SaveSettingsOptions): Promise<CheckinScheduleConfig> {
   const patch = patchFor(change);
-  function assertActive() {
-    if (signal?.aborted) error("cancelled");
-  }
-  function authorize(document: Record<string, unknown>) {
-    if (canWrite(structuredClone(document)) !== true) error("permission");
-  }
-
   try {
-    assertActive();
-    const initial = await effectiveFile(root);
-    if (!initial.exists && !await named(dirname(initial.file))) {
-      authorize(await inheritLotusGlobalConfig(root, {}));
-      await mkdir(dirname(initial.file), { mode: 0o700 }).catch((cause: unknown) => {
-        if (errno(cause) !== "EEXIST") throw cause;
-      });
-    }
-    const sidecar = join(dirname(initial.file), `.${basename(initial.file)}.lotus-global.sqlite`);
-    const database = await lockFile(sidecar, "全局签到调度配置").catch(() => error("conflict"));
-    try {
-      assertActive();
-      const location = await effectiveFile(root);
-      if (!sameLocation(initial, location)) error("conflict");
-      const current = await snapshot(location);
-      const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current?.bytes);
-      const previous = readDocument(content);
-      const effective = await inheritLotusGlobalConfig(root, previous.config);
-      const scheduler = validScheduler(effective.scheduler);
-      authorize(effective);
-      assertActive();
-      async function verifySnapshot() {
-        const active = await effectiveFile(root);
-        if (!sameLocation(location, active) || location.exists !== active.exists) error("conflict");
-        const latest = await snapshot(active);
-        if (current && (!latest || !sameState(current.stat, latest.stat) || !current.bytes.equals(latest.bytes))) error("conflict");
-        const latestEffective = await inheritLotusGlobalConfig(root, previous.config);
-        if (!isDeepStrictEqual(effective, latestEffective)) error("conflict");
-        assertActive();
-      }
-      if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
-        await verifySnapshot();
-        return scheduler;
-      }
-      const next = applyPatch(previous, patch);
-      const nextScheduler = validScheduler({ ...scheduler, ...next.scheduler });
-
-      const directory = await mkdtemp(join(dirname(location.file), ".lotus-schedule-settings-"));
-      try {
-        const staged = join(directory, "global.yaml");
-        const output = await open(staged, "wx", 0o600);
-        try {
-          await output.writeFile(next.yaml, "utf8");
-          if (current) {
-            const owner = await output.stat();
-            if (owner.uid !== current.stat.uid || owner.gid !== current.stat.gid) await output.chown(current.stat.uid, current.stat.gid);
-            await output.chmod(current.stat.mode & 0o7777);
-          }
-          await output.sync();
-        } finally {
-          await output.close();
+    return await updateLotusGlobalConfig(root, {
+      canWrite(document) {
+        validScheduler(document.scheduler);
+        return canWrite(document);
+      },
+      signal,
+      prepare(content, _local, effective) {
+        const previous = readDocument(content);
+        const scheduler = validScheduler(effective.scheduler);
+        if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
+          return { value: scheduler };
         }
-
-        await verifySnapshot();
-        if (current) renameSync(staged, location.file);
-        else {
-          try { linkSync(staged, location.file); }
-          catch (cause) { if (errno(cause) === "EEXIST") error("conflict"); throw cause; }
-        }
-        return nextScheduler;
-      } finally {
-        await rm(directory, { recursive: true, force: true }).catch(() => undefined);
-      }
-    } finally {
-      database.close();
-    }
+        const next = applyPatch(previous, patch);
+        return { yaml: next.yaml, value: validScheduler({ ...scheduler, ...next.scheduler }) };
+      },
+    });
   } catch (cause) {
+    if (cause instanceof GlobalConfigWriteError) error(cause.reason);
     if (cause instanceof CheckinScheduleSettingsError) throw cause;
     error("config");
   }

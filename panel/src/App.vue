@@ -6,6 +6,7 @@ import ExtensionPages from "./ExtensionPages.vue";
 import PluginSettings from "./PluginSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
 import GroupNoticeSettings from "./GroupNoticeSettings.vue";
+import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -14,7 +15,7 @@ const error = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -43,6 +44,7 @@ function setView(next: PanelView, discard = false) {
     likes: "like-settings-title",
     notices: "group-notice-settings-title",
     "plugin-settings": "plugin-settings-title",
+    atlas: "atlas-channel-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -174,6 +176,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'notices' ? 'page' : undefined" @click="setView('notices')">群通知</ElButton>
       <ElButton :type="view === 'plugin-settings' ? 'primary' : 'default'"
         :aria-current="view === 'plugin-settings' ? 'page' : undefined" @click="setView('plugin-settings')">插件配置</ElButton>
+      <ElButton :type="view === 'atlas' ? 'primary' : 'default'"
+        :aria-current="view === 'atlas' ? 'page' : undefined" @click="setView('atlas')">图鉴设置</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
         :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
@@ -187,6 +191,8 @@ onBeforeUnmount(() => {
     <GroupNoticeSettings v-else-if="view === 'notices'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <PluginSettings v-else-if="view === 'plugin-settings'" :token="token" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <AtlasChannelSettings v-else-if="view === 'atlas'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :token="token" :preferences="extensionPreferences"
       @unauthorized="expireSession" />

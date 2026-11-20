@@ -84,6 +84,7 @@ import { setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, typ
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
+import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
@@ -2763,6 +2764,7 @@ if (import.meta.main) {
       }
       const fallback = createServerRedirect(network.redirect);
       const settingsRoutes = new Map([
+        ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
       ]);
