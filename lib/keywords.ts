@@ -2,10 +2,11 @@ import { decodeChatFileBytes, maxChatFileBytes, readQqMessageMedia } from "./cha
 import { delegationSession } from "./command-delegation.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { isKeywordMedia } from "./keyword-store.ts";
-import type { InboundSegment, MessageEvent, MessageReply } from "./messages.ts";
+import type { GroupMembership, InboundSegment, MessageEvent, MessageReply } from "./messages.ts";
 
 type Scope = number | "global";
 type Variants = readonly (readonly InboundSegment[])[];
+type GroupRole = GroupMembership["botRole"];
 
 interface KeywordStore {
   read(scope: Scope): Promise<ReadonlyMap<string, Variants>>;
@@ -28,6 +29,7 @@ interface Draft {
   readonly name: string;
   readonly segments: (InboundSegment | undefined)[];
   readonly signal?: AbortSignal;
+  readonly legacyGroup?: number;
   readonly controller: AbortController;
   readonly active: AbortSignal;
   pending?: Promise<void>;
@@ -38,6 +40,10 @@ interface Draft {
 interface RecentGroupStore {
   read(actor: string): Promise<number | undefined>;
   write(actor: string, id: number): Promise<void>;
+  readonly legacy?: {
+    read(user: number): Promise<number | undefined>;
+    allows(event: MessageEvent, id: number): boolean;
+  };
 }
 
 const pageSize = 100;
@@ -174,17 +180,44 @@ export function createKeywords(
     if (groupWrites.get(actor) === write) groupWrites.delete(actor);
   }
 
-  async function recent(actor: string): Promise<number | undefined> {
+  async function recent(actor: string): Promise<{ group?: number; useLegacy: boolean }> {
     const group = groups.get(actor);
-    if (group && group.expires > now()) return group.id;
+    if (group && group.expires > now()) return { group: group.id, useLegacy: false };
     groups.delete(actor);
-    const id = await recentStore?.read(actor).catch(() => undefined);
+    const result = await recentStore?.read(actor).then(
+      id => isId(id) ? { group: id, useLegacy: false } : { useLegacy: true },
+      () => ({ useLegacy: false }),
+    );
     const updated = groups.get(actor);
-    if (updated && updated.expires > now()) return updated.id;
-    return isId(id) ? id : undefined;
+    if (updated && updated.expires > now()) return { group: updated.id, useLegacy: false };
+    return result ?? { useLegacy: false };
   }
 
-  async function permission(event: MessageEvent, scope: Scope): Promise<string | undefined> {
+  const legacy = recentStore?.legacy;
+
+  function allowsLegacyGroup(event: MessageEvent, group: number): boolean {
+    return event[delegationSession]?.signal !== undefined && hasKeywordSession(event) && legacy?.allows(event, group) === true;
+  }
+
+  async function readLegacyGroup(event: MessageEvent): Promise<number | undefined> {
+    if (!legacy || !isId(event.user_id) || !event[delegationSession]?.signal || !hasKeywordSession(event)) return;
+    const group = await legacy.read(event.user_id).catch(() => undefined);
+    if (isId(group) && allowsLegacyGroup(event, group)) return group;
+  }
+
+  async function checkLegacyMember(event: MessageEvent, group: number, actor?: string): Promise<GroupRole | undefined> {
+    if (!allowsLegacyGroup(event, group)) return;
+    // The old key identifies a group, and the current connection supplies the member role.
+    const role = await event.getGroupRole?.(group).catch(() => undefined);
+    if (!role) return;
+    if (actor !== undefined) {
+      const scoped = await recent(actor);
+      if (!scoped.useLegacy && scoped.group !== group) return;
+    }
+    if (await readLegacyGroup(event) === group) return role;
+  }
+
+  async function permission(event: MessageEvent, scope: Scope, verifiedRole?: GroupRole): Promise<string | undefined> {
     if (!hasKeywordSession(event)) return unboundMessage;
     if (event.adapter === "milky" ? isMilkyOwnerSession(event) : event.isMaster) return;
     if (scope === "global") return "暂无权限，只有主人才能操作全局词条。";
@@ -196,14 +229,14 @@ export function createKeywords(
     if (event.message_type === "group") {
       if (event.member?.is_admin || event.member?.is_owner) return;
     } else {
-      const role = await event.getGroupRole?.(scope).catch(() => undefined);
+      const role = verifiedRole ?? await event.getGroupRole?.(scope).catch(() => undefined);
       if (role === "owner" || role === "admin") return;
       if (role !== "member") return "无法确认管理员权限，请在群内操作。";
     }
     return "暂无权限，只有群管理员才能操作。";
   }
 
-  async function list(event: MessageEvent, scope: Scope, argument: string) {
+  async function list(event: MessageEvent, scope: Scope, argument: string, legacyGroup?: number) {
     const listMode = !argument || argument.startsWith("列表");
     const page = listMode && argument ? Number(argument.slice(2).trim() || "1") : 1;
     if (listMode && ((!/^列表\s*\d*$/u.test(argument) && argument !== "") || !Number.isSafeInteger(page) || page < 1)) {
@@ -218,6 +251,7 @@ export function createKeywords(
       await event.reply("读取词条失败，请稍后重试。");
       return;
     }
+    if (legacyGroup !== undefined && !allowsLegacyGroup(event, legacyGroup)) return;
     const rows = [...entries]
       .filter(([name]) => listMode || name.includes(argument))
       .map(([name, versions], index) => `${index + 1}. ${name}(${versions.length})`)
@@ -247,13 +281,13 @@ export function createKeywords(
     if (!forwarded) await event.reply(nodes.join("\n"));
   }
 
-  async function remove(event: MessageEvent, scope: Scope, argument: string) {
+  async function remove(event: MessageEvent, scope: Scope, argument: string, legacyGroup?: number) {
     let removed: boolean;
     let label = argument;
     try {
       const entries = await store.read(scope);
       const indexed = entries.has(argument) ? undefined : numbered(argument, (key) => entries.get(key));
-      if (!hasKeywordSession(event)) return;
+      if (!hasKeywordSession(event) || (legacyGroup !== undefined && !allowsLegacyGroup(event, legacyGroup))) return;
       removed = await store.remove(scope, indexed?.key ?? argument, indexed?.order);
       if (indexed) label = `${indexed.key}(${indexed.order})`;
     } catch {
@@ -292,7 +326,11 @@ export function createKeywords(
     try {
       await draft.pending;
       if (!hasKeywordSession(event)) return true;
-      const denied = await permission(event, draft.scope);
+      const legacyGroup = draft.legacyGroup;
+      const role = legacyGroup !== undefined && await readLegacyGroup(event) === legacyGroup
+        ? await checkLegacyMember(event, legacyGroup) : undefined;
+      const denied = legacyGroup !== undefined && role === undefined ? "添加已失效，请重新添加。"
+        : await permission(event, draft.scope, role);
       if (!hasKeywordSession(event)) return true;
       if (draft.active.aborted || draft.expires <= now()) {
         await event.reply("添加已失效，请重新添加。");
@@ -318,7 +356,7 @@ export function createKeywords(
     }
   }
 
-  async function trigger(event: MessageEvent, group: number, name: string): Promise<boolean> {
+  async function trigger(event: MessageEvent, group: number, name: string, authorize?: () => Promise<GroupRole | undefined>): Promise<boolean> {
     let reply: MessageReply | undefined;
     let found = false;
     try {
@@ -333,12 +371,14 @@ export function createKeywords(
       const variants = variantsFor(name);
       const variant = variants?.length ? variants[Math.floor(Math.random() * variants.length)] : numbered(name, variantsFor)?.variant;
       if (!variant) return false;
+      if (authorize && !await authorize()) return false;
       found = true;
       reply = await store.render(variant);
     } catch {
       if (!found) return false;
     }
 
+    if (authorize && !allowsLegacyGroup(event, group)) return false;
     if (reply === undefined) {
       await event.reply("该词条的内容当前无法发送。");
     } else {
@@ -353,35 +393,43 @@ export function createKeywords(
     if (!sender) return false;
     if (sender.group !== undefined && hasKeywordSession(event)) await remember(sender.actor, sender.group);
     const name = event.msg.trim();
-    const group = sender.group ?? await recent(sender.actor);
+    if (!name) return false;
     if (name === finishCommand) {
       if (event.isDelegated) return false;
       await event.reply("目前没有正在添加的词条。");
       return true;
     }
     const command = managementCommand.exec(name);
-    if (!command) return group !== undefined && !!name && trigger(event, group, name);
+    const scoped = sender.group === undefined && !command?.[1] ? await recent(sender.actor) : undefined;
+    const group = sender.group ?? scoped?.group;
+    const legacyGroup = scoped?.useLegacy ? await readLegacyGroup(event) : undefined;
+    const authorizeLegacy = legacyGroup === undefined ? undefined : () => checkLegacyMember(event, legacyGroup, sender.actor);
+    if (!command) {
+      if (group !== undefined) return trigger(event, group, name);
+      return legacyGroup !== undefined && trigger(event, legacyGroup, name, authorizeLegacy);
+    }
 
     const [, global, action, suffix] = command;
     if (event.isDelegated && action === "添加") return false;
     const argument = suffix?.trim() ?? "";
-    const scope = global ? "global" : group;
+    const role = await authorizeLegacy?.();
+    const scope = global ? "global" : group ?? (role ? legacyGroup : undefined);
     if (scope === undefined) {
       await event.reply("请先在群内发送消息，确定词条所属的群。");
       return true;
     }
     if (action === "消息" || action === "词条") {
-      await list(event, scope, argument);
+      await list(event, scope, argument, legacyGroup);
       return true;
     }
-    const denied = await permission(event, scope);
+    const denied = await permission(event, scope, role);
     if (denied || !argument) {
       await event.reply(denied ?? `${action}错误：没有关键词。`);
       return true;
     }
     if (!hasKeywordSession(event)) return true;
     if (action === "删除") {
-      await remove(event, scope, argument);
+      await remove(event, scope, argument, legacyGroup);
       return true;
     }
 
@@ -401,7 +449,8 @@ export function createKeywords(
     const sources = [controller.signal, AbortSignal.timeout(draftTtl)];
     if (signal) sources.push(signal);
     const active = AbortSignal.any(sources);
-    const draft: Draft = { scope, name: argument, expires: time + draftTtl, segments: [], signal, controller, active, bytes: 0, omitted: 0 };
+    const draft: Draft = { scope, name: argument, expires: time + draftTtl, segments: [], signal, legacyGroup,
+      controller, active, bytes: 0, omitted: 0 };
     active.addEventListener("abort", () => {
       draftMediaBytes -= draft.bytes;
       draft.segments.length = 0;

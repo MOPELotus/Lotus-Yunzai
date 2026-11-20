@@ -98,30 +98,34 @@ function gateway() {
   };
 }
 
-async function oneBot(endpoint: string) {
+async function oneBot(endpoint: string, account = bot,
+  memberInfo?: (params: Record<string, unknown>) => unknown | Promise<unknown>) {
   const Socket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
   const socket = new Socket(endpoint, { headers: {
-    Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(bot),
+    Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(account),
   } });
   const connected = Promise.withResolvers<void>();
   const replies: Reply[] = [];
   socket.addEventListener("open", () => connected.resolve(), { once: true });
   socket.addEventListener("error", connected.reject, { once: true });
-  socket.addEventListener("message", ({ data }) => {
+  socket.addEventListener("message", async ({ data }) => {
     const frame = JSON.parse(data);
     if (frame.action === "send_msg") replies.push(reply(frame.params));
-    if (frame.echo) socket.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 99 } }));
+    if (!frame.echo) return;
+    const response = frame.action === "get_group_member_info" && memberInfo ? await memberInfo(frame.params) : { message_id: 99 };
+    socket.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: response }));
   });
   await connected.promise;
   let messageId = 0;
   return {
     socket,
-    send(text: string | readonly object[], group: number | null = originalGroup) {
-      socket.send(JSON.stringify({ self_id: bot, user_id: moderator, group_id: group ?? undefined,
+    send(text: string | readonly object[], group: number | null = originalGroup, user = moderator) {
+      socket.send(JSON.stringify({ self_id: account, user_id: user, group_id: group ?? undefined,
         post_type: "message", message_type: group === null ? "private" : "group", sub_type: group === null ? "friend" : "normal",
         sender: { role: "admin" }, message: text, message_id: ++messageId }));
     },
     next: () => waitFor(() => replies.shift(), "未收到 OneBot 词条回复。"),
+    expectDrained() { expect(replies).toEqual([]); },
   };
 }
 
@@ -294,3 +298,182 @@ test("Milky 词条沿用旧文件，按绑定账号鉴权并隔离不同协议�
     await rm(root, { recursive: true, force: true });
   }
 }, 12_000);
+
+const valkeyServer = Bun.which("valkey-server");
+test.skipIf(!valkeyServer)("旧最近群按原到期时间供当前双协议和各机器人复核", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-legacy-keyword-group-"));
+  const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = listener.port;
+  listener.stop(true);
+  const password = crypto.randomUUID();
+  const url = `redis://:${password}@127.0.0.1:${port}`;
+  const valkey = Bun.spawn([valkeyServer!, "--bind", "127.0.0.1", "--port", String(port), "--requirepass", password,
+    "--save", "", "--appendonly", "no", "--dir", root], { stdout: "ignore", stderr: "ignore" });
+  const milky = gateway();
+  let connection: InstanceType<typeof Bun.RedisClient> | undefined;
+  const clients: Awaited<ReturnType<typeof oneBot>>[] = [];
+  let host: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
+  try {
+    async function connect() {
+      const deadline = performance.now() + 2_000;
+      while (performance.now() < deadline) {
+        const candidate = new Bun.RedisClient(url, { autoReconnect: false });
+        try {
+          await candidate.connect();
+          return candidate;
+        } catch {
+          candidate.close();
+          await Bun.sleep(10);
+        }
+      }
+      throw new Error("隔离 Valkey 未就绪。");
+    }
+    const redis = connection = await connect();
+    const oldKey = `Yz:group_id:${moderator}`;
+    const oneKey = `lotus-yunzai:keywords:recent:${bot}:${moderator}`;
+    const milkyKey = `lotus-yunzai:keywords:recent:milky:${bot}:${moderator}`;
+    await redis.send("SET", [oldKey, String(originalGroup), "EX", "90"]);
+    const originalExpiry = await redis.send("PEXPIRETIME", [oldKey]);
+    const draftUser = 43;
+    const oldDraftKey = `Yz:group_id:${draftUser}`;
+    await redis.send("SET", [oldDraftKey, String(originalGroup), "EX", "90"]);
+    const expiryUser = 45;
+    const expiringKey = `Yz:group_id:${expiryUser}`;
+    await redis.send("SET", [expiringKey, String(originalGroup), "EX", "90"]);
+
+    await copyHost(root);
+    disableMemberPrewarm(root);
+    const config = join(root, "config");
+    const data = join(root, "data", "messageJson");
+    await mkdir(data, { recursive: true });
+    await writeFile(join(config, "config/bot.yaml"), "cache_group_member: false\nonline_msg_exp: 0\n");
+    await writeFile(join(config, "other.yaml"), 'master: ["100:42"]\nblackGroup: [80]\nblackUser: [44]\n');
+    await writeFile(join(config, "group.yaml"), [
+      "default: {groupCD: 0, singleCD: 0, addLimit: 1, addPrivate: 1, addReply: 0, addRecall: 0}",
+      '"99:81": {disable: [添加消息]}', "",
+    ].join("\n"));
+    await writeFile(join(config, "global.yaml"), "coin_shop: {enable: false}\nscheduler: {enable: false}\n");
+    await writeFile(join(config, "milky.yaml"), [
+      "enable: true", "host: 127.0.0.1", `port: ${milky.server.port}`, `access_token: ${token}`,
+      "ws:", "  reconnect_interval: 0.05", "  heartbeat: 0.2", "",
+    ].join("\n"));
+    const original = JSON.stringify({ 同一词条: [[{ type: "text", text: "旧群词条" }]] });
+    const groupFile = join(data, `${originalGroup}.json`);
+    await writeFile(groupFile, original);
+    await writeFile(join(data, `${secondGroup}.json`), JSON.stringify({ 同一词条: [[{ type: "text", text: "现群词条" }]] }));
+    host = Bun.spawn([process.execPath, "--no-env-file", "app.ts"], {
+      cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_VALKEY_URL: url },
+    });
+    let startup = "";
+    const decoder = new TextDecoder();
+    void host.stdout.pipeTo(new WritableStream({ write(chunk) { startup += decoder.decode(chunk, { stream: true }); } }));
+    const endpoint = await waitFor(() => startup.includes("Lotus-Yunzai 已启动")
+      ? /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(startup)?.[0] : undefined, "词条宿主未启动。");
+    const queried: Record<string, unknown>[] = [];
+    let role = "admin";
+    const one = await oneBot(endpoint, bot, async params => {
+      queried.push(params);
+      if (params.user_id === expiryUser) {
+        await redis.send("PEXPIRE", [expiringKey, "1"]);
+        await Bun.sleep(10);
+      }
+      return { ...params, role };
+    });
+    clients.push(one);
+    const secondQueries: Record<string, unknown>[] = [];
+    const other = await oneBot(endpoint, 100, params => {
+      secondQueries.push(params);
+      return { ...params, group_id: 79, role: "owner" };
+    });
+    clients.push(other);
+    await waitFor(() => milky.sockets[0], "Milky 测试网关未连接。");
+
+    one.send("同一词条", null);
+    expect((await one.next()).text).toBe("旧群词条");
+    expect(queried).toEqual([{ group_id: originalGroup, user_id: moderator, no_cache: true }]);
+    expect(await redis.get(oneKey)).toBeNull();
+    expect(await redis.send("PEXPIRETIME", [oldKey])).toBe(originalExpiry);
+
+    other.send("#词条列表", null);
+    expect((await other.next()).text).toContain("请先在群内");
+    expect(secondQueries).toEqual(queried);
+    milky.setRole("admin", true);
+    milky.send("#词条列表", { group: null });
+    expect((await milky.next()).text).toContain("请先在群内");
+    expect(milky.roleQueries).toEqual(queried);
+    milky.setRole("member");
+    milky.send("同一词条", { group: null });
+    expect((await milky.next()).text).toBe("旧群词条");
+    expect(await redis.get(milkyKey)).toBeNull();
+
+    role = "member";
+    one.send("#删除同一词条", null);
+    expect((await one.next()).text).toContain("只有群管理员");
+    expect(await readFile(groupFile, "utf8")).toBe(original);
+    role = "admin";
+    one.send("#添加到期草稿", null, draftUser);
+    expect((await one.next()).text).toContain("#结束添加");
+    await redis.send("PEXPIRE", [oldDraftKey, "1"]);
+    await Bun.sleep(10);
+    expect(await redis.get(oldDraftKey)).toBeNull();
+    one.send("过期后不能写入", null, draftUser);
+    one.send("#结束添加", null, draftUser);
+    expect((await one.next()).text).toContain("添加已失效");
+    expect(await readFile(groupFile, "utf8")).toBe(original);
+
+    one.send("#词条列表", null, expiryUser);
+    expect((await one.next()).text).toContain("请先在群内");
+    expect(await redis.get(expiringKey)).toBeNull();
+    expect(queried.at(-1)).toMatchObject({ group_id: originalGroup, user_id: expiryUser });
+
+    one.send("#添加可写词条", null);
+    expect((await one.next()).text).toContain("#结束添加");
+    one.send("从旧最近群定位的内容", null);
+    one.send("#结束添加", null);
+    expect((await one.next()).text).toBe("添加成功：可写词条");
+    const saved = JSON.parse(await readFile(groupFile, "utf8"));
+    expect(saved.可写词条).toEqual([[{ type: "text", text: "从旧最近群定位的内容" }]]);
+    one.send("#删除可写词条", null);
+    expect((await one.next()).text).toBe("删除成功：可写词条");
+    const afterDelete = JSON.parse(await readFile(groupFile, "utf8"));
+    expect(afterDelete).toEqual(JSON.parse(original));
+
+    await redis.send("SET", ["Yz:group_id:44", String(originalGroup), "EX", "90"]);
+    await redis.set("Yz:group_id:46", String(originalGroup));
+    const previousCount = queried.length;
+    one.send("#词条列表", null, 44);
+    one.send("#词条列表", null, 46);
+    expect(await one.next()).toMatchObject({ user: 46, text: expect.stringContaining("请先在群内") });
+    for (const group of [80, 81]) {
+      await redis.send("SET", [oldKey, String(group), "KEEPTTL"]);
+      one.send("#词条列表", null);
+      expect((await one.next()).text).toContain("请先在群内");
+    }
+    expect(queried).toHaveLength(previousCount);
+    expect(await redis.send("PEXPIRETIME", [oldKey])).toBe(originalExpiry);
+    await redis.send("SET", [oldKey, String(originalGroup), "KEEPTTL"]);
+
+    await redis.send("SET", [milkyKey, String(secondGroup), "EX", "90"]);
+    milky.send("同一词条", { group: null });
+    expect((await milky.next()).text).toBe("现群词条");
+    one.send("同一词条", secondGroup);
+    expect(await one.next()).toMatchObject({ group: secondGroup, text: "现群词条" });
+    expect(await redis.get(oneKey)).toBe(String(secondGroup));
+    one.send("同一词条", null);
+    expect((await one.next()).text).toBe("现群词条");
+    expect(queried).toHaveLength(previousCount);
+    expect(await redis.get(oldKey)).toBe(String(originalGroup));
+    expect(await redis.send("PEXPIRETIME", [oldKey])).toBe(originalExpiry);
+    one.expectDrained();
+  } finally {
+    for (const client of clients) client.socket.close();
+    milky.server.stop(true);
+    connection?.close();
+    host?.kill("SIGTERM");
+    await host?.exited;
+    valkey.kill("SIGTERM");
+    await valkey.exited;
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);
