@@ -130,6 +130,7 @@ import type { GroupOwnerGroupNotice } from "./plugins/group/group-owner-group-no
 import type { GroupOwnerInvitationNotice } from "./plugins/group/group-owner-invitation-notice.ts";
 import type { GroupOwnerJoinRequestNotice } from "./plugins/group/group-owner-join-request-notice.ts";
 import type { GroupOwnerMemberNotice } from "./plugins/group/group-owner-member-notice.ts";
+import type { OwnerNoticeRecipients } from "./plugins/group/owner-notice-recipients.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
 declare global {
@@ -334,6 +335,7 @@ if (import.meta.main) {
   let groupOwnerGroupNotice: { policy: GroupOwnerGroupNotice; signal: AbortSignal } | undefined;
   let groupOwnerJoinRequestNotice: { policy: GroupOwnerJoinRequestNotice; signal: AbortSignal } | undefined;
   let groupOwnerInvitationNotice: { policy: GroupOwnerInvitationNotice; signal: AbortSignal } | undefined;
+  let ownerNoticeRecipients: { policy: OwnerNoticeRecipients; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   const notifiedPrivateMessages = new Set<string>();
   const pendingPrivateNotices = new Set<string>();
@@ -2066,6 +2068,15 @@ if (import.meta.main) {
     }, "[gacha] 抽卡记录");
     const { hostname, oneBot, https, panelToken } = network;
     const groupActions = {
+      async noticeOwnerIds(botId: number, transport: AbortSignal) {
+        const registration = ownerNoticeRecipients;
+        const signal = registration ? nativeOperationSignal(registration.signal, transport) : nativeOperationSignal(transport);
+        if (signal.aborted) return [];
+        const all = await registration?.policy(botId, signal).catch(() => undefined);
+        if (signal.aborted) return [];
+        const owners = masterPermissions.masterIds(botId).filter(id => id !== botId);
+        return all === false ? owners.slice(0, 1) : owners;
+      },
       friendNoticeReceipts: probingUpdate ? undefined : friendNoticeReceipts,
       ownerFriendReplyClaim: probingUpdate ? undefined : ownerFriendReplyClaim,
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
@@ -2468,6 +2479,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupOwnerInvitationNotice === registration) groupOwnerInvitationNotice = undefined;
+          };
+        },
+        registerOwnerNoticeRecipients(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          ownerNoticeRecipients = registration;
+          return () => {
+            session.abort();
+            if (ownerNoticeRecipients === registration) ownerNoticeRecipients = undefined;
           };
         },
         registerGroupVerification(policy) {

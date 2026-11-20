@@ -298,11 +298,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return new Set(friends.map(friend => friend.user_id as number));
   }
 
+  async function selectNoticeOwners(active: AbortSignal) {
+    if (active.aborted) return [];
+    const owners = await (options.noticeOwnerIds?.(account, active) ?? options.masterIds?.(account) ?? []);
+    return active.aborted ? [] : [...new Set(owners)].filter(id => id !== account && isMaster(id));
+  }
+
   async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal,
     onDelivered?: (owner: number, messageId: number) => Promise<void>, friends?: ReadonlySet<number>) {
     const active = AbortSignal.any([signal, workflow]);
     if (active.aborted) return 0;
-    const recipients = [...new Set(options.masterIds?.(account))].filter(id => id !== account && isMaster(id) && friends?.has(id) !== false);
+    const recipients = (await selectNoticeOwners(active)).filter(id => friends?.has(id) !== false);
     const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active,
       onDelivered ? id => onDelivered(user_id, id) : undefined)));
     return deliveries.filter(result => result === "confirmed").length;
@@ -679,7 +685,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             const messages = encodeMilkyForward([original], sender_id, nickname ?? String(sender_id));
             if (active.aborted || !messages) return;
             const friends = await listCurrentFriends(active);
-            const owners = options.masterIds?.(account).filter(owner => owner !== account && friends?.has(owner)) ?? [];
+            const owners = (await selectNoticeOwners(active)).filter(owner => friends?.has(owner));
             await Promise.all(owners.map(async owner => {
               if (active.aborted || !isMaster(owner)) return;
               const target = { user_id: owner };
@@ -788,7 +794,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
               const active = AbortSignal.any([signal, ...(workflow ? [workflow] : []), ...(rich ? [rich.signal] : [])]);
               const friends = rich && await listCurrentFriends(active);
               if (active.aborted || (rich && !friends)) return 0;
-              const owners = options.masterIds?.(account).filter(owner => owner !== account && isMaster(owner) && (!friends || friends.has(owner))) ?? [];
+              const candidates = rich ? await selectNoticeOwners(active) : options.masterIds?.(account) ?? [];
+              const owners = candidates.filter(owner => owner !== account && isMaster(owner) && (!friends || friends.has(owner)));
               const origin = rich ? { ...invitationOrigin, groupAvatar: true as const } : invitationOrigin;
               const delivered = await Promise.allSettled(owners.map(owner => sendReply({ user_id: owner }, rich?.reply ?? message, async (messageId) => {
                 if (!active.aborted && isMaster(owner)) await invitationReceipts.record({ account, owner, message: messageId }, origin, message);

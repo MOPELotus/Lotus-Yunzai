@@ -19,6 +19,7 @@ import type { GroupOwnerGroupNotice } from "../../plugins/group/group-owner-grou
 import type { GroupOwnerInvitationNotice } from "../../plugins/group/group-owner-invitation-notice.ts";
 import type { GroupOwnerJoinRequestNotice } from "../../plugins/group/group-owner-join-request-notice.ts";
 import type { GroupOwnerMemberNotice } from "../../plugins/group/group-owner-member-notice.ts";
+import type { OwnerNoticeRecipients } from "../../plugins/group/owner-notice-recipients.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ExecuteService } from "../../plugins/execute/index.ts";
@@ -265,6 +266,7 @@ export async function loadPlugins(
       registerGroupOwnerGroupNotice?(policy: GroupOwnerGroupNotice): () => void;
       registerGroupOwnerJoinRequestNotice?(policy: GroupOwnerJoinRequestNotice): () => void;
       registerGroupOwnerInvitationNotice?(policy: GroupOwnerInvitationNotice): () => void;
+      registerOwnerNoticeRecipients?(policy: OwnerNoticeRecipients): () => void;
       registerGroupVerification?(policy: GroupVerification): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;

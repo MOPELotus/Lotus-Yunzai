@@ -75,6 +75,7 @@ export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
   readonly canModeratePrivateGroup?: (bot: number, group: number) => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
+  readonly noticeOwnerIds?: (bot: number, signal: AbortSignal) => Promise<readonly number[]>;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
   readonly onTemporaryMessage?: (notice: NativeTemporaryMessageNotice) => void;
   readonly onFriendRecall?: (notice: NativeFriendRecallNotice) => void;
