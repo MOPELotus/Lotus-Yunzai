@@ -1,7 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
-import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
+import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
 import type { JoinRequestOrigin } from "../group-join-review.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
@@ -273,11 +273,17 @@ export class OneBotCalls {
   }
 
   async getGroupRole(send: Send, groupId: number, userId: number, verifyIds = false, signal?: AbortSignal): Promise<GroupMembership["botRole"] | undefined> {
+    return (await this.getLiveGroupMember(send, groupId, userId, verifyIds, signal))?.role;
+  }
+
+  async getLiveGroupMember(send: Send, groupId: number, userId: number, verifyIds: boolean, signal?: AbortSignal): Promise<LiveGroupMember | undefined> {
     try {
       const result = await this.#getGroupMember(send, groupId, userId, signal);
       if (!isRecord(result) || (verifyIds && (result.group_id !== groupId || result.user_id !== userId))) return;
       const role = result.role;
-      if (role === "member" || role === "admin" || role === "owner") return role;
+      if (role === "member" || role === "admin" || role === "owner") {
+        return { role, joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined };
+      }
     } catch {
       return undefined;
     }

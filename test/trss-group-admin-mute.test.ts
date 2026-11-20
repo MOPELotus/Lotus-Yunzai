@@ -96,6 +96,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let milkyJoinReceipt: number | undefined;
   let wrongMilkyAnnouncementGroup = false;
   const rosterChanges = new Map<string, "admin" | "member">();
+  const memberJoinTimes = new Map<string, number>();
   let cleanupRosterChanged = false;
   const activity = (group_id: number, bot: number) => {
     const joined = 1_700_000_000;
@@ -114,7 +115,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   const reportedMembers = (group: unknown, bot: number) => group === 85 ? 5 : activity(Number(group), bot).length;
   function member(params: Call["params"]) {
     const baseline = liveMember(params);
-    return { ...baseline, role: rosterChanges.get(`${params.group_id}:${params.user_id}`) ?? baseline.role };
+    const key = `${params.group_id}:${params.user_id}`;
+    return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key) };
   }
   function updateRole(params: Call["params"], enabled: unknown) {
     rosterChanges.set(`${params.group_id}:${params.user_id}`, enabled === true ? "admin" : "member");
@@ -963,6 +965,42 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       action === "kick_group_member" && params.user_id === 60), "Milky 群管理员一票终决未执行。");
     expect(enactedVote.params).toEqual({ group_id: 79, user_id: 60, reject_add_request: false });
     await announcementReply("管理员介入");
+
+    const votingConfig = await readFile(legacyList, "utf8");
+    await writeFile(legacyList, votingConfig + "groupVerify:\n  openGroup: [79, 82]\n  DelayTime: 0\n  time: 2\n  times: 2\n" +
+      "  range: {min: 10, max: 12}\n  mode: 精确\n  SuccessMsgs: {0: 合成入群验证成功}\n");
+    const joinedAt = nowSeconds();
+    memberJoinTimes.set("82:72", joinedAt);
+    client.send(JSON.stringify({ post_type: "notice", notice_type: "group_increase", sub_type: "approve", time: joinedAt,
+      self_id: oneBotId, group_id: 82, user_id: 72, operator_id: operator }));
+    const prompt = await groupReplyWith("的运算结果");
+    const expression = /「(\d+) ([+-]) (\d+)」/u.exec(JSON.stringify(prompt.params.message));
+    expect(expression).not.toBeNull();
+    const [, left, operation, right] = expression!;
+    const solution = String(operation === "+" ? Number(left) + Number(right) : Number(left) - Number(right));
+    const incorrectVerification = { ...oneBotMessage("9999", 72, 82), raw_message: "9999" };
+    send(incorrectVerification);
+    await groupReplyWith("你还有「1」次机会");
+    expect(oneBotCalls.some(({ action, params }) => action === "delete_msg" && params.message_id === incorrectVerification.message_id)).toBe(true);
+    send({ ...oneBotMessage(solution, 72, 82), raw_message: solution });
+    await groupReplyWith("合成入群验证成功");
+
+    const milkyJoin = (user_id: number, invitor_id?: number) => webhook("group_member_increase", { group_id: 79, user_id, invitor_id });
+    const promptTo = (id: number) => waitUntil(() => milkyCalls.find(({ action, params }) =>
+      action === "send_group_message" && JSON.stringify(params.message).includes(`"user_id":${id}`) &&
+      JSON.stringify(params.message).includes("欢迎！")), `Milky 没有向 ${id} 发出原群验证题。`);
+    memberJoinTimes.set("79:73", nowSeconds());
+    memberJoinTimes.set("79:75", nowSeconds());
+    await milkyJoin(74, operator);
+    await milkyJoin(73);
+    await milkyJoin(75);
+    await Promise.all([promptTo(73), promptTo(75)]);
+    memberJoinTimes.set("79:73", memberJoinTimes.get("79:73")! + 1);
+    await announcementReply("验证超时，已移出群聊，请重新申请");
+    expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" &&
+      [73, 74, 75].includes(Number(params.user_id))).map(({ params }) => params)).toEqual([{ group_id: 79, user_id: 75 }]);
+    expect(milkyCalls.some(({ action, params }) => action === "send_group_message" &&
+      JSON.stringify(params.message).includes('"user_id":74') && JSON.stringify(params.message).includes("欢迎！"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

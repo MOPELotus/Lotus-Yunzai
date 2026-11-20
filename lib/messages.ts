@@ -5,7 +5,7 @@ import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-gr
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
-  GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVoteAccess,
+  GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
   MutedGroupMember } from "./adapters/group-moderation.ts";
 
@@ -75,6 +75,7 @@ export interface MessageEvent {
   readonly groupDeleteAnnouncement?: GroupDeleteAnnouncement;
   readonly groupRuleImageDigest?: (signal: AbortSignal) => Promise<string | undefined>;
   readonly groupVote?: GroupVoteAccess;
+  readonly groupVerification?: GroupVerificationScope;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

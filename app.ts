@@ -67,7 +67,7 @@ import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-en
 import { appendBlackUser } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import { setImagePreviews, type BotEvent, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
+import { setImagePreviews, type BotEvent, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -108,7 +108,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { GroupAddNotice } from "./plugins/group/index.ts";
+import type { GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
@@ -128,6 +128,7 @@ const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunza
 const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
+const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -278,6 +279,7 @@ if (import.meta.main) {
   const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
   let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
   let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
+  let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
   const groupJoinReview = createGroupJoinReview(() => {
     const redis = globalThis.redis;
     if (!redis) return;
@@ -627,11 +629,73 @@ if (import.meta.main) {
 
   async function routeEvent(event: BotEvent) {
     if (event.post_type !== "message") {
+      if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "decrease") {
+        await handleGroupVerificationNotice(event);
+      }
       if (dispatchPower.paused || await handleLeaveBlacklist(event)) return;
       if (stopping || !handoff.accepting || dispatchPower.paused) return;
     }
     if (await handleManagedBlacklist(event)) return;
+    if (event.post_type === "message" && event.message_type === "group" && groupDispatch.allowsInbound(event) &&
+        await handleGroupVerificationAnswer(event)) return;
     if (groupDispatch.admit(event)) await handleEvent(event);
+  }
+
+  async function handleGroupVerificationNotice(event: GroupNotice) {
+    const registration = groupVerification;
+    const transport = groupModerationSession(event);
+    if (!registration || !transport?.groupVerification) return;
+    const { groupVerification: gate, signal: connection, act } = transport;
+    const signal = nativeOperationSignal(registration.signal, connection);
+    const { self_id: botId, group_id: groupId, user_id: userId, time, inviter_id: inviterId } = event;
+    const scope = { adapter: gate.adapter, groupId, userId, botId, time, connection, signal };
+    if (signal.aborted) return;
+    if (event.sub_type === "decrease") {
+      await registration.policy.leave({ ...scope, voluntary: event.decrease_type === "leave", dismissed: event.dismiss,
+        operatorId: event.operator_id }).catch(() => {});
+      return;
+    }
+    const active = () => !signal.aborted && groupDispatch.allowsGroupModeration(event) && groupDispatch.allows(event, groupVerificationNames);
+    const protectedTarget = () => userId === botId || masterPermissions.isMaster(botId, userId) || masterPermissions.legacyMasterIds().includes(userId);
+    if (!act || time === undefined || !active() || protectedTarget()) return;
+    await registration.policy.join({ ...scope, time, inviterId,
+      async inspect() {
+        if (!active()) return;
+        const [bot, member, inviter] = await Promise.all([gate.member(botId, signal), gate.member(userId, signal),
+          inviterId && inviterId !== userId ? gate.member(inviterId, signal) : undefined]);
+        if (active() && bot && member) return { botRole: bot.role, targetRole: member.role, targetJoinTime: member.joinTime,
+          inviterRole: inviter?.role, protectedTarget: protectedTarget() };
+      },
+      reply: async parts => active() && await gate.send(parts, signal) && active(),
+      async kick(request, expectedJoinTime) {
+        if (!active() || request.aborted) return "unavailable";
+        const running = AbortSignal.any([request, signal]);
+        const [bot, member] = await Promise.all([gate.member(botId, running), gate.member(userId, running)]);
+        if (!active() || running.aborted || !bot || bot.role === "member" || !member ||
+            (expectedJoinTime !== undefined && member.joinTime !== expectedJoinTime)) return "unavailable";
+        if (protectedTarget() || member.role !== "member") return "protected";
+        return act(running);
+      },
+    }).catch(() => {});
+  }
+
+  async function handleGroupVerificationAnswer(event: MessageEvent) {
+    const registration = groupVerification;
+    const transport = groupModerationSession(event);
+    const { memberMessage } = transport ?? {};
+    const { groupVerification: scope, self_id: botId, group_id: groupId, user_id: userId, message_id: messageId } = event;
+    if (!registration || event.message_type !== "group" || event.isDelegated || !scope || !memberMessage?.send ||
+        !botId || !groupId || !userId || messageId === undefined || !groupDispatch.allows(event, groupVerificationNames)) return false;
+    const signal = nativeOperationSignal(registration.signal, scope.signal);
+    const active = () => !signal.aborted && botId !== userId && !masterPermissions.isMaster(botId, userId) &&
+      !masterPermissions.legacyMasterIds().includes(userId) && groupDispatch.allows(event, groupVerificationNames);
+    if (!active()) return false;
+    return await registration.policy.answer({ adapter: event.adapter ?? "onebot", botId, groupId, userId, messageId,
+      text: event.raw_message, connection: scope.connection, signal,
+      canAnswer: async () => active() && await memberMessage.canAct(signal) && active(),
+      recall: async () => active() && await memberMessage.canAct(signal) && active() ? memberMessage.recall(signal) : "rejected",
+      reply: async parts => active() && await memberMessage.send?.(parts, signal) === true && active(),
+    }).catch(() => false);
   }
 
   async function handleManagedBlacklist(event: BotEvent): Promise<boolean> {
@@ -829,6 +893,9 @@ if (import.meta.main) {
 
   async function handleEvent(event: BotEvent) {
     if (event.post_type === "message") return dispatchMessage(event);
+    if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "increase") {
+      await handleGroupVerificationNotice(event);
+    }
     if (event.post_type === "notice" && event.notice_type === "friend" && await privateAccess.blockedPoke(event)) return;
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "invite") {
@@ -1555,7 +1622,7 @@ if (import.meta.main) {
     const groupActions = {
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       joinReview: probingUpdate ? undefined : groupJoinReview,
-      groupVoteSignal: probingUpdate ? undefined : () => nativeOperationSignal(),
+      groupWorkflowSignal: probingUpdate ? undefined : () => nativeOperationSignal(),
       isProtectedMaster: (bot: number, user: number) =>
         permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
       onMemberMute(notice: MemberMuteNotice) {
@@ -1770,6 +1837,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupAddNotice === registration) groupAddNotice = undefined;
+          };
+        },
+        registerGroupVerification(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupVerification = registration;
+          return () => {
+            session.abort();
+            if (groupVerification === registration) groupVerification = undefined;
           };
         },
         groupLeaveBlacklist: {

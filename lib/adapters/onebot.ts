@@ -289,6 +289,14 @@ async function dispatchGroupNotice(
   const session = groupActionSignal(connection, self_id);
   if (session) bindGroupModeration(notice, {
     signal: session,
+    groupVerification: {
+      adapter: "onebot",
+      member: (user, active) => calls.getLiveGroupMember(send, group_id, user, true, active),
+      async send(reply, active) {
+        const message = encodeOneBotReply(reply);
+        return message !== undefined && await calls.sendConfirmed(send, { group_id }, message, active) === "confirmed";
+      },
+    },
     canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id, user_id),
     act: sub_type === "increase" && self_id !== user_id
       ? signal => calls.kickGroupMember(send, group_id, user_id, signal) : undefined,
@@ -382,7 +390,7 @@ async function dispatchMessage(
     (messageType === "group" || event.sub_type === "friend")
     ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
   const joinReview = groupActions?.joinReview;
-  const voteSignal = likeSession ? groupActions?.groupVoteSignal?.() : undefined;
+  const workflowSignal = likeSession ? groupActions?.groupWorkflowSignal?.() : undefined;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -449,14 +457,16 @@ async function dispatchMessage(
         remove: id => calls.deleteGroupAnnouncement(send, target.group_id, id, likeSession),
         confirmRemovalByList: true,
       },
-      vote: voteSignal ? {
-        signal: voteSignal,
+      vote: workflowSignal ? {
+        signal: workflowSignal,
         async reply(parts, quote, active) {
           const message = encodeOneBotReply(parts, quote ? messageId : undefined);
           return message !== undefined && await calls.sendConfirmed(send, target, message, active) === "confirmed";
         },
       } : undefined,
     })),
+    groupVerification: workflowSignal && likeSession && event.sub_type !== "anonymous"
+      ? { connection: likeSession, signal: AbortSignal.any([likeSession, workflowSignal]) } : undefined,
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
       return calls.listMutedMembers(send, target.group_id, likeSession);
@@ -586,6 +596,10 @@ async function dispatchMessage(
         botCanAct: active => checkRole(active),
         mute: (seconds, active) => calls.setGroupMute(send, target.group_id, userId, seconds, active),
         recall: active => calls.recallMessage(send, nativeId, active),
+        async send(reply, active) {
+          const message = encodeOneBotReply(reply);
+          return message !== undefined && await calls.sendConfirmed(send, target, message, active) === "confirmed";
+        },
       },
     });
   }

@@ -74,7 +74,7 @@ export interface GroupActionPolicy {
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
-  readonly groupVoteSignal?: () => AbortSignal;
+  readonly groupWorkflowSignal?: () => AbortSignal;
 }
 
 export interface MemberMuteNotice {
@@ -95,6 +95,16 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 }
 
 type Role = "member" | "admin" | "owner";
+export interface LiveGroupMember {
+  readonly role: Role;
+  readonly joinTime?: number;
+}
+
+export interface GroupVerificationScope {
+  readonly connection: AbortSignal;
+  readonly signal: AbortSignal;
+}
+
 type GroupVoteReply = readonly (string | { readonly type: "at"; readonly qq: number })[];
 
 export interface GroupVoteAccess {
@@ -465,6 +475,11 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
 interface GroupModerationSession {
   readonly signal: AbortSignal;
   readonly joinRequestOrigin?: JoinRequestOrigin;
+  readonly groupVerification?: {
+    readonly adapter: "onebot" | "milky";
+    member(user: number, signal: AbortSignal): Promise<LiveGroupMember | undefined>;
+    send(reply: MessageReply, signal: AbortSignal): Promise<boolean>;
+  };
   readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
   readonly memberMessage?: {
@@ -474,6 +489,7 @@ interface GroupModerationSession {
     botCanAct(signal: AbortSignal): Promise<boolean>;
     mute(seconds: number, signal: AbortSignal): Promise<GroupModerationResult>;
     recall(signal: AbortSignal): Promise<GroupModerationResult>;
+    send?(reply: MessageReply, signal: AbortSignal): Promise<boolean>;
   };
 }
 

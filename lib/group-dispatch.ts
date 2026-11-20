@@ -30,6 +30,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶群管-违禁词", ["[group] 违禁词", "[group] 头衔屏蔽词"]],
   ["椰奶群管-群公告", ["[group] 群公告"]],
   ["椰奶群管-投票", ["[group] 群投票"]],
+  ["椰奶群管-入群验证", ["[group] 入群验证"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
@@ -163,10 +164,15 @@ export async function readGroupDispatch(root: URL) {
     return !blackGroup.has(group) && (whiteGroup.size === 0 || whiteGroup.has(group));
   }
 
-  function admit(event: BotEvent): boolean {
+  function allowsInbound(event: BotEvent): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     const user = id(event.user_id);
-    if ((user && blackUser.has(user)) || !allowsGroupModeration(event)) return false;
+    return !(user && blackUser.has(user)) && allowsGroupModeration(event);
+  }
+
+  function admit(event: BotEvent): boolean {
+    if (!allowsInbound(event)) return false;
+    const user = id(event.user_id);
     const group = "group_id" in event ? id(event.group_id) : undefined;
     if (!groups || event.post_type !== "message" || event.message_type !== "group" || !group || event.isDelegated) return true;
 
@@ -261,5 +267,5 @@ export async function readGroupDispatch(root: URL) {
     if (user) blackUser.add(user);
   }
 
-  return { admit, prepare, allows, allowsGroupModeration, allowsScheduledGroup, blockUser, keywordSettings };
+  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, blockUser, keywordSettings };
 }

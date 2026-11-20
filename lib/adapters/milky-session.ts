@@ -5,7 +5,7 @@ import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindMessageGroupActions, bindMixedGroupImageParts, bindSingleGroupImageDigest, canModerateGroupSubject,
   groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
-  runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
+  runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type LiveGroupMember, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
@@ -110,6 +110,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             },
             async recall(active) {
               return (await call.confirmed("recall_group_message", { group_id, message_seq: message_id }, active)).status;
+            },
+            async send(reply, active) {
+              return await sendConfirmed({ group_id }, reply, undefined, active) === "confirmed";
             },
           },
         });
@@ -252,11 +255,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   async function memberRole(group_id: number, user_id: number, active = signal) {
+    return (await liveGroupMember(group_id, user_id, active))?.role;
+  }
+
+  async function liveGroupMember(group_id: number, user_id: number, active = signal): Promise<LiveGroupMember | undefined> {
     if (signal.aborted || active.aborted) return;
     const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true }, active);
     const member = result.status === "confirmed" ? result.data.member : undefined;
     if (signal.aborted || active.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
-    if (member.role === "member" || member.role === "admin" || member.role === "owner") return member.role;
+    if (member.role === "member" || member.role === "admin" || member.role === "owner") {
+      return { role: member.role, joinTime: positiveId(member.join_time) ? member.join_time : undefined };
+    }
   }
 
   async function listGroupAnnouncements(group_id: number) {
@@ -418,13 +427,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const cardOwner = message?.user_id;
     const quoted = typeof message?.reply_id === "string" ? Number(message.reply_id) : message?.reply_id;
     const lookupReply = message?.lookupReply;
-    const voteSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupVoteSignal?.() : undefined;
+    const workflowSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,
+      groupVerification: workflowSignal ? { connection: signal, signal: AbortSignal.any([signal, workflowSignal]) } : undefined,
       groupRuleImageDigest: positiveId(groupId) && positiveId(cardOwner)
         ? bindGroupRuleImageDigest(message.message, account, signal, options.canModerateGroups, active => memberRole(groupId, cardOwner, active))
         : undefined,
@@ -503,8 +513,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             return (await call.confirmed("delete_group_announcement", { group_id: groupId, announcement_id }, signal)).status;
           },
         },
-        vote: voteSignal ? {
-          signal: voteSignal,
+        vote: workflowSignal ? {
+          signal: workflowSignal,
           async reply(parts, quote, active) {
             return await sendConfirmed({ group_id: groupId }, parts, quote ? message.message_id : undefined, active) === "confirmed";
           },
@@ -542,6 +552,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const { group_id, user_id } = event;
       bindGroupModeration(event, {
         signal,
+        groupVerification: {
+          adapter: "milky",
+          member: (user, active) => liveGroupMember(group_id, user, active),
+          async send(reply, active) { return await sendConfirmed({ group_id }, reply, undefined, active) === "confirmed"; },
+        },
         canModerate: () => canModerateGroupSubject(id => delegation.memberRole(group_id, id), account, user_id),
         act: event.sub_type === "increase" && user_id !== account
           ? async active => (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status
