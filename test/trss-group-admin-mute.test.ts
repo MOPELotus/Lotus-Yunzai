@@ -1723,11 +1723,44 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(botUnmute).toContain("处理人账号：69");
     expect(botUnmute).toContain("处理群号：90");
     await webhook("group_mute", { group_id: 91, user_id: milkyId, operator_id: 69, duration: 30 });
-    await webhook("group_whole_mute_change", { group_id: 90, operator_id: 69, is_mute: true });
+    await webhook("group_whole_mute", { group_id: 90, operator_id: 69, is_mute: true });
     await Bun.sleep(100);
     expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("机器人被禁言"))).toHaveLength(1);
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes("机器人被禁言"))).toHaveLength(0);
+
+    await writeFile(noticeFile, 'default: { groupNumberChange: true }\n"bot:100:97": { groupNumberChange: false }\n');
+    const oneBotSelfJoin = { post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: oneBotId,
+      group_id: 94, user_id: oneBotId, operator_id: 67, time: 1_700_000_027 };
+    client.send(JSON.stringify(oneBotSelfJoin));
+    const joinedGroup = (await ownerReplyWith("机器人加入群聊")).params.message;
+    expect(typeof joinedGroup).toBe("string");
+    expect(joinedGroup).toContain("群聊：合成 OneBot 94");
+    client.send(JSON.stringify({ ...oneBotSelfJoin, notice_type: "group_decrease", sub_type: "leave", time: 1_700_000_028 }));
+    const leftGroup = (await ownerReplyWith("机器人退出群聊")).params.message;
+    expect(leftGroup).toContain("群号：94");
+    expect(leftGroup).not.toContain("操作人");
+    client.send(JSON.stringify({ ...oneBotSelfJoin, notice_type: "group_decrease", sub_type: "disband", user_id: 0,
+      group_id: 95, time: 1_700_000_029 }));
+    const dissolvedGroup = (await ownerReplyWith("群聊已解散")).params.message;
+    expect(dissolvedGroup).toContain("群号：95");
+    expect(dissolvedGroup).toContain("操作人：67");
+
+    await webhook("group_member_decrease", { group_id: 94, user_id: milkyId, operator_id: 0 });
+    const silentDeparture = JSON.stringify((await milkyOwnerReply(operator, "机器人已离开群聊")).params.message);
+    expect(silentDeparture).toContain("群号：94");
+    expect(silentDeparture).not.toContain("操作人");
+    await webhook("group_member_decrease", { group_id: 96, user_id: milkyId, operator_id: 69 });
+    const removedRobot = JSON.stringify((await milkyOwnerReply(operator, "机器人被移出")).params.message);
+    expect(removedRobot).toContain("群号：96");
+    expect(removedRobot).toContain("操作人：69");
+    await webhook("group_disband", { group_id: 95 });
+    const dissolvedExtension = JSON.stringify((await milkyOwnerReply(operator, "群聊已解散")).params.message);
+    expect(dissolvedExtension).toContain("群号：95");
+    expect(dissolvedExtension).not.toContain("操作人");
+    await webhook("group_disband", { group_id: 97, operator_id: 69 });
+    await Bun.sleep(100);
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && JSON.stringify(params.message).includes("群号：97"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

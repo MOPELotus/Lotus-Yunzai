@@ -83,6 +83,7 @@ export interface GroupActionPolicy {
   readonly onGroupOwnerMemberNotice?: (notice: NativeGroupOwnerMemberNotice) => void;
   readonly onGroupOwnerAdminNotice?: (notice: NativeGroupOwnerAdminNotice) => void;
   readonly onGroupOwnerBanNotice?: (notice: NativeGroupOwnerBanNotice) => void;
+  readonly onGroupOwnerGroupNotice?: (notice: NativeGroupOwnerGroupNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
   readonly groupWorkflowSignal?: () => AbortSignal;
 }
@@ -112,6 +113,15 @@ export interface NativeGroupOwnerAdminNotice extends GroupOwnerTargetNotice {
 export interface NativeGroupOwnerBanNotice extends GroupOwnerTargetNotice {
   readonly operatorId: number;
   readonly duration: number;
+}
+
+export interface NativeGroupOwnerGroupNotice extends GroupOwnerNoticeSession {
+  readonly botId: number;
+  readonly groupId: number;
+  readonly time: number;
+  readonly kind: "joined" | "left" | "removed" | "dissolved" | "departed";
+  readonly operatorId?: number;
+  describe(signal: AbortSignal): Promise<string | undefined>;
 }
 
 export interface MemberMuteNotice {

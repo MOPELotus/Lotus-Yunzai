@@ -7,7 +7,7 @@ import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
-  isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
+  isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
@@ -262,10 +262,31 @@ async function dispatchGroupNotice(
 ): Promise<void> {
   const { notice_type, user_id, group_id, self_id, operator_id, time } = event;
   if (notice_type !== "group_increase" && notice_type !== "group_decrease") return;
-  if (!isId(user_id) || !isId(group_id) || !isId(self_id)) return;
+  if (!isId(group_id) || !isId(self_id)) return;
 
   const sub_type = notice_type === "group_increase" ? "increase" : "decrease";
   const action = stringField(event.sub_type);
+  const session = groupActionSignal(connection, self_id);
+  const notifyOwners = session && ((reply: MessageReply, active: AbortSignal) => notifyVerifiedFriendOwners(calls, send, self_id,
+    () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([session, active])));
+  if (session && notifyOwners && options.onGroupOwnerGroupNotice && isId(time)) {
+    const operator = isId(operator_id) ? operator_id : undefined;
+    const removed = action === "kick_me" || (action === "kick" && operator !== undefined && operator !== self_id);
+    let kind: NativeGroupOwnerGroupNotice["kind"] | undefined;
+    if (sub_type === "decrease" && action === "disband") kind = "dissolved";
+    else if (user_id === self_id) {
+      if (sub_type === "increase") kind = "joined";
+      else if (action === "leave") kind = "left";
+      else kind = removed ? "removed" : "departed";
+    }
+    if (kind) {
+      options.onGroupOwnerGroupNotice({ adapter: "onebot", botId: self_id, groupId: group_id, time, kind, signal: session,
+        operatorId: kind === "removed" && operator === self_id ? undefined : operator,
+        describe: active => calls.getGroupName(send, group_id, active, true), notifyOwners,
+      });
+    }
+  }
+  if (!isId(user_id)) return;
   const source = isRecord(event.member) ? event.member : undefined;
   const display = self_id === connection.botId && connection.display?.closed === false ? connection.display : undefined;
   const cached = display?.peek(group_id, user_id);
@@ -324,8 +345,7 @@ async function dispatchGroupNotice(
       return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
     },
   };
-  const session = groupActionSignal(connection, self_id);
-  if (session && user_id !== self_id && notice.dismiss !== true && action !== "disband") {
+  if (session && notifyOwners && user_id !== self_id && notice.dismiss !== true && action !== "disband") {
     options.onGroupOwnerMemberNotice?.({ adapter: "onebot", event: notice, signal: session,
       async describe(active) {
         const [groupName, subject] = await Promise.all([
@@ -334,8 +354,7 @@ async function dispatchGroupNotice(
         ]);
         return { groupName, nickname: subject?.nickname ?? member?.nickname, card: subject?.card ?? member?.card };
       },
-      notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
-        () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([session, active])),
+      notifyOwners,
     });
   }
   if (session) bindGroupModeration(notice, {

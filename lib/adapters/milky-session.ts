@@ -312,6 +312,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
   }
 
+  async function readVerifiedGroupName(groupId: number, active: AbortSignal) {
+    const response = await call.confirmed("get_group_info", { group_id: groupId, no_cache: true }, active);
+    const group = response.status === "confirmed" ? response.data.group : undefined;
+    if (record(group) && group.group_id === groupId) return memberDisplayName(group.group_name);
+  }
+
   const checkinNotify: CheckinNotifyTransport = {
     async isFriend(user_id) {
       if (signal.aborted || !positiveId(user_id)) return false;
@@ -616,6 +622,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (options.onGroupOwnerAdminNotice && positiveId(group_id) && positiveId(user_id) && typeof is_set === "boolean" && positiveId(body.time)) {
         options.onGroupOwnerAdminNotice({ adapter: "milky", botId: account, groupId: group_id, userId: user_id, set: is_set, time: body.time, signal,
           notifyOwners: notifyVerifiedOwnerReplies,
+        });
+      }
+      return "accepted";
+    }
+
+    if (body.event_type === "group_disband") {
+      const { group_id, operator_id } = body.data;
+      if (positiveId(group_id) && positiveId(body.time)) {
+        options.onGroupOwnerGroupNotice?.({ adapter: "milky", botId: account, groupId: group_id, time: body.time, kind: "dissolved", signal,
+          operatorId: positiveId(operator_id) ? operator_id : undefined,
+          describe: active => readVerifiedGroupName(group_id, active), notifyOwners: notifyVerifiedOwnerReplies,
         });
       }
       return "accepted";
@@ -991,15 +1008,20 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     });
     if (event?.post_type === "notice" && event.notice_type === "group") {
       const { group_id, user_id } = event;
+      if (user_id === account && event.dismiss !== true && positiveId(event.time)) {
+        const operatorId = event.operator_id === account ? undefined : event.operator_id;
+        const kind = event.sub_type === "increase" ? "joined" : operatorId !== undefined ? "removed" : "departed";
+        options.onGroupOwnerGroupNotice?.({ adapter: "milky", botId: account, groupId: group_id, time: event.time, kind, operatorId, signal,
+          describe: active => readVerifiedGroupName(group_id, active), notifyOwners: notifyVerifiedOwnerReplies,
+        });
+      }
       if (user_id !== account && event.dismiss !== true) {
         options.onGroupOwnerMemberNotice?.({ adapter: "milky", event, signal,
           async describe(active) {
-            const [response, member] = await Promise.all([
-              call.confirmed("get_group_info", { group_id, no_cache: true }, active),
+            const [groupName, member] = await Promise.all([
+              readVerifiedGroupName(group_id, active),
               event.sub_type === "increase" ? liveGroupMember(group_id, user_id, active) : undefined,
             ]);
-            const group = response.status === "confirmed" ? response.data.group : undefined;
-            const groupName = record(group) && group.group_id === group_id ? memberDisplayName(group.group_name) : undefined;
             return { groupName, nickname: member?.nickname, card: member?.card };
           },
           notifyOwners: notifyVerifiedOwnerReplies,
