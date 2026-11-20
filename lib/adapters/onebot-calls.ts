@@ -2,7 +2,7 @@ import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, typ
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
-import type { JoinRequestOrigin } from "../group-join-review.ts";
+import type { JoinRequestOrigin, PendingGroupJoinEntry, PendingGroupJoinList } from "../group-join-review.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -168,6 +168,37 @@ export class OneBotCalls {
       const risk = choose(await this.#request(send, "get_group_ignore_add_request", {}, signal));
       return !signal.aborted && risk?.length === 1 && risk[0]?.checked === false ? "risk" as const : "unavailable" as const;
     } catch { return "unavailable" as const; }
+  }
+
+  async listPendingGroupJoin(send: Send, groupId: number, signal: AbortSignal): Promise<PendingGroupJoinList | undefined> {
+    if (!await this.isNapCat(send, signal) || signal.aborted) return;
+    const [normal, filtered] = await Promise.all([
+      this.#request(send, "get_group_system_msg", { count: 100 }, signal).catch(() => undefined),
+      this.#request(send, "get_group_ignore_add_request", {}, signal).catch(() => undefined),
+    ]);
+    const normalRows = isRecord(normal) && Array.isArray(normal.join_requests) ? normal.join_requests : undefined;
+    const filteredRows = Array.isArray(filtered) ? filtered : undefined;
+    if (signal.aborted || (!normalRows && !filteredRows)) return;
+    const entries = new Map<number, PendingGroupJoinEntry>();
+    const conflicted = new Set<number>();
+    for (const [rows, risk] of [[normalRows, false], [filteredRows, true]] as const) {
+      for (const row of rows ?? []) {
+        if (!isRecord(row) || row.group_id !== groupId || row.checked !== false || !isPositiveInteger(row.invitor_uin) ||
+            !isPositiveInteger(row.request_id) || conflicted.has(row.request_id)) continue;
+        const previous = entries.get(row.request_id);
+        if (previous) {
+          if (previous.userId !== row.invitor_uin) {
+            entries.delete(row.request_id);
+            conflicted.add(row.request_id);
+          } else if (risk) entries.set(row.request_id, { ...previous, risk: true });
+          continue;
+        }
+        entries.set(row.request_id, { userId: row.invitor_uin, nickname: memberDisplayName(row.invitor_nick),
+          comment: typeof row.message === "string" ? row.message : undefined, risk });
+      }
+    }
+    // NapCat exposes bounded screens and omits third-party join notifications.
+    return { entries: [...entries.values()], complete: false };
   }
 
   async listGroupAnnouncements(send: Send, groupId: number, signal: AbortSignal) {

@@ -8,6 +8,19 @@ export type QuotedJoinReviewResult = {
   readonly nickname?: string;
 };
 
+export interface PendingGroupJoinEntry {
+  readonly userId: number;
+  readonly nickname?: string;
+  readonly comment?: string;
+  readonly tip?: string;
+  readonly risk?: boolean;
+}
+
+export interface PendingGroupJoinList {
+  readonly entries: readonly PendingGroupJoinEntry[];
+  readonly complete: boolean;
+}
+
 interface JoinReviewKey {
   readonly adapter: Adapter;
   readonly botId: number;

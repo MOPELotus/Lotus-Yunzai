@@ -7,7 +7,7 @@ export type CommandContext = Readonly<Pick<
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
-    "groupNotifyAll" | "groupReviewQuotedRequest" | "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
+    "groupNotifyAll" | "groupReviewQuotedRequest" | "groupListPendingJoinRequests" | "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
     "groupRuleImageDigest" | "groupVote" | "groupVerification" | "privateGroupMute" | "privateGroupWholeMute" | "privateGroupKick"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
@@ -92,7 +92,7 @@ interface RegisteredCommand {
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
-    groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupListAnnouncements,
+    groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupListPendingJoinRequests, groupListAnnouncements,
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
@@ -117,6 +117,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupSetQuotedEssence ? { groupSetQuotedEssence } : {}),
     ...(message_type === "group" && !isDelegated && groupNotifyAll ? { groupNotifyAll } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewQuotedRequest ? { groupReviewQuotedRequest } : {}),
+    ...(message_type === "group" && !isDelegated && groupListPendingJoinRequests ? { groupListPendingJoinRequests } : {}),
     ...(message_type === "group" && !isDelegated && groupListAnnouncements ? { groupListAnnouncements } : {}),
     ...(message_type === "group" && !isDelegated && groupPublishAnnouncement ? { groupPublishAnnouncement } : {}),
     ...(message_type === "group" && !isDelegated && groupDeleteAnnouncement ? { groupDeleteAnnouncement } : {}),

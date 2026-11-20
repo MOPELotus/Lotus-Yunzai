@@ -119,6 +119,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let milkyJoinState: "pending" | "rejected" = "pending";
   let milkyJoinReceipt: number | undefined;
   let wrongMilkyAnnouncementGroup = false;
+  let pendingJoinListing = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
   const memberLastSentTimes = new Map<string, number>();
@@ -150,6 +151,23 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   function updateRole(params: Call["params"], enabled: unknown) {
     rosterChanges.set(`${params.group_id}:${params.user_id}`, enabled === true ? "admin" : "member");
   }
+  function milkyJoinNotifications(params: Call["params"]) {
+    const previous = { group_id: 79, notification_seq: 901, type: "invited_join_request",
+      initiator_id: 72, target_user_id: 74, state: milkyJoinState };
+    if (!pendingJoinListing) return { notifications: [previous] };
+    if (params.is_filtered === true) return { notifications: [
+      { group_id: 79, notification_seq: 991, type: "join_request", initiator_id: 73, state: "pending", is_filtered: true },
+    ] };
+    if (params.start_notification_seq === 890) return { notifications: [
+      { group_id: 79, notification_seq: 889, type: "join_request", initiator_id: 75,
+        state: "pending", is_filtered: false, comment: "合成第二页申请" },
+    ] };
+    return { notifications: [
+      { group_id: 79, notification_seq: 903, type: "invited_join_request", initiator_id: 72, target_user_id: 78, state: "pending" },
+      { group_id: 80, notification_seq: 902, type: "join_request", initiator_id: 76, state: "pending", is_filtered: false, comment: "隔壁群附言" },
+      previous,
+    ], next_notification_seq: 890 };
+  }
   const milky = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request) {
@@ -174,8 +192,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId),
           group_name: `合成 Milky ${params.group_id}` } }
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
-        : action === "get_group_notifications" ? { notifications: [{ group_id: 79, notification_seq: 901,
-          type: "invited_join_request", initiator_id: 72, target_user_id: 74, state: milkyJoinState }] }
+        : action === "get_group_notifications" ? milkyJoinNotifications(params)
         : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
@@ -276,8 +293,9 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { notice_id: "opaque-image", message: { text: "", images: [{ id: "opaque-img" }] } },
         ].filter(({ notice_id }) => !removedOneBotAnnouncements.has(notice_id))
         : action === "get_group_system_msg" ? { join_requests: [
-          { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false },
+          { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false, invitor_nick: "仍在等待", message: "合成待审附言" },
           { request_id: 910001, invitor_uin: 70, group_id: 82, checked: originalJoinChecked },
+          { request_id: 910004, invitor_uin: 77, group_id: 83, checked: false, message: "隔壁 OneBot 群附言" },
         ] }
         : action === "get_group_ignore_add_request" ? [{ request_id: 910003, invitor_uin: 73, group_id: 82, checked: false }]
         : action === "get_msg" ? {
@@ -1126,6 +1144,29 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await milkyOwnerReply(operator, "已将「67」踢出群聊（群 88）");
     expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, user_id: 67, reject_add_request: false }]);
+
+    const priorOneBotDecisions = oneBotCalls.filter(({ action }) => action === "set_group_add_request").length;
+    send(oneBotMessage("#查看加群申请", 54, 82));
+    const joinList = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_group_forward_msg" &&
+      JSON.stringify(params.messages).includes("合成待审附言")), "OneBot 待审列表没有保留群内申请附言。");
+    const shownOneBot = JSON.stringify(joinList.params.messages);
+    expect(shownOneBot).toContain("仍在等待");
+    expect(shownOneBot).toContain("风险");
+    expect(shownOneBot).not.toContain("隔壁 OneBot 群附言");
+    expect(shownOneBot).not.toContain("910002");
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_add_request")).toHaveLength(priorOneBotDecisions);
+
+    pendingJoinListing = true;
+    await webhook("message_receive", milkyTitle("查看入群申请", 54));
+    const milkyJoinList = await announcementReply("合成第二页申请");
+    const shownMilky = JSON.stringify(milkyJoinList.params.message);
+    expect(shownMilky).toContain("QQ：78");
+    expect(shownMilky).toContain("风险");
+    expect(shownMilky).not.toContain("隔壁群附言");
+    expect(shownMilky).not.toContain("QQ：74");
+    const emptyJoinList = milkyTitle("#查看群申请", 54);
+    await webhook("message_receive", { ...emptyJoinList, peer_id: 84, group_member: { ...emptyJoinList.group_member, group_id: 84 } });
+    await announcementReply("暂无加群申请");
   } finally {
     socket?.close();
     host?.kill();

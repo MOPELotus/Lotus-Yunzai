@@ -1,11 +1,11 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
-import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
+import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinEntry, type PendingGroupJoinList } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
-  groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
+  groupMayReadPendingJoins, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type LiveGroupMember, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -256,6 +256,65 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return "unavailable" as const;
   }
 
+  async function listPendingGroupJoin(groupId: number, active: AbortSignal): Promise<PendingGroupJoinList | undefined> {
+    async function readPages(is_filtered: boolean) {
+      const entries = new Map<string, PendingGroupJoinEntry>();
+      const conflicted = new Set<string>();
+      const visited = new Set<number>();
+      let start_notification_seq: number | undefined;
+      let received = false;
+      let wellFormed = true;
+      let complete = false;
+      for (let page = 0; page < 8 && !active.aborted; page++) {
+        const result = await call.confirmed("get_group_notifications", { is_filtered, limit: 50,
+          ...(start_notification_seq === undefined ? {} : { start_notification_seq }) }, active);
+        if (result.status !== "confirmed" || !Array.isArray(result.data.notifications) || active.aborted) break;
+        received = true;
+        for (const row of result.data.notifications) {
+          if (!record(row) || !positiveId(row.group_id)) { wellFormed = false; continue; }
+          if (row.group_id !== groupId || (row.type !== "join_request" && row.type !== "invited_join_request")) continue;
+          if (row.state !== "pending") {
+            if (row.state !== "accepted" && row.state !== "rejected" && row.state !== "ignored") wellFormed = false;
+            continue;
+          }
+          const direct = row.type === "join_request";
+          const userId = direct ? row.initiator_id : row.target_user_id;
+          if (!positiveId(userId) || !positiveId(row.notification_seq) || (direct && row.is_filtered !== is_filtered)) {
+            wellFormed = false;
+            continue;
+          }
+          const key = `${row.type}:${row.notification_seq}`;
+          if (conflicted.has(key)) continue;
+          const previous = entries.get(key);
+          if (previous && previous.userId !== userId) {
+            conflicted.add(key);
+            entries.delete(key);
+            wellFormed = false;
+          } else if (!previous) entries.set(key, { userId, risk: is_filtered,
+            comment: direct && typeof row.comment === "string" ? row.comment : undefined });
+        }
+        const next = result.data.next_notification_seq;
+        if (next === undefined || next === null) { complete = wellFormed; break; }
+        if (!positiveId(next) || visited.has(next)) break;
+        visited.add(next);
+        start_notification_seq = next;
+      }
+      return received ? { entries, conflicted, complete } : undefined;
+    }
+
+    const [normal, filtered] = await Promise.all([readPages(false), readPages(true)]);
+    if (active.aborted || (!normal && !filtered)) return;
+    const entries = new Map(normal?.entries);
+    const conflicted = new Set([...(normal?.conflicted ?? []), ...(filtered?.conflicted ?? [])]);
+    for (const [key, row] of filtered?.entries ?? []) {
+      const previous = entries.get(key);
+      if (previous && previous.userId !== row.userId) conflicted.add(key);
+      else entries.set(key, previous ? { ...previous, risk: true } : row);
+    }
+    for (const key of conflicted) entries.delete(key);
+    return { entries: [...entries.values()], complete: !conflicted.size && normal?.complete === true && filtered?.complete === true };
+  }
+
   async function memberRole(group_id: number, user_id: number, active = signal) {
     return (await liveGroupMember(group_id, user_id, active))?.role;
   }
@@ -481,6 +540,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         if (!active() || !await memberRole(groupId, cardOwner) || !active()) return;
         const announcements = await listGroupAnnouncements(groupId);
         if (announcements && active() && await memberRole(groupId, cardOwner) && active()) return announcements;
+      } : undefined,
+      groupListPendingJoinRequests: workflowSignal && positiveId(groupId) && positiveId(cardOwner) ? async () => {
+        const combined = AbortSignal.any([workflowSignal, signal]);
+        const active = () => !combined.aborted && options.canModerateGroups?.() !== false;
+        const authorize = () => groupMayReadPendingJoins(id => memberRole(groupId, id, combined), account, cardOwner, active);
+        if (!await authorize()) return;
+        const list = await listPendingGroupJoin(groupId, combined);
+        if (list && await authorize()) return list;
       } : undefined,
       groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
         ? (approve: boolean) => {

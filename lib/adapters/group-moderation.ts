@@ -302,6 +302,14 @@ export function readGroupAnnouncements(rows: unknown, decode: (row: unknown) => 
   return entries;
 }
 
+export async function groupMayReadPendingJoins(
+  role: (id: number) => Promise<Role | undefined>, bot: number, actor: number, active: () => boolean,
+): Promise<boolean> {
+  if (!active() || actor === bot) return false;
+  const [botRole, actorRole] = await Promise.all([role(bot), role(actor)]).catch(() => []);
+  return active() && !!actorRole && (botRole === "admin" || botRole === "owner");
+}
+
 export async function groupOperatorAuthority(
   role: (id: number) => Promise<Role | undefined>, bot: number, actor: number, isMaster: () => boolean, active: () => boolean,
 ) {

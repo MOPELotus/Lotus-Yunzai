@@ -5,7 +5,7 @@ import { segment, type BotEvent, type FriendPoke, type FriendRequest, type Group
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
-  bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
+  bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -511,6 +511,15 @@ async function dispatchMessage(
       const announcements = await calls.listGroupAnnouncements(send, target.group_id, likeSession);
       if (announcements && active() && await role() && active()) return announcements;
     } : undefined,
+    groupListPendingJoinRequests: workflowSignal && likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
+      ? async () => {
+        const signal = AbortSignal.any([workflowSignal, likeSession]);
+        const active = () => !signal.aborted && groupActions?.canModerateGroups?.() !== false;
+        const authorize = () => groupMayReadPendingJoins(id => calls.getGroupRole(send, target.group_id, id, true, signal), selfId, userId, active);
+        if (!await authorize()) return;
+        const list = await calls.listPendingGroupJoin(send, target.group_id, signal);
+        if (list && await authorize()) return list;
+      } : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId
