@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { activateUpdate, previousUpdateDirectory } from "../lib/update-activation.ts";
+import { deviceCommands } from "../lib/device-commands.ts";
 import { createFileToUrl, createImageToUrl } from "../lib/file-to-url.ts";
 import { createPublicFiles } from "../lib/public-files.ts";
 import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-runtime-paths.ts";
@@ -344,6 +345,60 @@ test.skipIf(process.platform === "win32")("外部档案别名在旧主管回退�
     expect((await store.checkinSettings(qq, id)).games.genshin?.enabled).toBe(true);
     expect(await Bun.file(join(result.previous, "custom/profiles", `${qq}-${id}.yaml`)).exists()).toBe(false);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("配置的设备绑定附件在受管切换后仍由私聊指令发送", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-device-apk-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const profiles = join(active, "data/users");
+  const apk = "local resources/device.apk";
+  const bytes = Buffer.from("synthetic device attachment");
+  const env = { PATH: process.env.PATH, LOTUS_DEVICE_INFO_APK: `  ${join(active, apk)}  ` };
+  const previousSetting = Bun.env.LOTUS_DEVICE_INFO_APK;
+  const controller = new AbortController();
+  const commands = deviceCommands(profiles, controller.signal, () => "已绑定");
+  const message = "#绑定设备2";
+  async function bindAndReadAttachment() {
+    const replies: unknown[] = [];
+    const files: { name: string; bytes: Uint8Array }[] = [];
+    await commands.fallback!(message, {
+      normalizedMessage: message, message_type: "private", self_id: 99, user_id: 51,
+      isMaster: false, isBotMaster: () => false,
+      reply(value) { replies.push(value); return true; },
+      async uploadFile(file) { files.push(file); return "confirmed"; },
+    });
+    expect(replies).toEqual([expect.stringContaining("请发送 profile 2 的设备 JSON")]);
+    expect(files.map(file => [file.name, Buffer.from(file.bytes)])).toEqual([["copy_device_info_1.2.apk", bytes]]);
+  }
+  const verify = async (root: string) => {
+    const previous = await previousUpdateDirectory(root);
+    if (!previous) throw new Error("测试候选缺少旧目录记录。");
+    await verifyMovedRuntimePaths(root, previous, env);
+    await bindAndReadAttachment();
+  };
+  try {
+    await mkdir(candidate);
+    await mkdir(profiles, { recursive: true });
+    await mkdir(dirname(join(active, apk)));
+    await writeFile(join(active, apk), bytes);
+    await writeFile(join(profiles, "51-2.yaml"), Bun.YAML.stringify({
+      version: 1, user: { qq: "51" }, profile: { id: 2 },
+      account: { cookie: "cookie_token=fixture", stoken: "fixture" },
+    }));
+    Bun.env.LOTUS_DEVICE_INFO_APK = env.LOTUS_DEVICE_INFO_APK;
+    await bindAndReadAttachment();
+    await expect(activateUpdate(active, candidate, verify)).rejects.toThrow("仍留在旧版本");
+    expect(await readFile(join(active, apk))).toEqual(bytes);
+    const state = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), env);
+    expect(state).toEqual([apk]);
+    await activateUpdate(active, candidate, verify, state);
+  } finally {
+    controller.abort();
+    if (previousSetting === undefined) delete Bun.env.LOTUS_DEVICE_INFO_APK;
+    else Bun.env.LOTUS_DEVICE_INFO_APK = previousSetting;
     await rm(dir, { recursive: true, force: true });
   }
 });

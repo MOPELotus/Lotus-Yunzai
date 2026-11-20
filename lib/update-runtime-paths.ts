@@ -13,7 +13,7 @@ const trimmedPathKeys = [
   "LOTUS_GENSHIN_WISH_STATE_DIR", "LOTUS_STAR_RAIL_WARP_STATE_DIR", "LOTUS_GUIDES_ROLE_DIR",
 ] as const;
 const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
-  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR"];
+  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR", "LOTUS_DEVICE_INFO_APK"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set(["config", "data", "logs", "internal"]);
 const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
@@ -53,6 +53,8 @@ function configuredAssetPaths(env: RuntimePaths): string[] {
   if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
   if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
+  const deviceApk = env.LOTUS_DEVICE_INFO_APK?.trim();
+  if (deviceApk) assets.push(deviceApk);
   return assets;
 }
 
