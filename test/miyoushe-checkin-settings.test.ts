@@ -22,7 +22,7 @@ test("签到设置同档读写和权限，保留各独立开关并拒绝非受�
   let changeLogin = false;
   let writing = 0;
   const web = createMiyousheWeb({
-    origin: () => origin, databasePath: join(directory, "sessions.sqlite"), assetDirectory: "web/miyoushe", signal: active,
+    publicBase: () => origin, databasePath: join(directory, "sessions.sqlite"), assetDirectory: "web/miyoushe", signal: active,
     async loginIdentity(_qq, id) { return "session-for-" + id + ":" + changeLogin; },
     async overview({ profileId }) { return { profileId, displayName: "测试", account: { deviceBound: true, loggedIn: true, roles: [] },
       todaySchedule: null, missions: null }; },

@@ -2052,7 +2052,7 @@ if (import.meta.main) {
         },
       });
       miyousheWeb = createMiyousheWeb({
-        ...shopSettings, origin: () => shopSettings.origin ?? (fileBase && new URL(fileBase.origin)),
+        ...shopSettings, publicBase: () => shopSettings.origin ?? fileBase,
         signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),

@@ -22,7 +22,7 @@ async function fixture(use: (context: {
   const login = new Map([...records.keys()].map(key => [key, key]));
   let beforeSave: (() => Promise<void>) | undefined;
   const web = createMiyousheWeb({
-    origin: () => origin, databasePath: join(directory, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: scope,
+    publicBase: () => origin, databasePath: join(directory, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: scope,
     async loginIdentity(qq, profileId) { return login.get(qq + ":" + profileId) ?? ""; },
     async overview({ profileId }) { return { profileId, displayName: "测试档案", account: { loggedIn: true, deviceBound: true, roles: [] },
       todaySchedule: null, missions: null }; },

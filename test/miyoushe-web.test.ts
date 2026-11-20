@@ -49,7 +49,7 @@ test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档�
   let now = 1_000;
   let account = "first-login";
   const options = {
-    origin: () => origin, databasePath, assetDirectory: "web/miyoushe", signal: new AbortController().signal,
+    publicBase: () => origin, databasePath, assetDirectory: "web/miyoushe", signal: new AbortController().signal,
     now: () => now,
     async loginIdentity(qq: string, profileId: number) { verified.push([qq, profileId]); return account; },
     async overview({ qq, profileId }: MiyousheOverviewTarget, _signal?: AbortSignal, verify?: () => Promise<void>) {
@@ -88,6 +88,36 @@ test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档�
     const next = /#ticket=([\w-]{43})/u.exec(String(await run(message())))?.[1];
     now += 600_000;
     expect((await web.handle(claim(next!)))?.status).toBe(401);
+  } finally {
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("反代剥去公共前缀时，米游社票链接和登录、退出 Cookie 都使用浏览器路径", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-public-path-"));
+  const base = new URL("/bots/my%20lotus/", origin);
+  const web = createMiyousheWeb({
+    publicBase: () => base, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: session.signal,
+    async loginIdentity() { return "same-login"; },
+    async overview() { throw new Error("测试不读取概况"); },
+  });
+  try {
+    const reply = await web.commands.fallback!(command, message());
+    const link = new URL(String(reply).split("\n")[1]!);
+    expect(link.origin).toBe(origin.origin);
+    expect(link.pathname).toBe("/bots/my%20lotus/miyoushe/");
+    const ticket = link.hash.replace(/^#ticket=/u, "");
+    const accepted = await web.handle(claim(ticket));
+    expect(accepted?.status).toBe(204);
+    const cookie = accepted?.headers.get("Set-Cookie");
+    expect(cookie).toContain(`Path=${link.pathname};`);
+    expect(cookie).toEndWith("; Secure");
+    const logout = await web.handle(request("api/logout", {
+      method: "POST", headers: { Origin: origin.origin, Cookie: cookie!.split(";", 1)[0]! },
+    }));
+    expect(logout?.status).toBe(204);
+    expect(logout?.headers.get("Set-Cookie")).toContain(`Path=${link.pathname}; HttpOnly; SameSite=Strict; Max-Age=0; Secure`);
   } finally {
     web.close();
     await rm(root, { recursive: true, force: true });
@@ -141,7 +171,7 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
       return { roles: await catalog.trackingRoles(target, "hk4e_cn", signal, verify) };
     } },
   });
-  const web = createMiyousheWeb({ origin: () => origin, databasePath: join(root, "auth.sqlite"),
+  const web = createMiyousheWeb({ publicBase: () => origin, databasePath: join(root, "auth.sqlite"),
     assetDirectory: "web/miyoushe", signal: session.signal, loginIdentity: profiles.loginIdentity, catalog, plans,
     async overview() { throw new Error("测试不读取概况"); },
   });

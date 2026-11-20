@@ -28,7 +28,7 @@ async function fixture(run: (options: {
   let revision = firstRevision;
   const job = { started: gate(), finish: gate(), writes: 0, signal: undefined as AbortSignal | undefined };
   const web = createMiyousheWeb({
-    origin: () => origin, databasePath: join(directory, "sessions.sqlite"), assetDirectory: "web/miyoushe", signal,
+    publicBase: () => origin, databasePath: join(directory, "sessions.sqlite"), assetDirectory: "web/miyoushe", signal,
     async loginIdentity(qq, profileId) { return qq + ":" + profileId; },
     async overview({ profileId }) { return { profileId, displayName: "测试档案", account: { deviceBound: true, loggedIn: true, roles: [] },
       todaySchedule: null, missions: null }; },

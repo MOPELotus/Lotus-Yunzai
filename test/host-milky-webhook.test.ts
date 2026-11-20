@@ -244,6 +244,7 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
     await mkdir(join(root, "web"), { recursive: true });
     await cp(new URL("../web/miyoushe", import.meta.url), join(root, "web", "miyoushe"), { recursive: true });
     await writeFile(join(root, "config", "global.yaml"), "coin_shop: {path: /fixture}\n");
+    await writeFile(join(root, "config", "server.yaml"), "url: https://proxy.fixture.example/bots/lotus/\n");
     await writeFile(join(root, "config", "group.yaml"), [
       "strangeThumbUp: false", "count: 3", "noFriendMsg: 仅好友可用", 'successMsg: "确认 {{thumbUpNum}}"',
     ].join("\n") + "\n");
@@ -308,6 +309,9 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       const shopPage = await request(new URL("/miyoushe/", origin), { method: "HEAD" });
       expect(shopPage.status).toBe(200);
       expect(shopPage.headers.get("Content-Type")).toMatch(/^text\/html/u);
+      const shopRedirect = await request(new URL("/miyoushe", origin), { method: "HEAD", redirect: "manual" });
+      expect(shopRedirect.status).toBe(308);
+      expect(shopRedirect.headers.get("Location")).toBe("/bots/lotus/miyoushe/");
       expect((await request(new URL("/fixture/", origin), { method: "HEAD" })).status).toBe(404);
       expect((await webhook(endpoint, message("friend"), milkyToken)).status).toBe(503);
       gateway.releaseLogin.resolve();

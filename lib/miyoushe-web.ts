@@ -124,7 +124,7 @@ interface ProfileSettings<Patch, Settings> {
 }
 
 interface Options {
-  readonly origin: () => URL | undefined;
+  readonly publicBase: () => URL | undefined;
   readonly databasePath: string;
   readonly assetDirectory: string;
   readonly signal: AbortSignal;
@@ -150,8 +150,8 @@ function digest(value: string) { return createHash("sha256").update(value).diges
 function generateToken() { return randomBytes(32).toString("base64url"); }
 function error(status: number) { return new Response(null, { status, headers }); }
 
-function validOrigin(base: URL | undefined) {
-  if (!base || base.username || base.password || base.pathname !== "/" || base.search || base.hash) return;
+function validPublicUrl(base: URL | null | undefined) {
+  if (!base || base.username || base.password || base.search || base.hash) return;
   if (base.protocol === "https:" || (base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname))) return base;
 }
 
@@ -162,10 +162,9 @@ function normalizedPath(value: unknown) {
 
 export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   const config = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-  const url = typeof config.public_url === "string" && config.public_url.trim() ? URL.parse(config.public_url.trim()) : null;
-  const origin = url && (url.protocol === "https:" || url.protocol === "http:") && !url.search && !url.hash && !url.username && !url.password
-    ? validOrigin(new URL(url.origin)) : undefined;
-  const configuredPath = normalizedPath(config.path) ?? (origin ? normalizedPath(url?.pathname) : undefined);
+  const url = validPublicUrl(typeof config.public_url === "string" ? URL.parse(config.public_url.trim()) : undefined);
+  const origin = url && new URL(url.origin);
+  const configuredPath = normalizedPath(config.path) ?? normalizedPath(url?.pathname);
   const coversWebhook = (path: string) => {
     const key = path.toLowerCase();
     return webhookPath === key || webhookPath?.startsWith(`${key}/`) === true;
@@ -180,7 +179,7 @@ export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   };
 }
 
-export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
+export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
   previewSettings, checkinSettings, manualCheckin, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours,
   now = Date.now }: Options) {
   const mount = normalizedPath(path) ?? defaultMount;
@@ -195,6 +194,14 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
   const stopJobs = new AbortController();
   const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
 
+  function publicPage() {
+    const base = validPublicUrl(publicBase());
+    if (!base) return;
+    const path = base.pathname;
+    if (!path.endsWith("/") || path.startsWith("//") || path.includes(";")) return;
+    return new URL(prefix.slice(1), base);
+  }
+
   function pruneJobs() {
     const stale = now() - checkinJobRetention;
     for (const [key, job] of jobs) if (job.status !== "running" && job.updatedAt < stale) jobs.delete(key);
@@ -208,8 +215,9 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     const session = digest(token);
     for (const job of jobs.values()) if (job.session === session && job.status === "running") job.cancel.abort();
   }
-  function browserCookie(session: string, age: number, secure: boolean) {
-    return `${sessionName}=${session}; Path=${prefix}; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(age)}${secure ? "; Secure" : ""}`;
+  function browserCookie(session: string, age: number, page: URL) {
+    const secure = page.protocol === "https:" ? "; Secure" : "";
+    return `${sessionName}=${session}; Path=${page.pathname}; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(age)}${secure}`;
   }
   let db: Database | undefined;
   function database() {
@@ -254,8 +262,8 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
       if (!connection || connection.aborted || !context.user_id) return "请从当前连接的机器人好友私聊获取登录链接。";
       const profileId = Number(match[2] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
-      const base = validOrigin(origin());
-      if (!base) return "米游社功能页尚未配置可用的访问地址。";
+      const link = publicPage();
+      if (!link) return "米游社功能页尚未配置可用的访问地址。";
       const qq = String(context.user_id);
       try {
         const account = await loginIdentity(qq, profileId);
@@ -264,7 +272,6 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         database().run("DELETE FROM sessions WHERE expiresAt <= ?", [time]);
         const token = generateToken();
         insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMs });
-        const link = new URL(prefix, base);
         link.hash = `ticket=${token}${catalog && match[1] !== "米游社功能" ? "&tab=shop" : ""}`;
         return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 ${ticketMinutes} 分钟内有效，只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch (failure) {
@@ -278,12 +285,11 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
   async function handle(request: Request): Promise<Response | undefined> {
     const { pathname, search, searchParams } = new URL(request.url);
     if (pathname !== mount && !pathname.startsWith(prefix)) return;
-    const base = validOrigin(origin());
-    if (!base || (search && pathname !== `${prefix}api/catalog` && pathname !== `${prefix}api/tracking-targets`) || signal.aborted) return error(404);
+    const page = publicPage();
+    if (!page || (search && pathname !== `${prefix}api/catalog` && pathname !== `${prefix}api/tracking-targets`) || signal.aborted) return error(404);
     const method = request.method;
     const isRead = method === "GET" || method === "HEAD";
-    const secure = base.protocol === "https:";
-    if (pathname === mount) return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: prefix } }) : error(405);
+    if (pathname === mount) return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: page.pathname } }) : error(405);
     const part = pathname.slice(prefix.length);
     const goodsId = /^api\/goods\/([1-9]\d{0,19})$/u.exec(part)?.[1];
     const planAction = /^api\/plans\/([a-f0-9]{12})\/(cancel|resolve)$/u.exec(part);
@@ -304,7 +310,7 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     }
     if (part === "api/claim" || part === "api/logout" || editingPlans || ((settingsRoute || manualCheckinRoute) && method !== "GET")) {
       if (method !== "POST") return error(405);
-      if (request.headers.get("Origin") !== base.origin) return error(403);
+      if (request.headers.get("Origin") !== page.origin) return error(403);
     } else if (part === "api/overview" || settingsRoute || manualCheckinRoute || (catalog && (part === "api/catalog" || goodsId)) ||
       (plans && ["api/plans", "api/trackers", "api/tracking-targets"].includes(part))) {
       if (method !== "GET") return error(405);
@@ -338,14 +344,14 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
         }).immediate();
         if (!swapped) return error(401);
         if (currentToken) abortSessionJobs(currentToken);
-        return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie(fresh, sessionMs / 1000, secure) } });
+        return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie(fresh, sessionMs / 1000, page) } });
       }
       if (part === "api/logout") {
         if (currentToken) {
           remove(currentToken, "web");
           abortSessionJobs(currentToken);
         }
-        return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie("", 0, secure) } });
+        return new Response(null, { status: 204, headers: { ...headers, "Set-Cookie": browserCookie("", 0, page) } });
       }
       if (!currentToken) return error(401);
       const row = lookup(currentToken, "web");
