@@ -38,7 +38,7 @@ import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
 import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice,
-  type NativeGroupOwnerAdminNotice, type NativeGroupOwnerBanNotice, type NativeGroupOwnerGroupNotice,
+  type NativeGroupMessageSource, type NativeGroupOwnerAdminNotice, type NativeGroupOwnerBanNotice, type NativeGroupOwnerGroupNotice,
   type NativeGroupOwnerMemberNotice } from "./lib/adapters/group-moderation.ts";
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
@@ -56,7 +56,7 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
-import { createMessageRecallCache, type NativeFriendRecallNotice, type NativeGroupRecallNotice, type NativeGroupRecallSource } from "./lib/message-recall-notice.ts";
+import { createMessageRecallCache, type NativeFriendRecallNotice, type NativeGroupRecallNotice } from "./lib/message-recall-notice.ts";
 import { privateNoticeText } from "./lib/private-notice-receipts.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
@@ -123,6 +123,7 @@ import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-
 import { createRequestClaim } from "./lib/request-claim.ts";
 import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
+import type { GroupMessageNotice } from "./plugins/group/group-message-notice.ts";
 import type { GroupOwnerAdminNotice } from "./plugins/group/group-owner-admin-notice.ts";
 import type { GroupOwnerBanNotice } from "./plugins/group/group-owner-ban-notice.ts";
 import type { GroupOwnerGroupNotice } from "./plugins/group/group-owner-group-notice.ts";
@@ -153,6 +154,7 @@ const friendRelationshipNoticeNames = ["[group] 好友增减通知", "group", "@
 const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus-yunzai/group"];
 const friendRecallNoticeNames = ["[group] 好友撤回通知", "group", "@lotus-yunzai/group"];
 const groupRecallNoticeNames = ["[group] 群撤回通知", "group", "@lotus-yunzai/group"];
+const groupMessageNoticeNames = ["[group] 群消息通知", "group", "@lotus-yunzai/group"];
 const groupOwnerMemberNoticeNames = ["[group] 群成员变动通知", "group", "@lotus-yunzai/group"];
 const groupOwnerAdminNoticeNames = ["[group] 群管理变动通知", "group", "@lotus-yunzai/group"];
 const groupOwnerBanNoticeNames = ["[group] 机器人禁言通知", "group", "@lotus-yunzai/group"];
@@ -325,6 +327,7 @@ if (import.meta.main) {
   let friendPokeNotice: { policy: FriendPokeNotice; signal: AbortSignal } | undefined;
   let friendRecallNotice: { policy: FriendRecallNotice; signal: AbortSignal } | undefined;
   let groupRecallNotice: { policy: GroupRecallNotice; signal: AbortSignal } | undefined;
+  let groupMessageNotice: { policy: GroupMessageNotice; signal: AbortSignal } | undefined;
   let groupOwnerMemberNotice: { policy: GroupOwnerMemberNotice; signal: AbortSignal } | undefined;
   let groupOwnerAdminNotice: { policy: GroupOwnerAdminNotice; signal: AbortSignal } | undefined;
   let groupOwnerBanNotice: { policy: GroupOwnerBanNotice; signal: AbortSignal } | undefined;
@@ -1170,7 +1173,7 @@ if (import.meta.main) {
       () => registration.policy.retention(botId, signal), signal);
   }
 
-  function rememberGroupRecall(source: NativeGroupRecallSource) {
+  function rememberGroupRecall(source: NativeGroupMessageSource) {
     const registration = groupRecallNotice;
     const { botId, userId, groupId, message } = source;
     const scope = { self_id: botId, user_id: userId, group_id: groupId };
@@ -1182,6 +1185,23 @@ if (import.meta.main) {
     if (!text || isPrivateCredentialMessage(text)) return;
     return groupRecallCache.capture(source, text,
       () => registration.policy.retention(botId, groupId, signal), signal);
+  }
+
+  async function forwardGroupTextNotice(source: NativeGroupMessageSource) {
+    const registration = groupMessageNotice;
+    const { adapter, botId, groupId, userId, messageId, message, nickname } = source;
+    if (!registration || !canForwardPrivateNotice(botId, userId)) return;
+    const scope = { self_id: botId, group_id: groupId, user_id: userId };
+    const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
+    if (!signal) return;
+    const text = typeof message === "string" ? message : privateNoticeText(message, false);
+    if (!text?.trim() || isPrivateCredentialMessage(text)) return;
+    await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {
+      const reply = await registration.policy({ botId, groupId, userId, text, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
+      if (!reply || signal.aborted) return;
+      mark();
+      await source.notifyOwners(reply, signal);
+    });
   }
 
   async function forwardFriendRecall(notice: NativeFriendRecallNotice) {
@@ -2069,11 +2089,16 @@ if (import.meta.main) {
         pending.add(handling);
         void handling.then(() => pending.delete(handling));
       },
-      onGroupRecallSource(source: NativeGroupRecallSource) {
+      onGroupMessageSource(source: NativeGroupMessageSource) {
         const capture = rememberGroupRecall(source);
         if (capture) {
           pending.add(capture);
           void capture.then(() => pending.delete(capture));
+        }
+        if (groupMessageNotice) {
+          const handling = forwardGroupTextNotice(source).catch(() => {});
+          pending.add(handling);
+          void handling.then(() => pending.delete(handling));
         }
       },
       onGroupOwnerMemberNotice(notice: NativeGroupOwnerMemberNotice) {
@@ -2374,6 +2399,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupRecallNotice === registration) groupRecallNotice = undefined;
+          };
+        },
+        registerGroupMessageNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupMessageNotice = registration;
+          return () => {
+            session.abort();
+            if (groupMessageNotice === registration) groupMessageNotice = undefined;
           };
         },
         registerGroupOwnerMemberNotice(policy) {

@@ -1840,6 +1840,34 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(nativeInvitation.params).toEqual({ group_id: 98, invitation_seq: 1810 });
     await webhook("message_receive", quoteInvitation());
     expect(invitationWrites()).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { groupMessage: false }\n94: { groupMessage: true }\n"bot:100:95": { groupMessage: true }\n');
+    const oneBotGroupText = { ...oneBotMessage("合成 OneBot 群通知正文\n第二行", 85, 94), sender: { role: "member", nickname: "原群昵称" } };
+    send(oneBotGroupText);
+    send(oneBotGroupText);
+    const forwardedOneBotText = JSON.stringify((await ownerReplyWith("合成 OneBot 群通知正文")).params.message);
+    expect(forwardedOneBotText).toContain("https://p.qlogo.cn/gh/94/94/100");
+    expect(forwardedOneBotText).toContain("发送人昵称：原群昵称");
+    expect(forwardedOneBotText).toContain("来源群名：合成 OneBot 94");
+    expect(forwardedOneBotText).toContain("第二行");
+    send({ ...oneBotGroupText, group_id: 95, message: "未启用来源群不送", raw_message: "未启用来源群不送" });
+    send(oneBotMessage("cookie_token=synthetic-unforwardable-group-secret", 85, 94));
+    send(oneBotMessage("当前主人群消息不转发", 52, 94));
+
+    const milkyGroupText = { ...milkyTitle("合成 Milky 群通知正文", 86), peer_id: 95,
+      group_member: { group_id: 95, user_id: 86, nickname: "合成 Milky 群内名" } };
+    await webhook("message_receive", milkyGroupText);
+    await webhook("message_receive", milkyGroupText);
+    const forwardedMilkyText = JSON.stringify((await milkyOwnerReply(operator, "合成 Milky 群通知正文")).params.message);
+    expect(forwardedMilkyText).toContain("发送人昵称：合成 Milky 群内名");
+    expect(forwardedMilkyText).toContain("来源群名：合成 Milky 95");
+    await webhook("message_receive", { ...milkyGroupText, segments: [text("本片不转富文本"), { type: "face", data: { face_id: "1" } }] });
+    await Bun.sleep(100);
+    const oneBotGroupNotices = oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("群聊消息"));
+    expect(oneBotGroupNotices).toHaveLength(1);
+    const milkyGroupNotices = milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("群聊消息"));
+    expect(milkyGroupNotices).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

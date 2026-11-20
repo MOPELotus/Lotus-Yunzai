@@ -1,5 +1,5 @@
 import type { FriendMessageNoticeSession } from "./friend-message-notice.ts";
-import type { MessageEvent, MessageReply } from "./messages.ts";
+import type { MessageReply } from "./messages.ts";
 
 export interface FriendRecallScope {
   readonly adapter: "onebot" | "milky";
@@ -10,11 +10,6 @@ export interface FriendRecallScope {
 
 export interface GroupRecallScope extends FriendRecallScope {
   readonly groupId: number;
-}
-
-export interface NativeGroupRecallSource extends GroupRecallScope {
-  readonly message: MessageEvent["message"];
-  readonly signal: AbortSignal;
 }
 
 export interface NativeFriendRecallNotice extends FriendRecallScope, FriendMessageNoticeSession {

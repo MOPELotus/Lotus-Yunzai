@@ -444,14 +444,19 @@ async function dispatchMessage(
   const attachment = noticeAttachment ?? (rawFile && attachmentSession
     ? incomingAttachment(attachmentSession.signal, calls, send, target, rawFile, "message") : undefined);
   const { text, ...messageFields } = incoming;
-  const recallId = oneBotMessageId(event.message_id);
-  if (groupActions?.onGroupRecallSource && connection && selfId !== undefined && "group_id" in target &&
-      !noticeAttachment && event.sub_type !== "anonymous" && recallId !== undefined) {
-    const signal = groupActionSignal(connection, selfId);
-    if (signal) groupActions.onGroupRecallSource({ adapter: "onebot", botId: selfId, groupId: target.group_id, userId, messageId: recallId,
-      message: incoming.message, signal });
-  }
   const sender = isRecord(event.sender) ? event.sender : undefined;
+  const sourceId = oneBotMessageId(event.message_id);
+  if (groupActions?.onGroupMessageSource && connection && selfId !== undefined && "group_id" in target &&
+      !noticeAttachment && event.sub_type !== "anonymous" && sourceId !== undefined) {
+    const signal = groupActionSignal(connection, selfId);
+    const groupId = target.group_id;
+    if (signal) groupActions.onGroupMessageSource({ adapter: "onebot", botId: selfId, groupId, userId, messageId: sourceId,
+      message: incoming.message, nickname: stringField(sender?.nickname), signal,
+      describeGroup: active => calls.getGroupName(send, groupId, active, true),
+      notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, selfId,
+        () => (groupActions.masterIds?.(selfId) ?? []).filter(id => isMaster(selfId, id)), reply, AbortSignal.any([signal, active])),
+    });
+  }
   if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {
     display?.remember(target.group_id, userId, { card: stringField(sender.card), nickname: stringField(sender.nickname) });
   }

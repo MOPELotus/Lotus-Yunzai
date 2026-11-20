@@ -3,7 +3,7 @@ import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
 import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
 import type { NativeTemporaryMessageNotice } from "../temporary-message-notice.ts";
-import type { NativeFriendRecallNotice, NativeGroupRecallNotice, NativeGroupRecallSource } from "../message-recall-notice.ts";
+import type { GroupRecallScope, NativeFriendRecallNotice, NativeGroupRecallNotice } from "../message-recall-notice.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
@@ -79,7 +79,7 @@ export interface GroupActionPolicy {
   readonly onTemporaryMessage?: (notice: NativeTemporaryMessageNotice) => void;
   readonly onFriendRecall?: (notice: NativeFriendRecallNotice) => void;
   readonly onGroupRecall?: (notice: NativeGroupRecallNotice) => void;
-  readonly onGroupRecallSource?: (source: NativeGroupRecallSource) => void;
+  readonly onGroupMessageSource?: (source: NativeGroupMessageSource) => void;
   readonly onGroupOwnerMemberNotice?: (notice: NativeGroupOwnerMemberNotice) => void;
   readonly onGroupOwnerAdminNotice?: (notice: NativeGroupOwnerAdminNotice) => void;
   readonly onGroupOwnerBanNotice?: (notice: NativeGroupOwnerBanNotice) => void;
@@ -92,6 +92,12 @@ interface GroupOwnerNoticeSession {
   readonly adapter: "onebot" | "milky";
   readonly signal: AbortSignal;
   notifyOwners(reply: MessageReply, signal: AbortSignal): Promise<number>;
+}
+
+export interface NativeGroupMessageSource extends GroupRecallScope, GroupOwnerNoticeSession {
+  readonly message: MessageEvent["message"];
+  readonly nickname?: string;
+  describeGroup(signal: AbortSignal): Promise<string | undefined>;
 }
 
 export interface NativeGroupOwnerMemberNotice extends GroupOwnerNoticeSession {

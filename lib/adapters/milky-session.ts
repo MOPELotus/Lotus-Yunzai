@@ -719,8 +719,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     }, call.confirmed);
     if (message?.message_type === "group" && positiveId(message.group_id) && positiveId(message.user_id) && hasMessageSequence(message.message_id)) {
-      options.onGroupRecallSource?.({ adapter: "milky", botId: account, groupId: message.group_id, userId: message.user_id,
-        messageId: message.message_id, message: message.message, signal });
+      const groupId = message.group_id;
+      options.onGroupMessageSource?.({ adapter: "milky", botId: account, groupId, userId: message.user_id,
+        messageId: message.message_id, message: message.message,
+        nickname: typeof message.sender?.nickname === "string" ? message.sender.nickname : undefined, signal,
+        describeGroup: active => readVerifiedGroupName(groupId, active), notifyOwners: notifyVerifiedOwnerReplies,
+      });
     }
     if (message && !files.receive(message)) return "accepted";
     async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply,

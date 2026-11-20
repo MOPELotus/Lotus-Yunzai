@@ -12,6 +12,7 @@ import type { GroupBannedWords } from "../../plugins/group/banned-words.ts";
 import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupRecallNotice, GroupVerification,
   TemporaryMessageNotice } from "../../plugins/group/index.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
+import type { GroupMessageNotice } from "../../plugins/group/group-message-notice.ts";
 import type { GroupOwnerAdminNotice } from "../../plugins/group/group-owner-admin-notice.ts";
 import type { GroupOwnerBanNotice } from "../../plugins/group/group-owner-ban-notice.ts";
 import type { GroupOwnerGroupNotice } from "../../plugins/group/group-owner-group-notice.ts";
@@ -257,6 +258,7 @@ export async function loadPlugins(
       registerFriendPokeNotice?(policy: FriendPokeNotice): () => void;
       registerFriendRecallNotice?(policy: FriendRecallNotice): () => void;
       registerGroupRecallNotice?(policy: GroupRecallNotice): () => void;
+      registerGroupMessageNotice?(policy: GroupMessageNotice): () => void;
       registerGroupOwnerMemberNotice?(policy: GroupOwnerMemberNotice): () => void;
       registerGroupOwnerAdminNotice?(policy: GroupOwnerAdminNotice): () => void;
       registerGroupOwnerBanNotice?(policy: GroupOwnerBanNotice): () => void;
