@@ -1070,12 +1070,7 @@ if (import.meta.main) {
     }
   }
 
-  async function forwardFriendMessage(event: MessageEvent, transport: FriendMessageNoticeSession) {
-    const registration = friendMessageNotice;
-    const { self_id: botId, user_id: userId, message_id: messageId, message, sender } = event;
-    if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
-        messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
-    const signal = nativeOperationSignal(registration.signal, transport.signal);
+  function readMessageNoticeBody(message: MessageEvent["message"], signal: AbortSignal) {
     if (signal.aborted || typeof message === "string" || !message.length) return;
     const parts: (string | { sourceIndex: number })[] = [];
     for (const [sourceIndex, part] of message.entries()) {
@@ -1085,11 +1080,22 @@ if (import.meta.main) {
     }
     const text = parts.filter(part => typeof part === "string").join("");
     if (isPrivateCredentialMessage(text)) return;
+    const readParts = parts.some(part => typeof part !== "string") ? () => readFriendReplyParts(parts, message, signal) : undefined;
+    return { text, readParts };
+  }
+
+  async function forwardFriendMessage(event: MessageEvent, transport: FriendMessageNoticeSession) {
+    const registration = friendMessageNotice;
+    const { self_id: botId, user_id: userId, message_id: messageId, message, sender } = event;
+    if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
+        messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, transport.signal);
+    const body = readMessageNoticeBody(message, signal);
+    if (!body) return;
 
     const peer = `${event.adapter ?? "onebot"}:${botId}:${userId}`;
     await deliverPrivateNoticeOnce(`friend:${peer}:${messageId}`, async mark => {
-      const readParts = parts.some(part => typeof part !== "string") ? () => readFriendReplyParts(parts, message, signal) : undefined;
-      const reply = await registration.policy({ botId, userId, text, readParts, canQuote: true,
+      const reply = await registration.policy({ botId, userId, ...body, canQuote: true,
         nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
         async showHint() {
           if (signal.aborted) return false;
@@ -1187,17 +1193,17 @@ if (import.meta.main) {
       () => registration.policy.retention(botId, groupId, signal), signal);
   }
 
-  async function forwardGroupTextNotice(source: NativeGroupMessageSource) {
+  async function forwardGroupMessageNotice(source: NativeGroupMessageSource) {
     const registration = groupMessageNotice;
     const { adapter, botId, groupId, userId, messageId, message, nickname } = source;
     if (!registration || !canForwardPrivateNotice(botId, userId)) return;
     const scope = { self_id: botId, group_id: groupId, user_id: userId };
     const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
     if (!signal) return;
-    const text = typeof message === "string" ? message : privateNoticeText(message, false);
-    if (!text?.trim() || isPrivateCredentialMessage(text)) return;
+    const body = readMessageNoticeBody(message, signal);
+    if (!body) return;
     await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {
-      const reply = await registration.policy({ botId, groupId, userId, text, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
+      const reply = await registration.policy({ botId, groupId, userId, ...body, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
       if (!reply || signal.aborted) return;
       mark();
       await source.notifyOwners(reply, signal);
@@ -2096,7 +2102,7 @@ if (import.meta.main) {
           void capture.then(() => pending.delete(capture));
         }
         if (groupMessageNotice) {
-          const handling = forwardGroupTextNotice(source).catch(() => {});
+          const handling = forwardGroupMessageNotice(source).catch(() => {});
           pending.add(handling);
           void handling.then(() => pending.delete(handling));
         }

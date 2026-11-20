@@ -1861,13 +1861,37 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const forwardedMilkyText = JSON.stringify((await milkyOwnerReply(operator, "合成 Milky 群通知正文")).params.message);
     expect(forwardedMilkyText).toContain("发送人昵称：合成 Milky 群内名");
     expect(forwardedMilkyText).toContain("来源群名：合成 Milky 95");
-    await webhook("message_receive", { ...milkyGroupText, segments: [text("本片不转富文本"), { type: "face", data: { face_id: "1" } }] });
     await Bun.sleep(100);
     const oneBotGroupNotices = oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("群聊消息"));
     expect(oneBotGroupNotices).toHaveLength(1);
     const milkyGroupNotices = milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes("群聊消息"));
     expect(milkyGroupNotices).toHaveLength(1);
+
+    send(oneBotMessage([embeddedImage], 85, 94));
+    const oneBotGroupImage = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("[消息(99) - 群聊消息]") && JSON.stringify(params.message).includes(noticeImageBase64)),
+    "群纯原图未发给当前 OneBot 主人。");
+    expect(JSON.stringify(oneBotGroupImage.params.message)).toContain(`base64://${noticeImageBase64}`);
+    const milkyMixedGroup = { ...milkyTitle("合成群图文起始", 86), peer_id: 95 };
+    await webhook("message_receive", { ...milkyMixedGroup, segments: [...milkyMixedGroup.segments,
+      { type: "face", data: { face_id: "14", is_large: true } }, { type: "image", data: { resource_id: "matched-picture" } }, text("合成群图文结尾"),
+    ] });
+    const milkyGroupMedia = (await milkyOwnerReply(operator, "合成群图文结尾")).params.message;
+    expect((milkyGroupMedia as readonly unknown[]).slice(-4)).toEqual([
+      text("合成群图文起始"), { type: "face", data: { face_id: "14", is_large: true } },
+      { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } }, text("合成群图文结尾"),
+    ]);
+    for (const [groupId, resourceId] of [[95, "unavailable-group-notice-image"], [97, "disabled-group-notice-image"]] as const) {
+      const extra = { ...milkyTitle(resourceId, 86), peer_id: groupId };
+      await webhook("message_receive", { ...extra, segments: [...extra.segments, { type: "image", data: { resource_id: resourceId } }] });
+    }
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "get_resource_temp_url" &&
+      params.resource_id === "unavailable-group-notice-image"), "开启群未查当前图片资源。");
+    await Bun.sleep(100);
+    expect(milkyCalls.some(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "disabled-group-notice-image")).toBe(false);
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && JSON.stringify(params.message).includes("group-notice-image")))
+      .toBe(false);
   } finally {
     socket?.close();
     host?.kill();
