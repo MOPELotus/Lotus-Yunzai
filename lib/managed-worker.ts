@@ -97,6 +97,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           endpoints = {
             tls: tls === "https" || tls === "wss" ? tls : undefined,
             milky: milky === "webhook" || milky === "ws" ? milky : undefined,
+            valkey: "valkey" in message && message.valkey === true ? true : undefined,
           };
           if (expectedEndpoints.tls && (!endpoints.tls || (expectedEndpoints.tls === "wss" && endpoints.tls !== "wss"))) {
             startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
@@ -105,6 +106,11 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           }
           if (expectedEndpoints.milky && endpoints.milky !== expectedEndpoints.milky) {
             startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Milky 入口。");
+            void stop();
+            return;
+          }
+          if (expectedEndpoints.valkey && !endpoints.valkey) {
+            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Valkey 存储。");
             void stop();
             return;
           }

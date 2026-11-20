@@ -7,6 +7,7 @@ export type ManagedTlsListener = "https" | "wss";
 export interface ManagedEndpoints {
   readonly tls?: ManagedTlsListener;
   readonly milky?: "webhook" | "ws";
+  readonly valkey?: true;
 }
 
 interface ManagedHandoff {

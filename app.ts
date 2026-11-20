@@ -2840,7 +2840,7 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
-        tls: tlsListener, milky: milkyTransport && milky?.connection,
+        tls: tlsListener, milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
       });
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();

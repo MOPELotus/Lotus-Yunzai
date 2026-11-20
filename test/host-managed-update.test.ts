@@ -481,6 +481,68 @@ const canTestTlsUpdate = Boolean(Bun.which("git") && Bun.which("openssl"));
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选无法接回 TLS 监听时恢复原版本", () => exerciseTlsUpdate("bind"), 35_000);
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选只接回 HTTPS 但丢失 WSS 时恢复原版本", () => exerciseTlsUpdate("wss"), 35_000);
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选接回 TLS 监听时继续切换", () => exerciseTlsUpdate(), 35_000);
+
+const valkeyServer = Bun.which("valkey-server");
+
+async function exerciseValkeyUpdate(lostStorage: boolean) {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-storage-ready-"));
+  const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const { port } = reservation;
+  reservation.stop(true);
+  const valkey = Bun.spawn([
+    valkeyServer!, "--bind", "127.0.0.1", "--port", String(port), "--save", "", "--appendonly", "no", "--dir", temporary,
+  ], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  try {
+    const { active, old, candidate, writer } = await fixtureRepository(temporary, false);
+    if (lostStorage) {
+      const app = join(writer, "app.ts");
+      const source = await readFile(app, "utf8");
+      const readSettings = "probingUpdate ? undefined : await readStorageConnection(";
+      expect(source).toContain(readSettings);
+      await writeFile(app, source.replace(readSettings,
+        "probingUpdate || !handoff.accepting ? undefined : await readStorageConnection("));
+      git(writer, "add", "app.ts");
+      git(writer, "commit", "--quiet", "-m", "Fixture missing storage during handoff");
+      git(writer, "push", "--quiet", "origin", "main");
+    }
+    await writeFile(join(active, "config/config/redis.yaml"), Bun.YAML.stringify({ host: "127.0.0.1", port, db: 3 }));
+    await appendFile(join(active, "config/config/bot.yaml"), "online_msg_exp: 0\n");
+    await writeFile(join(active, "plugins/storage-fixture.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message.private", rule: [
+          { reg: "^#写存储样本$", fnc: "save" }, { reg: "^#读存储样本$", fnc: "read" },
+        ] }); }
+        async save(event) { await redis.set("storage-fixture:key", "原存储样本"); return this.read(event); }
+        async read(event) { return event.reply(await redis?.get("storage-fixture:key") ?? "缺少存储"); }
+      }
+    `);
+
+    const supervisor = bootSupervisor(active);
+    try {
+      const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储测试宿主未启动。"), 99);
+      first.command("#写存储样本", 51);
+      expectText(await first.next(), { user_id: 51 }, /^原存储样本$/u);
+      first.command("#更新", 51);
+      expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
+      const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储更新后未启动宿主。", 16_000), 99);
+      expectText(await replacement.next(), { user_id: 51 }, lostStorage ? /已恢复旧版本/u : /^更新成功/u);
+      expect(git(active, "rev-parse", "HEAD")).toBe(lostStorage ? old : candidate);
+      replacement.command("#读存储样本", 51);
+      expectText(await replacement.next(), { user_id: 51 }, /^原存储样本$/u);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    valkey.kill("SIGKILL");
+    await valkey.exited;
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+const canTestValkeyUpdate = Boolean(valkeyServer && Bun.which("git"));
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选漏接已有 Valkey 时恢复原版本和原数据", () => exerciseValkeyUpdate(true), 35_000);
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选接回 Valkey 后继续读取同库数据", () => exerciseValkeyUpdate(false), 35_000);
+
 test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定义目录中的原图", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-public-images-"));
   try {
