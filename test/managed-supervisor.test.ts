@@ -273,7 +273,7 @@ function gitFixture(directory: string, ...args: string[]): string {
   return child.stdout.toString().trimEnd();
 }
 
-test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执，同 QQ 的 OneBot 不能领取", async () => {
+test.skipIf(!Bun.which("git"))("托管更新接管关机时写入的配置，并按适配器保存 IPC 会话回执", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-milky-receipt-"));
   let supervisor: Supervisor | undefined;
   try {
@@ -287,14 +287,14 @@ test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执
     await mkdir(join(writer, "scripts"));
     const handoffModule = fileURLToPath(new URL("../lib/managed-handoff.ts", import.meta.url));
     await Promise.all([
-      writeFile(join(writer, ".gitignore"), "/config/\n/data/\n/logs/\n"),
+      writeFile(join(writer, ".gitignore"), "/config/\n/data/\n/logs/\n/settings/\n.env\n"),
       writeFile(join(writer, "package.json"), JSON.stringify({
         name: "lotus-yunzai", private: true, type: "module", scripts: { typecheck: "bun --version" },
       })),
       writeFile(join(writer, "scripts/bootstrap.ts"), "export {};\n"),
       writeFile(join(writer, "revision.txt"), "initial worker\n"),
       writeFile(join(writer, "app.ts"), `
-        import { appendFileSync } from "node:fs";
+        import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
         import { createManagedHandoff } from ${JSON.stringify(handoffModule)};
         const result = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
         if (result.exitCode !== 0) process.exit(11);
@@ -308,7 +308,14 @@ test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执
         } else {
           const audit = ${JSON.stringify(audit)};
           function record(event) { appendFileSync(audit, event + "\\n"); }
-          process.on("SIGTERM", () => process.exit(143));
+          process.on("SIGTERM", () => {
+            if (!held) {
+              mkdirSync("settings", { recursive: true });
+              writeFileSync(Bun.env.LOTUS_GROUP_CONFIG, "count: 9\\n");
+            }
+            process.exit(143);
+          });
+          if (held && await Bun.file(Bun.env.LOTUS_GROUP_CONFIG).text() !== "count: 9\\n") process.exit(13);
           const timeout = setTimeout(() => process.exit(30), 14_000);
           await handoff.ready(revision, new AbortController().signal);
           record("active " + revision);
@@ -325,6 +332,7 @@ test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执
     gitFixture(writer, "commit", "--quiet", "-m", "Fixture active host");
     gitFixture(writer, "push", "--quiet", origin, "main");
     gitFixture(temporary, "clone", "--quiet", "--no-local", origin, active);
+    await writeFile(join(active, ".env"), "LOTUS_GROUP_CONFIG=settings/group.yaml\n");
     await writeFile(join(writer, "revision.txt"), "candidate worker\n");
     gitFixture(writer, "commit", "--quiet", "-am", "Fixture candidate host");
     gitFixture(writer, "push", "--quiet", origin, "main");
@@ -340,6 +348,7 @@ test.skipIf(!Bun.which("git"))("托管更新通过 IPC 保存 Milky 会话回执
     }, "Milky 更新候选未接管。");
 
     await supervisor.stop();
+    expect(await readFile(join(active, "settings", "group.yaml"), "utf8")).toBe("count: 9\n");
     const receipts = createProcessReceipts(pathToFileURL(`${active}/`));
     expect(await receipts.takeUpdate(99)).toBeUndefined();
     expect(await receipts.takeUpdate(99, "milky")).toMatchObject({ kind: "update", result: "updated", revision, target });

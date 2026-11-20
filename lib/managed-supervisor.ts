@@ -113,8 +113,6 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         expectedPlugins = [...directories.keys(), ready.plugin.name];
       }
       if (stopped || signal.aborted || current !== worker) return;
-      const runtimePaths = await readUpdateRuntimePaths(root, signal, options.env ?? process.env);
-      if (stopped || signal.aborted || current !== worker) return;
       report("switching");
       const target = request.target;
       const targets: readonly ProcessReceipt["target"][] = target.type === "scheduled"
@@ -125,7 +123,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         ] : [target];
       let archived: string | undefined;
       const installed = ready.scope === "install" ? ready.plugin : undefined;
-      transition = switchWorker(stage, runtimePaths, async (outcome, previous) => {
+      transition = switchWorker(stage, () => readUpdateRuntimePaths(root, signal, options.env ?? process.env), async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
         const at = Date.now();
         const saved = await Promise.allSettled(targets.map((target) => {
@@ -188,7 +186,8 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   }
 
   async function switchWorker(
-    stage: PreparedUpdate, statePaths?: readonly string[], notify?: NotifyResult, expectedPlugins?: readonly string[],
+    stage: PreparedUpdate, readStatePaths?: () => readonly string[] | Promise<readonly string[]>,
+    notify?: NotifyResult, expectedPlugins?: readonly string[],
   ) {
     const previousWorker = current;
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
@@ -206,6 +205,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     let candidate: Worker | undefined;
     let activated: ActivatedUpdate | undefined;
     try {
+      // SQLite can create or remove companion files while the old worker is shutting down.
+      const statePaths = await readStatePaths?.();
+      if (stopped) return "stopped" as const;
       activated = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
         const worker = launch(active, stage.revision, pausedAt, expectedPlugins);
@@ -267,7 +269,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     },
     replace(stage: PreparedUpdate, statePaths?: readonly string[]) {
       if (!current || stopped || transition) return Promise.reject(new Error("托管宿主暂不可切换。"));
-      transition = switchWorker(stage, statePaths).finally(() => { transition = undefined; });
+      transition = switchWorker(stage, statePaths && (() => statePaths)).finally(() => { transition = undefined; });
       return transition;
     },
     async stop(signal: StopSignal = "SIGTERM") {
