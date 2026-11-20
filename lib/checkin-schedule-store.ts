@@ -100,6 +100,10 @@ function mergePlan(current: CheckinSchedulePlan | undefined, source: CheckinSche
       entries.set(key(original), historical);
       continue;
     }
+    if (previous.stage === legacyUnconfirmedStage && historical.stage === legacyUnconfirmedStage && !previous.runningAt) {
+      entries.set(key(original), { ...previous, ...(historical.runningAt && { runningAt: historical.runningAt }) });
+      continue;
+    }
     const priorProgress = progress(previous), historicalProgress = progress(historical);
     if (priorProgress > 0 && priorProgress < 3 && priorProgress === historicalProgress && !isDeepStrictEqual(previous, historical)) {
       throw new Error("签到计划中同一档案有冲突的历史执行记录。");

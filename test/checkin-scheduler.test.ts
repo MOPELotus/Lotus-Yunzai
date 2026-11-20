@@ -54,6 +54,14 @@ test("迁回两处旧计划后，只执行未领取的档案，已完成和在�
     expect(await Promise.all(sources.map(source => readFile(join(source.directory, date + ".json"), "utf8")))).toEqual(legacy);
     expect(await scheduler(createCheckinScheduleStore(primary, sources)).tick()).toMatchObject({ status: "complete", completed: 0 });
     expect(await readFile(join(primary, date + ".json"), "utf8")).toBe(current);
+
+    const downgraded = JSON.parse(current);
+    delete downgraded.importedLegacy;
+    delete downgraded.entries.find((record: { profileId: number }) => record.profileId === 2).runningAt;
+    await writeFile(join(primary, date + ".json"), JSON.stringify(downgraded));
+    const reupgraded = createCheckinScheduleStore(primary, sources);
+    expect(await scheduler(reupgraded).tick()).toMatchObject({ status: "complete", completed: 0 });
+    expect((await reupgraded.read(date))?.entries[1]).toMatchObject({ stage: "legacy-unconfirmed", runningAt, done: true });
     expect(ran).toEqual([3]);
   });
 });
