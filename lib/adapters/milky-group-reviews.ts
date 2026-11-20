@@ -13,6 +13,8 @@ interface Entry {
   state: "pending" | "sending" | "completed" | "unknown";
 }
 
+const observedLifetime = 60 * 60 * 1_000;
+
 export function createMilkyGroupReviews() {
   const requests = new Map<string, Entry>();
   const maxRequests = 4096;
@@ -35,12 +37,24 @@ export function createMilkyGroupReviews() {
   }
 
   function listObservedInvitations(account: number): PendingGroupInvitationList {
-    const cutoff = performance.now() - 60 * 60 * 1_000;
+    const cutoff = performance.now() - observedLifetime;
     const entries: PendingGroupInvitation[] = [];
     for (const entry of requests.values()) {
       if (entry.account === account && entry.state === "pending" && entry.invitation && entry.observedAt >= cutoff) entries.push(entry.invitation);
     }
     return { entries: entries.reverse(), complete: false };
+  }
+
+  function selectObservedInvitation(account: number, groupId: number): { status: "pending"; flag: string } |
+    { status: "not-found" | "ambiguous" | "unknown" } {
+    const cutoff = performance.now() - observedLifetime;
+    const matches = [...requests].filter(([, entry]) => entry.account === account && entry.invitation?.groupId === groupId &&
+      entry.state !== "completed" && entry.observedAt >= cutoff);
+    if (matches.length > 1) return { status: "ambiguous" };
+    const [match] = matches;
+    if (!match) return { status: "not-found" };
+    const [flag, entry] = match;
+    return entry.state === "pending" ? { status: "pending", flag } : { status: "unknown" };
   }
 
   async function review(
@@ -65,5 +79,5 @@ export function createMilkyGroupReviews() {
     }
   }
 
-  return { register, review, listObservedInvitations };
+  return { register, review, listObservedInvitations, selectObservedInvitation };
 }

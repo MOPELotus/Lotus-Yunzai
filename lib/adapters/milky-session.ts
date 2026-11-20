@@ -3,6 +3,7 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
+import type { PendingGroupInvitationDecision } from "../group-invitations.ts";
 import { createRequestClaim } from "../request-claim.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
@@ -33,6 +34,7 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly friendReview?: ReturnType<typeof createRequestClaim>;
+  readonly invitationReview?: ReturnType<typeof createRequestClaim>;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
@@ -72,6 +74,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const account = login.uin;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
   const friendReview = options.friendReview ?? createRequestClaim(() => undefined);
+  const invitationReview = options.invitationReview ?? createRequestClaim(() => undefined);
   const joinReview = options.joinReview;
   const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
@@ -192,6 +195,43 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (status !== "confirmed" || !active()) return { status };
     const current = await readFriendRequestWindow(false, scope);
     return { status: milkyFriendRequestState(account, identity, current) === (approve ? "accepted" : "rejected") ? "confirmed" : "submitted" };
+  }
+
+  function submitGroupInvitation(flag: string, approve: boolean, scope: AbortSignal, authorized: () => boolean) {
+    return invitationReview({ adapter: "milky", botId: account, flag }, async () => {
+      if (scope.aborted || !authorized()) return "unavailable";
+      const confirmed = await groupReviews.review(account, flag, "invite", approve, undefined,
+        (action, params) => call.confirmed(action, params, scope));
+      return confirmed ? "confirmed" : "rejected";
+    });
+  }
+
+  async function submitGroupRequest(flag: string, kind: "add" | "invite", approve: boolean, reason?: string,
+    scope = signal, authorize = () => true) {
+    const active = () => !scope.aborted && authorize();
+    if (!active()) return false;
+    if (kind === "add") {
+      return confirmJoinReview(joinReview, { adapter: "milky", botId: account, flag },
+        () => active() ? groupReviews.review(account, flag, kind, approve, reason,
+          (action, params) => call.confirmed(action, params, scope)) : Promise.resolve(false));
+    }
+    const result = await submitGroupInvitation(flag, approve, scope, active);
+    if (result === "unknown") throw new Error("Milky 群邀请审核结果未确认。");
+    return result === "confirmed";
+  }
+
+  async function reviewCurrentGroupInvitation(actor: number, groupId: number, approve: boolean,
+    scope: AbortSignal): Promise<PendingGroupInvitationDecision> {
+    const active = () => !scope.aborted && isMaster(actor);
+    if (!active() || !positiveId(groupId) || typeof approve !== "boolean") return { status: "unavailable" };
+    const selected = groupReviews.selectObservedInvitation(account, groupId);
+    if (selected.status !== "pending") return { status: selected.status };
+    const status = await submitGroupInvitation(selected.flag, approve, scope, () => {
+      if (!active()) return false;
+      const current = groupReviews.selectObservedInvitation(account, groupId);
+      return current.status === "pending" && current.flag === selected.flag;
+    });
+    return status === "confirmed" ? { status, resolvedFlag: selected.flag } : { status };
   }
 
   async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply, quoted?: number,
@@ -569,9 +609,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const kind = body.event_type === "group_invitation" ? "invite" : "add";
       const candidate = milkyGroupRequest(body, account, {
         isMaster,
-        approve: (flag, accept, reason) => signal.aborted ? Promise.resolve(false)
-          : confirmJoinReview(kind === "add" ? joinReview : undefined, { adapter: "milky", botId: account, flag },
-            () => groupReviews.review(account, flag, kind, accept, reason, call.confirmed)),
+        approve: (flag, accept, reason) => submitGroupRequest(flag, kind, accept, reason),
         sendGroup: (group_id, reply, onDelivered) => sendReply({ group_id }, reply, onDelivered),
         sendPrivate: (user_id, reply) => sendReply({ user_id }, reply),
         masterIds: options.masterIds?.(account) ?? [],
@@ -614,6 +652,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       listPendingGroupInvitations: privateGroupSignal && positiveId(cardOwner) ? async () => {
         if (!signal.aborted && !privateGroupSignal.aborted && isMaster(cardOwner)) return groupReviews.listObservedInvitations(account);
       } : undefined,
+      reviewPendingGroupInvitation: privateGroupSignal && positiveId(cardOwner) ? (group: number, approve: boolean) =>
+        reviewCurrentGroupInvitation(cardOwner, group, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
       listPendingFriendRequests: privateGroupSignal && positiveId(cardOwner) ? async () => {
         const combined = AbortSignal.any([signal, privateGroupSignal]);
         const active = () => !combined.aborted && isMaster(cardOwner);
@@ -770,11 +810,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           return (await call.confirmed("set_group_member_card", { group_id, user_id, card })).status;
         },
       }) : undefined,
-      reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
-        !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
-          ? confirmJoinReview(kind === "add" ? joinReview : undefined, { adapter: "milky", botId: account, flag },
-            () => groupReviews.review(account, flag, kind, accept, reason, call.confirmed))
-          : Promise.resolve(false) : undefined,
+      reviewGroupRequest: privateGroupSignal && positiveId(cardOwner)
+        ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) => submitGroupRequest(flag, kind, accept, reason,
+          AbortSignal.any([signal, privateGroupSignal]), () => isMaster(cardOwner)) : undefined,
     };
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
       const result = await call.confirmed("quit_group", { group_id });

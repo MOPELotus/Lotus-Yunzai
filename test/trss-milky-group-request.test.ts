@@ -241,11 +241,22 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       expect(shown).toContain(`邀请人QQ：${outsider}`);
       for (const omitted of [autoGroup, unknownGroup, directGroup, indirectGroup]) expect(shown).not.toContain(`邀请群号：${omitted}`);
       expect(shown).not.toContain(outsiderInvite.id);
-      await command(`#同意入群 ${outsiderInvite.id}`);
+      await command(`#拒绝群邀请${unknownGroup}`);
+      expect(await privateText(mock)).toContain("群邀请处理结果未确认");
+      await command(`#同意群邀请${pendingInviteGroup}`);
       expect(await mock.next("accept_group_invitation")).toEqual({ group_id: pendingInviteGroup, invitation_seq: 102 });
-      expect(await privateText(mock)).toBe("已同意群请求。");
+      expect(await privateText(mock)).toBe(`✅ 已同意群 ${pendingInviteGroup} 的邀请`);
+      await command(`#拒绝入群 ${outsiderInvite.id}`);
+      expect(await privateText(mock)).toBe("未找到当前机器人的待审核群请求。");
       await command("#查看全部群邀请");
       expect(await privateText(mock)).toContain("本次查询范围内未发现待处理的群邀请，未能核验完整列表");
+      const ambiguousGroup = pendingInviteGroup + 100;
+      for (const seq of [106, 107]) {
+        expect((await webhook(endpoint, "group_invitation", invitation(ambiguousGroup, seq, outsider))).status).toBe(200);
+        await manualId(mock, ambiguousGroup);
+      }
+      await command(`#拒绝群邀请${ambiguousGroup}`);
+      expect(await privateText(mock)).toContain("多条待处理的邀请");
       await Bun.sleep(80);
       expect(mock.calls).toHaveLength(mock.consumed);
     } finally {

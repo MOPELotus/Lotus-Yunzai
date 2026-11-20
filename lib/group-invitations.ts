@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readLocalConfig } from "./config.ts";
 import type { GroupRequest } from "./messages.ts";
+import type { RequestDecisionOutcome } from "./request-claim.ts";
 
 export type GroupInvitationResult = "confirmed" | "rejected" | "unknown" | "skip" | "duplicate";
 
@@ -14,6 +15,11 @@ export interface PendingGroupInvitation {
 export interface PendingGroupInvitationList {
   readonly entries: readonly PendingGroupInvitation[];
   readonly complete: boolean;
+}
+
+export interface PendingGroupInvitationDecision {
+  readonly status: RequestDecisionOutcome | "not-found" | "ambiguous";
+  readonly resolvedFlag?: string;
 }
 
 export async function readGroupInvitations(root: URL) {

@@ -286,7 +286,7 @@ if (import.meta.main) {
   let friendRequestNotice: { policy: FriendRequestNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
-  function requestStorage(feature: "group-join-review" | "friend-review") {
+  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review") {
     const redis = globalThis.redis;
     if (!redis) return;
     const namespace = (key: string) => `lotus-yunzai:${feature}:${key}`;
@@ -302,6 +302,7 @@ if (import.meta.main) {
   }
   const groupJoinReview = createGroupJoinReview(() => requestStorage("group-join-review"));
   const friendReview = createRequestClaim(() => requestStorage("friend-review"));
+  const invitationReview = createRequestClaim(() => requestStorage("group-invitation-review"));
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1644,6 +1645,7 @@ if (import.meta.main) {
       signal: lifecycle.signal,
       dispatch,
       friendReview,
+      invitationReview,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
       onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute) => {
