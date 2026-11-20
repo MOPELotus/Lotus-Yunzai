@@ -249,7 +249,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && JSON.stringify(params.message).includes("撤回群号：96") &&
-          JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
+          /\[(?:语音|视频)\]/u.test(JSON.stringify(params.message))) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && omitFriendVoiceReceipt && JSON.stringify(params.message).includes("好友账号：43") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：97") &&
@@ -2372,6 +2372,40 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.slice(groupVoiceStart.milky).filter(({ action, params }) => action === "send_private_message" &&
       JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
     expect(oneBotCalls.slice(groupVoiceStart.oneBot).some(({ action }) => action === "send_private_forward_msg")).toBe(false);
+
+    await writeFile(noticeFile, 'default: { PrivateRecall: true, groupRecall: true }\n');
+    const videoRecallStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const originalPrivateVideo = { ...oneBotPrivate("", 42), message: oneBotVideo.message };
+    client.send(JSON.stringify(originalPrivateVideo));
+    client.send(JSON.stringify({ ...oneBotRecall, message_id: originalPrivateVideo.message_id }));
+    const videoRecallHeader = await waitUntil(() => oneBotCalls.slice(videoRecallStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("好友撤回消息") &&
+      JSON.stringify(params.message).includes("[视频]")), "OneBot 好友撤回缺少视频摘要。");
+    const videoRecallDelivery = await waitUntil(() => oneBotCalls.slice(videoRecallStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVideoBase64)),
+      "OneBot 好友没有送出撤回的原视频。");
+    expect(oneBotCalls.indexOf(videoRecallDelivery)).toBeGreaterThan(oneBotCalls.indexOf(videoRecallHeader));
+    expect(videoRecallDelivery.params.message).toEqual(oneBotVideoDelivery.params.message);
+
+    const milkyVideoRecallEvent = (groupId: number) => ({
+      ...milkyTitle("", 54), peer_id: groupId, segments: milkyVideo(groupId, "original-video", expiredNoticeImageUrl).segments,
+    });
+    const originalGroupVideo = milkyVideoRecallEvent(79);
+    await webhook("message_receive", originalGroupVideo);
+    await webhook("message_recall", { ...milkyGroupRecall, message_seq: originalGroupVideo.message_seq });
+    const groupVideoRecallDelivery = await waitUntil(() => milkyCalls.slice(videoRecallStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVideoBase64)),
+      "Milky 群撤回没有送出原视频。");
+    expect(groupVideoRecallDelivery.params.message).toEqual(milkyVideoDelivery.params.message);
+    const unknownVideoRecall = milkyVideoRecallEvent(96);
+    await webhook("message_receive", unknownVideoRecall);
+    await webhook("message_recall", { ...milkyGroupRecall, peer_id: 96, message_seq: unknownVideoRecall.message_seq });
+    await waitUntil(() => milkyCalls.slice(videoRecallStart.milky).find(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes("撤回群号：96") && JSON.stringify(params.message).includes("特殊消息：[视频]")),
+      "Milky 群撤回缺待验证回执的视频摘要。");
+    await Bun.sleep(100);
+    expect(milkyCalls.slice(videoRecallStart.milky).filter(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes(noticeVideoBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

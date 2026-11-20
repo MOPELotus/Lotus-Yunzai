@@ -1,4 +1,5 @@
 import { decodeChatFileBytes, maxChatFileBytes } from "./chat-files.ts";
+import { hasMp4VideoTrack } from "./qq-video.ts";
 import { hasSilkVoicePackets } from "./qq-voice.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 
@@ -32,7 +33,15 @@ type RecallFace = { readonly type: "face"; readonly data: { readonly id: string 
 type RecallImage = { readonly type: "image"; readonly file: Uint8Array };
 type RecallPart = string | RecallFace | RecallImage;
 export type RecallTextBody = string | readonly RecallPart[];
-export type RecallBody = RecallTextBody | { readonly voice: Uint8Array };
+export interface RecallMedia {
+  readonly type: "record" | "video";
+  readonly file: Uint8Array;
+}
+export type RecallBody = RecallTextBody | RecallMedia;
+
+export function isRecallMedia(body: RecallBody): body is RecallMedia {
+  return typeof body !== "string" && "type" in body;
+}
 
 interface RecallRecord {
   body?: RecallBody;
@@ -80,8 +89,9 @@ export function readRecallBody(source: MessageEvent["message"]): RecallTextBody 
   if (parts.length <= maxParts) return parts;
 }
 
-function voiceBody(voice: Uint8Array | undefined): RecallBody | undefined {
-  if (voice && voice.byteLength <= maxChatFileBytes && hasSilkVoicePackets(voice)) return { voice };
+function mediaBody(type: RecallMedia["type"], file: Uint8Array | undefined): RecallMedia | undefined {
+  if (!file || file.byteLength > maxChatFileBytes) return;
+  if (type === "record" ? hasSilkVoicePackets(file) : hasMp4VideoTrack(file)) return { type, file };
 }
 
 function copyRecallParts(parts: readonly unknown[], fromStorage: boolean): RecallPart[] | undefined {
@@ -181,13 +191,13 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
         const original = typeof content === "function" ? await content() : content;
         if (original === undefined || signal.aborted || expires <= now()) return;
         const body = typeof original === "string" ? original.slice(0, maxTextLength).toWellFormed()
-          : "voice" in original ? voiceBody(original.voice) : copyRecallParts(original, false);
+          : isRecallMedia(original) ? mediaBody(original.type, original.file) : copyRecallParts(original, false);
         if (!body || (typeof body === "string" && !body.trim())) return;
-        const mediaBytes = typeof body === "string" ? 0 : "voice" in body ? body.voice.byteLength
+        const mediaBytes = typeof body === "string" ? 0 : isRecallMedia(body) ? body.file.byteLength
           : body.reduce((total, part) => total + (typeof part !== "string" && part.type === "image" ? part.file.byteLength : 0), 0);
         if (storage) {
           const record = typeof body === "string" ? { text: body, expires }
-            : "voice" in body ? { voice: Buffer.from(body.voice).toString("base64"), expires }
+            : isRecallMedia(body) ? { [body.type === "record" ? "voice" : "video"]: Buffer.from(body.file).toString("base64"), expires }
             : { parts: body.map(part => typeof part !== "string" && part.type === "image"
               ? { type: "image", bytes: Buffer.from(part.file).toString("base64") } : part), expires };
           await storage.save(key, JSON.stringify(record), Math.ceil((expires - now()) / 1000), mediaBytes > 0);
@@ -221,7 +231,8 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
               !positiveId(entry.expires) || entry.expires <= now()) return;
           if ("parts" in entry) return Array.isArray(entry.parts) ? copyRecallParts(entry.parts, true) : undefined;
           if ("text" in entry && typeof entry.text === "string" && entry.text.length <= maxTextLength) return entry.text;
-          if ("voice" in entry) return voiceBody(decodeChatFileBytes(entry.voice));
+          if ("voice" in entry) return mediaBody("record", decodeChatFileBytes(entry.voice));
+          if ("video" in entry) return mediaBody("video", decodeChatFileBytes(entry.video));
         } catch { return; }
         return;
       }

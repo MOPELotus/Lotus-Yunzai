@@ -56,9 +56,9 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
-import { createMessageRecallCache, maxRecallMediaCacheBytes, maxRecallMediaCacheEntries, readRecallBody,
+import { createMessageRecallCache, isRecallMedia, maxRecallMediaCacheBytes, maxRecallMediaCacheEntries, readRecallBody,
   type NativeFriendRecallNotice, type NativeGroupRecallNotice,
-  type RecallBody, type RecallTextBody } from "./lib/message-recall-notice.ts";
+  type RecallBody, type RecallMedia, type RecallTextBody } from "./lib/message-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -1123,7 +1123,7 @@ if (import.meta.main) {
     const voice = standaloneVoicePart(message);
     if (voice) return {
       label: "[语音]", unavailable: "（原音不可用）",
-      async read(signal: AbortSignal): Promise<MessageReply | undefined> {
+      async read(signal: AbortSignal): Promise<RecallMedia | undefined> {
         const file = await readOriginalQqVoice(voice, signal);
         if (file) return { type: "record", file };
       },
@@ -1131,7 +1131,7 @@ if (import.meta.main) {
     const video = standaloneVideoPart(message);
     if (video) return {
       label: "[视频]", unavailable: "（原视频不可用）",
-      async read(signal: AbortSignal): Promise<MessageReply | undefined> {
+      async read(signal: AbortSignal): Promise<RecallMedia | undefined> {
         const file = await readOriginalQqVideo(video, signal);
         if (file) return { type: "video", file };
       },
@@ -1260,11 +1260,8 @@ if (import.meta.main) {
   }
 
   function recallCaptureContent(message: MessageEvent["message"], signal: AbortSignal) {
-    const voice = standaloneVoicePart(message);
-    if (voice) return () => readRecallMedia(signal, async () => {
-      const file = await readOriginalQqVoice(voice, signal);
-      if (file) return { voice: file };
-    });
+    const media = originalNoticeMedia(message);
+    if (media) return () => readRecallMedia(signal, () => media.read(signal));
     const body = readRecallBody(message);
     if (body !== undefined) {
       if (!isPrivateCredentialMessage(recallNoticeInput(body).text)) return body;
@@ -1323,9 +1320,10 @@ if (import.meta.main) {
     if (signal.aborted || await registration.policy.retention(botId, signal) === undefined || signal.aborted) return;
     const body = await friendRecallCache.take(notice, signal);
     if (body === undefined || signal.aborted) return;
-    if (typeof body !== "string" && "voice" in body) {
-      const summary = await registration.policy.format({ botId, userId, time, text: "[语音]" }, signal);
-      if (summary && !signal.aborted) await notice.notifyOwners(summary, signal, { type: "record", file: body.voice });
+    if (isRecallMedia(body)) {
+      const text = body.type === "record" ? "[语音]" : "[视频]";
+      const summary = await registration.policy.format({ botId, userId, time, text }, signal);
+      if (summary && !signal.aborted) await notice.notifyOwners(summary, signal, body);
     } else {
       const reply = await registration.policy.format({ botId, userId, time, ...recallNoticeInput(body) }, signal);
       if (reply && !signal.aborted) await notice.notifyOwners(reply, signal);
@@ -1345,10 +1343,11 @@ if (import.meta.main) {
     const description = await notice.describe(signal);
     if (signal.aborted) return;
     const details = { ...description, botId, userId, groupId, operatorId, time };
-    if (typeof body !== "string" && "voice" in body) {
-      const reply = await registration.policy.format({ ...details, text: "[语音]", special: "[语音]" }, signal);
+    if (isRecallMedia(body)) {
+      const special = body.type === "record" ? "[语音]" : "[视频]";
+      const reply = await registration.policy.format({ ...details, text: special, special }, signal);
       if (reply && !signal.aborted) {
-        await notice.notifyOwners(reply.summary, reply.text, reply.nickname, signal, { type: "record", file: body.voice });
+        await notice.notifyOwners(reply.summary, reply.text, reply.nickname, signal, body);
       }
     } else {
       const reply = await registration.policy.format({ ...details, ...recallNoticeInput(body) }, signal);
