@@ -93,6 +93,22 @@ async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | u
   }
 }
 
+async function readSlashAlias(root: URL, active: Record<string, unknown>): Promise<boolean> {
+  const option = "/→#";
+  const enabled = (value: unknown) => value === true || value === 1;
+  if (Object.hasOwn(active, option)) return enabled(active[option]);
+
+  // TRSS supplied this key from its default file even in trimmed runtime YAML.
+  try {
+    const previous: unknown = Bun.YAML.parse(await Bun.file(new URL("config/config/bot.yaml", root)).text());
+    if (previous != null && (typeof previous !== "object" || Array.isArray(previous))) return false;
+    const legacy = record(previous);
+    return !Object.hasOwn(legacy, option) || enabled(legacy[option]);
+  } catch {
+    return false;
+  }
+}
+
 interface GroupRoutingScope {
   readonly self_id?: number;
   readonly user_id?: number;
@@ -135,7 +151,7 @@ export async function readGroupDispatch(root: URL) {
   const groupCooldowns = new Cooldowns();
   const memberCooldowns = new Cooldowns();
   const duplicates = new Cooldowns();
-  const slashAlias = botConfig["/→#"] === true || botConfig["/→#"] === 1;
+  const slashAlias = await readSlashAlias(root, botConfig);
 
   function normalizePrefix(text: string): string {
     if (slashAlias) text = text.replace(/^\/\s*/u, "#");
