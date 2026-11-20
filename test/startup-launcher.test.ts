@@ -26,7 +26,13 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     const action = Bun.argv[2];
     const home = process.env.PM2_HOME;
     if (action === "jlist") console.log(await Bun.file(home + "/apps.json").text());
-    else if (action === "start") process.exit(9);
+    else if (action === "start") {
+      const configured = process.env.FIXTURE_START_RESULT;
+      if (!configured) process.exit(9);
+      const [status, pid, ready] = JSON.parse(configured);
+      await Bun.write(home + "/apps.json", JSON.stringify([{ name: "lotus-yunzai", pid, pm2_env: { status } }]));
+      if (ready) await Bun.write(home + "/host-ready", ready);
+    }
     else console.log(home);
   `, { mode: 0o700 });
   await writeFile(join(current, "host-ready"), "999");
@@ -66,6 +72,23 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
 
     await setApp(current, 0, "waiting restart");
     expect((await start(["start:bg"], env))[0]).toBe(1);
+
+    await setApp(legacy, 0, "stopped");
+    async function attempt(status: string, pid: number, ready: string) {
+      await setApp(current, 0, "stopped");
+      return start(["start:bg"], { ...env, FIXTURE_START_RESULT: JSON.stringify([status, pid, ready]) });
+    }
+    const [exitedCode, exitedOutput, exitedError] = await attempt("stopped", 0, "303");
+    expect(exitedCode).toBe(1);
+    expect(exitedOutput).not.toContain(current);
+    expect(exitedError).toContain("后台宿主未就绪");
+    const [recoveryCode, recoveryOutput] = await attempt("launching", 404, "303");
+    expect(recoveryCode).toBe(1);
+    expect(recoveryOutput).not.toContain(current);
+    const [timeoutCode, timeoutOutput] = await attempt("online", 505, "");
+    expect(timeoutCode).toBe(1);
+    expect(timeoutOutput).toContain(current);
+    expect((await attempt("online", 606, "606"))[0]).toBe(0);
   } finally {
     for (const listener of listeners) listener.stop(true);
   }
@@ -226,9 +249,11 @@ test.skipIf(process.platform === "win32")("PM2 启动入口先恢复中断的目
   await mkdir(join(cwd, "data/atlas/data"), { recursive: true });
   await writeFile(join(cwd, "data/atlas/data/map.json"), index);
   await writeFile(config, "atlas: {version_channel: latest}\n");
-  const [code, output] = await start(["start:bg"], { PATH: `${bin}:${process.env.PATH}` });
-  expect(code).toBe(0);
+  const [code, output, error] = await start(["start:bg"], { PATH: `${bin}:${process.env.PATH}` });
+  // The fixture supervisor exits after ready and the PM2 stand-in registers no running process.
+  expect(code).toBe(1);
   expect(output).toContain("fixture host ready");
+  expect(error).toContain("后台宿主未就绪");
   const home = join(parent, ".checkout.lotus-pm2");
   const { apps: [app] } = await Bun.file(join(home, "host-process.json")).json();
   expect(app.cwd).toBe(parent);

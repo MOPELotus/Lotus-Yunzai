@@ -102,7 +102,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     const status: unknown = process.pm2_env?.status;
     if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
     const pid: unknown = process.pid;
-    return { path, active: status !== "stopped" && status !== "errored",
+    return { path, status, active: status !== "stopped" && status !== "errored",
       pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined };
   }
 
@@ -126,7 +126,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     });
   }
   if (active) {
-    if (!active.pid || active.pid !== await readyPid(active.path)) {
+    if (active.status !== "online" || !active.pid || active.pid !== await readyPid(active.path)) {
       throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
     }
     console.log("当前目录的后台宿主已运行。");
@@ -148,10 +148,13 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   const start = await Bun.spawn([binary, "start", config, "--only", name], spawn).exited;
   if (start !== 0) return start;
 
-  // PM2 can report success after the child exits before ready or after its wait-ready timeout.
-  // A new marker also proves readiness if the first worker has already entered crash recovery.
-  if (/^[1-9]\d*$/u.test(await readyPid(home) ?? "")) return 0;
-  await Bun.spawn([binary, "stop", name], spawn).exited;
+  // The marker can outlive the process that wrote it, even before PM2 returns from start.
+  const launched = await application(home);
+  const ready = await readyPid(home);
+  if (launched?.status === "online" && launched.pid && launched.pid === ready) return 0;
+  if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) {
+    await Bun.spawn([binary, "stop", name], spawn).exited;
+  }
   throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
 }
 
