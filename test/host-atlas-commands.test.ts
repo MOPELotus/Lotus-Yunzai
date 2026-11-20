@@ -161,6 +161,7 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       }
       expect(await query("#重置图鉴")).toBe("只有 bot 主人可以重置图鉴。");
       expect(await query("清空图鉴")).toBe("只有 bot 主人可以重置图鉴。");
+      expect(await query("#全量更新图鉴")).toBe("只有 bot 主人可以操作图鉴更新。");
 
       for (const command of excludedCommands) expect(await query(command)).toBe(`旁路 ${command}`);
       expect(frames).toEqual([]);
