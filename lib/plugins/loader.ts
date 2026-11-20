@@ -5,6 +5,7 @@ import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
+import type { NoticeGroupTransport } from "../adapters/notice-groups.ts";
 import type { TimedGroupMuteBinding, TimedGroupMuteResult } from "../adapters/group-moderation.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { ProfileLikeImage } from "../adapters/mention-like.ts";
@@ -233,6 +234,11 @@ export async function loadPlugins(
     readonly fileWatch?: boolean;
     readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
     readonly hostReplacementModules?: readonly string[];
+    readonly noticeServices?: {
+      readonly noticeGroups: NoticeGroupTransport;
+      whenNoticeActive(start: () => void): () => void;
+      readonly disconnect: AbortSignal;
+    };
     readonly groupServices?: {
       ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
@@ -446,7 +452,10 @@ export async function loadPlugins(
         const group = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupServices : undefined;
         const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
         const guidesSchedule = builtIn && moduleName === "@lotus-yunzai/guides" ? options.guidesSchedule : undefined;
-        const module = create ? await create(Object.freeze({ ...services, ...group, signal,
+        const notice = builtIn && moduleName === "@lotus-yunzai/notice" ? options.noticeServices : undefined;
+        const module = create ? await create(Object.freeze({ ...services, ...group,
+          signal: notice ? AbortSignal.any([signal, notice.disconnect]) : signal,
+          ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
           ...(guidesSchedule && { guidesSchedule }),
         })) : published.default;

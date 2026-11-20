@@ -1,5 +1,6 @@
 import type { MessageReply } from "../messages.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
+import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import type { OwnGroupCardAccount } from "./own-group-card.ts";
 import { encodeOneBotForward, encodeOneBotReply } from "./onebot-message.ts";
@@ -120,6 +121,40 @@ export class OneBotGroups implements GroupTransport {
   async listGroups(botId: number): Promise<readonly GroupTarget[]> {
     const { calls, send } = this.#connection(botId);
     return calls.listGroups(send);
+  }
+
+  noticeAccounts(): readonly NoticeGroupAccount[] {
+    return this.onlineBots().flatMap(botId => {
+      const account = this.#connected.get(botId);
+      if (!account) return [];
+      const { calls, send } = account.connection;
+      const check = (signal?: AbortSignal) => {
+        if (signal?.aborted || this.#connected.get(botId) !== account) throw new NoticeNotSentError("原公告会话已关闭。");
+      };
+      return [{ botId, adapter: "onebot", async listGroups(signal) {
+        check(signal);
+        const targets = await calls.listGroups(send, signal);
+        check(signal);
+        return targets;
+      }, async sendGroup(groupId, content, signal) {
+        check(signal);
+        const message = encodeOneBotReply(content);
+        if (message === undefined || !Number.isSafeInteger(groupId) || groupId < 1) {
+          throw new NoticeNotSentError("公告群号或内容无效。");
+        }
+        let messageId: number | undefined;
+        const status = await calls.sendConfirmed(send, { group_id: groupId }, message, signal, id => { messageId = id; });
+        if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
+        if (messageId === undefined) throw new Error("公告发送结果未确认。");
+        return messageId;
+      }, async recall(_groupId, messageId, signal) {
+        check(signal);
+        if (!Number.isSafeInteger(messageId)) throw new NoticeNotSentError("公告消息编号无效。");
+        const status = await calls.recallMessage(send, messageId, signal);
+        if (status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
+        if (status !== "confirmed") throw new Error("公告撤回结果未确认。");
+      } } satisfies NoticeGroupAccount];
+    });
   }
 
   async sendGroup(botId: number, groupId: number, content: MessageReply): Promise<number> {

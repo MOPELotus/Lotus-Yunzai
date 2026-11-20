@@ -27,6 +27,7 @@ import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
+import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
 import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
@@ -46,7 +47,7 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
-    ownGroupCardAccount: OwnGroupCardAccount, timedWholeMute: MilkySession["timedWholeMute"]) => void;
+    ownGroupCardAccount: OwnGroupCardAccount, timedWholeMute: MilkySession["timedWholeMute"], noticeAccount: NoticeGroupAccount) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
@@ -55,6 +56,7 @@ export interface MilkySession {
   readonly botId: number;
   readonly checkinNotify: CheckinNotifyTransport;
   readonly ownGroupCardAccount: OwnGroupCardAccount;
+  readonly noticeAccount: NoticeGroupAccount;
   timedWholeMute(binding: TimedGroupMuteBinding, signal: AbortSignal): Promise<TimedGroupMuteResult>;
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
@@ -611,7 +613,33 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
   }, authorize);
 
-  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), async timedWholeMute(binding, jobSignal) {
+  const noticeAccount: NoticeGroupAccount = {
+    botId: account, adapter: "milky",
+    async listGroups(active = signal) {
+      const result = await call.confirmed("get_group_list", { no_cache: true }, active);
+      const groups = result.status === "confirmed" ? result.data.groups : undefined;
+      if (signal.aborted || active.aborted || !Array.isArray(groups)) throw new Error("公告群列表未确认。");
+      return groups.map(group => {
+        if (!record(group) || !positiveId(group.group_id)) throw new Error("公告群列表无效。");
+        return { id: group.group_id, name: typeof group.group_name === "string" ? group.group_name : undefined };
+      });
+    },
+    async sendGroup(group_id, message, active = signal) {
+      let messageId: number | undefined;
+      const status = await sendConfirmed({ group_id }, message, undefined, active, id => { messageId = id; });
+      if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
+      if (messageId === undefined) throw new Error("公告发送结果未确认。");
+      return messageId;
+    },
+    async recall(group_id, message_seq, active = signal) {
+      if (!positiveId(group_id) || !hasMessageSequence(message_seq)) throw new NoticeNotSentError("公告撤回参数无效。");
+      const result = await call.confirmed("recall_group_message", { group_id, message_seq }, active);
+      if (result.status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
+      if (result.status !== "confirmed") throw new Error("公告撤回结果未确认。");
+    },
+  };
+
+  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), noticeAccount, async timedWholeMute(binding, jobSignal) {
     if (binding.adapter !== "milky" || binding.botId !== account) return "unavailable";
     const active = AbortSignal.any([signal, jobSignal]);
     return runTimedWholeMute(binding, {

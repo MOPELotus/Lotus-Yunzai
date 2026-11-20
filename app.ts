@@ -37,6 +37,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { noticeGroupTransport, type NoticeGroupAccount } from "./lib/adapters/notice-groups.ts";
 import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice,
   type NativeGroupMessageSource, type NativeGroupOwnerAdminNotice, type NativeGroupOwnerBanNotice, type NativeGroupOwnerGroupNotice,
   type NativeGroupOwnerMemberNotice } from "./lib/adapters/group-moderation.ts";
@@ -285,7 +286,7 @@ if (import.meta.main) {
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
     checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
-    timedWholeMute: MilkySession["timedWholeMute"] } | undefined;
+    timedWholeMute: MilkySession["timedWholeMute"]; noticeAccount: NoticeGroupAccount } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -2271,9 +2272,9 @@ if (import.meta.main) {
       invitationReceipts,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute) => {
-        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute };
-        queueStartupMessages(id, "milky", signal);
+      onOnline: (botId, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute, noticeAccount) => {
+        milkyOnline = { id: botId, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute, noticeAccount };
+        queueStartupMessages(botId, "milky", signal);
       },
       isMaster: permissions.isMaster,
       groupReviews: milky && createMilkyGroupReviews(),
@@ -2366,8 +2367,10 @@ if (import.meta.main) {
     const likeAssets = Bun.env.LOTUS_GROUP_LIKE_ASSETS_DIR?.trim() ||
       (await stat(storedLikeAssets).then(info => info.isDirectory(), () => false)
         ? fileURLToPath(storedLikeAssets) : fileURLToPath(new URL("plugins/yenai-plugin/resources/memes/", root)));
+    const groupTransport = groups.transport();
+    const noticeActive = () => handoff.accepting && !stopping && !lifecycle.signal.aborted;
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
-      groups: groups.transport(), signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
+      groups: groupTransport, signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       statusPhotoStorage: statusStorage("status-photo"),
@@ -2408,6 +2411,16 @@ if (import.meta.main) {
     }), {
       loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
       hostReplacementModules: [gachaExpectationModuleName],
+      noticeServices: {
+        whenNoticeActive: probingUpdate ? () => () => {} : whenModuleTasksActive,
+        noticeGroups: noticeGroupTransport(groupTransport,
+          () => noticeActive() ? groups.noticeAccounts() : [],
+          () => {
+            const online = milkyOnline;
+            return noticeActive() && online && !online.signal.aborted ? online.noticeAccount : undefined;
+          }),
+        disconnect: handoffSession.signal,
+      },
       groupServices: probingUpdate ? undefined : {
         noticeSettingsThemeDirectory: Bun.env.LOTUS_GROUP_NOTICE_THEME_DIR?.trim() || fileURLToPath(new URL("data/group/notice-theme/", root)),
         ownGroupCardAccounts() {
