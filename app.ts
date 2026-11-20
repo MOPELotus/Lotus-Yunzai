@@ -145,6 +145,7 @@ const friendRelationshipNoticeNames = ["[group] 好友增减通知", "group", "@
 const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus-yunzai/group"];
 const friendRecallNoticeNames = ["[group] 好友撤回通知", "group", "@lotus-yunzai/group"];
 const groupRecallNoticeNames = ["[group] 群撤回通知", "group", "@lotus-yunzai/group"];
+const noticeSettingsNames = ["[group] 通知设置", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
 function isPrivateCredentialMessage(text: string): boolean {
@@ -1468,6 +1469,30 @@ if (import.meta.main) {
       else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);
       else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
       return;
+    }
+    if (/^#椰奶(?:通知设置|(?:启用|禁用)全部通知$)/u.test(command.msg)) {
+      if (!allowed(noticeSettingsNames)) return;
+      const session = event[delegationSession]?.signal;
+      const userId = event.user_id;
+      const signal = session && nativeOperationSignal(session);
+      const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/group" && allowed(names),
+        isBotMaster, command.msg, {
+          async configureNoticeSettings(scope) {
+            const group = event.message_type === "group" && event.sub_type !== "anonymous" && event.group_id !== undefined;
+            const friend = event.message_type === "private" && event.sub_type === "friend";
+            if (!signal || signal.aborted || event.isDelegated || event.attachmentOnly || userId === undefined || !isBotMaster(userId) ||
+                !(group || friend) || ((scope === "group" || scope === "bot-group") && !group) || !allowed(noticeSettingsNames)) return false;
+            if (scope === "bot" || scope === "bot-group") return true;
+            const accounts = new Set(masterPermissions.botIds());
+            for (const account of groups.onlineAccounts()) accounts.add(account.id);
+            if (milkyOnline && !milkyOnline.signal.aborted) accounts.add(milkyOnline.id);
+            return accounts.size > 0 && [...accounts].every(account => masterPermissions.isMaster(account, userId));
+          },
+        });
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
     }
     const fallbackEvent = bareStatus && runtimeStatusScope ? {
       ...event, runtimeStatusScope, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" as const : undefined,

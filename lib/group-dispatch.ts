@@ -23,6 +23,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
   ["椰奶小助手", ["[group] 群名片"]],
   ["椰奶点赞", ["[group] 资料卡点赞"]],
+  ["椰奶配置-通知", ["[group] 通知设置"]],
   ["椰奶群管-基础", ["[group] 群禁言", "[group] 群成员移出", "[group] 群头衔", "[group] 群管理员", "[group] 群禁言列表",
     "[group] 从未发言成员", "[group] 群成员活动排行", "[group] 群精华", "[group] 自助禁言", "[group] 定时群禁言", "[group] 群通知",
     "[group] 加群申请通知", "[group] 引用加群审核"]],

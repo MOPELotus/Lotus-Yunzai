@@ -250,7 +250,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\ndisablePrivate: true\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告, 椰奶私聊群管]}\n");
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告, 椰奶私聊群管]}\n89: {disable: [椰奶配置-通知]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
     await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { friendRequest: false }\n"bot:99": { friendRequest: true }\n');
@@ -1626,6 +1626,33 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.user_id === 52 && JSON.stringify(params.messages).includes("合成 OneBot 原群正文"))).toHaveLength(1);
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes("合成 Milky 原群正文"))).toHaveLength(1);
+
+    const noticeFile = join(legacyDirectory, "notice.yaml");
+    const originalSettings = "# 原通知设置\ndefault: { groupRecall: true, msgSaveDeltime: 600 } # 保留\n";
+    await writeFile(noticeFile, originalSettings);
+    client.send(JSON.stringify(oneBotPrivate("#椰奶通知设置好友消息开启")));
+    await ownerReplyWith("当前会话没有修改此通知设置的权限");
+    expect(await readFile(noticeFile, "utf8")).toBe(originalSettings);
+
+    client.send(JSON.stringify(oneBotPrivate("#椰奶通知设置好友消息bot单独开启")));
+    const oneBotSettings = await ownerReplyWith("好友消息：开启");
+    expect(JSON.stringify(oneBotSettings.params.message)).toContain("已保存通知设置");
+    expect(await readFile(noticeFile, "utf8")).toContain(originalSettings);
+
+    await webhook("message_receive", milkyPrivate("#椰奶通知设置"));
+    const milkySettings = await milkyOwnerReply(operator, "好友消息：关闭");
+    expect(JSON.stringify(milkySettings.params.message)).toContain("删除缓存时间：600 秒");
+    await webhook("message_receive", milkyTitle("#椰奶通知设置群撤回bot群单独关闭", operator));
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" && params.group_id === 79 &&
+      JSON.stringify(params.message).includes("群撤回：关闭")), "Milky 当前群未回读自己的通知覆盖。");
+    const savedSettings = await readFile(noticeFile, "utf8");
+    expect(Bun.YAML.parse(savedSettings)).toMatchObject({ default: { groupRecall: true }, "bot:99": { privateMessage: true },
+      "bot:100:79": { groupRecall: false } });
+    const previousSettingsReplies = oneBotReplies().filter(({ params }) => params.group_id === 89).length;
+    send(oneBotMessage("#椰奶通知设置", 52, 89));
+    await Bun.sleep(100);
+    expect(oneBotReplies().filter(({ params }) => params.group_id === 89)).toHaveLength(previousSettingsReplies);
+    expect(await readFile(noticeFile, "utf8")).toBe(savedSettings);
   } finally {
     socket?.close();
     host?.kill();
