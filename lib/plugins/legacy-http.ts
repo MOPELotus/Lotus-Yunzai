@@ -23,6 +23,7 @@ export class LegacyHttpRoutes {
   readonly #pending = new Map<HandlerScope, PendingRoutes>();
   #routes = new Map<string, Route>();
   readonly #reserved = new Set<string>();
+  readonly #reservedMounts = new Set<string>();
 
   readonly express = Object.freeze({
     post: (path: string, handler: LegacyHttpHandler): void => {
@@ -30,7 +31,8 @@ export class LegacyHttpRoutes {
       const pending = owner && this.#pending.get(owner);
       if (!owner || !pending?.accepting) throw new Error("Bot.express.post 须在旧插件初始化期间调用。");
       const key = typeof path === "string" ? publicPostPath(path) : undefined;
-      if (!key || this.#reserved.has(key) || typeof handler !== "function") {
+      if (!key || this.#reserved.has(key) || [...this.#reservedMounts].some(mount => key === mount || key.startsWith(`${mount}/`)) ||
+          typeof handler !== "function") {
         throw new Error("Bot.express.post 需要可用的固定路径和处理函数。");
       }
       if (pending.routes.has(key)) throw new Error("Bot.express.post 重复注册路径。");
@@ -42,6 +44,12 @@ export class LegacyHttpRoutes {
     const key = publicPostPath(path);
     if (!key) throw new Error("原生 POST 路径无效。");
     this.#reserved.add(key);
+  }
+
+  reserveMount(path: string): void {
+    const key = publicPostPath(path);
+    if (!key) throw new Error("原生挂载路径无效。");
+    this.#reservedMounts.add(key);
   }
 
   open(scope: HandlerScope): void {

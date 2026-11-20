@@ -241,6 +241,9 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       recursive: true, filter: (path) => !path.endsWith("/.git"),
     });
     await mkdir(join(root, "config"), { recursive: true });
+    await mkdir(join(root, "web"), { recursive: true });
+    await cp(new URL("../web/miyoushe", import.meta.url), join(root, "web", "miyoushe"), { recursive: true });
+    await writeFile(join(root, "config", "global.yaml"), "coin_shop: {path: /fixture}\n");
     await writeFile(join(root, "config", "group.yaml"), [
       "strangeThumbUp: false", "count: 3", "noFriendMsg: 仅好友可用", 'successMsg: "确认 {{thumbUpNum}}"',
     ].join("\n") + "\n");
@@ -302,6 +305,10 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       expect(login.headers.get("Content-Type")).toMatch(/^application\/json(?:;|$)/u);
 
       const endpoint = new URL(webhookPath, origin);
+      const shopPage = await request(new URL("/miyoushe/", origin), { method: "HEAD" });
+      expect(shopPage.status).toBe(200);
+      expect(shopPage.headers.get("Content-Type")).toMatch(/^text\/html/u);
+      expect((await request(new URL("/fixture/", origin), { method: "HEAD" })).status).toBe(404);
       expect((await webhook(endpoint, message("friend"), milkyToken)).status).toBe(503);
       gateway.releaseLogin.resolve();
       await waitForBind(endpoint);
@@ -411,7 +418,9 @@ test("Milky Webhook 独立鉴权并按已绑定账号处理消息、多媒体、
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;
     }
-    expect(await stderr).not.toContain(milkyToken);
+    const diagnostics = await stderr;
+    expect(diagnostics).toContain("原挂载路径与 Milky Webhook 冲突，已使用 /miyoushe");
+    expect(diagnostics).not.toContain(milkyToken);
 
     const probe = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "ignore",

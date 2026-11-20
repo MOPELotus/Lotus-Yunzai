@@ -36,6 +36,10 @@ test("米游社网页沿用旧挂载地址、开关和网页登录有效期", ()
   expect(settings).toMatchObject({ enabled: false, path: "/lotus/coin-shop", ticketMinutes: 2, sessionHours: 0.5 });
   expect(settings.origin?.href).toBe("https://miyoushe.example.org/");
   expect(miyousheWebSettings({ path: "/panel/account", public_url: "file:///tmp/shop" })).toMatchObject({ path: undefined, origin: undefined });
+  expect(miyousheWebSettings({ path: "/MEDIA/cards", public_url: "https://miyoushe.example.org/exit/session" }).path).toBeUndefined();
+  expect(miyousheWebSettings({ path: "/Shared" }, "/shared/events")).toMatchObject({ path: "/miyoushe", mountConflict: true });
+  expect(miyousheWebSettings({}, "/miyoushe/events")).toMatchObject({ path: "/lotus-miyoushe", mountConflict: true });
+  expect(miyousheWebSettings({ path: "/shared-shop" }, "/shared/events")).toMatchObject({ path: "/shared-shop", mountConflict: false });
 });
 
 test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档案，会话重启后可用", async () => {

@@ -48,12 +48,15 @@ test("固定路径拒绝保留段、歧义及跨作用域冲突", async () => {
   const first = new HandlerScope();
   const second = new HandlerScope();
   [active, first, second].forEach((owner) => registry.open(owner));
+  registry.reserveMount("/PublicShop");
 
   first.run(() => {
-    for (const path of ["/status", "/PaNeL/x", "/File/abc", "/OneBotv11/", "/exit", "/st%61tus", "/../route", "/*", "/:arg", "/a?b", "/a//b", "//host/route", "/a\\b"]) {
+    for (const path of ["/status", "/PaNeL/x", "/File/abc", "/Media/a", "/OneBotv11/", "/exit", "/publicshop/", "/PublicShop/api/claim",
+      "/st%61tus", "/../route", "/*", "/:arg", "/a?b", "/a//b", "//host/route", "/a\\b"]) {
       expect(() => registry.express.post(path, () => {})).toThrow("固定路径");
     }
     registry.express.post("/webhook", (_req, res) => res.sendStatus(202));
+    registry.express.post("/PublicShopOtra", (_req, res) => res.sendStatus(202));
     expect(() => registry.express.post("/Webhook/", () => {})).toThrow("重复注册");
   });
   active.run(() => registry.express.post("/webhook", (_req, res) => res.sendStatus(201)));

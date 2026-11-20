@@ -10,6 +10,7 @@ import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overvi
 import { MiyousheShopError, type createMiyousheShopCatalog } from "./miyoushe-shop-catalog.ts";
 import { MiyousheShopPlanError, type createMiyousheShopPlans } from "./miyoushe-shop-plans.ts";
 import { readPanelJson } from "./panel.ts";
+import { isReservedServerPath } from "./server-redirect.ts";
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
 const command = /^#(米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
@@ -17,6 +18,7 @@ const sessionName = "lotus_miyoushe";
 const checkinJobRetention = 10 * 60_000;
 const checkinJobLifetime = 12 * 60_000;
 const maxCheckinJobs = 256;
+const defaultMount = "/miyoushe";
 
 export function isMiyousheWebCommand(message: string) { return command.test(message); }
 const headers = {
@@ -155,17 +157,24 @@ function validOrigin(base: URL | undefined) {
 
 function normalizedPath(value: unknown) {
   return typeof value === "string" && /^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/?$/u.test(value) &&
-    !/^\/(?:Media|File|panel|captcha|OneBotv11|status)(?:\/|$)/u.test(value) ? value.replace(/\/$/u, "") : undefined;
+    !/^\/captcha(?:\/|$)/iu.test(value) && !isReservedServerPath(value) ? value.replace(/\/$/u, "") : undefined;
 }
 
-export function miyousheWebSettings(raw: unknown) {
+export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   const config = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
   const url = typeof config.public_url === "string" && config.public_url.trim() ? URL.parse(config.public_url.trim()) : null;
   const origin = url && (url.protocol === "https:" || url.protocol === "http:") && !url.search && !url.hash && !url.username && !url.password
     ? validOrigin(new URL(url.origin)) : undefined;
+  const configuredPath = normalizedPath(config.path) ?? (origin ? normalizedPath(url?.pathname) : undefined);
+  const coversWebhook = (path: string) => {
+    const key = path.toLowerCase();
+    return webhookPath === key || webhookPath?.startsWith(`${key}/`) === true;
+  };
+  const mountConflict = coversWebhook(configuredPath ?? defaultMount);
+  const path = mountConflict ? coversWebhook(defaultMount) ? "/lotus-miyoushe" : defaultMount : configuredPath;
   return {
     enabled: config.enable !== false,
-    path: normalizedPath(config.path) ?? (origin ? normalizedPath(url?.pathname) : undefined), origin,
+    path, origin, mountConflict,
     ticketMinutes: typeof config.ticket_minutes === "number" ? config.ticket_minutes : undefined,
     sessionHours: typeof config.session_hours === "number" ? config.session_hours : undefined,
   };
@@ -174,7 +183,7 @@ export function miyousheWebSettings(raw: unknown) {
 export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
   previewSettings, checkinSettings, manualCheckin, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours,
   now = Date.now }: Options) {
-  const mount = normalizedPath(path) ?? "/miyoushe";
+  const mount = normalizedPath(path) ?? defaultMount;
   const prefix = `${mount}/`;
   const ticketMinutes = typeof configuredTicketMinutes === "number" && Number.isSafeInteger(configuredTicketMinutes) &&
     configuredTicketMinutes >= 1 && Number.isSafeInteger(now() + configuredTicketMinutes * 60_000) ? configuredTicketMinutes : 10;
@@ -486,5 +495,5 @@ export function createMiyousheWeb({ origin, databasePath, assetDirectory, signal
     }
   }
 
-  return { commands, handle, close() { stopJobs.abort(); jobs.clear(); db?.close(); db = undefined; } };
+  return { mount, commands, handle, close() { stopJobs.abort(); jobs.clear(); db?.close(); db = undefined; } };
 }

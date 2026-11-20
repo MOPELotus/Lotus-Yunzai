@@ -2003,8 +2003,10 @@ if (import.meta.main) {
         },
       };
     }
-    const shopSettings = miyousheWebSettings(globalConfig.coin_shop);
+    const milkyWebhookPath = milky?.connection === "webhook" ? milky.webhookPath : undefined;
+    const shopSettings = miyousheWebSettings(globalConfig.coin_shop, milkyWebhookPath);
     if (!probingUpdate && shopSettings.enabled) {
+      if (shopSettings.mountConflict) console.warn(`[米游社网页] 原挂载路径与 Milky Webhook 冲突，已使用 ${shopSettings.path}。`);
       const plans = checkinScheduleStore;
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
       const catalog = createMiyousheShopCatalog({ profileDirectory });
@@ -2313,7 +2315,8 @@ if (import.meta.main) {
     const milkyWebhook = milky?.connection === "webhook" ? createMilkyWebhook(milky, milkyOptions) : undefined;
     const milkyWs = milky?.connection === "ws" ? createMilkyWs(milky, milkyOptions) : undefined;
     const milkyTransport = milkyWebhook ?? milkyWs;
-    if (milky?.connection === "webhook") legacy.httpRoutes.reserve(milky.webhookPath);
+    if (milkyWebhookPath) legacy.httpRoutes.reserve(milkyWebhookPath);
+    if (miyousheWeb) legacy.httpRoutes.reserveMount(miyousheWeb.mount);
     stopMilky = milkyTransport && (async () => {
       await milkyNoticeReceipts.closed;
       await milkyTransport.stop();
