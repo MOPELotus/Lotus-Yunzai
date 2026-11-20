@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { readLocalConfig } from "./config.ts";
 import type { FriendRequest } from "./messages.ts";
+import type { RequestDecisionOutcome } from "./request-claim.ts";
 
 export interface PendingFriendRequest {
   readonly userId: number;
@@ -15,6 +16,10 @@ export interface PendingFriendRequest {
 export interface PendingFriendRequestList {
   readonly entries: readonly PendingFriendRequest[];
   readonly complete: boolean;
+}
+
+export interface PendingFriendRequestDecision {
+  readonly status: RequestDecisionOutcome | "submitted" | "not-found" | "ambiguous" | "risk";
 }
 
 type FriendAutoResult = "confirmed" | "rejected" | "unknown" | "duplicate" | undefined;

@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createRequestClaim, type RequestClaimStorage, type RequestDecisionOutcome, type RequestScope } from "./request-claim.ts";
 
 type Adapter = "onebot" | "milky";
-export type JoinReviewOutcome = "confirmed" | "rejected" | "unknown" | "unavailable";
+export type JoinReviewOutcome = RequestDecisionOutcome;
 export type QuotedJoinReviewResult = {
   readonly status: JoinReviewOutcome | "expired" | "risk" | "unrelated";
   readonly userId?: number;
@@ -31,13 +31,7 @@ export interface PendingGroupJoinBatch {
   readonly entries?: readonly { readonly userId: number; readonly status: JoinReviewOutcome | "risk" | "expired" }[];
 }
 
-interface JoinReviewKey {
-  readonly adapter: Adapter;
-  readonly botId: number;
-  readonly flag: string;
-}
-
-interface JoinRequestBase extends JoinReviewKey {
+interface JoinRequestBase extends RequestScope {
   readonly groupId: number;
   readonly userId: number;
   readonly nickname?: string;
@@ -66,11 +60,9 @@ interface JoinReviewTransport {
   submit(origin: JoinRequestOrigin): Promise<JoinReviewOutcome>;
 }
 
-interface JoinReviewStorage {
+interface JoinReviewStorage extends RequestClaimStorage {
   read(key: string): Promise<string | null>;
   write(key: string, value: string, ttl: number): Promise<void>;
-  claim(key: string, value: string, ttl: number): Promise<boolean>;
-  release(key: string, value: string): Promise<void>;
 }
 
 interface RecordEntry {
@@ -108,53 +100,17 @@ function receiptKey(scope: JoinNoticeQuote) {
   return `receipt:${adapter}:${botId}:${groupId}:${messageId}`;
 }
 
-function claimKey({ adapter, botId, flag }: JoinReviewKey) {
-  const digest = createHash("sha256").update(flag).digest("hex");
-  return `decision:${adapter}:${botId}:${digest}`;
-}
-
 export function createGroupJoinReview(getStorage: () => JoinReviewStorage | undefined, now = Date.now) {
   const notices = new Map<string, RecordEntry>();
-  const claims = new Map<string, { token: string; expires: number }>();
-
-  function remember<T>(container: Map<string, T>, key: string, value: T) {
-    if (container.size >= maxEntries) container.delete(container.keys().next().value!);
-    container.set(key, value);
-  }
-
-  async function once(scope: JoinReviewKey, perform: () => Promise<JoinReviewOutcome>): Promise<JoinReviewOutcome> {
-    const key = claimKey(scope);
-    const token = crypto.randomUUID();
-    const time = now();
-    if ((claims.get(key)?.expires ?? 0) > time) return "unknown";
-    claims.delete(key);
-    const storage = getStorage();
-    if (storage) {
-      try {
-        if (!await storage.claim(key, token, lifetimeSeconds)) return "unknown";
-      } catch {
-        return "unavailable";
-      }
-    } else if (claims.size >= maxEntries) {
-      for (const [old, claim] of claims) if (claim.expires <= time) claims.delete(old);
-      if (claims.size >= maxEntries) return "unavailable";
-    }
-    const lease = { token, expires: time + lifetimeSeconds * 1000 };
-    remember(claims, key, lease);
-    const outcome = await perform().catch(() => "unknown" as const);
-    if (outcome === "rejected" || outcome === "unavailable") {
-      if (claims.get(key) === lease) claims.delete(key);
-      await storage?.release(key, token).catch(() => {});
-    }
-    return outcome;
-  }
+  const once = createRequestClaim(getStorage, now);
 
   return {
     async record(origin: JoinRequestOrigin, messageId: number) {
       const key = receiptKey({ ...origin, messageId });
       if (!key || !validOrigin(origin)) return;
       const entry = { origin, expires: now() + lifetimeSeconds * 1000 };
-      remember(notices, key, entry);
+      if (notices.size >= maxEntries) notices.delete(notices.keys().next().value!);
+      notices.set(key, entry);
       await getStorage()?.write(key, JSON.stringify(entry), noticeRetention);
     },
     once,
@@ -188,7 +144,7 @@ export function createGroupJoinReview(getStorage: () => JoinReviewStorage | unde
   };
 }
 
-export async function confirmJoinReview(review: ReturnType<typeof createGroupJoinReview> | undefined, scope: JoinReviewKey,
+export async function confirmJoinReview(review: ReturnType<typeof createGroupJoinReview> | undefined, scope: RequestScope,
   submit: () => Promise<boolean>): Promise<boolean> {
   if (!review) return submit();
   const outcome = await review.once(scope, async () => await submit() ? "confirmed" : "rejected");

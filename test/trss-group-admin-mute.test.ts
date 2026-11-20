@@ -120,6 +120,9 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let milkyJoinReceipt: number | undefined;
   let wrongMilkyAnnouncementGroup = false;
   let pendingJoinListing = false;
+  let milkyFriendReviewFixture = false;
+  let regularFriendReadback = "pending";
+  let changingFriendReads = 0;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
   const memberLastSentTimes = new Map<string, number>();
@@ -172,10 +175,17 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   }
   function milkyFriendNotifications(isFiltered: unknown) {
     const row = { initiator_id: 93, initiator_uid: "milky_fixture_sender", target_user_id: milkyId,
-      is_filtered: isFiltered, time: 1_704_038_405, state: "pending", via: "合成搜索", comment: "常规好友附言" };
-    return { requests: isFiltered ? [{ ...row, initiator_id: 94, initiator_uid: "milky_fixture_risk", comment: "风险好友附言" }] : [
+      is_filtered: isFiltered, time: 1_704_038_405, state: regularFriendReadback, via: "合成搜索", comment: "常规好友附言" };
+    return { requests: isFiltered ? [{ ...row, state: "pending", initiator_id: 94, initiator_uid: "milky_fixture_risk", comment: "风险好友附言" }] : [
       row, { ...row, target_user_id: oneBotId, comment: "另一个账号的好友申请" },
-      { ...row, state: "accepted", comment: "已处理的好友审批" },
+      { ...row, initiator_id: 92, initiator_uid: "milky_fixture_accepted", state: "accepted", comment: "已处理的好友审批" },
+      ...(milkyFriendReviewFixture ? [
+        { ...row, state: "pending", initiator_id: 96, initiator_uid: "milky_fixture_stale" },
+        { ...row, state: "pending", initiator_id: 97, initiator_uid: "milky_fixture_double" },
+        { ...row, state: "pending", initiator_id: 97, initiator_uid: "milky_fixture_double", time: row.time + 1 },
+        { ...row, state: "pending", initiator_id: 98, initiator_uid: "milky_fixture_changing", time: row.time + changingFriendReads++ },
+        { ...row, state: "pending", initiator_id: 95, initiator_uid: "milky_fixture_unknown" },
+      ] : []),
     ] };
   }
   const milky = Bun.serve({
@@ -189,6 +199,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         milkyJoinReceipt = milkyCalls.length;
       }
       if (action === "reject_group_request" && params.notification_seq === 901) milkyJoinState = "rejected";
+      if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_sender") regularFriendReadback = "accepted";
+      if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_unknown") return new Response(null, { status: 503 });
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
           (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_member_admin" && params.user_id === 60044) ||
@@ -1293,6 +1305,36 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(groupRows).not.toContain("好友申请");
     expect(groupRows).not.toContain("群邀请");
     expect(milkyCalls.filter(({ action }) => action === "get_friend_requests")).toHaveLength(accountListReads);
+
+    milkyFriendReviewFixture = true;
+    client.send(JSON.stringify(oneBotPrivate("#同意好友申请95")));
+    await ownerReplyWith("当前无法按 QQ 核实并处理这条好友申请");
+    expect(oneBotCalls.filter(({ action }) => action === "set_friend_add_request")).toHaveLength(0);
+    await webhook("message_receive", milkyPrivate("#拒绝好友申请94"));
+    await milkyOwnerReply(operator, "风险账号请在 QQ 中手动处理");
+    await webhook("message_receive", milkyPrivate("#同意好友申请97"));
+    await milkyOwnerReply(operator, "这个 QQ 有多条待处理的好友申请");
+    await webhook("message_receive", milkyPrivate("#同意好友申请98"));
+    await milkyOwnerReply(operator, "当前无法按 QQ 核实并处理这条好友申请");
+    await webhook("message_receive", milkyPrivate("#同意好友申请93"));
+    await milkyOwnerReply(operator, "已同意 93 的好友申请");
+    const staleFriendReview = milkyPrivate("#拒绝好友申请96");
+    await webhook("message_receive", staleFriendReview);
+    await milkyOwnerReply(operator, "协议端已受理拒绝 96");
+    await webhook("message_receive", staleFriendReview);
+    const unknownFriendReview = milkyPrivate("#同意好友申请95");
+    await webhook("message_receive", unknownFriendReview);
+    await milkyOwnerReply(operator, "好友申请处理结果未确认");
+    const replyCount = () => milkyCalls.filter(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes("好友申请处理结果未确认")).length;
+    const unknownCount = replyCount();
+    await webhook("message_receive", milkyPrivate("#拒绝好友申请95"));
+    await waitUntil(() => replyCount() === unknownCount + 1 || undefined, "未知好友审核重复时未得到核对提示。");
+    expect(milkyCalls.filter(({ action }) => action === "accept_friend_request" || action === "reject_friend_request")).toEqual([
+      { action: "accept_friend_request", params: { initiator_uid: "milky_fixture_sender", is_filtered: false } },
+      { action: "reject_friend_request", params: { initiator_uid: "milky_fixture_stale", is_filtered: false } },
+      { action: "accept_friend_request", params: { initiator_uid: "milky_fixture_unknown", is_filtered: false } },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

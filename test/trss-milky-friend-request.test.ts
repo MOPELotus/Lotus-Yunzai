@@ -30,6 +30,7 @@ function mockGateway() {
   const accepted = Promise.withResolvers<Review>();
   const replayReply = Promise.withResolvers<unknown>();
   const ownerNotice = Promise.withResolvers<unknown>();
+  const ownerReview = Promise.withResolvers<unknown>();
   const notifiedOwners: unknown[] = [];
   const release = Promise.withResolvers<void>();
   const server = Bun.serve({
@@ -48,8 +49,15 @@ function mockGateway() {
         if (JSON.stringify(body).includes("添加好友申请")) {
           notifiedOwners.push(body);
           ownerNotice.resolve(body);
+        } else if (JSON.stringify(body).includes("好友申请处理结果未确认")) {
+          ownerReview.resolve(body);
         } else replayReply.resolve(body);
         return Response.json({ status: "ok", retcode: 0, data: { message_seq: 11 } });
+      }
+      if (action === "get_friend_requests") {
+        const requests = body.is_filtered ? [] : [{ initiator_id: 45, initiator_uid: autoUid, target_user_id: account,
+          is_filtered: false, time: now - 5, state: "pending" }];
+        return Response.json({ status: "ok", retcode: 0, data: { requests } });
       }
       const review = { action, body, receivedAt: performance.now() };
       reviews.push(review);
@@ -65,7 +73,7 @@ function mockGateway() {
       return new Response(null, { status: 404 });
     },
   });
-  return { server, reviews, accepted, rejected, release, replayReply, ownerNotice, notifiedOwners };
+  return { server, reviews, accepted, rejected, release, replayReply, ownerNotice, ownerReview, notifiedOwners };
 }
 
 async function startup(stream: ReadableStream<Uint8Array>) {
@@ -192,6 +200,13 @@ test("Milky Webhook 好友申请按旧配置延时审批，保留 V3 手动拒�
       expect(shown).toContain("自动审批结果未确认");
       expect(shown).toContain("#查看好友申请");
       expect(shown).not.toContain(autoUid);
+      expect((await webhook(endpoint, { time: now, self_id: account, event_type: "message_receive", data: {
+        message_scene: "friend", sender_id: 52, peer_id: 52, message_seq: 303,
+        segments: [{ type: "text", data: { text: "#拒绝好友申请45" } }],
+      } })).status).toBe(200);
+      const priorApproval = await deadline(mock.ownerReview.promise, "自动审批未知后，主人按 QQ 操作未提示先核对。");
+      expect(priorApproval).toMatchObject({ user_id: 52 });
+      expect(mock.reviews.map(({ action }) => action)).toEqual(["reject_friend_request", "accept_friend_request"]);
       await writeFile(replayMarker, "");
       expect((await webhook(endpoint, automatic)).status).toBe(200);
       expect(await deadline(mock.replayReply.promise, "未观察到 V3 插件对重放申请的审批结果。")).toEqual({

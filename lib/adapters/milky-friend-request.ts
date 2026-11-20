@@ -19,9 +19,59 @@ function isOpaqueUid(value: unknown): value is string {
     !/[\s\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
 
+function friendRequestFlag(selfId: number, userId: number, uid: string, time: number | null) {
+  const digest = createHash("sha256").update(JSON.stringify([selfId, userId, uid, time])).digest("hex");
+  return `milky:friend:${digest}`;
+}
+
+export const milkyFriendRequestLimit = 50;
+const friendStates = new Set(["pending", "accepted", "rejected", "ignored"]);
+
+interface MilkyFriendRequestIdentity {
+  readonly userId: number;
+  readonly uid: string;
+  readonly time: number;
+  readonly flag: string;
+}
+
+function friendWindow(value: unknown): readonly unknown[] | undefined {
+  return isRecord(value) && Array.isArray(value.requests) ? value.requests : undefined;
+}
+
+export function selectCurrentMilkyFriendRequest(selfId: number, userId: number, ordinary: unknown, filtered: unknown):
+  { status: "pending"; identity: MilkyFriendRequestIdentity } | { status: "not-found" | "ambiguous" | "risk" | "unavailable" } {
+  const normal = friendWindow(ordinary);
+  const risk = friendWindow(filtered);
+  if (!normal || !risk || normal.length >= milkyFriendRequestLimit || risk.length >= milkyFriendRequestLimit) return { status: "unavailable" };
+  let selected: MilkyFriendRequestIdentity | undefined;
+  for (const [rows, isFiltered] of [[risk, true], [normal, false]] as const) {
+    for (const row of rows) {
+      if (!isRecord(row) || row.initiator_id !== userId || row.target_user_id !== selfId) continue;
+      if (row.is_filtered !== isFiltered || typeof row.state !== "string" || !friendStates.has(row.state)) return { status: "unavailable" };
+      if (row.state !== "pending") continue;
+      if (isFiltered) return { status: "risk" };
+      if (!isOpaqueUid(row.initiator_uid) || !isId(row.time)) return { status: "unavailable" };
+      if (selected) return { status: "ambiguous" };
+      selected = { userId, uid: row.initiator_uid, time: row.time, flag: friendRequestFlag(selfId, userId, row.initiator_uid, row.time) };
+    }
+  }
+  if (!selected) return { status: "not-found" };
+  const { uid } = selected;
+  if ([...normal, ...risk].some(row => isRecord(row) && row.target_user_id === selfId &&
+      row.initiator_uid === uid && row.initiator_id !== userId)) return { status: "unavailable" };
+  return { status: "pending", identity: selected };
+}
+
+export function milkyFriendRequestState(selfId: number, identity: MilkyFriendRequestIdentity, ordinary: unknown) {
+  const matching = friendWindow(ordinary)?.filter(row => isRecord(row) && row.target_user_id === selfId && row.initiator_id === identity.userId &&
+    row.initiator_uid === identity.uid && row.time === identity.time && row.is_filtered === false);
+  const row = matching?.length === 1 ? matching[0] : undefined;
+  return isRecord(row) ? row.state : undefined;
+}
+
 export function milkyPendingFriendRequests(selfId: number, ordinary: unknown, filtered: unknown): PendingFriendRequestList | undefined {
-  const normal = isRecord(ordinary) && Array.isArray(ordinary.requests) ? ordinary.requests : undefined;
-  const risk = isRecord(filtered) && Array.isArray(filtered.requests) ? filtered.requests : undefined;
+  const normal = friendWindow(ordinary);
+  const risk = friendWindow(filtered);
   if (!normal && !risk) return;
 
   const entries = new Map<string, PendingFriendRequest>();
@@ -57,8 +107,7 @@ export function milkyFriendRequest(
   if (!isId(userId) || userId === selfId || !isOpaqueUid(uid)) return;
 
   const time = isId(value.time) ? value.time : null;
-  const digest = createHash("sha256").update(JSON.stringify([selfId, userId, uid, time])).digest("hex");
-  const flag = `milky:friend:${digest}`;
+  const flag = friendRequestFlag(selfId, userId, uid, time);
   const recipients = [...new Set(masterIds.filter((id) => isId(id) && id !== selfId))];
   let submitted = false;
 

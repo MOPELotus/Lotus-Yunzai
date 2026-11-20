@@ -5,7 +5,7 @@ import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-gr
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationList } from "./group-invitations.ts";
-import type { PendingFriendRequestList } from "./friend-requests.ts";
+import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
@@ -75,6 +75,7 @@ export interface MessageEvent {
   readonly groupListPendingJoinRequests?: () => Promise<PendingGroupJoinList | undefined>;
   readonly listPendingGroupInvitations?: () => Promise<PendingGroupInvitationList | undefined>;
   readonly listPendingFriendRequests?: () => Promise<PendingFriendRequestList | undefined>;
+  readonly reviewPendingFriendRequest?: (userId: number, approve: boolean) => Promise<PendingFriendRequestDecision>;
   readonly groupReviewPendingJoin?: (userId: number, approve: boolean) => Promise<PendingGroupJoinDecision>;
   readonly groupReviewAllPendingJoins?: (approve: boolean) => Promise<PendingGroupJoinBatch>;
   readonly groupListAnnouncements?: () => Promise<readonly GroupAnnouncement[] | undefined>;

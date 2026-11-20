@@ -8,7 +8,7 @@ export type CommandContext = Readonly<Pick<
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
     "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" | "listPendingGroupInvitations" |
-    "listPendingFriendRequests" |
+    "listPendingFriendRequests" | "reviewPendingFriendRequest" |
     "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
     "groupRuleImageDigest" | "groupVote" | "groupVerification" | "privateGroupMute" | "privateGroupWholeMute" | "privateGroupKick"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
@@ -95,7 +95,7 @@ function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
-    groupListPendingJoinRequests, listPendingGroupInvitations, listPendingFriendRequests, groupListAnnouncements,
+    groupListPendingJoinRequests, listPendingGroupInvitations, listPendingFriendRequests, reviewPendingFriendRequest, groupListAnnouncements,
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
@@ -123,6 +123,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupListPendingJoinRequests ? { groupListPendingJoinRequests } : {}),
     ...(message_type === "private" && !isDelegated && listPendingGroupInvitations ? { listPendingGroupInvitations } : {}),
     ...(message_type === "private" && !isDelegated && listPendingFriendRequests ? { listPendingFriendRequests } : {}),
+    ...(message_type === "private" && !isDelegated && reviewPendingFriendRequest ? { reviewPendingFriendRequest } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewPendingJoin ? { groupReviewPendingJoin } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewAllPendingJoins ? { groupReviewAllPendingJoins } : {}),
     ...(message_type === "group" && !isDelegated && groupListAnnouncements ? { groupListAnnouncements } : {}),

@@ -2,6 +2,8 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
+import type { PendingFriendRequestDecision } from "../friend-requests.ts";
+import { createRequestClaim } from "../request-claim.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
@@ -11,7 +13,8 @@ import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationSco
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
-import { milkyFriendRequest, milkyPendingFriendRequests } from "./milky-friend-request.ts";
+import { milkyFriendRequest, milkyFriendRequestLimit, milkyFriendRequestState, milkyPendingFriendRequests,
+  selectCurrentMilkyFriendRequest } from "./milky-friend-request.ts";
 import { milkyGroupRequest, milkyGroupRequestFlag } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
@@ -29,6 +32,7 @@ type MilkyPendingJoin = PendingGroupJoinEntry & { readonly origin: MilkyJoinOrig
 export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
+  readonly friendReview?: ReturnType<typeof createRequestClaim>;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
@@ -67,6 +71,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   if (signal.aborted || !positiveId(login?.uin)) return;
   const account = login.uin;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
+  const friendReview = options.friendReview ?? createRequestClaim(() => undefined);
   const joinReview = options.joinReview;
   const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
@@ -147,12 +152,46 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   async function approveFriendRequest(flag: string, action: string, params: Record<string, unknown>) {
-    if (signal.aborted || reviewedFriendRequests.has(flag)) return false;
+    const uid = params.initiator_uid;
+    if (signal.aborted || typeof uid !== "string" || reviewedFriendRequests.has(flag)) return false;
     reviewedFriendRequests.add(flag);
     if (reviewedFriendRequests.size > 4096) reviewedFriendRequests.delete(reviewedFriendRequests.values().next().value!);
-    const result = await call.confirmed(action, params);
-    if (result.status === "unknown") throw new Error("Milky 好友审批结果未确认。");
-    return result.status === "confirmed";
+    const status = await friendReview({ adapter: "milky", botId: account, flag: uid }, async () =>
+      (await call.confirmed(action, params)).status);
+    if (status === "unknown") throw new Error("Milky 好友审批结果未确认。");
+    return status === "confirmed";
+  }
+
+  async function readFriendRequestWindow(is_filtered: boolean, active: AbortSignal) {
+    const result = await call.confirmed("get_friend_requests", { limit: milkyFriendRequestLimit, is_filtered }, active);
+    return result.status === "confirmed" ? result.data : undefined;
+  }
+
+  function readFriendRequestWindows(active: AbortSignal) {
+    return Promise.all([readFriendRequestWindow(false, active), readFriendRequestWindow(true, active)]);
+  }
+
+  async function reviewCurrentFriendRequest(actor: number, user: number, approve: boolean, scope: AbortSignal): Promise<PendingFriendRequestDecision> {
+    const active = () => !scope.aborted && isMaster(actor);
+    if (!active() || !positiveId(user) || user === account || typeof approve !== "boolean") return { status: "unavailable" };
+    const select = async () => selectCurrentMilkyFriendRequest(account, user, ...await readFriendRequestWindows(scope));
+    const selected = await select();
+    if (!active()) return { status: "unavailable" };
+    if (selected.status !== "pending") return { status: selected.status };
+
+    const { identity } = selected;
+    // The native write is by UID. The event timestamp need not equal the request-list timestamp.
+    const status = await friendReview({ adapter: "milky", botId: account, flag: identity.uid }, async () => {
+      if (!active()) return "unavailable";
+      const current = await select();
+      if (!active() || current.status !== "pending" || current.identity.flag !== identity.flag) return "unavailable";
+      return (await call.confirmed(approve ? "accept_friend_request" : "reject_friend_request", {
+        initiator_uid: identity.uid, is_filtered: false,
+      }, scope)).status;
+    });
+    if (status !== "confirmed" || !active()) return { status };
+    const current = await readFriendRequestWindow(false, scope);
+    return { status: milkyFriendRequestState(account, identity, current) === (approve ? "accepted" : "rejected") ? "confirmed" : "submitted" };
   }
 
   async function sendConfirmed(target: { group_id: number } | { user_id: number }, reply: MessageReply, quoted?: number,
@@ -579,12 +618,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         const combined = AbortSignal.any([signal, privateGroupSignal]);
         const active = () => !combined.aborted && isMaster(cardOwner);
         if (!active()) return;
-        const [ordinary, filtered] = await Promise.all([false, true].map(async is_filtered => {
-          const result = await call.confirmed("get_friend_requests", { limit: 50, is_filtered }, combined);
-          return result.status === "confirmed" ? result.data : undefined;
-        }));
+        const [ordinary, filtered] = await readFriendRequestWindows(combined);
         if (active()) return milkyPendingFriendRequests(account, ordinary, filtered);
       } : undefined,
+      reviewPendingFriendRequest: privateGroupSignal && positiveId(cardOwner) ? (user: number, approve: boolean) =>
+        reviewCurrentFriendRequest(cardOwner, user, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
       ...(privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup &&
         bindPrivateGroupActions({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
           master: () => isMaster(cardOwner), protectedMember: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),

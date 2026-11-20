@@ -111,6 +111,7 @@ import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
 import type { FriendRequestNotice, GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
+import { createRequestClaim } from "./lib/request-claim.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -285,20 +286,22 @@ if (import.meta.main) {
   let friendRequestNotice: { policy: FriendRequestNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
-  const groupJoinReview = createGroupJoinReview(() => {
+  function requestStorage(feature: "group-join-review" | "friend-review") {
     const redis = globalThis.redis;
     if (!redis) return;
-    const namespace = (key: string) => `lotus-yunzai:group-join-review:${key}`;
+    const namespace = (key: string) => `lotus-yunzai:${feature}:${key}`;
     return {
-      read: key => redis.get(namespace(key)),
-      async write(key, value, ttl) { await redis.set(namespace(key), value, { EX: ttl }); },
-      async claim(key, value, ttl) { return await redis.set(namespace(key), value, { EX: ttl, NX: true }) === "OK"; },
-      async release(key, value) {
+      read: (key: string) => redis.get(namespace(key)),
+      async write(key: string, value: string, ttl: number) { await redis.set(namespace(key), value, { EX: ttl }); },
+      async claim(key: string, value: string, ttl: number) { return await redis.set(namespace(key), value, { EX: ttl, NX: true }) === "OK"; },
+      async release(key: string, value: string) {
         await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0",
           { keys: [namespace(key)], arguments: [value] });
       },
     };
-  });
+  }
+  const groupJoinReview = createGroupJoinReview(() => requestStorage("group-join-review"));
+  const friendReview = createRequestClaim(() => requestStorage("friend-review"));
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1640,6 +1643,7 @@ if (import.meta.main) {
       ...groupActions,
       signal: lifecycle.signal,
       dispatch,
+      friendReview,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
       onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute) => {
