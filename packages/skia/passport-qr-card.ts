@@ -33,12 +33,12 @@ const defaultResources = fileURLToPath(new URL("../../data/passport/resources", 
 
 async function loadTheme(directory: string) {
   const alias = createHash("sha256").update(directory).digest("hex").slice(0, 12);
-  const miao = `PassportQrMiao${alias}`;
+  const body = `PassportQrBody${alias}`;
   const title = `PassportQrTitle${alias}`;
   const miSans = `PassportQrMiSans${alias}`;
 
   for (const [name, file] of [
-    [miao, "miao-theme/fonts/HYWH-65W.ttf"],
+    [body, "miao-theme/fonts/HYWH-65W.ttf"],
     [title, "source-templates/miao-stat/fonts/NZBZ.ttf"],
     [miSans, "fonts/MiSans-VF.ttf"],
   ] as const) {
@@ -52,7 +52,7 @@ async function loadTheme(directory: string) {
     loadImage(join(themePath, "bg-01.jpg")),
     loadImage(join(themePath, "main-01.png")),
   ]);
-  const textFont = `"${miao}", "${miSans}", sans-serif`;
+  const textFont = `"${body}", "${miSans}", sans-serif`;
   return { background, foreground, textFont, titleFont: `"${title}", ${textFont}` };
 }
 

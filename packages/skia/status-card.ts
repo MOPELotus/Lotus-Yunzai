@@ -13,12 +13,12 @@ export interface StatusCardOptions {
 // Miao help/version-info, as drawn by Lotus-ReFactor's Skia status template.
 const width = 600;
 const panelWidth = 575;
-const font = '"LotusGachaMiao", "LotusGachaMiSans", sans-serif';
+const font = '"LotusStatusBody", "LotusStatusMiSans", sans-serif';
 const defaultTheme = fileURLToPath(new URL("../../data/atlas/theme", import.meta.url));
 
 async function loadTheme(directory: string) {
   for (const [family, file] of [
-    ["LotusGachaMiao", "HYWH-65W.ttf"], ["LotusGachaMiSans", "MiSans-VF.ttf"],
+    ["LotusStatusBody", "HYWH-65W.ttf"], ["LotusStatusMiSans", "MiSans-VF.ttf"],
   ] as const) {
     const filename = join(directory, "fonts", file);
     if (await Bun.file(filename).exists()) FontLibrary.use(family, [filename]);

@@ -48,12 +48,12 @@ const defaultResources = fileURLToPath(new URL("../../data/passport/resources", 
 
 async function loadTheme(directory: string) {
   const key = createHash("sha256").update(directory).digest("hex").slice(0, 12);
-  const miao = `PassportProfileMiao${key}`;
+  const body = `PassportProfileBody${key}`;
   const title = `PassportProfileTitle${key}`;
   const number = `PassportProfileNumber${key}`;
   const miSans = `PassportProfileMiSans${key}`;
   for (const [name, file] of [
-    [miao, "miao-theme/fonts/HYWH-65W.ttf"],
+    [body, "miao-theme/fonts/HYWH-65W.ttf"],
     [title, "source-templates/miao-stat/fonts/NZBZ.ttf"],
     [number, "source-templates/miao-stat/fonts/tttgbnumber.ttf"],
     [miSans, "fonts/MiSans-VF.ttf"],
@@ -63,7 +63,7 @@ async function loadTheme(directory: string) {
     FontLibrary.use(name, [fontPath]);
   }
   const background = await loadImage(join(directory, "miao-theme/bg/bg-hydro.webp"));
-  const text = `"${miao}", "${miSans}", sans-serif`;
+  const text = `"${body}", "${miSans}", sans-serif`;
   return { background, text, number: `"${number}", ${text}`, title: `"${title}", ${text}` };
 }
 

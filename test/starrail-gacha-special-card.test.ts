@@ -25,14 +25,14 @@ const renderers = [
 test.each(renderers)("%s 特殊池卡在渲染前要求真实的原主题目录并拒绝越界字体", async (game, render) => {
   const root = await mkdtemp(join(tmpdir(), "lotus-gacha-special-theme-"));
   const genshinResourceDirectory = join(root, "genshin");
-  const themeDirectory = join(root, "miao");
+  const themeDirectory = join(root, "character-theme");
   const opts = { mode: "gpu", genshinResourceDirectory, themeDirectory } as const;
   try {
     await expect(render(opts)).rejects.toThrow(`${game}特殊池记录的原 Genshin 资源目录不可用。`);
 
     const fonts = join(genshinResourceDirectory, "font");
     await mkdir(fonts, { recursive: true });
-    await expect(render(opts)).rejects.toThrow(`${game}特殊池记录的原喵喵资源目录不可用。`);
+    await expect(render(opts)).rejects.toThrow(`${game}特殊池记录的原版角色资源目录不可用。`);
 
     const outside = join(root, "outside.ttf");
     await mkdir(themeDirectory);

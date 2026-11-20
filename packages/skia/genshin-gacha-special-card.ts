@@ -84,7 +84,7 @@ async function image(root: string, source: string) {
   }
 }
 
-async function loadTheme(genshin: string, miao: string, game: Game) {
+async function loadTheme(genshin: string, characterTheme: string, game: Game) {
   const config = games[game];
   const aliases: string[] = [];
   for (const [family, name] of [["Number", "tttgbnumber.ttf"], ["Han", "HYWenHei-55W.ttf"]] as const) {
@@ -98,7 +98,7 @@ async function loadTheme(genshin: string, miao: string, game: Game) {
   }
 
   const [banner, logo, star] = await Promise.all([
-    image(miao, config.banner),
+    image(characterTheme, config.banner),
     image(genshin, config.logo),
     image(genshin, "img/other/bg5.png"),
   ]);
@@ -109,11 +109,11 @@ async function loadTheme(genshin: string, miao: string, game: Game) {
 
 const themeCache = new Map<string, ReturnType<typeof loadTheme>>();
 
-function themeAt(genshin: string, miao: string, game: Game) {
-  const key = `${game}\0${genshin}\0${miao}`;
+function themeAt(genshin: string, characterTheme: string, game: Game) {
+  const key = `${game}\0${genshin}\0${characterTheme}`;
   let theme = themeCache.get(key);
   if (!theme) {
-    theme = loadTheme(genshin, miao, game).catch((error: unknown) => {
+    theme = loadTheme(genshin, characterTheme, game).catch((error: unknown) => {
       themeCache.delete(key);
       throw error;
     });
@@ -342,18 +342,18 @@ export async function renderGachaSpecialCard(
   const height = bottom + (page ? 47 : 25);
   if (height > 24_000) throw new RangeError(`${games[game].label}特殊池记录超出可渲染高度。`);
 
-  const [genshin, miao] = await Promise.all([
+  const [genshin, characterTheme] = await Promise.all([
     realpath(genshinResourceDirectory).catch(() => undefined),
     realpath(themeDirectory).catch(() => undefined),
   ]);
   if (!genshin) throw new Error(`${games[game].label}特殊池记录的原 Genshin 资源目录不可用。`);
-  if (!miao) throw new Error(`${games[game].label}特殊池记录的原喵喵资源目录不可用。`);
-  const theme = await themeAt(genshin, miao, game);
+  if (!characterTheme) throw new Error(`${games[game].label}特殊池记录的原版角色资源目录不可用。`);
+  const theme = await themeAt(genshin, characterTheme, game);
   const icons = new Set(model.pools.flatMap(({ fiveLog }) => fiveLog.map(({ icon }) => icon))
     .filter((path): path is string => !!path && /^\/?meta-(gs|sr)\/(?:character|weapon)\/.+\.(?:png|webp|jpe?g)$/iu.exec(path)?.[1]?.toLowerCase() === game));
   const portraits = new Map<string, Image>();
   for (const path of icons) {
-    const art = await image(miao, path);
+    const art = await image(characterTheme, path);
     if (art) portraits.set(path, art);
   }
 

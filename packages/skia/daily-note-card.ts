@@ -66,12 +66,12 @@ type Row = DailyNoteCardDetail & { readonly icon?: Icon };
 
 async function loadTheme(directory: string) {
   const alias = createHash("sha256").update(directory).digest("hex").slice(0, 12);
-  const miao = `DailyNoteMiao${alias}`;
+  const body = `DailyNoteBody${alias}`;
   const number = `DailyNoteNumber${alias}`;
   const miSans = `DailyNoteMiSans${alias}`;
 
   for (const [name, file] of [
-    [miao, "miao-theme/fonts/HYWH-65W.ttf"],
+    [body, "miao-theme/fonts/HYWH-65W.ttf"],
     [number, "source-templates/miao-stat/fonts/tttgbnumber.ttf"],
     [miSans, "fonts/MiSans-VF.ttf"],
   ] as const) {
@@ -85,7 +85,7 @@ async function loadTheme(directory: string) {
     const file = join(directory, "source-templates/genshin/note-icons/gs", `${icon}.png`);
     images.set(icon, await loadImage(file));
   }));
-  const textFont = `"${miao}", "${miSans}", sans-serif`;
+  const textFont = `"${body}", "${miSans}", sans-serif`;
   return { images, textFont, numberFont: `"${number}", ${textFont}` };
 }
 
