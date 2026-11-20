@@ -56,6 +56,8 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
 test("双协议群管理复核名单、成员权限和各项网关回执", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-group-mute-wire-"));
   const milkyCalls: Call[] = [];
+  let milkyJoinState: "pending" | "rejected" = "pending";
+  let milkyJoinReceipt: number | undefined;
   const rosterChanges = new Map<string, "admin" | "member">();
   let cleanupRosterChanged = false;
   const activity = (group_id: number, bot: number) => {
@@ -87,6 +89,10 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const action = new URL(request.url).pathname.split("/").at(-1)!;
       const params = await request.json() as Call["params"];
       milkyCalls.push({ action, params });
+      if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
+        milkyJoinReceipt = milkyCalls.length;
+      }
+      if (action === "reject_group_request" && params.notification_seq === 901) milkyJoinState = "rejected";
       if ((action === "set_group_member_mute" && params.user_id === 44) ||
           (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_member_admin" && params.user_id === 60044) ||
@@ -98,8 +104,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         { member: member(params) } : action === "send_group_message" || action === "send_private_message" ? { message_seq: milkyCalls.length }
         : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId) } }
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
+        : action === "get_group_notifications" ? { notifications: [{ group_id: 79, notification_seq: 901,
+          type: "invited_join_request", initiator_id: 72, target_user_id: 74, state: milkyJoinState }] }
         : action === "get_message" ? { message: {
-          message_scene: "group", peer_id: params.peer_id, message_seq: params.message_seq, sender_id: 42,
+          message_scene: "group", peer_id: params.peer_id, message_seq: params.message_seq,
+          sender_id: params.message_seq === milkyJoinReceipt ? milkyId : 42,
           segments: [{ type: "text", data: { text: "被引用的合成消息" } }],
         } } : {};
       return Response.json({ status: "ok", retcode: 0, data });
@@ -160,10 +169,16 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(oneBotId),
     } });
     const oneBotCalls: Call[] = [];
+    const oneBotJoinReceipts = new Set<number>();
+    let originalJoinChecked = false;
     const nowSeconds = () => Math.floor(Date.now() / 1000);
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
       oneBotCalls.push({ action, params });
+      if (action === "send_msg" && params.group_id === 82 && JSON.stringify(params.message).includes("合成入群提醒")) {
+        oneBotJoinReceipts.add(oneBotCalls.length);
+      }
+      if (action === "set_group_add_request" && params.flag === "910001") originalJoinChecked = true;
       if (action === "set_group_admin") updateRole(params, params.enable);
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
       const reply = action === "get_group_member_info" ? member(params)
@@ -174,9 +189,16 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
         ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
         : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId)
+        : action === "get_version_info" ? { app_name: "NapCat.Onebot" }
+        : action === "get_group_system_msg" ? { join_requests: [
+          { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false },
+          { request_id: 910001, invitor_uin: 70, group_id: 82, checked: originalJoinChecked },
+        ] }
+        : action === "get_group_ignore_add_request" ? [{ request_id: 910003, invitor_uin: 73, group_id: 82, checked: false }]
         : action === "get_msg" ? {
           message_id: params.message_id, self_id: oneBotId, group_id: params.message_id === 104 ? 84 : 82,
-          message_type: "group", sender: { user_id: 42 }, message: [{ type: "text", data: { text: "原群引用内容" } }],
+          message_type: "group", sender: { user_id: oneBotJoinReceipts.has(Number(params.message_id)) ? oneBotId : 42 },
+          message: [{ type: "text", data: { text: "原群引用内容" } }],
         } : {};
       if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied ? 100 : 0, data: reply }));
     };
@@ -644,7 +666,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       post_type: "request", request_type: "group", sub_type: "add", self_id: oneBotId, group_id: 82, user_id, flag,
       nickname: "合成申请人", comment,
     });
-    const added = oneBotJoin("join-notice-original-flag", 70, "合成入群附言");
+    const added = oneBotJoin("910001", 70, "合成入群附言");
     client.send(JSON.stringify(added));
     const joinedNotice = await groupReplyWith("合成入群提醒");
     expect(joinedNotice.params.group_id).toBe(82);
@@ -655,12 +677,41 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await waitUntil(() => oneBotReplies().find(({ params }) => params.message_type === "private" &&
       params.user_id === 52 && JSON.stringify(params.message).includes("合成入群附言")), "原机器人主人未收到私聊审核。");
     client.send(JSON.stringify(added));
-
+    const originalReceipt = [...oneBotJoinReceipts][0]!;
+    send(oneBotMessage([quote(originalReceipt), text("#同意")], 54, 82));
+    await groupReplyWith("当前无法核实并处理这条加群申请");
+    expect(originalJoinChecked).toBe(false);
+    send(oneBotMessage([quote(originalReceipt), text("#同意")], operator, 84));
+    send(oneBotMessage([quote(originalReceipt), text("#同意")], operator, 82));
+    await groupReplyWith("已同意合成申请人(70)的加群申请");
+    send(oneBotMessage([quote(originalReceipt), text("拒绝")], operator, 82));
+    await groupReplyWith("找不到原消息了，手动拒绝");
+    client.send(JSON.stringify(oneBotJoin("910003", 73, "合成风险申请")));
+    const riskReceipt = await waitUntil(() => oneBotJoinReceipts.size === 2 ? [...oneBotJoinReceipts][1] : undefined,
+      "OneBot 风险申请未收到群内通知。");
+    await waitUntil(() => oneBotReplies().find(({ params }) => params.message_type === "private" &&
+      params.user_id === 52 && JSON.stringify(params.message).includes("合成风险申请")), "风险申请未通知原主人。");
+    send(oneBotMessage([quote(riskReceipt), text("#同意")], operator, 82));
+    await groupReplyWith("该账号为风险账号请手动处理");
+    expect(oneBotCalls.filter(({ action, params }) => action === "set_group_add_request" &&
+      ["910001", "910002", "910003"].includes(String(params.flag))).map(({ params }) => params)).toEqual([
+      { flag: "910001", sub_type: "add", approve: true, reason: "" },
+    ]);
     expect((await webhook("group_invited_join_request", { group_id: 79, initiator_id: 72,
       target_user_id: 74, notification_seq: 901 })).status).toBe(200);
     const invitedNotice = await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
       params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")), "原群未收到第三方代邀的入群提醒。");
     expect(JSON.stringify(invitedNotice.params.message)).toContain("nk=74");
+    const milkyDecision = milkyTitle("#拒绝");
+    await webhook("message_receive", { ...milkyDecision, segments: [
+      { type: "reply", data: { message_seq: milkyJoinReceipt } }, ...milkyDecision.segments,
+    ] });
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
+      params.group_id === 79 && /已拒绝.*74/u.test(JSON.stringify(params.message))), "Milky 引用拒绝未确认。");
+    expect(milkyCalls.filter(({ action, params }) => action === "reject_group_request" && params.notification_seq === 901)
+      .map(({ params }) => params)).toEqual([
+      { group_id: 79, notification_seq: 901, notification_type: "invited_join_request", is_filtered: false },
+    ]);
 
     send(oneBotMessage("#关闭加群通知", 51, 82));
     await groupReplyWith("已关闭「82」的加群申请通知");
@@ -668,7 +719,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await waitUntil(() => oneBotReplies().find(({ params }) => params.message_type === "private" &&
       params.user_id === 52 && JSON.stringify(params.message).includes("再次合成申请")), "关闭群通知影响了原主人审核。");
     expect(oneBotReplies().filter(({ params }) => params.group_id === 82 &&
-      JSON.stringify(params.message).includes("合成入群提醒"))).toHaveLength(1);
+      JSON.stringify(params.message).includes("合成入群提醒"))).toHaveLength(2);
     const savedGroupAdmin = await readFile(legacyList, "utf8");
     expect(savedGroupAdmin).toStartWith(priorGroupAdmin);
     expect(savedGroupAdmin).toContain("# 合成旧开关");

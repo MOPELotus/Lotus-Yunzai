@@ -2,6 +2,7 @@ import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, typ
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { readGroupActivity, type GroupActivityVisibility, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
+import type { JoinRequestOrigin } from "../group-join-review.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -149,6 +150,25 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_add_request", {
       flag, sub_type: "add", approve: false, reason,
     }, signal);
+  }
+
+  async verifyPendingGroupJoin(send: Send, origin: Extract<JoinRequestOrigin, { adapter: "onebot" }>, signal: AbortSignal) {
+    try {
+      const version = await this.#request(send, "get_version_info", {}, signal);
+      if (!isRecord(version) || version.app_name !== "NapCat.Onebot" || signal.aborted) return "unavailable" as const;
+      const choose = (rows: unknown) => Array.isArray(rows) ? rows.filter((item: unknown): item is Record<string, unknown> =>
+        isRecord(item) && item.group_id === origin.groupId && item.invitor_uin === origin.userId &&
+        isPositiveInteger(item.request_id) && String(item.request_id) === origin.flag) : undefined;
+      const list = await this.#request(send, "get_group_system_msg", { count: 100 }, signal);
+      const ordinary = isRecord(list) ? choose(list.join_requests) : undefined;
+      if (signal.aborted || !ordinary || ordinary.length > 1) return "unavailable" as const;
+      if (ordinary.length === 1) {
+        if (ordinary[0]?.checked === false) return "pending" as const;
+        return ordinary[0]?.checked === true ? "expired" as const : "unavailable" as const;
+      }
+      const risk = choose(await this.#request(send, "get_group_ignore_add_request", {}, signal));
+      return !signal.aborted && risk?.length === 1 && risk[0]?.checked === false ? "risk" as const : "unavailable" as const;
+    } catch { return "unavailable" as const; }
   }
 
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {

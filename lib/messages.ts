@@ -3,6 +3,7 @@ import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./m
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
+import type { QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupKickAction, GroupManageBlacklistAction, GroupMuteAction, GroupNotifyAllAction,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
   MutedGroupMember } from "./adapters/group-moderation.ts";
@@ -67,6 +68,7 @@ export interface MessageEvent {
   readonly groupActivitySignal?: AbortSignal;
   readonly groupSetQuotedEssence?: GroupSetQuotedEssenceAction;
   readonly groupNotifyAll?: GroupNotifyAllAction;
+  readonly groupReviewQuotedRequest?: (approve: boolean) => Promise<QuotedJoinReviewResult>;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

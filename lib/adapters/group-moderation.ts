@@ -1,4 +1,5 @@
 import { maxChatFileBytes, readQqMessageMedia } from "../chat-files.ts";
+import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
@@ -71,6 +72,7 @@ export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
+  readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
 }
 
 export interface MemberMuteNotice {
@@ -92,7 +94,7 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
-async function groupOperatorAuthority(
+export async function groupOperatorAuthority(
   role: (id: number) => Promise<Role | undefined>, bot: number, actor: number, isMaster: () => boolean, active: () => boolean,
 ) {
   const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
@@ -284,6 +286,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
 
 interface GroupModerationSession {
   readonly signal: AbortSignal;
+  readonly joinRequestOrigin?: JoinRequestOrigin;
   readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
   readonly memberMessage?: {

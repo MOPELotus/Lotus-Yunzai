@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import type { GroupRequest, MessageReply } from "../messages.ts";
+import type { GroupRequest, MessageReply, ReplyOptions } from "../messages.ts";
+import type { JoinRequestOrigin } from "../group-join-review.ts";
 
 interface Callbacks {
   readonly isMaster: (userId: number) => boolean;
   readonly approve: (flag: string, accept: boolean, reason?: string) => Promise<boolean>;
-  readonly sendGroup: (groupId: number, reply: MessageReply) => Promise<boolean>;
+  readonly sendGroup: (groupId: number, reply: MessageReply, onDelivered?: ReplyOptions["onDelivered"]) => Promise<boolean>;
   readonly sendPrivate: (userId: number, reply: MessageReply) => Promise<boolean>;
   readonly masterIds: readonly number[];
 }
@@ -21,7 +22,7 @@ function isId(value: unknown): value is number {
 
 export function milkyGroupRequest(
   value: unknown, selfId: number, callbacks: Callbacks,
-): (GroupRequest & { readonly decision: Decision }) | undefined {
+): (GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin }) | undefined {
   if (!isId(selfId) || !isRecord(value) || value.self_id !== selfId || !isRecord(value.data)) return;
   const { event_type: type, data } = value;
   if (type !== "group_join_request" && type !== "group_invited_join_request" && type !== "group_invitation") return;
@@ -57,7 +58,7 @@ export function milkyGroupRequest(
   };
 
   let submitted = false;
-  const request: GroupRequest & { readonly decision: Decision } = {
+  const request: GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin } = {
     post_type: "request", request_type: "group", sub_type: invitation ? "invite" : "add",
     self_id: selfId, user_id: userId, group_id: groupId, flag, groupRequestScope: "milky",
     inviter_id: invitation || thirdParty ? initiatorId : undefined,
@@ -65,6 +66,12 @@ export function milkyGroupRequest(
     nickname: typeof data.nickname === "string" ? data.nickname : undefined,
     isGroup: true, isPrivate: false, isMaster: invitation && callbacks.isMaster(initiatorId) === true,
     decision,
+    joinRequestOrigin: invitation ? undefined : {
+      adapter: "milky", botId: selfId, groupId, userId, flag, sequence, filtered,
+      kind: thirdParty ? "invited_join_request" : "join_request",
+      inviterId: thirdParty ? initiatorId : undefined,
+      nickname: typeof data.nickname === "string" ? data.nickname : undefined,
+    },
     async approve(accept = true, reason) {
       if (submitted || !decision(accept, reason)) return false;
       submitted = true;
@@ -73,7 +80,7 @@ export function milkyGroupRequest(
       return confirmed;
     },
     replyToApplicant: invitation ? (reply) => callbacks.sendPrivate(initiatorId, reply) : undefined,
-    reply: (reply) => callbacks.sendGroup(groupId, reply),
+    reply: (reply, _quote, options) => callbacks.sendGroup(groupId, reply, options?.onDelivered),
     async notifyMasters(message) {
       if (typeof message !== "string" || !message) return 0;
       const outcomes = await Promise.allSettled(recipients.map(async (id) => callbacks.sendPrivate(id, message)));

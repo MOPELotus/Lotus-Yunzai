@@ -4,7 +4,9 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority,
+  isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
+import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
@@ -138,7 +140,7 @@ async function dispatchRequest(
   send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
-  permissions: { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
+  permissions: GroupActionPolicy & { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
   connection: ConnectionData,
 ): Promise<void> {
   const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
@@ -174,25 +176,35 @@ async function dispatchRequest(
   }
 
   if (request_type !== "group" || (sub_type !== "add" && sub_type !== "invite") || !isId(group_id)) return;
+  const reviewKey = { adapter: "onebot" as const, botId: self_id, flag };
+  const joinReview = sub_type === "add" ? permissions.joinReview : undefined;
 
   const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
     group_name: stringField(event.group_name),
     nickname: stringField(event.nickname),
     inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
-    approve: (approve = true, reason) => calls.reviewGroupRequest(send, flag, sub_type, approve, reason),
+    approve: (approve = true, reason) => confirmJoinReview(joinReview, reviewKey,
+      () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
     replyToApplicant,
-    reply(reply) {
+    reply(reply, _quote, options) {
       const message = encodeOneBotReply(reply);
       if (message === undefined) return false;
-      return calls.replyWithConfirmation(send, { message_type: "group", group_id, message, auto_escape: true });
+      const params = { message_type: "group", group_id, message, auto_escape: true };
+      return options?.onDelivered ? calls.replyWithReceipt(send, params, undefined, undefined, options.onDelivered)
+        : calls.replyWithConfirmation(send, params);
     },
   };
   const session = groupActionSignal(connection, self_id);
   if (session && sub_type === "add") bindGroupModeration(request, {
     signal: session,
+    joinRequestOrigin: { ...reviewKey, groupId: group_id, userId: user_id, nickname: request.nickname },
     canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id),
-    act: (signal, reason = "主动退群被拉黑") => calls.declineGroupApplication(send, flag, signal, reason),
+    async act(signal, reason = "主动退群被拉黑") {
+      if (!joinReview) return calls.declineGroupApplication(send, flag, signal, reason);
+      const status = await joinReview.once(reviewKey, () => calls.declineGroupApplication(send, flag, signal, reason));
+      return status === "unavailable" ? "rejected" : status;
+    },
   });
   await dispatch(request);
 }
@@ -369,6 +381,7 @@ async function dispatchMessage(
   const lookupReply = quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
     (messageType === "group" || event.sub_type === "friend")
     ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
+  const joinReview = groupActions?.joinReview;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -485,9 +498,28 @@ async function dispatchMessage(
       const message = encodeOneBotMusicCard(card);
       return message ? calls.sendConfirmed(send, target, message) : "rejected";
     } : undefined,
-    reviewGroupRequest: messageType === "private" && owner
-      ? (flag, type, approve, reason) => calls.reviewGroupRequest(send, flag, type, approve, reason)
+    reviewGroupRequest: messageType === "private" && owner && selfId !== undefined
+      ? (flag, type, approve, reason) => confirmJoinReview(type === "add" ? joinReview : undefined,
+        { adapter: "onebot", botId: selfId, flag }, () => calls.reviewGroupRequest(send, flag, type, approve, reason))
       : undefined,
+    groupReviewQuotedRequest: joinReview && lookupReply && likeSession && event.sub_type !== "anonymous" &&
+      quotedId !== undefined && selfId !== undefined && "group_id" in target
+      ? approve => {
+        const active = () => !likeSession.aborted && groupActions?.canModerateGroups?.() !== false;
+        return joinReview.quoted({ adapter: "onebot", botId: selfId, groupId: target.group_id, messageId: quotedId }, {
+          active,
+          async verifyNotice() { return (await lookupReply())?.user_id === selfId; },
+          async authorize() {
+            return await groupOperatorAuthority(id => calls.getGroupRole(send, target.group_id, id, true, likeSession),
+              selfId, userId, () => isMaster(selfId, userId), active) !== undefined;
+          },
+          verifyPending: origin => origin.adapter === "onebot" ? calls.verifyPendingGroupJoin(send, origin, likeSession)
+            : Promise.resolve("unavailable"),
+          async submit(origin) {
+            return await calls.reviewGroupRequest(send, origin.flag, "add", approve) ? "confirmed" : "rejected";
+          },
+        });
+      } : undefined,
     recallReply: owner && selfId === connectedBotId ? () => {
       const ids = new Set([oneBotMessageId(messageId), quotedId].filter((id) => id !== undefined));
       return Promise.all([...ids].map((id) => calls.recallMessage(send, id)));

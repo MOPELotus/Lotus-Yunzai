@@ -1,8 +1,9 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
-import type { BotEvent, MessageReply } from "../messages.ts";
+import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
+import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, readGroupActivity,
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -61,6 +62,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   if (signal.aborted || !positiveId(login?.uin)) return;
   const account = login.uin;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
+  const joinReview = options.joinReview;
   const groupMute = createMilkyGroupMute(account, signal, call.confirmed);
   const isMaster = (userId: number) => options.isMaster?.(account, userId) === true;
   const recallReply = createMilkyRecallReply(signal, call.confirmed, isMaster);
@@ -216,6 +218,35 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       master: () => isMaster(actor), count, visibility });
   }
 
+  async function verifyPendingGroupJoin(origin: Extract<JoinRequestOrigin, { adapter: "milky" }>) {
+    if (origin.filtered) return "risk" as const;
+    const visited = new Set<number>();
+    let start_notification_seq: number | undefined;
+    for (let page = 0; page < 8 && !signal.aborted; page++) {
+      const result = await call.confirmed("get_group_notifications", { is_filtered: false, limit: 50,
+        ...(start_notification_seq === undefined ? {} : { start_notification_seq }) });
+      if (result.status !== "confirmed" || !Array.isArray(result.data.notifications) || signal.aborted) break;
+      const matching = result.data.notifications.filter((row: unknown): row is Record<string, unknown> =>
+        record(row) && row.group_id === origin.groupId && row.notification_seq === origin.sequence);
+      if (matching.length > 1) break;
+      const found = matching[0];
+      if (found) {
+        if (found.type !== origin.kind || (origin.kind === "join_request" ? found.initiator_id !== origin.userId :
+          found.target_user_id !== origin.userId || found.initiator_id !== origin.inviterId)) break;
+        if (found.is_filtered === true) return "risk" as const;
+        if (origin.kind === "join_request" && found.is_filtered !== false) break;
+        if (found.state === "pending") return "pending" as const;
+        if (found.state === "accepted" || found.state === "rejected" || found.state === "ignored") return "expired" as const;
+        break;
+      }
+      const next = result.data.next_notification_seq;
+      if (!positiveId(next) || visited.has(next)) break;
+      visited.add(next);
+      start_notification_seq = next;
+    }
+    return "unavailable" as const;
+  }
+
   async function memberRole(group_id: number, user_id: number, active = signal) {
     if (signal.aborted || active.aborted) return;
     const result = await call.confirmed("get_group_member_info", { group_id, user_id, no_cache: true }, active);
@@ -298,7 +329,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     }, call.confirmed);
     if (message && !files.receive(message)) return "accepted";
-    async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply) {
+    async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply,
+      onDelivered?: ReplyOptions["onDelivered"]) {
       const content = encodeMilkyReply(reply);
       if (!content) return false;
       const action = "group_id" in target ? "send_group_message" : "send_private_message";
@@ -308,6 +340,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         throw new Error("Milky 通知回复未确认。");
       }
       confirmSent(target, result.data, content);
+      await notifyReplyDelivery(onDelivered, result.data.message_seq);
       return true;
     }
 
@@ -336,23 +369,26 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const candidate = milkyGroupRequest(body, account, {
         isMaster,
         approve: (flag, accept, reason) => signal.aborted ? Promise.resolve(false)
-          : groupReviews.review(account, flag, kind, accept, reason, call.confirmed),
-        sendGroup: (group_id, reply) => sendReply({ group_id }, reply),
+          : confirmJoinReview(kind === "add" ? joinReview : undefined, { adapter: "milky", botId: account, flag },
+            () => groupReviews.review(account, flag, kind, accept, reason, call.confirmed)),
+        sendGroup: (group_id, reply, onDelivered) => sendReply({ group_id }, reply, onDelivered),
         sendPrivate: (user_id, reply) => sendReply({ user_id }, reply),
         masterIds: options.masterIds?.(account) ?? [],
       });
       if (candidate) {
-        const { decision, ...request } = candidate;
+        const { decision, joinRequestOrigin, ...request } = candidate;
         if (groupReviews.register(request, decision)) {
           groupRequest = request;
           if (kind === "add") bindGroupModeration(request, {
             signal,
+            joinRequestOrigin,
             canModerate: () => canModerateGroupSubject(id => delegation.memberRole(request.group_id, id), account),
             async act(active, reason = "主动退群被拉黑") {
               if (active.aborted || signal.aborted) return "rejected";
               try {
-                return await groupReviews.review(account, request.flag, kind, false, reason,
-                  (action, params) => call.confirmed(action, params, active)) ? "confirmed" : "rejected";
+                return await confirmJoinReview(joinReview, { adapter: "milky", botId: account, flag: request.flag },
+                  () => groupReviews.review(account, request.flag, kind, false, reason,
+                    (action, params) => call.confirmed(action, params, active))) ? "confirmed" : "rejected";
               } catch {
                 return "unknown";
               }
@@ -375,6 +411,25 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,
+      groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
+        ? (approve: boolean) => {
+          const active = () => !signal.aborted && options.canModerateGroups?.() !== false;
+          return joinReview.quoted({ adapter: "milky", botId: account, groupId, messageId: quoted }, {
+            active,
+            async verifyNotice() { return (await lookupReply())?.user_id === account; },
+            async authorize() {
+              return await groupOperatorAuthority(id => memberRole(groupId, id), account, cardOwner,
+                () => isMaster(cardOwner), active) !== undefined;
+            },
+            verifyPending: origin => origin.adapter === "milky" ? verifyPendingGroupJoin(origin) : Promise.resolve("unavailable"),
+            async submit(origin) {
+              if (origin.adapter !== "milky") return "unavailable";
+              return (await call.confirmed(approve ? "accept_group_request" : "reject_group_request", {
+                group_id: groupId, notification_seq: origin.sequence, notification_type: origin.kind, is_filtered: origin.filtered,
+              }, signal)).status;
+            },
+          });
+        } : undefined,
       likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,
       profileLikeImageSignal: signal,
       mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,
@@ -433,7 +488,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       }) : undefined,
       reviewGroupRequest: canReview ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) =>
         !signal.aborted && positiveId(message.user_id) && isMaster(message.user_id)
-          ? groupReviews.review(account, flag, kind, accept, reason, call.confirmed)
+          ? confirmJoinReview(kind === "add" ? joinReview : undefined, { adapter: "milky", botId: account, flag },
+            () => groupReviews.review(account, flag, kind, accept, reason, call.confirmed))
           : Promise.resolve(false) : undefined,
     };
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {

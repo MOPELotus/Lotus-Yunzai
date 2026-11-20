@@ -109,6 +109,7 @@ import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
 import type { GroupAddNotice } from "./plugins/group/index.ts";
+import { createGroupJoinReview } from "./lib/group-join-review.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -277,6 +278,20 @@ if (import.meta.main) {
   const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
   let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
   let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
+  const groupJoinReview = createGroupJoinReview(() => {
+    const redis = globalThis.redis;
+    if (!redis) return;
+    const namespace = (key: string) => `lotus-yunzai:group-join-review:${key}`;
+    return {
+      read: key => redis.get(namespace(key)),
+      async write(key, value, ttl) { await redis.set(namespace(key), value, { EX: ttl }); },
+      async claim(key, value, ttl) { return await redis.set(namespace(key), value, { EX: ttl, NX: true }) === "OK"; },
+      async release(key, value) {
+        await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0",
+          { keys: [namespace(key)], arguments: [value] });
+      },
+    };
+  });
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -812,7 +827,12 @@ if (import.meta.main) {
           sub_type, self_id, group_id, user_id, groupRequestScope, flag, nickname, comment, inviter_id, signal,
           async notifyGroup(parts) {
             if (signal.aborted || !await authorize(signal) || signal.aborted) return false;
-            return (await event.reply(parts)) === true;
+            const origin = transport.joinRequestOrigin;
+            return (await event.reply(parts, false, origin ? {
+              async onDelivered(messageId) {
+                if (!signal.aborted) await groupJoinReview.record(origin, messageId);
+              },
+            } : undefined)) === true;
           },
         }).catch(() => {});
       }
@@ -1003,6 +1023,15 @@ if (import.meta.main) {
     if (!event.isDelegated && event.message_type === "group" && /^#?(?:确认|取消)清理$/u.test(event.msg)) {
       const reply = await commands.dispatchFallback(event,
         names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 从未发言成员") && allowed(names),
+        user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
+    }
+    if (!event.isDelegated && event.message_type === "group" && event.reply_id !== undefined && /^#?(?:同意|拒绝)$/u.test(event.msg)) {
+      const reply = await commands.dispatchFallback(event,
+        names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 引用加群审核") && allowed(names),
         user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
       if (reply !== undefined) {
         await sendCommandReply(event, reply);
@@ -1506,6 +1535,7 @@ if (import.meta.main) {
     const { hostname, oneBot, https, panelToken } = network;
     const groupActions = {
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
+      joinReview: probingUpdate ? undefined : groupJoinReview,
       isProtectedMaster: (bot: number, user: number) =>
         permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
       onMemberMute(notice: MemberMuteNotice) {
