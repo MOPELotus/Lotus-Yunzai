@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
 
 const pathKeys = [
   "LOTUS_ATLAS_DATA_DIR", "LOTUS_PROFILE_DIR", "LOTUS_ZZZ_PANEL_DIR", "LOTUS_ZZZ_SHOWCASE_DIR",
@@ -10,7 +11,7 @@ const trimmedPathKeys = [
   "LOTUS_ATLAS_THEME_DIR", "LOTUS_GENSHIN_PANEL_DIR", "LOTUS_GENSHIN_PANEL_RANK_DIR",
   "LOTUS_GENSHIN_WISH_STATE_DIR", "LOTUS_STAR_RAIL_WARP_STATE_DIR", "LOTUS_GUIDES_ROLE_DIR",
 ] as const;
-const keys = [...pathKeys, ...trimmedPathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
+const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
   "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set(["config", "data", "logs", "internal"]);
@@ -22,8 +23,12 @@ const atlasSourceAssets = [
   "fonts/MiSans-VF.ttf", "portraits",
   "meta-gs/character/空/imgs/splash.webp", "meta-gs/character/荧/imgs/splash.webp",
 ];
-const loginAssets = [
+const passportFonts = [
   "miao-theme/fonts/HYWH-65W.ttf", "fonts/MiSans-VF.ttf", "source-templates/miao-stat/fonts/NZBZ.ttf",
+];
+const passportBackdrop = "miao-theme/bg/bg-hydro.webp";
+const passportAssets = [
+  ...passportFonts, passportBackdrop, "source-templates/miao-stat/fonts/tttgbnumber.ttf",
   "source-templates/miao/common/theme/bg-01.jpg", "source-templates/miao/common/theme/main-01.png",
 ];
 const dailyNoteAssets = [
@@ -32,7 +37,7 @@ const dailyNoteAssets = [
 ];
 
 function configuredAssetPaths(env: RuntimePaths): string[] {
-  const assets: string[] = [];
+  const assets = configuredGameResourcePaths(env);
   const donor = env.LOTUS_ATLAS_THEME_SOURCE_DIR?.trim();
   if (donor && !env.LOTUS_ATLAS_THEME_DIR?.trim()) {
     assets.push(...atlasSourceAssets.map(path => join(donor, path)), join(dirname(donor), "fonts", "MiSans-VF.ttf"));
@@ -42,10 +47,9 @@ function configuredAssetPaths(env: RuntimePaths): string[] {
   if (gallery?.trim()) assets.push(...["gs-character", "sr-character", "zzz-character"].map(path => join(gallery.trim(), path)));
 
   const login = env.LOTUS_PASSPORT_QR_RESOURCES;
-  // Sign-in verification trims this setting. The other login screens use the original path.
-  for (const directory of new Set([login, login?.trim()])) {
-    if (directory) assets.push(...loginAssets.map(path => join(directory, path)));
-  }
+  if (login) assets.push(...passportAssets.map(path => join(login, path)));
+  const checkin = login?.trim();
+  if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
   if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
   return assets;
@@ -93,7 +97,7 @@ async function existingAssetPath(root: string, source: string, value: string): P
       const targets = path === installed ? [await realpath(path)] : await Promise.all([realpath(path), realpath(installed)]);
       if (targets.some(target => [root, source].some(base =>
         within(base, target) && !persistentPath(relative(base, target))))) {
-        throw new Error("原主题、立绘或登录素材经过指向安装目录内的链接，无法安全切换版本。");
+        throw new Error("原素材或旧资料经过指向安装目录内的链接，无法安全切换版本。");
       }
       // Moving the link keeps external resources at their existing location.
       return relative(source, path);

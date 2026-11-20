@@ -147,9 +147,10 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
     "theme/donor/meta-gs/character/空/imgs/splash.webp", "theme/fonts/MiSans-VF.ttf",
     "media/gallery/gs-character/角色.webp", "media/gallery/sr-character/开拓者/原图.png",
     "media/gallery/zzz-character/安比/a.webp", " media/gallery/zzz-character/安比/b.webp",
-    "resources/login/source-templates/miao/common/theme/bg-01.jpg",
+    "resources/login/miao-theme/bg/bg-hydro.webp", "resources/login/source-templates/miao-stat/fonts/NZBZ.ttf",
     " resources/login/source-templates/miao/common/theme/main-01.png",
     " resources/login/source-templates/miao-stat/fonts/NZBZ.ttf",
+    " resources/login/source-templates/miao-stat/fonts/tttgbnumber.ttf", " resources/login/miao-theme/bg/bg-hydro.webp",
     " resources/note/miao-theme/fonts/HYWH-65W.ttf", " resources/note/fonts/MiSans-VF.ttf",
     " resources/note/source-templates/miao-stat/fonts/tttgbnumber.ttf",
     " resources/note/source-templates/genshin/note-icons/gs/参量质变仪.png",
@@ -157,7 +158,8 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
   const unrelated = [
     "theme/donor/app.ts", "theme/donor/meta-gs/character/其他角色/imgs/splash.webp",
     "media/gallery/original.psd", " media/gallery/sr-character/仅原样.jpg",
-    " resources/login/secret.txt", "resources/note/fonts/MiSans-VF.ttf",
+    " resources/login/secret.txt", "resources/login/source-templates/miao/common/theme/bg-01.jpg",
+    "resources/note/fonts/MiSans-VF.ttf",
   ];
   const conflict = selected[2]!;
   try {
