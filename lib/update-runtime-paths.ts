@@ -2,6 +2,7 @@ import { lstat, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
+import { findLinkedPath } from "./update-linked-path.ts";
 
 const pathKeys = [
   "LOTUS_ATLAS_DATA_DIR", "LOTUS_PROFILE_DIR", "LOTUS_ZZZ_PANEL_DIR", "LOTUS_ZZZ_SHOWCASE_DIR",
@@ -36,7 +37,7 @@ const dailyNoteAssets = [
   ...["树脂", "洞天宝钱", "委托", "派遣", "周本", "参量质变仪"].map(icon => `source-templates/genshin/note-icons/gs/${icon}.png`),
 ];
 
-function configuredAssetPaths(root: string, env: RuntimePaths): string[] {
+function configuredAssetPaths(env: RuntimePaths): string[] {
   const assets = configuredGameResourcePaths(env);
   const donor = env.LOTUS_ATLAS_THEME_SOURCE_DIR?.trim();
   if (donor && !env.LOTUS_ATLAS_THEME_DIR?.trim()) {
@@ -52,9 +53,6 @@ function configuredAssetPaths(root: string, env: RuntimePaths): string[] {
   if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
   if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
-  const publicImages = env.LOTUS_PUBLIC_IMAGE_DIR?.trim();
-  // The checkout itself can be the access boundary, in which case there is no dedicated image directory to move.
-  if (publicImages && relative(root, resolve(root, publicImages))) assets.push(publicImages);
   return assets;
 }
 
@@ -112,11 +110,15 @@ async function archivedAssetLink(root: string, archive: string, asset: string): 
   }
 }
 
-async function existingAssetPath(root: string, source: string, value: string): Promise<string | undefined> {
+async function existingAssetPath(root: string, source: string, value: string, allowRoot = false): Promise<string | undefined> {
   const absolute = resolve(root, value);
-  if (!within(root, absolute)) return;
-  const asset = relative(root, absolute);
-  if (!asset) throw new Error("原主题或素材配置使用宿主根目录，无法安全切换版本。");
+  const installedPath = within(root, absolute) ? absolute : await findLinkedPath(absolute, path => within(root, path));
+  if (!installedPath) return;
+  const asset = relative(root, installedPath);
+  if (!asset) {
+    if (allowRoot) return;
+    throw new Error("原主题或素材配置使用宿主根目录，无法安全切换版本。");
+  }
   try {
     const installed = join(source, asset);
     await lstat(installed);
@@ -141,11 +143,14 @@ async function existingAssetPath(root: string, source: string, value: string): P
 }
 
 async function findRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
-  const assets: string[] = [];
-  for (const value of new Set(configuredAssetPaths(root, env))) {
-    const path = await existingAssetPath(root, source, value);
-    if (path && !persistentPath(path)) assets.push(path.split(sep).join("/"));
+  const selected: (string | undefined)[] = [];
+  const publicImages = env.LOTUS_PUBLIC_IMAGE_DIR?.trim();
+  // The checkout itself can be the access boundary without being a dedicated image directory to move.
+  if (publicImages) selected.push(await existingAssetPath(root, source, publicImages, true));
+  for (const value of new Set(configuredAssetPaths(env))) {
+    selected.push(await existingAssetPath(root, source, value));
   }
+  const assets = selected.flatMap(path => path && !persistentPath(path) ? [path.split(sep).join("/")] : []);
   const paths = [...configuredRuntimePaths(root, env), ...assets];
   return existingPaths(source, [...new Set(paths)].sort().filter(path => !paths.some(parent => path.startsWith(parent + "/"))));
 }

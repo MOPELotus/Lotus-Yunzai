@@ -429,13 +429,18 @@ test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定�
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64");
     await mkdir(join(active, directory));
     await writeFile(join(active, directory, picture), png);
+    const imageDirectory = process.platform === "win32" ? directory : join(temporary, "share-images");
+    if (imageDirectory !== directory) {
+      await symlink(join(active, directory), join(temporary, "image-storage"));
+      await symlink("image-storage", imageDirectory);
+    }
     await writeFile(join(active, "plugins", "public-image-fixture.js"), `
       export default class extends plugin {
         constructor() { super({ event: "message.private", rule: [{ reg: "^#分享原图$", fnc: "share" }] }); }
-        async share(event) { return event.reply(String(await Bot.imageToUrl(${JSON.stringify(join(directory, picture))}))); }
+        async share(event) { return event.reply(String(await Bot.imageToUrl(${JSON.stringify(join(imageDirectory, picture))}))); }
       }
     `);
-    const supervisor = bootSupervisor(active, { LOTUS_HTTP_PORT: "0", LOTUS_PUBLIC_IMAGE_DIR: directory });
+    const supervisor = bootSupervisor(active, { LOTUS_HTTP_PORT: "0", LOTUS_PUBLIC_IMAGE_DIR: imageDirectory });
     async function checkPicture(client: Gateway) {
       client.command("#分享原图", 51);
       const frame = await client.next();

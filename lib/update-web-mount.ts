@@ -1,7 +1,8 @@
-import { lstat, readdir, readlink, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { lstat, readdir, realpath } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readServerWebMount, type WebMountSettings } from "./server.ts";
+import { findLinkedPath } from "./update-linked-path.ts";
 
 const persistent = new Set(["config", "data", "logs", "internal"]);
 const sourceError = "端口挂载的原版目录须位于 Lotus-Yunzai 安装目录外，才能安全切换版本。";
@@ -33,28 +34,10 @@ async function physical(path: string) {
 }
 
 async function retainedInArchive(root: string, previous: string, directory: string): Promise<boolean> {
-  const followed = new Set<string>();
-  let target = resolve(directory);
-  for (let depth = 0; depth <= 40 && !followed.has(target); depth++) {
-    followed.add(target);
+  return Boolean(await findLinkedPath(directory, async target => {
     const installed = installedPath(root, target);
-    if (installed !== undefined && await info(join(previous, installed))) return true;
-
-    // Resolve one component at a time so dangling chains retain their link targets during the old supervisor's rename.
-    let link = parse(target).root;
-    let next: string | undefined;
-    for (const part of relative(link, target).split(sep)) {
-      link = join(link, part);
-      const entry = await info(link);
-      if (!entry) return false;
-      if (!entry.isSymbolicLink()) continue;
-      next = resolve(dirname(link), await readlink(link), relative(link, target));
-      break;
-    }
-    if (!next) return false;
-    target = next;
-  }
-  return false;
+    return installed !== undefined && Boolean(await info(join(previous, installed)));
+  }));
 }
 
 async function verifySource(root: string, directory: string, previous?: string) {

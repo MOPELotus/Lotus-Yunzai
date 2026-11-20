@@ -268,6 +268,44 @@ test("受管更新保留显式生成图目录，继续按原范围分享本地�
   }
 });
 
+test.skipIf(process.platform === "win32")("安装树外的多级别名保留其指向的树内分享图和素材", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-asset-alias-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const alias = join(dir, "public-alias");
+  const env = {
+    PATH: process.env.PATH, LOTUS_PUBLIC_IMAGE_DIR: join(alias, "images"),
+    LOTUS_CHARACTER_GALLERY_DIR: join(alias, "gallery"),
+  };
+  const gallery = "gallery/sr-character";
+  const verify = async (root: string) => {
+    const previous = await previousUpdateDirectory(root);
+    if (!previous) throw new Error("测试候选缺少旧目录记录。");
+    await verifyMovedRuntimePaths(root, previous, env);
+    expect(await readFile(join(alias, "images/原图.png"), "utf8")).toBe("分享图原字节");
+    expect(await readFile(join(alias, gallery, "角色.webp"), "utf8")).toBe("图库原字节");
+  };
+  try {
+    await mkdir(candidate);
+    await mkdir(join(active, "images"), { recursive: true });
+    await mkdir(join(active, gallery), { recursive: true });
+    await writeFile(join(active, "images/原图.png"), "分享图原字节");
+    await writeFile(join(active, gallery, "角色.webp"), "图库原字节");
+    await symlink("active", join(dir, "root-alias"));
+    await symlink("root-alias", alias);
+
+    await expect(activateUpdate(active, candidate, verify)).rejects.toThrow("仍留在旧版本");
+    expect(await readFile(join(alias, "images/原图.png"), "utf8")).toBe("分享图原字节");
+    const state = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), env);
+    expect(state).toEqual([gallery, "images"]);
+    const rootScope = { PATH: process.env.PATH, LOTUS_PUBLIC_IMAGE_DIR: alias };
+    expect(await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), rootScope)).toEqual([]);
+    await activateUpdate(active, candidate, verify, state);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test.skipIf(process.platform === "win32")("共享图库保留外置链接，指向未保护的安装内路径时拒绝切换", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-update-gallery-link-"));
   const active = join(dir, "active");
