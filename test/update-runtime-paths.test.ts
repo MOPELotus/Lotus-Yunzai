@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { activateUpdate } from "../lib/update-activation.ts";
 import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-runtime-paths.ts";
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
@@ -126,6 +126,102 @@ test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，�
       }
     }, paths);
     await expect(verifyMovedRuntimePaths(active, activated.previous, settings)).resolves.toBeUndefined();
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+
+test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定素材", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-artwork-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const settings = {
+    LOTUS_ATLAS_THEME_SOURCE_DIR: " theme/donor ",
+    LOTUS_CHARACTER_GALLERY_DIR: " media/gallery",
+    LOTUS_PASSPORT_QR_RESOURCES: " resources/login",
+    LOTUS_DAILY_NOTE_RESOURCES: " resources/note",
+  };
+  const selected = [
+    "theme/donor/bg/bg-pyro.webp", "theme/donor/common/bg/bg-sr.webp", "theme/donor/common/cont/card-bg.png",
+    "theme/donor/common/font/HYWH-65W.ttf", "theme/donor/portraits/index.json", "theme/donor/portraits/gi-10000003.webp",
+    "theme/donor/meta-gs/character/空/imgs/splash.webp", "theme/fonts/MiSans-VF.ttf",
+    "media/gallery/gs-character/角色.webp", "media/gallery/sr-character/开拓者/原图.png",
+    "media/gallery/zzz-character/安比/a.webp", " media/gallery/zzz-character/安比/b.webp",
+    "resources/login/source-templates/miao/common/theme/bg-01.jpg",
+    " resources/login/source-templates/miao/common/theme/main-01.png",
+    " resources/login/source-templates/miao-stat/fonts/NZBZ.ttf",
+    " resources/note/miao-theme/fonts/HYWH-65W.ttf", " resources/note/fonts/MiSans-VF.ttf",
+    " resources/note/source-templates/miao-stat/fonts/tttgbnumber.ttf",
+    " resources/note/source-templates/genshin/note-icons/gs/参量质变仪.png",
+  ];
+  const unrelated = [
+    "theme/donor/app.ts", "theme/donor/meta-gs/character/其他角色/imgs/splash.webp",
+    "media/gallery/original.psd", " media/gallery/sr-character/仅原样.jpg",
+    " resources/login/secret.txt", "resources/note/fonts/MiSans-VF.ttf",
+  ];
+  const conflict = selected[2]!;
+  try {
+    await mkdir(candidate);
+    await Promise.all([...selected, ...unrelated].map(async (path) => {
+      const file = join(active, path);
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, path);
+    }));
+    await writeFile(join(active, ".env"), Object.entries(settings)
+      .map(([key, value]) => `${key}=${JSON.stringify(value)}\n`).join(""));
+    const getPaths = (env: NodeJS.ProcessEnv = {}) =>
+      readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), { PATH: process.env.PATH, ...env });
+    const paths = await getPaths();
+    expect(paths).toEqual(expect.arrayContaining([
+      "theme/donor/portraits", "media/gallery/gs-character", "media/gallery/sr-character",
+      "media/gallery/zzz-character", " media/gallery/zzz-character",
+    ]));
+    const explicitTheme = await getPaths({ LOTUS_ATLAS_THEME_DIR: "verified-theme" });
+    expect(explicitTheme).toEqual(paths.filter(path => !path.startsWith("theme/")));
+    await expect(verifyMovedRuntimePaths(active, active, settings)).rejects.toThrow("仍留在旧版本");
+
+    await mkdir(dirname(join(candidate, conflict)), { recursive: true });
+    await writeFile(join(candidate, conflict), "candidate");
+    await expect(activateUpdate(active, candidate, async () => {}, paths)).rejects.toThrow("占用了持久状态");
+    expect(await readFile(join(active, conflict), "utf8")).toBe(conflict);
+    expect(await readFile(join(candidate, conflict), "utf8")).toBe("candidate");
+    await rm(join(candidate, conflict));
+
+    const result = await activateUpdate(active, candidate, async root => {
+      for (const file of selected) expect(await readFile(join(root, file), "utf8")).toBe(file);
+      for (const file of unrelated) expect(await Bun.file(join(root, file)).exists()).toBe(false);
+    }, paths);
+    for (const file of unrelated) expect(await readFile(join(result.previous, file), "utf8")).toBe(file);
+    await expect(verifyMovedRuntimePaths(active, result.previous, settings)).resolves.toBeUndefined();
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+
+test.skipIf(process.platform === "win32")("共享图库保留外置链接，指向未保护的安装内路径时拒绝切换", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-gallery-link-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const outside = join(dir, "outside");
+  try {
+    await Promise.all([mkdir(active), mkdir(candidate), mkdir(join(outside, "gs-character"), { recursive: true })]);
+    await writeFile(join(outside, "gs-character", "角色.webp"), "outside");
+    const env = { LOTUS_CHARACTER_GALLERY_DIR: "gallery", PATH: process.env.PATH };
+    const getPaths = () => readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), env);
+    await symlink("../outside", join(active, "gallery"));
+    expect(await getPaths()).toEqual(["gallery"]);
+    const result = await activateUpdate(active, candidate, async root => {
+      expect(await readFile(join(root, "gallery", "gs-character", "角色.webp"), "utf8")).toBe("outside");
+    }, await getPaths());
+    await expect(verifyMovedRuntimePaths(active, result.previous, env)).resolves.toBeUndefined();
+    await rm(join(active, "gallery"));
+    await mkdir(join(active, "custom-link-target", "gs-character"), { recursive: true });
+    await symlink("custom-link-target", join(active, "gallery"));
+    await expect(getPaths()).rejects.toThrow("经过指向安装目录内的链接");
+    await rm(join(active, "gallery"));
+    await mkdir(join(active, "data", "gallery", "gs-character"), { recursive: true });
+    await symlink("data/gallery", join(active, "gallery"));
+    expect(await getPaths()).toEqual(["gallery"]);
   } finally {
     await rm(dir, { force: true, recursive: true });
   }

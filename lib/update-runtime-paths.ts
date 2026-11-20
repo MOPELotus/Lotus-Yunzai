@@ -1,4 +1,4 @@
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -10,9 +10,56 @@ const trimmedPathKeys = [
   "LOTUS_ATLAS_THEME_DIR", "LOTUS_GENSHIN_PANEL_DIR", "LOTUS_GENSHIN_PANEL_RANK_DIR",
   "LOTUS_GENSHIN_WISH_STATE_DIR", "LOTUS_STAR_RAIL_WARP_STATE_DIR", "LOTUS_GUIDES_ROLE_DIR",
 ] as const;
-const keys = [...pathKeys, ...trimmedPathKeys];
+const keys = [...pathKeys, ...trimmedPathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
+  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set(["config", "data", "logs", "internal"]);
+const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
+  .map(element => `bg/bg-${element}.webp`);
+const atlasSourceAssets = [
+  ...atlasBackgrounds, ...atlasBackgrounds.map(path => `common/${path}`),
+  "card-bg.png", "common/cont/card-bg.png", "fonts/HYWH-65W.ttf", "common/font/HYWH-65W.ttf",
+  "fonts/MiSans-VF.ttf", "portraits",
+  "meta-gs/character/空/imgs/splash.webp", "meta-gs/character/荧/imgs/splash.webp",
+];
+const loginAssets = [
+  "miao-theme/fonts/HYWH-65W.ttf", "fonts/MiSans-VF.ttf", "source-templates/miao-stat/fonts/NZBZ.ttf",
+  "source-templates/miao/common/theme/bg-01.jpg", "source-templates/miao/common/theme/main-01.png",
+];
+const dailyNoteAssets = [
+  "miao-theme/fonts/HYWH-65W.ttf", "fonts/MiSans-VF.ttf", "source-templates/miao-stat/fonts/tttgbnumber.ttf",
+  ...["树脂", "洞天宝钱", "委托", "派遣", "周本", "参量质变仪"].map(icon => `source-templates/genshin/note-icons/gs/${icon}.png`),
+];
+
+function configuredAssetPaths(env: RuntimePaths): string[] {
+  const assets: string[] = [];
+  const donor = env.LOTUS_ATLAS_THEME_SOURCE_DIR?.trim();
+  if (donor && !env.LOTUS_ATLAS_THEME_DIR?.trim()) {
+    assets.push(...atlasSourceAssets.map(path => join(donor, path)), join(dirname(donor), "fonts", "MiSans-VF.ttf"));
+  }
+  const gallery = env.LOTUS_CHARACTER_GALLERY_DIR;
+  if (gallery) assets.push(join(gallery, "zzz-character"));
+  if (gallery?.trim()) assets.push(...["gs-character", "sr-character", "zzz-character"].map(path => join(gallery.trim(), path)));
+
+  const login = env.LOTUS_PASSPORT_QR_RESOURCES;
+  // Sign-in verification trims this setting. The other login screens use the original path.
+  for (const directory of new Set([login, login?.trim()])) {
+    if (directory) assets.push(...loginAssets.map(path => join(directory, path)));
+  }
+  const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
+  if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
+  return assets;
+}
+
+function within(root: string, path: string): boolean {
+  const part = relative(root, path);
+  return !isAbsolute(part) && part !== ".." && !part.startsWith(".." + sep);
+}
+
+function persistentPath(path: string): boolean {
+  const [first] = path.split(sep);
+  return alreadyPersistent.has(first!) || first === ".env" || first?.startsWith(".env.") === true;
+}
 
 function configuredRuntimePaths(root: string, env: RuntimePaths): string[] {
   const theme = env.LOTUS_ATLAS_THEME_DIR?.trim();
@@ -22,14 +69,50 @@ function configuredRuntimePaths(root: string, env: RuntimePaths): string[] {
   const configured = [...pathKeys.map(key => env[key]), ...trimmedPathKeys.map(key => env[key]?.trim()), adjacentFont, ...sidecars];
   const paths = configured.flatMap(value => {
     if (!value) return [];
-    const path = relative(root, resolve(root, value));
+    const absolute = resolve(root, value);
+    const path = relative(root, absolute);
     if (!path) throw new Error("运行数据配置使用宿主根目录，无法安全切换版本。");
-    if (isAbsolute(path) || path === ".." || path.startsWith(".." + sep)) return [];
-    const [first] = path.split(sep);
-    if (alreadyPersistent.has(first!) || first === ".env" || first?.startsWith(".env.")) return [];
+    if (!within(root, absolute) || persistentPath(path)) return [];
     return [path.split(sep).join("/")];
   });
-  return [...new Set(paths)].sort().filter(path => !paths.some(parent => path.startsWith(parent + "/")));
+  return paths;
+}
+
+async function existingAssetPath(root: string, source: string, value: string): Promise<string | undefined> {
+  const absolute = resolve(root, value);
+  if (!within(root, absolute)) return;
+  const asset = relative(root, absolute);
+  if (!asset) throw new Error("原主题或素材配置使用宿主根目录，无法安全切换版本。");
+  try {
+    const installed = join(source, asset);
+    await lstat(installed);
+    let path = source;
+    for (const part of asset.split(sep)) {
+      path = join(path, part);
+      if (!(await lstat(path)).isSymbolicLink()) continue;
+      const targets = path === installed ? [await realpath(path)] : await Promise.all([realpath(path), realpath(installed)]);
+      if (targets.some(target => [root, source].some(base =>
+        within(base, target) && !persistentPath(relative(base, target))))) {
+        throw new Error("原主题、立绘或登录素材经过指向安装目录内的链接，无法安全切换版本。");
+      }
+      // Moving the link keeps external resources at their existing location.
+      return relative(source, path);
+    }
+    return asset;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+  }
+}
+
+async function findRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
+  const assets: string[] = [];
+  for (const value of new Set(configuredAssetPaths(env))) {
+    const path = await existingAssetPath(root, source, value);
+    if (path && !persistentPath(path)) assets.push(path.split(sep).join("/"));
+  }
+  const paths = [...configuredRuntimePaths(root, env), ...assets];
+  return existingPaths(source, [...new Set(paths)].sort().filter(path => !paths.some(parent => path.startsWith(parent + "/"))));
 }
 
 async function existingPaths(root: string, paths: readonly string[]): Promise<string[]> {
@@ -58,11 +141,10 @@ export async function readUpdateRuntimePaths(root: string, signal: AbortSignal, 
   const [text, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
   signal.throwIfAborted();
   if (code !== 0) throw new Error("无法读取工作进程的运行数据路径。");
-  return existingPaths(root, configuredRuntimePaths(root, JSON.parse(text) as RuntimePaths));
+  return findRuntimePaths(root, root, JSON.parse(text) as RuntimePaths);
 }
 
 export async function verifyMovedRuntimePaths(root: string, previous: string, env: RuntimePaths): Promise<void> {
-  const paths = configuredRuntimePaths(root, env);
   // An older supervisor cannot move these paths. Do not acknowledge readiness if its archive still owns them.
-  if ((await existingPaths(previous, paths)).length) throw new Error("指定的运行数据仍留在旧版本，已拒绝接管。");
+  if ((await findRuntimePaths(root, previous, env)).length) throw new Error("指定的运行数据仍留在旧版本，已拒绝接管。");
 }
