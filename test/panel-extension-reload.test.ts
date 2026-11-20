@@ -1,9 +1,60 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { panelExtensionRoutes } from "../lib/panel-extension-routes.ts";
 import { panelApi } from "../lib/panel.ts";
+
+test("管理父页可续签过期的同一扩展页 API 票据，重扫废止续签", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-ext-renew-"));
+  const plugin = join(root, "plugin");
+  let now = Date.now();
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  try {
+    await mkdir(join(plugin, "guoba"), { recursive: true });
+    await writeFile(join(plugin, "guoba/index.js"), `
+      export function init(ctx) {
+        ctx.registerPages([
+          { id: "one", title: "第一页", html: "one" },
+          { id: "two", title: "第二页", html: "two" },
+        ]);
+        ctx.registerApi("get", "/data", (_req, res) => res.json({ active: true }));
+      }
+    `);
+    const routes = panelExtensionRoutes(new Map([["plugin", { path: plugin, packageName: "fixture" }]]));
+    const api = panelApi("panel-fixture", [], routes.api);
+    const origin = "http://127.0.0.1:9876";
+    const headers = { Authorization: "Bearer panel-fixture" };
+    const admin = (suffix: string, sent: HeadersInit = headers) => api(new Request(`${origin}/panel/api/extensions/${suffix}`, {
+      method: "POST", headers: sent,
+    }));
+    const renew = (id: string, previous: string) => admin(`${id}/renew`, {
+      ...headers, "guoba-access-token": previous,
+    });
+    const call = (token: string) => routes.assets(new Request(`${origin}/panel/extensions-api/one/data`, {
+      headers: { Origin: "null", "guoba-access-token": token },
+    }));
+    const open = await admin("one/open");
+    const entry = new URL((await open?.json() as { url: string }).url, origin);
+    const token = entry.searchParams.get("token")!;
+    const asset = entry.pathname.split("/").at(-2)!;
+    now += 5 * 60_000;
+    expect((await call(token))?.status).toBe(401);
+    expect((await admin("one/renew", { "guoba-access-token": token }))?.status).toBe(401);
+    expect((await renew("two", token))?.status).toBe(404);
+    expect((await renew("one", asset))?.status).toBe(404);
+    const confirmed = await renew("one", token);
+    const { token: renewed } = await confirmed?.json() as { token: string };
+    expect(renewed).not.toBe(token);
+    expect(await (await call(renewed))?.json()).toEqual({ active: true });
+    expect((await admin("reload"))?.status).toBe(200);
+    expect((await call(renewed))?.status).toBe(401);
+    expect((await renew("one", renewed))?.status).toBe(404);
+  } finally {
+    clock.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("经过面板鉴权的扩展重扫原子切换目录与 API，在途调用保留旧注册", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-ext-reload-"));

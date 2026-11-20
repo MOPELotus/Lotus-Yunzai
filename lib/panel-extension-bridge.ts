@@ -1,14 +1,15 @@
 export const extensionTokenHeader = "guoba-access-token";
+export const extensionTicketLifetimeMs = 5 * 60_000;
 
 export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }): string {
   // This script runs in the extension frame, whose origin is opaque.
   const configuration = api ? JSON.stringify({ ...api, tokenKey: extensionTokenHeader }) : "null";
   return `(() => {
+    let nonce;
     try {
       void window.localStorage;
     } catch {
       const values = new Map();
-      let nonce;
       const prefix = "#lotus-frame:";
       if (window.location?.hash.startsWith(prefix)) {
         try {
@@ -49,9 +50,34 @@ export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }
     }
     const config = ${configuration};
     if (!config) return;
-    const token = new URLSearchParams(location.search).get("token") || "";
+    let token = new URLSearchParams(location.search).get("token") || "";
     const { apiBase, legacyApiBase, tokenKey } = config;
     window.__GUOBA__ = { apiBase, token, tokenKey };
+    const refreshAfterMs = ${extensionTicketLifetimeMs - 30_000};
+    let renewAt = Date.now() + refreshAfterMs;
+    let renewal;
+    function renewToken() {
+      if (!nonce || Date.now() < renewAt) return;
+      renewal ??= new Promise((resolve) => {
+        const { port1, port2 } = new MessageChannel();
+        const finish = () => {
+          clearTimeout(timeout);
+          port1.close();
+          resolve();
+        };
+        const timeout = setTimeout(finish, 5_000);
+        port1.onmessage = ({ data }) => {
+          if (typeof data?.token === "string" && /^\\d{13}\\.[0-9a-f]{64}$/.test(data.token)) {
+            token = data.token;
+            renewAt = Date.now() + refreshAfterMs;
+            window.__GUOBA__.token = token;
+          }
+          finish();
+        };
+        window.parent.postMessage({ type: "lotus-frame-api-renew", nonce }, window.location.origin, [port2]);
+      }).finally(() => { renewal = undefined; });
+      return renewal;
+    }
     const original = window.fetch.bind(window);
     const legacy = "/guoba/api";
     const includesPath = (path, prefix) => path === prefix || path.startsWith(prefix + "/");
@@ -66,6 +92,7 @@ export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }
       } else if (!includesPath(target.pathname, apiBase)) {
         return original(source);
       }
+      await renewToken();
       const headers = new Headers(source.headers);
       headers.set(tokenKey, token);
       return original(target, {

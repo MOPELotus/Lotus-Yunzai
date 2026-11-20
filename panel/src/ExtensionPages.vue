@@ -39,7 +39,7 @@ const frameUrl = ref("");
 const busy = ref<"list" | "open">();
 const error = ref("");
 let active: AbortController | undefined;
-let frameStorage: { key: string; nonce: string } | undefined;
+let frameState: { key: string; nonce: string; pageId: string; ticket?: string; lifetime: AbortController } | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -72,7 +72,8 @@ function scopedUrl(value: unknown, pageId: string): string | undefined {
 }
 
 function clearFrame() {
-  frameStorage = undefined;
+  frameState?.lifetime.abort();
+  frameState = undefined;
   frameUrl.value = "";
 }
 
@@ -82,18 +83,55 @@ function openFrame(url: string, page: ExtensionPage) {
   const frameLocation = new URL(url, window.location.origin);
   const state = { nonce, hash: frameLocation.hash, data: props.preferences.get(key) ?? "[]" };
   frameLocation.hash = "#lotus-frame:" + encodeURIComponent(JSON.stringify(state));
-  frameStorage = { key, nonce };
+  frameState = {
+    key, nonce, pageId: page.id,
+    ticket: frameLocation.searchParams.get("token") ?? undefined,
+    lifetime: new AbortController(),
+  };
   frameUrl.value = frameLocation.pathname + frameLocation.search + frameLocation.hash;
 }
 
-function saveFrameStorage(event: MessageEvent<unknown>) {
-  if (!frameStorage || event.origin !== "null" || event.source !== frame.value?.contentWindow) return;
+async function handleFrameMessage(event: MessageEvent<unknown>) {
+  const opened = frameState;
+  if (!opened || event.origin !== "null" || event.source !== frame.value?.contentWindow) return;
   const value = event.data;
-  if (!isRecord(value) || value.type !== "lotus-frame-storage" || value.nonce !== frameStorage.nonce ||
-      typeof value.data !== "string" || value.data.length > 4096 ||
+  if (!isRecord(value) || value.nonce !== opened.nonce) return;
+  if (value.type === "lotus-frame-api-renew") {
+    const [port] = event.ports;
+    if (!port) return;
+    let ticket: string | undefined;
+    try {
+      if (opened.ticket && props.token) {
+        const path = `${endpoint}/${encodeURIComponent(opened.pageId)}/renew`;
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${props.token}`, "guoba-access-token": opened.ticket },
+          signal: AbortSignal.any([opened.lifetime.signal, AbortSignal.timeout(4_000)]),
+          cache: "no-store",
+          credentials: "omit",
+          redirect: "error",
+        });
+        if (frameState !== opened) return;
+        if (response.status === 401) emit("unauthorized");
+        if (response.ok) {
+          const data: unknown = await response.json();
+          if (frameState === opened && isRecord(data) && typeof data.token === "string") {
+            ticket = opened.ticket = data.token;
+          }
+        }
+      }
+    } catch {
+      // Without a renewed ticket the original request still gets its normal response.
+    } finally {
+      port.postMessage({ token: ticket });
+      port.close();
+    }
+    return;
+  }
+  if (value.type !== "lotus-frame-storage" || typeof value.data !== "string" || value.data.length > 4096 ||
       new TextEncoder().encode(value.data).byteLength > 4096) return;
-  if (value.data === "[]") props.preferences.delete(frameStorage.key);
-  else props.preferences.set(frameStorage.key, value.data);
+  if (value.data === "[]") props.preferences.delete(opened.key);
+  else props.preferences.set(opened.key, value.data);
 }
 
 async function load(page?: ExtensionPage, rescan = false) {
@@ -171,9 +209,10 @@ watch(() => props.token, () => {
   void load();
 }, { immediate: true });
 
-onMounted(() => window.addEventListener("message", saveFrameStorage));
+onMounted(() => window.addEventListener("message", handleFrameMessage));
 onBeforeUnmount(() => {
-  window.removeEventListener("message", saveFrameStorage);
+  window.removeEventListener("message", handleFrameMessage);
+  clearFrame();
   active?.abort();
   active = undefined;
 });

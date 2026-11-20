@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { attachExtensionBridge, extensionBridge, extensionTokenHeader } from "./panel-extension-bridge.ts";
+import { attachExtensionBridge, extensionBridge, extensionTicketLifetimeMs, extensionTokenHeader } from "./panel-extension-bridge.ts";
 import { dispatchGuobaApi } from "./panel-guoba-http.ts";
 import { loadGuobaPages, type GuobaPages } from "./panel-guoba-pages.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
@@ -43,11 +43,14 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     createHmac("sha256", secret).update(`${generation}:${use}:${id}:${expires}`).digest();
   const mint = (generation: string, use: TicketUse, id: string, expires: string) =>
     `${expires}.${signature(generation, use, id, expires).toString("hex")}`;
-  function validTicket(generation: string, use: TicketUse, id: string, value: string): boolean {
+  function ticketExpiry(generation: string, use: TicketUse, id: string, value: string): number {
     const [, expires, mac] = /^(\d{13})\.([0-9a-f]{64})$/u.exec(value) ?? [];
-    return expires !== undefined && mac !== undefined && Number(expires) > Date.now() &&
-      timingSafeEqual(signature(generation, use, id, expires), Buffer.from(mac, "hex"));
+    if (!expires || !mac || !timingSafeEqual(signature(generation, use, id, expires), Buffer.from(mac, "hex"))) return 0;
+    return Number(expires);
   }
+  const validTicket = (generation: string, use: TicketUse, id: string, value: string) =>
+    ticketExpiry(generation, use, id, value) > Date.now();
+  const nextExpiry = () => String(Date.now() + extensionTicketLifetimeMs);
 
   function catalog({ pages, issues }: GuobaPages): Response {
     return Response.json({
@@ -78,7 +81,7 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
     if (!page) return new Response(null, { status: 404 });
-    const expires = String(Date.now() + 5 * 60_000);
+    const expires = nextExpiry();
     const ticket = mint(generation, "asset", id, expires);
     const url = `${assetRoot}/${id}/${ticket}/${page.src ? escapedPath(page.src) : ""}`;
     if (!apis.get(page.plugin)?.length) return Response.json({ url });
@@ -88,6 +91,22 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
       token: mint(generation, "api", id, expires),
     });
     return Response.json({ url: `${url}?${search}` });
+  }
+
+  // The management API authenticates the parent. The old ticket also binds the
+  // request to the original page and registry, even if the frame was dormant.
+  async function renew(request: Request, id: string): Promise<Response> {
+    if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    const { registry, generation } = current;
+    if (!ticketExpiry(generation, "api", id, request.headers.get(extensionTokenHeader) ?? "")) {
+      return new Response(null, { status: 404 });
+    }
+    const { pages, apis } = await registry;
+    const page = pages.find((item) => item.id === id);
+    if (generation !== current.generation || !page || !apis.get(page.plugin)?.length) {
+      return new Response(null, { status: 404 });
+    }
+    return Response.json({ token: mint(generation, "api", id, nextExpiry()) });
   }
 
   async function assets(request: Request): Promise<Response | undefined> {
@@ -200,8 +219,8 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     api(path: string) {
       if (path === "/panel/api/extensions") return list;
       if (path === "/panel/api/extensions/reload") return reload;
-      const id = /^\/panel\/api\/extensions\/([A-Za-z0-9_-]+)\/open$/u.exec(path)?.[1];
-      return id ? (request: Request) => open(request, id) : undefined;
+      const [, id, action] = /^\/panel\/api\/extensions\/([A-Za-z0-9_-]+)\/(open|renew)$/u.exec(path) ?? [];
+      return id ? (request: Request) => action === "renew" ? renew(request, id) : open(request, id) : undefined;
     },
     async assets(request: Request) {
       return await assets(request) ?? await bridge(request) ?? await invoke(request);
