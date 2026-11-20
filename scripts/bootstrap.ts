@@ -47,23 +47,27 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
 const installArgs = [process.execPath, "install", "--frozen-lockfile"];
 let installCode = await Bun.spawn(installArgs, options).exited;
 const prepared = installCode === 0 ? 0 : await Bun.spawn([...installArgs, "--ignore-scripts"], options).exited;
-if (prepared === 0) {
+// Load each probe in a fresh Bun process so a failed import does not survive native recovery.
+const loadSkiaNative = () => Bun.spawn(
+  [process.execPath, "--eval", 'await import("./packages/skia/index.ts")'],
+  { ...options, stdout: "ignore", stderr: "ignore" },
+).exited.then(code => code === 0);
+let skiaReady = prepared === 0 && await loadSkiaNative();
+if (prepared === 0 && !skiaReady) {
   try {
     const { recoverSkiaBinary } = await import("./skia-binary.ts");
     if (await recoverSkiaBinary(root)) {
       console.log("[初始化] 已重新下载并校验 Skia 原生库。");
       if (installCode !== 0) installCode = await Bun.spawn(installArgs, options).exited;
+      if (installCode === 0) skiaReady = await loadSkiaNative();
     }
   } catch {
     console.error("Skia 原生库重试下载未完成或校验失败，请检查发布资源是否可访问。");
   }
 }
 if (installCode !== 0) process.exit(installCode);
-
-try {
-  await import("../packages/skia/index.ts");
-  console.log("[初始化] Skia 原生库已加载。");
-} catch {
+if (skiaReady) console.log("[初始化] Skia 原生库已加载。");
+else {
   console.error("Skia 原生库加载失败，请检查安装日志及系统运行库。");
   process.exitCode = 1;
 }
