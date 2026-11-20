@@ -1,6 +1,6 @@
 import { createProfileStore } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
-import type { CheckinScheduleEntry, CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
+import { legacyUnconfirmedStage, type CheckinScheduleEntry, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleRuntime } from "./checkin-schedule-runtime.ts";
 import { CheckinScheduleSettingsError, persistCheckinScheduleSettings, type CheckinScheduleSettingsChange } from "./checkin-schedule-settings.ts";
 import type { CommandContext, CommandModule } from "./commands.ts";
@@ -63,7 +63,8 @@ export function checkinScheduleSettingCommands(root: URL,
 }
 
 function checkinPlanCard(plan: CheckinSchedulePlan, title: string, subtitle: string, signal: AbortSignal, extra: readonly string[] = []) {
-  const lines = plan.entries.slice(0, 12).map(entry => `Profile ${entry.profileId}：${entry.time} · ${entry.mode}`);
+  const lines = plan.entries.slice(0, 12).map(entry =>
+    `Profile ${entry.profileId}：${entry.time} · ${entry.stage === legacyUnconfirmedStage ? "旧版签到结果待核对" : entry.mode}`);
   if (plan.entries.length > 12) lines.push(`更多：另有 ${plan.entries.length - 12} 个 profile`);
   lines.push(...extra);
   const message = plan.mode === "random"

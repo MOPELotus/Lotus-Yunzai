@@ -2,7 +2,9 @@ import { Database } from "bun:sqlite";
 import { constants, linkSync, unlinkSync, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { isCheckinScheduleDate, parseCheckinSchedulePlan, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
+import { isDeepStrictEqual } from "node:util";
+import { isCheckinScheduleDate, legacyUnconfirmedStage, parseCheckinSchedulePlan,
+  type CheckinScheduleEntry, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 import { lockFile } from "./file-lock.ts";
 
 interface ScheduleUpdate<T> {
@@ -69,7 +71,45 @@ function decoded(bytes: Uint8Array, date: string) {
   } catch {
     throw new Error("自动签到计划 JSON 无效。");
   }
-  return projected(raw, date);
+  const plan = projected(raw, date);
+  const imported = (raw as { importedLegacy?: unknown }).importedLegacy;
+  if (imported !== undefined && (!Array.isArray(imported) || !imported.every(id => typeof id === "string"))) {
+    throw new Error("签到计划迁移记录无效。");
+  }
+  return { plan, imported: (imported ?? []) as string[] };
+}
+
+function progress(entry: CheckinScheduleEntry) {
+  if (entry.stage === legacyUnconfirmedStage) return 2;
+  if (entry.done) return 3;
+  if (entry.runningAt) return 2;
+  return entry.communityWrites || entry.communityRetry ? 1 : 0;
+}
+
+function mergePlan(current: CheckinSchedulePlan | undefined, source: CheckinSchedulePlan): CheckinSchedulePlan {
+  const key = (item: CheckinScheduleEntry) => `${item.qq}/${item.profileId}`;
+  const entries = new Map(current?.entries.map(item => [key(item), item]));
+  for (const original of source.entries) {
+    const previous = entries.get(key(original));
+    let historical = original;
+    if (original.runningAt && !original.done) {
+      const { ok: _ok, ...pending } = original;
+      historical = { ...pending, done: true, stage: legacyUnconfirmedStage, message: "旧版签到结果待核对。" };
+    }
+    if (!previous || isDeepStrictEqual(previous, original)) {
+      entries.set(key(original), historical);
+      continue;
+    }
+    const priorProgress = progress(previous), historicalProgress = progress(historical);
+    if (priorProgress > 0 && priorProgress < 3 && priorProgress === historicalProgress && !isDeepStrictEqual(previous, historical)) {
+      throw new Error("签到计划中同一档案有冲突的历史执行记录。");
+    }
+    const chosen = historicalProgress > priorProgress ? historical : previous;
+    const noticeAttemptedAt = chosen.noticeAttemptedAt ?? previous.noticeAttemptedAt ?? historical.noticeAttemptedAt;
+    entries.set(key(original), { ...chosen, notified: previous.notified || historical.notified,
+      ...(noticeAttemptedAt && { noticeAttemptedAt }) });
+  }
+  return projected({ ...(current ?? source), entries: [...entries.values()] }, source.date);
 }
 
 async function isInterruptedLink(info: Stats, otherPath: string): Promise<boolean> {
@@ -136,31 +176,48 @@ async function verifySnapshot(file: string, stage: string, previous: Awaited<Ret
   }
 }
 
-export function createCheckinScheduleStore(path: string) {
+export function createCheckinScheduleStore(path: string, legacy: readonly { id: string; directory: string }[] = []) {
   if (typeof path !== "string" || !path.trim()) throw new TypeError("须指定自动签到计划目录。");
   const directory = resolve(path);
 
-  function files(date: string) {
+  function files(date: string, base = directory) {
     if (!isCheckinScheduleDate(date)) throw new TypeError("自动签到计划日期无效。");
     return {
-      file: join(directory, `${date}.json`),
-      stage: join(directory, `.${date}.lotus-checkin.tmp`),
-      lock: join(directory, `.${date}.lotus-checkin.sqlite`),
-      executionLock: join(directory, `.${date}.lotus-checkin.run.sqlite`),
+      file: join(base, `${date}.json`),
+      stage: join(base, `.${date}.lotus-checkin.tmp`),
+      lock: join(base, `.${date}.lotus-checkin.sqlite`),
+      executionLock: join(base, `.${date}.lotus-checkin.run.sqlite`),
     };
   }
 
-  async function read(date: string): Promise<CheckinSchedulePlan | undefined> {
-    const { file, stage } = files(date);
-    const initial = await scheduleDirectory(directory, false);
+  async function readDirectory(date: string, base: string) {
+    const { file, stage } = files(date, base);
+    const initial = await scheduleDirectory(base, false);
     if (!initial) return;
     const current = await snapshot(file, stage).catch(async (error: unknown) => {
       if (!(error instanceof CheckinScheduleReadConflict)) throw error;
-      await assertDirectory(directory, initial);
+      await assertDirectory(base, initial);
       return snapshot(file, stage);
     });
-    await assertDirectory(directory, initial);
+    await assertDirectory(base, initial);
     return current && decoded(current.bytes, date);
+  }
+
+  async function withLegacy(date: string, current?: ReturnType<typeof decoded>) {
+    let plan = current?.plan;
+    const imported = new Set(current?.imported);
+    for (const source of legacy) {
+      if (imported.has(source.id)) continue;
+      const history = await readDirectory(date, resolve(source.directory));
+      if (!history) continue;
+      plan = mergePlan(plan, history.plan);
+      imported.add(source.id);
+    }
+    return { plan, imported: [...imported] };
+  }
+
+  async function read(date: string): Promise<CheckinSchedulePlan | undefined> {
+    return (await withLegacy(date, await readDirectory(date, directory))).plan;
   }
 
   async function update<T>(date: string, change: (current: CheckinSchedulePlan | undefined) => ScheduleUpdate<T> | Promise<ScheduleUpdate<T>>): Promise<T> {
@@ -177,15 +234,16 @@ export function createCheckinScheduleStore(path: string) {
         await clearStage(stage, file);
         const previous = await snapshot(file, stage);
         const current = previous && decoded(previous.bytes, date);
-        const original = current && JSON.stringify(current);
-        const { plan, result } = await change(current);
+        const effective = await withLegacy(date, current);
+        const { plan, result } = await change(effective.plan);
         const next = plan === undefined ? undefined : projected(plan, date);
-        if (next === undefined || JSON.stringify(next) === original) {
+        if (next === undefined || (isDeepStrictEqual(next, current?.plan) && effective.imported.length === current?.imported.length)) {
           await assertDirectory(directory, initial);
           await verifySnapshot(file, stage, previous);
           return result;
         }
-        const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`);
+        const stored = effective.imported.length ? { ...next, importedLegacy: effective.imported } : next;
+        const bytes = Buffer.from(`${JSON.stringify(stored, null, 2)}\n`);
         if (bytes.length > maxPlanBytes) throw new Error("自动签到计划超过大小上限。");
         // Check the exact serialization before publication, including the date.
         decoded(bytes, date);

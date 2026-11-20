@@ -1,5 +1,5 @@
 import {
-  checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, reconcileCheckinSchedulePlan,
+  checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, legacyUnconfirmedStage, reconcileCheckinSchedulePlan,
   type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
 } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
@@ -82,6 +82,7 @@ function nextCommunityAttempt(date: string, started: number, settled: number, is
 }
 
 function clearRunning(entry: CheckinScheduleEntry): CheckinScheduleEntry {
+  if (entry.stage === legacyUnconfirmedStage) return entry;
   const { runningAt: _runningAt, ...rest } = entry;
   return rest;
 }

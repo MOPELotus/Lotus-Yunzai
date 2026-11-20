@@ -56,6 +56,25 @@ test("缺文件便捷读取，日期严格绑定，空更新不重写版本一�
   expect(await readFile(file, "utf8")).toBe(legacy);
 }));
 
+test("同档同日的两条不同在途记录暂停该日处理，保留每份账本", fixture(async (root, directory, store) => {
+  const legacy = join(root, "legacy");
+  await mkdir(legacy);
+  const fromOld = JSON.stringify(plan([{ ...entry("42"), runningAt: `${date}T04:30:00.000+08:00` }]));
+  await writeFile(join(legacy, name), fromOld);
+  const primary = plan([{ ...entry("42"), runningAt: `${date}T04:31:00.000+08:00` }]);
+  await store.update(date, () => ({ plan: primary, result: undefined }));
+  const originalCurrent = await readFile(join(directory, name), "utf8");
+  const merging = createCheckinScheduleStore(directory, [{ id: "previous", directory: legacy }]);
+  await expect(merging.read(date)).rejects.toThrow("同一档案有冲突的历史执行记录");
+  let entered = false;
+  await expect(merging.update(date, () => { entered = true; return { plan: primary, result: undefined }; }))
+    .rejects.toThrow("同一档案有冲突的历史执行记录");
+  expect(entered).toBe(false);
+  expect(await readFile(join(legacy, name), "utf8")).toBe(fromOld);
+  expect(await readFile(join(directory, name), "utf8")).toBe(originalCurrent);
+  expect(await merging.read(tomorrow)).toBeUndefined();
+}));
+
 test("同日并发更新在锁内合并，其他日期可独立写入", fixture(async (_root, directory, store) => {
   const secondStore = createCheckinScheduleStore(directory);
   const locked = Promise.withResolvers<void>();

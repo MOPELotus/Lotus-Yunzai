@@ -1900,6 +1900,8 @@ if (import.meta.main) {
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
+      legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
@@ -1983,7 +1985,7 @@ if (import.meta.main) {
     }
     const shopSettings = miyousheWebSettings(globalConfig.coin_shop);
     if (!probingUpdate && shopSettings.enabled) {
-      const plans = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)));
+      const plans = checkinScheduleStore;
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
       const catalog = createMiyousheShopCatalog({ profileDirectory });
       const shopClient = createProfileHoyoClient(checkinProfiles);
@@ -2139,7 +2141,7 @@ if (import.meta.main) {
           });
         }
         const runtime = createCheckinScheduleRuntime({
-          store: createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root))),
+          store: checkinScheduleStore,
           config: (config ?? {}) as CheckinScheduleConfig,
           listProfiles: checkinProfiles.listCheckinProfiles,
           signal: lifecycle.signal,

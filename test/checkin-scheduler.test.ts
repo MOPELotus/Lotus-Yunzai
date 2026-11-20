@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateCheckinSchedulePlan, type CheckinScheduleProfile } from "../lib/checkin-schedule-plan.ts";
@@ -20,6 +20,43 @@ async function withStore(run: (store: ReturnType<typeof createCheckinScheduleSto
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+test("迁回两处旧计划后，只执行未领取的档案，已完成和在途记录跨重启保留", async () => {
+  await withStore(async (_unused, directory) => {
+    const profiles = [first, { ...first, profileId: 2 }, { ...first, profileId: 3 }];
+    const plan = generateCheckinSchedulePlan({ date, profiles, config, now: dueAt });
+    const primary = join(directory, "current");
+    const sources = ["Lotus-Plugin", "Lotus-ReFactor"].map(id => ({ id, directory: join(directory, id) }));
+    const runningAt = "2026-11-19T06:10:00+08:00";
+    const legacy = [JSON.stringify({ ...plan, entries: [{ ...plan.entries[0], done: true, notified: true }] }) + "\r\n",
+      JSON.stringify({ ...plan, entries: [{ ...plan.entries[1], runningAt }] }) + "\n"];
+    await Promise.all(sources.map(async (source, index) => {
+      await mkdir(source.directory, { recursive: true });
+      await writeFile(join(source.directory, date + ".json"), legacy[index]!);
+    }));
+    const fresh = createCheckinScheduleStore(primary, sources);
+    expect((await fresh.read(date))?.entries).toEqual([
+      expect.objectContaining({ profileId: 1, done: true, notified: true }),
+      expect.objectContaining({ profileId: 2, runningAt, done: true, stage: "legacy-unconfirmed" }),
+    ]);
+    expect(await Bun.file(join(primary, date + ".json")).exists()).toBe(false);
+    await createCheckinScheduleStore(primary).update(date, () => ({ plan, result: undefined }));
+    const ran: number[] = [];
+    const scheduler = (store: typeof fresh) => createCheckinScheduler({ store, config, now: () => dueAt,
+      listProfiles: async () => profiles, async runProfile(entry) {
+        ran.push(entry.profileId);
+        return successful;
+      } });
+    expect(await scheduler(fresh).tick()).toMatchObject({ status: "complete", completed: 1 });
+    expect(ran).toEqual([3]);
+    const current = await readFile(join(primary, date + ".json"), "utf8");
+    expect(JSON.parse(current)).toMatchObject({ importedLegacy: sources.map(source => source.id) });
+    expect(await Promise.all(sources.map(source => readFile(join(source.directory, date + ".json"), "utf8")))).toEqual(legacy);
+    expect(await scheduler(createCheckinScheduleStore(primary, sources)).tick()).toMatchObject({ status: "complete", completed: 0 });
+    expect(await readFile(join(primary, date + ".json"), "utf8")).toBe(current);
+    expect(ran).toEqual([3]);
+  });
+});
 
 test("只跑中国当天到期的启用档案，保留旧社区补跑计划，确认后才递送回执", async () => {
   await withStore(async (store, directory) => {

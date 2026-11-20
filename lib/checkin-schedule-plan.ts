@@ -75,6 +75,8 @@ export interface CheckinSchedulePlan {
   readonly entries: readonly CheckinScheduleEntry[];
 }
 
+export const legacyUnconfirmedStage = "legacy-unconfirmed";
+
 interface PlanContext {
   readonly config?: CheckinScheduleConfig;
   readonly now?: Date | number;
