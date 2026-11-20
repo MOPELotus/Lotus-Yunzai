@@ -37,7 +37,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
-import { noticeGroupTransport, type NoticeGroupAccount } from "./lib/adapters/notice-groups.ts";
+import { noticeGroupTransport, waitForMilkyNoticeReceipts, type NoticeGroupAccount } from "./lib/adapters/notice-groups.ts";
 import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice,
   type NativeGroupMessageSource, type NativeGroupOwnerAdminNotice, type NativeGroupOwnerBanNotice, type NativeGroupOwnerGroupNotice,
   type NativeGroupOwnerMemberNotice } from "./lib/adapters/group-moderation.ts";
@@ -2263,10 +2263,13 @@ if (import.meta.main) {
         void handling.then(() => pending.delete(handling));
       },
     };
+    const milkyNoticeReceipts = waitForMilkyNoticeReceipts(lifecycle.signal);
     const milkyOptions: MilkyTransportOptions = {
       ...groupActions,
-      signal: lifecycle.signal,
+      signal: milkyNoticeReceipts.signal,
       dispatch,
+      accepting: () => !stopping && !lifecycle.signal.aborted && handoff.accepting,
+      onNoticeAttempt: milkyNoticeReceipts.track,
       friendReview,
       invitationReview,
       invitationReceipts,
@@ -2283,7 +2286,10 @@ if (import.meta.main) {
     const milkyWs = milky?.connection === "ws" ? createMilkyWs(milky, milkyOptions) : undefined;
     const milkyTransport = milkyWebhook ?? milkyWs;
     if (milky?.connection === "webhook") legacy.httpRoutes.reserve(milky.webhookPath);
-    stopMilky = milkyTransport?.stop;
+    stopMilky = milkyTransport && (async () => {
+      await milkyNoticeReceipts.closed;
+      await milkyTransport.stop();
+    });
     const http = network.http ?? (milkyWebhook && !https ? { port: 2536, auth: new Headers() } : undefined);
     if (network.manualCaptchaUrl && !probingUpdate) {
       if (!http && !https) {

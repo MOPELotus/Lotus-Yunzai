@@ -19,6 +19,35 @@ export interface NoticeGroupTransport extends GroupTransport {
     signal?: AbortSignal): Promise<void>;
 }
 
+export function waitForMilkyNoticeReceipts(shutdown: AbortSignal) {
+  const connection = new AbortController();
+  const pending = new Set<Promise<unknown>>();
+  const closed = Promise.withResolvers<void>();
+  const close = () => {
+    connection.abort();
+    closed.resolve();
+  };
+  const drain = () => {
+    if (!pending.size) { close(); return; }
+    const timer = setTimeout(close, 5_000);
+    void Promise.allSettled(pending).then(() => {
+      clearTimeout(timer);
+      close();
+    });
+  };
+  if (shutdown.aborted) close();
+  else shutdown.addEventListener("abort", drain, { once: true });
+  return {
+    signal: connection.signal,
+    closed: closed.promise,
+    track(attempt: Promise<unknown>) {
+      pending.add(attempt);
+      const finish = () => pending.delete(attempt);
+      void attempt.then(finish, finish);
+    },
+  };
+}
+
 export function noticeGroupTransport(fallback: GroupTransport, onebot: () => readonly NoticeGroupAccount[],
   milky: () => NoticeGroupAccount | undefined): NoticeGroupTransport {
   return Object.freeze({

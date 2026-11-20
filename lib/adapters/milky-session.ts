@@ -39,6 +39,8 @@ type MilkyPendingJoin = PendingGroupJoinEntry & { readonly origin: MilkyJoinOrig
 export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
+  readonly accepting?: () => boolean;
+  readonly onNoticeAttempt?: (attempt: Promise<unknown>) => void;
   readonly friendReview?: ReturnType<typeof createRequestClaim>;
   readonly invitationReview?: ReturnType<typeof createRequestClaim>;
   readonly invitationReceipts?: ReturnType<typeof createMilkyInvitationReceipts>;
@@ -625,15 +627,21 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       });
     },
     async sendGroup(group_id, message, active = signal) {
+      if (active.aborted || signal.aborted || options.accepting?.() === false) throw new NoticeNotSentError("原公告会话已关闭。");
       let messageId: number | undefined;
-      const status = await sendConfirmed({ group_id }, message, undefined, active, id => { messageId = id; });
+      const attempt = sendConfirmed({ group_id }, message, undefined, signal, id => { messageId = id; });
+      options.onNoticeAttempt?.(attempt);
+      const status = await attempt;
       if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
       if (messageId === undefined) throw new Error("公告发送结果未确认。");
       return messageId;
     },
     async recall(group_id, message_seq, active = signal) {
-      if (!positiveId(group_id) || !hasMessageSequence(message_seq)) throw new NoticeNotSentError("公告撤回参数无效。");
-      const result = await call.confirmed("recall_group_message", { group_id, message_seq }, active);
+      if (!positiveId(group_id) || !hasMessageSequence(message_seq) || active.aborted || signal.aborted ||
+          options.accepting?.() === false) throw new NoticeNotSentError("公告撤回参数或会话无效。");
+      const attempt = call.confirmed("recall_group_message", { group_id, message_seq });
+      options.onNoticeAttempt?.(attempt);
+      const result = await attempt;
       if (result.status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
       if (result.status !== "confirmed") throw new Error("公告撤回结果未确认。");
     },
@@ -658,6 +666,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         !body.event_type || !record(body.data)) return "invalid";
     if (body.self_id !== account) return "foreign";
     if (body.event_type === "bot_offline") return "offline";
+    if (options.accepting?.() === false) return "accepted";
     groupMute.observe(body);
 
     if (body.event_type === "group_admin_change") {
