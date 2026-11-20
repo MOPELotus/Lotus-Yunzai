@@ -1,7 +1,8 @@
-import { lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
+import { backgroundStartupFailure } from "../lib/managed-exit.ts";
 import { prepareStartup } from "./startup.ts";
 
 const name = "lotus-yunzai";
@@ -76,17 +77,19 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     }
   }
   await rm(readyFile, { force: true });
-  const start = await Bun.spawn([
-    binary, "start", process.execPath, "--name", name, "--cwd", root, "--interpreter", "none",
-    "--update-env", "--no-vizion", "--no-pmx", "--no-autorestart", "--no-treekill",
-    "--kill-timeout", "20000", "--listen-timeout", "120000", "--wait-ready", "--time",
-    "--", join(root, "scripts", "run-managed.ts"), root, readyFile,
-  ], spawn).exited;
+  const config = join(home, "host-process.json");
+  await writeFile(config, JSON.stringify({ apps: [{
+    name, cwd: root, script: process.execPath, args: [join(root, "scripts", "run-managed.ts"), root, readyFile],
+    interpreter: "none", autorestart: true, stop_exit_codes: [0, backgroundStartupFailure],
+    min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: 120_000,
+    kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
+  }] }), { mode: 0o600 });
+  const start = await Bun.spawn([binary, "start", config, "--only", name], spawn).exited;
   if (start !== 0) return start;
 
   // PM2 can report success after the child exits before ready or after its wait-ready timeout.
-  const pid = await runningPid();
-  if (pid && pid === await readyPid()) return 0;
+  // A new marker also proves readiness if the first worker has already entered crash recovery.
+  if (/^[1-9]\d*$/u.test(await readyPid() ?? "")) return 0;
   await Bun.spawn([binary, "stop", name], spawn).exited;
   throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
 }

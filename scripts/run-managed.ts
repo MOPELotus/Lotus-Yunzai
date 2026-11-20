@@ -1,16 +1,22 @@
 import { realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
-import { createManagedSupervisor } from "../lib/managed-supervisor.ts";
+import { backgroundStartupFailure } from "../lib/managed-exit.ts";
 
 export async function runManaged(directory: string, ready?: () => Promise<void>): Promise<number> {
+  const { createManagedSupervisor } = await import("../lib/managed-supervisor.ts");
   const root = await realpath(directory);
   // Keep the same lock across a supervised checkout replacement.
   const lock = await lockFile(join(dirname(root), `.${basename(root)}.lotus-host.sqlite`),
     "托管宿主", 0, "当前目录已有托管宿主运行。");
   const supervisor = createManagedSupervisor(root);
-  const interrupt = () => { void supervisor.stop("SIGINT"); };
-  const terminate = () => { void supervisor.stop("SIGTERM"); };
+  let stopping = false;
+  const stop = (signal: "SIGINT" | "SIGTERM") => {
+    stopping = true;
+    void supervisor.stop(signal);
+  };
+  const interrupt = () => stop("SIGINT");
+  const terminate = () => stop("SIGTERM");
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   try {
@@ -23,7 +29,8 @@ export async function runManaged(directory: string, ready?: () => Promise<void>)
         throw new Error("无法通知 PM2 宿主已就绪。");
       }
     }
-    return await supervisor.done;
+    const status = await supervisor.done;
+    return ready && stopping ? 0 : status;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
     return (await supervisor.done) || 1;
@@ -35,14 +42,18 @@ export async function runManaged(directory: string, ready?: () => Promise<void>)
 }
 
 if (import.meta.main) {
+  const [directory = process.cwd(), readyFile] = process.argv.slice(2);
+  let started = !readyFile;
   try {
-    const [directory = process.cwd(), readyFile] = process.argv.slice(2);
-    process.exitCode = await runManaged(directory, readyFile ? async () => {
+    const status = await runManaged(directory, readyFile ? async () => {
       await writeFile(readyFile, String(process.pid), { mode: 0o600 });
-      if (process.connected) process.send?.("ready");
+      started = true;
+      if (process.connected) process.send?.("ready", () => {});
     } : undefined);
+    const exit = readyFile && status === backgroundStartupFailure ? 1 : status;
+    process.exitCode = started ? exit : backgroundStartupFailure;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
-    process.exitCode = 1;
+    process.exitCode = started ? 1 : backgroundStartupFailure;
   }
 }

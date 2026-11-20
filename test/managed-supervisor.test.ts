@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createManagedSupervisor } from "../lib/managed-supervisor.ts";
+import { backgroundStartupFailure } from "../lib/managed-exit.ts";
 import { createProcessReceipts } from "../lib/process-receipts.ts";
 import { activateUpdate } from "../lib/update-activation.ts";
 
@@ -11,6 +12,36 @@ const liveValue = "production fixture environment";
 const config = "active production configuration";
 const oldRevision = "a".repeat(40);
 const newRevision = "b".repeat(40);
+
+test("后台入口区分未就绪失败、正常退出和就绪后崩溃", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-exit-"));
+  const active = join(temporary, "active");
+  await mkdir(active);
+  try {
+    await writeFile(join(active, "app.ts"), `
+      const { FIXTURE_READY, FIXTURE_STATUS, FIXTURE_MARKER, LOTUS_MANAGED_TOKEN } = process.env;
+      if (FIXTURE_READY === "1") {
+        process.send({ type: "lotus-ready", token: LOTUS_MANAGED_TOKEN });
+        while (!await Bun.file(FIXTURE_MARKER).exists()) await Bun.sleep(10);
+      }
+      process.exit(Number(FIXTURE_STATUS));
+    `);
+    for (const [ready, status, expected] of [
+      [false, 0, backgroundStartupFailure], [false, 42, backgroundStartupFailure],
+      [true, 0, 0], [true, 42, 42], [true, backgroundStartupFailure, 1],
+    ] as const) {
+      const marker = join(temporary, `ready-${ready}-${status}`);
+      const child = Bun.spawn([process.execPath, fileURLToPath(new URL("../scripts/run-managed.ts", import.meta.url)), active, marker], {
+        cwd: active, stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 2_000,
+        env: { PATH: process.env.PATH, FIXTURE_READY: ready ? "1" : "0", FIXTURE_STATUS: String(status), FIXTURE_MARKER: marker },
+      });
+      expect(await child.exited).toBe(expected);
+      expect(await Bun.file(marker).exists()).toBe(ready);
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
 
 type WorkerEvent = {
   readonly event: "launch" | "ready" | "serving" | "cleanup" | "failed";
