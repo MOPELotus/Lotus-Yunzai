@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
+import { MiyoliveProvider } from "../packages/hoyo-client/redeem-preview/official.js";
 import { CommandRegistry, sendCommandReply } from "../lib/commands.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 import { redeemCodeCommands } from "../lib/redeem-code-commands.ts";
@@ -19,6 +20,41 @@ const fixtureItems = [
 ];
 const recap = { uid: author, post_id: "101", subject: "《原神》7.2版本前瞻特别节目",
   created_at: start / 1000, content: "本次兑换码将于2026年10月26日12:00:00失效。" };
+
+test("仅官方直播索引 HTTP 410 触发一次匿名直连", async () => {
+  const index = "https://api-takumi.mihoyo.com/event/miyolive/index";
+  const calls: string[] = [];
+  const direct: string[] = [];
+  let fails = false;
+  const controller = new AbortController();
+  const provider = new MiyoliveProvider({ signal: controller.signal, async fetch(url: string, init: RequestInit) {
+    calls.push(url);
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+    expect(new Headers(init.headers).has("Cookie")).toBe(false);
+    return new Response("", { status: 410 });
+  }, async directRequest(url: string, options: { headers: HeadersInit; timeoutMs: number; signal?: AbortSignal }) {
+    direct.push(url);
+    expect(new Headers(options.headers).has("Cookie")).toBe(false);
+    expect(options.timeoutMs).toBeGreaterThan(0);
+    expect(options.timeoutMs).toBeLessThanOrEqual(10_000);
+    expect(options.signal).toBe(controller.signal);
+    if (fails) throw new Error("直连失败夹具");
+    return { retcode: 0, data: { template: {} } };
+  } });
+  expect(await provider.request(index, activity)).toEqual({ template: {} });
+  fails = true;
+  await expect(provider.request(index, activity)).rejects.toThrow("直连失败夹具");
+  for (const endpoint of [
+    "https://api-takumi-static.mihoyo.com/event/miyolive/refreshCode",
+    "https://bbs-api.mihoyo.com/post/wapi/userPost",
+  ]) await expect(provider.request(endpoint, activity)).rejects.toThrow("HTTP 410");
+  expect(calls).toHaveLength(4);
+  expect(direct).toEqual([index, index]);
+  controller.abort();
+  await expect(provider.request(index, activity)).rejects.toThrow();
+  expect(calls).toHaveLength(4);
+  expect(direct).toHaveLength(2);
+});
 
 type MockOptions = {
   game?: { uid: string; gids: string; version: string; title: string };

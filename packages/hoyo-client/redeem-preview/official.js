@@ -99,6 +99,7 @@ export class MiyoliveProvider {
     const deadline = Date.now() + 20000
     const headers = { "x-rpc-client_type": "2", "x-rpc-act_id": actId, Referer: "https://www.miyoushe.com/" }
     let body
+    let liveIndexGone = false
     try {
       let response
       for (const waitMs of [0, 800, 1800]) {
@@ -111,7 +112,9 @@ export class MiyoliveProvider {
       }
       if (!response.ok) {
         const error = new Error(`官方接口 HTTP ${response.status}`)
-        error.retryable = response.status >= 500 || response.status === 429
+        liveIndexGone = response.status === 410 && target.hostname === "api-takumi.mihoyo.com" &&
+          target.pathname === "/event/miyolive/index"
+        error.retryable = response.status >= 500 || response.status === 429 || liveIndexGone
         error.httpStatus = response.status
         await response.body?.cancel().catch(() => {})
         throw error
@@ -123,7 +126,7 @@ export class MiyoliveProvider {
       const detail = error.cause?.code || error.code || error.message
       if (!this.directRequest || error.retryable === false) throw new Error(`${endpoint}：${detail}`, { cause: error })
       let lastError
-      for (const waitMs of [0, 150, 350]) {
+      for (const waitMs of liveIndexGone ? [0] : [0, 150, 350]) {
         if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
         const remainingMs = deadline - Date.now()
         if (remainingMs <= 0) break
