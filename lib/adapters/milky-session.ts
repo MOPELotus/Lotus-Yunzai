@@ -694,7 +694,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
               const result = await call.confirmed("send_private_message", { ...target, message }, active);
               if (result.status === "confirmed") confirmSent(target, result.data, message);
               if (result.status === "rejected" && !active.aborted && isMaster(owner)) {
-                await sendConfirmed(target, `撤回消息：${original}`, undefined, active);
+                await sendConfirmed(target, typeof original === "string" ? `撤回消息：${original}` : ["撤回消息：", ...original], undefined, active);
               }
             }));
           },

@@ -969,7 +969,8 @@ export function startOneBot(
                     const target = { user_id: owner };
                     if (await calls.sendConfirmed(send, target, message, active) !== "confirmed" || active.aborted || !options.isMaster(self_id, owner)) return;
                     if (await calls.sendForwardConfirmed(send, target, nodes, active) === "rejected" && !active.aborted && options.isMaster(self_id, owner)) {
-                      await calls.sendConfirmed(send, target, [{ type: "text", data: { text: `撤回消息：${original}` } }], active);
+                      const fallback = encodeOneBotReply(typeof original === "string" ? `撤回消息：${original}` : ["撤回消息：", ...original]);
+                      if (fallback !== undefined) await calls.sendConfirmed(send, target, fallback, active);
                     }
                   }));
                 },

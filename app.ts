@@ -56,8 +56,8 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
-import { createMessageRecallCache, type NativeFriendRecallNotice, type NativeGroupRecallNotice } from "./lib/message-recall-notice.ts";
-import { privateNoticeText } from "./lib/private-notice-receipts.ts";
+import { createMessageRecallCache, readRecallBody, type NativeFriendRecallNotice, type NativeGroupRecallNotice,
+  type RecallBody } from "./lib/message-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -1173,11 +1173,11 @@ if (import.meta.main) {
     const { self_id: botId, user_id: userId, message_id: messageId, message } = event;
     if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendRecallNoticeNames) ||
-        typeof message === "string" || !message.length || message.some(part => part.type !== "text" || typeof part.text !== "string")) return;
+        typeof message === "string" || !message.length) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const text = message.map(part => part.text).join("");
-    if (signal.aborted || isPrivateCredentialMessage(text)) return;
-    return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, text,
+    const body = readRecallBody(message);
+    if (body === undefined || signal.aborted || isPrivateCredentialMessage(recallNoticeInput(body).text)) return;
+    return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, body,
       () => registration.policy.retention(botId, signal), signal);
   }
 
@@ -1189,10 +1189,15 @@ if (import.meta.main) {
         !groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, groupRecallNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, source.signal);
     if (signal.aborted) return;
-    const text = typeof message === "string" ? message : privateNoticeText(message, false);
-    if (!text || isPrivateCredentialMessage(text)) return;
-    return groupRecallCache.capture(source, text,
+    const body = readRecallBody(message);
+    if (body === undefined || isPrivateCredentialMessage(recallNoticeInput(body).text)) return;
+    return groupRecallCache.capture(source, body,
       () => registration.policy.retention(botId, groupId, signal), signal);
+  }
+
+  function recallNoticeInput(body: RecallBody) {
+    if (typeof body === "string") return { text: body };
+    return { text: body.filter(part => typeof part === "string").join(""), parts: body };
   }
 
   async function forwardGroupMessageNotice(source: NativeGroupMessageSource) {
@@ -1220,9 +1225,9 @@ if (import.meta.main) {
     if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, friendRecallNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, notice.signal);
     if (signal.aborted || await registration.policy.retention(botId, signal) === undefined || signal.aborted) return;
-    const text = await friendRecallCache.take(notice, signal);
-    if (text === undefined || signal.aborted) return;
-    const reply = await registration.policy.format({ botId, userId, time, text }, signal);
+    const body = await friendRecallCache.take(notice, signal);
+    if (body === undefined || signal.aborted) return;
+    const reply = await registration.policy.format({ botId, userId, time, ...recallNoticeInput(body) }, signal);
     if (reply && !signal.aborted) await notice.notifyOwners(reply, signal);
   }
 
@@ -1234,12 +1239,12 @@ if (import.meta.main) {
     if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, groupRecallNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, notice.signal);
     if (signal.aborted || await registration.policy.retention(botId, groupId, signal) === undefined || signal.aborted) return;
-    const text = await groupRecallCache.take(notice, signal);
-    if (text === undefined || signal.aborted) return;
+    const body = await groupRecallCache.take(notice, signal);
+    if (body === undefined || signal.aborted) return;
     const description = await notice.describe(signal);
     if (signal.aborted) return;
-    const reply = await registration.policy.format({ ...description, botId, userId, groupId, operatorId, time, text }, signal);
-    if (reply && !signal.aborted) await notice.notifyOwners(reply.summary, reply.text, reply.nickname, signal);
+    const reply = await registration.policy.format({ ...description, botId, userId, groupId, operatorId, time, ...recallNoticeInput(body) }, signal);
+    if (reply && !signal.aborted) await notice.notifyOwners(reply.summary, reply.parts ?? reply.text, reply.nickname, signal);
   }
 
   function groupOwnerNotificationSignal(module: AbortSignal, transport: AbortSignal,

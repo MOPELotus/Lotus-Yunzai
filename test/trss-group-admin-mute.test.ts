@@ -1899,6 +1899,33 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await waitUntil(() => oneBotReplies().slice(previousOwnerReplies).find(({ params }) => params.user_id === 52 &&
       JSON.stringify(params.message).includes("当前会话没有修改此通知设置的权限")), "仅当前机器人主人不可关闭其他账号的默认通知。");
     expect(await readFile(noticeFile, "utf8")).toBe(beforeBulkConfig);
+
+    await writeFile(noticeFile, 'default: { PrivateRecall: true, groupRecall: true }\n');
+    const oneBotFace = { type: "face", data: { id: "14" } };
+    const facePrivate = { ...oneBotPrivate("", 42), message: [oneBotFace] };
+    const facePrivateRecall = { ...oneBotRecall, message_id: facePrivate.message_id, time: 1_700_000_032 };
+    client.send(JSON.stringify(facePrivate));
+    client.send(JSON.stringify(facePrivateRecall));
+    const pureFaceNotice = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("好友撤回消息") && JSON.stringify(params.message).includes('"type":"face"')),
+    "OneBot 好友撤回的纯 QQ 表情未到达主人。");
+    expect((pureFaceNotice.params.message as readonly unknown[]).at(-1)).toMatchObject({ type: "face" });
+    const secretFace = { ...oneBotPrivate("", 42), message: [text("cookie_"), oneBotFace, text("token=synthetic-secret-with-face")] };
+    client.send(JSON.stringify(secretFace));
+    client.send(JSON.stringify({ ...facePrivateRecall, message_id: secretFace.message_id }));
+
+    const recalledFaceGroup = { ...milkyTitle("合成群撤回表情前", 86), peer_id: 95 };
+    await webhook("message_receive", { ...recalledFaceGroup, segments: [...recalledFaceGroup.segments,
+      { type: "face", data: { face_id: "14", is_large: true } }, text("合成群撤回表情后"),
+    ] });
+    const faceGroupRecall = { message_scene: "group", peer_id: 95, sender_id: 86, operator_id: 86, message_seq: recalledFaceGroup.message_seq };
+    await webhook("message_recall", faceGroupRecall);
+    await webhook("message_recall", faceGroupRecall);
+    const groupFaceNotice = (await milkyOwnerReply(operator, "合成群撤回表情后")).params.message;
+    expect(groupFaceNotice).toMatchObject([{ type: "forward", data: { messages: [{ user_id: 86, segments: [
+      text("合成群撤回表情前"), { type: "face", data: { face_id: "14", is_large: true } }, text("合成群撤回表情后"),
+    ] }] } }]);
+    expect(oneBotReplies().some(({ params }) => JSON.stringify(params.message).includes("synthetic-secret-with-face"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createMessageRecallCache, type FriendRecallScope, type GroupRecallScope } from "../lib/message-recall-notice.ts";
+import { createMessageRecallCache, readRecallBody, type FriendRecallScope, type GroupRecallScope } from "../lib/message-recall-notice.ts";
 
 test("撤回等待原消息留存并只领取一次，同协议当前原好友和消息才匹配", async () => {
   const cache = createMessageRecallCache(() => undefined);
@@ -70,4 +70,36 @@ test("同账号的相同原消息编号按群与好友会话分别核对", async
   expect(await cache.take({ ...group, groupId: 78 }, signal)).toBeUndefined();
   expect(await cache.take(group, signal)).toBe("当前群原文");
   expect(await cache.take(direct, signal)).toBe("好友原文");
+});
+
+test("标准 QQ 表情按原顺序持久化，过期、伪造媒体及超长片段不恢复", async () => {
+  const body = readRecallBody([
+    { type: "text", text: "第一段" }, { type: "face", id: "14", is_large: true, url: "https://example.test/media" },
+    { type: "text", text: "末段" },
+  ]);
+  const expected = ["第一段", { type: "face", data: { id: 14, is_large: true } }, "末段"] as const;
+  expect(body).toEqual(expected);
+  expect(readRecallBody([{ type: "image", resource_id: "not-a-face" }])).toBeUndefined();
+  expect(readRecallBody([{ type: "face", id: "-2" }])).toBeUndefined();
+  expect(readRecallBody([{ type: "face", id: 14, is_large: "true" }])).toBeUndefined();
+  expect(readRecallBody(Array.from({ length: 129 }, () => ({ type: "face", id: 0 })))).toBeUndefined();
+
+  let now = 1_700_000_000_000;
+  const store = {
+    entry: null as string | null,
+    async save(_key: string, value: string) { this.entry ??= value; },
+    async take() { const found = this.entry; this.entry = "null"; return found; },
+  };
+  const scope: FriendRecallScope = { adapter: "milky", botId: 99, userId: 42, messageId: 25 };
+  const signal = new AbortController().signal;
+  const cache = createMessageRecallCache(() => store, () => now);
+  await cache.capture(scope, body!, async () => 600, signal);
+  expect(store.entry).toBe(JSON.stringify({ parts: expected, expires: now + 600_000 }));
+  const restarted = createMessageRecallCache(() => store, () => now);
+  expect(await restarted.take(scope, signal)).toEqual(expected);
+  store.entry = JSON.stringify({ parts: [{ type: "image" }], expires: now + 600_000 });
+  expect(await restarted.take(scope, signal)).toBeUndefined();
+  store.entry = JSON.stringify({ parts: expected, expires: now + 600_000 });
+  now += 600_001;
+  expect(await restarted.take(scope, signal)).toBeUndefined();
 });
