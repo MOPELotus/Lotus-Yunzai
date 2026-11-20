@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createMiyousheShopPlans, type MiyousheShopInspection } from "../lib/miyoushe-shop-plans.ts";
 
 const target = { qq: "42", profileId: 1 };
@@ -38,6 +38,62 @@ async function inspection(good: MiyousheShopInspection["good"] = mockGood) {
 }
 
 function gate() { return Promise.withResolvers<void>(); }
+
+test("导入两个旧目录的兑换计划后保留未确认记录，阻止已有同商品预约提交", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let submits = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { submits++; return "succeeded" as const; } };
+    const original = createMiyousheShopPlans(options);
+    const reservation = await original.reserve(target, body);
+    const { bindingStamp: _stamp, ...originalPlan } = JSON.parse(await readFile(file, "utf8")).plans[0];
+    const previous = { ...originalPlan, id: "123456789abc", status: "submitting", attempts: 1 };
+    const finished = { ...originalPlan, id: "abcdef123456", status: "succeeded", goodsId: "31" };
+    const legacyFiles = ["Lotus-Plugin", "Lotus-ReFactor"].map(id => ({ id, file: join(profileDirectory, id, "plans.json") }));
+    const legacyBytes = [JSON.stringify({ version: 1, plans: [previous] }) + "\r\n",
+      JSON.stringify({ version: 2, plans: [finished], trackers: [{ id: "111111111111", legacyField: true }] }) + "\n"];
+    await Promise.all(legacyFiles.map(async (source, index) => {
+      await mkdir(dirname(source.file), { recursive: true });
+      await writeFile(source.file, legacyBytes[index]!);
+    }));
+    const migrated = createMiyousheShopPlans({ ...options, legacyFiles });
+    await Promise.all([migrated.scan(), createMiyousheShopPlans({ ...options, legacyFiles }).scan()]);
+    expect(submits).toBe(0);
+    const { plans } = await migrated.list(target);
+    expect(plans).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: previous.id, status: "unknown", attempts: 1 }),
+      expect.objectContaining({ id: finished.id, status: "succeeded" }),
+      expect.objectContaining({ id: reservation.id, status: "cancelled", message: expect.stringContaining("有兑换结果待确认") }),
+    ]));
+    await expect(migrated.reserve(other, body)).rejects.toMatchObject({ status: 409 });
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ importedLegacy: legacyFiles.map(source => source.id),
+      trackers: [{ id: "111111111111", legacyField: true }] });
+    expect(await Promise.all(legacyFiles.map(source => readFile(source.file, "utf8")))).toEqual(legacyBytes);
+    await migrated.resolve(target, previous.id, false);
+    const restarted = createMiyousheShopPlans({ ...options, legacyFiles });
+    expect((await restarted.list(target)).plans.find(plan => plan.id === previous.id)?.status).toBe("failed");
+  });
+});
+
+test("现用和旧兑换账本相同编号内容冲突时保留两份原文件", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let submits = 0;
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { submits++; return "succeeded" as const; } };
+    await createMiyousheShopPlans(options).reserve(target, body);
+    const primary = await readFile(file, "utf8");
+    const legacy = join(profileDirectory, "legacy.json");
+    const prior = JSON.parse(primary);
+    prior.plans[0].status = "submitting";
+    const legacyBytes = JSON.stringify(prior);
+    await writeFile(legacy, legacyBytes);
+    const migrated = createMiyousheShopPlans({ ...options, legacyFiles: [{ id: "Lotus-ReFactor", file: legacy }] });
+    await expect(migrated.scan()).rejects.toThrow("现用与旧版兑换计划有冲突");
+    expect(submits).toBe(0);
+    expect(await readFile(file, "utf8")).toBe(primary);
+    expect(await readFile(legacy, "utf8")).toBe(legacyBytes);
+  });
+});
 
 test("预约需要明确确认，同一账号跨档案去重，同一意图在完成后重试仍复用记录", async () => {
   await fixture(async ({ file, profileDirectory }) => {

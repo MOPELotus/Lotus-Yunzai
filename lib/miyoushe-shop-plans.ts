@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { MiyousheExchangeError, type MiyousheShopExchangeResult } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import { lockFile } from "./file-lock.ts";
@@ -36,6 +37,7 @@ const details = {
   redeemed: "用户核对官方兑换记录后确认已兑换。",
   unredeemed: "用户核对官方兑换记录后确认未兑换，可重新预约。",
   stockEmpty: "官方库存已售罄，本轮追踪结束。",
+  pending: "该账号此商品有兑换结果待确认，请先核对米游社兑换记录再预约。",
   verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
   "rate-limited": "米游社商城请求频繁，请稍后重新预约。",
 } as const;
@@ -91,6 +93,7 @@ export interface MiyousheShopInspection {
 
 interface Options {
   readonly file: string;
+  readonly legacyFiles?: readonly { readonly id: string; readonly file: string }[];
   readonly profileDirectory?: string | URL;
   readonly now?: () => number;
   readonly inspect: (target: MiyousheOverviewTarget, goodsId: string, signal?: AbortSignal,
@@ -152,13 +155,15 @@ function addressLabel(label: unknown) {
   return matching(label, /^(?:[^\p{Cc}\p{Cf}*])\*\* \*\*\*\*\d{0,4}$/u) ? label : "";
 }
 
-interface Store { version: 1 | 2; plans: MiyousheShopPlan[]; trackers?: unknown[] }
+interface Store { version: 1 | 2; plans: MiyousheShopPlan[]; trackers?: unknown[]; importedLegacy?: string[] }
 
-function createStore(file: string) {
+function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles"]>) {
   const directory = dirname(file);
-  async function read(): Promise<Store> {
+  let migrated: Promise<void> | undefined;
+
+  async function readFile(path: string): Promise<Store | undefined> {
     try {
-      const input = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       try {
         if (!(await input.stat()).isFile()) throw new Error("米游币兑换计划须为普通文件。");
         const data = asRecord(JSON.parse(await input.readFile("utf8")));
@@ -166,20 +171,26 @@ function createStore(file: string) {
             !Array.isArray(data.plans) || !data.plans.every(validPlan) ||
             new Set(data.plans.map(plan => plan.id)).size !== data.plans.length ||
             (data.version === 2 && !Array.isArray(data.trackers)) ||
-            (data.trackers !== undefined && !Array.isArray(data.trackers))) throw new Error("米游币兑换计划文件格式异常。");
+            (data.trackers !== undefined && !Array.isArray(data.trackers)) ||
+            (data.importedLegacy !== undefined && (!Array.isArray(data.importedLegacy) ||
+              !data.importedLegacy.every(id => typeof id === "string")))) throw new Error("米游币兑换计划文件格式异常。");
         return data as unknown as Store;
       } finally { await input.close(); }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 2, plans: [], trackers: [] };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       throw error;
     }
   }
 
-  async function change<T>(edit: (data: Store) => T | Promise<T>): Promise<T> {
+  async function readPrimary(): Promise<Store> {
+    return await readFile(file) ?? { version: 2, plans: [], trackers: [] };
+  }
+
+  async function changePrimary<T>(edit: (data: Store) => T | Promise<T>): Promise<T> {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const guard = await lockFile(join(directory, `.${basename(file)}.sqlite`), "兑换计划");
     try {
-      const data = await read();
+      const data = await readPrimary();
       const previous = JSON.stringify(data);
       const result = await edit(data);
       if (previous === JSON.stringify(data)) return result;
@@ -196,6 +207,51 @@ function createStore(file: string) {
       } finally { await rm(stage, { force: true }); }
       return result;
     } finally { guard.close(); }
+  }
+
+  function ensureMigrated() {
+    return migrated ??= (async () => {
+      if (!legacyFiles.length) return;
+      const known = (await readPrimary()).importedLegacy ?? [];
+      const unchecked = legacyFiles.filter(source => !known.includes(source.id));
+      const sources = await Promise.all(unchecked.map(async source => ({ ...source, data: await readFile(source.file) })));
+      if (!sources.some(source => source.data)) return;
+      await changePrimary(data => {
+        const imported = data.importedLegacy ??= [];
+        const trackers = data.trackers ??= [];
+        const plansById = new Map(data.plans.map(plan => [plan.id, plan]));
+        for (const source of sources) {
+          if (!source.data || imported.includes(source.id)) continue;
+          for (const plan of source.data.plans) {
+            const existing = plansById.get(plan.id);
+            if (existing && !isDeepStrictEqual(existing, plan)) throw new Error("现用与旧版兑换计划有冲突。");
+            if (!existing) {
+              data.plans.push(plan);
+              plansById.set(plan.id, plan);
+            }
+          }
+          for (const tracker of source.data.trackers ?? []) {
+            const id = asTrackerRecord(tracker)?.id;
+            if (trackers.some(item => isDeepStrictEqual(item, tracker))) continue;
+            if (typeof id === "string" && trackers.some(item => asTrackerRecord(item)?.id === id)) {
+              throw new Error("现用与旧版兑换追踪有冲突。");
+            }
+            trackers.push(tracker);
+          }
+          imported.push(source.id);
+        }
+      });
+    })().catch(error => { migrated = undefined; throw error; });
+  }
+
+  async function read() {
+    await ensureMigrated();
+    return readPrimary();
+  }
+
+  async function change<T>(edit: (data: Store) => T | Promise<T>) {
+    await ensureMigrated();
+    return changePrimary(edit);
   }
 
   async function withAccount<T>(accountId: string, action: () => Promise<T>) {
@@ -257,8 +313,8 @@ function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   return plan;
 }
 
-export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now, inspect, submit, tracking }: Options) {
-  const store = createStore(resolvePath(file));
+export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirectory, now = Date.now, inspect, submit, tracking }: Options) {
+  const store = createStore(resolvePath(file), legacyFiles);
   const profiles = createProfileStore(profileDirectory);
   type Verify = () => Promise<void>;
 
@@ -536,6 +592,8 @@ export function createMiyousheShopPlans({ file, profileDirectory, now = Date.now
     await store.withAccount(plan.accountId, async () => {
       const claimed = await update(plan.id, "scheduled", (current, data) => {
         if (!trackerIsCurrent(data, current)) finish(current, "cancelled");
+        else if (data.plans.some(other => other.accountId === current.accountId && other.goodsId === current.goodsId &&
+            (other.status === "unknown" || other.status === "submitting"))) finish(current, "cancelled", details.pending);
         else Object.assign(current, { status: "preparing", message: statusMessage.preparing });
       });
       if (claimed?.status !== "preparing") return;

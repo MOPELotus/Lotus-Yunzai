@@ -1989,6 +1989,9 @@ if (import.meta.main) {
       const shopClient = createProfileHoyoClient(checkinProfiles);
       shopPlans = createMiyousheShopPlans({
         file: fileURLToPath(new URL("data/coinShop/plans.json", root)), profileDirectory,
+        legacyFiles: legacyLotusDirectories.map(id => ({ id,
+          file: fileURLToPath(new URL(`plugins/${id}/data/coinShop/plans.json`, root)),
+        })),
         tracking: {
           async catalog(target, game, signal, verifyBinding) {
             const result = [];
