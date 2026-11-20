@@ -1,3 +1,6 @@
+import { constants } from "node:fs";
+import { open, realpath } from "node:fs/promises";
+import { basename, isAbsolute, relative, sep } from "node:path";
 import { maxPublicFileBytes, type createPublicFiles } from "./public-files.ts";
 
 interface FileOptions {
@@ -17,7 +20,9 @@ type FileInput = FileData | {
 
 const defaultTimeMs = 60_000;
 const maxEncodedLength = Math.ceil(maxPublicFileBytes / 3) * 4;
+const maxImagePixels = 32_000_000;
 const numberText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/u;
+const pngEnd = Buffer.from("0000000049454e44ae426082", "hex");
 
 function numeric(value: unknown): number | undefined {
   const input = typeof value === "string" && numberText.test(value.trim()) ? Number(value) : value;
@@ -68,13 +73,31 @@ const rasterSignatures = [
   { mime: "image/gif", extension: "gif", bytes: [71, 73, 70, 56, 55, 97] },
   { mime: "image/gif", extension: "gif", bytes: [71, 73, 70, 56, 57, 97] },
 ] as const;
+type RasterMime = typeof rasterSignatures[number]["mime"] | "image/webp";
 
-function rasterFile(bytes: Uint8Array): { mime: string; extension: string } | undefined {
+function rasterFile(bytes: Uint8Array): { mime: RasterMime; extension: string } | undefined {
   if ([82, 73, 70, 70].every((byte, index) => bytes[index] === byte) &&
       [87, 69, 66, 80].every((byte, index) => bytes[index + 8] === byte)) {
     return { mime: "image/webp", extension: "webp" };
   }
   return rasterSignatures.find((signature) => signature.bytes.every((byte, index) => bytes[index] === byte));
+}
+
+async function verifyLocalRaster(bytes: Buffer, mime: RasterMime): Promise<boolean> {
+  const complete = mime === "image/png" ? bytes.subarray(-pngEnd.length).equals(pngEnd)
+    : mime === "image/jpeg" ? bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9
+    : mime === "image/gif" ? bytes.at(-1) === 0x3b
+    : bytes.readUInt32LE(4) + 8 === bytes.length;
+  if (!complete) return false;
+  try {
+    const image = new Bun.Image(bytes);
+    const { width, height, format } = await image.metadata();
+    if (`image/${format}` !== mime || width < 1 || height < 1 || width * height > maxImagePixels) return false;
+    await image.resize(1, 1).png().bytes();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function createFileToUrl(
@@ -125,6 +148,38 @@ export function createFileToUrl(
 }
 
 export type FileToUrl = ReturnType<typeof createFileToUrl>;
+
+export function createImageToUrl(fileToUrl: FileToUrl, directory: string | undefined) {
+  return async (input: string, options: Pick<FileOptions, "name"> = {}): Promise<URL | string> => {
+    if (!directory) throw new Error("未设置允许分享的本地图像目录。");
+    if (typeof input !== "string" || !input.trim() || input.includes("\0")) throw new TypeError("本地图像路径无效。");
+    const [root, file] = await Promise.all([realpath(directory), realpath(input)]).catch(() => []);
+    if (!root || !file) throw new Error("本地图像不可读取。");
+    const path = relative(root, file);
+    if (!path || path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) throw new Error("本地图像不在允许分享的目录。");
+
+    const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      .catch(() => undefined);
+    if (!handle) throw new Error("本地图像不可读取。");
+    try {
+      const before = await handle.stat();
+      if (!before.isFile() || before.size < 1 || before.size > maxPublicFileBytes) throw new Error("本地图像大小或类型无效。");
+      const bytes = Buffer.alloc(before.size);
+      for (let offset = 0; offset < bytes.length;) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (!bytesRead) throw new Error("本地图像在读取时发生变化。");
+        offset += bytesRead;
+      }
+      const after = await handle.stat();
+      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error("本地图像在读取时发生变化。");
+      const raster = rasterFile(bytes);
+      if (!raster || !await verifyLocalRaster(bytes, raster.mime)) throw new Error("本地图像格式无效或不受支持。");
+      return fileToUrl(bytes, { name: options.name ?? basename(input), mime: raster.mime });
+    } finally {
+      await handle.close();
+    }
+  };
+}
 
 export function listenerFileBase(hostname: string, port: number | undefined, protocol: "http" | "https" = "http"): URL | undefined {
   if (!port) return;

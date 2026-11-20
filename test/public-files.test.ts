@@ -1,4 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
+import { mkdir, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createFileToUrl, createImageToUrl } from "../lib/file-to-url.ts";
 import { createPublicFiles, maxPublicFileBytes } from "../lib/public-files.ts";
 
 function request(path: string, method = "GET", headers?: HeadersInit) {
@@ -118,5 +122,47 @@ test("拒绝路径、FileRef、非法定额和过大字节，限制总容量及�
   } finally {
     files.close();
     clock.mockRestore();
+  }
+});
+
+test("旧图片分享只读获准目录内有界栅格字节，沿用公共链接的访问次数", async () => {
+  const work = await mkdtemp(join(tmpdir(), "lotus-public-image-"));
+  const directory = join(work, "images");
+  const outside = join(work, "images-other");
+  const image = join(directory, "许可.png");
+  const alias = join(directory, "链接.png");
+  const other = join(outside, "外面.png");
+  const escape = join(directory, "越界.png");
+  const text = join(directory, "伪装.png");
+  const truncated = join(directory, "截断.png");
+  const emptyContainer = join(directory, "缺正文.png");
+  const large = join(directory, "大图.png");
+  const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64");
+  const files = createPublicFiles();
+  const publish = createFileToUrl(files, { file_to_url_times: 1 }, () => new URL("https://example.invalid/prefix/"));
+  try {
+    await Promise.all([mkdir(directory), mkdir(outside)]);
+    await Promise.all([writeFile(image, bytes), writeFile(other, bytes), writeFile(text, "非图片"), writeFile(large, bytes)]);
+    await Promise.all([writeFile(truncated, bytes.subarray(0, -12)),
+      writeFile(emptyContainer, Buffer.concat([bytes.subarray(0, 33), bytes.subarray(-12)]))]);
+    await Promise.all([symlink(other, escape), symlink(image, alias), truncate(large, maxPublicFileBytes + 1)]);
+    await expect(createImageToUrl(publish, undefined)(image)).rejects.toThrow("未设置");
+    const shares = createImageToUrl(publish, directory);
+    for (const candidate of [other, escape, text, truncated, emptyContainer, large, directory, "https://example.invalid/pic.png"]) {
+      await expect(shares(candidate)).rejects.toThrow("本地图像");
+    }
+
+    const url = new URL(await shares(alias, { name: "原图.png" }));
+    expect(url.origin).toBe("https://example.invalid");
+    expect(url.pathname).toMatch(/^\/prefix\/File\/[a-f0-9-]{36}$/u);
+    const path = url.pathname.slice("/prefix".length);
+    expect(files.handle(request(path, "HEAD"))?.headers.get("Content-Type")).toBe("image/png");
+    const response = files.handle(request(path))!;
+    expect(response.headers.get("Content-Disposition")).toContain("%E5%8E%9F%E5%9B%BE.png");
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+    expect(files.handle(request(path))?.status).toBe(404);
+  } finally {
+    files.close();
+    await rm(work, { recursive: true, force: true });
   }
 });

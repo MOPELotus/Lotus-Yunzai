@@ -53,7 +53,7 @@ import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
-import { createFileToUrl, listenerFileBase } from "./lib/file-to-url.ts";
+import { createFileToUrl, createImageToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
@@ -2366,9 +2366,10 @@ if (import.meta.main) {
     }
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
+    const imageToUrl = createImageToUrl(fileToUrl, Bun.env.LOTUS_PUBLIC_IMAGE_DIR?.trim());
     const makeLog = createPluginLog(botConfig, runtimeLog?.writePluginLog);
     Object.assign(globalThis, { Bot: Object.freeze({
-      fileToUrl, makeLog, express: legacy.httpRoutes.express,
+      fileToUrl, imageToUrl, makeLog, express: legacy.httpRoutes.express,
       get uin() {
         const sessions = groups.onlineBindings();
         const milky = milkyOnline;
