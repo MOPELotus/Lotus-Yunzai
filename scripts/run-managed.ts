@@ -1,7 +1,7 @@
-import { realpath, writeFile } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
-import { backgroundStartupFailure } from "../lib/managed-exit.ts";
+import { managedProcess } from "../lib/managed-exit.ts";
 
 export async function runManaged(directory: string, ready?: () => Promise<void>): Promise<number> {
   const { createManagedSupervisor } = await import("../lib/managed-supervisor.ts");
@@ -43,17 +43,5 @@ export async function runManaged(directory: string, ready?: () => Promise<void>)
 
 if (import.meta.main) {
   const [directory = process.cwd(), readyFile] = process.argv.slice(2);
-  let started = !readyFile;
-  try {
-    const status = await runManaged(directory, readyFile ? async () => {
-      await writeFile(readyFile, String(process.pid), { mode: 0o600 });
-      started = true;
-      if (process.connected) process.send?.("ready", () => {});
-    } : undefined);
-    const exit = readyFile && status === backgroundStartupFailure ? 1 : status;
-    process.exitCode = started ? exit : backgroundStartupFailure;
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
-    process.exitCode = started ? 1 : backgroundStartupFailure;
-  }
+  await managedProcess(ready => runManaged(directory, ready), readyFile);
 }

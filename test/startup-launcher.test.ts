@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { backgroundCleanStop } from "../lib/managed-exit.ts";
 
 const roots = new Set<string>();
 const source = fileURLToPath(new URL("../", import.meta.url));
@@ -16,21 +17,21 @@ afterEach(async () => {
 });
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "lotus-startup-launcher-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "lotus-startup-launcher-")));
   roots.add(root);
   const cwd = join(root, "checkout");
   await Promise.all(["lib", "plugins/atlas", "scripts", "config"].map((path) => mkdir(join(cwd, path), { recursive: true })));
   await Promise.all([
-    ...["package.json", "scripts/launcher.ts", "scripts/startup.ts",
+    ...["package.json", "scripts/launcher.ts", "scripts/startup.ts", "scripts/managed-entry.ts",
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "managed-exit"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+    ...["atlas-channel", "file-lock", "managed-exit", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
     writeFile(join(cwd, "scripts/run-managed.ts"),
-      'export async function runManaged() { console.log("fixture host ready"); return 0; }\n'),
+      'export async function runManaged(_root, ready) { await ready?.(); console.log("fixture host ready"); return 0; }\n'),
     writeFile(join(cwd, "plugins/atlas/initialize-atlas.ts"), `
       import { appendFile, mkdir, symlink, writeFile } from "node:fs/promises";
       import { join } from "node:path";
@@ -146,4 +147,53 @@ test("simultaneous startup and initialization publish only once", async () => {
   expect(startStatus).toBe(0);
   expect(output).toContain("fixture host ready");
   expect(await readFile(attempts, "utf8")).toBe("live\n");
+});
+
+test.skipIf(process.platform === "win32")("PM2 启动入口先恢复中断的目录切换，再加载原主管", async () => {
+  const { cwd, config, start } = await fixture();
+  const parent = dirname(cwd);
+  const bin = join(parent, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "pm2"), `#!${process.execPath}
+    const [, , action, config] = process.argv;
+    if (action !== "start") process.exit(3);
+    const { apps: [app] } = await Bun.file(config).json();
+    const status = await Bun.spawn([app.script, ...app.args], {
+      cwd: app.cwd, stdin: "ignore", stdout: "inherit", stderr: "inherit",
+    }).exited;
+    process.exitCode = app.stop_exit_codes.includes(status) ? 0 : status;
+  `, { mode: 0o700 });
+  await mkdir(join(cwd, "data/atlas/data"), { recursive: true });
+  await writeFile(join(cwd, "data/atlas/data/map.json"), index);
+  await writeFile(config, "atlas: {version_channel: latest}\n");
+  const [code, output] = await start(["start:bg"], { PATH: `${bin}:${process.env.PATH}` });
+  expect(code).toBe(0);
+  expect(output).toContain("fixture host ready");
+  const home = join(parent, ".checkout.lotus-pm2");
+  const { apps: [app] } = await Bun.file(join(home, "host-process.json")).json();
+  expect(app.cwd).toBe(parent);
+  expect(app.stop_exit_codes).toContain(backgroundCleanStop);
+  expect(app.stop_exit_codes).not.toContain(0);
+  const readyFile = join(home, "host-ready");
+  await rm(readyFile);
+
+  const candidate = join(parent, "stage", "candidate");
+  await mkdir(candidate, { recursive: true });
+  await writeFile(join(candidate, "app.ts"), "candidate source");
+  const id = crypto.randomUUID();
+  const journal = join(parent, ".checkout.lotus-update.json");
+  await writeFile(journal, JSON.stringify({ id, candidate, state: ["config", "data"], committed: false }));
+  await rename(cwd, join(parent, `.checkout.lotus-previous-${id}`));
+
+  const retry = Bun.spawn([app.script, ...app.args], {
+    cwd: app.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 4_000,
+  });
+  const [status, stdout, stderr] = await Promise.all([retry.exited, new Response(retry.stdout).text(), new Response(retry.stderr).text()]);
+  expect(stderr).toBe("");
+  expect(status).toBe(backgroundCleanStop);
+  expect(stdout).toContain("fixture host ready");
+  expect(await readFile(readyFile, "utf8")).toBe(String(retry.pid));
+  expect(await readFile(config, "utf8")).toBe("atlas: {version_channel: latest}\n");
+  expect(await readFile(join(candidate, "app.ts"), "utf8")).toBe("candidate source");
+  expect(await Bun.file(journal).exists()).toBe(false);
 });

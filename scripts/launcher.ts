@@ -1,8 +1,8 @@
-import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
-import { backgroundStartupFailure } from "../lib/managed-exit.ts";
+import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 import { prepareStartup } from "./startup.ts";
 
 const name = "lotus-yunzai";
@@ -34,53 +34,82 @@ async function present(path: string) {
   });
 }
 
-async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status", options: readonly string[] = []) {
-  const home = join(root, "data", ".pm2");
-  if (action === "start:bg") await mkdir(home, { recursive: true, mode: 0o700 });
-  const directory = await present(home);
-  if (!directory) {
-    if (action === "logs") throw new Error("当前目录暂无后台启动日志。");
-    console.log("当前目录未启动后台托管。");
-    return 0;
+async function preparePm2Entry(home: string) {
+  const entry = join(home, "host-entry.js");
+  const temporary = `${entry}.${crypto.randomUUID()}`;
+  const bundle = await Bun.build({
+    entrypoints: [fileURLToPath(new URL("managed-entry.ts", import.meta.url))], target: "bun",
+  });
+  const output = bundle.outputs[0];
+  if (!bundle.success || !output) throw new Error("无法准备 PM2 宿主启动入口。");
+  try {
+    await writeFile(temporary, await output.text(), { mode: 0o600, flag: "wx" });
+    await rename(temporary, entry);
+  } finally {
+    await rm(temporary, { force: true });
   }
-  if (!directory.isDirectory() || directory.uid !== process.getuid?.() || directory.mode & 0o077) {
-    throw new Error("data/.pm2 须为当前用户独占的实体目录（权限 0700）。");
-  }
+  return entry;
+}
 
+async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status", options: readonly string[] = []) {
+  const parent = dirname(root);
+  const home = join(parent, `.${basename(root)}.lotus-pm2`);
+  const legacyHome = join(root, "data", ".pm2");
+  async function privateHome(path: string) {
+    const directory = await present(path);
+    if (directory && (!directory.isDirectory() || directory.uid !== process.getuid?.() || directory.mode & 0o077)) {
+      throw new Error("PM2 运行目录须为当前用户独占的实体目录（权限 0700）。");
+    }
+    return directory !== undefined;
+  }
   // PM2 also accepts socket and state path overrides through environment variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PM2_")));
-  env.PM2_HOME = home;
-  const spawn = { cwd: root, env, stdin: "ignore", stdout: "inherit", stderr: "inherit" } as const;
+  const spawnOptions = (path: string) => ({
+    cwd: parent, env: { ...env, PM2_HOME: path }, stdin: "ignore", stdout: "inherit", stderr: "inherit",
+  } as const);
+  const hasCurrent = await privateHome(home);
   if (action !== "start:bg") {
+    const selected = hasCurrent ? home : await privateHome(legacyHome) ? legacyHome : undefined;
+    if (!selected) {
+      if (action === "logs") throw new Error("当前目录暂无后台启动日志。");
+      console.log("当前目录未启动后台托管。");
+      return 0;
+    }
     const args = action === "status" ? ["status"] : [action, name, ...options];
-    return Bun.spawn([binary, ...args], spawn).exited;
+    return Bun.spawn([binary, ...args], spawnOptions(selected)).exited;
   }
 
-  const readyFile = join(home, "host-ready");
-  async function runningPid() {
-    const lookup = Bun.spawn([binary, "pid", name], { ...spawn, stdout: "pipe" });
+  async function runningPid(path: string) {
+    if (!(await present(join(path, "rpc.sock")))?.isSocket()) return;
+    const lookup = Bun.spawn([binary, "pid", name], { ...spawnOptions(path), stdout: "pipe" });
     const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
     const pid = result.trim();
     return code === 0 && /^[1-9]\d*$/u.test(pid) ? pid : undefined;
   }
-  function readyPid() {
-    return readFile(readyFile, "utf8").catch((error: unknown) => {
+  function readyPid(path: string) {
+    return readFile(join(path, "host-ready"), "utf8").catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
     });
   }
-  if ((await present(join(home, "rpc.sock")))?.isSocket()) {
-    const pid = await runningPid();
+  for (const path of [home, legacyHome]) {
+    if (!await privateHome(path)) continue;
+    const pid = await runningPid(path);
     if (pid) {
-      if (pid !== await readyPid()) throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
+      if (pid !== await readyPid(path)) throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
       console.log("当前目录的后台宿主已运行。");
       return 0;
     }
   }
+  await mkdir(home, { mode: 0o700, recursive: true });
+  await privateHome(home);
+  const spawn = spawnOptions(home);
+  const readyFile = join(home, "host-ready");
+  const entry = await preparePm2Entry(home);
   await rm(readyFile, { force: true });
   const config = join(home, "host-process.json");
   await writeFile(config, JSON.stringify({ apps: [{
-    name, cwd: root, script: process.execPath, args: [join(root, "scripts", "run-managed.ts"), root, readyFile],
-    interpreter: "none", autorestart: true, stop_exit_codes: [0, backgroundStartupFailure],
+    name, cwd: parent, script: process.execPath, args: ["--no-env-file", entry, root, readyFile],
+    interpreter: "none", autorestart: true, stop_exit_codes: [backgroundCleanStop, backgroundStartupFailure],
     min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: 120_000,
     kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
   }] }), { mode: 0o600 });
@@ -89,7 +118,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
 
   // PM2 can report success after the child exits before ready or after its wait-ready timeout.
   // A new marker also proves readiness if the first worker has already entered crash recovery.
-  if (/^[1-9]\d*$/u.test(await readyPid() ?? "")) return 0;
+  if (/^[1-9]\d*$/u.test(await readyPid(home) ?? "")) return 0;
   await Bun.spawn([binary, "stop", name], spawn).exited;
   throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
 }
