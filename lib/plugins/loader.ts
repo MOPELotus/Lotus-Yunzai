@@ -30,6 +30,7 @@ import type { FileToUrl } from "../file-to-url.ts";
 import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { lockFile } from "../file-lock.ts";
 import { isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
+import type { MessageReply } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { watchLegacyFiles } from "./file-watch.ts";
@@ -281,6 +282,12 @@ export async function loadPlugins(
       };
     };
     readonly memeRuntime?: import("../../plugins/meme/catalog-runtime.ts").MemeRuntime;
+    readonly mediaRuntime?: {
+      readonly disconnect: AbortSignal;
+      whenReady(start: () => void): () => void;
+      registerTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+      notifyMasters(reply: MessageReply, signal?: AbortSignal): Promise<void>;
+    };
     readonly profileLikeImages?: {
       readonly directory: string;
       register(renderer: ProfileLikeImage): () => void;
@@ -454,13 +461,16 @@ export async function loadPlugins(
         const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
         const guidesSchedule = builtIn && moduleName === "@lotus-yunzai/guides" ? options.guidesSchedule : undefined;
         const memeRuntime = builtIn && moduleName === "@lotus-yunzai/meme" ? options.memeRuntime : undefined;
+        const mediaRuntime = builtIn && moduleName === "@lotus-yunzai/media" ? options.mediaRuntime : undefined;
         const notice = builtIn && moduleName === "@lotus-yunzai/notice" ? options.noticeServices : undefined;
+        const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect;
         const module = create ? await create(Object.freeze({ ...services, ...group,
-          signal: notice ? AbortSignal.any([signal, notice.disconnect]) : signal,
+          signal: disconnect ? AbortSignal.any([signal, disconnect]) : signal,
           ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
+          ...(mediaRuntime && { mediaRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule } = record(module);
         if (dispose !== undefined) {

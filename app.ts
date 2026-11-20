@@ -2718,6 +2718,29 @@ if (import.meta.main) {
         whenReady: whenModuleTasksActive,
         registerTask: (cron, run) => registerModuleTask("[meme] 自动更新表情包数据", cron, run),
       },
+      mediaRuntime: probingUpdate ? undefined : {
+        disconnect: handoffSession.signal,
+        whenReady: whenModuleTasksActive,
+        registerTask: (cron, run) => registerModuleTask("[media] 网易云合伙人定时任务", cron, run),
+        async notifyMasters(reply, signal) {
+          const active = signal ? nativeOperationSignal(signal) : nativeOperationSignal();
+          const notified = new Set<number>();
+          for (const session of subscriptionTransport()) {
+            for (const userId of masterPermissions.masterIds(session.botId)) {
+              if (!handoff.accepting || stopping || active.aborted) return;
+              if (userId === session.botId || notified.has(userId)) continue;
+              const result = await notifyCheckin({
+                userId, reply, transports: [session], signal: active,
+                settings: { enabled: true, prefer: "private", fallbackGroups: [] },
+                async verifySend() {
+                  return handoff.accepting && !stopping && masterPermissions.isMaster(session.botId, userId);
+                },
+              });
+              if (result.status === "confirmed" || result.status === "unknown") notified.add(userId);
+            }
+          }
+        },
+      },
       profileLikeImages: probingUpdate ? undefined : {
         directory: likeAssets,
         register(renderer) {
