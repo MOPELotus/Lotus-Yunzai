@@ -1947,7 +1947,7 @@ if (import.meta.main) {
         profiles: checkinProfiles, signal: previewSignal, canRegister: canRegisterCheckin, hasHistory: preview.hasHistory,
       }));
       registerModuleTask("[前瞻兑换]", "0 */5 * * * *",
-        () => preview.scan(previewSignal, () => console.warn("[前瞻兑换] 某项任务未完成。")));
+        () => preview.scan(previewSignal, diagnostic => console.warn(`[前瞻兑换] ${diagnostic}`)));
       previewSettings = {
         async read({ qq, profileId }, signal, verifyLogin) {
           await verifyLogin();

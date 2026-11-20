@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { lockFile } from "./file-lock.ts";
 
 const redeemGames = {
@@ -56,6 +57,21 @@ const submissionTimeout = 20_000;
 const identity = /^\d{1,20}$/u;
 const codePattern = /^[\p{L}\p{N}_-]{1,64}$/u;
 type Journal = Record<string, unknown>;
+
+const requestErrorText = {
+  "invalid-input": "请求资料无效", transport: "连接失败", http: "HTTP 请求失败", response: "接口响应无效",
+  api: "接口拒绝请求", refresh: "登录续期失败", "profile-changed": "档案已变更",
+} as const;
+
+function requestFailure(error: unknown) {
+  if (!(error instanceof HoyoRequestError)) return "原因未知";
+  const { status, retcode, code } = error;
+  if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599) return `HTTP ${status}`;
+  if (typeof retcode === "number" && Number.isInteger(retcode) && retcode >= -2_147_483_648 && retcode <= 2_147_483_647) {
+    return `米游社返回 ${retcode}`;
+  }
+  return Object.hasOwn(requestErrorText, code) ? requestErrorText[code] : "原因未知";
+}
 
 function record(value: unknown): Journal | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Journal : undefined;
@@ -226,7 +242,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
     else await notify?.(profile, reply, signal);
   }
 
-  function scan(signal?: AbortSignal, onError?: () => void) {
+  function scan(signal?: AbortSignal, onError?: (diagnostic: string) => void) {
     return running ??= (async () => {
       if (signal?.aborted) return;
       const available = (await listProfiles(signal)).filter(profile => profile.games.length);
@@ -239,7 +255,10 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
         if (!subscribers.length || (nextLookup.get(game) ?? 0) > now()) continue;
         let value: unknown;
         try { value = await lookup(game, signal); }
-        catch { if (!signal?.aborted) onError?.(); continue; }
+        catch (error) {
+          if (!signal?.aborted) onError?.(`${redeemGames[game].name}前瞻查询未完成（${requestFailure(error)}）。`);
+          continue;
+        }
         if (signal?.aborted) return;
         const checked = now();
         const info = record(value);
@@ -250,7 +269,9 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
         for (const profile of subscribers) {
           if (signal?.aborted || isExpired(current.expiry, now())) break;
           try { await redeem(profile, game, current, signal); }
-          catch { if (!signal?.aborted) onError?.(); }
+          catch (error) {
+            if (!signal?.aborted) onError?.(`${redeemGames[game].name} ${current.version} 前瞻自动兑换未完成（${requestFailure(error)}）。`);
+          }
         }
       }
     })().finally(() => { running = undefined; });

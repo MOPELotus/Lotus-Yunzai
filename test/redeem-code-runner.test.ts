@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { createPreviewRedeemRunner, type PreviewGame, type PreviewProfile } from "../lib/redeem-code-runner.ts";
 
 const profile = { qq: "42", profileId: 2, games: ["gs"], allowNewJournal: true } as const;
@@ -22,6 +23,45 @@ async function fixture(use: (paths: { journal: string; legacyJournal: string }) 
   try { await use({ journal: join(root, "auto.json"), legacyJournal: join(root, "legacy.json") }); }
   finally { await rm(root, { force: true, recursive: true }); }
 }
+
+test("前瞻错误日志只输出已知游戏、版本及可信接口状态，失败后继续其余档案", async () => {
+  await fixture(async paths => {
+    const privateText = "Cookie=fake-secret account=123456789 code=FIXTURE-SECRET";
+    const failures = [
+      new HoyoRequestError("http", privateText, 503, -100),
+      new HoyoRequestError("api", privateText, 200, -100),
+      new HoyoRequestError("refresh", privateText),
+      Object.assign(new Error(privateText), { name: privateText, status: 404, retcode: -202, code: privateText }),
+    ];
+    const posted: string[] = [];
+    const warnings: string[] = [];
+    const runner = createPreviewRedeemRunner({ ...paths, now: () => stamp,
+      async listProfiles() {
+        return [...failures.map((_, index) => ({ ...profile, profileId: index + 2 })),
+          { ...profile, profileId: 6, games: ["gs", "sr"] }];
+      },
+      async lookup(game) {
+        if (game === "sr") throw new HoyoRequestError("transport", privateText);
+        return activity;
+      },
+      async readRoles({ profileId }) {
+        const failure = failures[profileId - 2];
+        if (failure) throw failure;
+        return { accountId: "10", roles: [role], selectedUid: role.uid,
+          async submit(code) { posted.push(code); return confirmed; } };
+      },
+    });
+    await runner.scan(undefined, warning => warnings.push(warning));
+    expect(warnings).toEqual([
+      "原神 7.2 前瞻自动兑换未完成（HTTP 503）。",
+      "原神 7.2 前瞻自动兑换未完成（米游社返回 -100）。",
+      "原神 7.2 前瞻自动兑换未完成（登录续期失败）。",
+      "原神 7.2 前瞻自动兑换未完成（原因未知）。",
+      "星穹铁道前瞻查询未完成（连接失败）。",
+    ]);
+    expect(posted).toEqual(codes);
+  });
+});
 
 test("旧 journal 两个路径的 started、finished 与隐式角色键均阻止重复执行", async () => {
   await fixture(async paths => {
