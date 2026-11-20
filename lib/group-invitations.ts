@@ -22,6 +22,12 @@ export interface PendingGroupInvitationDecision {
   readonly resolvedFlag?: string;
 }
 
+export interface QuotedGroupInvitationDecision {
+  readonly status: RequestDecisionOutcome | "expired" | "unrelated";
+  readonly groupId?: number;
+  readonly resolvedFlag?: string;
+}
+
 export async function readGroupInvitations(root: URL) {
   const { autoGroup } = await readLocalConfig(root, "other");
   const masterOnly = autoGroup === 0 || autoGroup === "0";

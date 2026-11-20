@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { GroupRequest, MessageReply, ReplyOptions } from "../messages.ts";
 import type { JoinRequestOrigin } from "../group-join-review.ts";
+import type { MilkyInvitationOrigin } from "./milky-invitation-receipts.ts";
 
 interface Callbacks {
   readonly isMaster: (userId: number) => boolean;
@@ -28,7 +29,8 @@ function isId(value: unknown): value is number {
 
 export function milkyGroupRequest(
   value: unknown, selfId: number, callbacks: Callbacks,
-): (GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin }) | undefined {
+): (GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin;
+  readonly invitationOrigin?: MilkyInvitationOrigin }) | undefined {
   if (!isId(selfId) || !isRecord(value) || value.self_id !== selfId || !isRecord(value.data)) return;
   const { event_type: type, data } = value;
   if (type !== "group_join_request" && type !== "group_invited_join_request" && type !== "group_invitation") return;
@@ -63,7 +65,7 @@ export function milkyGroupRequest(
   };
 
   let submitted = false;
-  const request: GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin } = {
+  const request = {
     post_type: "request", request_type: "group", sub_type: invitation ? "invite" : "add",
     self_id: selfId, user_id: userId, group_id: groupId, flag, groupRequestScope: "milky",
     inviter_id: invitation || thirdParty ? initiatorId : undefined,
@@ -71,6 +73,7 @@ export function milkyGroupRequest(
     nickname: typeof data.nickname === "string" ? data.nickname : undefined,
     isGroup: true, isPrivate: false, isMaster: invitation && callbacks.isMaster(initiatorId) === true,
     decision,
+    invitationOrigin: invitation ? { groupId, inviterId: initiatorId, sequence } : undefined,
     joinRequestOrigin: invitation ? undefined : {
       adapter: "milky", botId: selfId, groupId, userId, flag, sequence, filtered,
       kind: thirdParty ? "invited_join_request" : "join_request",
@@ -91,7 +94,8 @@ export function milkyGroupRequest(
       const outcomes = await Promise.allSettled(recipients.map(async (id) => callbacks.sendPrivate(id, message)));
       return outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value === true).length;
     },
-  };
+  } satisfies GroupRequest & { readonly decision: Decision; readonly joinRequestOrigin?: JoinRequestOrigin;
+    readonly invitationOrigin?: MilkyInvitationOrigin };
   Object.defineProperty(request, "decision", { enumerable: false, configurable: false, writable: false });
   return request;
 }

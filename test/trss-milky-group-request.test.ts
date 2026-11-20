@@ -31,6 +31,9 @@ function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
 function mockGateway() {
   let ready = Promise.withResolvers<void>();
   const calls: Call[] = [];
+  const privateMessages = new Map<number, Record<string, unknown>>();
+  const wrongAuthors = new Set<number>();
+  const changedNotices = new Set<number>();
   let handled = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -47,12 +50,22 @@ function mockGateway() {
         case "get_login_info":
           return Response.json({ status: "ok", retcode: 0, data: { uin: account, nickname: "入群审批夹具" } });
         case "send_private_message":
+          privateMessages.set(100 + calls.length, body);
           return Response.json({ status: "ok", retcode: 0, data: { message_seq: 100 + calls.length, time } });
+        case "get_message": {
+          const sequence = Number(body.message_seq);
+          const message = privateMessages.get(sequence);
+          if (!message || message.user_id !== body.peer_id) return new Response(null, { status: 404 });
+          const segments = changedNotices.has(sequence) ? [{ type: "text", data: { text: "同一序号的另一条消息" } }] : message.message;
+          return Response.json({ status: "ok", retcode: 0, data: { message: { message_scene: "friend", peer_id: body.peer_id,
+            message_seq: sequence, sender_id: wrongAuthors.has(sequence) ? outsider : account, segments } } });
+        }
         case "accept_group_invitation":
           if (body.group_id === unknownGroup) return new Response(null, { status: 503 });
           return Response.json({ status: "ok", retcode: 0, data: {} });
         case "accept_group_request":
         case "reject_group_request":
+        case "reject_group_invitation":
           return Response.json({ status: "ok", retcode: 0, data: {} });
         default:
           return new Response(null, { status: 404 });
@@ -60,7 +73,8 @@ function mockGateway() {
     },
   });
   return {
-    server, calls,
+    server, calls, wrongAuthors, changedNotices,
+    get latestPrivateReceipt() { return [...privateMessages.keys()].at(-1); },
     get consumed() { return handled; },
     async next(action: string) {
       if (handled === calls.length) await deadline(ready.promise, `未收到 Milky ${action} 请求。`);
@@ -89,7 +103,7 @@ async function manualId(mock: Gateway, group: number) {
   expect(notice).toContain(`群 ${group}`);
   const id = /#同意入群 ([a-f0-9]{12})/u.exec(notice)?.[1];
   expect(id).toBeDefined();
-  return { id: id!, notice };
+  return { id: id!, notice, receipt: mock.latestPrivateReceipt };
 }
 
 async function startup(stream: ReadableStream<Uint8Array>) {
@@ -257,6 +271,32 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       }
       await command(`#拒绝群邀请${ambiguousGroup}`);
       expect(await privateText(mock)).toContain("多条待处理的邀请");
+
+      const quotedGroup = pendingInviteGroup + 200;
+      expect((await webhook(endpoint, "group_invitation", invitation(quotedGroup, 108, outsider))).status).toBe(200);
+      const quotedInvite = await manualId(mock, quotedGroup);
+      expect(quotedInvite.notice).toContain("引用此通知");
+      expect(quotedInvite.receipt).toBeNumber();
+      async function reviewQuote(text: string, receipt: number) {
+        const message = commandMessage(text, ++sequence);
+        expect((await webhook(endpoint, "message_receive", { ...message,
+          segments: [{ type: "reply", data: { message_seq: receipt } }, ...message.segments],
+        })).status).toBe(200);
+      }
+      mock.wrongAuthors.add(quotedInvite.receipt!);
+      await reviewQuote("#同意", quotedInvite.receipt!);
+      expect(await mock.next("get_message")).toEqual({ message_scene: "friend", peer_id: owner, message_seq: quotedInvite.receipt });
+      mock.wrongAuthors.delete(quotedInvite.receipt!);
+      mock.changedNotices.add(quotedInvite.receipt!);
+      await reviewQuote("#同意", quotedInvite.receipt!);
+      expect(await mock.next("get_message")).toMatchObject({ peer_id: owner, message_seq: quotedInvite.receipt });
+      mock.changedNotices.delete(quotedInvite.receipt!);
+      await reviewQuote("拒绝", quotedInvite.receipt!);
+      expect(await mock.next("get_message")).toMatchObject({ peer_id: owner, message_seq: quotedInvite.receipt });
+      expect(await mock.next("reject_group_invitation")).toEqual({ group_id: quotedGroup, invitation_seq: 108 });
+      expect(await privateText(mock)).toBe(`✅ 已拒绝群 ${quotedGroup} 的邀请`);
+      await command(`#同意入群 ${quotedInvite.id}`);
+      expect(await privateText(mock)).toBe("未找到当前机器人的待审核群请求。");
       await Bun.sleep(80);
       expect(mock.calls).toHaveLength(mock.consumed);
     } finally {

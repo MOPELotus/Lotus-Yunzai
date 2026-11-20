@@ -30,6 +30,7 @@ import { isPreviewRedeemSetting, redeemCodeCommands } from "./lib/redeem-code-co
 import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
+import { createMilkyInvitationReceipts } from "./lib/adapters/milky-invitation-receipts.ts";
 import type { MilkySession, MilkyTransportOptions } from "./lib/adapters/milky-session.ts";
 import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
@@ -303,6 +304,7 @@ if (import.meta.main) {
   const groupJoinReview = createGroupJoinReview(() => requestStorage("group-join-review"));
   const friendReview = createRequestClaim(() => requestStorage("friend-review"));
   const invitationReview = createRequestClaim(() => requestStorage("group-invitation-review"));
+  const invitationReceipts = createMilkyInvitationReceipts(() => requestStorage("group-invitation-review"));
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1122,9 +1124,11 @@ if (import.meta.main) {
         return;
       }
     }
-    if (!event.isDelegated && event.message_type === "group" && event.reply_id !== undefined && isGroupJoinReviewInput(event.msg)) {
+    const quotedInvitation = event.message_type === "private" && event.reviewQuotedGroupInvitation !== undefined;
+    if (!event.isDelegated && (event.message_type === "group" || quotedInvitation) && event.reply_id !== undefined && isGroupJoinReviewInput(event.msg)) {
+      const feature = quotedInvitation ? "[group] 群邀请审核" : "[group] 引用加群审核";
       const reply = await commands.dispatchFallback(event,
-        names => names[0] === "@lotus-yunzai/group" && names.includes("[group] 引用加群审核") && allowed(names),
+        names => names[0] === "@lotus-yunzai/group" && names.includes(feature) && allowed(names),
         user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
       if (reply !== undefined) {
         await sendCommandReply(event, reply);
@@ -1646,6 +1650,7 @@ if (import.meta.main) {
       dispatch,
       friendReview,
       invitationReview,
+      invitationReceipts,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
       onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute) => {
