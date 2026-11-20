@@ -16,34 +16,45 @@ test("撤回等待原消息留存并只领取一次，同协议当前原好友�
   await capture;
   expect(await recall).toBe("原始文字");
   expect(await cache.take(scope, signal)).toBeUndefined();
+  await cache.capture(scope, "重放的原始文字", async () => 600, signal);
+  expect(await cache.take(scope, signal)).toBeUndefined();
 });
 
 test("不会留存关闭、已中断或过期的原消息，独立缓存实例只消费同一持久原消息一次", async () => {
-  const data = new Map<string, string>();
+  const data = new Map<string, { value: string; expires: number }>();
+  let now = 1_700_000_000_000;
   const store = {
     async save(key: string, value: string, ttl: number) {
       expect(ttl).toBe(600);
-      if (!data.has(key)) data.set(key, value);
+      if ((data.get(key)?.expires ?? 0) <= now) data.set(key, { value, expires: now + ttl * 1_000 });
     },
     async take(key: string) {
-      const value = data.get(key) ?? null;
-      data.delete(key);
+      const record = data.get(key);
+      if (!record || record.expires <= now || record.value === "null") return null;
+      const { value } = record;
+      record.value = "null";
       return value;
     },
   };
   const scope: FriendRecallScope = { adapter: "milky", botId: 99, userId: 42, messageId: 15 };
   const active = new AbortController();
-  let now = 1_700_000_000_000;
   const cache = createMessageRecallCache(() => store, () => now);
   await cache.capture(scope, "关闭时无留存", async () => undefined, active.signal);
   expect(data.size).toBe(0);
   await cache.capture(scope, "原消息可跨进程恢复", async () => 600, active.signal);
   const restarted = createMessageRecallCache(() => store, () => now);
   expect(await restarted.take(scope, active.signal)).toBe("原消息可跨进程恢复");
+  expect([...data.values()]).toEqual([{ value: "null", expires: now + 600_000 }]);
   expect(await cache.take(scope, active.signal)).toBeUndefined();
-  await cache.capture(scope, "过期内容", async () => 600, active.signal);
+  now += 500_000;
+  await restarted.capture(scope, "重放的原始文字", async () => 600, active.signal);
+  expect(await cache.take(scope, active.signal)).toBeUndefined();
+  expect([...data.values()]).toEqual([{ value: "null", expires: now + 100_000 }]);
+  const expiring = { ...scope, messageId: 16 };
+  await cache.capture(expiring, "过期内容", async () => 600, active.signal);
   now += 600_001;
-  expect(await restarted.take(scope, active.signal)).toBeUndefined();
+  expect(await restarted.take(expiring, active.signal)).toBeUndefined();
+  data.clear();
   active.abort();
   await cache.capture(scope, "中断后无留存", async () => 600, active.signal);
   expect(data.size).toBe(0);

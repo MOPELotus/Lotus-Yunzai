@@ -30,7 +30,7 @@ export interface NativeGroupRecallNotice extends GroupRecallScope {
 }
 
 interface RecallRecord {
-  readonly text: string;
+  text?: string;
   readonly expires: number;
 }
 
@@ -115,8 +115,12 @@ export function createMessageRecallCache(getStorage: () => RecallStore | undefin
         } catch { return; }
         return;
       }
-      const entry = remove(key);
-      if (entry && entry.expires > now()) return entry.text;
+      const entry = records.get(key);
+      if (entry && entry.expires > now()) {
+        const text = entry.text;
+        delete entry.text;
+        return text;
+      }
     },
   };
 }

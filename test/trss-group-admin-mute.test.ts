@@ -1617,6 +1617,15 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyRecalledForward.params.message).toMatchObject([{ type: "forward", data: { messages: [
       { user_id: 54, segments: [text("合成 Milky 原群正文")] },
     ] } }]);
+    send(recalledGroupOneBot);
+    client.send(JSON.stringify(oneBotGroupRecall));
+    await webhook("message_receive", recalledGroupMilky);
+    await webhook("message_recall", milkyGroupRecall);
+    await Bun.sleep(100);
+    expect(oneBotCalls.filter(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("合成 OneBot 原群正文"))).toHaveLength(1);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("合成 Milky 原群正文"))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

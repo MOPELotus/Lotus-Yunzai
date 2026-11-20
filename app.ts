@@ -343,8 +343,12 @@ if (import.meta.main) {
       return {
         async save(key, value, ttl) { await redis.set(prefix + key, value, { EX: ttl, NX: true }); },
         async take(key) {
-          const result = await redis.eval("local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); end; return value",
-            { keys: [prefix + key], arguments: [] });
+          const result = await redis.eval(`
+            local value = redis.call('GET', KEYS[1]);
+            if not value or value == 'null' then return nil; end;
+            redis.call('SET', KEYS[1], 'null', 'KEEPTTL');
+            return value;
+          `, { keys: [prefix + key], arguments: [] });
           return typeof result === "string" ? result : null;
         },
       };
