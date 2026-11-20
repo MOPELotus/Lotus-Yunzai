@@ -173,7 +173,7 @@ export function encodeMilkyReply(reply: MessageReply, quoteId?: number, mention?
   return message;
 }
 
-export function encodeMilkyForward(nodes: readonly MessageReply[], selfId: number): ForwardNode[] | undefined {
+export function encodeMilkyForward(nodes: readonly MessageReply[], selfId: number, senderName = "Lotus-Yunzai"): ForwardNode[] | undefined {
   if (!Array.isArray(nodes) || nodes.length === 0 || nodes.length > maxForwardNodes) return;
   const messages: ForwardNode[] = [];
   let remainingMediaBytes = maxPublicFileBytes;
@@ -181,7 +181,7 @@ export function encodeMilkyForward(nodes: readonly MessageReply[], selfId: numbe
     const encoded = encodeSegments(node, remainingMediaBytes);
     if (!encoded) return;
     remainingMediaBytes = encoded.remainingMediaBytes;
-    messages.push({ user_id: selfId, sender_name: "Lotus-Yunzai", segments: encoded.message });
+    messages.push({ user_id: selfId, sender_name: senderName, segments: encoded.message });
   }
   return messages;
 }

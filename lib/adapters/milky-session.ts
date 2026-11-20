@@ -626,6 +626,44 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return "accepted";
     }
 
+    if (body.event_type === "message_recall" && body.data.message_scene === "group") {
+      const { sender_id, peer_id, operator_id, message_seq } = body.data;
+      if (options.onGroupRecall && positiveId(sender_id) && positiveId(peer_id) && positiveId(operator_id) &&
+          sender_id !== account && operator_id !== account && positiveId(body.time) && hasMessageSequence(message_seq)) {
+        options.onGroupRecall({ adapter: "milky", botId: account, userId: sender_id, groupId: peer_id,
+          operatorId: operator_id, messageId: message_seq, time: body.time, signal,
+          async describe(active) {
+            const [response, author, operator] = await Promise.all([
+              call.confirmed("get_group_info", { group_id: peer_id, no_cache: true }, active),
+              liveGroupMember(peer_id, sender_id, active),
+              operator_id === sender_id ? undefined : liveGroupMember(peer_id, operator_id, active),
+            ]);
+            const group = response.status === "confirmed" ? response.data.group : undefined;
+            const groupName = record(group) && group.group_id === peer_id ? memberDisplayName(group.group_name) : undefined;
+            return { groupName, nickname: author?.name, operatorName: operator?.name };
+          },
+          async notifyOwners(summary, original, nickname, active) {
+            const messages = encodeMilkyForward([original], sender_id, nickname ?? String(sender_id));
+            if (active.aborted || !messages) return;
+            const friends = await listCurrentFriends(active);
+            const owners = options.masterIds?.(account).filter(owner => owner !== account && friends?.has(owner)) ?? [];
+            await Promise.all(owners.map(async owner => {
+              if (active.aborted || !isMaster(owner)) return;
+              const target = { user_id: owner };
+              if (await sendConfirmed(target, summary, undefined, active) !== "confirmed" || active.aborted || !isMaster(owner)) return;
+              const message = [{ type: "forward", data: { messages } }];
+              const result = await call.confirmed("send_private_message", { ...target, message }, active);
+              if (result.status === "confirmed") confirmSent(target, result.data, message);
+              if (result.status === "rejected" && !active.aborted && isMaster(owner)) {
+                await sendConfirmed(target, `撤回消息：${original}`, undefined, active);
+              }
+            }));
+          },
+        });
+      }
+      return "accepted";
+    }
+
     if (body.event_type === "message_receive" && body.data.message_scene === "temp") {
       const { sender_id, peer_id, message_seq, group, segments } = body.data;
       if (options.onTemporaryMessage && positiveId(sender_id) && sender_id === peer_id && sender_id !== account &&
@@ -651,6 +689,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     }, call.confirmed);
+    if (message?.message_type === "group" && positiveId(message.group_id) && positiveId(message.user_id) && hasMessageSequence(message.message_id)) {
+      options.onGroupRecallSource?.({ adapter: "milky", botId: account, groupId: message.group_id, userId: message.user_id,
+        messageId: message.message_id, message: message.message, signal });
+    }
     if (message && !files.receive(message)) return "accepted";
     async function sendReply(target: { group_id: number } | { user_id: number }, reply: MessageReply,
       onDelivered?: ReplyOptions["onDelivered"], active = signal) {

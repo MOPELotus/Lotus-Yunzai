@@ -78,12 +78,12 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
   return segments;
 }
 
-export function encodeOneBotForward(nodes: readonly MessageReply[], selfId: number) {
+export function encodeOneBotForward(nodes: readonly MessageReply[], selfId: number, senderName = "Lotus-Yunzai") {
   const messages = [];
   for (const node of nodes) {
     const content = encodeOneBotReply(typeof node === "string" ? [node] : node);
     if (!Array.isArray(content)) return;
-    messages.push({ type: "node", data: { uin: String(selfId), name: "Lotus-Yunzai", content } });
+    messages.push({ type: "node", data: { uin: String(selfId), name: senderName, content } });
   }
   if (messages.length) return messages;
 }

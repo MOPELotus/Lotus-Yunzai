@@ -1,4 +1,5 @@
 import type { FriendMessageNoticeSession } from "./friend-message-notice.ts";
+import type { MessageEvent, MessageReply } from "./messages.ts";
 
 export interface FriendRecallScope {
   readonly adapter: "onebot" | "milky";
@@ -7,8 +8,25 @@ export interface FriendRecallScope {
   readonly messageId: number;
 }
 
+export interface GroupRecallScope extends FriendRecallScope {
+  readonly groupId: number;
+}
+
+export interface NativeGroupRecallSource extends GroupRecallScope {
+  readonly message: MessageEvent["message"];
+  readonly signal: AbortSignal;
+}
+
 export interface NativeFriendRecallNotice extends FriendRecallScope, FriendMessageNoticeSession {
   readonly time: number;
+}
+
+export interface NativeGroupRecallNotice extends GroupRecallScope {
+  readonly operatorId: number;
+  readonly time: number;
+  readonly signal: AbortSignal;
+  describe(signal: AbortSignal): Promise<{ groupName?: string; nickname?: string; operatorName?: string }>;
+  notifyOwners(summary: MessageReply, text: string, nickname: string | undefined, signal: AbortSignal): Promise<void>;
 }
 
 interface RecallRecord {
@@ -28,13 +46,15 @@ function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function messageKey({ adapter, botId, userId, messageId }: FriendRecallScope): string | undefined {
+function messageKey(scope: FriendRecallScope | GroupRecallScope): string | undefined {
+  const { adapter, botId, userId, messageId } = scope;
   if (!positiveId(botId) || !positiveId(userId) || botId === userId || !Number.isSafeInteger(messageId)) return;
   if (adapter === "milky" ? messageId < 0 : messageId === 0 || messageId < -2147483648 || messageId > 2147483647) return;
+  if ("groupId" in scope) return positiveId(scope.groupId) ? `${adapter}:${botId}:${scope.groupId}:${userId}:${messageId}` : undefined;
   return `${adapter}:${botId}:${userId}:${messageId}`;
 }
 
-export function createFriendRecallCache(getStorage: () => RecallStore | undefined, now = Date.now) {
+export function createMessageRecallCache(getStorage: () => RecallStore | undefined, now = Date.now) {
   const pending = new Map<string, Promise<void>>();
   const records = new Map<string, RecallRecord & { expiry: ReturnType<typeof setTimeout> }>();
 
@@ -57,7 +77,7 @@ export function createFriendRecallCache(getStorage: () => RecallStore | undefine
   }
 
   return {
-    capture(scope: FriendRecallScope, text: string, retention: () => Promise<number | undefined>, signal: AbortSignal) {
+    capture(scope: FriendRecallScope | GroupRecallScope, text: string, retention: () => Promise<number | undefined>, signal: AbortSignal) {
       const key = messageKey(scope);
       if (!key || !text.trim() || signal.aborted) return;
       const existing = pending.get(key);
@@ -80,7 +100,7 @@ export function createFriendRecallCache(getStorage: () => RecallStore | undefine
       pending.set(key, handling);
       return handling;
     },
-    async take(scope: FriendRecallScope, signal: AbortSignal): Promise<string | undefined> {
+    async take(scope: FriendRecallScope | GroupRecallScope, signal: AbortSignal): Promise<string | undefined> {
       const key = messageKey(scope);
       if (!key || signal.aborted) return;
       await pending.get(key);

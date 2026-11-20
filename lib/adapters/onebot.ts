@@ -409,6 +409,13 @@ async function dispatchMessage(
   const attachment = noticeAttachment ?? (rawFile && attachmentSession
     ? incomingAttachment(attachmentSession.signal, calls, send, target, rawFile, "message") : undefined);
   const { text, ...messageFields } = incoming;
+  const recallId = oneBotMessageId(event.message_id);
+  if (groupActions?.onGroupRecallSource && connection && selfId !== undefined && "group_id" in target &&
+      !noticeAttachment && event.sub_type !== "anonymous" && recallId !== undefined) {
+    const signal = groupActionSignal(connection, selfId);
+    if (signal) groupActions.onGroupRecallSource({ adapter: "onebot", botId: selfId, groupId: target.group_id, userId, messageId: recallId,
+      message: incoming.message, signal });
+  }
   const sender = isRecord(event.sender) ? event.sender : undefined;
   if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {
     display?.remember(target.group_id, userId, { card: stringField(sender.card), nickname: stringField(sender.nickname) });
@@ -868,7 +875,41 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
-            if (message.notice_type === "friend_recall" && options.onFriendRecall) {
+            if (message.notice_type === "group_recall" && options.onGroupRecall) {
+              const { self_id, user_id, operator_id, group_id, time } = message;
+              const messageId = oneBotMessageId(message.message_id);
+              if (!isId(self_id) || !isId(user_id) || !isId(operator_id) || !isId(group_id) || !isId(time) || messageId === undefined ||
+                  self_id === user_id || self_id === operator_id) return;
+              const signal = groupActionSignal(socket.data, self_id);
+              if (!signal) return;
+              const memberName = async (id: number, active: AbortSignal) =>
+                (await calls.getLiveGroupMember(send, group_id, id, true, active))?.name;
+              options.onGroupRecall({ adapter: "onebot", botId: self_id, userId: user_id, groupId: group_id, operatorId: operator_id,
+                messageId, time, signal,
+                async describe(active) {
+                  const [groupName, nickname, operatorName] = await Promise.all([
+                    calls.getGroupName(send, group_id, active, true), memberName(user_id, active),
+                    operator_id === user_id ? undefined : memberName(operator_id, active),
+                  ]);
+                  return { groupName, nickname, operatorName };
+                },
+                async notifyOwners(summary, original, nickname, active) {
+                  const message = encodeOneBotReply(summary);
+                  const nodes = encodeOneBotForward([original], user_id, nickname ?? String(user_id));
+                  if (active.aborted || message === undefined || !nodes) return;
+                  const friends = new Set((await calls.listFriendProfiles(send, active).catch(() => [])).map(profile => String(profile.user_id)));
+                  const owners = options.masterIds(self_id).filter(owner => owner !== self_id && friends.has(String(owner)));
+                  await Promise.all(owners.map(async owner => {
+                    if (active.aborted || !options.isMaster(self_id, owner)) return;
+                    const target = { user_id: owner };
+                    if (await calls.sendConfirmed(send, target, message, active) !== "confirmed" || active.aborted || !options.isMaster(self_id, owner)) return;
+                    if (await calls.sendForwardConfirmed(send, target, nodes, active) === "rejected" && !active.aborted && options.isMaster(self_id, owner)) {
+                      await calls.sendConfirmed(send, target, [{ type: "text", data: { text: `撤回消息：${original}` } }], active);
+                    }
+                  }));
+                },
+              });
+            } else if (message.notice_type === "friend_recall" && options.onFriendRecall) {
               const { self_id, user_id, operator_id, time } = message;
               const messageId = oneBotMessageId(message.message_id);
               if (!isId(self_id) || !isId(user_id) || self_id === user_id || !isId(time) || messageId === undefined ||

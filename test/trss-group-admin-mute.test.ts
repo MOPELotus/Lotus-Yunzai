@@ -1586,6 +1586,37 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes("好友撤回消息"))).toHaveLength(1);
     expect(oneBotReplies().some(({ params }) => JSON.stringify(params.message).includes("synthetic-recalled-secret-never-forward"))).toBe(false);
+
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { groupRecall: true, msgSaveDeltime: 600 }\n');
+    const recalledGroupOneBot = oneBotMessage("合成 OneBot 原群正文", 42, 82);
+    const oneBotGroupRecall = { post_type: "notice", notice_type: "group_recall", self_id: oneBotId, user_id: 42,
+      operator_id: operator, group_id: 82, message_id: recalledGroupOneBot.message_id, time: 1_700_000_022,
+    };
+    send(recalledGroupOneBot);
+    await Bun.sleep(35);
+    client.send(JSON.stringify({ ...oneBotGroupRecall, group_id: 84 }));
+    client.send(JSON.stringify({ ...oneBotGroupRecall, operator_id: oneBotId }));
+    client.send(JSON.stringify(oneBotGroupRecall));
+    const oneBotGroupRecallSummary = JSON.stringify((await ownerReplyWith("群聊管理撤回")).params.message);
+    expect(oneBotGroupRecallSummary).toContain("撤回群名：合成 OneBot 82");
+    expect(oneBotGroupRecallSummary).toContain("被撤回人");
+    const oneBotRecalledForward = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("合成 OneBot 原群正文")), "OneBot 群撤回未向主人合并转发原文。");
+    expect(oneBotRecalledForward.params.messages).toMatchObject([{ type: "node", data: { uin: "42", content: [text("合成 OneBot 原群正文")] } }]);
+
+    const recalledGroupMilky = milkyTitle("合成 Milky 原群正文", 54);
+    await webhook("message_receive", recalledGroupMilky);
+    const milkyGroupRecall = { message_scene: "group", peer_id: 79, sender_id: 54, operator_id: 54, message_seq: recalledGroupMilky.message_seq };
+    await webhook("message_recall", { ...milkyGroupRecall, operator_id: 0 });
+    await webhook("message_recall", milkyGroupRecall);
+    await webhook("message_recall", milkyGroupRecall);
+    const milkyGroupRecallSummary = JSON.stringify((await milkyOwnerReply(operator, "[通知(100) - 群聊撤回]")).params.message);
+    expect(milkyGroupRecallSummary).toContain("撤回群号：79");
+    expect(milkyGroupRecallSummary).not.toContain("撤回管理");
+    const milkyRecalledForward = await milkyOwnerReply(operator, "合成 Milky 原群正文");
+    expect(milkyRecalledForward.params.message).toMatchObject([{ type: "forward", data: { messages: [
+      { user_id: 54, segments: [text("合成 Milky 原群正文")] },
+    ] } }]);
   } finally {
     socket?.close();
     host?.kill();

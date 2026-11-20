@@ -3,7 +3,7 @@ import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
 import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
 import type { NativeTemporaryMessageNotice } from "../temporary-message-notice.ts";
-import type { NativeFriendRecallNotice } from "../friend-recall-notice.ts";
+import type { NativeFriendRecallNotice, NativeGroupRecallNotice, NativeGroupRecallSource } from "../message-recall-notice.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
@@ -78,6 +78,8 @@ export interface GroupActionPolicy {
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
   readonly onTemporaryMessage?: (notice: NativeTemporaryMessageNotice) => void;
   readonly onFriendRecall?: (notice: NativeFriendRecallNotice) => void;
+  readonly onGroupRecall?: (notice: NativeGroupRecallNotice) => void;
+  readonly onGroupRecallSource?: (source: NativeGroupRecallSource) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
   readonly groupWorkflowSignal?: () => AbortSignal;
 }
