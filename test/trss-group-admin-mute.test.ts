@@ -229,6 +229,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告, 椰奶私聊群管]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { friendRequest: false }\n"bot:99": { friendRequest: true }\n');
     const legacyList = join(legacyDirectory, "groupAdmin.yaml");
     await writeFile(legacyList, "# 原群管配置\nblackQQ: [52, 57]\nwhiteQQ: [59] # 白名单\nnoBan: false\n");
     const legacyRules = join(root, "plugins/yenai-plugin/config/group");
@@ -1191,6 +1192,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     client.send(JSON.stringify(incomingFriend));
     client.send(JSON.stringify(incomingFriend));
     client.send(JSON.stringify({ ...incomingFriend, self_id: milkyId, comment: "越账号伪造好友附言" }));
+    const friendNotice = await ownerReplyWith("添加好友申请");
+    const shownFriendNotice = JSON.stringify(friendNotice.params.message);
+    expect(shownFriendNotice).toContain("当前连接所见好友附言");
+    expect(shownFriendNotice).toContain("#查看好友申请");
+    expect(shownFriendNotice).not.toContain(incomingFriend.flag);
     client.send(JSON.stringify(oneBotPrivate("#查看好友申请")));
     const oneBotFriendList = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
       params.user_id === 52 && JSON.stringify(params.messages).includes("当前连接所见好友附言")), "OneBot 好友申请未送达机器人主人。");
@@ -1199,6 +1205,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(shownOneBotFriends).toContain("2024-01-01 00:00:05");
     expect(shownOneBotFriends).not.toContain("越账号伪造好友附言");
     expect(shownOneBotFriends).not.toContain(incomingFriend.flag);
+    expect(oneBotReplies().filter(({ params }) => JSON.stringify(params.message).includes("添加好友申请")).map(({ params }) => params.user_id)).toEqual([52]);
 
     await webhook("message_receive", milkyPrivate("#查看好友申请", 52));
     await webhook("message_receive", milkyTitle("#查看好友申请", operator));

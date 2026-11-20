@@ -168,11 +168,24 @@ async function dispatchRequest(
 
   if (request_type === "friend") {
     if (self_id === user_id) return;
-    if (groupActionSignal(connection, self_id)) calls.observeFriendRequest(flag, {
-      userId: user_id, comment: stringField(event.comment), time: isId(event.time) ? event.time : undefined,
+    const session = groupActionSignal(connection, self_id);
+    const nickname = stringField(event.nickname);
+    const source = stringField(event.source);
+    if (session) calls.observeFriendRequest(flag, {
+      userId: user_id, nickname, source, comment: stringField(event.comment), time: isId(event.time) ? event.time : undefined,
     });
     await dispatch({
       ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
+      nickname, source,
+      notifyOwners: session ? async (reply, workflow) => {
+        const active = AbortSignal.any([session, workflow]);
+        const message = encodeOneBotReply(reply);
+        if (active.aborted || message === undefined) return 0;
+        const deliveries = await Promise.all(permissions.masterIds(self_id).filter(id => id !== self_id).map(
+          id => calls.sendConfirmed(send, { user_id: id }, message, active),
+        ));
+        return deliveries.filter(result => result === "confirmed").length;
+      } : undefined,
       approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
       reply: replyToApplicant,
     });

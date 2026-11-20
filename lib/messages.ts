@@ -204,12 +204,16 @@ export interface FriendRequest {
   readonly self_id: number;
   readonly user_id: number;
   readonly flag: string;
+  readonly adapter?: "milky";
   readonly comment?: string;
+  readonly nickname?: string;
+  readonly source?: string;
   readonly isGroup: false;
   readonly isPrivate: true;
   readonly isMaster: boolean;
   readonly approve: (approve?: boolean, remark?: string) => Promise<boolean>;
   readonly notifyMasters: (message: string) => Promise<number>;
+  readonly notifyOwners?: (message: MessageReply, signal: AbortSignal) => Promise<number>;
   readonly reply: MessageEvent["reply"];
 }
 

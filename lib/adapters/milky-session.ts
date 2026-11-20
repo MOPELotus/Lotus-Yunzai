@@ -512,9 +512,19 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return "accepted";
     }
 
-    const friendRequest = body.event_type === "friend_request"
+    const incomingFriend = body.event_type === "friend_request"
       ? milkyFriendRequest(body, account, approveFriendRequest, (user_id, reply) => sendReply({ user_id }, reply), options.masterIds?.(account) ?? [])
       : undefined;
+    const friendRequest = incomingFriend && {
+      ...incomingFriend,
+      async notifyOwners(reply: MessageReply, workflow: AbortSignal) {
+        const active = AbortSignal.any([signal, workflow]);
+        if (active.aborted) return 0;
+        const recipients = options.masterIds?.(account).filter(id => id !== account) ?? [];
+        const deliveries = await Promise.all(recipients.map(id => sendConfirmed({ user_id: id }, reply, undefined, active)));
+        return deliveries.filter(result => result === "confirmed").length;
+      },
+    };
     let groupRequest;
     if (body.event_type === "group_invitation" || body.event_type === "group_join_request" || body.event_type === "group_invited_join_request") {
       const kind = body.event_type === "group_invitation" ? "invite" : "add";

@@ -17,6 +17,8 @@ export interface PendingFriendRequestList {
   readonly complete: boolean;
 }
 
+type FriendAutoResult = "confirmed" | "rejected" | "unknown" | "duplicate" | undefined;
+
 export async function readFriendRequests(root: URL, delayMs = 3_000) {
   const { autoFriend } = await readLocalConfig(root, "other");
   // Existing Lotus-Yunzai installations remain opt-in. TRSS shipped autoFriend: 1.
@@ -25,11 +27,12 @@ export async function readFriendRequests(root: URL, delayMs = 3_000) {
   const handled = new Set<string>();
   const maxRequests = 4096;
 
-  return async (event: FriendRequest, signal?: AbortSignal): Promise<void> => {
+  return async (event: FriendRequest, signal?: AbortSignal): Promise<FriendAutoResult> => {
     if (!enabled || signal?.aborted) return;
 
-    const key = createHash("sha256").update(`${event.self_id}\0${event.flag}`).digest("hex");
-    if (pending.has(key) || handled.has(key) || pending.size >= maxRequests) return;
+    const key = createHash("sha256").update(JSON.stringify([event.adapter ?? "onebot", event.self_id, event.flag])).digest("hex");
+    if (pending.has(key) || handled.has(key)) return "duplicate";
+    if (pending.size >= maxRequests) return;
     pending.add(key);
 
     try {
@@ -38,9 +41,12 @@ export async function readFriendRequests(root: URL, delayMs = 3_000) {
       handled.add(key);
       if (handled.size > maxRequests) handled.delete(handled.values().next().value!);
       try {
-        if (!await event.approve(true)) console.warn("[好友申请] 协议端未接受自动审批。");
+        if (await event.approve(true)) return "confirmed";
+        console.warn("[好友申请] 协议端未接受自动审批。");
+        return "rejected";
       } catch {
         console.warn("[好友申请] 未确认自动审批结果。");
+        return "unknown";
       }
     } catch (error) {
       if (signal?.aborted) return;

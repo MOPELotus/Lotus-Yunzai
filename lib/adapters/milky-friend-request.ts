@@ -53,7 +53,7 @@ export function milkyFriendRequest(
 ): FriendRequest | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "friend_request" ||
       value.self_id !== selfId || !isRecord(value.data)) return;
-  const { initiator_id: userId, initiator_uid: uid, comment } = value.data;
+  const { initiator_id: userId, initiator_uid: uid, comment, via } = value.data;
   if (!isId(userId) || userId === selfId || !isOpaqueUid(uid)) return;
 
   const time = isId(value.time) ? value.time : null;
@@ -64,8 +64,9 @@ export function milkyFriendRequest(
 
   return {
     post_type: "request", request_type: "friend", sub_type: "add",
-    self_id: selfId, user_id: userId, flag,
+    self_id: selfId, user_id: userId, flag, adapter: "milky",
     comment: typeof comment === "string" ? comment : undefined,
+    source: typeof via === "string" ? via : undefined,
     isGroup: false, isPrivate: true, isMaster: false,
     async approve(accept = true, remark) {
       if (submitted || typeof accept !== "boolean") return false;

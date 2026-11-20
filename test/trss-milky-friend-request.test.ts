@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
@@ -29,6 +29,8 @@ function mockGateway() {
   const rejected = Promise.withResolvers<Review>();
   const accepted = Promise.withResolvers<Review>();
   const replayReply = Promise.withResolvers<unknown>();
+  const ownerNotice = Promise.withResolvers<unknown>();
+  const notifiedOwners: unknown[] = [];
   const release = Promise.withResolvers<void>();
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -43,7 +45,10 @@ function mockGateway() {
       }
       const body = await request.json();
       if (action === "send_private_message") {
-        replayReply.resolve(body);
+        if (JSON.stringify(body).includes("添加好友申请")) {
+          notifiedOwners.push(body);
+          ownerNotice.resolve(body);
+        } else replayReply.resolve(body);
         return Response.json({ status: "ok", retcode: 0, data: { message_seq: 11 } });
       }
       const review = { action, body, receivedAt: performance.now() };
@@ -60,7 +65,7 @@ function mockGateway() {
       return new Response(null, { status: 404 });
     },
   });
-  return { server, reviews, accepted, rejected, release, replayReply };
+  return { server, reviews, accepted, rejected, release, replayReply, ownerNotice, notifiedOwners };
 }
 
 async function startup(stream: ReadableStream<Uint8Array>) {
@@ -127,8 +132,12 @@ test("Milky Webhook 好友申请按旧配置延时审批，保留 V3 手动拒�
   const replayMarker = join(root, "replay-probe");
   try {
     await copyHost(root);
+    await cp(new URL("../plugins/group", import.meta.url), join(root, "plugins", "group"), {
+      recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
+    });
     await mkdir(join(root, "config", "config"), { recursive: true });
-    await writeFile(join(root, "config", "config", "other.yaml"), "autoFriend: 1\n");
+    await writeFile(join(root, "config", "config", "other.yaml"), 'autoFriend: 1\nmaster: ["99:52", "100:54"]\n');
+    await writeFile(join(root, "config", "group-notice.yaml"), 'default: { friendRequest: false }\n"bot:99": { friendRequest: true }\n');
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
       "connection: webhook", `access_token: ${token}`,
@@ -176,12 +185,20 @@ test("Milky Webhook 好友申请按旧配置延时审批，保留 V3 手动拒�
       expect(mock.reviews.map(({ action }) => action)).toEqual(["reject_friend_request", "accept_friend_request"]);
       mock.release.resolve();
       await deadline(unknown.promise, "未观察到好友审批回执未确认的记录。");
+      const notice = await deadline(mock.ownerNotice.promise, "当前 Milky 主人未收到自动审批未确认的通知。") as { user_id: number; message: unknown };
+      expect(notice.user_id).toBe(52);
+      const shown = JSON.stringify(notice.message);
+      expect(shown).toContain("搜索");
+      expect(shown).toContain("自动审批结果未确认");
+      expect(shown).toContain("#查看好友申请");
+      expect(shown).not.toContain(autoUid);
       await writeFile(replayMarker, "");
       expect((await webhook(endpoint, automatic)).status).toBe(200);
       expect(await deadline(mock.replayReply.promise, "未观察到 V3 插件对重放申请的审批结果。")).toEqual({
         user_id: 45, message: [{ type: "text", data: { text: "重放未再审批" } }],
       });
       expect(mock.reviews.map(({ action }) => action)).toEqual(["reject_friend_request", "accept_friend_request"]);
+      expect(mock.notifiedOwners).toHaveLength(1);
     } finally {
       mock.release.resolve();
       if (host.exitCode === null && host.signalCode === null) host.kill();

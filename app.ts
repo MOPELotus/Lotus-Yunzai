@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { sep } from "node:path";
@@ -108,7 +109,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
+import type { FriendRequestNotice, GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
@@ -128,6 +129,7 @@ const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunza
 const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
+const friendRequestNoticeNames = ["[group] 好友申请通知", "group", "@lotus-yunzai/group"];
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
@@ -280,6 +282,8 @@ if (import.meta.main) {
   const lastMemberMutes = new Map<string, { time: number; revisions: Set<string> }>();
   let groupBannedWords: { policy: GroupBannedWords; signal: AbortSignal } | undefined;
   let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
+  let friendRequestNotice: { policy: FriendRequestNotice; signal: AbortSignal } | undefined;
+  const notifiedFriendRequests = new Set<string>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
   const groupJoinReview = createGroupJoinReview(() => {
     const redis = globalThis.redis;
@@ -909,6 +913,7 @@ if (import.meta.main) {
       }
     }
     if (event.post_type === "request" && event.request_type === "friend") {
+      const active = nativeOperationSignal();
       let reviewed = false;
       const consumed = await legacy.dispatch({
         ...event,
@@ -917,7 +922,20 @@ if (import.meta.main) {
           return event.approve(approve, remark);
         },
       }, allowed);
-      if (!reviewed && !consumed && allowed(["autoFriend"])) await autoFriend(event, lifecycle.signal);
+      if (reviewed || consumed || active.aborted) return;
+      const result = allowed(["autoFriend"]) ? await autoFriend(event, active) : undefined;
+      const registration = friendRequestNotice;
+      if (result === "duplicate" || !registration || !event.notifyOwners || !allowed(friendRequestNoticeNames)) return;
+      const signal = AbortSignal.any([active, registration.signal]);
+      if (signal.aborted) return;
+      const key = createHash("sha256").update(JSON.stringify([event.adapter ?? "onebot", event.self_id, event.flag])).digest("hex");
+      if (notifiedFriendRequests.has(key)) return;
+      const reply = await registration.policy({ botId: event.self_id, userId: event.user_id,
+        nickname: event.nickname, source: event.source, comment: event.comment, autoResult: result }, signal);
+      if (!reply || signal.aborted || notifiedFriendRequests.has(key)) return;
+      notifiedFriendRequests.add(key);
+      if (notifiedFriendRequests.size > 4096) notifiedFriendRequests.delete(notifiedFriendRequests.values().next().value!);
+      await event.notifyOwners(reply, signal);
       return;
     }
     const consumed = await legacy.dispatch(event, allowed);
@@ -1824,6 +1842,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupAddNotice === registration) groupAddNotice = undefined;
+          };
+        },
+        registerFriendRequestNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          friendRequestNotice = registration;
+          return () => {
+            session.abort();
+            if (friendRequestNotice === registration) friendRequestNotice = undefined;
           };
         },
         registerGroupVerification(policy) {
