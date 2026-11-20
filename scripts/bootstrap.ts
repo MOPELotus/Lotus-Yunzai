@@ -16,11 +16,31 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
     console.error("初始化 Git 子模块需要 Git。");
     process.exit(1);
   }
-  const update = Bun.spawn([git, "submodule", "update", "--init", "--recursive", "--checkout"], options);
-  const exitCode = await update.exited;
-  if (exitCode !== 0) {
+  let initialized = false;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const update = await Bun.spawn(
+      [git, "submodule", "update", "--init", "--recursive", "--checkout"], options,
+    ).exited;
+    if (update === 0) {
+      // An interrupted clone can leave HEAD at the requested commit before any files are checked out.
+      const checkout = await Bun.spawn([
+        git, "submodule", "foreach", "--quiet", "--recursive",
+        'index=$(git rev-parse --git-path index) && { test -f "$index" || git read-tree -m -u HEAD; }',
+      ], options).exited;
+      if (checkout !== 0) break;
+
+      const status = Bun.spawn([git, "submodule", "status", "--recursive"], { ...options, stdout: "pipe" });
+      const [code, revisions] = await Promise.all([status.exited, new Response(status.stdout).text()]);
+      if (code === 0 && !/^[-+U]/m.test(revisions)) {
+        initialized = true;
+        break;
+      }
+    }
+    if (attempt === 1) console.error("[初始化] 子模块检出尚未完成，正在重试。");
+  }
+  if (!initialized) {
     console.error("子模块初始化失败。请检查主仓是否通过 Git 克隆，以及子模块是否可访问。");
-    process.exit(exitCode);
+    process.exit(1);
   }
 }
 
