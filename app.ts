@@ -112,9 +112,10 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { FriendMessageNotice, FriendRequestNotice, GroupAddNotice, GroupVerification } from "./plugins/group/index.ts";
+import type { FriendMessageNotice, FriendRequestNotice, GroupAddNotice, GroupVerification, TemporaryMessageNotice } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
+import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
 
@@ -135,7 +136,13 @@ const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
 const friendRequestNoticeNames = ["[group] 好友申请通知", "group", "@lotus-yunzai/group"];
 const friendMessageNoticeNames = ["[group] 好友消息通知", "group", "@lotus-yunzai/group"];
+const temporaryMessageNoticeNames = ["[group] 群临时消息通知", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
+
+function isPrivateCredentialMessage(text: string): boolean {
+  return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
+    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text);
+}
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
@@ -290,9 +297,10 @@ if (import.meta.main) {
   let groupAddNotice: { policy: GroupAddNotice; signal: AbortSignal } | undefined;
   let friendRequestNotice: { policy: FriendRequestNotice; signal: AbortSignal } | undefined;
   let friendMessageNotice: { policy: FriendMessageNotice; signal: AbortSignal } | undefined;
+  let temporaryMessageNotice: { policy: TemporaryMessageNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
-  const notifiedFriendMessages = new Set<string>();
-  const pendingFriendNotices = new Set<string>();
+  const notifiedPrivateMessages = new Set<string>();
+  const pendingPrivateNotices = new Set<string>();
   const friendNoticeHints = new Map<string, number>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
   function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice" | "owner-friend-reply") {
@@ -970,12 +978,29 @@ if (import.meta.main) {
     }
   }
 
+  function canForwardPrivateNotice(botId: number, userId: number) {
+    return botId !== userId && masterPermissions.masterIds(botId).length > 0 && !masterPermissions.isMaster(botId, userId) &&
+      !masterPermissions.legacyMasterIds().includes(userId);
+  }
+
+  async function deliverPrivateNoticeOnce(key: string, deliver: (mark: () => void) => Promise<void>) {
+    if (pendingPrivateNotices.has(key) || notifiedPrivateMessages.has(key)) return;
+    pendingPrivateNotices.add(key);
+    try {
+      await deliver(() => {
+        notifiedPrivateMessages.add(key);
+        if (notifiedPrivateMessages.size > 4096) notifiedPrivateMessages.delete(notifiedPrivateMessages.values().next().value!);
+      });
+    } finally {
+      pendingPrivateNotices.delete(key);
+    }
+  }
+
   async function forwardFriendMessage(event: MessageEvent, transport: FriendMessageNoticeSession) {
     const registration = friendMessageNotice;
     const { self_id: botId, user_id: userId, message_id: messageId, message, sender } = event;
     if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
-        botId === userId || messageId === undefined || !masterPermissions.masterIds(botId).length || masterPermissions.isMaster(botId, userId) ||
-        masterPermissions.legacyMasterIds().includes(userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
+        messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
     if (signal.aborted || typeof message === "string" || !message.length) return;
     const parts: (string | { sourceIndex: number })[] = [];
@@ -985,14 +1010,10 @@ if (import.meta.main) {
       else return;
     }
     const text = parts.filter(part => typeof part === "string").join("");
-    if (privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
-        isDeviceBindingInput(text) || isZzzGachaLinkMessage(text)) return;
+    if (isPrivateCredentialMessage(text)) return;
 
     const peer = `${event.adapter ?? "onebot"}:${botId}:${userId}`;
-    const key = `${peer}:${messageId}`;
-    if (pendingFriendNotices.has(key) || notifiedFriendMessages.has(key)) return;
-    pendingFriendNotices.add(key);
-    try {
+    await deliverPrivateNoticeOnce(`friend:${peer}:${messageId}`, async mark => {
       const readParts = parts.some(part => typeof part !== "string") ? () => readFriendReplyParts(parts, message, signal) : undefined;
       const reply = await registration.policy({ botId, userId, text, readParts, canQuote: true,
         nickname: typeof sender?.nickname === "string" ? sender.nickname : undefined,
@@ -1009,17 +1030,30 @@ if (import.meta.main) {
         },
       }, signal);
       if (!reply || signal.aborted) return;
-      notifiedFriendMessages.add(key);
-      if (notifiedFriendMessages.size > 4096) notifiedFriendMessages.delete(notifiedFriendMessages.values().next().value!);
+      mark();
       const noticeText = reply.filter(part => typeof part === "string").join("");
       await transport.notifyOwners(reply, signal, async (owner, message) => {
         if (!signal.aborted && masterPermissions.isMaster(botId, owner)) {
           await friendNoticeReceipts.record({ adapter: event.adapter ?? "onebot", account: botId, owner, message }, userId, noticeText);
         }
       });
-    } finally {
-      pendingFriendNotices.delete(key);
-    }
+    });
+  }
+
+  async function forwardTemporaryMessage(notice: NativeTemporaryMessageNotice) {
+    const registration = temporaryMessageNotice;
+    const { adapter, botId, userId, messageId, groupId, reportedGroupId, text } = notice;
+    if (!registration || stopping || !handoff.accepting || !canForwardPrivateNotice(botId, userId) || isPrivateCredentialMessage(text)) return;
+    const scope = { self_id: botId, user_id: userId, group_id: groupId };
+    if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, temporaryMessageNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, notice.signal);
+    if (signal.aborted) return;
+    await deliverPrivateNoticeOnce(`temporary:${adapter}:${botId}:${userId}:${messageId}`, async mark => {
+      const reply = await registration.policy({ botId, userId, text, groupId, reportedGroupId }, signal);
+      if (!reply || signal.aborted) return;
+      mark();
+      await notice.notifyOwners(reply, signal);
+    });
   }
 
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
@@ -1725,6 +1759,11 @@ if (import.meta.main) {
         pending.add(handling);
         void handling.then(() => pending.delete(handling));
       },
+      onTemporaryMessage(notice: NativeTemporaryMessageNotice) {
+        const handling = forwardTemporaryMessage(notice).catch(() => {});
+        pending.add(handling);
+        void handling.then(() => pending.delete(handling));
+      },
     };
     const milkyOptions: MilkyTransportOptions = {
       ...groupActions,
@@ -1953,6 +1992,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (friendMessageNotice === registration) friendMessageNotice = undefined;
+          };
+        },
+        registerTemporaryMessageNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          temporaryMessageNotice = registration;
+          return () => {
+            session.abort();
+            if (temporaryMessageNotice === registration) temporaryMessageNotice = undefined;
           };
         },
         registerGroupVerification(policy) {

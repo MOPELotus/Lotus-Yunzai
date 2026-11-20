@@ -166,7 +166,7 @@ export async function readGroupDispatch(root: URL) {
     return !blackGroup.has(group) && (whiteGroup.size === 0 || whiteGroup.has(group));
   }
 
-  function allowsInbound(event: BotEvent): boolean {
+  function allowsInbound(event: GroupRoutingScope): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     const user = id(event.user_id);
     return !(user && blackUser.has(user)) && allowsGroupModeration(event);

@@ -406,6 +406,21 @@ async function dispatchMessage(
   const mentioned = likeSession && selfId !== undefined ? mentionedProfileId(incoming.message, selfId, userId) : undefined;
   const messageId = typeof event.message_id === "number" && Number.isSafeInteger(event.message_id)
     ? event.message_id : undefined;
+  const temporaryMessageId = oneBotMessageId(messageId);
+  if (groupActions?.onTemporaryMessage && boundAccount && selfId !== undefined && attachmentSession && !noticeAttachment &&
+      messageType === "private" && event.sub_type === "group" && temporaryMessageId !== undefined && text.trim() &&
+      incoming.message.every(part => part.type === "text")) {
+    const signal = attachmentSession.signal;
+    const reportedGroupId = isId(event.group_id) && event.group_id !== 284840486 ? event.group_id : undefined;
+    groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId, text, reportedGroupId, signal,
+      async notifyOwners(reply, workflow) {
+        const active = AbortSignal.any([signal, workflow]);
+        const owners = groupActions.masterIds?.(selfId).filter(id => id !== selfId && isMaster(selfId, id)) ?? [];
+        const verified = await Promise.all(owners.map(async id => await calls.isFriend(send, id, active).catch(() => false) ? id : undefined));
+        return notifyOwnerReplies(calls, send, selfId, verified.filter((id): id is number => id !== undefined && isMaster(selfId, id)), reply, active);
+      },
+    });
+  }
   const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
     const closed = () => display.closed || attachmentSession?.signal.aborted;
     if (closed()) return;

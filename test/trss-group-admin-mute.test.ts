@@ -124,6 +124,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let milkyFriendReviewFixture = false;
   let regularFriendReadback = "pending";
   let changingFriendReads = 0;
+  let includeNoticeOwnersInFriendList = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
   const memberLastSentTimes = new Map<string, number>();
@@ -221,7 +222,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? milkyJoinNotifications(params)
         : action === "get_friend_requests" ? milkyFriendNotifications(params.is_filtered)
-        : action === "get_friend_list" ? { friends: [{ user_id: 43 }] }
+        : action === "get_friend_list" ? { friends: [{ user_id: 43 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: operator }] : [])] }
         : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
@@ -316,7 +317,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
       const reply = action === "get_group_member_info" ? member(params)
         : action === "send_msg" ? { message_id: oneBotCalls.length }
-        : action === "get_friend_list" ? [{ user_id: 42 }]
+        : action === "get_friend_list" ? [{ user_id: 42 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: 52 }] : [])]
         : action === "get_friend_msg_history" ? { messages: [...oneBotPrivateHistory].flatMap(([message_id, stored]) =>
           message_id === params.message_seq && stored.user_id === params.user_id ? [{
             message_id, self_id: oneBotId, user_id: oneBotId, sender: { user_id: oneBotId }, message_type: "private", sub_type: "friend",
@@ -1476,6 +1477,44 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const richQuote = milkyPrivate("#回复 混排来源仍可准确绑定");
     await webhook("message_receive", { ...richQuote, segments: [{ type: "reply", data: { message_seq: richReceipt } }, ...richQuote.segments] });
     await milkyOwnerReply(43, "混排来源仍可准确绑定");
+
+    includeNoticeOwnersInFriendList = true;
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { grouptemporaryMessage: true }\n"bot:100:88": { grouptemporaryMessage: false }\n');
+    const temporaryOneBot = { ...oneBotPrivate("真实临时 OneBot 文本", 42), sub_type: "group", group_id: 86 };
+    client.send(JSON.stringify(temporaryOneBot));
+    client.send(JSON.stringify(temporaryOneBot));
+    const reportedNotice = await ownerReplyWith("真实临时 OneBot 文本");
+    const reportedText = JSON.stringify(reportedNotice.params.message);
+    expect(reportedText).toContain("[消息(99) - 群临时消息]");
+    expect(reportedText).toContain("来源群号：未核实（协议报告 86）");
+    expect(reportedText).not.toContain("加为好友");
+    client.send(JSON.stringify({ ...oneBotPrivate("固定假群号不显示", 42), sub_type: "group", group_id: 284840486 }));
+    const fallbackTempNotice = JSON.stringify((await ownerReplyWith("固定假群号不显示")).params.message);
+    expect(fallbackTempNotice).toContain("来源群号：未核实");
+    expect(fallbackTempNotice).not.toContain("284840486");
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("真实临时 OneBot 文本"))).toHaveLength(1);
+
+    const temporaryMilky = (content: string, groupId: number) => ({ ...milkyPrivate(content, 43), message_scene: "temp",
+      group: { group_id: groupId, group_name: "只是合成群" },
+    });
+    await webhook("message_receive", temporaryMilky("此来源群禁用通知", 88));
+    await webhook("message_receive", temporaryMilky("authkey=should-not-forward-temp", 79));
+    await webhook("message_receive", { ...temporaryMilky("不匹配的对端勿转发", 79), peer_id: 55 });
+    await webhook("message_receive", temporaryMilky("真实 Milky 临时会话文本", 79));
+    const temporaryDelivery = await milkyOwnerReply(operator, "真实 Milky 临时会话文本");
+    const temporaryText = JSON.stringify(temporaryDelivery.params.message);
+    expect(temporaryText).toContain("[消息(100) - 群临时消息]");
+    expect(temporaryText).toContain("来源群号：79");
+    expect(temporaryText).not.toContain("回复 <内容>");
+    const tempSequence = milkyCalls.indexOf(temporaryDelivery) + 1;
+    const unrelatedTempQuote = milkyPrivate("#回复 临时通知不作为好友回信来源");
+    await webhook("message_receive", { ...unrelatedTempQuote,
+      segments: [{ type: "reply", data: { message_seq: tempSequence } }, ...unrelatedTempQuote.segments] });
+    await webhook("message_receive", milkyPrivate("#回复 43 最终正常好友回执"));
+    await milkyOwnerReply(43, "最终正常好友回执");
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
+      /此来源群禁用通知|should-not-forward-temp|不匹配的对端勿转发|临时通知不作为好友回信来源/u.test(JSON.stringify(params.message)))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

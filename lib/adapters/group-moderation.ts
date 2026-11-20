@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
 import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
+import type { NativeTemporaryMessageNotice } from "../temporary-message-notice.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
@@ -74,6 +75,7 @@ export interface GroupActionPolicy {
   readonly canModeratePrivateGroup?: (bot: number, group: number) => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
+  readonly onTemporaryMessage?: (notice: NativeTemporaryMessageNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
   readonly groupWorkflowSignal?: () => AbortSignal;
 }

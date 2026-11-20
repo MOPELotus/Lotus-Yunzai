@@ -281,10 +281,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return "confirmed";
   }
 
-  async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>) {
+  async function listCurrentFriends(active: AbortSignal): Promise<ReadonlySet<number> | undefined> {
+    const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
+    const friends = result.status === "confirmed" ? result.data.friends : undefined;
+    if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
+    return new Set(friends.map(friend => friend.user_id as number));
+  }
+
+  async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal,
+    onDelivered?: (owner: number, messageId: number) => Promise<void>, friends?: ReadonlySet<number>) {
     const active = AbortSignal.any([signal, workflow]);
     if (active.aborted) return 0;
-    const recipients = [...new Set(options.masterIds?.(account))].filter(id => id !== account && isMaster(id));
+    const recipients = [...new Set(options.masterIds?.(account))].filter(id => id !== account && isMaster(id) && friends?.has(id) !== false);
     const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active,
       onDelivered ? id => onDelivered(user_id, id) : undefined)));
     return deliveries.filter(result => result === "confirmed").length;
@@ -595,6 +603,24 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return "accepted";
     }
 
+    if (body.event_type === "message_receive" && body.data.message_scene === "temp") {
+      const { sender_id, peer_id, message_seq, group, segments } = body.data;
+      if (options.onTemporaryMessage && positiveId(sender_id) && sender_id === peer_id && sender_id !== account &&
+          hasMessageSequence(message_seq) && Array.isArray(segments) && segments.length && segments.every(part =>
+            record(part) && part.type === "text" && record(part.data) && typeof part.data.text === "string")) {
+        const text = segments.map(part => part.data.text).join("");
+        const groupId = record(group) && positiveId(group.group_id) ? group.group_id : undefined;
+        options.onTemporaryMessage({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, text, groupId, signal,
+          async notifyOwners(reply, workflow) {
+            const active = AbortSignal.any([signal, workflow]);
+            const friends = await listCurrentFriends(active);
+            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+          },
+        });
+      }
+      return "accepted";
+    }
+
     const message = milkyMessage(body, account, async (action, params) => {
       return confirmSent(message, await call(action, params), params.message);
     }, scheduleRecall, async (action, params) => {
@@ -699,12 +725,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       claimDelivery: ownerFriendReplyClaim && hasMessageSequence(ownerMessageId) ? sendReply => ownerFriendReplyClaim({
         adapter: "milky", botId: account, flag: `${cardOwner}:${ownerMessageId}`,
       }, sendReply) : undefined,
-      async isFriend(userId, active) {
-        const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
-        const friends = result.status === "confirmed" ? result.data.friends : undefined;
-        if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
-        return friends.some(friend => friend.user_id === userId);
-      },
+      async isFriend(userId, active) { return (await listCurrentFriends(active))?.has(userId); },
       send: (user_id, reply, active) => sendConfirmed({ user_id }, reply, undefined, active),
     }) : undefined;
     const scopedMessage = message && {
