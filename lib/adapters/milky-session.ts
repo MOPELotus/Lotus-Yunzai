@@ -445,6 +445,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           async mute(group_id, user_id, duration, active) {
             return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration }, active)).status;
           },
+          async kick(group_id, user_id, active) {
+            return (await call.confirmed("kick_group_member", { group_id, user_id, reject_add_request: false }, active)).status;
+          },
           async wholeMute(group_id, is_mute, active) {
             return (await call.confirmed("set_group_whole_mute", { group_id, is_mute }, active)).status;
           },

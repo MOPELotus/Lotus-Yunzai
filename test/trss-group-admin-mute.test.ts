@@ -1116,6 +1116,16 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await milkyOwnerReply(operator, "合成 Milky 88(88)」解除全体禁言");
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_whole_mute" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, is_mute: false }]);
+    client.send(JSON.stringify(oneBotPrivate("#踢 88 59")));
+    await ownerReplyWith("已将「59」踢出群聊（群 88）");
+    expect(oneBotCalls.filter(({ action, params }) => action === "set_group_kick" && params.group_id === 88).map(({ params }) => params))
+      .toEqual([{ group_id: 88, user_id: 59, reject_add_request: false }]);
+    await webhook("message_receive", milkyPrivate("#踢 88 52"));
+    await milkyOwnerReply(operator, "52 受群");
+    await webhook("message_receive", milkyPrivate("#踢 88 67"));
+    await milkyOwnerReply(operator, "已将「67」踢出群聊（群 88）");
+    expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.group_id === 88).map(({ params }) => params))
+      .toEqual([{ group_id: 88, user_id: 67, reject_add_request: false }]);
   } finally {
     socket?.close();
     host?.kill();

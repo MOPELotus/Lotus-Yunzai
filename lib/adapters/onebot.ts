@@ -427,6 +427,7 @@ async function dispatchMessage(
         allowed: groupId => groupActions.canModeratePrivateGroup?.(selfId, groupId) === true,
         member: (groupId, id, active) => calls.getLiveGroupMember(send, groupId, id, true, active),
         mute: (groupId, id, seconds, active) => calls.setGroupMute(send, groupId, id, seconds, active),
+        kick: (groupId, id, active) => calls.kickGroupMember(send, groupId, id, active, false),
         wholeMute: (groupId, enabled, active) => calls.setGroupWholeMute(send, groupId, enabled, active),
         groupName: (groupId, active) => calls.getGroupName(send, groupId, active, true),
       })),
