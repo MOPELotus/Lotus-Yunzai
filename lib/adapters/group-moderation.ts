@@ -100,6 +100,10 @@ export interface GroupAnnouncement {
 }
 
 export type GroupPublishAnnouncement = (text: string) => Promise<GroupModerationResult | "unavailable" | "invalid-image">;
+export type GroupDeleteAnnouncement = (index: number) => Promise<{
+  readonly status: GroupModerationResult | "unavailable" | "not-found";
+  readonly text?: string;
+}>;
 
 export function readGroupAnnouncements(rows: unknown, decode: (row: unknown) => GroupAnnouncement | null | undefined) {
   if (!Array.isArray(rows)) return;
@@ -197,7 +201,10 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly announcement?: {
     readonly source: MessageEvent["message"];
     available?(): Promise<boolean>;
+    list(): Promise<readonly GroupAnnouncement[] | undefined>;
     send(text: string, image?: string): Promise<GroupModerationResult>;
+    remove(id: string): Promise<GroupModerationResult>;
+    readonly confirmRemovalByList?: boolean;
   };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
@@ -208,6 +215,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   groupMuteSelf: GroupMuteSelfAction;
   groupNotifyAll?: GroupNotifyAllAction;
   groupPublishAnnouncement?: GroupPublishAnnouncement;
+  groupDeleteAnnouncement?: GroupDeleteAnnouncement;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -321,6 +329,25 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (image && !bytes) return "invalid-image";
       if ((announcement.available || image) && !await canManage("list")) return "unavailable";
       return apply(() => announcement.send(text, bytes && `base64://${Buffer.from(bytes).toString("base64")}`));
+    } : undefined,
+    groupDeleteAnnouncement: announcement ? async index => {
+      if (!Number.isSafeInteger(index) || index < 1) return { status: "not-found" };
+      if (!await canManage("list")) return { status: "unavailable" };
+      const before = await announcement.list().catch(() => undefined);
+      if (!before || !active()) return { status: "unavailable" };
+      const selected = before[index - 1];
+      if (!selected) return { status: "not-found" };
+      if (!await canManage("list")) return { status: "unavailable" };
+      const status = await apply(() => announcement.remove(selected.id));
+      if (status !== "confirmed") return { status };
+      if (announcement.confirmRemovalByList) {
+        const after = active() ? await announcement.list().catch(() => undefined) : undefined;
+        const remainder = before.filter(entry => entry.id !== selected.id);
+        if (!after || !active() || after.length !== remainder.length || !after.every((entry, i) => entry.id === remainder[i]?.id)) {
+          return { status: "unknown" };
+        }
+      }
+      return { status: "confirmed", text: selected.text };
     } : undefined,
   };
 }

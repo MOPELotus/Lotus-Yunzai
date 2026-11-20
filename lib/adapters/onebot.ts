@@ -443,7 +443,10 @@ async function dispatchMessage(
       announcement: {
         source: incoming.message,
         available: () => calls.isNapCat(send, likeSession),
+        list: () => calls.listGroupAnnouncements(send, target.group_id, likeSession),
         send: (text, image) => calls.publishGroupAnnouncement(send, target.group_id, text, image, likeSession),
+        remove: id => calls.deleteGroupAnnouncement(send, target.group_id, id, likeSession),
+        confirmRemovalByList: true,
       },
     })),
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {

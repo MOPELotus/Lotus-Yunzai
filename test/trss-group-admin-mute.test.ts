@@ -176,6 +176,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     } });
     const oneBotCalls: Call[] = [];
     const oneBotJoinReceipts = new Set<number>();
+    const removedOneBotAnnouncements = new Set<string>();
     let originalJoinChecked = false;
     let oneBotGatewayName = "NapCat.Onebot";
     const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -186,6 +187,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         oneBotJoinReceipts.add(oneBotCalls.length);
       }
       if (action === "set_group_add_request" && params.flag === "910001") originalJoinChecked = true;
+      if (action === "_del_group_notice" && params.notice_id === "opaque-image") removedOneBotAnnouncements.add(params.notice_id);
       if (action === "set_group_admin") updateRole(params, params.enable);
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
       const reply = action === "get_group_member_info" ? member(params)
@@ -197,11 +199,12 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
         : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId)
         : action === "get_version_info" ? { app_name: oneBotGatewayName }
+        : action === "_del_group_notice" ? null
         : action === "_get_group_notice" ? [
           { notice_id: "opaque-welcome", send_to_new_member: true, message: { text: "仅新成员的合成公告" } },
           { notice_id: "opaque-onebot", message: { text: "合成 OneBot 公告 & 中文" } },
           { notice_id: "opaque-image", message: { text: "", images: [{ id: "opaque-img" }] } },
-        ]
+        ].filter(({ notice_id }) => !removedOneBotAnnouncements.has(notice_id))
         : action === "get_group_system_msg" ? { join_requests: [
           { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false },
           { request_id: 910001, invitor_uin: 70, group_id: 82, checked: originalJoinChecked },
@@ -795,6 +798,25 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { group_id: 79, content: "合成 Milky 公告", image_uri: `base64://${noticeImageBase64}` },
       { group_id: 79, content: "模拟未知公告" },
     ]);
+
+    send(oneBotMessage("#删公告2", operator, 82));
+    await groupReplyWith("已删除「（无文字，可能仅含图片）」");
+    const unresolvedDeletion = oneBotMessage("#删群公告1", operator, 82);
+    send(unresolvedDeletion);
+    await groupReplyWith("删除结果未确认");
+    send(unresolvedDeletion);
+    send(oneBotMessage("#删公告2", 54, 82));
+    send(oneBotMessage("#删公告99", operator, 82));
+    await groupReplyWith("找不到该序号");
+    expect(oneBotCalls.filter(({ action }) => action === "_del_group_notice").map(({ params }) => params)).toEqual([
+      { group_id: "82", notice_id: "opaque-image" }, { group_id: "82", notice_id: "opaque-onebot" },
+    ]);
+
+    wrongMilkyAnnouncementGroup = false;
+    await webhook("message_receive", milkyTitle("#删群公告01"));
+    await announcementReply("已删除「合成 Milky 公告 👩‍👩‍👧‍👧」");
+    expect(milkyCalls.filter(({ action }) => action === "delete_group_announcement").map(({ params }) => params))
+      .toEqual([{ group_id: 79, announcement_id: "opaque-milky" }]);
   } finally {
     socket?.close();
     host?.kill();

@@ -255,6 +255,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (member.role === "member" || member.role === "admin" || member.role === "owner") return member.role;
   }
 
+  async function listGroupAnnouncements(group_id: number) {
+    const result = await call.confirmed("get_group_announcements", { group_id }, signal);
+    if (result.status !== "confirmed" || signal.aborted) return;
+    return readGroupAnnouncements(result.data.announcements, row => {
+      if (!record(row) || row.group_id !== group_id || typeof row.announcement_id !== "string" || typeof row.content !== "string") return;
+      return { id: row.announcement_id, text: row.content };
+    });
+  }
+
   const delegation: DelegationSession = {
     signal,
     async groups() {
@@ -414,13 +423,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       groupListAnnouncements: positiveId(groupId) && positiveId(cardOwner) ? async () => {
         const active = () => !signal.aborted && options.canModerateGroups?.() !== false;
         if (!active() || !await memberRole(groupId, cardOwner) || !active()) return;
-        const result = await call.confirmed("get_group_announcements", { group_id: groupId }, signal);
-        if (result.status !== "confirmed" || !active()) return;
-        const announcements = readGroupAnnouncements(result.data.announcements, row => {
-          if (!record(row) || row.group_id !== groupId || typeof row.announcement_id !== "string" || typeof row.content !== "string") return;
-          return { id: row.announcement_id, text: row.content };
-        });
-        if (announcements && await memberRole(groupId, cardOwner) && active()) return announcements;
+        const announcements = await listGroupAnnouncements(groupId);
+        if (announcements && active() && await memberRole(groupId, cardOwner) && active()) return announcements;
       } : undefined,
       groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
         ? (approve: boolean) => {
@@ -481,10 +485,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         },
         announcement: {
           source: message.message,
+          list: () => listGroupAnnouncements(groupId),
           async send(content, image_uri) {
             return (await call.confirmed("send_group_announcement", {
               group_id: groupId, content, ...(image_uri === undefined ? {} : { image_uri }),
             }, signal)).status;
+          },
+          async remove(announcement_id) {
+            return (await call.confirmed("delete_group_announcement", { group_id: groupId, announcement_id }, signal)).status;
           },
         },
       })),

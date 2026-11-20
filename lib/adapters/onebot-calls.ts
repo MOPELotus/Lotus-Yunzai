@@ -197,6 +197,10 @@ export class OneBotCalls {
     }, signal);
   }
 
+  deleteGroupAnnouncement(send: Send, groupId: number, notice_id: string, signal: AbortSignal) {
+    return this.#moderateGroup(send, "_del_group_notice", { group_id: String(groupId), notice_id }, signal);
+  }
+
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {
     if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512) {
       return false;
