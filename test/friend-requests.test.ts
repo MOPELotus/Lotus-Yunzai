@@ -34,24 +34,41 @@ async function usingRoot(run: (path: string, root: URL) => Promise<void>): Promi
   }
 }
 
-test("好友申请仅在旧配置显式启用时自动同意", () => usingRoot(async (path, root) => {
-  let approved = 0;
-  const event = request(async (approve) => {
-    expect(approve).toBe(true);
-    approved++;
-    return true;
-  });
+test.each([
+  { label: "新部署未配置", enabled: false },
+  { label: "只有主配置中的其他字段", primary: 'master: ["99:51"]\n', enabled: false },
+  { label: "已存在的空旧配置", legacy: "# 使用旧版默认\n", enabled: true },
+  { label: "主配置只有其他字段时旧默认仍生效", primary: "disablePrivate: true\n", legacy: 'master: ["99:51"]\n', enabled: true },
+  { label: "继承旧配置的数字字符串", legacy: "autoFriend: '1'\n", enabled: true },
+  { label: "使用旧配置中明确的 true", legacy: "autoFriend: true\n", enabled: true },
+  { label: "主配置只有其他字段时旧关闭仍生效", primary: "disablePrivate: true\n", legacy: "autoFriend: 0\n", enabled: false },
+  { label: "主配置明确关闭可覆盖旧默认", primary: "autoFriend: 0\n", legacy: "{}\n", enabled: false },
+  { label: "主配置明确开启可覆盖旧关闭", primary: "autoFriend: 1\n", legacy: "autoFriend: 0\n", enabled: true },
+  { label: "主配置明确空值维持关闭", primary: "autoFriend:\n", legacy: "{}\n", enabled: false },
+  { label: "旧文件格式无效时保留有效主配置", primary: "disablePrivate: true\n", legacy: "[]\n", enabled: false },
+])("好友自动通过沿用当前和旧运行配置 $label", ({ primary, legacy, enabled }) => usingRoot(async (path, root) => {
+  if (legacy !== undefined) await writeFile(join(path, "config/config/other.yaml"), legacy);
+  if (primary !== undefined) await writeFile(join(path, "config/other.yaml"), primary);
+  const handle = await readFriendRequests(root, 0);
+  const result = await handle(request(async (approve) => approve === true));
+  expect(result).toBe(enabled ? "confirmed" : undefined);
+}));
 
-  await (await readFriendRequests(root, 0))(event);
-  expect(approved).toBe(0);
-
-  await writeFile(join(path, "config/config/other.yaml"), "autoFriend: '1'\n");
-  await (await readFriendRequests(root, 0))(event);
-  expect(approved).toBe(1);
-
-  await writeFile(join(path, "config/other.yaml"), "autoFriend: 0\n");
-  await (await readFriendRequests(root, 0))(event);
-  expect(approved).toBe(1);
+test("继承旧好友策略时保留旧黑白名单和显式主覆盖", () => usingRoot(async (path, root) => {
+  const legacy = join(path, "config/config/other.yaml");
+  const primary = join(path, "config/other.yaml");
+  await writeFile(legacy, 'whiteUser: [42, 43]\nblackUser: ["42"]\n');
+  await writeFile(primary, "disablePrivate: true\n");
+  const requestFor = (user_id: number) => request(async () => true, { user_id, flag: String(user_id), isMaster: true });
+  const inherited = await readFriendRequests(root, 0);
+  expect(await inherited(requestFor(41))).toBeUndefined();
+  expect(await inherited(requestFor(42))).toBeUndefined();
+  expect(await inherited(requestFor(43))).toBe("confirmed");
+  await writeFile(primary, "blackUser: []\n");
+  expect(await (await readFriendRequests(root, 0))(requestFor(42))).toBe("confirmed");
+  await writeFile(legacy, "{}\n");
+  await writeFile(primary, "disablePrivate: true\n");
+  expect(await (await readFriendRequests(root, 0))(requestFor(528_952_540))).toBeUndefined();
 }));
 
 test("好友申请按机器人和 flag 去重，不因不明回执重试或输出 flag", () => usingRoot(async (path, root) => {
@@ -78,6 +95,23 @@ test("好友申请按机器人和 flag 去重，不因不明回执重试或输�
       ["[好友申请] 协议端未接受自动审批。"],
       ["[好友申请] 未确认自动审批结果。"],
     ]));
+  } finally {
+    warn.mockRestore();
+  }
+}));
+
+test("已确认申请记录轮转后仍保留未确认申请", () => usingRoot(async (path, root) => {
+  await writeFile(join(path, "config/config/other.yaml"), "{}\n");
+  const handle = await readFriendRequests(root, 0);
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  const unknown = request(async () => { throw new Error(); });
+  try {
+    expect(await handle(unknown)).toBe("unknown");
+    await Promise.all(Array.from({ length: 4_095 }, (_, id) => handle(request(async () => true, { flag: String(id) }))));
+    expect(await handle(request(async () => true, { flag: "last-retained-confirmation" }))).toBe("confirmed");
+    expect(await handle(request(async () => true, { flag: "confirm-after-rotation" }))).toBe("confirmed");
+    expect(await handle(unknown)).toBe("duplicate");
+    expect(warn.mock.calls).toHaveLength(1);
   } finally {
     warn.mockRestore();
   }

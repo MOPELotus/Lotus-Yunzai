@@ -822,7 +822,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const incomingFriend = body.event_type === "friend_request"
       ? milkyFriendRequest(body, account, approveFriendRequest, (user_id, reply) => sendReply({ user_id }, reply), options.masterIds?.(account) ?? [])
       : undefined;
-    const friendRequest = incomingFriend && { ...incomingFriend, notifyOwners: notifyOwnerReplies };
+    const friendRequest = incomingFriend && { ...incomingFriend, approvalSignal: signal, notifyOwners: notifyOwnerReplies };
     let groupRequest;
     if (body.event_type === "group_invitation" || body.event_type === "group_join_request" || body.event_type === "group_invited_join_request") {
       const kind = body.event_type === "group_invitation" ? "invite" : "add";
