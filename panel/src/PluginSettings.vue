@@ -39,7 +39,7 @@ const rows = computed(() => {
   return (snapshot.value?.schemas ?? []).map((schema, index) => ({
     schema,
     field: schema.field,
-    id: `guoba-field-${index}`,
+    id: `plugin-field-${index}`,
   })).filter(({ schema, field }) => !needle || [schema.label, field, schema.bottomHelpMessage]
     .some((text) => text?.toLowerCase().includes(needle)));
 });
@@ -77,12 +77,12 @@ async function request(path: string, signal: AbortSignal, body?: Record<string, 
   });
   if (!response.ok) {
     const messages: Record<number, string> = {
-      404: "此插件没有可用的锅巴表单。",
-      405: "此锅巴表单只读。",
+      404: "此插件没有可用的配置表单。",
+      405: "此配置表单只读。",
       400: "配置值无效，或插件拒绝保存。",
       422: "插件拒绝保存，请检查配置值。",
     };
-    throw new RequestError(response.status, messages[response.status] ?? "宿主暂时无法读取或写入锅巴配置。");
+    throw new RequestError(response.status, messages[response.status] ?? "宿主暂时无法读取或写入插件配置。");
   }
   return response.json().catch(() => undefined);
 }
@@ -91,7 +91,7 @@ async function read(plugin: string, signal: AbortSignal): Promise<Snapshot> {
   const data = await request(`${endpoint}/${encodeURIComponent(plugin)}`, signal);
   if (!isRecord(data) || !Array.isArray(data.schemas) || !data.schemas.every(isSchema) || !isRecord(data.values) ||
       !strArray(data.configuredPasswords)) {
-    throw new RequestError(500, "宿主返回了无法识别的锅巴表单。");
+    throw new RequestError(500, "宿主返回了无法识别的配置表单。");
   }
   return {
     schemas: data.schemas,
@@ -119,7 +119,7 @@ async function operate(operation: Operation) {
       const result = await request(endpoint, controller.signal);
       if (active !== controller) return;
       if (!isRecord(result) || !strArray(result.plugins)) {
-        throw new RequestError(500, "宿主返回了无法识别的锅巴插件清单。");
+        throw new RequestError(500, "宿主返回了无法识别的可配置插件清单。");
       }
       plugins.value = result.plugins;
       if (!result.plugins.includes(plugin)) {
@@ -280,44 +280,44 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="guoba-settings" aria-labelledby="guoba-title" :aria-busy="Boolean(busy)">
+  <section class="plugin-settings" aria-labelledby="plugin-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="guoba-title" tabindex="-1">锅巴配置</h1>
+      <h1 id="plugin-settings-title" tabindex="-1">插件配置</h1>
       <ElButton :loading="busy === 'list'" :disabled="Boolean(busy) || Boolean(pending)"
         @click="requestNavigation({ kind: 'list' })">重新载入</ElButton>
     </div>
 
     <div v-if="plugins.length" class="filters">
       <div>
-        <label for="guoba-module">插件</label>
-        <select id="guoba-module" :value="selected" :disabled="Boolean(busy) || Boolean(pending)" @change="changePlugin">
+        <label for="plugin-module">插件</label>
+        <select id="plugin-module" :value="selected" :disabled="Boolean(busy) || Boolean(pending)" @change="changePlugin">
           <option disabled value="">请选择插件</option>
           <option v-for="plugin in plugins" :key="plugin" :value="plugin">{{ plugin }}</option>
         </select>
       </div>
       <div v-if="snapshot">
-        <label for="guoba-field-search">查找配置项</label>
-        <ElInput id="guoba-field-search" v-model="query" placeholder="标签、字段名或说明" />
+        <label for="plugin-field-search">查找配置项</label>
+        <ElInput id="plugin-field-search" v-model="query" placeholder="标签、字段名或说明" />
       </div>
     </div>
-    <div v-if="pending" class="guoba-feedback" role="alert">
+    <div v-if="pending" class="plugin-feedback" role="alert">
       <p>当前表单还有未保存的改动。</p>
-      <div class="guoba-actions">
+      <div class="plugin-actions">
         <ElButton @click="pending = undefined">继续编辑</ElButton>
         <ElButton type="danger" @click="operate(pending)">放弃改动并继续</ElButton>
       </div>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
-    <p v-if="readOnly && snapshot" class="guoba-note" role="status">此锅巴表单只读。</p>
-    <p v-if="!snapshot && busy" class="guoba-note" role="status">正在读取配置…</p>
-    <p v-else-if="!plugins.length && !error" class="guoba-note" role="status">当前没有提供锅巴表单的插件。</p>
-    <p v-if="!snapshot && notice" class="guoba-note" role="status">{{ notice }}</p>
+    <p v-if="readOnly && snapshot" class="plugin-note" role="status">此配置表单只读。</p>
+    <p v-if="!snapshot && busy" class="plugin-note" role="status">正在读取配置…</p>
+    <p v-else-if="!plugins.length && !error" class="plugin-note" role="status">当前没有提供配置表单的插件。</p>
+    <p v-if="!snapshot && notice" class="plugin-note" role="status">{{ notice }}</p>
 
     <form v-if="snapshot" @submit.prevent="operate({ kind: 'save' })">
       <fieldset :disabled="Boolean(busy) || readOnly" class="schema-grid" aria-label="插件配置项">
         <template v-for="{ schema, field, id } in rows" :key="id">
           <h2 v-if="schema.component === 'Divider'" class="schema-divider">{{ schema.label }}</h2>
-          <div v-else-if="field" class="guoba-field">
+          <div v-else-if="field" class="plugin-field">
             <label :for="id">{{ schema.label }}</label>
             <template v-if="schema.component === 'InputPassword'">
               <ElInput
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
                     :selected="selectedOption(fieldValue(field), option.value)"
                   >{{ option.label }}</option>
                 </select>
-                <p v-if="!schema.componentProps?.options?.length" class="guoba-help">插件未提供可供选择的值。</p>
+                <p v-if="!schema.componentProps?.options?.length" class="plugin-help">插件未提供可供选择的值。</p>
               </template>
             </template>
             <ElInput
@@ -394,15 +394,15 @@ onBeforeUnmount(() => {
             <template v-else>
               <input :id="id" :value="displayText(fieldValue(field))" :placeholder="schema.componentProps?.placeholder"
                 @input="updateText(field, $event)" />
-              <p v-if="schema.component === 'EasyCron'" class="guoba-help">填写插件接受的 Cron 表达式。</p>
+              <p v-if="schema.component === 'EasyCron'" class="plugin-help">填写插件接受的 Cron 表达式。</p>
             </template>
-            <p v-if="schema.bottomHelpMessage" class="guoba-help">{{ schema.bottomHelpMessage }}</p>
+            <p v-if="schema.bottomHelpMessage" class="plugin-help">{{ schema.bottomHelpMessage }}</p>
           </div>
         </template>
-        <p v-if="!rows.length" class="guoba-help">没有符合条件的配置项。</p>
+        <p v-if="!rows.length" class="plugin-help">没有符合条件的配置项。</p>
       </fieldset>
 
-      <div class="guoba-feedback save-group">
+      <div class="plugin-feedback save-group">
         <p v-if="notice || dirty" role="status">{{ dirty ? "有未保存的改动" : notice }}</p>
         <ElButton v-if="!readOnly" type="primary" native-type="submit"
           :loading="busy === 'save'" :disabled="!dirty || Boolean(busy) || Boolean(pending)">
@@ -422,13 +422,13 @@ onBeforeUnmount(() => {
 }
 .filters .el-input { width: 100%; }
 
-.guoba-note, .guoba-help {
+.plugin-note, .plugin-help {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
 }
 
-.guoba-note { margin-top: 16px; }
+.plugin-note { margin-top: 16px; }
 
 .schema-grid {
   display: grid;
@@ -444,10 +444,10 @@ onBeforeUnmount(() => {
 
 .schema-divider { grid-column: 1 / -1; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .schema-divider:first-child { padding-top: 0; }
-.guoba-field { min-width: 0; display: grid; gap: 6px; align-content: start; }
-.guoba-field label, .filters label { font-size: 14px; font-weight: 600; }
+.plugin-field { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.plugin-field label, .filters label { font-size: 14px; font-weight: 600; }
 
-.guoba-field :is(input:not([type="checkbox"]), select) {
+.plugin-field :is(input:not([type="checkbox"]), select) {
   min-height: 38px;
   width: 100%;
   padding: 0 10px;
@@ -458,23 +458,23 @@ onBeforeUnmount(() => {
   font: inherit;
   font-size: 14px;
 }
-.guoba-field select[multiple] { min-height: 80px; padding: 4px 8px; }
-.guoba-field :is(input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.guoba-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.plugin-field select[multiple] { min-height: 80px; padding: 4px 8px; }
+.plugin-field :is(input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plugin-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 
-.guoba-feedback, .guoba-actions, .password-controls {
+.plugin-feedback, .plugin-actions, .password-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.guoba-feedback {
+.plugin-feedback {
   margin-top: 14px;
   justify-content: space-between;
   color: var(--muted);
   font-size: 14px;
 }
-.guoba-actions > .el-button, .password-controls > .el-button { margin: 0; }
+.plugin-actions > .el-button, .password-controls > .el-button { margin: 0; }
 .save-group {
   position: sticky;
   bottom: 0;

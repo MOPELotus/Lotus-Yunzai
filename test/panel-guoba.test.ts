@@ -109,10 +109,10 @@ test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改�
       [policy]: "inherit",
     });
     expect(await form.save({ "settings.note": "error-result" })).toEqual({
-      ok: false, status: 422, message: "插件拒绝保存锅巴配置。",
+      ok: false, status: 422, message: "插件拒绝保存配置。",
     });
     expect(await form.save({ "settings.note": "throw" })).toEqual({
-      ok: false, status: 500, message: "无法保存锅巴配置。",
+      ok: false, status: 500, message: "无法保存插件配置。",
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -163,13 +163,13 @@ test("锅巴适配拒绝目录外文件并屏蔽导入和读取异常", async ()
     expect(await loadGuobaForm(linked)).toBeUndefined();
     await writeFile(external, `await Bun.write(new URL("executed", import.meta.url), "bad");`);
     await symlink(external, join(linked, "guoba.support.js"));
-    await expect(loadGuobaForm(linked)).rejects.toThrow("无法加载锅巴表单。");
+    await expect(loadGuobaForm(linked)).rejects.toThrow("无法加载插件表单。");
     expect(await Bun.file(join(directory, "executed")).exists()).toBe(false);
 
     const broken = join(directory, "broken");
     await mkdir(broken);
     await writeFile(join(broken, "guoba.support.js"), 'throw new Error("fixture-private-import");');
-    await expect(loadGuobaForm(broken)).rejects.toThrow(/^无法加载锅巴表单。$/u);
+    await expect(loadGuobaForm(broken)).rejects.toThrow(/^无法加载插件表单。$/u);
 
     const reader = join(directory, "reader");
     await mkdir(reader);
@@ -183,7 +183,7 @@ test("锅巴适配拒绝目录外文件并屏蔽导入和读取异常", async ()
     `);
     const form = await loadGuobaForm(reader);
     if (!form) throw new Error("表单未加载。");
-    await expect(form.read()).rejects.toThrow(/^无法读取锅巴配置。$/u);
+    await expect(form.read()).rejects.toThrow(/^无法读取插件配置。$/u);
     expect(await form.save({ note: "无写入入口" })).toMatchObject({ ok: false, status: 405 });
   } finally {
     await rm(directory, { recursive: true, force: true });

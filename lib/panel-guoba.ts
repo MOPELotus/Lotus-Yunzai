@@ -272,16 +272,16 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
           }
           return { values, configuredPasswords };
         } catch {
-          throw new Error("无法读取锅巴配置。");
+          throw new Error("无法读取插件配置。");
         }
       },
       async save(data) {
-        if (typeof setConfigData !== "function") return { ok: false, status: 405, message: "此锅巴表单只读。" };
+        if (typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
         let values: Record<string, GuobaInput>;
         try {
           values = submitted(data, compiled);
         } catch {
-          return { ok: false, status: 400, message: "锅巴配置包含未知字段或无效值。" };
+          return { ok: false, status: 400, message: "插件表单包含未知字段或无效值。" };
         }
 
         const before = saveQueues.get(file);
@@ -299,11 +299,11 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
             if (result instanceof Result && !result.isOk) {
               const status = result.httpStatus;
               return { ok: false, status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 400,
-                message: "插件拒绝保存锅巴配置。" };
+                message: "插件拒绝保存配置。" };
             }
             return { ok: true, status: 200, message: "配置已保存。" };
           } catch {
-            return { ok: false, status: 500, message: "无法保存锅巴配置。" };
+            return { ok: false, status: 500, message: "无法保存插件配置。" };
           }
         });
         saveQueues.set(file, saving);
@@ -315,6 +315,6 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
       },
     };
   } catch {
-    throw new Error("无法加载锅巴表单。");
+    throw new Error("无法加载插件表单。");
   }
 }
