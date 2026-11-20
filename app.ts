@@ -54,6 +54,7 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
+import { createFriendRecallCache, type NativeFriendRecallNotice } from "./lib/friend-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -113,7 +114,7 @@ import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-com
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
-import type { FriendMessageNotice, FriendPokeNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
+import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
   TemporaryMessageNotice } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
@@ -141,6 +142,7 @@ const friendMessageNoticeNames = ["[group] 好友消息通知", "group", "@lotus
 const temporaryMessageNoticeNames = ["[group] 群临时消息通知", "group", "@lotus-yunzai/group"];
 const friendRelationshipNoticeNames = ["[group] 好友增减通知", "group", "@lotus-yunzai/group"];
 const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus-yunzai/group"];
+const friendRecallNoticeNames = ["[group] 好友撤回通知", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
 function isPrivateCredentialMessage(text: string): boolean {
@@ -304,6 +306,7 @@ if (import.meta.main) {
   let temporaryMessageNotice: { policy: TemporaryMessageNotice; signal: AbortSignal } | undefined;
   let friendRelationshipNotice: { policy: FriendRelationshipNotice; signal: AbortSignal } | undefined;
   let friendPokeNotice: { policy: FriendPokeNotice; signal: AbortSignal } | undefined;
+  let friendRecallNotice: { policy: FriendRecallNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   const notifiedPrivateMessages = new Set<string>();
   const pendingPrivateNotices = new Set<string>();
@@ -329,6 +332,19 @@ if (import.meta.main) {
   const invitationReceipts = createMilkyInvitationReceipts(() => requestStorage("group-invitation-review"));
   const friendNoticeReceipts = createFriendMessageReceipts(() => requestStorage("friend-message-notice"));
   const ownerFriendReplyClaim = createRequestClaim(() => requestStorage("owner-friend-reply"));
+  const friendRecallCache = createFriendRecallCache(() => {
+    const redis = globalThis.redis;
+    if (!redis) return;
+    const prefix = "lotus-yunzai:friend-recall-notice:";
+    return {
+      async save(key, value, ttl) { await redis.set(prefix + key, value, { EX: ttl, NX: true }); },
+      async take(key) {
+        const result = await redis.eval("local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); end; return value",
+          { keys: [prefix + key], arguments: [] });
+        return typeof result === "string" ? result : null;
+      },
+    };
+  });
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -913,6 +929,13 @@ if (import.meta.main) {
   async function handleEvent(event: BotEvent) {
     if (event.post_type === "message") {
       const transport = event[friendMessageNoticeSession];
+      if (transport && friendRecallNotice) {
+        const capture = rememberFriendRecall(event, transport);
+        if (capture) {
+          pending.add(capture);
+          void capture.then(() => pending.delete(capture));
+        }
+      }
       if (transport && friendMessageNotice) {
         const notice = forwardFriendMessage(event, transport).catch(() => {});
         pending.add(notice);
@@ -1098,6 +1121,33 @@ if (import.meta.main) {
       mark();
       await transport.notifyOwners(reply, signal);
     });
+  }
+
+  function rememberFriendRecall(event: MessageEvent, transport: FriendMessageNoticeSession) {
+    const registration = friendRecallNotice;
+    const { self_id: botId, user_id: userId, message_id: messageId, message } = event;
+    if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
+        messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendRecallNoticeNames) ||
+        typeof message === "string" || !message.length || message.some(part => part.type !== "text" || typeof part.text !== "string")) return;
+    const signal = nativeOperationSignal(registration.signal, transport.signal);
+    const text = message.map(part => part.text).join("");
+    if (signal.aborted || isPrivateCredentialMessage(text)) return;
+    return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, text,
+      () => registration.policy.retention(botId, signal), signal);
+  }
+
+  async function forwardFriendRecall(notice: NativeFriendRecallNotice) {
+    const registration = friendRecallNotice;
+    const { botId, userId, time } = notice;
+    if (!registration || stopping || !handoff.accepting || !canForwardPrivateNotice(botId, userId)) return;
+    const scope = { self_id: botId, user_id: userId };
+    if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, friendRecallNoticeNames)) return;
+    const signal = nativeOperationSignal(registration.signal, notice.signal);
+    if (signal.aborted || await registration.policy.retention(botId, signal) === undefined || signal.aborted) return;
+    const text = await friendRecallCache.take(notice, signal);
+    if (text === undefined || signal.aborted) return;
+    const reply = await registration.policy.format({ botId, userId, time, text }, signal);
+    if (reply && !signal.aborted) await notice.notifyOwners(reply, signal);
   }
 
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
@@ -1808,6 +1858,11 @@ if (import.meta.main) {
         pending.add(handling);
         void handling.then(() => pending.delete(handling));
       },
+      onFriendRecall(notice: NativeFriendRecallNotice) {
+        const handling = forwardFriendRecall(notice).catch(() => {});
+        pending.add(handling);
+        void handling.then(() => pending.delete(handling));
+      },
     };
     const milkyOptions: MilkyTransportOptions = {
       ...groupActions,
@@ -2068,6 +2123,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (friendPokeNotice === registration) friendPokeNotice = undefined;
+          };
+        },
+        registerFriendRecallNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          friendRecallNotice = registration;
+          return () => {
+            session.abort();
+            if (friendRecallNotice === registration) friendRecallNotice = undefined;
           };
         },
         registerGroupVerification(policy) {

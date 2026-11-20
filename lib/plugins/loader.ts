@@ -9,7 +9,7 @@ import type { TimedGroupMuteBinding, TimedGroupMuteResult } from "../adapters/gr
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { ProfileLikeImage } from "../adapters/mention-like.ts";
 import type { GroupBannedWords } from "../../plugins/group/banned-words.ts";
-import type { FriendMessageNotice, FriendPokeNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
+import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupVerification,
   TemporaryMessageNotice } from "../../plugins/group/index.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
@@ -249,6 +249,7 @@ export async function loadPlugins(
       registerTemporaryMessageNotice?(policy: TemporaryMessageNotice): () => void;
       registerFriendRelationshipNotice?(policy: FriendRelationshipNotice): () => void;
       registerFriendPokeNotice?(policy: FriendPokeNotice): () => void;
+      registerFriendRecallNotice?(policy: FriendRecallNotice): () => void;
       registerGroupVerification?(policy: GroupVerification): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;

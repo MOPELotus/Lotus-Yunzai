@@ -156,6 +156,14 @@ async function notifyOwnerReplies(calls: OneBotCalls, send: Send, bot: number, o
   return deliveries.filter(result => result === "confirmed").length;
 }
 
+async function notifyVerifiedFriendOwners(calls: OneBotCalls, send: Send, bot: number, owners: () => readonly number[],
+  reply: MessageReply, signal: AbortSignal, source?: number) {
+  const profiles = await calls.listFriendProfiles(send, signal).catch(() => []);
+  const peers = new Set(profiles.map(profile => String(profile.user_id)));
+  if (source !== undefined && !peers.has(String(source))) return 0;
+  return notifyOwnerReplies(calls, send, bot, owners().filter(id => peers.has(String(id))), reply, signal);
+}
+
 async function dispatchRequest(
   dispatch: (event: FriendRequest | GroupRequest) => Promise<void>,
   send: Send,
@@ -356,14 +364,9 @@ async function dispatchFriendPoke(
     time: isId(time) ? time : undefined,
     [friendMessageNoticeSession]: signal ? {
       signal,
-      async notifyOwners(reply, workflow) {
-        const active = AbortSignal.any([signal, workflow]);
-        const profiles = await connection.calls.listFriendProfiles(send, active).catch(() => []);
-        const peers = new Set(profiles.map(profile => String(profile.user_id)));
-        if (!peers.has(String(user_id))) return 0;
-        const owners = permissions.masterIds(self_id).filter(id => peers.has(String(id)) && permissions.isMaster(self_id, id));
-        return notifyOwnerReplies(connection.calls, send, self_id, owners, reply, active);
-      },
+      notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(connection.calls, send, self_id,
+        () => permissions.masterIds(self_id).filter(id => permissions.isMaster(self_id, id)), reply,
+        AbortSignal.any([signal, workflow]), user_id),
     } : undefined,
     isGroup: false, isPrivate: true, isMaster: permissions.isMaster(self_id, user_id),
     reply(reply) {
@@ -428,12 +431,8 @@ async function dispatchMessage(
     const signal = attachmentSession.signal;
     const reportedGroupId = isId(event.group_id) && event.group_id !== 284840486 ? event.group_id : undefined;
     groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId, text, reportedGroupId, signal,
-      async notifyOwners(reply, workflow) {
-        const active = AbortSignal.any([signal, workflow]);
-        const owners = groupActions.masterIds?.(selfId).filter(id => id !== selfId && isMaster(selfId, id)) ?? [];
-        const verified = await Promise.all(owners.map(async id => await calls.isFriend(send, id, active).catch(() => false) ? id : undefined));
-        return notifyOwnerReplies(calls, send, selfId, verified.filter((id): id is number => id !== undefined && isMaster(selfId, id)), reply, active);
-      },
+      notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(calls, send, selfId,
+        () => groupActions.masterIds?.(selfId).filter(id => isMaster(selfId, id)) ?? [], reply, AbortSignal.any([signal, workflow])),
     });
   }
   const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
@@ -869,7 +868,18 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
-            if (message.notice_type === "friend_add" && options.onFriendRelationship) {
+            if (message.notice_type === "friend_recall" && options.onFriendRecall) {
+              const { self_id, user_id, operator_id, time } = message;
+              const messageId = oneBotMessageId(message.message_id);
+              if (!isId(self_id) || !isId(user_id) || self_id === user_id || !isId(time) || messageId === undefined ||
+                  isId(message.group_id) || (operator_id !== undefined && operator_id !== user_id)) return;
+              const signal = groupActionSignal(socket.data, self_id);
+              if (!signal) return;
+              options.onFriendRecall({ adapter: "onebot", botId: self_id, userId: user_id, messageId, time, signal,
+                notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(calls, send, self_id,
+                  () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([signal, workflow])),
+              });
+            } else if (message.notice_type === "friend_add" && options.onFriendRelationship) {
               const { self_id, user_id, time } = message;
               if (!isId(self_id) || !isId(user_id) || self_id === user_id || !isId(time)) return;
               const signal = groupActionSignal(socket.data, self_id);

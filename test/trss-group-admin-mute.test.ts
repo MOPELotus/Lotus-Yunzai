@@ -1553,6 +1553,39 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("[消息(99) - 戳一戳]")))
       .toHaveLength(1);
     expect(milkyCalls.filter(({ action }) => action === "send_friend_nudge")).toHaveLength(0);
+
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { PrivateRecall: true, msgSaveDeltime: 600 }\n');
+    const recalledOneBot = oneBotPrivate("只在 OneBot 原好友撤回后给主人看", 42);
+    const oneBotRecall = { post_type: "notice", notice_type: "friend_recall", self_id: oneBotId, user_id: 42,
+      message_id: recalledOneBot.message_id, time: 1_700_000_011,
+    };
+    client.send(JSON.stringify(recalledOneBot));
+    client.send(JSON.stringify({ ...oneBotRecall, user_id: 43 }));
+    client.send(JSON.stringify(oneBotRecall));
+    client.send(JSON.stringify(oneBotRecall));
+    const oneBotRecallNotice = JSON.stringify((await ownerReplyWith("只在 OneBot 原好友撤回后给主人看")).params.message);
+    expect(oneBotRecallNotice).toContain("[消息(99) - 好友撤回消息]");
+    expect(oneBotRecallNotice).toContain("好友账号：42");
+    expect(oneBotRecallNotice).toContain("撤回时间：");
+    const secretRecall = oneBotPrivate("cookie_token=synthetic-recalled-secret-never-forward", 42);
+    client.send(JSON.stringify(secretRecall));
+    client.send(JSON.stringify({ ...oneBotRecall, message_id: secretRecall.message_id }));
+
+    const recalledMilky = milkyPrivate("只在 Milky 原好友撤回后给主人看", 43);
+    await webhook("message_receive", recalledMilky);
+    const milkyRecall = { message_scene: "friend", peer_id: 43, sender_id: 43, operator_id: 43, message_seq: recalledMilky.message_seq };
+    await webhook("message_recall", { ...milkyRecall, peer_id: 44 });
+    await webhook("message_recall", { ...milkyRecall, operator_id: milkyId });
+    await webhook("message_recall", milkyRecall);
+    await webhook("message_recall", milkyRecall);
+    const milkyRecallNotice = JSON.stringify((await milkyOwnerReply(operator, "只在 Milky 原好友撤回后给主人看")).params.message);
+    expect(milkyRecallNotice).toContain("[消息(100) - 好友撤回消息]");
+    expect(milkyRecallNotice).toContain("好友账号：43");
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("好友撤回消息")))
+      .toHaveLength(1);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("好友撤回消息"))).toHaveLength(1);
+    expect(oneBotReplies().some(({ params }) => JSON.stringify(params.message).includes("synthetic-recalled-secret-never-forward"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

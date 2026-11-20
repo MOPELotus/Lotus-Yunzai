@@ -611,6 +611,21 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return "accepted";
     }
 
+    if (body.event_type === "message_recall" && body.data.message_scene === "friend") {
+      const { sender_id, peer_id, operator_id, message_seq } = body.data;
+      if (options.onFriendRecall && positiveId(sender_id) && sender_id === peer_id && sender_id === operator_id && sender_id !== account &&
+          positiveId(body.time) && hasMessageSequence(message_seq)) {
+        options.onFriendRecall({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, time: body.time, signal,
+          async notifyOwners(reply, workflow) {
+            const active = AbortSignal.any([signal, workflow]);
+            const friends = await listCurrentFriends(active);
+            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+          },
+        });
+      }
+      return "accepted";
+    }
+
     if (body.event_type === "message_receive" && body.data.message_scene === "temp") {
       const { sender_id, peer_id, message_seq, group, segments } = body.data;
       if (options.onTemporaryMessage && positiveId(sender_id) && sender_id === peer_id && sender_id !== account &&
