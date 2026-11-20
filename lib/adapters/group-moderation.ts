@@ -107,8 +107,12 @@ export type PrivateGroupMute = (groupId: number, userId: number, seconds: number
   readonly status: GroupModerationResult | "unavailable" | "protected";
   readonly memberName?: string;
 }>;
+export type PrivateGroupWholeMute = (groupId: number, enabled: boolean) => Promise<{
+  readonly status: GroupModerationResult | "unavailable";
+  readonly groupName?: string;
+}>;
 
-export function bindPrivateGroupMute({ bot, signal, master, protectedMember, allowed, member, mute }: {
+export function bindPrivateGroupActions({ bot, signal, master, protectedMember, allowed, member, mute, wholeMute, groupName }: {
   bot: number;
   signal: AbortSignal;
   master: () => boolean;
@@ -116,21 +120,33 @@ export function bindPrivateGroupMute({ bot, signal, master, protectedMember, all
   allowed: (group: number) => boolean;
   member: (group: number, user: number, signal: AbortSignal) => Promise<LiveGroupMember | undefined>;
   mute: (group: number, user: number, seconds: number, signal: AbortSignal) => Promise<GroupModerationResult>;
-}): PrivateGroupMute {
-  return async (group, user, seconds) => {
+  wholeMute: (group: number, enabled: boolean, signal: AbortSignal) => Promise<GroupModerationResult>;
+  groupName: (group: number, signal: AbortSignal) => Promise<string | undefined>;
+}): { privateGroupMute: PrivateGroupMute; privateGroupWholeMute: PrivateGroupWholeMute } {
+  const active = (group: number) => !signal.aborted && master() && allowed(group);
+  const privateGroupMute: PrivateGroupMute = async (group, user, seconds) => {
     if (!Number.isSafeInteger(group) || group <= 0 || !Number.isSafeInteger(user) || user <= 0 || !isMemberMuteDuration(seconds)) {
       return { status: "rejected" };
     }
-    const active = () => !signal.aborted && master() && allowed(group);
     const protectedTarget = () => user === bot || seconds > 0 && protectedMember(user);
-    if (!active()) return { status: "unavailable" };
+    if (!active(group)) return { status: "unavailable" };
     if (protectedTarget()) return { status: "protected" };
     const [botState, target] = await Promise.all([member(group, bot, signal), member(group, user, signal)]).catch(() => []);
-    if (!active() || !botState || botState.role === "member" || !target) return { status: "unavailable" };
+    if (!active(group) || !botState || botState.role === "member" || !target) return { status: "unavailable" };
     if (protectedTarget() || target.role === "owner" || (target.role === "admin" && botState.role !== "owner")) return { status: "protected" };
     try { return { status: await mute(group, user, seconds, signal), memberName: target.name }; }
     catch { return { status: "unknown" }; }
   };
+  const privateGroupWholeMute: PrivateGroupWholeMute = async (group, enabled) => {
+    if (!Number.isSafeInteger(group) || group <= 0 || typeof enabled !== "boolean") return { status: "rejected" };
+    if (!active(group)) return { status: "unavailable" };
+    const botState = await member(group, bot, signal).catch(() => undefined);
+    if (!active(group) || !botState || botState.role === "member") return { status: "unavailable" };
+    const status = await wholeMute(group, enabled, signal).catch(() => "unknown" as const);
+    const name = status === "confirmed" && active(group) ? await groupName(group, signal).catch(() => undefined) : undefined;
+    return { status, groupName: name };
+  };
+  return { privateGroupMute, privateGroupWholeMute };
 }
 
 export interface GroupVerificationScope {

@@ -7,7 +7,7 @@ import type { QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
-  MutedGroupMember, PrivateGroupMute } from "./adapters/group-moderation.ts";
+  MutedGroupMember, PrivateGroupMute, PrivateGroupWholeMute } from "./adapters/group-moderation.ts";
 
 export interface MusicCard {
   readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
@@ -77,6 +77,7 @@ export interface MessageEvent {
   readonly groupVote?: GroupVoteAccess;
   readonly groupVerification?: GroupVerificationScope;
   readonly privateGroupMute?: PrivateGroupMute;
+  readonly privateGroupWholeMute?: PrivateGroupWholeMute;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

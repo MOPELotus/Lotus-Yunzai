@@ -4,7 +4,7 @@ import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOption
 import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
-  bindPrivateGroupMute, bindSingleGroupImageDigest, canModerateGroupSubject,
+  bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
   groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type LiveGroupMember, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
@@ -437,15 +437,23 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
-      privateGroupMute: privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup
-        ? bindPrivateGroupMute({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
+      ...(privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup &&
+        bindPrivateGroupActions({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
           master: () => isMaster(cardOwner), protectedMember: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
           allowed: groupId => options.canModeratePrivateGroup?.(account, groupId) === true,
           member: liveGroupMember,
           async mute(group_id, user_id, duration, active) {
             return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration }, active)).status;
           },
-        }) : undefined,
+          async wholeMute(group_id, is_mute, active) {
+            return (await call.confirmed("set_group_whole_mute", { group_id, is_mute }, active)).status;
+          },
+          async groupName(group_id, active) {
+            const result = await call.confirmed("get_group_info", { group_id, no_cache: true }, active);
+            const group = result.status === "confirmed" ? result.data.group : undefined;
+            if (record(group) && group.group_id === group_id && typeof group.group_name === "string") return group.group_name;
+          },
+        })),
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,

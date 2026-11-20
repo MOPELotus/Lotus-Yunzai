@@ -243,11 +243,10 @@ export class OneBotCalls {
     }
   }
 
-  async getGroupName(send: Send, groupId: number): Promise<string | undefined> {
+  async getGroupName(send: Send, groupId: number, signal?: AbortSignal, verifyId = false): Promise<string | undefined> {
     try {
-      const group = await this.#request(send, "get_group_info", { group_id: groupId });
-      if (typeof group !== "object" || group === null || !("group_name" in group) ||
-          typeof group.group_name !== "string") return;
+      const group = await this.#request(send, "get_group_info", { group_id: groupId }, signal);
+      if (!isRecord(group) || typeof group.group_name !== "string" || (verifyId && group.group_id !== groupId)) return;
       return group.group_name;
     } catch {
       return undefined;

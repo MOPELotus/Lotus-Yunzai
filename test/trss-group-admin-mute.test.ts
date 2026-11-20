@@ -167,11 +167,12 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           (action === "set_group_essence_message" && params.is_set === false) ||
           (action === "send_group_message" && JSON.stringify(params.message).includes("合成未知通知")) ||
           (action === "send_group_announcement" && params.content === "模拟未知公告") ||
-          (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
+          (action === "set_group_whole_mute" && params.group_id !== 88 && params.is_mute === false)) return new Response(null, { status: 503 });
       if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
         { member: member(params) } : action === "send_group_message" || action === "send_private_message" ? { message_seq: milkyCalls.length }
-        : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId) } }
+        : action === "get_group_info" ? { group: { group_id: params.group_id, member_count: reportedMembers(params.group_id, milkyId),
+          group_name: `合成 Milky ${params.group_id}` } }
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? { notifications: [{ group_id: 79, notification_seq: 901,
           type: "invited_join_request", initiator_id: 72, target_user_id: 74, state: milkyJoinState }] }
@@ -264,7 +265,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { uin: "43", cardName: "合成群名片", nick: "合成昵称", role: 2, shutUpTime: nowSeconds() + 81 },
           { uin: "44", nick: "另一个群成员", role: 3, shutUpTime: nowSeconds() + 120 },
           { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
-        ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
+        ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId),
+          group_name: `合成 OneBot ${params.group_id}` }
         : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId)
         : action === "get_version_info" ? { app_name: oneBotGatewayName }
         : action === "_del_group_notice" ? null
@@ -1106,6 +1108,14 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", uncertainPrivateMute);
     expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.group_id === 79 &&
       params.user_id === 44 && params.duration === 14)).toHaveLength(1);
+    client.send(JSON.stringify(oneBotPrivate("#全体禁言88")));
+    await ownerReplyWith("合成 OneBot 88(88)」开启全体禁言");
+    expect(oneBotCalls.filter(({ action, params }) => action === "set_group_whole_ban" && params.group_id === 88).map(({ params }) => params))
+      .toEqual([{ group_id: 88, enable: true }]);
+    await webhook("message_receive", milkyPrivate("#全体解禁88"));
+    await milkyOwnerReply(operator, "合成 Milky 88(88)」解除全体禁言");
+    expect(milkyCalls.filter(({ action, params }) => action === "set_group_whole_mute" && params.group_id === 88).map(({ params }) => params))
+      .toEqual([{ group_id: 88, is_mute: false }]);
   } finally {
     socket?.close();
     host?.kill();
