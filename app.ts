@@ -72,7 +72,7 @@ import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
-import { createManagedHandoff } from "./lib/managed-handoff.ts";
+import { createManagedHandoff, type ManagedTlsListener } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
 import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
@@ -2388,15 +2388,18 @@ if (import.meta.main) {
       listenerMessages.push(`HTTP 正在监听 ${server.url.origin}/status`);
     }
     if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
+    let tlsListener: ManagedTlsListener | undefined;
     if (https && !probingUpdate) {
       try {
         const [key, cert] = await Promise.all([readFile(https.key), readFile(https.cert)]);
         if (!stopping) {
           const tls = { key, cert };
           const fetch = httpHandler(https.auth);
-          const server = https.oneBotAuth
-            ? listenOneBot(https.port, https.oneBotAuth, fetch, tls)
+          const oneBotAuth = https.oneBotAuth;
+          const server = oneBotAuth
+            ? listenOneBot(https.port, oneBotAuth, fetch, tls)
             : listenHttp(https.port, fetch, tls);
+          tlsListener = oneBotAuth ? "wss" : "https";
           fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
           listenerMessages.push(`HTTPS 正在监听 ${server.url.origin}/status`);
         }
@@ -2836,7 +2839,7 @@ if (import.meta.main) {
         await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
-      await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories);
+      await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, tlsListener);
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();
       pendingModuleTasks.clear();

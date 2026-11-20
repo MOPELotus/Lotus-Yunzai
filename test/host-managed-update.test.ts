@@ -243,7 +243,7 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
   git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", pluginRemote);
   git(localPlugin, "remote", "add", "origin", pluginRemote);
   git(localPlugin, "push", "--quiet", "-u", "origin", "main");
-  return { active, old, candidate, localPlugin, pluginRemote };
+  return { active, old, candidate, localPlugin, pluginRemote, writer };
 }
 
 function expectText(frame: Frame, target: Target, message: RegExp) {
@@ -420,6 +420,67 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
 }
 
 test.skipIf(!Bun.which("git"))("托管 #更新 应用宿主候选并只向原私聊发送一次成功回执", () => exerciseUpdate(false), 35_000);
+
+async function exerciseTlsUpdate(fault?: "bind" | "wss") {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));
+  try {
+    const { active, old, candidate, writer } = await fixtureRepository(temporary, false);
+    if (fault) {
+      const app = join(writer, "app.ts");
+      const source = await readFile(app, "utf8");
+      const site = "const oneBotAuth = https.oneBotAuth;";
+      expect(source).toContain(site);
+      const injection = fault === "bind"
+        ? "if (!handoff.accepting) throw new Error('fixture TLS listener failure');\n          " + site
+        : "const oneBotAuth = handoff.accepting ? https.oneBotAuth : undefined;";
+      await writeFile(app, source.replace(site, injection));
+      git(writer, "add", "app.ts");
+      git(writer, "commit", "--quiet", "-m", "Fixture TLS listener failure during handoff");
+      git(writer, "push", "--quiet", "origin", "main");
+    }
+
+    const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    const port = reservation.port;
+    reservation.stop(true);
+    const config = join(active, "config");
+    const cert = join(config, "fixture.crt");
+    const key = join(config, "fixture.key");
+    const generated = Bun.spawnSync([Bun.which("openssl")!, "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+      "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert]);
+    expect(generated.exitCode).toBe(0);
+    await writeFile(join(config, "server.yaml"), Bun.YAML.stringify({ https: { port, cert, key } }));
+    const ca = await readFile(cert, "utf8");
+    async function checkTls(revision: string) {
+      const response = await fetch(`https://127.0.0.1:${port}/status`, {
+        proxy: false, tls: { ca }, signal: AbortSignal.timeout(2_000),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ revision });
+    }
+
+    const supervisor = bootSupervisor(active);
+    try {
+      const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "TLS 测试宿主未启动。"), 99);
+      await checkTls(old);
+      first.command("#更新", 51);
+      expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
+      const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "TLS 更新后未启动宿主。", 16_000), 99);
+      expectText(await replacement.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /^更新成功/u);
+      const revision = fault ? old : candidate;
+      expect(git(active, "rev-parse", "HEAD")).toBe(revision);
+      await checkTls(revision);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+const canTestTlsUpdate = Boolean(Bun.which("git") && Bun.which("openssl"));
+test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选无法接回 TLS 监听时恢复原版本", () => exerciseTlsUpdate("bind"), 35_000);
+test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选只接回 HTTPS 但丢失 WSS 时恢复原版本", () => exerciseTlsUpdate("wss"), 35_000);
+test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选接回 TLS 监听时继续切换", () => exerciseTlsUpdate(), 35_000);
 test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定义目录中的原图", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-public-images-"));
   try {

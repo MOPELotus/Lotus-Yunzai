@@ -5,7 +5,8 @@ import { readInstallCatalog } from "./install-catalog.ts";
 import { preparePluginInstall, type ReadyInstall } from "./install-preflight.ts";
 import { createLocalGit, gitHead } from "./local-git.ts";
 import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-update-protocol.ts";
-import { spawnManagedWorker } from "./managed-worker.ts";
+import type { ManagedTlsListener } from "./managed-handoff.ts";
+import { ManagedTlsUnavailableError, spawnManagedWorker } from "./managed-worker.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./process-receipts.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
@@ -39,9 +40,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   let transition: Promise<SwitchResult> | undefined;
   let update: { controller: AbortController; done: Promise<void> } | undefined;
 
-  function launch(path = root, expectedRevision?: string, pausedAt?: number, expectedPlugins?: readonly string[]) {
+  function launch(path = root, expectedRevision?: string, pausedAt?: number, expectedPlugins?: readonly string[], expectedTls?: ManagedTlsListener) {
     const worker: Worker = spawnManagedWorker(path, {
-      env: options.env, expectedRevision, held: expectedRevision !== undefined, pausedAt, expectedPlugins,
+      env: options.env, expectedRevision, held: expectedRevision !== undefined, pausedAt, expectedPlugins, expectedTls,
       onRestart(restartPausedAt) {
         if (current === worker && !stopped) restarts.set(worker, restartPausedAt);
       },
@@ -217,7 +218,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       if (stopped) return "stopped" as const;
       activated = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
-        const worker = launch(active, stage.revision, pausedAt, expectedPlugins);
+        const worker = launch(active, stage.revision, pausedAt, expectedPlugins, previousWorker.tls);
         candidate = worker;
         try {
           await worker.ready;
@@ -242,7 +243,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       return "updated" as const;
     } catch (error) {
       if (!stopped) {
-        if (error instanceof WebMountUpdateError) console.warn(`[更新] ${error.message}`);
+        if (error instanceof WebMountUpdateError || error instanceof ManagedTlsUnavailableError) console.warn(`[更新] ${error.message}`);
         console.warn(candidate ? "[更新] 候选宿主未能完成交接，正在恢复原版本。" : "[更新] 文件切换失败，正在恢复原版本。");
       }
       await candidate?.stop(stopped);

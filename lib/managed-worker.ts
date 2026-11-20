@@ -1,5 +1,6 @@
 import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
+import type { ManagedTlsListener } from "./managed-handoff.ts";
 import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
   type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
@@ -10,6 +11,7 @@ interface ManagedWorkerOptions {
   readonly held?: boolean;
   readonly expectedRevision?: string;
   readonly expectedPlugins?: readonly string[];
+  readonly expectedTls?: ManagedTlsListener;
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
   readonly onRestart?: (pausedAt?: number) => void;
@@ -19,12 +21,14 @@ interface ManagedWorkerOptions {
 const gracefulStopTimeout = 10_000;
 const startupStopTimeout = 1_000;
 
+export class ManagedTlsUnavailableError extends Error {}
+
 function validPause(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
-  const { expectedRevision, expectedPlugins = [], held, onRestart, onUpdate } = options;
+  const { expectedRevision, expectedPlugins = [], expectedTls, held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
     throw new Error("宿主启动检查需要完整的 Git 提交号。");
   }
@@ -39,6 +43,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "1",
   };
   let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
+  let tls: ManagedTlsListener | undefined;
   if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
   else delete env.LOTUS_MANAGED_PAUSED_AT;
   const readiness = Promise.withResolvers<void>();
@@ -84,6 +89,13 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           if (expectedPlugins.length !== 0 && (!Array.isArray(plugins) || plugins.length > managedUpdateDirectoryLimit ||
               !plugins.every(isManagedPluginDirectory) || !expectedPlugins.every((plugin) => plugins.includes(plugin)))) {
             startupError = new Error("宿主未加载预期的候选插件。");
+            void stop();
+            return;
+          }
+          const listener = "tls" in message ? message.tls : undefined;
+          tls = listener === "https" || listener === "wss" ? listener : undefined;
+          if (expectedTls && (!tls || (expectedTls === "wss" && tls !== "wss"))) {
+            startupError = new ManagedTlsUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
             void stop();
             return;
           }
@@ -197,6 +209,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     ready: readiness.promise,
     exited,
     get pausedAt() { return pausedAt; },
+    get tls() { return tls; },
     activate() {
       if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");
       if (active) return;
