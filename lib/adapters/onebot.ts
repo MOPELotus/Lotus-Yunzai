@@ -213,21 +213,21 @@ async function dispatchRequest(
   });
 
   if (request_type === "friend") {
-    if (self_id === user_id) return;
     const session = groupActionSignal(connection, self_id);
+    if (!session || self_id === user_id) return;
     const nickname = stringField(event.nickname);
     const source = stringField(event.source);
-    if (session) calls.observeFriendRequest(flag, {
+    calls.observeFriendRequest(flag, {
       userId: user_id, nickname, source, comment: stringField(event.comment), time: isId(event.time) ? event.time : undefined,
     });
     await dispatch({
       ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
-      nickname, source,
-      notifyOwners: session ? async (reply, workflow) => {
+      nickname, source, approvalSignal: session,
+      async notifyOwners(reply, workflow) {
         const active = AbortSignal.any([session, workflow]);
         return notifyOwnerReplies(calls, send, self_id, await selectNoticeOwners(permissions, self_id, active, permissions.isMaster), reply, active);
-      } : undefined,
-      approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
+      },
+      approve: (approve = true, remark) => session.aborted ? Promise.resolve(false) : calls.reviewFriendRequest(send, flag, approve, remark),
       reply: replyToApplicant,
     });
     return;

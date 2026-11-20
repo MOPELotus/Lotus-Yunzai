@@ -223,6 +223,7 @@ export interface FriendRequest {
   readonly isGroup: false;
   readonly isPrivate: true;
   readonly isMaster: boolean;
+  readonly approvalSignal?: AbortSignal;
   readonly approve: (approve?: boolean, remark?: string) => Promise<boolean>;
   readonly notifyMasters: (message: string) => Promise<number>;
   readonly notifyOwners?: (message: MessageReply, signal: AbortSignal) => Promise<number>;

@@ -14,13 +14,17 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-trss-"));
   let host: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined;
   let client: WebSocket | undefined;
+  let initial: WebSocket | undefined;
+  let unbound: WebSocket | undefined;
   try {
     await copyHost(root);
     await mkdir(join(root, "config/config"), { recursive: true });
-    await writeFile(join(root, "config/config/other.yaml"), [
+    const other = [
       'master: ["99:51"]', "disablePrivate: true", "disableMsg: 当前只接受账号资料",
-      "disableAdopt: ['^#通行[0-9]+$']", "autoFriend: 1", "",
-    ].join("\n"));
+      "disableAdopt: ['^#通行[0-9]+$']", "",
+    ].join("\n");
+    await writeFile(join(root, "config/other.yaml"), other);
+    await writeFile(join(root, "config/config/other.yaml"), "blackUser: [63]\n");
     await writeFile(join(root, "config/config/group.yaml"), "# 使用旧版群派发默认值\n");
     await writeFile(join(root, "plugins", "trss-fixture.js"), `
       export const apps = {
@@ -66,19 +70,22 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
       reader.releaseLock();
     }
     const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
-    const socket = new BunWebSocket(endpoint, {
-      headers: { Authorization: "Bearer trss-fixture", "X-Client-Role": "Universal", "X-Self-ID": "99" },
-    });
-    client = socket;
     const frames: Frame[] = [];
-    socket.addEventListener("message", ({ data }) => frames.push(JSON.parse(data)));
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", reject, { once: true });
-    });
+    async function connect(botId?: number) {
+      const headers: Record<string, string> = { Authorization: "Bearer trss-fixture", "X-Client-Role": "Universal" };
+      if (botId !== undefined) headers["X-Self-ID"] = String(botId);
+      const socket = new BunWebSocket(endpoint!, { headers });
+      socket.addEventListener("message", ({ data }) => frames.push(JSON.parse(data)));
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", reject, { once: true });
+      });
+      return socket;
+    }
+    client = initial = await connect(99);
 
     function send(event: object) {
-      socket.send(JSON.stringify({ self_id: 99, ...event }));
+      client!.send(JSON.stringify({ self_id: 99, ...event }));
     }
     async function next(timeout = 1_000): Promise<Frame> {
       const deadline = performance.now() + timeout;
@@ -136,15 +143,36 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
     const start = performance.now();
     send({ ...request, flag: "automatic" });
     send({ ...request, flag: "automatic" });
-    const automatic = await next(4_500);
+    send({ ...request, flag: "unknown" });
+    send({ ...request, user_id: 63, flag: "blocked-user" });
+    send({ ...request, self_id: 100, flag: "different-bot" });
+    unbound = await connect();
+    unbound.send(JSON.stringify({ ...request, self_id: 99, flag: "unbound" }));
+    const approvals = [await next(4_500), await next()];
     expect(performance.now() - start).toBeGreaterThanOrEqual(2_900);
-    expect(automatic).toMatchObject({ action: "set_friend_add_request", params: {
-      flag: "automatic", approve: true, remark: "",
-    } });
-    send({ echo: automatic.echo, status: "ok", retcode: 0 });
+    expect(approvals.map(frame => frame.params.flag).sort()).toEqual(["automatic", "unknown"]);
+    for (const approval of approvals) {
+      expect(approval).toMatchObject({ action: "set_friend_add_request", params: { approve: true, remark: "" } });
+      send({ echo: approval.echo, status: approval.params.flag === "unknown" ? "async" : "ok", retcode: 0 });
+    }
+    await silence();
+
+    send({ ...request, flag: "unknown" });
+    send({ ...request, flag: "rebound" });
+    await Bun.sleep(100);
+    client = await connect(99);
+    send({ ...request, flag: "unknown" });
+    const reboundStart = performance.now();
+    send({ ...request, flag: "rebound" });
+    const rebound = await next(4_500);
+    expect(performance.now() - reboundStart).toBeGreaterThanOrEqual(2_900);
+    expect(rebound).toMatchObject({ action: "set_friend_add_request", params: { flag: "rebound", approve: true } });
+    send({ echo: rebound.echo, status: "ok", retcode: 0 });
     await silence();
   } finally {
     client?.close();
+    if (initial !== client) initial?.close();
+    unbound?.close();
     if (host) {
       host.kill();
       await host.exited;

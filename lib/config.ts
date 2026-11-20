@@ -4,16 +4,20 @@ export async function readLocalConfig(root: URL, name: string): Promise<Record<s
 
 export async function readOptionalLocalConfig(root: URL, name: string): Promise<Record<string, unknown> | undefined> {
   for (const path of [`config/${name}.yaml`, `config/config/${name}.yaml`]) {
-    const file = Bun.file(new URL(path, root));
-    if (!await file.exists()) continue;
+    const value = await readOptionalConfigFile(root, path);
+    if (value !== undefined) return value;
+  }
+}
 
-    try {
-      const value: unknown = Bun.YAML.parse(await file.text());
-      if (value === null || value === undefined) return {};
-      if (typeof value !== "object" || Array.isArray(value)) throw new Error();
-      return value as Record<string, unknown>;
-    } catch {
-      throw new Error(`无法读取 ${path}。`);
-    }
+export async function readOptionalConfigFile(root: URL, path: string): Promise<Record<string, unknown> | undefined> {
+  const file = Bun.file(new URL(path, root));
+  if (!await file.exists()) return;
+  try {
+    const value: unknown = Bun.YAML.parse(await file.text());
+    if (value === null || value === undefined) return {};
+    if (typeof value !== "object" || Array.isArray(value)) throw new Error();
+    return value as Record<string, unknown>;
+  } catch {
+    throw new Error(`无法读取 ${path}。`);
   }
 }
