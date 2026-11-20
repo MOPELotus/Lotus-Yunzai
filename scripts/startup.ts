@@ -66,13 +66,16 @@ async function loadStartupConfig(root: URL) {
 export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal) {
   const { persistAtlasChannel, readAtlasChannel } = await loadStartupConfig(root);
   const previous = await readAtlasChannel(root);
+  const directory = fileURLToPath(new URL("data/atlas/", root));
+  const ready = await atlasReady(directory);
+  signal.throwIfAborted();
+  if (ready && requested === undefined) return;
   const channel = requested ?? previous ?? await askAtlasChannel(signal);
   if (previous !== channel) {
     await persistAtlasChannel(root, channel, previous, signal);
   }
   signal.throwIfAborted();
-  const directory = fileURLToPath(new URL("data/atlas/", root));
-  if (await atlasReady(directory)) return;
+  if (ready) return;
   await mkdir(directory, { recursive: true, mode: 0o700 });
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
   const download = Bun.spawn([

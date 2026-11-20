@@ -63,6 +63,23 @@ test("noninteractive first start requires a source choice before starting the ho
   expect(await Bun.file(attempts).exists()).toBe(false);
 });
 
+test("an already prepared installation starts without choosing a channel and rejects malformed YAML", async () => {
+  const { cwd, config, attempts, start } = await fixture();
+  const atlas = join(cwd, "data/atlas/data");
+  await mkdir(atlas, { recursive: true });
+  await writeFile(join(atlas, "map.json"), "{}");
+  const [code, output] = await start(["start"]);
+  expect(code).toBe(0);
+  expect(output).toContain("fixture host ready");
+  expect(await Bun.file(config).exists()).toBe(false);
+
+  await writeFile(config, "atlas: [\n");
+  const [invalid, , error] = await start(["start"]);
+  expect(invalid).toBe(1);
+  expect(error).toContain("无法读取 config/global.yaml");
+  expect(await Bun.file(attempts).exists()).toBe(false);
+});
+
 test("first start retries incomplete preparation, preserves config, and reuses published data", async () => {
   const { config, attempts, start } = await fixture();
   await writeFile(config, "atlas:\n  update: true\n# unrelated settings\npermissions:\n  mode: partial\n");

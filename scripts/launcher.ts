@@ -27,12 +27,16 @@ function pm2Executable() {
   return binary;
 }
 
+async function present(path: string) {
+  return lstat(path).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
+  });
+}
+
 async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status", options: readonly string[] = []) {
   const home = join(root, "data", ".pm2");
   if (action === "start:bg") await mkdir(home, { recursive: true, mode: 0o700 });
-  const directory = await lstat(home).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
-  });
+  const directory = await present(home);
   if (!directory) {
     if (action === "logs") throw new Error("当前目录暂无后台启动日志。");
     console.log("当前目录未启动后台托管。");
@@ -52,6 +56,25 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   }
 
   const readyFile = join(home, "host-ready");
+  async function runningPid() {
+    const lookup = Bun.spawn([binary, "pid", name], { ...spawn, stdout: "pipe" });
+    const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
+    const pid = result.trim();
+    return code === 0 && /^[1-9]\d*$/u.test(pid) ? pid : undefined;
+  }
+  function readyPid() {
+    return readFile(readyFile, "utf8").catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
+    });
+  }
+  if ((await present(join(home, "rpc.sock")))?.isSocket()) {
+    const pid = await runningPid();
+    if (pid) {
+      if (pid !== await readyPid()) throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
+      console.log("当前目录的后台宿主已运行。");
+      return 0;
+    }
+  }
   await rm(readyFile, { force: true });
   const start = await Bun.spawn([
     binary, "start", process.execPath, "--name", name, "--cwd", root, "--interpreter", "none",
@@ -62,11 +85,8 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   if (start !== 0) return start;
 
   // PM2 can report success after the child exits before ready or after its wait-ready timeout.
-  const lookup = Bun.spawn([binary, "pid", name], { ...spawn, stdout: "pipe" });
-  const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
-  const pid = result.trim();
-  if (code === 0 && /^[1-9]\d*$/u.test(pid) &&
-      await readFile(readyFile, "utf8").catch(() => undefined) === pid) return 0;
+  const pid = await runningPid();
+  if (pid && pid === await readyPid()) return 0;
   await Bun.spawn([binary, "stop", name], spawn).exited;
   throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
 }
