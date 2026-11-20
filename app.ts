@@ -124,6 +124,7 @@ const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yun
 const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunzai/group"];
 const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunzai/group"];
 const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
+const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -167,6 +168,19 @@ if (import.meta.main) {
     if (moduleTasksActive && handoff.accepting && !lifecycle.signal.aborted) start();
     else if (!lifecycle.signal.aborted) pendingModuleTasks.add(start);
     return () => pendingModuleTasks.delete(start);
+  }
+
+  function validateGroupTimedCron(cron: string) {
+    if (stopping || lifecycle.signal.aborted) return false;
+    try {
+      const candidate = moduleTasks.prepare([{ owner: new HandlerScope(), app: {
+        name: "[group] 定时群禁言校验", task: { cron, fnc() {}, log: false },
+      } }]);
+      candidate.cancel();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
@@ -221,7 +235,8 @@ if (import.meta.main) {
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
-    checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount } | undefined;
+    checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
+    timedWholeMute: MilkySession["timedWholeMute"] } | undefined;
   let stopping = false;
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
@@ -1486,8 +1501,8 @@ if (import.meta.main) {
       dispatch,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount) => {
-        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount };
+      onOnline: (id, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute) => {
+        milkyOnline = { id, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute };
         queueStartupMessages(id, "milky", signal);
       },
       isMaster: permissions.isMaster,
@@ -1625,6 +1640,29 @@ if (import.meta.main) {
         },
         registerAutoGroupCardTask(cron, run) {
           return registerModuleTask("[group] 自动群名片", cron, run);
+        },
+        groupTimedMute: {
+          async readLegacy() { return await globalThis.redis?.get("yenai:MuteTasks") ?? null; },
+          validateCron: validateGroupTimedCron,
+          register(name, cron, run) {
+            if (!validateGroupTimedCron(cron)) throw new Error("定时群禁言配置无效。");
+            return registerModuleTask(name, cron, run);
+          },
+          async execute(binding, signal) {
+            const active = nativeOperationSignal(signal);
+            const { botId, groupId, issuerId } = binding;
+            if (active.aborted || stopping || !handoff.accepting || dispatchPower.paused ||
+                !groupDispatch.allowsScheduledGroup(botId, groupId, timedGroupMuteNames)) return "unavailable";
+            if (binding.adapter === "onebot") {
+              return groups.timedWholeMute(binding, active, () => permissions.isMaster(botId, issuerId));
+            }
+            const session = milkyOnline;
+            if (!session || session.id !== botId || session.signal.aborted) return "unavailable";
+            return session.timedWholeMute(binding, active);
+          },
+          report(binding, result) {
+            if (result === "unknown") console.warn(`[group] 群 ${binding.groupId} 的定时禁言操作结果未确认。`);
+          },
         },
         autoRepeatSessionSignal(value) {
           if (!value || typeof value !== "object") return;

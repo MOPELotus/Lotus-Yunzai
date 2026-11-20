@@ -3,6 +3,7 @@ import type { BotNotifications } from "../checkin-notify.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import type { OwnGroupCardAccount } from "./own-group-card.ts";
 import { encodeOneBotForward, encodeOneBotReply } from "./onebot-message.ts";
+import { runTimedWholeMute, type TimedGroupMuteBinding, type TimedGroupMuteResult } from "./group-moderation.ts";
 
 export interface GroupTarget {
   readonly id: number;
@@ -63,6 +64,19 @@ export class OneBotGroups implements GroupTransport {
     return [...this.#connected.values()].flatMap(({ connection }) => {
       const account = connection.ownGroupCardAccount;
       return account && !account.signal.aborted ? [account] : [];
+    });
+  }
+
+  async timedWholeMute(binding: TimedGroupMuteBinding, signal: AbortSignal, isMaster: () => boolean): Promise<TimedGroupMuteResult> {
+    const { botId, groupId } = binding;
+    const account = this.#connected.get(botId);
+    if (!account || binding.adapter !== "onebot") return "unavailable";
+    const { calls, send } = account.connection;
+    return runTimedWholeMute(binding, {
+      active: () => !signal.aborted && this.#connected.get(botId) === account,
+      role: id => calls.getGroupRole(send, groupId, id, true, signal),
+      isMaster,
+      write: enabled => calls.setGroupWholeMute(send, groupId, enabled, signal),
     });
   }
 

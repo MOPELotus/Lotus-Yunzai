@@ -53,7 +53,7 @@ export function createMilkyWs(settings: MilkySettings, options: MilkyTransportOp
     let waitingForPong = false;
     socket.addEventListener("open", () => {
       clearTimeout(connection.handshake);
-      options.onOnline?.(session.botId, signal, session.send, session.checkinNotify, session.ownGroupCardAccount);
+      options.onOnline?.(session.botId, signal, session.send, session.checkinNotify, session.ownGroupCardAccount, session.timedWholeMute);
       connection.heartbeat = setInterval(() => {
         if (waitingForPong || socket.readyState !== WebSocket.OPEN) {
           reconnect(connection);

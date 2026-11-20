@@ -14,6 +14,14 @@ export type GroupSetAdminAction = (userId: number, enabled: boolean) => Promise<
 export type GroupSetQuotedEssenceAction = (
   enabled: boolean,
 ) => Promise<GroupModerationResult | "unavailable" | "invalid-quote">;
+export interface TimedGroupMuteBinding {
+  readonly adapter: "onebot" | "milky";
+  readonly botId: number;
+  readonly groupId: number;
+  readonly issuerId: number;
+  readonly enabled: boolean;
+}
+export type TimedGroupMuteResult = GroupModerationResult | "unavailable";
 
 export interface MutedGroupMember {
   readonly userId: number;
@@ -80,6 +88,28 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
+async function groupOperatorAuthority(
+  role: (id: number) => Promise<Role | undefined>, bot: number, actor: number, isMaster: () => boolean, active: () => boolean,
+) {
+  const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
+  if (!active() || !actorRole || !botRole) return;
+  const master = isMaster();
+  if ((master || actorRole !== "member") && botRole !== "member") return { master, botRole };
+}
+
+export async function runTimedWholeMute(binding: TimedGroupMuteBinding, session: {
+  role(userId: number): Promise<Role | undefined>;
+  isMaster(): boolean;
+  active(): boolean;
+  write(enabled: boolean): Promise<GroupModerationResult>;
+}): Promise<TimedGroupMuteResult> {
+  const { botId, groupId, issuerId, enabled } = binding;
+  if (![botId, groupId, issuerId].every(id => Number.isSafeInteger(id) && id > 0) || typeof enabled !== "boolean") return "rejected";
+  if (!session.active() || !await groupOperatorAuthority(session.role, botId, issuerId, session.isMaster, session.active) ||
+      !session.active()) return "unavailable";
+  try { return await session.write(enabled); } catch { return "unknown"; }
+}
+
 export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
   essence }: {
   readonly bot: number;
@@ -108,11 +138,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
-    const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
-    if (!active() || !actorRole || !botRole) return "unavailable" as const;
-    const master = isMaster();
-    if ((!master && actorRole === "member") || botRole === "member") return "unavailable" as const;
-    return { master, botRole };
+    return await groupOperatorAuthority(role, bot, actor, isMaster, active) ?? "unavailable" as const;
   }
 
   async function apply(write: () => Promise<GroupModerationResult>): Promise<GroupModerationResult | "unavailable"> {

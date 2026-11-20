@@ -3,7 +3,8 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import type { BotEvent, MessageReply } from "../messages.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, isMemberMuteDuration, readGroupActivity,
-  type GroupActionPolicy, type GroupActivityVisibility } from "./group-moderation.ts";
+  runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
+  type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
@@ -25,7 +26,7 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
-    ownGroupCardAccount: OwnGroupCardAccount) => void;
+    ownGroupCardAccount: OwnGroupCardAccount, timedWholeMute: MilkySession["timedWholeMute"]) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
@@ -34,6 +35,7 @@ export interface MilkySession {
   readonly botId: number;
   readonly checkinNotify: CheckinNotifyTransport;
   readonly ownGroupCardAccount: OwnGroupCardAccount;
+  timedWholeMute(binding: TimedGroupMuteBinding, signal: AbortSignal): Promise<TimedGroupMuteResult>;
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
@@ -259,7 +261,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
   }, authorize);
 
-  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), async send(target, reply) {
+  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), async timedWholeMute(binding, jobSignal) {
+    if (binding.adapter !== "milky" || binding.botId !== account) return "unavailable";
+    const active = AbortSignal.any([signal, jobSignal]);
+    return runTimedWholeMute(binding, {
+      active: () => !active.aborted,
+      role: id => memberRole(binding.groupId, id, active),
+      isMaster: () => isMaster(binding.issuerId),
+      async write(is_mute) {
+        return (await call.confirmed("set_group_whole_mute", { group_id: binding.groupId, is_mute }, active)).status;
+      },
+    });
+  }, async send(target, reply) {
     return await sendConfirmed(target, reply) === "confirmed";
   }, receive(body) {
     if (signal.aborted) return "offline";

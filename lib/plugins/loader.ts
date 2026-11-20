@@ -5,6 +5,7 @@ import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
+import type { TimedGroupMuteBinding, TimedGroupMuteResult } from "../adapters/group-moderation.ts";
 import type { OwnGroupCardAccount } from "../adapters/own-group-card.ts";
 import type { ProfileLikeImage } from "../adapters/mention-like.ts";
 import type { GroupBannedWords } from "../../plugins/group/banned-words.ts";
@@ -225,6 +226,13 @@ export async function loadPlugins(
     readonly groupServices?: {
       ownGroupCardAccounts(): readonly OwnGroupCardAccount[];
       registerAutoGroupCardTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+      groupTimedMute?: {
+        readLegacy(): Promise<string | null>;
+        validateCron(cron: string): boolean;
+        register(name: string, cron: string, run: () => Promise<void>): () => void | Promise<void>;
+        execute(binding: TimedGroupMuteBinding, signal: AbortSignal): Promise<TimedGroupMuteResult>;
+        report?(binding: TimedGroupMuteBinding, result: TimedGroupMuteResult): void;
+      };
       autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
       readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
       readonly profileLikeImage?: ProfileLikeImage;
