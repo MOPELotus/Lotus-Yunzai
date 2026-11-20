@@ -1860,6 +1860,21 @@ if (import.meta.main) {
       async write(actor, id) {
         if (globalThis.redis) await storage("keywords").set(`recent:${actor}`, String(id), 2_592_000);
       },
+      legacy: {
+        async read(user) {
+          const id = await globalThis.redis?.eval(`
+            if redis.call('PTTL', KEYS[1]) <= 0 then return false end
+            return redis.call('GET', KEYS[1])
+          `, { keys: [`Yz:group_id:${user}`], arguments: [] });
+          if (typeof id !== "string" || !/^[1-9]\d*$/u.test(id)) return;
+          const group = Number(id);
+          if (Number.isSafeInteger(group)) return group;
+        },
+        allows(event, group_id) {
+          const scope = { self_id: event.self_id, user_id: event.user_id, group_id };
+          return routing.allowsInbound(scope) && routing.allows(scope, keywordFeatureNames);
+        },
+      },
     });
     reviewInvitation = invitations;
     autoQuit = await readAutoQuit(root, permissions.masterIds, permissions.legacyMasterIds);
