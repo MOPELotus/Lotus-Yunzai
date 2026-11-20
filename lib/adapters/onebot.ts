@@ -440,6 +440,11 @@ async function dispatchMessage(
           return message === undefined ? "rejected" : calls.sendConfirmed(send, { group_id: target.group_id }, message);
         },
       },
+      announcement: {
+        source: incoming.message,
+        available: () => calls.isNapCat(send, likeSession),
+        send: (text, image) => calls.publishGroupAnnouncement(send, target.group_id, text, image, likeSession),
+      },
     })),
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;

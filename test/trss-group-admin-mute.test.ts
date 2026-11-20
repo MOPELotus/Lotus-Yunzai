@@ -99,6 +99,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           (action === "set_group_member_admin" && params.user_id === 60044) ||
           (action === "set_group_essence_message" && params.is_set === false) ||
           (action === "send_group_message" && JSON.stringify(params.message).includes("合成未知通知")) ||
+          (action === "send_group_announcement" && params.content === "模拟未知公告") ||
           (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
       if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
@@ -767,6 +768,33 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       .toEqual([{ group_id: 79 }, { group_id: 84 }, { group_id: 79 }]);
     expect(oneBotCalls.filter(({ action }) => action === "_get_group_notice").map(({ params }) => params))
       .toEqual([{ group_id: "82" }]);
+
+    send(oneBotMessage([text("#发群公告 首行合成公告\n第二行 #发公告"), embeddedImage,
+      { type: "image", data: { file: "file:///tmp/other-image.png" } }], operator, 82));
+    const writtenAnnouncement = await waitUntil(() => oneBotCalls.find(({ action }) => action === "_send_group_notice"),
+      "OneBot 未发送原生公告请求。");
+    expect(writtenAnnouncement.params).toEqual({ group_id: "82", content: "首行合成公告\n第二行 #发公告",
+      image: `base64://${noticeImageBase64}`, pinned: 0, type: 1, is_show_edit_card: 1, tip_window_type: 1, confirm_required: 1 });
+    send(oneBotMessage([text("#发公告合成坏图"), { type: "image", data: { file: "file:///tmp/invalid-image.png" } }], operator, 82));
+    await groupReplyWith("无法使用原消息的公告图片");
+    send(oneBotMessage("#发群公告无权发出", 54, 82));
+    await groupReplyWith("当前无法发布 QQ 群公告");
+    expect(oneBotCalls.filter(({ action }) => action === "_send_group_notice")).toHaveLength(1);
+    expect(oneBotReplies().some(({ params }) => JSON.stringify(params.message).includes("首行合成公告"))).toBe(false);
+
+    const groupPublication = milkyTitle("#发群公告合成 Milky 公告");
+    await webhook("message_receive", { ...groupPublication, segments: [...groupPublication.segments,
+      { type: "image", data: { temp_url: noticeImageUrl } },
+    ] });
+    await waitUntil(() => milkyCalls.find(({ action }) => action === "send_group_announcement"), "Milky 未发送原生公告请求。");
+    const uncertainPublication = milkyTitle("#发公告模拟未知公告");
+    await webhook("message_receive", uncertainPublication);
+    await announcementReply("群公告发布结果未确认");
+    await webhook("message_receive", uncertainPublication);
+    expect(milkyCalls.filter(({ action }) => action === "send_group_announcement").map(({ params }) => params)).toEqual([
+      { group_id: 79, content: "合成 Milky 公告", image_uri: `base64://${noticeImageBase64}` },
+      { group_id: 79, content: "模拟未知公告" },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

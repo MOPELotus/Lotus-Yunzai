@@ -154,8 +154,7 @@ export class OneBotCalls {
 
   async verifyPendingGroupJoin(send: Send, origin: Extract<JoinRequestOrigin, { adapter: "onebot" }>, signal: AbortSignal) {
     try {
-      const version = await this.#request(send, "get_version_info", {}, signal);
-      if (!isRecord(version) || version.app_name !== "NapCat.Onebot" || signal.aborted) return "unavailable" as const;
+      if (!await this.isNapCat(send, signal) || signal.aborted) return "unavailable" as const;
       const choose = (rows: unknown) => Array.isArray(rows) ? rows.filter((item: unknown): item is Record<string, unknown> =>
         isRecord(item) && item.group_id === origin.groupId && item.invitor_uin === origin.userId &&
         isPositiveInteger(item.request_id) && String(item.request_id) === origin.flag) : undefined;
@@ -173,8 +172,7 @@ export class OneBotCalls {
 
   async listGroupAnnouncements(send: Send, groupId: number, signal: AbortSignal) {
     try {
-      const version = await this.#request(send, "get_version_info", {}, signal);
-      if (!isRecord(version) || version.app_name !== "NapCat.Onebot" || signal.aborted) return;
+      if (!await this.isNapCat(send, signal) || signal.aborted) return;
       const rows = await this.#request(send, "_get_group_notice", { group_id: String(groupId) }, signal);
       return readGroupAnnouncements(rows, row => {
         if (!isRecord(row) || ("group_id" in row && row.group_id !== groupId && row.group_id !== String(groupId))) return;
@@ -183,6 +181,20 @@ export class OneBotCalls {
         return { id: row.notice_id, text: row.message.text };
       });
     } catch { return undefined; }
+  }
+
+  async isNapCat(send: Send, signal: AbortSignal): Promise<boolean> {
+    try {
+      const version = await this.#request(send, "get_version_info", {}, signal);
+      return isRecord(version) && version.app_name === "NapCat.Onebot";
+    } catch { return false; }
+  }
+
+  publishGroupAnnouncement(send: Send, groupId: number, content: string, image: string | undefined, signal: AbortSignal) {
+    return this.#moderateGroup(send, "_send_group_notice", {
+      group_id: String(groupId), content, ...(image === undefined ? {} : { image }),
+      pinned: 0, type: 1, is_show_edit_card: 1, tip_window_type: 1, confirm_required: 1,
+    }, signal);
   }
 
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {

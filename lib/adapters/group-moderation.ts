@@ -99,6 +99,8 @@ export interface GroupAnnouncement {
   readonly text: string;
 }
 
+export type GroupPublishAnnouncement = (text: string) => Promise<GroupModerationResult | "unavailable" | "invalid-image">;
+
 export function readGroupAnnouncements(rows: unknown, decode: (row: unknown) => GroupAnnouncement | null | undefined) {
   if (!Array.isArray(rows)) return;
   const entries: GroupAnnouncement[] = [];
@@ -137,6 +139,12 @@ export async function runTimedWholeMute(binding: TimedGroupMuteBinding, session:
 
 const noticeMedia = new Set(["image", "record", "video"]);
 
+async function readMessageMedia(part: InboundSegment, signal: AbortSignal) {
+  const url = typeof part.url === "string" ? part.url
+    : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
+  return readQqMessageMedia(url, signal);
+}
+
 async function buildGroupNotice(parts: readonly InboundSegment[], source: MessageEvent["message"], signal: AbortSignal) {
   if (!Array.isArray(parts) || !parts.length) return;
   let mediaBytes = 0;
@@ -154,9 +162,7 @@ async function buildGroupNotice(parts: readonly InboundSegment[], source: Messag
       reply.push({ type, data: { id: String(part.id), ...(part.is_large === true && { is_large: true }) } });
     } else if ((type === "image" || type === "record" || type === "video") &&
         typeof source !== "string" && source.includes(part)) {
-      const url = typeof part.url === "string" ? part.url
-        : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
-      const bytes = await readQqMessageMedia(url, signal);
+      const bytes = await readMessageMedia(part, signal);
       if (!bytes || (mediaBytes += bytes.byteLength) > maxChatFileBytes) return;
       reply.push({ type, data: { file: bytes,
         ...(type === "image" && typeof part.summary === "string" && { summary: part.summary }) } });
@@ -167,7 +173,7 @@ async function buildGroupNotice(parts: readonly InboundSegment[], source: Messag
 }
 
 export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
-  essence, notice }: {
+  essence, notice, announcement }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -188,6 +194,11 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     readonly source: MessageEvent["message"];
     send(reply: MessageReply): Promise<GroupModerationResult>;
   };
+  readonly announcement?: {
+    readonly source: MessageEvent["message"];
+    available?(): Promise<boolean>;
+    send(text: string, image?: string): Promise<GroupModerationResult>;
+  };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
@@ -196,6 +207,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   groupSetQuotedEssence?: GroupSetQuotedEssenceAction;
   groupMuteSelf: GroupMuteSelfAction;
   groupNotifyAll?: GroupNotifyAllAction;
+  groupPublishAnnouncement?: GroupPublishAnnouncement;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -299,6 +311,16 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (!reply) return "rejected";
       if (parts.some(({ type }) => noticeMedia.has(type)) && !await canManage("list")) return "unavailable";
       return apply(() => notice.send(reply));
+    } : undefined,
+    groupPublishAnnouncement: announcement ? async text => {
+      if (typeof text !== "string" || !text.trim()) return "rejected";
+      if (!await canManage("list") || announcement.available && !await announcement.available() || !active()) return "unavailable";
+      const image = typeof announcement.source === "string" ? undefined : announcement.source.find(part => part.type === "image");
+      const bytes = image && await readMessageMedia(image, signal).catch(() => undefined);
+      if (!active()) return "unavailable";
+      if (image && !bytes) return "invalid-image";
+      if ((announcement.available || image) && !await canManage("list")) return "unavailable";
+      return apply(() => announcement.send(text, bytes && `base64://${Buffer.from(bytes).toString("base64")}`));
     } : undefined,
   };
 }
