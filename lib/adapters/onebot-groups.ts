@@ -146,14 +146,15 @@ export class OneBotGroups implements GroupTransport {
           throw new NoticeNotSentError("公告群号或内容无效。");
         }
         let messageId: number | undefined;
-        const status = await calls.sendConfirmed(send, { group_id: groupId }, message, signal, id => { messageId = id; });
+        // A shutdown stops new sends, but the original connection can still confirm a send already on the wire.
+        const status = await calls.sendConfirmed(send, { group_id: groupId }, message, undefined, id => { messageId = id; });
         if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
         if (messageId === undefined) throw new Error("公告发送结果未确认。");
         return messageId;
       }, async recall(_groupId, messageId, signal) {
         check(signal);
         if (!Number.isSafeInteger(messageId)) throw new NoticeNotSentError("公告消息编号无效。");
-        const status = await calls.recallMessage(send, messageId, signal);
+        const status = await calls.recallMessage(send, messageId);
         if (status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
         if (status !== "confirmed") throw new Error("公告撤回结果未确认。");
       } } satisfies NoticeGroupAccount];
