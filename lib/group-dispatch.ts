@@ -76,15 +76,19 @@ function cooldown(value: unknown): number {
 }
 
 async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | undefined> {
-  for (const path of ["config/group.yaml", "config/config/group.yaml"]) {
+  const legacyPath = "config/config/group.yaml";
+  for (const path of ["config/group.yaml", legacyPath]) {
     const file = Bun.file(new URL(path, root));
     if (!await file.exists()) continue;
     try {
       const value: unknown = Bun.YAML.parse(await file.text());
       if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
       const config = record(value);
+      const keys = Object.keys(config);
+      // An empty TRSS runtime overlay still inherited its bundled group defaults.
+      if (path === legacyPath && keys.length === 0) return config;
       // Lotus likes settings also use config/group.yaml, with flat keys.
-      if (Object.keys(config).some((key) => /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u.test(key))) {
+      if (keys.some((key) => /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u.test(key))) {
         return config;
       }
     } catch {
