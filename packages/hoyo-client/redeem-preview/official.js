@@ -242,5 +242,12 @@ export class MiyoliveProvider {
 }
 
 export function parseOfficialDate(value) {
-  return Date.parse(String(value || "").replace(" ", "T") + "+08:00") || 0
+  if (typeof value !== "string") return 0
+  const parts = /^(\d{4})-(\d{2})-(\d{2})[ T]([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/.exec(value)
+  if (!parts) return 0
+  const ms = Date.parse(value.replace(" ", "T") + "+08:00")
+  if (!Number.isFinite(ms)) return 0
+  const local = new Date(ms + 8 * 3_600_000)
+  if (local.getUTCMonth() + 1 !== Number(parts[2]) || local.getUTCDate() !== Number(parts[3])) return 0
+  return ms
 }

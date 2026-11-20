@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
-import { MiyoliveProvider } from "../packages/hoyo-client/redeem-preview/official.js";
+import { MiyoliveProvider, parseOfficialDate } from "../packages/hoyo-client/redeem-preview/official.js";
 import { CommandRegistry, sendCommandReply } from "../lib/commands.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 import { redeemCodeCommands } from "../lib/redeem-code-commands.ts";
@@ -20,6 +20,13 @@ const fixtureItems = [
 ];
 const recap = { uid: author, post_id: "101", subject: "《原神》7.2版本前瞻特别节目",
   created_at: start / 1000, content: "本次兑换码将于2026年10月26日12:00:00失效。" };
+
+test("官方开播时间必须是有效北京时间，不能把非法日期滚动成确定的开播时刻", () => {
+  expect(parseOfficialDate("2026-02-31 20:00:00")).toBe(0);
+  expect(parseOfficialDate("2026-04-30 24:00:00")).toBe(0);
+  expect(parseOfficialDate("2028-02-29 20:00:00")).toBe(Date.parse("2028-02-29T12:00:00Z"));
+  expect(parseOfficialDate("2028-02-29T20:00")).toBe(Date.parse("2028-02-29T12:00:00Z"));
+});
 
 test("仅官方直播索引 HTTP 410 触发一次匿名直连", async () => {
   const index = "https://api-takumi.mihoyo.com/event/miyolive/index";
