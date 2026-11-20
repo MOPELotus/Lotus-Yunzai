@@ -974,7 +974,12 @@ export function startOneBot(
                   ]);
                   return { groupName, nickname, operatorName };
                 },
-                async notifyOwners(summary, original, nickname, active) {
+                async notifyOwners(summary, original, nickname, active, followup) {
+                  if (followup !== undefined) {
+                    await notifyVerifiedFriendOwners(calls, send, self_id, scope => selectNoticeOwners(options, self_id, scope, options.isMaster),
+                      summary, AbortSignal.any([signal, active]), { followup, allowFollowup: id => options.isMaster(self_id, id) });
+                    return;
+                  }
                   const message = encodeOneBotReply(summary);
                   const nodes = encodeOneBotForward([original], user_id, nickname ?? String(user_id));
                   if (active.aborted || message === undefined || !nodes) return;

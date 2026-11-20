@@ -1239,11 +1239,7 @@ if (import.meta.main) {
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendRecallNoticeNames) ||
         typeof message === "string" || !message.length) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const voice = standaloneVoicePart(message);
-    const body = voice ? () => readRecallMedia(signal, async () => {
-      const file = await readOriginalQqVoice(voice, signal);
-      if (file) return { voice: file };
-    }) : recallCaptureContent(message, signal);
+    const body = recallCaptureContent(message, signal);
     if (body === undefined || signal.aborted) return;
     return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, body,
       () => registration.policy.retention(botId, signal), signal);
@@ -1264,6 +1260,11 @@ if (import.meta.main) {
   }
 
   function recallCaptureContent(message: MessageEvent["message"], signal: AbortSignal) {
+    const voice = standaloneVoicePart(message);
+    if (voice) return () => readRecallMedia(signal, async () => {
+      const file = await readOriginalQqVoice(voice, signal);
+      if (file) return { voice: file };
+    });
     const body = readRecallBody(message);
     if (body !== undefined) {
       if (!isPrivateCredentialMessage(recallNoticeInput(body).text)) return body;
@@ -1340,11 +1341,19 @@ if (import.meta.main) {
     const signal = nativeOperationSignal(registration.signal, notice.signal);
     if (signal.aborted || await registration.policy.retention(botId, groupId, signal) === undefined || signal.aborted) return;
     const body = await groupRecallCache.take(notice, signal);
-    if (body === undefined || signal.aborted || (typeof body !== "string" && "voice" in body)) return;
+    if (body === undefined || signal.aborted) return;
     const description = await notice.describe(signal);
     if (signal.aborted) return;
-    const reply = await registration.policy.format({ ...description, botId, userId, groupId, operatorId, time, ...recallNoticeInput(body) }, signal);
-    if (reply && !signal.aborted) await notice.notifyOwners(reply.summary, reply.parts ?? reply.text, reply.nickname, signal);
+    const details = { ...description, botId, userId, groupId, operatorId, time };
+    if (typeof body !== "string" && "voice" in body) {
+      const reply = await registration.policy.format({ ...details, text: "[语音]", special: "[语音]" }, signal);
+      if (reply && !signal.aborted) {
+        await notice.notifyOwners(reply.summary, reply.text, reply.nickname, signal, { type: "record", file: body.voice });
+      }
+    } else {
+      const reply = await registration.policy.format({ ...details, ...recallNoticeInput(body) }, signal);
+      if (reply && !signal.aborted) await notice.notifyOwners(reply.summary, reply.parts ?? reply.text, reply.nickname, signal);
+    }
   }
 
   function groupOwnerNotificationSignal(module: AbortSignal, transport: AbortSignal,

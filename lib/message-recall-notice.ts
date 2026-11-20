@@ -24,7 +24,8 @@ export interface NativeGroupRecallNotice extends GroupRecallScope {
   readonly time: number;
   readonly signal: AbortSignal;
   describe(signal: AbortSignal): Promise<{ groupName?: string; nickname?: string; operatorName?: string }>;
-  notifyOwners(summary: MessageReply, body: RecallTextBody, nickname: string | undefined, signal: AbortSignal): Promise<void>;
+  notifyOwners(summary: MessageReply, body: RecallTextBody, nickname: string | undefined, signal: AbortSignal,
+    followup?: MessageReply): Promise<void>;
 }
 
 type RecallFace = { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };

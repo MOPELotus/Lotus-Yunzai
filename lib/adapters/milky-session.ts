@@ -689,7 +689,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             const groupName = record(group) && group.group_id === peer_id ? memberDisplayName(group.group_name) : undefined;
             return { groupName, nickname: author?.name, operatorName: operator?.name };
           },
-          async notifyOwners(summary, original, nickname, active) {
+          async notifyOwners(summary, original, nickname, active, followup) {
+            if (followup !== undefined) {
+              await notifyVerifiedOwnerReplies(summary, active, followup);
+              return;
+            }
             const messages = encodeMilkyForward([original], sender_id, nickname ?? String(sender_id));
             if (active.aborted || !messages) return;
             const friends = await listCurrentFriends(active);

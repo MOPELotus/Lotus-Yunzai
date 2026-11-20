@@ -248,6 +248,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if (action === "send_private_message") milkyPrivateHistory.set(milkyCalls.length, params);
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
+      if (action === "send_private_message" && JSON.stringify(params.message).includes("撤回群号：96") &&
+          JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && omitFriendVoiceReceipt && JSON.stringify(params.message).includes("好友账号：43") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：97") &&
@@ -2333,6 +2335,43 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
     expect(oneBotCalls.slice(voiceRecallStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
       params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { groupRecall: true }\n');
+    const groupVoiceStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const originalGroupVoice = oneBotMessage(oneBotVoice.message, 42, 82);
+    send(originalGroupVoice);
+    const groupVoiceRecall = { ...oneBotGroupRecall, message_id: originalGroupVoice.message_id };
+    client.send(JSON.stringify({ ...groupVoiceRecall, group_id: 84 }));
+    client.send(JSON.stringify(groupVoiceRecall));
+    client.send(JSON.stringify(groupVoiceRecall));
+    const groupVoiceHeader = await waitUntil(() => oneBotCalls.slice(groupVoiceStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("特殊消息：[语音]")), "OneBot 群撤回缺原音摘要。");
+    expect(JSON.stringify(groupVoiceHeader.params.message)).toContain("撤回群号：82");
+    const groupVoiceReply = await waitUntil(() => oneBotCalls.slice(groupVoiceStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64)), "OneBot 群撤回缺独立原音。");
+    expect(oneBotCalls.indexOf(groupVoiceReply)).toBeGreaterThan(oneBotCalls.indexOf(groupVoiceHeader));
+    expect(groupVoiceReply.params.message).toEqual(voiceRecallAudio.params.message);
+
+    const milkyOriginalGroupVoice = (groupId: number) => ({
+      ...milkyTitle("", 54), peer_id: groupId, segments: audioEvent(groupId, "original-voice", expiredVoiceUrl).segments,
+    });
+    const groupVoice = milkyOriginalGroupVoice(79);
+    await webhook("message_receive", groupVoice);
+    await webhook("message_recall", { ...milkyGroupRecall, message_seq: groupVoice.message_seq });
+    const refMilkyVoice = await waitUntil(() => milkyCalls.slice(groupVoiceStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64)),
+      "Milky 群撤回缺独立原音。");
+    expect(refMilkyVoice.params.message).toEqual(milkyVoiceRecallAudio.params.message);
+    const unknownVoice = milkyOriginalGroupVoice(96);
+    await webhook("message_receive", unknownVoice);
+    await webhook("message_recall", { ...milkyGroupRecall, peer_id: 96, message_seq: unknownVoice.message_seq });
+    await waitUntil(() => milkyCalls.slice(groupVoiceStart.milky).find(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes("撤回群号：96") && JSON.stringify(params.message).includes("特殊消息：[语音]")),
+      "Milky 群撤回没有发出待验证缺回执的语音摘要。");
+    await Bun.sleep(100);
+    expect(milkyCalls.slice(groupVoiceStart.milky).filter(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+    expect(oneBotCalls.slice(groupVoiceStart.oneBot).some(({ action }) => action === "send_private_forward_msg")).toBe(false);
   } finally {
     socket?.close();
     host?.kill();
