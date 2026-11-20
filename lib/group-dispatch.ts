@@ -1,6 +1,7 @@
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { isGroupJoinReviewInput } from "./group-join-review.ts";
+import { groupModerationSession } from "./adapters/group-moderation.ts";
 import type { BotEvent, MessageEvent } from "./messages.ts";
 
 const defaults = { groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"] };
@@ -178,6 +179,8 @@ export async function readGroupDispatch(root: URL) {
     if (event.message_id !== undefined) {
       if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
         duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      } else if (!event.msg && groupModerationSession(event)?.memberMessage?.readImageMd5) {
+        duplicate = `${event.adapter ?? "onebot"}:image:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (event.adapter === "milky" && event.file) {
         duplicate = `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       }

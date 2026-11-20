@@ -4,7 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority,
+import { bindGroupModeration, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -569,6 +569,7 @@ async function dispatchMessage(
       canModerate: active => checkRole(active, userId),
       act: active => calls.kickGroupMember(send, target.group_id, userId, active),
       memberMessage: nativeId === undefined ? undefined : {
+        readImageMd5: bindSingleGroupImageDigest(incoming.message),
         canAct: active => checkRole(active, userId, false),
         botCanAct: active => checkRole(active),
         mute: (seconds, active) => calls.setGroupMute(send, target.group_id, userId, seconds, active),

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { maxChatFileBytes, readQqMessageMedia } from "../chat-files.ts";
 import type { createGroupJoinReview, JoinRequestOrigin } from "../group-join-review.ts";
 import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
@@ -147,6 +148,16 @@ async function readMessageMedia(part: InboundSegment, signal: AbortSignal) {
   const url = typeof part.url === "string" ? part.url
     : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
   return readQqMessageMedia(url, signal);
+}
+
+export function bindSingleGroupImageDigest(source: MessageEvent["message"]) {
+  if (typeof source === "string") return;
+  const content = source.filter(part => part.type !== "text" || typeof part.text !== "string" || part.text.trim());
+  const image = content.length === 1 && content[0]?.type === "image" ? content[0] : undefined;
+  if (image) return async (signal: AbortSignal) => {
+    const bytes = await readMessageMedia(image, signal);
+    if (bytes && !signal.aborted) return createHash("md5").update(bytes).digest("hex");
+  };
 }
 
 async function buildGroupNotice(parts: readonly InboundSegment[], source: MessageEvent["message"], signal: AbortSignal) {
@@ -358,6 +369,7 @@ interface GroupModerationSession {
   readonly act?: (signal: AbortSignal, reason?: string) => Promise<GroupModerationResult>;
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
   readonly memberMessage?: {
+    readImageMd5?(signal: AbortSignal): Promise<string | undefined>;
     canAct(signal: AbortSignal): Promise<boolean>;
     botCanAct(signal: AbortSignal): Promise<boolean>;
     mute(seconds: number, signal: AbortSignal): Promise<GroupModerationResult>;

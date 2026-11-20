@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ const token = "group-admin-mute-fixture";
 type Call = { readonly action: string; readonly params: Record<string, unknown> };
 const noticeImageUrl = "https://gchat.qpic.cn/download?fixture=notice";
 const noticeImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR42mNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==";
+const imageDigest = createHash("md5").update(Buffer.from(noticeImageBase64, "base64")).digest("hex");
 
 async function waitUntil<T>(read: () => T | undefined, description: string): Promise<T> {
   const until = performance.now() + 3_500;
@@ -108,6 +110,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? { notifications: [{ group_id: 79, notification_seq: 901,
           type: "invited_join_request", initiator_id: 72, target_user_id: 74, state: milkyJoinState }] }
+        : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
           content: "合成 Milky 公告 👩‍👩‍👧‍👧", image_url: "https://example.test/image",
@@ -817,6 +820,39 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await announcementReply("已删除「合成 Milky 公告 👩‍👩‍👧‍👧」");
     expect(milkyCalls.filter(({ action }) => action === "delete_group_announcement").map(({ params }) => params))
       .toEqual([{ group_id: 79, announcement_id: "opaque-milky" }]);
+
+    const imageRule = (separator: string) => ({
+      [`{image${separator}${imageDigest.toUpperCase()}}`]: { matchType: 1, penaltyType: 3 },
+    });
+    await writeFile(join(legacyRules, "82.json"), JSON.stringify({ bannedWords: imageRule(":") }));
+    const milkyRulesFile = join(root, "data/group/banned-words/79.json");
+    const milkyRules = JSON.parse(await readFile(milkyRulesFile, "utf8"));
+    await writeFile(milkyRulesFile, JSON.stringify({ ...milkyRules, bannedWords: { ...milkyRules.bannedWords, ...imageRule("_") } }));
+    const rawDigest = `{image:${imageDigest.toUpperCase()}}`;
+    const forgedMarker = oneBotMessage(rawDigest, 54, 82);
+    send(forgedMarker);
+    const oneBotImage = oneBotMessage([embeddedImage], 54, 82);
+    send(oneBotImage);
+    await groupReplyWith("触发违禁词：[图片]");
+    send(oneBotImage);
+    expect(oneBotCalls.filter(({ action, params }) => action === "delete_msg" &&
+      (params.message_id === forgedMarker.message_id || params.message_id === oneBotImage.message_id)).map(({ params }) => params))
+      .toEqual([{ message_id: oneBotImage.message_id }]);
+
+    const imageEvent = (resource_id: string) => ({ ...milkyTitle("", 54), segments: [{ type: "image", data: { resource_id } }] });
+    const missingImage = imageEvent("missing-picture");
+    await webhook("message_receive", missingImage);
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "missing-picture"),
+      "Milky 未尝试查询原图片资源。");
+    const matchedImage = imageEvent("matched-picture");
+    await webhook("message_receive", matchedImage);
+    await announcementReply("触发违禁词：[图片]");
+    await webhook("message_receive", matchedImage);
+    expect(milkyCalls.filter(({ action, params }) => action === "recall_group_message" &&
+      (params.message_seq === missingImage.message_seq || params.message_seq === matchedImage.message_seq)).map(({ params }) => params))
+      .toEqual([{ group_id: 79, message_seq: matchedImage.message_seq }]);
+    expect(milkyCalls.filter(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "matched-picture"))
+      .toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

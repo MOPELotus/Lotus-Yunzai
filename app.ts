@@ -718,19 +718,25 @@ if (import.meta.main) {
 
   async function handleGroupBannedWords(source: MessageEvent, text: string): Promise<boolean> {
     const registration = groupBannedWords;
-    if (!registration || source.message_type !== "group" || source.isDelegated || !text) return false;
+    if (!registration || source.message_type !== "group" || source.isDelegated) return false;
     const { self_id: bot, group_id: group, user_id: user, message_id } = source;
     if (!bot || !group || !user || message_id === undefined) return false;
     const transport = groupModerationSession(source);
     if (!transport?.memberMessage || !transport.act) return false;
     const { memberMessage, act } = transport;
+    if (!text && !memberMessage.readImageMd5) return false;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
     const active = () => !signal.aborted && bot !== user &&
       !masterPermissions.isMaster(bot, user) && !masterPermissions.legacyMasterIds().includes(user);
     if (!active()) return false;
     const key = moderatedMessageKey(source);
     if (moderatedMessages.has(key)) return true;
-    const match = () => registration.policy.match(group, user, text, signal).catch(() => undefined);
+    let imageDigest: Promise<string | undefined> | undefined;
+    const readImage = !text && memberMessage.readImageMd5 ? (current: AbortSignal) => imageDigest ??= (async () => {
+      if (!active() || !await memberMessage.canAct(current).catch(() => false) || !active()) return;
+      return memberMessage.readImageMd5?.(current);
+    })() : undefined;
+    const match = () => registration.policy.match(group, user, text, signal, readImage).catch(() => undefined);
     if (!await match() || !active() || !await memberMessage.canAct(signal).catch(() => false) || !active()) return false;
     const rule = await match();
     if (!rule || !active()) return false;

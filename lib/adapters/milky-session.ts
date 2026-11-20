@@ -3,7 +3,7 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
+import { bindGroupModeration, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -100,6 +100,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           canModerate: active => checkRole(active, user_id),
           async act(active) { return (await call.confirmed("kick_group_member", { group_id, user_id }, active)).status; },
           memberMessage: message_id === undefined ? undefined : {
+            readImageMd5: bindSingleGroupImageDigest(event.message),
             canAct: active => checkRole(active, user_id, false),
             botCanAct: active => checkRole(active),
             async mute(duration, active) {
