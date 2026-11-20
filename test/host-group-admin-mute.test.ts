@@ -2142,6 +2142,45 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     } }]);
     expect(milkyCalls.slice(milkyRecallPictureStart).filter(({ action, params }) =>
       action === "get_resource_temp_url" && params.resource_id === "matched-picture")).toHaveLength(1);
+
+    const oneBotMixedRecall = oneBotMessage([
+      text("OneBot 撤回图前"), oneBotFace, ...tempOneBotImage.message, text("OneBot 撤回图后"),
+    ], 42, 82);
+    send(oneBotMixedRecall);
+    client.send(JSON.stringify({ ...oneBotGroupRecall, message_id: oneBotMixedRecall.message_id }));
+    const mixedOneBotForward = await waitUntil(() => oneBotCalls.find(({ action, params }) =>
+      action === "send_private_forward_msg" && params.user_id === 52 && JSON.stringify(params.messages).includes("OneBot 撤回图后")),
+      "群撤回的图文没有从原群发给主人。");
+    expect(mixedOneBotForward.params.messages).toMatchObject([{ type: "node", data: { uin: "42", content: [
+      text("OneBot 撤回图前"), oneBotFace, { type: "image", data: { file: `base64://${noticeImageBase64}` } }, text("OneBot 撤回图后"),
+    ] } }]);
+
+    const milkyPrivatePicture = (segments: unknown[]) => ({ ...milkyPrivate("", 43), segments });
+    const mixedMilkyPicture = milkyPrivatePicture([
+      tempText("Milky 撤回图前"), tempFace, tempImage("matched-picture"), tempText("Milky 撤回图后"),
+    ]);
+    await webhook("message_receive", mixedMilkyPicture);
+    await webhook("message_recall", { ...milkyRecall, message_seq: mixedMilkyPicture.message_seq });
+    const mixedMilkyRecall = await milkyOwnerReply(operator, "Milky 撤回图后");
+    expect((mixedMilkyRecall.params.message as unknown[]).slice(-4)).toEqual([
+      tempText("Milky 撤回图前"), tempFace, { type: "image", data: { uri: `base64://${noticeImageBase64}`, sub_type: "normal" } },
+      tempText("Milky 撤回图后"),
+    ]);
+    const skippedMixedStart = milkyCalls.length;
+    for (const bypassed of [
+      milkyPrivatePicture([tempText("authkey="), tempImage("sensitive-recall-image"), tempText("masked-test-value")]),
+      milkyPrivatePicture([tempText("缺图时不能发送这段"), tempImage("matched-picture"), tempImage("unavailable-recall-image")]),
+    ]) {
+      await webhook("message_receive", bypassed);
+      await webhook("message_recall", { ...milkyRecall, message_seq: bypassed.message_seq });
+    }
+    await waitUntil(() => milkyCalls.slice(skippedMixedStart).find(({ action, params }) =>
+      action === "get_resource_temp_url" && params.resource_id === "unavailable-recall-image"), "缺图撤回用例没有查询资源。");
+    await Bun.sleep(100);
+    expect(milkyCalls.slice(skippedMixedStart).filter(({ action }) => action === "get_resource_temp_url")
+      .map(({ params }) => params.resource_id)).toEqual(["matched-picture", "unavailable-recall-image"]);
+    expect(milkyCalls.slice(skippedMixedStart).some(({ action, params }) =>
+      action === "send_private_message" && /缺图时不能发送这段|masked-test-value/u.test(JSON.stringify(params.message)))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

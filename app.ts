@@ -11,7 +11,7 @@ import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
-import { readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
+import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -1244,21 +1244,24 @@ if (import.meta.main) {
   }
 
   function recallCaptureContent(message: MessageEvent["message"], signal: AbortSignal) {
-    if (typeof message !== "string" && message.length === 1 && message[0]?.type === "image") {
-      const image = message[0];
-      return async (): Promise<RecallBody | undefined> => {
-        if (signal.aborted || activeRecallImageReads >= 4) return;
-        activeRecallImageReads++;
-        try {
-          const file = await readQqMessageSegmentMedia(image, signal);
-          if (file && !signal.aborted) return [{ type: "image", file }];
-        } finally {
-          activeRecallImageReads--;
-        }
-      };
-    }
     const body = readRecallBody(message);
-    if (body !== undefined && !isPrivateCredentialMessage(recallNoticeInput(body).text)) return body;
+    if (body !== undefined) {
+      if (!isPrivateCredentialMessage(recallNoticeInput(body).text)) return body;
+      return;
+    }
+    if (typeof message === "string" || !message.some(part => part.type === "image")) return;
+    const readParts = readMessageNoticeBody(message, signal)?.readParts;
+    if (!readParts) return;
+    return async (): Promise<RecallBody | undefined> => {
+      if (signal.aborted || activeRecallImageReads >= 4) return;
+      activeRecallImageReads++;
+      try {
+        const parts = await readParts();
+        if (!signal.aborted) return parts;
+      } finally {
+        activeRecallImageReads--;
+      }
+    };
   }
 
   function recallNoticeInput(body: RecallBody) {
