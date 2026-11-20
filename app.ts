@@ -294,7 +294,7 @@ if (import.meta.main) {
   const pendingFriendNotices = new Set<string>();
   const friendNoticeHints = new Map<string, number>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
-  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice") {
+  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice" | "owner-friend-reply") {
     const redis = globalThis.redis;
     if (!redis) return;
     const namespace = (key: string) => `lotus-yunzai:${feature}:${key}`;
@@ -313,6 +313,7 @@ if (import.meta.main) {
   const invitationReview = createRequestClaim(() => requestStorage("group-invitation-review"));
   const invitationReceipts = createMilkyInvitationReceipts(() => requestStorage("group-invitation-review"));
   const friendNoticeReceipts = createFriendMessageReceipts(() => requestStorage("friend-message-notice"));
+  const ownerFriendReplyClaim = createRequestClaim(() => requestStorage("owner-friend-reply"));
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1703,6 +1704,7 @@ if (import.meta.main) {
     const { hostname, oneBot, https, panelToken } = network;
     const groupActions = {
       friendNoticeReceipts: probingUpdate ? undefined : friendNoticeReceipts,
+      ownerFriendReplyClaim: probingUpdate ? undefined : ownerFriendReplyClaim,
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       canModeratePrivateGroup: (bot: number, group: number) => !stopping && handoff.accepting && !dispatchPower.paused &&
         groupDispatch.allowsScheduledGroup(bot, group, privateGroupNames),

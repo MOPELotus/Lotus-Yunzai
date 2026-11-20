@@ -17,6 +17,7 @@ import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encode
 import { OneBotMutes } from "./onebot-mutes.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
+import type { createRequestClaim } from "../request-claim.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,6 +69,7 @@ interface ConnectionData {
 interface OwnerNoticeOptions {
   readonly masterIds?: (bot: number) => readonly number[];
   readonly friendNoticeReceipts?: FriendMessageReceipts;
+  readonly ownerFriendReplyClaim?: ReturnType<typeof createRequestClaim>;
 }
 
 function attachmentSize(value: unknown): number | undefined {
@@ -422,8 +424,12 @@ async function dispatchMessage(
     ? groupActions?.groupWorkflowSignal?.() : undefined;
   const ownerSignal = privateGroupSignal && attachmentSession && !noticeAttachment
     ? AbortSignal.any([privateGroupSignal, attachmentSession.signal]) : undefined;
+  const ownerFriendReplyClaim = groupActions?.ownerFriendReplyClaim;
   const ownerFriendReply = ownerSignal && selfId !== undefined ? bindOwnerFriendReply({
     account: selfId, signal: ownerSignal, isOwner: () => isMaster(selfId, userId), source: incoming.message,
+    claimDelivery: ownerFriendReplyClaim && messageId !== undefined ? sendReply => ownerFriendReplyClaim({
+      adapter: "onebot", botId: selfId, flag: `${userId}:${messageId}`,
+    }, sendReply) : undefined,
     isFriend: (target, active) => calls.isFriend(send, target, active),
     async send(target, reply, active) {
       const encoded = encodeOneBotReply(typeof reply === "string" ? [reply] : reply);

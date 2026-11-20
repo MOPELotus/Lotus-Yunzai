@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { bindOwnerFriendReply } from "../lib/adapters/owner-friend-reply.ts";
+import { createRequestClaim, type RequestScope } from "../lib/request-claim.ts";
 
 test("好友身份读取期间停机或撤销主人权限后不继续发送", async () => {
   const lookup = Promise.withResolvers<boolean>();
@@ -34,4 +35,35 @@ test("图文回复在取得消息段后再次核对好友关系", async () => {
   expect(await reply(42, [{ sourceIndex: 1 }])).toBe("not-friend");
   expect(reads).toBe(2);
   expect(writes).toBe(0);
+});
+
+test("未知好友回复只占同一协议和账号的原主人消息，跨进程不会重发", async () => {
+  const claims = new Map<string, string>();
+  const storage = {
+    async claim(key: string, value: string) {
+      if (claims.has(key)) return false;
+      claims.set(key, value);
+      return true;
+    },
+    async release(key: string, value: string) {
+      if (claims.get(key) === value) claims.delete(key);
+    },
+  };
+  const scope = { adapter: "milky", botId: 99, flag: "51:18" } as const;
+  let sent = 0;
+  const reply = (selection: RequestScope = scope) => {
+    const claim = createRequestClaim(() => storage);
+    return bindOwnerFriendReply({
+      account: selection.botId, signal: new AbortController().signal, isOwner: () => true, source: "#回复42 一条消息",
+      isFriend: async () => true,
+      send: async () => { sent++; return "unknown"; },
+      claimDelivery: deliver => claim(selection, deliver),
+    });
+  };
+  expect(await reply()(42, "实际提交")).toBe("unknown");
+  expect(await reply()(42, "重启后收到同一消息")).toBe("unknown");
+  expect(sent).toBe(1);
+  expect(await reply({ ...scope, adapter: "onebot" })(42, "另一个协议")).toBe("unknown");
+  expect(await reply({ ...scope, botId: 100 })(42, "另一个账号")).toBe("unknown");
+  expect(sent).toBe(3);
 });

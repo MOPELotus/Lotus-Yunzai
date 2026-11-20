@@ -1,5 +1,6 @@
 import { maxChatFileBytes, readQqMessageSegmentMedia } from "../chat-files.ts";
 import type { MessageEvent, MessageReply } from "../messages.ts";
+import type { RequestDecisionOutcome } from "../request-claim.ts";
 
 export type OwnerFriendReplyBody = string | readonly (string | { readonly sourceIndex: number })[];
 export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable" | "unsupported";
@@ -9,6 +10,7 @@ interface OwnerFriendReplySession {
   readonly signal: AbortSignal;
   readonly isOwner: () => boolean;
   readonly source: MessageEvent["message"];
+  readonly claimDelivery?: (perform: () => Promise<RequestDecisionOutcome>) => Promise<RequestDecisionOutcome>;
   isFriend(userId: number, signal: AbortSignal): Promise<boolean | undefined>;
   send(userId: number, message: MessageReply, signal: AbortSignal): Promise<"confirmed" | "rejected" | "unknown">;
 }
@@ -46,8 +48,13 @@ export function bindOwnerFriendReply(session: OwnerFriendReplySession) {
     const friend = await lookup();
     if (!active() || friend === undefined) return "unavailable";
     if (!friend) return "not-friend";
+    const deliver = (message: MessageReply) => {
+      const send = async (): Promise<RequestDecisionOutcome> =>
+        active() ? session.send(userId, message, signal).catch(() => "unknown") : "unavailable";
+      return session.claimDelivery ? session.claimDelivery(send) : send();
+    };
     if (typeof body === "string") {
-      return body.trim() ? session.send(userId, body, signal).catch(() => "unknown") : "unsupported";
+      return body.trim() ? deliver(body) : "unsupported";
     }
     const parts = await readReplyParts(body, session.source, signal);
     if (!active()) return "unavailable";
@@ -55,6 +62,6 @@ export function bindOwnerFriendReply(session: OwnerFriendReplySession) {
     const stillFriend = await lookup();
     if (!active() || stillFriend === undefined) return "unavailable";
     if (!stillFriend) return "not-friend";
-    return session.send(userId, parts, signal).catch(() => "unknown");
+    return deliver(parts);
   };
 }

@@ -41,6 +41,7 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly invitationReview?: ReturnType<typeof createRequestClaim>;
   readonly invitationReceipts?: ReturnType<typeof createMilkyInvitationReceipts>;
   readonly friendNoticeReceipts?: FriendMessageReceipts;
+  readonly ownerFriendReplyClaim?: ReturnType<typeof createRequestClaim>;
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
@@ -691,8 +692,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const workflowSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
     const privateGroupSignal = canReview && message?.sub_type === "friend" && !message.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
     const ownerSignal = privateGroupSignal && AbortSignal.any([signal, privateGroupSignal]);
+    const { friendNoticeReceipts, ownerFriendReplyClaim } = options;
+    const ownerMessageId = message?.message_id;
     const ownerFriendReply = ownerSignal && message && positiveId(cardOwner) ? bindOwnerFriendReply({
       account, signal: ownerSignal, isOwner: () => isMaster(cardOwner), source: message.message,
+      claimDelivery: ownerFriendReplyClaim && hasMessageSequence(ownerMessageId) ? sendReply => ownerFriendReplyClaim({
+        adapter: "milky", botId: account, flag: `${cardOwner}:${ownerMessageId}`,
+      }, sendReply) : undefined,
       async isFriend(userId, active) {
         const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
         const friends = result.status === "confirmed" ? result.data.friends : undefined;
@@ -701,7 +707,6 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       },
       send: (user_id, reply, active) => sendConfirmed({ user_id }, reply, undefined, active),
     }) : undefined;
-    const { friendNoticeReceipts } = options;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
