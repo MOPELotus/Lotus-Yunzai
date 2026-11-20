@@ -280,6 +280,7 @@ export async function loadPlugins(
         register(policy: GroupLeaveBlacklist): () => void;
       };
     };
+    readonly memeRuntime?: import("../../plugins/meme/catalog-runtime.ts").MemeRuntime;
     readonly profileLikeImages?: {
       readonly directory: string;
       register(renderer: ProfileLikeImage): () => void;
@@ -452,12 +453,14 @@ export async function loadPlugins(
         const group = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupServices : undefined;
         const atlasUpdate = builtIn && moduleName === "@lotus-yunzai/atlas" ? options.atlasUpdate : undefined;
         const guidesSchedule = builtIn && moduleName === "@lotus-yunzai/guides" ? options.guidesSchedule : undefined;
+        const memeRuntime = builtIn && moduleName === "@lotus-yunzai/meme" ? options.memeRuntime : undefined;
         const notice = builtIn && moduleName === "@lotus-yunzai/notice" ? options.noticeServices : undefined;
         const module = create ? await create(Object.freeze({ ...services, ...group,
           signal: notice ? AbortSignal.any([signal, notice.disconnect]) : signal,
           ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
           ...(guidesSchedule && { guidesSchedule }),
+          ...(memeRuntime && { memeRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule } = record(module);
         if (dispose !== undefined) {

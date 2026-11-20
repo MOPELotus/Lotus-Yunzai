@@ -2713,6 +2713,10 @@ if (import.meta.main) {
           },
         },
       },
+      memeRuntime: probingUpdate ? undefined : {
+        whenReady: whenModuleTasksActive,
+        registerTask: (cron, run) => registerModuleTask("[meme] 自动更新表情包数据", cron, run),
+      },
       profileLikeImages: probingUpdate ? undefined : {
         directory: likeAssets,
         register(renderer) {
