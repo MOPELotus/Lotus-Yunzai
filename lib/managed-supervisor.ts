@@ -13,6 +13,7 @@ import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpda
 import { stageUpdate } from "./update-staging.ts";
 import { readManagedHttpsPaths } from "./update-https-paths.ts";
 import { readUpdateRuntimePaths } from "./update-runtime-paths.ts";
+import { readWebMountUpdatePaths, WebMountUpdateError } from "./update-web-mount.ts";
 
 type Worker = ReturnType<typeof spawnManagedWorker>;
 type StopSignal = "SIGINT" | "SIGTERM";
@@ -127,6 +128,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       const statePaths = async () => [
         ...await readUpdateRuntimePaths(root, signal, options.env ?? process.env),
         ...await readManagedHttpsPaths(rootUrl),
+        ...await readWebMountUpdatePaths(rootUrl),
       ];
       transition = switchWorker(stage, statePaths, async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
@@ -238,8 +240,9 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       candidate.activate();
       current = candidate;
       return "updated" as const;
-    } catch {
+    } catch (error) {
       if (!stopped) {
+        if (error instanceof WebMountUpdateError) console.warn(`[更新] ${error.message}`);
         console.warn(candidate ? "[更新] 候选宿主未能完成交接，正在恢复原版本。" : "[更新] 文件切换失败，正在恢复原版本。");
       }
       await candidate?.stop(stopped);

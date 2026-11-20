@@ -125,6 +125,11 @@ function httpsSettings(value: unknown, auth: Headers, oneBotAuth?: Headers): Pic
   }
 }
 
+export async function readServerWebMount(root: URL): Promise<WebMountSettings | undefined> {
+  const config = await readLocalConfig(root, "server");
+  return webMountSettings(config.web_mount);
+}
+
 export async function readServerHttpsPaths(root: URL): Promise<Pick<HttpsListener, "key" | "cert"> | undefined> {
   const config = await readLocalConfig(root, "server");
   return httpsSettings(config.https, new Headers()).https;

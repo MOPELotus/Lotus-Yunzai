@@ -119,6 +119,7 @@ import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { previousUpdateDirectory } from "./lib/update-activation.ts";
 import { verifyMovedHttpsPaths } from "./lib/update-https-paths.ts";
 import { verifyMovedRuntimePaths } from "./lib/update-runtime-paths.ts";
+import { verifyMovedWebMount } from "./lib/update-web-mount.ts";
 import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
@@ -1847,7 +1848,11 @@ if (import.meta.main) {
         return undefined;
       }),
     ]);
-    if (previous) await verifyMovedHttpsPaths(fileURLToPath(root), previous, network.https);
+    if (previous) {
+      const directory = fileURLToPath(root);
+      await verifyMovedHttpsPaths(directory, previous, network.https);
+      await verifyMovedWebMount(directory, previous, network.webMount);
+    }
     const canRefresh = accountScopePermission(globalConfig, "checkin.refresh");
     const canRegisterCheckin = accountScopePermission(globalConfig, "checkin.register");
     const canRegisterGroup = accountScopePermission(globalConfig, "checkin.group_register");
