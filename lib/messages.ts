@@ -4,7 +4,8 @@ import { delegationSession, type DelegationSession } from "./command-delegation.
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupKickAction, GroupManageBlacklistAction, GroupMuteAction,
-  GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction, MutedGroupMember } from "./adapters/group-moderation.ts";
+  GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
+  MutedGroupMember } from "./adapters/group-moderation.ts";
 
 export interface MusicCard {
   readonly type: "163" | "qq" | "kugou" | "kuwo" | "migu";
@@ -54,6 +55,7 @@ export interface MessageEvent {
   readonly likeSelf?: (count: number) => Promise<number>;
   readonly mentionLike?: MentionLikeTarget;
   readonly groupMute?: GroupMuteAction;
+  readonly groupMuteSelf?: GroupMuteSelfAction;
   readonly groupWholeMute?: GroupWholeMuteAction;
   readonly groupKick?: GroupKickAction;
   readonly groupManageBlacklist?: GroupManageBlacklistAction;

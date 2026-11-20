@@ -3,6 +3,7 @@ import type { GroupNotice, GroupRequest, MessageEvent, MessageReply } from "../m
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
 export type GroupMuteAction = (userId: number, seconds: number) => Promise<GroupMemberModerationResult>;
+export type GroupMuteSelfAction = (seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
 export type GroupKickAction = (userId: number, block: boolean) => Promise<GroupMemberModerationResult>;
 export type GroupManageBlacklistAction = () => Promise<boolean>;
@@ -103,6 +104,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   groupSetSpecialTitle: GroupSpecialTitleAction;
   groupSetAdmin: GroupSetAdminAction;
   groupSetQuotedEssence?: GroupSetQuotedEssenceAction;
+  groupMuteSelf: GroupMuteSelfAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -195,6 +197,15 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (!await canManage("list")) return "unavailable";
       return apply(() => essence.write(enabled));
     } : undefined,
+    async groupMuteSelf(seconds) {
+      if (!active()) return "unavailable";
+      if (!isMemberMuteDuration(seconds) || seconds === 0) return "rejected";
+      if (actor === bot || isProtected(actor)) return "protected";
+      const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
+      if (!active() || !actorRole || !botRole || botRole === "member") return "unavailable";
+      if (isProtected(actor) || actorRole === "owner" || (actorRole === "admin" && botRole !== "owner")) return "protected";
+      return apply(() => mute(actor, seconds));
+    },
   };
 }
 

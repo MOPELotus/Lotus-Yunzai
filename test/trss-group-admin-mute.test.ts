@@ -563,6 +563,32 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.filter(({ action }) => action === "set_group_essence_message").map(({ params }) => params)).toEqual([
       { group_id: 79, message_seq: 402, is_set: true }, { group_id: 79, message_seq: 402, is_set: false },
     ]);
+
+    const muteSelf = oneBotMessage("#我要自闭", 54, 82);
+    send(muteSelf);
+    await groupReplyWith("那我就不手下留情了");
+    send(muteSelf);
+    send(oneBotMessage("#我要禅定二分钟", 52, 82));
+    await groupReplyWith("别自闭啦");
+    updateRole({ group_id: 79, user_id: 53 }, true);
+    const protectedSelf = oneBotReplies().length;
+    send(oneBotMessage("#我要自闭五秒", 53, 79));
+    expect(JSON.stringify((await oneBotReply(protectedSelf + 1)).params.message)).toContain("别自闭啦");
+    expect(oneBotMuted().filter(({ group_id, duration }) => (group_id === 82 || group_id === 79) && duration === 300))
+      .toEqual([{ group_id: 82, user_id: 54, duration: 300 }]);
+
+    updateRole({ group_id: 79, user_id: 56 }, true);
+    const selfReplies = milkyCalls.filter(({ action }) => action === "send_group_message").length;
+    await webhook("message_receive", milkyTitle("我要禅定二分钟", 56));
+    expect(JSON.stringify((await milkyReply(selfReplies + 1)).params.message)).toContain("那我就不手下留情了");
+    const unknownSelf = milkyTitle("#我要自闭15秒", 44);
+    await webhook("message_receive", unknownSelf);
+    expect(JSON.stringify((await milkyReply(selfReplies + 2)).params.message)).toContain("未确认");
+    await webhook("message_receive", unknownSelf);
+    expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.group_id === 79 &&
+      (params.duration === 120 || params.duration === 15)).map(({ params }) => params)).toEqual([
+      { group_id: 79, user_id: 56, duration: 120 }, { group_id: 79, user_id: 44, duration: 15 },
+    ]);
   } finally {
     socket?.close();
     host?.kill();

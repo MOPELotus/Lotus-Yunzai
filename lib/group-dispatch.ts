@@ -22,7 +22,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶小助手", ["[group] 群名片"]],
   ["椰奶点赞", ["[group] 资料卡点赞"]],
   ["椰奶群管-基础", ["[group] 群禁言", "[group] 群成员移出", "[group] 群头衔", "[group] 群管理员", "[group] 群禁言列表",
-    "[group] 从未发言成员", "[group] 群成员活动排行", "[group] 群精华"]],
+    "[group] 从未发言成员", "[group] 群成员活动排行", "[group] 群精华", "[group] 自助禁言"]],
   ["椰奶群管-黑白名单", ["[group] 群管黑名单", "[group] 群管白名单"]],
   ["椰奶群管-违禁词", ["[group] 违禁词", "[group] 头衔屏蔽词"]],
   ["复读", ["主动复读"]],

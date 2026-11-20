@@ -5,7 +5,7 @@ export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
-    "profileLikeImageSignal" | "groupMute" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
+    "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
@@ -88,7 +88,7 @@ interface RegisteredCommand {
 }
 
 function commandContext(context: CommandContext): CommandContext {
-  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupWholeMute, groupKick,
+  const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
@@ -101,6 +101,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     ...(message_type === "group" && !isDelegated && mentionLike ? { mentionLike } : {}),
     ...(message_type === "group" && !isDelegated && groupMute ? { groupMute } : {}),
+    ...(message_type === "group" && !isDelegated && groupMuteSelf ? { groupMuteSelf } : {}),
     ...(message_type === "group" && !isDelegated && groupWholeMute ? { groupWholeMute } : {}),
     ...(message_type === "group" && !isDelegated && groupKick ? { groupKick } : {}),
     ...(message_type === "group" && !isDelegated && groupManageBlacklist ? { groupManageBlacklist } : {}),
