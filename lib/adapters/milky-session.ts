@@ -3,7 +3,8 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts, bindSingleGroupImageDigest, canModerateGroupSubject,
+import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
+  bindPrivateGroupMute, bindSingleGroupImageDigest, canModerateGroupSubject,
   groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type LiveGroupMember, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
@@ -18,6 +19,7 @@ import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
+import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 
 type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
@@ -265,7 +267,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted || active.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
     if (member.role === "member" || member.role === "admin" || member.role === "owner") {
       const last = member.last_sent_time;
-      return { role: member.role, joinTime: positiveId(member.join_time) ? member.join_time : undefined,
+      return { role: member.role, name: memberDisplayName(member.card) || memberDisplayName(member.nickname),
+        joinTime: positiveId(member.join_time) ? member.join_time : undefined,
         lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
     }
   }
@@ -430,9 +433,19 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const quoted = typeof message?.reply_id === "string" ? Number(message.reply_id) : message?.reply_id;
     const lookupReply = message?.lookupReply;
     const workflowSignal = positiveId(groupId) && !message?.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
+    const privateGroupSignal = canReview && message?.sub_type === "friend" && !message.attachmentOnly ? options.groupWorkflowSignal?.() : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      privateGroupMute: privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup
+        ? bindPrivateGroupMute({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
+          master: () => isMaster(cardOwner), protectedMember: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),
+          allowed: groupId => options.canModeratePrivateGroup?.(account, groupId) === true,
+          member: liveGroupMember,
+          async mute(group_id, user_id, duration, active) {
+            return (await call.confirmed("set_group_member_mute", { group_id, user_id, duration }, active)).status;
+          },
+        }) : undefined,
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,

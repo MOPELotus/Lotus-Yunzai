@@ -144,7 +144,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const baseline = liveMember(params);
     const key = `${params.group_id}:${params.user_id}`;
     return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key),
-      last_sent_time: memberLastSentTimes.get(key) };
+      last_sent_time: memberLastSentTimes.get(key), ...(key === "88:55" ? { card: "合成私聊名片" } : {}),
+      ...(key === "88:52" ? { group_id: 89 } : {}) };
   }
   function updateRole(params: Call["params"], enabled: unknown) {
     rosterChanges.set(`${params.group_id}:${params.user_id}`, enabled === true ? "admin" : "member");
@@ -195,8 +196,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
     });
     await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告]}\n");
+    await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\ndisablePrivate: true\n');
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告, 椰奶私聊群管]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
     const legacyList = join(legacyDirectory, "groupAdmin.yaml");
@@ -1072,6 +1073,39 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await announcementReply("批量验证结束，已确认向 1 人发送题目");
     expect(milkyCalls.some(({ action, params }) => action === "send_group_message" &&
       JSON.stringify(params.message).includes('"user_id":77') && JSON.stringify(params.message).includes("欢迎！"))).toBe(false);
+
+    const oneBotPrivate = (message: string, user_id = 52) => ({ post_type: "message", message_type: "private", sub_type: "friend",
+      message_id: ++sequence, self_id: oneBotId, user_id, message, raw_message: message });
+    const ownerReplyWith = (value: string) => waitUntil(() => oneBotReplies().find(({ params }) =>
+      params.message_type === "private" && params.user_id === 52 && JSON.stringify(params.message).includes(value)),
+      `OneBot 主人私聊未收到 ${value}`);
+    client.send(JSON.stringify(oneBotPrivate("#禁言 88 55 二分钟")));
+    await ownerReplyWith("合成私聊名片");
+    expect(oneBotMuted().filter(({ group_id }) => group_id === 88)).toEqual([{ group_id: 88, user_id: 55, duration: 120 }]);
+    expect(oneBotCalls.some(({ action, params }) => action === "get_group_member_info" && params.group_id === 88 && params.user_id === 52)).toBe(false);
+    client.send(JSON.stringify(oneBotPrivate("#禁言 87 55 60秒")));
+    await ownerReplyWith("无法");
+    expect(oneBotMuted().filter(({ group_id }) => group_id === 87)).toHaveLength(0);
+
+    const milkyPrivate = (message: string, sender_id = operator) => ({ message_scene: "friend", sender_id, peer_id: sender_id,
+      message_seq: ++sequence, segments: [text(message)] });
+    const milkyOwnerReply = (userId: number, value: string) => waitUntil(() => milkyCalls.find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === userId && JSON.stringify(params.message).includes(value)),
+      `Milky 私聊未收到 ${value}`);
+    await webhook("message_receive", milkyPrivate("#禁言 79 68 60秒", 52));
+    await milkyOwnerReply(52, "私聊功能已禁用");
+    expect(milkyCalls.some(({ action, params }) => action === "set_group_member_mute" && params.user_id === 68)).toBe(false);
+    updateRole({ group_id: 79, user_id: operator }, false);
+    await webhook("message_receive", milkyPrivate("#解禁 79 51"));
+    await milkyOwnerReply(operator, "解除禁言");
+    expect(milkyCalls.some(({ action, params }) => action === "set_group_member_mute" && params.group_id === 79 &&
+      params.user_id === operator && params.duration === 0)).toBe(true);
+    const uncertainPrivateMute = milkyPrivate("#禁言 79 44 14秒");
+    await webhook("message_receive", uncertainPrivateMute);
+    await milkyOwnerReply(operator, "结果未确认");
+    await webhook("message_receive", uncertainPrivateMute);
+    expect(milkyCalls.filter(({ action, params }) => action === "set_group_member_mute" && params.group_id === 79 &&
+      params.user_id === 44 && params.duration === 14)).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

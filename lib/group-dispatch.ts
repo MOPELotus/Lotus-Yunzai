@@ -31,6 +31,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶群管-群公告", ["[group] 群公告"]],
   ["椰奶群管-投票", ["[group] 群投票"]],
   ["椰奶群管-入群验证", ["[group] 入群验证"]],
+  ["椰奶私聊群管", ["[group] 私聊群管"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],

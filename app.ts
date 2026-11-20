@@ -129,6 +129,7 @@ const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/grou
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
+const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
 const calendarScheduleNames = ["[guides] 定时日历", "guides", "@lotus-yunzai/guides"];
 const gachaExpectationNames = ["[gacha] 抽卡期望", gachaExpectationModuleName];
 const processFeatureNames = ["进程管理", "system", systemModuleName];
@@ -1605,6 +1606,8 @@ if (import.meta.main) {
     const { hostname, oneBot, https, panelToken } = network;
     const groupActions = {
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
+      canModeratePrivateGroup: (bot: number, group: number) => !stopping && handoff.accepting && !dispatchPower.paused &&
+        groupDispatch.allowsScheduledGroup(bot, group, privateGroupNames),
       joinReview: probingUpdate ? undefined : groupJoinReview,
       groupWorkflowSignal: probingUpdate ? undefined : () => nativeOperationSignal(),
       isProtectedMaster: (bot: number, user: number) =>

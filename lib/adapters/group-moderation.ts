@@ -71,6 +71,7 @@ export function readGroupActivity(members: unknown, scope: {
 
 export interface GroupActionPolicy {
   readonly canModerateGroups?: () => boolean;
+  readonly canModeratePrivateGroup?: (bot: number, group: number) => boolean;
   readonly isProtectedMaster?: (bot: number, user: number) => boolean;
   readonly onMemberMute?: (notice: MemberMuteNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
@@ -97,8 +98,39 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 type Role = "member" | "admin" | "owner";
 export interface LiveGroupMember {
   readonly role: Role;
+  readonly name?: string;
   readonly joinTime?: number;
   readonly lastSentTime?: number;
+}
+
+export type PrivateGroupMute = (groupId: number, userId: number, seconds: number) => Promise<{
+  readonly status: GroupModerationResult | "unavailable" | "protected";
+  readonly memberName?: string;
+}>;
+
+export function bindPrivateGroupMute({ bot, signal, master, protectedMember, allowed, member, mute }: {
+  bot: number;
+  signal: AbortSignal;
+  master: () => boolean;
+  protectedMember: (user: number) => boolean;
+  allowed: (group: number) => boolean;
+  member: (group: number, user: number, signal: AbortSignal) => Promise<LiveGroupMember | undefined>;
+  mute: (group: number, user: number, seconds: number, signal: AbortSignal) => Promise<GroupModerationResult>;
+}): PrivateGroupMute {
+  return async (group, user, seconds) => {
+    if (!Number.isSafeInteger(group) || group <= 0 || !Number.isSafeInteger(user) || user <= 0 || !isMemberMuteDuration(seconds)) {
+      return { status: "rejected" };
+    }
+    const active = () => !signal.aborted && master() && allowed(group);
+    const protectedTarget = () => user === bot || seconds > 0 && protectedMember(user);
+    if (!active()) return { status: "unavailable" };
+    if (protectedTarget()) return { status: "protected" };
+    const [botState, target] = await Promise.all([member(group, bot, signal), member(group, user, signal)]).catch(() => []);
+    if (!active() || !botState || botState.role === "member" || !target) return { status: "unavailable" };
+    if (protectedTarget() || target.role === "owner" || (target.role === "admin" && botState.role !== "owner")) return { status: "protected" };
+    try { return { status: await mute(group, user, seconds, signal), memberName: target.name }; }
+    catch { return { status: "unknown" }; }
+  };
 }
 
 export interface GroupVerificationScope {

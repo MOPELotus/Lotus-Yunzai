@@ -5,7 +5,7 @@ import { segment, type BotEvent, type FriendPoke, type FriendRequest, type Group
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
-  bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
+  bindPrivateGroupMute, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -392,6 +392,8 @@ async function dispatchMessage(
     ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
   const joinReview = groupActions?.joinReview;
   const workflowSignal = likeSession ? groupActions?.groupWorkflowSignal?.() : undefined;
+  const privateGroupSignal = owner && boundAccount && messageType === "private" && event.sub_type === "friend" && selfId !== undefined
+    ? groupActions?.groupWorkflowSignal?.() : undefined;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -419,6 +421,13 @@ async function dispatchMessage(
     boundAccount,
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
       ? attachmentSession?.signal : undefined,
+    privateGroupMute: privateGroupSignal && attachmentSession && selfId !== undefined && groupActions?.canModeratePrivateGroup
+      ? bindPrivateGroupMute({ bot: selfId, signal: AbortSignal.any([privateGroupSignal, attachmentSession.signal]),
+        master: () => isMaster(selfId, userId), protectedMember: id => groupActions.isProtectedMaster?.(selfId, id) ?? isMaster(selfId, id),
+        allowed: groupId => groupActions.canModeratePrivateGroup?.(selfId, groupId) === true,
+        member: (groupId, id, active) => calls.getLiveGroupMember(send, groupId, id, true, active),
+        mute: (groupId, id, seconds, active) => calls.setGroupMute(send, groupId, id, seconds, active),
+      }) : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
       (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,

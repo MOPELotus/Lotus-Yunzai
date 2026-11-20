@@ -283,7 +283,8 @@ export class OneBotCalls {
       const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") {
         const last = result.last_sent_time;
-        return { role, joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined,
+        return { role, name: memberDisplayName(result.card) || memberDisplayName(result.nickname),
+          joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined,
           lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
       }
     } catch {
