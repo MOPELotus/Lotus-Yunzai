@@ -421,6 +421,48 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
 
 test.skipIf(!Bun.which("git"))("托管 #更新 应用宿主候选并只向原私聊发送一次成功回执", () => exerciseUpdate(false), 35_000);
 
+test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载失败会回退", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-retained-plugin-"));
+  try {
+    const { active, old, localPlugin, writer } = await fixtureRepository(temporary, false);
+    await writeFile(join(localPlugin, "index.ts"), `
+      if (Bun.env.FIXTURE_RETAINED_PLUGIN_FAILURE === "1") throw new Error("fixture retained plugin load failure");
+      export default { commands: { "#保留插件样本": () => "原插件可用" } };
+    `);
+    git(localPlugin, "add", "index.ts");
+    git(localPlugin, "commit", "--quiet", "-m", "Fixture retained plugin command");
+    const app = join(writer, "app.ts");
+    const source = await readFile(app, "utf8");
+    await writeFile(app, `
+      if (Bun.env.LOTUS_MANAGED_HELD === "1") Bun.env.FIXTURE_RETAINED_PLUGIN_FAILURE = "1";
+      ${source}
+    `);
+    git(writer, "add", "app.ts");
+    git(writer, "commit", "--quiet", "-m", "Fixture retained plugin fails during handoff");
+    git(writer, "push", "--quiet", "origin", "main");
+
+    const supervisor = bootSupervisor(active);
+    async function checkPlugin(client: Gateway) {
+      client.command("#保留插件样本", 51);
+      expectText(await client.next(), { user_id: 51 }, /^原插件可用$/u);
+    }
+    try {
+      const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "插件测试宿主未启动。"), 99);
+      await checkPlugin(first);
+      first.command("#更新", 51);
+      expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
+      const restored = await supervisor.open(await deadline(supervisor.nextEndpoint(), "插件更新后未恢复宿主。", 16_000), 99);
+      expectText(await restored.next(), { user_id: 51 }, /已恢复旧版本/u);
+      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+      await checkPlugin(restored);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 35_000);
+
 async function exerciseTlsUpdate(fault?: "bind" | "wss") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));
   try {

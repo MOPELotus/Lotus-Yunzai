@@ -109,15 +109,11 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       const revision = ready.scope === "all" ? ready.host.candidate : ready.scope === "install" ? stage.revision : ready.candidate;
       const repositories = ready.scope === "all"
         ? Number(ready.host.current !== ready.host.candidate || ready.host.force === true) + ready.plugins.size : undefined;
-      let expectedPlugins: readonly string[] | undefined;
-      if (ready.scope === "all") {
-        const installed = new Set(await readdir(join(stage.directory, "plugins")));
-        expectedPlugins = [...directories.keys()].filter((name) => installed.has(name));
-      } else if (ready.scope === "plugin") {
-        expectedPlugins = [ready.name];
-      } else if (ready.scope === "install") {
-        expectedPlugins = [...directories.keys(), ready.plugin.name];
-      }
+      // An update can affect the retained plugins regardless of which repository was requested.
+      const stagedPlugins = ready.scope === "install" ? undefined : new Set(await readdir(join(stage.directory, "plugins")));
+      const expectedPlugins = new Set([...directories.keys()].filter(name => !stagedPlugins || stagedPlugins.has(name)));
+      if (ready.scope === "plugin") expectedPlugins.add(ready.name);
+      if (ready.scope === "install") expectedPlugins.add(ready.plugin.name);
       if (stopped || signal.aborted || current !== worker) return;
       report("switching");
       const target = request.target;
@@ -153,7 +149,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         if (saved.some((item) => item.status === "rejected")) {
           console.warn(`${log} 部分会话的操作回执未能保存。`);
         }
-      }, expectedPlugins).finally(() => { transition = undefined; });
+      }, [...expectedPlugins]).finally(() => { transition = undefined; });
       const outcome = await transition;
       if (request.force && outcome === "updated" && archived) {
         console.log(`[更新] 强制更新前的工作区保存在 ${JSON.stringify(archived)}。`);
