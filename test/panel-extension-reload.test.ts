@@ -105,6 +105,8 @@ test("经过面板鉴权的扩展重扫原子切换目录与 API，在途调用�
     expect(await initial?.json()).toEqual({
       pages: [{ id: "same", plugin: "loaded", title: "旧动态扩展", priority: 100 }], issues: [],
     });
+    expect((await request("/panel/api/extensions/same/open?plugin=other", "POST"))?.status).toBe(404);
+    expect((await request("/panel/api/extensions/same/open?plugin=loaded", "POST"))?.status).toBe(200);
     const old = await open();
     const oldToken = old.searchParams.get("token") ?? "";
     expect(await (await routes.assets(new Request(old)))?.text()).toContain("旧页面");

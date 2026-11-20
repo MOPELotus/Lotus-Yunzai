@@ -141,12 +141,15 @@ async function load(page?: ExtensionPage, rescan = false) {
   active = controller;
   busy.value = page ? "open" : "list";
   error.value = "";
+  let reopen: ExtensionPage | undefined;
   if (page) {
     selected.value = page;
     clearFrame();
   }
   try {
-    const path = page ? `${endpoint}/${encodeURIComponent(page.id)}/open` : rescan ? `${endpoint}/reload` : endpoint;
+    const path = page
+      ? `${endpoint}/${encodeURIComponent(page.id)}/open?${new URLSearchParams({ plugin: page.plugin })}`
+      : rescan ? `${endpoint}/reload` : endpoint;
     const response = await fetch(path, {
       method: page || rescan ? "POST" : "GET",
       headers: { Authorization: `Bearer ${props.token}` },
@@ -183,9 +186,11 @@ async function load(page?: ExtensionPage, rescan = false) {
         return;
       }
       catalog.value = { pages: data.pages, issues: data.issues };
-      const opened = rescan ? undefined : data.pages.find(({ id }) => id === selected.value?.id);
-      if (!opened || opened.plugin !== selected.value?.plugin) clearFrame();
+      const previous = selected.value;
+      const opened = previous && data.pages.find(({ id, plugin }) => id === previous.id && plugin === previous.plugin);
+      if (rescan || !opened) clearFrame();
       selected.value = opened;
+      if (rescan) reopen = opened;
     }
   } catch {
     if (active === controller) error.value = "暂时无法连接宿主，请重试。";
@@ -196,6 +201,7 @@ async function load(page?: ExtensionPage, rescan = false) {
       busy.value = undefined;
     }
   }
+  if (reopen) await load(reopen);
 }
 
 watch(() => props.token, () => {

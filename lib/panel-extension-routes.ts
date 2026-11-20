@@ -80,7 +80,8 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     const { registry, generation } = current;
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
-    if (!page) return new Response(null, { status: 404 });
+    const plugin = new URL(request.url).searchParams.get("plugin");
+    if (!page || (plugin !== null && plugin !== page.plugin)) return new Response(null, { status: 404 });
     const expires = nextExpiry();
     const ticket = mint(generation, "asset", id, expires);
     const url = `${assetRoot}/${id}/${ticket}/${page.src ? escapedPath(page.src) : ""}`;
