@@ -392,7 +392,9 @@ export class OneBotCalls {
       const role = result.role;
       if (role === "member" || role === "admin" || role === "owner") {
         const last = result.last_sent_time;
-        return { role, name: memberDisplayName(result.card) || memberDisplayName(result.nickname),
+        const card = memberDisplayName(result.card);
+        const nickname = memberDisplayName(result.nickname);
+        return { role, name: card || nickname, nickname, card,
           joinTime: isPositiveInteger(result.join_time) ? result.join_time : undefined,
           lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
       }

@@ -12,6 +12,7 @@ import type { GroupBannedWords } from "../../plugins/group/banned-words.ts";
 import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendRelationshipNotice, FriendRequestNotice, GroupAddNotice, GroupRecallNotice, GroupVerification,
   TemporaryMessageNotice } from "../../plugins/group/index.ts";
 import type { GroupLeaveBlacklist, GroupLeaveBlacklistIO } from "../../plugins/group/group-leave-blacklist.ts";
+import type { GroupOwnerMemberNotice } from "../../plugins/group/group-owner-member-notice.ts";
 import type { CalendarSchedule, CalendarScheduleOptions } from "../../plugins/guides/calendar-schedule.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ExecuteService } from "../../plugins/execute/index.ts";
@@ -251,6 +252,7 @@ export async function loadPlugins(
       registerFriendPokeNotice?(policy: FriendPokeNotice): () => void;
       registerFriendRecallNotice?(policy: FriendRecallNotice): () => void;
       registerGroupRecallNotice?(policy: GroupRecallNotice): () => void;
+      registerGroupOwnerMemberNotice?(policy: GroupOwnerMemberNotice): () => void;
       registerGroupVerification?(policy: GroupVerification): () => void;
       readonly groupLeaveBlacklist: {
         readonly io: GroupLeaveBlacklistIO;

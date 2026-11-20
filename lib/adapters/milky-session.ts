@@ -530,7 +530,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted || active.aborted || !record(member) || member.group_id !== group_id || member.user_id !== user_id) return;
     if (member.role === "member" || member.role === "admin" || member.role === "owner") {
       const last = member.last_sent_time;
-      return { role: member.role, name: memberDisplayName(member.card) || memberDisplayName(member.nickname),
+      const card = memberDisplayName(member.card);
+      const nickname = memberDisplayName(member.nickname);
+      return { role: member.role, name: card || nickname, nickname, card,
         joinTime: positiveId(member.join_time) ? member.join_time : undefined,
         lastSentTime: typeof last === "number" && Number.isSafeInteger(last) && last >= 0 ? last : undefined };
     }
@@ -976,6 +978,24 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     });
     if (event?.post_type === "notice" && event.notice_type === "group") {
       const { group_id, user_id } = event;
+      if (user_id !== account && event.dismiss !== true) {
+        options.onGroupOwnerMemberNotice?.({ adapter: "milky", event, signal,
+          async describe(active) {
+            const [response, member] = await Promise.all([
+              call.confirmed("get_group_info", { group_id, no_cache: true }, active),
+              event.sub_type === "increase" ? liveGroupMember(group_id, user_id, active) : undefined,
+            ]);
+            const group = response.status === "confirmed" ? response.data.group : undefined;
+            const groupName = record(group) && group.group_id === group_id ? memberDisplayName(group.group_name) : undefined;
+            return { groupName, nickname: member?.nickname, card: member?.card };
+          },
+          async notifyOwners(reply, workflow) {
+            const active = AbortSignal.any([signal, workflow]);
+            const friends = await listCurrentFriends(active);
+            return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+          },
+        });
+      }
       bindGroupModeration(event, {
         signal,
         groupVerification: {

@@ -80,8 +80,17 @@ export interface GroupActionPolicy {
   readonly onFriendRecall?: (notice: NativeFriendRecallNotice) => void;
   readonly onGroupRecall?: (notice: NativeGroupRecallNotice) => void;
   readonly onGroupRecallSource?: (source: NativeGroupRecallSource) => void;
+  readonly onGroupOwnerMemberNotice?: (notice: NativeGroupOwnerMemberNotice) => void;
   readonly joinReview?: ReturnType<typeof createGroupJoinReview>;
   readonly groupWorkflowSignal?: () => AbortSignal;
+}
+
+export interface NativeGroupOwnerMemberNotice {
+  readonly adapter: "onebot" | "milky";
+  readonly event: GroupNotice;
+  readonly signal: AbortSignal;
+  describe(signal: AbortSignal): Promise<{ groupName?: string; nickname?: string; card?: string }>;
+  notifyOwners(reply: MessageReply, signal: AbortSignal): Promise<number>;
 }
 
 export interface MemberMuteNotice {
@@ -105,6 +114,8 @@ type Role = "member" | "admin" | "owner";
 export interface LiveGroupMember {
   readonly role: Role;
   readonly name?: string;
+  readonly nickname?: string;
+  readonly card?: string;
   readonly joinTime?: number;
   readonly lastSentTime?: number;
 }

@@ -257,7 +257,7 @@ async function dispatchGroupNotice(
   send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
-  isMaster: (bot: number, user: number) => boolean,
+  options: GroupActionPolicy & { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
   connection: ConnectionData,
 ): Promise<void> {
   const { notice_type, user_id, group_id, self_id, operator_id, time } = event;
@@ -317,7 +317,7 @@ async function dispatchGroupNotice(
     dismiss: typeof event.dismiss === "boolean" ? event.dismiss : undefined,
     isGroup: true,
     isPrivate: false,
-    isMaster: isId(operator_id) && isMaster(self_id, operator_id),
+    isMaster: isId(operator_id) && options.isMaster(self_id, operator_id),
     reply(reply) {
       const message = encodeOneBotReply(reply);
       if (message === undefined) return false;
@@ -325,6 +325,19 @@ async function dispatchGroupNotice(
     },
   };
   const session = groupActionSignal(connection, self_id);
+  if (session && user_id !== self_id && notice.dismiss !== true && action !== "disband") {
+    options.onGroupOwnerMemberNotice?.({ adapter: "onebot", event: notice, signal: session,
+      async describe(active) {
+        const [groupName, subject] = await Promise.all([
+          calls.getGroupName(send, group_id, active, true),
+          sub_type === "increase" && !member?.nickname ? calls.getLiveGroupMember(send, group_id, user_id, true, active) : undefined,
+        ]);
+        return { groupName, nickname: subject?.nickname ?? member?.nickname, card: subject?.card ?? member?.card };
+      },
+      notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
+        () => options.masterIds(self_id).filter(id => options.isMaster(self_id, id)), reply, AbortSignal.any([session, active])),
+    });
+  }
   if (session) bindGroupModeration(notice, {
     signal: session,
     groupVerification: {
@@ -981,7 +994,7 @@ export function startOneBot(
             } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
               await dispatchFriendPoke(dispatch, send, message, socket.data, options);
             } else {
-              await dispatchGroupNotice(dispatch, send, message, calls, options.isMaster, socket.data);
+              await dispatchGroupNotice(dispatch, send, message, calls, options, socket.data);
             }
           } else if (message.post_type === "request") {
             await dispatchRequest(dispatch, send, message, calls, options, socket.data);

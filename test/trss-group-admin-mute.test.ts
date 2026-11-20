@@ -1653,6 +1653,35 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await Bun.sleep(100);
     expect(oneBotReplies().filter(({ params }) => params.group_id === 89)).toHaveLength(previousSettingsReplies);
     expect(await readFile(noticeFile, "utf8")).toBe(savedSettings);
+
+    await writeFile(noticeFile, 'default: { groupMemberNumberChange: true }\n"bot:100:91": { groupMemberNumberChange: false }\n');
+    const oneBotMemberJoin = { post_type: "notice", notice_type: "group_increase", sub_type: "invite", self_id: oneBotId,
+      group_id: 90, user_id: 66, operator_id: 67, time: 1_700_000_023, member: { nickname: "原加入昵称", card: "原加入名片" } };
+    client.send(JSON.stringify(oneBotMemberJoin));
+    client.send(JSON.stringify(oneBotMemberJoin));
+    const ownerJoin = (await ownerReplyWith("新成员加入")).params.message;
+    expect(JSON.stringify(ownerJoin)).toContain("成员：原加入昵称（66）");
+    expect(JSON.stringify(ownerJoin)).toContain("名片：原加入名片");
+    expect(JSON.stringify(ownerJoin)).toContain("邀请人：67");
+    expect(typeof ownerJoin).toBe("string");
+    const welcome = await waitUntil(() => oneBotReplies().find(({ params }) => params.group_id === 90 &&
+      JSON.stringify(params.message).includes("欢迎加入")), "OneBot 旧群欢迎未发回原群。");
+    expect(welcome.params.user_id).toBeUndefined();
+    client.send(JSON.stringify({ ...oneBotMemberJoin, notice_type: "group_decrease", sub_type: "disband", group_id: 92, time: 1_700_000_024 }));
+
+    await webhook("group_member_decrease", { group_id: 90, user_id: 68 });
+    const ownerDeparture = (await milkyOwnerReply(operator, "⚪ 成员离开")).params.message;
+    expect(JSON.stringify(ownerDeparture)).toContain("群号：90");
+    expect(JSON.stringify(ownerDeparture)).toContain("成员：68");
+    expect(JSON.stringify(ownerDeparture)).not.toContain("操作人");
+    await webhook("group_member_increase", { group_id: 91, user_id: 69 });
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" && params.group_id === 91 &&
+      JSON.stringify(params.message).includes("欢迎加入")), "关闭主人通知的群仍应发送原群欢迎。");
+    await Bun.sleep(100);
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("新成员加入"))).toHaveLength(1);
+    expect(oneBotReplies().some(({ params }) => params.user_id === 52 && JSON.stringify(params.message).includes("群号：92"))).toBe(false);
+    expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
+      JSON.stringify(params.message).includes("群号：91"))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();
