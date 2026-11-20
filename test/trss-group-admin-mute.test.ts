@@ -890,7 +890,10 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
 
     const currentRules = JSON.parse(await readFile(milkyRulesFile, "utf8"));
     const twoImages = `{image_${imageDigest}}间隔${rawDigest}`;
-    await writeFile(milkyRulesFile, JSON.stringify({ ...currentRules, bannedWords: { ...currentRules.bannedWords, [twoImages]: mixedRule } }));
+    const substring = `边缘${rawDigest}保留`;
+    await writeFile(milkyRulesFile, JSON.stringify({ ...currentRules, bannedWords: {
+      ...currentRules.bannedWords, [twoImages]: mixedRule, [substring]: { matchType: 2, penaltyType: 3 },
+    } }));
     const mixedMedia = (first: string) => ({ ...milkyTitle("", 54), segments: [
       { type: "image", data: { resource_id: first } }, text("间隔"), { type: "image", data: { resource_id: "matched-picture" } },
     ] });
@@ -901,6 +904,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await waitUntil(() => milkyCalls.find(({ action, params }) => action === "recall_group_message" && params.message_seq === validMixed.message_seq),
       "Milky 同文不同原图的正确消息被遗漏。");
     expect(milkyCalls.some(({ action, params }) => action === "recall_group_message" && params.message_seq === invalidMixed.message_seq)).toBe(false);
+
+    const substringMedia = { ...milkyTitle("", 54), segments: [
+      text("前缀边缘"), { type: "image", data: { resource_id: "matched-picture" } }, text("保留尾部"),
+    ] };
+    await webhook("message_receive", substringMedia);
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "recall_group_message" && params.message_seq === substringMedia.message_seq),
+      "Milky 未命中收到的原图与前后文本子串。");
   } finally {
     socket?.close();
     host?.kill();
