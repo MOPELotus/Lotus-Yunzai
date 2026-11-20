@@ -32,7 +32,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["椰奶群管-投票", ["[group] 群投票"]],
   ["椰奶群管-入群验证", ["[group] 入群验证"]],
   ["椰奶私聊群管", ["[group] 私聊群管"]],
-  ["椰奶申请处理", ["[group] 加群申请列表", "[group] 引用加群审核"]],
+  ["椰奶申请处理", ["[group] 加群申请列表", "[group] 引用加群审核", "[group] 加群申请审核"]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
@@ -188,6 +188,8 @@ export async function readGroupDispatch(root: URL) {
     if (event.message_id !== undefined) {
       const member = groupModerationSession(event)?.memberMessage;
       if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
+        duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      } else if (event.groupReviewPendingJoin && /^#?(?:同意|拒绝)(?:加|入)?群申请\d+$/u.test(normalizePrefix(event.msg))) {
         duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (event.groupVote && /^#(?:(?:发起)?投票(?:禁言|踢人)|(?:支持|反对)投票)/u.test(normalizePrefix(event.msg))) {
         duplicate = `${event.adapter ?? "onebot"}:group-vote:${bot}:${group}:${user ?? ""}:${event.message_id}`;

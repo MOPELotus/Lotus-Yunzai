@@ -21,6 +21,11 @@ export interface PendingGroupJoinList {
   readonly complete: boolean;
 }
 
+export interface PendingGroupJoinDecision {
+  readonly status: JoinReviewOutcome | "not-found" | "ambiguous" | "risk" | "expired";
+  readonly nickname?: string;
+}
+
 interface JoinReviewKey {
   readonly adapter: Adapter;
   readonly botId: number;

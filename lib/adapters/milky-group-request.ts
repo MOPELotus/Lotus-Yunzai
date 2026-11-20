@@ -11,6 +11,12 @@ interface Callbacks {
 }
 
 type Decision = (accept: boolean, reason?: string) => { action: string; params: Record<string, unknown> } | undefined;
+type GroupRequestEvent = "group_join_request" | "group_invited_join_request" | "group_invitation";
+
+export function milkyGroupRequestFlag(bot: number, type: GroupRequestEvent, group: number, sequence: number, filtered: boolean) {
+  const digest = createHash("sha256").update(JSON.stringify([bot, type, group, sequence, filtered])).digest("hex");
+  return `milky:group:${digest}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -35,8 +41,7 @@ export function milkyGroupRequest(
   if (type === "group_join_request" && typeof data.is_filtered !== "boolean") return;
 
   const filtered = type === "group_join_request" && data.is_filtered === true;
-  const digest = createHash("sha256").update(JSON.stringify([selfId, type, groupId, sequence, filtered])).digest("hex");
-  const flag = `milky:group:${digest}`;
+  const flag = milkyGroupRequestFlag(selfId, type, groupId, sequence, filtered);
   const recipients = [...new Set(callbacks.masterIds.filter((id) => isId(id) && id !== selfId))];
   const decision: Decision = (accept, reason) => {
     if (typeof accept !== "boolean") return;

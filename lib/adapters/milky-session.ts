@@ -1,7 +1,7 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
-import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinEntry, type PendingGroupJoinList } from "../group-join-review.ts";
+import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
@@ -12,7 +12,7 @@ import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
 import { milkyFriendRequest } from "./milky-friend-request.ts";
-import { milkyGroupRequest } from "./milky-group-request.ts";
+import { milkyGroupRequest, milkyGroupRequestFlag } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
@@ -23,6 +23,8 @@ import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 
 type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
+type MilkyJoinOrigin = Extract<JoinRequestOrigin, { adapter: "milky" }>;
+type MilkyPendingJoin = PendingGroupJoinEntry & { readonly origin: MilkyJoinOrigin };
 
 export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly signal: AbortSignal;
@@ -227,14 +229,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       master: () => isMaster(actor), count, visibility });
   }
 
-  async function verifyPendingGroupJoin(origin: Extract<JoinRequestOrigin, { adapter: "milky" }>) {
+  async function verifyPendingGroupJoin(origin: MilkyJoinOrigin, active = signal) {
     if (origin.filtered) return "risk" as const;
     const visited = new Set<number>();
     let start_notification_seq: number | undefined;
-    for (let page = 0; page < 8 && !signal.aborted; page++) {
+    for (let page = 0; page < 8 && !active.aborted; page++) {
       const result = await call.confirmed("get_group_notifications", { is_filtered: false, limit: 50,
-        ...(start_notification_seq === undefined ? {} : { start_notification_seq }) });
-      if (result.status !== "confirmed" || !Array.isArray(result.data.notifications) || signal.aborted) break;
+        ...(start_notification_seq === undefined ? {} : { start_notification_seq }) }, active);
+      if (result.status !== "confirmed" || !Array.isArray(result.data.notifications) || active.aborted) break;
       const matching = result.data.notifications.filter((row: unknown): row is Record<string, unknown> =>
         record(row) && row.group_id === origin.groupId && row.notification_seq === origin.sequence);
       if (matching.length > 1) break;
@@ -256,9 +258,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return "unavailable" as const;
   }
 
-  async function listPendingGroupJoin(groupId: number, active: AbortSignal): Promise<PendingGroupJoinList | undefined> {
+  async function readPendingGroupJoins(groupId: number, active: AbortSignal) {
     async function readPages(is_filtered: boolean) {
-      const entries = new Map<string, PendingGroupJoinEntry>();
+      const entries = new Map<string, MilkyPendingJoin>();
       const conflicted = new Set<string>();
       const visited = new Set<number>();
       let start_notification_seq: number | undefined;
@@ -279,7 +281,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           }
           const direct = row.type === "join_request";
           const userId = direct ? row.initiator_id : row.target_user_id;
-          if (!positiveId(userId) || !positiveId(row.notification_seq) || (direct && row.is_filtered !== is_filtered)) {
+          if (!positiveId(userId) || !positiveId(row.initiator_id) || !positiveId(row.notification_seq) || (direct && row.is_filtered !== is_filtered)) {
             wellFormed = false;
             continue;
           }
@@ -290,8 +292,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             conflicted.add(key);
             entries.delete(key);
             wellFormed = false;
-          } else if (!previous) entries.set(key, { userId, risk: is_filtered,
-            comment: direct && typeof row.comment === "string" ? row.comment : undefined });
+          } else if (!previous) {
+            const filtered = direct && is_filtered;
+            entries.set(key, { userId, risk: is_filtered, comment: direct && typeof row.comment === "string" ? row.comment : undefined,
+              origin: { adapter: "milky", botId: account, groupId, userId, sequence: row.notification_seq, kind: row.type,
+                filtered, inviterId: direct ? undefined : row.initiator_id,
+                flag: milkyGroupRequestFlag(account, `group_${row.type}`, groupId, row.notification_seq, filtered) },
+            });
+          }
         }
         const next = result.data.next_notification_seq;
         if (next === undefined || next === null) { complete = wellFormed; break; }
@@ -313,6 +321,34 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     for (const key of conflicted) entries.delete(key);
     return { entries: [...entries.values()], complete: !conflicted.size && normal?.complete === true && filtered?.complete === true };
+  }
+
+  async function submitGroupJoin(origin: MilkyJoinOrigin, approve: boolean, active: AbortSignal) {
+    return (await call.confirmed(approve ? "accept_group_request" : "reject_group_request", {
+      group_id: origin.groupId, notification_seq: origin.sequence, notification_type: origin.kind, is_filtered: origin.filtered,
+    }, active)).status;
+  }
+
+  async function reviewPendingGroupJoin(groupId: number, actor: number, user: number, approve: boolean,
+    combined: AbortSignal): Promise<PendingGroupJoinDecision> {
+    if (!joinReview || !positiveId(user) || user === account || typeof approve !== "boolean") return { status: "unavailable" };
+    const active = () => !combined.aborted && options.canModerateGroups?.() !== false;
+    const authorized = () => groupOperatorAuthority(id => memberRole(groupId, id, combined), account, actor, () => isMaster(actor), active);
+    if (!await authorized()) return { status: "unavailable" };
+    const list = await readPendingGroupJoins(groupId, combined);
+    if (!active() || !list?.complete) return { status: "unavailable" };
+    const matches = list.entries.filter(entry => entry.userId === user);
+    if (!matches.length) return { status: "not-found" };
+    if (matches.some(entry => entry.risk)) return { status: "risk" };
+    const [selected] = matches;
+    if (matches.length !== 1 || !selected) return { status: "ambiguous" };
+    const pending = await verifyPendingGroupJoin(selected.origin, combined);
+    if (pending !== "pending") return { status: pending };
+    const status = await joinReview.once(selected.origin, async () => {
+      if (!await authorized() || !active()) return "unavailable";
+      return submitGroupJoin(selected.origin, approve, combined);
+    });
+    return { status, nickname: selected.nickname };
   }
 
   async function memberRole(group_id: number, user_id: number, active = signal) {
@@ -546,9 +582,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         const active = () => !combined.aborted && options.canModerateGroups?.() !== false;
         const authorize = () => groupMayReadPendingJoins(id => memberRole(groupId, id, combined), account, cardOwner, active);
         if (!await authorize()) return;
-        const list = await listPendingGroupJoin(groupId, combined);
-        if (list && await authorize()) return list;
+        const list = await readPendingGroupJoins(groupId, combined);
+        if (list && await authorize()) return { complete: list.complete, entries: list.entries.map(({ origin, ...entry }) => entry) };
       } : undefined,
+      groupReviewPendingJoin: workflowSignal && joinReview && positiveId(groupId) && positiveId(cardOwner)
+        ? (userId: number, approve: boolean) => reviewPendingGroupJoin(groupId, cardOwner, userId, approve, AbortSignal.any([workflowSignal, signal]))
+        : undefined,
       groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
         ? (approve: boolean) => {
           const active = () => !signal.aborted && options.canModerateGroups?.() !== false;
@@ -560,12 +599,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
                 () => isMaster(cardOwner), active) !== undefined;
             },
             verifyPending: origin => origin.adapter === "milky" ? verifyPendingGroupJoin(origin) : Promise.resolve("unavailable"),
-            async submit(origin) {
-              if (origin.adapter !== "milky") return "unavailable";
-              return (await call.confirmed(approve ? "accept_group_request" : "reject_group_request", {
-                group_id: groupId, notification_seq: origin.sequence, notification_type: origin.kind, is_filtered: origin.filtered,
-              }, signal)).status;
-            },
+            submit: origin => origin.adapter === "milky" ? submitGroupJoin(origin, approve, signal) : Promise.resolve("unavailable"),
           });
         } : undefined,
       likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,

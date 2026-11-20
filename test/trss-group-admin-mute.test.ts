@@ -161,6 +161,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     if (params.start_notification_seq === 890) return { notifications: [
       { group_id: 79, notification_seq: 889, type: "join_request", initiator_id: 75,
         state: "pending", is_filtered: false, comment: "合成第二页申请" },
+      { group_id: 79, notification_seq: 888, type: "join_request", initiator_id: 77, state: "pending", is_filtered: false },
+      { group_id: 79, notification_seq: 887, type: "join_request", initiator_id: 77, state: "pending", is_filtered: false },
     ] };
     return { notifications: [
       { group_id: 79, notification_seq: 903, type: "invited_join_request", initiator_id: 72, target_user_id: 78, state: "pending" },
@@ -1167,6 +1169,25 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const emptyJoinList = milkyTitle("#查看群申请", 54);
     await webhook("message_receive", { ...emptyJoinList, peer_id: 84, group_member: { ...emptyJoinList.group_member, group_id: 84 } });
     await announcementReply("暂无加群申请");
+
+    send(oneBotMessage("#同意加群申请70", operator, 82));
+    await groupReplyWith("请引用原加群通知或在 QQ 中处理");
+    expect(oneBotCalls.filter(({ action }) => action === "set_group_add_request")).toHaveLength(priorOneBotDecisions);
+    await webhook("message_receive", milkyTitle("#同意加群申请77", operator));
+    await announcementReply("多条待处理");
+    await webhook("message_receive", milkyTitle("#拒绝入群申请73", operator));
+    await announcementReply("风险账号");
+    const directDecision = milkyTitle("#同意加群申请75", operator);
+    await webhook("message_receive", directDecision);
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
+      /已同意.*75.*加群申请/u.test(JSON.stringify(params.message))), "Milky 未明确同意指定 QQ 的唯一待审申请。");
+    await webhook("message_receive", directDecision);
+    await webhook("message_receive", milkyTitle("#拒绝入群申请75", operator));
+    await announcementReply("加群申请处理结果未确认");
+    expect(milkyCalls.filter(({ action, params }) => (action === "accept_group_request" || action === "reject_group_request") &&
+      [887, 888, 889, 903, 991].includes(Number(params.notification_seq))).map(({ action, params }) => ({ action, params }))).toEqual([
+      { action: "accept_group_request", params: { group_id: 79, notification_seq: 889, notification_type: "join_request", is_filtered: false } },
+    ]);
   } finally {
     socket?.close();
     host?.kill();
