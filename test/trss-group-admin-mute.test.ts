@@ -170,6 +170,14 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       previous,
     ], next_notification_seq: 890 };
   }
+  function milkyFriendNotifications(isFiltered: unknown) {
+    const row = { initiator_id: 93, initiator_uid: "milky_fixture_sender", target_user_id: milkyId,
+      is_filtered: isFiltered, time: 1_704_038_405, state: "pending", via: "合成搜索", comment: "常规好友附言" };
+    return { requests: isFiltered ? [{ ...row, initiator_id: 94, initiator_uid: "milky_fixture_risk", comment: "风险好友附言" }] : [
+      row, { ...row, target_user_id: oneBotId, comment: "另一个账号的好友申请" },
+      { ...row, state: "accepted", comment: "已处理的好友审批" },
+    ] };
+  }
   const milky = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request) {
@@ -195,6 +203,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           group_name: `合成 Milky ${params.group_id}` } }
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? milkyJoinNotifications(params)
+        : action === "get_friend_requests" ? milkyFriendNotifications(params.is_filtered)
         : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
@@ -1176,6 +1185,34 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(invitationCalls()).toBe(beforeInvitations + 2);
     await webhook("message_receive", milkyPrivate("#查看群邀请"));
     await milkyOwnerReply(operator, "当前无法核验该机器人的群邀请");
+
+    const incomingFriend = { post_type: "request", request_type: "friend", sub_type: "add", self_id: oneBotId,
+      user_id: 95, flag: "onebot_fixture_friend_only", comment: "当前连接所见好友附言", time: 1_704_038_405 };
+    client.send(JSON.stringify(incomingFriend));
+    client.send(JSON.stringify(incomingFriend));
+    client.send(JSON.stringify({ ...incomingFriend, self_id: milkyId, comment: "越账号伪造好友附言" }));
+    client.send(JSON.stringify(oneBotPrivate("#查看好友申请")));
+    const oneBotFriendList = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("当前连接所见好友附言")), "OneBot 好友申请未送达机器人主人。");
+    const shownOneBotFriends = JSON.stringify(oneBotFriendList.params.messages);
+    expect(shownOneBotFriends).toContain("本次查到 1 条待处理好友申请");
+    expect(shownOneBotFriends).toContain("2024-01-01 00:00:05");
+    expect(shownOneBotFriends).not.toContain("越账号伪造好友附言");
+    expect(shownOneBotFriends).not.toContain(incomingFriend.flag);
+
+    await webhook("message_receive", milkyPrivate("#查看好友申请", 52));
+    await webhook("message_receive", milkyTitle("#查看好友申请", operator));
+    await webhook("message_receive", milkyPrivate("#查看全部好友申请"));
+    const shownMilkyFriends = JSON.stringify((await milkyOwnerReply(operator, "风险好友附言")).params.message);
+    expect(shownMilkyFriends).toContain("普通申请");
+    expect(shownMilkyFriends).toContain("合成搜索");
+    expect(shownMilkyFriends).toContain("常规好友附言");
+    expect(shownMilkyFriends).not.toContain("另一个账号的好友申请");
+    expect(shownMilkyFriends).not.toContain("已处理的好友审批");
+    expect(shownMilkyFriends).not.toContain("milky_fixture");
+    expect(milkyCalls.filter(({ action }) => action === "get_friend_requests").map(({ params }) => params)).toEqual([
+      { limit: 50, is_filtered: false }, { limit: 50, is_filtered: true },
+    ]);
 
     const priorOneBotDecisions = oneBotCalls.filter(({ action }) => action === "set_group_add_request").length;
     send(oneBotMessage("#查看加群申请", 54, 82));

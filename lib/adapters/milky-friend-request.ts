@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FriendRequest, MessageReply } from "../messages.ts";
+import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-requests.ts";
 
 type Approve = (flag: string, action: "accept_friend_request" | "reject_friend_request", params: Record<string, unknown>) =>
   Promise<boolean>;
@@ -16,6 +17,35 @@ function isId(value: unknown): value is number {
 function isOpaqueUid(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 4_096 && value.isWellFormed() &&
     !/[\s\u0000-\u001f\u007f-\u009f]/u.test(value);
+}
+
+export function milkyPendingFriendRequests(selfId: number, ordinary: unknown, filtered: unknown): PendingFriendRequestList | undefined {
+  const normal = isRecord(ordinary) && Array.isArray(ordinary.requests) ? ordinary.requests : undefined;
+  const risk = isRecord(filtered) && Array.isArray(filtered.requests) ? filtered.requests : undefined;
+  if (!normal && !risk) return;
+
+  const entries = new Map<string, PendingFriendRequest>();
+  const conflicted = new Set<string>();
+  for (const [rows, isFiltered] of [[normal, false], [risk, true]] as const) {
+    for (const row of rows ?? []) {
+      if (!isRecord(row) || row.target_user_id !== selfId || row.state !== "pending" || row.is_filtered !== isFiltered ||
+          !isId(row.initiator_id) || row.initiator_id === selfId || !isOpaqueUid(row.initiator_uid) || !isId(row.time)) continue;
+      const key = `${row.time}:${row.initiator_uid}`;
+      if (conflicted.has(key)) continue;
+      const previous = entries.get(key);
+      if (previous) {
+        if (previous.userId !== row.initiator_id || previous.risk !== isFiltered) {
+          entries.delete(key);
+          conflicted.add(key);
+        }
+        continue;
+      }
+      entries.set(key, { userId: row.initiator_id, time: row.time, risk: isFiltered,
+        source: typeof row.via === "string" ? row.via : undefined, comment: typeof row.comment === "string" ? row.comment : undefined });
+    }
+  }
+  // There is no cursor or total, even if both windows return fewer rows than requested.
+  return { entries: [...entries.values()].sort((left, right) => (right.time ?? 0) - (left.time ?? 0)), complete: false };
 }
 
 export function milkyFriendRequest(

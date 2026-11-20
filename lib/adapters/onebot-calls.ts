@@ -4,6 +4,7 @@ import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-displ
 import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
 import type { JoinRequestOrigin, PendingGroupJoinEntry, PendingGroupJoinList } from "../group-join-review.ts";
 import type { PendingGroupInvitation, PendingGroupInvitationList } from "../group-invitations.ts";
+import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-requests.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -34,6 +35,7 @@ function isPositiveInteger(value: unknown): value is number {
 export class OneBotCalls {
   readonly #requests = new Map<string, (response: ResponseValue) => void>();
   readonly #recalls = new Set<ReturnType<typeof setTimeout>>();
+  readonly #friendRequests = new Map<string, { entry: PendingFriendRequest; expires: number; reviewing: number; settled: boolean }>();
   #closed = false;
 
   async #request(send: Send, action: string, params: object, signal?: AbortSignal): Promise<unknown> {
@@ -260,11 +262,43 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "_del_group_notice", { group_id: String(groupId), notice_id }, signal);
   }
 
+  observeFriendRequest(flag: string, entry: PendingFriendRequest) {
+    const now = performance.now();
+    this.#pruneFriendRequests(now);
+    if (this.#friendRequests.has(flag)) return;
+    this.#friendRequests.set(flag, { entry, expires: now + 60 * 60 * 1_000, reviewing: 0, settled: false });
+    if (this.#friendRequests.size > 1_000) this.#friendRequests.delete(this.#friendRequests.keys().next().value!);
+  }
+
+  #pruneFriendRequests(now: number) {
+    for (const [flag, request] of this.#friendRequests) {
+      if (request.expires > now) break;
+      this.#friendRequests.delete(flag);
+    }
+  }
+
+  listObservedFriendRequests(): PendingFriendRequestList {
+    this.#pruneFriendRequests(performance.now());
+    const entries = [...this.#friendRequests.values()].filter(request => !request.settled && !request.reviewing).map(request => request.entry).reverse();
+    return { entries, complete: false };
+  }
+
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {
     if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512) {
       return false;
     }
-    return this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
+    const observed = this.#friendRequests.get(flag);
+    if (observed) observed.reviewing++;
+    try {
+      const confirmed = await this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
+      if (confirmed && observed) observed.settled = true;
+      return confirmed;
+    } catch (error) {
+      if (observed && !(error instanceof OneBotNotSentError)) observed.settled = true;
+      throw error;
+    } finally {
+      if (observed) observed.reviewing--;
+    }
   }
 
   async #confirmAction(send: Send, action: string, params: object): Promise<boolean> {

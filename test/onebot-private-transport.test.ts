@@ -88,3 +88,27 @@ test("需要回执的 OneBot 回复仅记录已确认的消息编号", async () 
   expect(await pending).toBe(false);
   expect(observed).toEqual([-49]);
 });
+
+test("好友申请窗口只显示当前连接观察到且未提交的普通申请", async () => {
+  const { calls, send, frames, confirm } = connection();
+  const entry = { userId: 42, comment: "原始附言" };
+  calls.observeFriendRequest("normal-flag", entry);
+  calls.observeFriendRequest("normal-flag", { userId: 43, comment: "重复事件" });
+  expect(calls.listObservedFriendRequests()).toEqual({ entries: [entry], complete: false });
+
+  const rejected = calls.reviewFriendRequest(send, "normal-flag", true);
+  expect(calls.listObservedFriendRequests().entries).toEqual([]);
+  confirm(frames[0]!, "failed", 100);
+  expect(await rejected).toBe(false);
+  expect(calls.listObservedFriendRequests().entries).toEqual([entry]);
+
+  const first = calls.reviewFriendRequest(send, "normal-flag", true);
+  const second = calls.reviewFriendRequest(send, "normal-flag", false);
+  confirm(frames[2]!);
+  expect(await second).toBe(true);
+  confirm(frames[1]!, "failed", 100);
+  expect(await first).toBe(false);
+  calls.observeFriendRequest("normal-flag", entry);
+  expect(calls.listObservedFriendRequests().entries).toEqual([]);
+  expect(connection().calls.listObservedFriendRequests()).toEqual({ entries: [], complete: false });
+});

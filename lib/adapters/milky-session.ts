@@ -11,7 +11,7 @@ import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationSco
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
-import { milkyFriendRequest } from "./milky-friend-request.ts";
+import { milkyFriendRequest, milkyPendingFriendRequests } from "./milky-friend-request.ts";
 import { milkyGroupRequest, milkyGroupRequestFlag } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
@@ -562,6 +562,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      listPendingFriendRequests: privateGroupSignal && positiveId(cardOwner) ? async () => {
+        const combined = AbortSignal.any([signal, privateGroupSignal]);
+        const active = () => !combined.aborted && isMaster(cardOwner);
+        if (!active()) return;
+        const [ordinary, filtered] = await Promise.all([false, true].map(async is_filtered => {
+          const result = await call.confirmed("get_friend_requests", { limit: 50, is_filtered }, combined);
+          return result.status === "confirmed" ? result.data : undefined;
+        }));
+        if (active()) return milkyPendingFriendRequests(account, ordinary, filtered);
+      } : undefined,
       ...(privateGroupSignal && positiveId(cardOwner) && options.canModeratePrivateGroup &&
         bindPrivateGroupActions({ bot: account, signal: AbortSignal.any([signal, privateGroupSignal]),
           master: () => isMaster(cardOwner), protectedMember: id => options.isProtectedMaster?.(account, id) ?? isMaster(id),

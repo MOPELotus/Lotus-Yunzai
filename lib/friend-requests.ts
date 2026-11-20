@@ -3,6 +3,20 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readLocalConfig } from "./config.ts";
 import type { FriendRequest } from "./messages.ts";
 
+export interface PendingFriendRequest {
+  readonly userId: number;
+  readonly nickname?: string;
+  readonly source?: string;
+  readonly time?: number;
+  readonly comment?: string;
+  readonly risk?: boolean;
+}
+
+export interface PendingFriendRequestList {
+  readonly entries: readonly PendingFriendRequest[];
+  readonly complete: boolean;
+}
+
 export async function readFriendRequests(root: URL, delayMs = 3_000) {
   const { autoFriend } = await readLocalConfig(root, "other");
   // Existing Lotus-Yunzai installations remain opt-in. TRSS shipped autoFriend: 1.

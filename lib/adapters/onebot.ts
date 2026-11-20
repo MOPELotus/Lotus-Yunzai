@@ -168,6 +168,9 @@ async function dispatchRequest(
 
   if (request_type === "friend") {
     if (self_id === user_id) return;
+    if (groupActionSignal(connection, self_id)) calls.observeFriendRequest(flag, {
+      userId: user_id, comment: stringField(event.comment), time: isId(event.time) ? event.time : undefined,
+    });
     await dispatch({
       ...common(), request_type, sub_type: "add", isGroup: false, isPrivate: true,
       approve: (approve = true, remark) => calls.reviewFriendRequest(send, flag, approve, remark),
@@ -526,6 +529,9 @@ async function dispatchMessage(
       if (!active()) return;
       const list = await calls.listPendingGroupInvitations(send, selfId, signal);
       if (active()) return list;
+    } : undefined,
+    listPendingFriendRequests: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment ? async () => {
+      if (!privateGroupSignal.aborted && !attachmentSession.signal.aborted && isMaster(selfId, userId)) return calls.listObservedFriendRequests();
     } : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
