@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderPng, type PngRender } from "./index.ts";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context } from "skia-canvas";
@@ -20,8 +20,13 @@ async function loadTheme(directory: string) {
   for (const [family, file] of [
     ["LotusStatusBody", "HYWH-65W.ttf"], ["LotusStatusMiSans", "MiSans-VF.ttf"],
   ] as const) {
-    const filename = join(directory, "fonts", file);
-    if (await Bun.file(filename).exists()) FontLibrary.use(family, [filename]);
+    const direct = join(directory, "fonts", file);
+    const candidates = file === "MiSans-VF.ttf" ? [direct, join(dirname(directory), "fonts", file)] : [direct];
+    for (const filename of candidates) {
+      if (!await Bun.file(filename).exists()) continue;
+      FontLibrary.use(family, [filename]);
+      break;
+    }
   }
   return loadImage(join(directory, "bg", "bg-hydro.webp")).catch(() => undefined);
 }
@@ -81,7 +86,8 @@ function localTime(date: Date, timeZone?: string) {
 }
 
 export async function renderStatusCard(title: string, lead: string, contents: readonly string[], at: Date,
-  { mode = "auto", scale = 4, themeDirectory = defaultTheme, timeZone }: StatusCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme,
+    timeZone }: StatusCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡卡片缩放比例须在 1 至 4 之间。");
   const background = await themeImage(themeDirectory);
   const metrics = new Canvas(1, 1);
