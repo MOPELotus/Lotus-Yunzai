@@ -48,6 +48,7 @@ test.skipIf(!executable)("恢复当地分支和非 origin 上游后，候选可�
   git(source, "branch", "-m", "local/managed");
   git(source, "remote", "rename", "origin", "managed");
   git(source, "remote", "add", "origin", "https://unused.example.invalid/traditional-origin");
+  git(source, "update-ref", "refs/remotes/managed/private", base);
   git(source, "config", "core.hooksPath", "/fixture/nonexistent/custom-hooks");
   const config = await readFile(join(source, ".git/config"));
   const sourceIndex = await readFile(join(source, ".git/index"));
@@ -57,19 +58,26 @@ test.skipIf(!executable)("恢复当地分支和非 origin 上游后，候选可�
   git(writer, "push", "--quiet", "origin", "release/next");
   const candidate = await fetchUpdateCandidate(source);
   expect(candidate).toMatchObject({ status: "ready", current: base, candidate: next });
-  if (!("release" in candidate)) throw new Error("expected local staged object");
+  if (!("release" in candidate) || !candidate.binding) throw new Error("expected verified upstream binding");
   try {
     await checkoutUpdateRevision(source, next, staged);
   } finally {
     await candidate.release();
   }
   const stageIndex = await readFile(join(staged, ".git/index"));
-  await restoreUpdateTracking(source, staged, base, next);
+  git(staged, "update-ref", "refs/remotes/managed/unrelated", base);
+  await expect(restoreUpdateTracking(source, staged, base, next, "0".repeat(64))).rejects.toThrow("上游已变更");
+  expect(git(staged, "branch", "--show-current")).toBe("");
+  await restoreUpdateTracking(source, staged, base, next, candidate.binding);
   expect(git(staged, "symbolic-ref", "HEAD")).toBe("refs/heads/local/managed");
   expect(git(staged, "rev-parse", "HEAD")).toBe(next);
   expect(git(staged, "config", "branch.local/managed.remote")).toBe("managed");
   expect(git(staged, "config", "branch.local/managed.merge")).toBe("refs/heads/release/next");
   expect(git(staged, "remote", "get-url", "managed")).toBe(upstream);
+  expect(git(staged, "rev-parse", "@{upstream}")).toBe(next);
+  expect(git(staged, "status", "--short", "--branch")).toBe("## local/managed...managed/release/next");
+  expect(git(staged, "for-each-ref", "--format=%(refname)", "refs/remotes")).toBe(
+    "refs/remotes/managed/release/next\nrefs/remotes/managed/unrelated");
   expect(await readFile(join(staged, ".git/config"), "utf8")).not.toContain("custom-hooks");
   expect(await readFile(join(staged, ".git/index"))).toEqual(stageIndex);
   expect(await readFile(join(source, ".git/config"))).toEqual(config);
@@ -82,6 +90,8 @@ test.skipIf(!executable)("恢复当地分支和非 origin 上游后，候选可�
   const subsequent = await fetchUpdateCandidate(staged);
   expect(subsequent).toMatchObject({ status: "ready", current: next, candidate: newest });
   if ("release" in subsequent) await subsequent.release();
+  git(staged, "pull", "--ff-only");
+  expect(git(staged, "rev-parse", "HEAD", "@{upstream}")).toBe(`${newest}\n${newest}`);
 }));
 
 test.skipIf(!executable)("分支或预期 SHA 变化时拒绝，保留候选的内容与 detached 状态", () => fixture(async (root) => {
@@ -123,5 +133,6 @@ test.skipIf(!executable)("恢复绑定使用候选已净化地址，拒绝带凭
   git(staged, "remote", "set-url", "origin", "https://example.invalid/repo");
   await restoreUpdateTracking(source, staged, revision, revision);
   expect(git(staged, "remote", "get-url", "admin-upstream")).toBe("https://example.invalid/repo");
+  expect(git(staged, "for-each-ref", "refs/remotes")).toBe("");
   expect(await readFile(join(staged, ".git/config"), "utf8")).not.toContain("fixture-only");
 }));

@@ -296,7 +296,8 @@ test.skipIf(noGit)("批量预检按最终集合校验插件身份，并释放所
   const result = await prepareAllUpdates(root, directories);
   if (result.status !== "ready") throw new Error(`批量预检失败：${JSON.stringify(result)}。`);
   try {
-    expect(result.host).toEqual({ directory: checkout, current: initialHeads[0]!, candidate: hostCandidate });
+    expect(result.host).toEqual({ directory: checkout, current: initialHeads[0]!, candidate: hostCandidate,
+      binding: await updateBindingFingerprint(createLocalGit()!, checkout) });
     expect([...result.plugins].map(([name, plugin]) => [name, plugin.candidate])).toEqual([
       ["first", firstCandidate], ["second", secondCandidate],
     ]);

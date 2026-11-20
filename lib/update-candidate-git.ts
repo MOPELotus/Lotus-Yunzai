@@ -165,7 +165,7 @@ export async function fetchUpdateCandidate(directory: string, signal?: AbortSign
         status = base === current ? "ready" : base === candidate ? "ahead" : "diverged";
       }
       signal?.throwIfAborted();
-      const binding = force && status === "ready" ? upstreamFingerprint(upstream) : undefined;
+      const binding = status === "ready" ? upstreamFingerprint(upstream) : undefined;
       handoff = true;
       return { status, current, candidate, ...(binding === undefined ? {} : { binding }), release };
     } finally {

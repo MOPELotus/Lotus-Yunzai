@@ -31,12 +31,10 @@ async function readActiveRevision(directory: string, signal?: AbortSignal, polic
   const git = createLocalGit();
   if (!git || !await isGitCheckout(git, directory)) throw new Error("无有效的 Git 工作区。");
   const [head, dirty] = await Promise.all([gitHead(git, directory), isUpdateWorktreeDirty(git, directory)]);
-  if (policy?.force) {
-    if (!policy.binding || await updateBindingFingerprint(git, directory) !== policy.binding) {
-      throw new Error("强制更新来源的分支或上游已变更。");
-    }
-    await verifyArchiveSource(git, directory);
+  if ((policy?.binding || policy?.force) && (!policy.binding || await updateBindingFingerprint(git, directory) !== policy.binding)) {
+    throw new Error("更新来源的分支或上游已变更。");
   }
+  if (policy?.force) await verifyArchiveSource(git, directory);
   signal?.throwIfAborted();
   if (!head || dirty === undefined || (dirty && !policy?.force)) throw new Error("Git 工作区存在修改或不可读。");
   return head;
@@ -342,7 +340,7 @@ export async function stageUpdate(
 
     phase = "恢复候选更新跟踪";
     signal?.throwIfAborted();
-    await restoreUpdateTracking(host, directory, hostHead, stagedHead);
+    await restoreUpdateTracking(host, directory, hostHead, stagedHead, hostTarget?.binding);
     for (const plugin of copies) {
       signal?.throwIfAborted();
       await restoreUpdateTracking(plugin.source, plugin.destination, plugin.head, plugin.stagedHead);

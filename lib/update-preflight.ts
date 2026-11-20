@@ -134,7 +134,7 @@ async function inspectCandidate(
   return {
     status: "ready", identities: metadata?.identities ?? [],
     update: { status: "ready", scope: name === undefined ? "host" : "plugin", name: name ?? "Lotus-Yunzai",
-      ...(force ? { force, binding } : {}),
+      ...(force ? { force } : {}), ...((name === undefined || force) && binding ? { binding } : {}),
       directory, current, candidate, changedPaths: diff.split("\0").filter(Boolean), gitlinks, release },
   };
 }
@@ -283,7 +283,8 @@ export async function prepareAllUpdates(
     ready = true;
     return {
       status: "ready", scope: "all", ...(force ? { force } : {}),
-      host: { directory, current, candidate, ...(force && selected ? { force, binding: result.binding } : {}) }, plugins, release,
+      host: { directory, current, candidate, ...(force && selected ? { force } : {}),
+        ...(selected && result.binding ? { binding: result.binding } : {}) }, plugins, release,
     };
   } catch {
     signal?.throwIfAborted();

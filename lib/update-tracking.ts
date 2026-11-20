@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
+import { updateBindingFingerprint } from "./update-candidate-git.ts";
 
 async function localConfig(git: LocalGit, directory: string, key: string): Promise<string | undefined> {
   const result = await git(directory, ["config", "--local", "--no-includes", "--null", "--get-all", key], true);
@@ -40,7 +41,8 @@ function nested(parent: string, child: string): boolean {
   return !isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`);
 }
 
-export async function restoreUpdateTracking(source: string, candidate: string, expectedSource: string, expectedCandidate: string): Promise<void> {
+export async function restoreUpdateTracking(source: string, candidate: string, expectedSource: string,
+  expectedCandidate: string, binding?: string): Promise<void> {
   const git = createLocalGit();
   if (!git || ![expectedSource, expectedCandidate].every((revision) => isGitRevision(revision) && revision.trim() === revision)) {
     throw new Error("恢复跟踪关系需要本地 Git 和完整提交号。");
@@ -57,6 +59,9 @@ export async function restoreUpdateTracking(source: string, candidate: string, e
   ]);
   if (oldHead !== expectedSource || stagedHead !== expectedCandidate || oldRef === undefined || stageRef !== "") {
     throw new Error("源或候选 Git 提交或分支状态已变更。");
+  }
+  if (binding && await updateBindingFingerprint(git, old) !== binding) {
+    throw new Error("更新来源的分支或上游已变更。");
   }
   if (!oldRef) return;
 
@@ -75,6 +80,11 @@ export async function restoreUpdateTracking(source: string, candidate: string, e
     if (remote !== "origin") await apply(git, staged, "remote", "add", "--", remote, origin);
     await apply(git, staged, "config", "--local", `${key}.remote`, remote);
     await apply(git, staged, "config", "--local", `${key}.merge`, merge);
+    if (binding) {
+      // Only the accepted host candidate receives the ref verified by its upstream fetch.
+      const trackingRef = `refs/remotes/${remote}/${merge.slice("refs/heads/".length)}`;
+      await apply(git, staged, "update-ref", "--no-deref", trackingRef, expectedCandidate, "0".repeat(expectedCandidate.length));
+    }
   }
 
   // Bind HEAD without checking files out or refreshing the candidate's index.
