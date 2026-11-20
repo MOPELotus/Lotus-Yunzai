@@ -904,7 +904,9 @@ export function startOneBot(
     tls: options.tls,
     fetch(request, server) {
       const path = new URL(request.url).pathname;
-      if (path !== "/OneBotv11" && path !== "/OneBotv11/") {
+      // TRSS routed reverse WebSockets by the first path segment.
+      const legacyUpgrade = path.startsWith("/OneBotv11/") && request.headers.get("Upgrade")?.toLowerCase() === "websocket";
+      if (path !== "/OneBotv11" && path !== "/OneBotv11/" && !legacyUpgrade) {
         return options.http?.(request) ?? new Response(null, { status: 404 });
       }
       if (options.accepting?.() === false) return new Response(null, { status: 503 });

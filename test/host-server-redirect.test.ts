@@ -70,9 +70,9 @@ function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function assertGatewayOpens(endpoint: URL) {
+async function assertGatewayOpens(endpoint: URL, path: string) {
   const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
-  const socket = new BunWebSocket(new URL("/OneBotv11", endpoint).href, {
+  const socket = new BunWebSocket(new URL(path, endpoint).href, {
     headers: { ...bearer(oneBotToken), "X-Client-Role": "Universal" },
   });
   const opened = Promise.withResolvers<void>();
@@ -87,7 +87,7 @@ async function assertGatewayOpens(endpoint: URL) {
   }
 }
 
-test.each([["共享", true], ["分离", false]] as const)("%s监听下的 server.redirect 只兜底公共 HTTP GET/HEAD", async (_binding, shared) => {
+test.each([["共享", true], ["分离", false]] as const)("%s监听区分公共 HTTP 跳转与 OneBot WebSocket 路由", async (_binding, shared) => {
   await withHost(shared, async ({ http, gateway }) => {
     expect(http.port === gateway.port).toBe(shared);
     const oneBotHttp = new URL(gateway);
@@ -122,12 +122,24 @@ test.each([["共享", true], ["分离", false]] as const)("%s监听下的 server
     expect((await request(oneBotHttp, "/OneBotv11", {
       headers: { ...bearer(oneBotToken), "X-Client-Role": "Universal" },
     })).status).toBe(426);
-    await assertGatewayOpens(gateway);
+    await assertGatewayOpens(gateway, "/OneBotv11");
+
+    const legacyPath = "/OneBotv11/gateways/qq?instance=primary";
+    expect((await request(oneBotHttp, legacyPath)).status).toBe(404);
+    expect((await request(oneBotHttp, legacyPath, { headers: upgrade })).status).toBe(401);
+    expect((await request(oneBotHttp, legacyPath, {
+      headers: { ...upgrade, ...bearer(oneBotToken), "X-Client-Role": "API" },
+    })).status).toBe(400);
+    for (const nearby of ["/OneBotv11x/gateways/qq", "/onebotv11/gateways/qq", "/OneBotv11%2fgateways/qq"]) {
+      expect((await request(oneBotHttp, nearby, { headers: { ...upgrade, ...bearer(oneBotToken) } })).status).toBe(404);
+    }
+    await assertGatewayOpens(gateway, legacyPath);
 
     if (!shared) {
       expect((await request(oneBotHttp, "/unknown")).status).toBe(404);
       expect((await request(oneBotHttp, "/unknown", { headers: upgrade })).status).toBe(404);
       expect((await request(http, "/OneBotv11")).status).toBe(404);
+      expect((await request(http, legacyPath, { headers: { ...upgrade, ...bearer(oneBotToken) } })).status).toBe(404);
     }
   });
 }, 8_000);
