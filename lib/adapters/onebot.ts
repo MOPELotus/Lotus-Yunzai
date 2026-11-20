@@ -716,7 +716,11 @@ async function dispatchMessage(
       ? () => connection?.ownGroupCardAccount?.(() => isMaster(selfId, userId)) : undefined,
     forward: selfId === undefined ? undefined : async (nodes, senderName) => {
       const messages = encodeOneBotForward(nodes, selfId, senderName);
-      return messages ? calls.sendForward(send, target, messages) : false;
+      if (!messages) return false;
+      if (senderName === undefined) return calls.sendForward(send, target, messages);
+      const result = await calls.sendForwardConfirmed(send, target, messages, attachmentSession?.signal);
+      if (result === "unknown") throw new Error("OneBot 合并转发结果未确认。");
+      return result === "confirmed";
     },
     uploadFile: boundAccount && attachmentSession && display?.closed === false
       ? (file) => display.closed || attachmentSession.signal.aborted ? Promise.resolve("rejected") : calls.uploadFile(send, target, file)
