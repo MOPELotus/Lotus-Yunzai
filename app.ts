@@ -123,6 +123,7 @@ import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendR
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
 import { readOriginalQqVoice, standaloneVoicePart } from "./lib/qq-voice.ts";
+import { readOriginalQqVideo, standaloneVideoPart } from "./lib/qq-video.ts";
 import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { GroupMessageNotice } from "./plugins/group/group-message-notice.ts";
@@ -1277,16 +1278,21 @@ if (import.meta.main) {
     const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
     if (!signal) return;
     const voice = standaloneVoicePart(message);
-    const body = voice ? { text: "[语音]" } : readMessageNoticeBody(message, signal);
+    const video = standaloneVideoPart(message);
+    const body = voice ? { text: "[语音]" } : video ? { text: "[视频]" } : readMessageNoticeBody(message, signal);
     if (!body) return;
     await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {
       const reply = await registration.policy({ botId, groupId, userId, ...body, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
       if (!reply || signal.aborted) return;
-      const original = voice && await readOriginalQqVoice(voice, signal);
+      const originalVoice = voice && await readOriginalQqVoice(voice, signal);
+      const originalVideo = video && await readOriginalQqVideo(video, signal);
       if (signal.aborted) return;
       mark();
-      const notice = voice && !original ? [...reply, "（原音不可用）"] : reply;
-      await source.notifyOwners(notice, signal, original ? { type: "record", file: original } : undefined);
+      const notice = voice && !originalVoice ? [...reply, "（原音不可用）"]
+        : video && !originalVideo ? [...reply, "（原视频不可用）"] : reply;
+      const followup = originalVoice ? { type: "record" as const, file: originalVoice }
+        : originalVideo ? { type: "video" as const, file: originalVideo } : undefined;
+      await source.notifyOwners(notice, signal, followup);
     });
   }
 

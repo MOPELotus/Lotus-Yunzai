@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { hasMp4VideoTrack } from "../lib/qq-video.ts";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +19,36 @@ const noticeImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQ
 const imageDigest = createHash("md5").update(Buffer.from(noticeImageBase64, "base64")).digest("hex");
 const noticeVoiceUrl = "https://gchat.qpic.cn/download?fixture=voice";
 const expiredNoticeImageUrl = "https://gchat.qpic.cn/download?fixture=expired-notice-image";
+const noticeVideoUrl = "https://multimedia.nt.qq.com.cn/download?fixture=original-video";
+// One synthetic solid-color H.264 frame generated with NVENC.
+const noticeVideoBase64 = [
+  "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMvbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAGQAAQAA",
+  "AQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "AAAAAgAAAll0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA",
+  "AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAKAAAABgAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAABkAAAMAAABAAAAAAHR",
+  "bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAABABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRl",
+  "b0hhbmRsZXIAAAABfG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAA",
+  "AQAAATxzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAKAAYABIAAAASAAAAAAA",
+  "AAABGExhdmM2MC4zMS4xMDIgaDI2NF9udmVuYwAAAAAAAAAAGP//AAAANmF2Y0MBTUAV/+EAH2dNQBWWUoUbYCIAAAfQAACc",
+  "QcAAAGGoAAA9CQXeXBQBAARo648gAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAehIAAehIAAABqQAAAAGHN0dHMAAAAAAAAA",
+  "AQAAAAEAAAQAAAAAGGN0dHMAAAAAAAAAAQAAAAEAAAwAAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAABRzdHN6AAAA",
+  "AAAAAFUAAAABAAAAFHN0Y28AAAAAAAAAAQAAA18AAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBw",
+  "bAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAAAXW1kYXQA",
+  "AAALBgAHgMXBABX5QIAAAAAIBgEEAAAQEIAAAAA2ZbgEAAa//u6CvgU2zRA/B1HSy806HPjqgvTQ3xXV/pvULiZ+86V1ZU1S",
+  "QrYooKCQAAL4EA2I",
+].join("");
+
+test("独立原 MP4 必须有可识别的视频轨和完整数据区", () => {
+  const original = Buffer.from(noticeVideoBase64, "base64");
+  expect(hasMp4VideoTrack(original)).toBe(true);
+  expect(hasMp4VideoTrack(original.subarray(0, -1))).toBe(false);
+  const noVideo = Buffer.from(original);
+  noVideo.write("soun", noVideo.indexOf("vide"));
+  expect(hasMp4VideoTrack(noVideo)).toBe(false);
+  const unknownCodec = Buffer.from(original);
+  unknownCodec.write("xxxx", unknownCodec.indexOf("stsd") + 16);
+  expect(hasMp4VideoTrack(unknownCodec)).toBe(false);
+});
 const expiredVoiceUrl = "https://gchat.qpic.cn/download?fixture=expired-voice";
 // 100 ms of a synthetic tone, encoded and decoded in isolation with silk-wasm 3.7.1.
 const noticeVoiceBase64 = "AiMhU0lMS19WMykA5xnesogJCj5c0HBrA2eDcv9K2Lyl8UoOJzlv+cgP5cMTIhN6rgKF139EALulD7zBNLWTjwjMQhrQHv2bTr3CYfe1BdK216zrnhuiZlSutyJHHRFRSR7G9nDItKk0TscVuhC5mw4zD8L+7nJ9hl9/MwC7peuE42QyS8bukipI3OFXDV6ML3JPHUqPiMwzSk6oOUJmn3c51fqJ4JNyosIixI6cLw85ALul64deVJG868zDHOYYAjmlZwXZpAZ8+SYDbLMQF2Dmc4gUydZhOsYNoEmB7uEV/FPRjDvOG8khv0UAu6XlLj+c96H7Wbn+BZ3JVjC3ujcUQQfPeutWYWWEGLZrL0eyn5GRUW8HEFGJR+hzn7qxwT6wcs2D7KDKo5aBxN7QqAky";
@@ -221,6 +252,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：97") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
+      if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") &&
+          JSON.stringify(params.message).includes("[视频]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
         milkyJoinReceipt = milkyCalls.length;
       }
@@ -247,7 +280,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_friend_requests" ? milkyFriendNotifications(params.is_filtered)
         : action === "get_friend_list" ? { friends: [{ user_id: 43 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: operator }] : [])] }
         : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } :
-          params.resource_id === "original-voice" ? { url: noticeVoiceUrl } : {})
+          params.resource_id === "original-voice" ? { url: noticeVoiceUrl } :
+          params.resource_id === "original-video" ? { url: noticeVideoUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
           content: "合成 Milky 公告 👩‍👩‍👧‍👧", image_url: "https://example.test/image",
@@ -300,6 +334,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           }));
         }
         if (url.href === ${JSON.stringify(expiredNoticeImageUrl)}) return Promise.resolve(new Response(null, { status: 404 }));
+        if (url.href === ${JSON.stringify(noticeVideoUrl)}) {
+          return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeVideoBase64)}, "base64"), {
+            headers: { "Content-Type": "video/mp4" }
+          }));
+        }
         if (url.href === ${JSON.stringify(noticeVoiceUrl)}) {
           return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeVoiceBase64)}, "base64"), {
             headers: { "Content-Type": "application/octet-stream" }
@@ -2181,6 +2220,43 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       .map(({ params }) => params.resource_id)).toEqual(["matched-picture", "unavailable-recall-image"]);
     expect(milkyCalls.slice(skippedMixedStart).some(({ action, params }) =>
       action === "send_private_message" && /缺图时不能发送这段|masked-test-value/u.test(JSON.stringify(params.message)))).toBe(false);
+
+    await writeFile(noticeFile, 'default: { groupMessage: false }\n94: { groupMessage: true }\n95: { groupMessage: true }\n96: { groupMessage: true }\n');
+    const videoStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const oneBotVideo = oneBotMessage([{ type: "video", data: { file: "original-video", url: noticeVideoUrl } }], 85, 94);
+    send(oneBotVideo);
+    send(oneBotVideo);
+    const oneBotVideoHeader = await waitUntil(() => oneBotCalls.slice(videoStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("[视频]")), "缺少 OneBot 群视频摘要。");
+    const oneBotVideoDelivery = await waitUntil(() => oneBotCalls.slice(videoStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVideoBase64)), "缺少 OneBot 原视频。");
+    expect(oneBotCalls.indexOf(oneBotVideoDelivery)).toBeGreaterThan(oneBotCalls.indexOf(oneBotVideoHeader));
+    expect(oneBotVideoDelivery.params.message).toEqual([{ type: "video", data: { file: `base64://${noticeVideoBase64}` } }]);
+    const milkyVideo = (group: number, resource: string, url?: string) => ({
+      ...milkyTitle("", 86), peer_id: group, segments: [{ type: "video", data: {
+        resource_id: resource, duration: 1, width: 160, height: 96, temp_url: url,
+      } }],
+    });
+    const incomingVideo = milkyVideo(95, "original-video", expiredNoticeImageUrl);
+    await webhook("message_receive", incomingVideo);
+    await webhook("message_receive", incomingVideo);
+    const milkyVideoHeader = await milkyOwnerReply(operator, "[视频]");
+    const milkyVideoDelivery = await milkyOwnerReply(operator, noticeVideoBase64);
+    expect(milkyCalls.indexOf(milkyVideoDelivery)).toBeGreaterThan(milkyCalls.indexOf(milkyVideoHeader));
+    expect(milkyVideoDelivery.params.message).toEqual([{ type: "video", data: { uri: `base64://${noticeVideoBase64}` } }]);
+    await webhook("message_receive", milkyVideo(96, "original-video"));
+    await waitUntil(() => milkyCalls.slice(videoStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") && JSON.stringify(params.message).includes("[视频]")),
+      "没有发出应当缺少回执的群视频摘要。");
+    await webhook("message_receive", milkyVideo(93, "closed-video"));
+    await webhook("message_receive", milkyVideo(95, "missing-video"));
+    await milkyOwnerReply(operator, "（原视频不可用）");
+    expect(milkyCalls.slice(videoStart.milky).filter(({ action }) => action === "get_resource_temp_url").map(({ params }) => params.resource_id))
+      .toEqual(["original-video", "original-video", "missing-video"]);
+    expect(milkyCalls.slice(videoStart.milky).filter(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes(noticeVideoBase64))).toHaveLength(1);
+    expect(oneBotCalls.slice(videoStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
+      params.user_id === 52 && JSON.stringify(params.message).includes(noticeVideoBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();
