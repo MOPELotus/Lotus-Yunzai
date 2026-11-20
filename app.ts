@@ -1132,17 +1132,25 @@ if (import.meta.main) {
 
   async function forwardTemporaryMessage(notice: NativeTemporaryMessageNotice) {
     const registration = temporaryMessageNotice;
-    const { adapter, botId, userId, messageId, groupId, reportedGroupId, text } = notice;
-    if (!registration || stopping || !handoff.accepting || !canForwardPrivateNotice(botId, userId) || isPrivateCredentialMessage(text)) return;
+    const { adapter, botId, userId, messageId, groupId, reportedGroupId, text, voice } = notice;
+    if (!registration || stopping || !handoff.accepting || !canForwardPrivateNotice(botId, userId) ||
+        (text !== undefined && isPrivateCredentialMessage(text))) return;
     const scope = { self_id: botId, user_id: userId, group_id: groupId };
     if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, temporaryMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, notice.signal);
     if (signal.aborted) return;
     await deliverPrivateNoticeOnce(`temporary:${adapter}:${botId}:${userId}:${messageId}`, async mark => {
-      const reply = await registration.policy({ botId, userId, text, groupId, reportedGroupId }, signal);
+      let followup: MessageReply | undefined;
+      const body = voice ? { async readText() {
+        const original = await readOriginalQqVoice(voice, signal);
+        if (!original) return "[语音]（原音不可用）";
+        followup = { type: "record", file: original };
+        return "[语音]";
+      } } : { text };
+      const reply = await registration.policy({ botId, userId, ...body, groupId, reportedGroupId }, signal);
       if (!reply || signal.aborted) return;
       mark();
-      await notice.notifyOwners(reply, signal);
+      await notice.notifyOwners(reply, signal, followup);
     });
   }
 

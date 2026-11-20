@@ -24,7 +24,7 @@ import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import type { createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
-import { encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
+import { decodeMilkyTemporaryVoice, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 import { memberDisplayName } from "./onebot-member-display.ts";
@@ -713,13 +713,16 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.event_type === "message_receive" && body.data.message_scene === "temp") {
       const { sender_id, peer_id, message_seq, group, segments } = body.data;
       if (options.onTemporaryMessage && positiveId(sender_id) && sender_id === peer_id && sender_id !== account &&
-          hasMessageSequence(message_seq) && Array.isArray(segments) && segments.length && segments.every(part =>
-            record(part) && part.type === "text" && record(part.data) && typeof part.data.text === "string")) {
-        const text = segments.map(part => part.data.text).join("");
+          hasMessageSequence(message_seq) && Array.isArray(segments) && segments.length) {
+        const voice = decodeMilkyTemporaryVoice(segments, call);
         const groupId = record(group) && positiveId(group.group_id) ? group.group_id : undefined;
-        options.onTemporaryMessage({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, text, groupId, signal,
-          notifyOwners: notifyVerifiedOwnerReplies,
-        });
+        const text = segments.every(part => record(part) && part.type === "text" && record(part.data) && typeof part.data.text === "string")
+          ? segments.map(part => part.data.text).join("") : undefined;
+        if (text !== undefined || voice) {
+          options.onTemporaryMessage({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, text, voice, groupId, signal,
+            notifyOwners: notifyVerifiedOwnerReplies,
+          });
+        }
       }
       return "accepted";
     }

@@ -3,6 +3,7 @@ import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
+import { standaloneVoicePart } from "../qq-voice.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
@@ -172,13 +173,14 @@ async function selectNoticeOwners(options: (GroupActionPolicy & OwnerNoticeOptio
 }
 
 async function notifyVerifiedFriendOwners(calls: OneBotCalls, send: Send, bot: number, owners: (signal: AbortSignal) => Promise<readonly number[]>,
-  reply: MessageReply, signal: AbortSignal, { source, followup }: { source?: number; followup?: MessageReply } = {}) {
+  reply: MessageReply, signal: AbortSignal,
+  { source, followup, allowFollowup }: { source?: number; followup?: MessageReply; allowFollowup?: (owner: number) => boolean } = {}) {
   const recipients = await owners(signal);
   if (signal.aborted || !recipients.length) return 0;
   const profiles = await calls.listFriendProfiles(send, signal).catch(() => []);
   const peers = new Set(profiles.map(profile => String(profile.user_id)));
   if (source !== undefined && !peers.has(String(source))) return 0;
-  return notifyOwnerReplies(calls, send, bot, recipients.filter(id => peers.has(String(id))), reply, signal, undefined, followup);
+  return notifyOwnerReplies(calls, send, bot, recipients.filter(id => peers.has(String(id))), reply, signal, undefined, followup, allowFollowup);
 }
 
 async function dispatchRequest(
@@ -492,14 +494,17 @@ async function dispatchMessage(
     ? event.message_id : undefined;
   const temporaryMessageId = oneBotMessageId(messageId);
   if (groupActions?.onTemporaryMessage && boundAccount && selfId !== undefined && attachmentSession && !noticeAttachment &&
-      messageType === "private" && event.sub_type === "group" && temporaryMessageId !== undefined && text.trim() &&
-      incoming.message.every(part => part.type === "text")) {
+      messageType === "private" && event.sub_type === "group" && temporaryMessageId !== undefined) {
     const signal = attachmentSession.signal;
     const reportedGroupId = isId(event.group_id) && event.group_id !== 284840486 ? event.group_id : undefined;
-    groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId, text, reportedGroupId, signal,
-      notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(calls, send, selfId,
-        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, workflow])),
-    });
+    const voice = standaloneVoicePart(incoming.message);
+    if (voice || (text.trim() && incoming.message.every(part => part.type === "text"))) {
+      groupActions.onTemporaryMessage({ adapter: "onebot", botId: selfId, userId, messageId: temporaryMessageId, text, voice, reportedGroupId, signal,
+        notifyOwners: (reply, workflow, followup) => notifyVerifiedFriendOwners(calls, send, selfId,
+          scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, workflow]),
+          { followup, allowFollowup: id => isMaster(selfId, id) }),
+      });
+    }
   }
   const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
     const closed = () => display.closed || attachmentSession?.signal.aborted;

@@ -218,6 +218,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_private_message" && omitFriendVoiceReceipt && JSON.stringify(params.message).includes("好友账号：43") &&
           JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
+      if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：97") &&
+          JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
         milkyJoinReceipt = milkyCalls.length;
       }
@@ -2016,6 +2018,57 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await Bun.sleep(100);
     expect(milkyCalls.slice(baselineMilkyVoice).filter(({ action, params }) => action === "send_private_message" &&
       params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { grouptemporaryMessage: false }\n79: { grouptemporaryMessage: true }\n86: { grouptemporaryMessage: true }\n97: { grouptemporaryMessage: true }\n"bot:99": { grouptemporaryMessage: true }\n');
+    const oneBotTempVoice = { ...oneBotPrivate("", 42), sub_type: "group", group_id: 86, message: oneBotVoice.message };
+    const tempOneBotStart = oneBotCalls.length;
+    client.send(JSON.stringify(oneBotTempVoice));
+    client.send(JSON.stringify(oneBotTempVoice));
+    const tempOneBotHeader = await waitUntil(() => oneBotCalls.slice(tempOneBotStart).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("群临时消息") &&
+      JSON.stringify(params.message).includes("[语音]")), "OneBot 没有发送群临时语音摘要。");
+    const tempOneBotOriginal = await waitUntil(() => oneBotCalls.slice(tempOneBotStart).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64)),
+      "OneBot 没有发送单独的群临时原音。");
+    expect(oneBotCalls.indexOf(tempOneBotOriginal)).toBeGreaterThan(oneBotCalls.indexOf(tempOneBotHeader));
+    expect(JSON.stringify(tempOneBotHeader.params.message)).toContain("未核实（协议报告 86）");
+    expect(JSON.stringify(tempOneBotHeader.params.message)).not.toContain("回复 <内容>");
+    expect(tempOneBotOriginal.params.message).toEqual([{ type: "record", data: { file: `base64://${noticeVoiceBase64}` } }]);
+
+    const tempMilkyStart = milkyCalls.length;
+    const tempMilkyVoice = (groupId: number, resource: string, url?: string) => ({
+      ...temporaryMilky("", groupId), segments: audioEvent(groupId, resource, url).segments,
+    });
+    const refreshedTempVoice = tempMilkyVoice(79, "original-voice", expiredVoiceUrl);
+    await webhook("message_receive", refreshedTempVoice);
+    await webhook("message_receive", refreshedTempVoice);
+    const tempMilkyHeader = await waitUntil(() => milkyCalls.slice(tempMilkyStart).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes("来源群号：79") &&
+      JSON.stringify(params.message).includes("[语音]")), "Milky 没有发送真实来源群的临时原音摘要。");
+    const tempMilkyOriginal = await waitUntil(() => milkyCalls.slice(tempMilkyStart).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64)),
+      "Milky 没有发送更新链接后的群临时原音。");
+    expect(milkyCalls.indexOf(tempMilkyOriginal)).toBeGreaterThan(milkyCalls.indexOf(tempMilkyHeader));
+    expect(tempMilkyOriginal.params.message).toEqual([{ type: "record", data: { uri: `base64://${noticeVoiceBase64}` } }]);
+    await webhook("message_receive", tempMilkyVoice(97, "original-voice"));
+    await waitUntil(() => milkyCalls.slice(tempMilkyStart).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes("来源群号：97")),
+      "Milky 没有发出待验证缺回执的临时消息摘要。");
+    await webhook("message_receive", tempMilkyVoice(88, "disabled-temp-voice"));
+    await webhook("message_receive", { ...tempMilkyVoice(79, "wrong-temp-peer"), peer_id: 55 });
+    const mixedTempVoice = tempMilkyVoice(79, "mixed-temp-voice");
+    await webhook("message_receive", { ...mixedTempVoice, segments: [...mixedTempVoice.segments, { type: "text", data: { text: "额外段" } }] });
+    await webhook("message_receive", tempMilkyVoice(79, "unavailable-temp-voice"));
+    await waitUntil(() => milkyCalls.slice(tempMilkyStart).find(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes("[语音]（原音不可用）")), "临时原音不可用时缺少摘要。");
+    expect(milkyCalls.slice(tempMilkyStart).filter(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+    expect(milkyCalls.slice(tempMilkyStart).filter(({ action, params }) =>
+      action === "get_resource_temp_url").map(({ params }) => params.resource_id)).toEqual([
+      "original-voice", "original-voice", "unavailable-temp-voice",
+    ]);
+    expect(oneBotCalls.slice(tempOneBotStart).filter(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

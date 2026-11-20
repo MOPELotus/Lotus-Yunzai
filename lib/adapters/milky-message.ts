@@ -240,6 +240,14 @@ function decodeResource(kind: "image" | "record" | "video", data: Record<string,
   return { ...media, getDownloadUrl: () => downloadUrl ??= resolveUrl() };
 }
 
+export function decodeMilkyTemporaryVoice(segments: unknown, call: MilkyCall): InboundSegment | undefined {
+  if (!Array.isArray(segments) || segments.length !== 1) return;
+  const [part] = segments;
+  if (isRecord(part) && part.type === "record" && isRecord(part.data)) {
+    return decodeResource("record", part.data, mediaLink(part.data.temp_url), call);
+  }
+}
+
 function decodeFile(data: Record<string, unknown>, target: Target, call: MilkyCall): InboundSegment | undefined {
   const file = opaqueFileField(data.file_id);
   const name = mediaText(data.file_name);
