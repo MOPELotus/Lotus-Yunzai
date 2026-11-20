@@ -1,4 +1,5 @@
-import type { GroupNotice, GroupRequest, MessageEvent, MessageReply } from "../messages.ts";
+import { maxChatFileBytes, readQqMessageMedia } from "../chat-files.ts";
+import type { GroupNotice, GroupRequest, InboundSegment, MessageEvent, MessageReply, ProtocolSegment } from "../messages.ts";
 
 export type GroupModerationResult = "confirmed" | "rejected" | "unknown";
 type GroupMemberModerationResult = GroupModerationResult | "protected" | "unavailable";
@@ -14,6 +15,9 @@ export type GroupSetAdminAction = (userId: number, enabled: boolean) => Promise<
 export type GroupSetQuotedEssenceAction = (
   enabled: boolean,
 ) => Promise<GroupModerationResult | "unavailable" | "invalid-quote">;
+export type GroupNotifyAllAction = (
+  parts: readonly InboundSegment[],
+) => Promise<GroupModerationResult | "unavailable">;
 export interface TimedGroupMuteBinding {
   readonly adapter: "onebot" | "milky";
   readonly botId: number;
@@ -110,8 +114,39 @@ export async function runTimedWholeMute(binding: TimedGroupMuteBinding, session:
   try { return await session.write(enabled); } catch { return "unknown"; }
 }
 
+const noticeMedia = new Set(["image", "record", "video"]);
+
+async function buildGroupNotice(parts: readonly InboundSegment[], source: MessageEvent["message"], signal: AbortSignal) {
+  if (!Array.isArray(parts) || !parts.length) return;
+  let mediaBytes = 0;
+  const reply: ProtocolSegment[] = [{ type: "at", data: { qq: "all" } }];
+  for (const part of parts) {
+    if (signal.aborted || !part || typeof part.type !== "string") return;
+    const { type } = part;
+    if (type === "text" && typeof part.text === "string") {
+      reply.push({ type, data: { text: part.text } });
+    } else if (type === "at" && part.qq === "all") {
+      continue;
+    } else if (type === "at" && (typeof part.qq === "string" || typeof part.qq === "number") && /^[1-9]\d*$/u.test(String(part.qq))) {
+      reply.push({ type, data: { qq: String(part.qq) } });
+    } else if (type === "face" && (typeof part.id === "string" || typeof part.id === "number") && /^\d+$/u.test(String(part.id))) {
+      reply.push({ type, data: { id: String(part.id), ...(part.is_large === true && { is_large: true }) } });
+    } else if ((type === "image" || type === "record" || type === "video") &&
+        typeof source !== "string" && source.includes(part)) {
+      const url = typeof part.url === "string" ? part.url
+        : typeof part.getDownloadUrl === "function" ? await part.getDownloadUrl() : part.file;
+      const bytes = await readQqMessageMedia(url, signal);
+      if (!bytes || (mediaBytes += bytes.byteLength) > maxChatFileBytes) return;
+      reply.push({ type, data: { file: bytes,
+        ...(type === "image" && typeof part.summary === "string" && { summary: part.summary }) } });
+    } else return;
+  }
+  if (!signal.aborted && reply.slice(1).some(({ type, data }) => type !== "text" ||
+      (typeof data.text === "string" && data.text.trim()))) return reply;
+}
+
 export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
-  essence }: {
+  essence, notice }: {
   readonly bot: number;
   readonly actor: number;
   readonly signal: AbortSignal;
@@ -128,6 +163,10 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
     verifyQuote(): Promise<boolean>;
     write(enabled: boolean): Promise<GroupModerationResult>;
   };
+  readonly notice?: {
+    readonly source: MessageEvent["message"];
+    send(reply: MessageReply): Promise<GroupModerationResult>;
+  };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
@@ -135,6 +174,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   groupSetAdmin: GroupSetAdminAction;
   groupSetQuotedEssence?: GroupSetQuotedEssenceAction;
   groupMuteSelf: GroupMuteSelfAction;
+  groupNotifyAll?: GroupNotifyAllAction;
 } {
   const active = () => !signal.aborted && accepting?.() !== false;
   async function authorize() {
@@ -232,6 +272,13 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (isProtected(actor) || actorRole === "owner" || (actorRole === "admin" && botRole !== "owner")) return "protected";
       return apply(() => mute(actor, seconds));
     },
+    groupNotifyAll: notice ? async parts => {
+      if (!await canManage("list")) return "unavailable";
+      const reply = await buildGroupNotice(parts, notice.source, signal).catch(() => undefined);
+      if (!reply) return "rejected";
+      if (parts.some(({ type }) => noticeMedia.has(type)) && !await canManage("list")) return "unavailable";
+      return apply(() => notice.send(reply));
+    } : undefined,
   };
 }
 

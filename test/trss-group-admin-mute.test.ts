@@ -11,6 +11,8 @@ const milkyId = 100;
 const operator = 51;
 const token = "group-admin-mute-fixture";
 type Call = { readonly action: string; readonly params: Record<string, unknown> };
+const noticeImageUrl = "https://gchat.qpic.cn/download?fixture=notice";
+const noticeImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR42mNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==";
 
 async function waitUntil<T>(read: () => T | undefined, description: string): Promise<T> {
   const until = performance.now() + 3_500;
@@ -89,6 +91,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           (action === "kick_group_member" && params.user_id === 44) ||
           (action === "set_group_member_admin" && params.user_id === 60044) ||
           (action === "set_group_essence_message" && params.is_set === false) ||
+          (action === "send_group_message" && JSON.stringify(params.message).includes("合成未知通知")) ||
           (action === "set_group_whole_mute" && params.is_mute === false)) return new Response(null, { status: 503 });
       if (action === "set_group_member_admin") updateRole(params, params.is_set);
       const data = action === "get_login_info" ? { uin: milkyId } : action === "get_group_member_info" ?
@@ -126,8 +129,22 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await writeFile(join(legacyRules, "81.json"), testRules);
     await writeFile(join(root, "config/milky.yaml"),
       `enable: true\nhost: 127.0.0.1\nport: ${milky.port}\nconnection: webhook\naccess_token: ${token}\n`);
+    const noticePreload = join(root, "notice-media-fixture.ts");
+    await writeFile(noticePreload, `
+      const send = globalThis.fetch;
+      globalThis.fetch = (source, options) => {
+        const url = new URL(source instanceof Request ? source.url : String(source));
+        if (url.href === ${JSON.stringify(noticeImageUrl)}) {
+          return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeImageBase64)}, "base64"), {
+            headers: { "Content-Type": "image/png" }
+          }));
+        }
+        if (url.hostname === "127.0.0.1") return send(source, options);
+        return Promise.reject(new Error("隔离宿主不请求公网。"));
+      };
+    `);
     disableMemberPrewarm(root);
-    host = Bun.spawn([process.execPath, "app.ts"], { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    host = Bun.spawn([process.execPath, "--preload", noticePreload, "app.ts"], { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_TOKEN: token } });
     const output = { stdout: "", stderr: "" };
     const read = (stream: ReadableStream<Uint8Array>, key: keyof typeof output) => {
@@ -589,6 +606,35 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       (params.duration === 120 || params.duration === 15)).map(({ params }) => params)).toEqual([
       { group_id: 79, user_id: 56, duration: 120 }, { group_id: 79, user_id: 44, duration: 15 },
     ]);
+
+    const all = { type: "at", data: { qq: "all" } };
+    const embeddedImage = { type: "image", data: { file: "synthetic-image-file", url: noticeImageUrl } };
+    const noticeSource = oneBotMessage([quote(103), at(oneBotId), text("#发通知 合成通知"), all, embeddedImage, at(42)], 51, 82);
+    send(noticeSource);
+    const broadcast = await groupReplyWith("合成通知");
+    expect(broadcast.params.message).toMatchObject([
+      all, text("合成通知"), { type: "image", data: { file: `base64://${noticeImageBase64}` } }, at(42),
+    ]);
+    send(noticeSource);
+    const callsBeforeRejectedNotice = oneBotReplies().length;
+    send(oneBotMessage([text("#发通知 路径不是 QQ 媒体"), { type: "image", data: { file: "/tmp/private-notice.jpg" } }], 51, 82));
+    const rejectedNotice = await oneBotReply(callsBeforeRejectedNotice + 1);
+    expect(JSON.stringify(rejectedNotice.params.message)).not.toContain("private-notice.jpg");
+    expect(oneBotReplies().filter(({ params }) => JSON.stringify(params.message).includes("合成通知"))).toHaveLength(1);
+
+    const noticeReplyCount = milkyCalls.filter(({ action }) => action === "send_group_message").length;
+    const unknownNotice = { ...milkyTitle("#发通知 合成未知通知"), segments: [
+      text("#发通知 合成未知通知"), { type: "mention_all", data: {} }, { type: "face", data: { face_id: "14" } },
+    ] };
+    await webhook("message_receive", unknownNotice);
+    const milkyNoticeBody = await milkyReply(noticeReplyCount + 1);
+    expect(milkyNoticeBody.params.message).toMatchObject([
+      { type: "mention_all" }, text("合成未知通知"), { type: "face", data: { face_id: "14" } },
+    ]);
+    expect(JSON.stringify((await milkyReply(noticeReplyCount + 2)).params.message)).toContain("未确认");
+    await webhook("message_receive", unknownNotice);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_group_message" &&
+      JSON.stringify(params.message).includes("合成未知通知"))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

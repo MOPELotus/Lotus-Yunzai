@@ -409,6 +409,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             return (await call.confirmed("set_group_essence_message", { group_id: groupId, message_seq: quoted, is_set }, signal)).status;
           },
         } : undefined,
+        notice: {
+          source: message.message,
+          send: reply => sendConfirmed({ group_id: groupId }, reply),
+        },
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")

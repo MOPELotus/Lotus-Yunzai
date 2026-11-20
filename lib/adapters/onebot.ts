@@ -418,6 +418,13 @@ async function dispatchMessage(
         async verifyQuote() { return await lookupReply() !== undefined; },
         write: enabled => calls.setQuotedEssence(send, quotedId, enabled, likeSession),
       } : undefined,
+      notice: {
+        source: incoming.message,
+        async send(reply) {
+          const message = encodeOneBotReply(reply);
+          return message === undefined ? "rejected" : calls.sendConfirmed(send, { group_id: target.group_id }, message);
+        },
+      },
     })),
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
