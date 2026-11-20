@@ -25,6 +25,7 @@ export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly configureNoticeSettings?: NoticeSettingsContext["configureNoticeSettings"];
+  readonly groupOriginalSignal?: AbortSignal;
 };
 
 export interface CommandForward {
@@ -267,7 +268,7 @@ export class CommandRegistry {
     allowed: (names: readonly string[]) => boolean,
     isBotMaster: MessageFallbackContext["isBotMaster"],
     normalizedMessage = event.msg,
-    capabilities?: Pick<MessageFallbackContext, "configureNoticeSettings">,
+    capabilities?: Pick<MessageFallbackContext, "configureNoticeSettings" | "groupOriginalSignal">,
   ): Promise<CommandReply | undefined> {
     for (const { handler, names, features } of this.#fallbacks.values()) {
       if (!features && !allowed(names)) continue;

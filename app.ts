@@ -1675,6 +1675,16 @@ if (import.meta.main) {
         await sendCommandReply(event, original);
         return;
       }
+      const session = event.message_type === "group" ? event[delegationSession]?.signal : undefined;
+      const groupOriginalSignal = session && nativeOperationSignal(session);
+      if (groupOriginalSignal && !groupOriginalSignal.aborted) {
+        const artwork = await commands.dispatchFallback(event,
+          (names) => names[0] === "@lotus-yunzai/zzz" && allowed(names), isBotMaster, command.msg, { groupOriginalSignal });
+        if (artwork !== undefined && !groupOriginalSignal.aborted) {
+          await sendCommandReply(event, artwork);
+          return;
+        }
+      }
     }
     const redeemSetting = isPreviewRedeemSetting(command.msg);
     const redeemConnection = redeemSetting ? event[delegationSession]?.signal : undefined;
