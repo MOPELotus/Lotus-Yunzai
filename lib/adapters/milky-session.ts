@@ -305,19 +305,25 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   async function notifyOwnerReplies(reply: MessageReply, workflow: AbortSignal,
-    onDelivered?: (owner: number, messageId: number) => Promise<void>, friends?: ReadonlySet<number>) {
+    onDelivered?: (owner: number, messageId: number) => Promise<void>, friends?: ReadonlySet<number>, followup?: MessageReply) {
     const active = AbortSignal.any([signal, workflow]);
     if (active.aborted) return 0;
     const recipients = (await selectNoticeOwners(active)).filter(id => friends?.has(id) !== false);
-    const deliveries = await Promise.all(recipients.map(user_id => sendConfirmed({ user_id }, reply, undefined, active,
-      onDelivered ? id => onDelivered(user_id, id) : undefined)));
+    const deliveries = await Promise.all(recipients.map(async user_id => {
+      const target = { user_id };
+      const status = await sendConfirmed(target, reply, undefined, active, onDelivered ? id => onDelivered(user_id, id) : undefined);
+      if (status === "confirmed" && followup !== undefined && !active.aborted && isMaster(user_id)) {
+        await sendConfirmed(target, followup, undefined, active);
+      }
+      return status;
+    }));
     return deliveries.filter(result => result === "confirmed").length;
   }
 
-  async function notifyVerifiedOwnerReplies(reply: MessageReply, workflow: AbortSignal) {
+  async function notifyVerifiedOwnerReplies(reply: MessageReply, workflow: AbortSignal, followup?: MessageReply) {
     const active = AbortSignal.any([signal, workflow]);
     const friends = await listCurrentFriends(active);
-    return friends ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+    return friends ? notifyOwnerReplies(reply, active, undefined, friends, followup) : 0;
   }
 
   async function readVerifiedGroupName(groupId: number, active: AbortSignal) {
@@ -659,7 +665,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (options.onFriendRecall && positiveId(sender_id) && sender_id === peer_id && sender_id === operator_id && sender_id !== account &&
           positiveId(body.time) && hasMessageSequence(message_seq)) {
         options.onFriendRecall({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, time: body.time, signal,
-          notifyOwners: notifyVerifiedOwnerReplies,
+          notifyOwners: (reply, workflow) => notifyVerifiedOwnerReplies(reply, workflow),
         });
       }
       return "accepted";

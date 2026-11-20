@@ -99,6 +99,7 @@ export interface NativeGroupMessageSource extends GroupRecallScope, GroupOwnerNo
   readonly message: MessageEvent["message"];
   readonly nickname?: string;
   describeGroup(signal: AbortSignal): Promise<string | undefined>;
+  notifyOwners(reply: MessageReply, signal: AbortSignal, followup?: MessageReply): Promise<number>;
 }
 
 export interface NativeGroupOwnerMemberNotice extends GroupOwnerNoticeSession {

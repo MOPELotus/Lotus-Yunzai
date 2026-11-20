@@ -121,6 +121,7 @@ import type { FriendMessageNotice, FriendPokeNotice, FriendRecallNotice, FriendR
   TemporaryMessageNotice } from "./plugins/group/index.ts";
 import { createGroupJoinReview, isGroupJoinReviewInput } from "./lib/group-join-review.ts";
 import { createRequestClaim } from "./lib/request-claim.ts";
+import { readOriginalQqVoice } from "./lib/qq-voice.ts";
 import type { NativeTemporaryMessageNotice } from "./lib/temporary-message-notice.ts";
 import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.ts";
 import type { GroupMessageNotice } from "./plugins/group/group-message-notice.ts";
@@ -1207,13 +1208,17 @@ if (import.meta.main) {
     const scope = { self_id: botId, group_id: groupId, user_id: userId };
     const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
     if (!signal) return;
-    const body = readMessageNoticeBody(message, signal);
+    const voice = typeof message !== "string" && message.length === 1 && message[0]?.type === "record" ? message[0] : undefined;
+    const body = voice ? { text: "[语音]" } : readMessageNoticeBody(message, signal);
     if (!body) return;
     await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {
       const reply = await registration.policy({ botId, groupId, userId, ...body, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
       if (!reply || signal.aborted) return;
+      const original = voice && await readOriginalQqVoice(voice, signal);
+      if (signal.aborted) return;
       mark();
-      await source.notifyOwners(reply, signal);
+      const notice = voice && !original ? [...reply, "（原音不可用）"] : reply;
+      await source.notifyOwners(notice, signal, original ? { type: "record", file: original } : undefined);
     });
   }
 

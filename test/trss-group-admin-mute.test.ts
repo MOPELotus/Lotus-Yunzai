@@ -4,6 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindGroupVerificationScope, bindMessageGroupActions } from "../lib/adapters/group-moderation.ts";
+import { hasSilkVoicePackets } from "../lib/qq-voice.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const group = 77;
@@ -15,6 +16,10 @@ type Call = { readonly action: string; readonly params: Record<string, unknown> 
 const noticeImageUrl = "https://gchat.qpic.cn/download?fixture=notice";
 const noticeImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR42mNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==";
 const imageDigest = createHash("md5").update(Buffer.from(noticeImageBase64, "base64")).digest("hex");
+const noticeVoiceUrl = "https://gchat.qpic.cn/download?fixture=voice";
+const expiredVoiceUrl = "https://gchat.qpic.cn/download?fixture=expired-voice";
+// 100 ms of a synthetic tone, encoded and decoded in isolation with silk-wasm 3.7.1.
+const noticeVoiceBase64 = "AiMhU0lMS19WMykA5xnesogJCj5c0HBrA2eDcv9K2Lyl8UoOJzlv+cgP5cMTIhN6rgKF139EALulD7zBNLWTjwjMQhrQHv2bTr3CYfe1BdK216zrnhuiZlSutyJHHRFRSR7G9nDItKk0TscVuhC5mw4zD8L+7nJ9hl9/MwC7peuE42QyS8bukipI3OFXDV6ML3JPHUqPiMwzSk6oOUJmn3c51fqJ4JNyosIixI6cLw85ALul64deVJG868zDHOYYAjmlZwXZpAZ8+SYDbLMQF2Dmc4gUydZhOsYNoEmB7uEV/FPRjDvOG8khv0UAu6XlLj+c96H7Wbn+BZ3JVjC3ujcUQQfPeutWYWWEGLZrL0eyn5GRUW8HEFGJR+hzn7qxwT6wcs2D7KDKo5aBxN7QqAky";
 
 async function waitUntil<T>(read: () => T | undefined, description: string): Promise<T> {
   const until = performance.now() + 3_500;
@@ -31,6 +36,15 @@ function liveMember({ group_id, user_id }: Call["params"]) {
     [oneBotId, operator, 53].includes(Number(user_id)) ? "admin" : "member";
   return { group_id: user_id === 45 ? 80 : group_id, user_id, role };
 }
+
+test("原 QQ SILK 必须有完整长度字段与至少一个实际音频包", () => {
+  const native = Buffer.from(noticeVoiceBase64, "base64");
+  expect(hasSilkVoicePackets(native)).toBe(true);
+  expect(hasSilkVoicePackets(Buffer.concat([native.subarray(1), Buffer.from([255, 255])]))).toBe(true);
+  expect(hasSilkVoicePackets(native.subarray(0, -1))).toBe(false);
+  expect(hasSilkVoicePackets(Buffer.from("#!SILK_V3\0\0"))).toBe(false);
+  expect(hasSilkVoicePackets(Buffer.from("#!AMR\n"))).toBe(false);
+});
 
 test("预检期间关机时当前会话不能继续禁言", async () => {
   const requested = Promise.withResolvers<void>();
@@ -199,6 +213,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const params = await request.json() as Call["params"];
       milkyCalls.push({ action, params });
       if (action === "send_private_message") milkyPrivateHistory.set(milkyCalls.length, params);
+      if (action === "send_private_message" && JSON.stringify(params.message).includes("来源群号：96") &&
+          JSON.stringify(params.message).includes("[语音]")) return Response.json({ status: "ok", retcode: 0, data: {} });
       if (action === "send_group_message" && params.group_id === 79 && JSON.stringify(params.message).includes("邀请人：72")) {
         milkyJoinReceipt = milkyCalls.length;
       }
@@ -224,7 +240,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_notifications" ? milkyJoinNotifications(params)
         : action === "get_friend_requests" ? milkyFriendNotifications(params.is_filtered)
         : action === "get_friend_list" ? { friends: [{ user_id: 43 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: operator }] : [])] }
-        : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } : {})
+        : action === "get_resource_temp_url" ? (params.resource_id === "matched-picture" ? { url: noticeImageUrl } :
+          params.resource_id === "original-voice" ? { url: noticeVoiceUrl } : {})
         : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
           group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
           content: "合成 Milky 公告 👩‍👩‍👧‍👧", image_url: "https://example.test/image",
@@ -274,6 +291,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         if (url.href === ${JSON.stringify(noticeImageUrl)}) {
           return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeImageBase64)}, "base64"), {
             headers: { "Content-Type": "image/png" }
+          }));
+        }
+        if (url.href === ${JSON.stringify(noticeVoiceUrl)}) {
+          return Promise.resolve(new Response(Buffer.from(${JSON.stringify(noticeVoiceBase64)}, "base64"), {
+            headers: { "Content-Type": "application/octet-stream" }
           }));
         }
         if (url.hostname === "127.0.0.1") return send(source, options);
@@ -1926,6 +1948,39 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       text("合成群撤回表情前"), { type: "face", data: { face_id: "14", is_large: true } }, text("合成群撤回表情后"),
     ] }] } }]);
     expect(oneBotReplies().some(({ params }) => JSON.stringify(params.message).includes("synthetic-secret-with-face"))).toBe(false);
+
+    await writeFile(noticeFile, 'default: { groupMessage: false }\n94: { groupMessage: true }\n95: { groupMessage: true }\n96: { groupMessage: true }\n');
+    const oneBotVoice = oneBotMessage([{ type: "record", data: { url: noticeVoiceUrl, file: "synthetic-original-voice" } }], 85, 94);
+    send(oneBotVoice);
+    send(oneBotVoice);
+    const voiceSummary = await ownerReplyWith("[语音]");
+    const originalVoice = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes(noticeVoiceBase64)), "OneBot 主人没有在摘要确认后收到单独原音。");
+    expect(oneBotCalls.indexOf(originalVoice)).toBeGreaterThan(oneBotCalls.indexOf(voiceSummary));
+    expect(originalVoice.params.message).toEqual([{ type: "record", data: { file: `base64://${noticeVoiceBase64}` } }]);
+
+    const audioEvent = (groupId: number, resource: string, url?: string) => ({ ...milkyTitle("", 86), peer_id: groupId,
+      segments: [{ type: "record", data: { resource_id: resource, duration: 1, ...(url ? { temp_url: url } : {}) } }],
+    });
+    const milkyVoice = audioEvent(95, "original-voice", expiredVoiceUrl);
+    await webhook("message_receive", milkyVoice);
+    await webhook("message_receive", milkyVoice);
+    const milkyVoiceSummary = await milkyOwnerReply(operator, "[语音]");
+    const milkyOriginalVoice = await milkyOwnerReply(operator, noticeVoiceBase64);
+    expect(milkyCalls.indexOf(milkyOriginalVoice)).toBeGreaterThan(milkyCalls.indexOf(milkyVoiceSummary));
+    expect(milkyOriginalVoice.params.message).toEqual([{ type: "record", data: { uri: `base64://${noticeVoiceBase64}` } }]);
+    expect(milkyCalls.filter(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "original-voice")).toHaveLength(1);
+
+    await webhook("message_receive", audioEvent(96, "original-voice"));
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes("来源群号：96") && JSON.stringify(params.message).includes("[语音]")), "缺回执测试没有发出语音摘要。");
+    await webhook("message_receive", audioEvent(95, "unsupported-voice", noticeImageUrl));
+    await milkyOwnerReply(operator, "原音不可用");
+    await webhook("message_receive", audioEvent(97, "disabled-voice"));
+    await Bun.sleep(100);
+    expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
+      JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+    expect(milkyCalls.some(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "disabled-voice")).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

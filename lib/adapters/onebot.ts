@@ -147,12 +147,17 @@ function sentMessage(frame: OneBotAction, source: MessageIdentity, record: (iden
 }
 
 async function notifyOwnerReplies(calls: OneBotCalls, send: Send, bot: number, owners: readonly number[], reply: MessageReply,
-  signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>) {
+  signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>, followup?: MessageReply) {
   const message = encodeOneBotReply(reply);
-  if (signal.aborted || message === undefined) return 0;
+  const next = followup === undefined ? undefined : encodeOneBotReply(followup);
+  if (signal.aborted || message === undefined || (followup !== undefined && next === undefined)) return 0;
   const recipients = [...new Set(owners)].filter(id => isId(id) && id !== bot);
-  const deliveries = await Promise.all(recipients.map(user_id => calls.sendConfirmed(send, { user_id }, message, signal,
-    onDelivered ? id => onDelivered(user_id, id) : undefined)));
+  const deliveries = await Promise.all(recipients.map(async user_id => {
+    const target = { user_id };
+    const status = await calls.sendConfirmed(send, target, message, signal, onDelivered ? id => onDelivered(user_id, id) : undefined);
+    if (status === "confirmed" && next !== undefined && !signal.aborted) await calls.sendConfirmed(send, target, next, signal);
+    return status;
+  }));
   return deliveries.filter(result => result === "confirmed").length;
 }
 
@@ -164,13 +169,13 @@ async function selectNoticeOwners(options: (GroupActionPolicy & OwnerNoticeOptio
 }
 
 async function notifyVerifiedFriendOwners(calls: OneBotCalls, send: Send, bot: number, owners: (signal: AbortSignal) => Promise<readonly number[]>,
-  reply: MessageReply, signal: AbortSignal, source?: number) {
+  reply: MessageReply, signal: AbortSignal, { source, followup }: { source?: number; followup?: MessageReply } = {}) {
   const recipients = await owners(signal);
   if (signal.aborted || !recipients.length) return 0;
   const profiles = await calls.listFriendProfiles(send, signal).catch(() => []);
   const peers = new Set(profiles.map(profile => String(profile.user_id)));
   if (source !== undefined && !peers.has(String(source))) return 0;
-  return notifyOwnerReplies(calls, send, bot, recipients.filter(id => peers.has(String(id))), reply, signal);
+  return notifyOwnerReplies(calls, send, bot, recipients.filter(id => peers.has(String(id))), reply, signal, undefined, followup);
 }
 
 async function dispatchRequest(
@@ -412,7 +417,7 @@ async function dispatchFriendPoke(
       signal,
       notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(connection.calls, send, self_id,
         scope => selectNoticeOwners(permissions, self_id, scope, permissions.isMaster), reply,
-        AbortSignal.any([signal, workflow]), user_id),
+        AbortSignal.any([signal, workflow]), { source: user_id }),
     } : undefined,
     isGroup: false, isPrivate: true, isMaster: permissions.isMaster(self_id, user_id),
     reply(reply) {
@@ -464,8 +469,8 @@ async function dispatchMessage(
     if (signal) groupActions.onGroupMessageSource({ adapter: "onebot", botId: selfId, groupId, userId, messageId: sourceId,
       message: incoming.message, nickname: stringField(sender?.nickname), signal,
       describeGroup: active => calls.getGroupName(send, groupId, active, true),
-      notifyOwners: (reply, active) => notifyVerifiedFriendOwners(calls, send, selfId,
-        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, active])),
+      notifyOwners: (reply, active, followup) => notifyVerifiedFriendOwners(calls, send, selfId,
+        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, active]), { followup }),
     });
   }
   if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {
