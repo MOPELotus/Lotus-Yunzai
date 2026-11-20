@@ -1,4 +1,4 @@
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
@@ -82,6 +82,33 @@ function configuredRuntimePaths(root: string, env: RuntimePaths): string[] {
   return paths;
 }
 
+async function archivedAssetLink(root: string, archive: string, asset: string): Promise<string | undefined> {
+  let path = archive;
+  try {
+    for (const part of asset.split(sep)) {
+      path = join(path, part);
+      if (!(await lstat(path)).isSymbolicLink()) continue;
+      const link = relative(archive, path);
+      const target = resolve(root, dirname(link), await readlink(path), relative(path, join(archive, asset)));
+      // A relative link can go stale in the archive when data/ has already moved to the active checkout.
+      const locations = within(root, target) ? [target, join(archive, relative(root, target))] : [target];
+      for (const location of locations) {
+        try {
+          await realpath(location);
+          return link;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+        }
+      }
+      return;
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+  }
+}
+
 async function existingAssetPath(root: string, source: string, value: string): Promise<string | undefined> {
   const absolute = resolve(root, value);
   if (!within(root, absolute)) return;
@@ -106,6 +133,7 @@ async function existingAssetPath(root: string, source: string, value: string): P
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    if (source !== root) return archivedAssetLink(root, source, asset);
   }
 }
 

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { activateUpdate } from "../lib/update-activation.ts";
+import { activateUpdate, previousUpdateDirectory } from "../lib/update-activation.ts";
 import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-runtime-paths.ts";
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
 
@@ -197,6 +197,35 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
     await expect(verifyMovedRuntimePaths(active, result.previous, settings)).resolves.toBeUndefined();
   } finally {
     await rm(dir, { force: true, recursive: true });
+  }
+});
+
+test.skipIf(process.platform === "win32")("候选拒绝旧主管遗留的相对图库链接，即使图已随 data 移走", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-archive-gallery-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const picture = "sr-character/角色.webp";
+  const env = { PATH: process.env.PATH, LOTUS_CHARACTER_GALLERY_DIR: "custom-gallery" };
+  const verify = async (root: string) => {
+    const previous = await previousUpdateDirectory(root);
+    if (!previous) throw new Error("测试候选缺少旧目录记录。");
+    await verifyMovedRuntimePaths(root, previous, env);
+    expect(await readFile(join(root, "custom-gallery", picture), "utf8")).toBe("原图字节");
+  };
+  try {
+    await mkdir(join(active, "data/gallery/sr-character"), { recursive: true });
+    await mkdir(candidate);
+    await writeFile(join(active, "data/gallery", picture), "原图字节");
+    await symlink("data/gallery", join(active, "custom-gallery"));
+
+    await expect(activateUpdate(active, candidate, verify)).rejects.toThrow("仍留在旧版本");
+    expect(await readFile(join(active, "custom-gallery", picture), "utf8")).toBe("原图字节");
+
+    const state = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), env);
+    expect(state).toEqual(["custom-gallery"]);
+    await activateUpdate(active, candidate, verify, state);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
