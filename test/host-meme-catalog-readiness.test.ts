@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database, SQLiteError } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,10 +7,11 @@ import { spawnManagedWorker } from "../lib/managed-worker.ts";
 import { pluginProbeTokenEnvironment } from "../lib/plugin-load-progress.ts";
 import { copyHost } from "./host-fixture.ts";
 
-async function waitFor(ready: () => boolean | Promise<boolean>) {
+async function waitFor<T>(read: () => T | Promise<T>) {
   const deadline = performance.now() + 4_000;
   while (performance.now() < deadline) {
-    if (await ready()) return;
+    const result = await read();
+    if (result) return result;
     await Bun.sleep(20);
   }
   throw new Error("表情目录未在预期时间内完成同步。");
@@ -36,10 +37,14 @@ test.skipIf(!git || process.platform === "win32")("表情安装和定时同步�
   function catalog() {
     const db = new Database(file, { readonly: true });
     try {
-      db.exec("PRAGMA busy_timeout = 250");
       return db.query<{ key: string }, []>("SELECT key FROM meme ORDER BY key").all().map(({ key }) => key);
+    } catch (error) {
+      // The worker can hold an exclusive lock while committing a catalog refresh.
+      if (error instanceof SQLiteError && error.code === "SQLITE_BUSY") return;
+      throw error;
+    } finally {
+      db.close();
     }
-    finally { db.close(); }
   }
   try {
     await copyHost(root);
@@ -73,17 +78,20 @@ test.skipIf(!git || process.platform === "win32")("表情安装和定时同步�
       expect(requests).toEqual([]);
       expect(await Bun.file(file).exists()).toBe(false);
       worker.activate();
-      await waitFor(() => Bun.file(file).exists());
-      expect(catalog()).toEqual(["ba_say"]);
+      const installed = await waitFor(async () => await Bun.file(file).exists() ? catalog() : undefined);
+      expect(installed).toEqual(["ba_say"]);
       expect(requests.filter(path => path === "/memes/ba_say/info")).toHaveLength(1);
 
       keys = ["ba_say", "new"];
       broken = true;
       await waitFor(() => requests.includes("/memes/new/info"));
-      expect(catalog()).toEqual(["ba_say"]);
+      expect(await waitFor(catalog)).toEqual(["ba_say"]);
       broken = false;
-      await waitFor(() => catalog().includes("new"));
-      expect(catalog()).toEqual(["ba_say", "new"]);
+      const updated = await waitFor(() => {
+        const rows = catalog();
+        if (rows?.includes("new")) return rows;
+      });
+      expect(updated).toEqual(["ba_say", "new"]);
       expect(requests.filter(path => path === "/memes/ba_say/info")).toHaveLength(1);
     } finally {
       await worker.stop();
