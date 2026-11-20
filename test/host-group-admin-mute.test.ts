@@ -2257,6 +2257,44 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       params.user_id === operator && JSON.stringify(params.message).includes(noticeVideoBase64))).toHaveLength(1);
     expect(oneBotCalls.slice(videoStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
       params.user_id === 52 && JSON.stringify(params.message).includes(noticeVideoBase64))).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { privateMessage: true, grouptemporaryMessage: false }\n79: { grouptemporaryMessage: true }\n');
+    const privateVideoStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const incomingPrivateVideo = { ...oneBotPrivate("", 42), message: oneBotVideo.message };
+    client.send(JSON.stringify(incomingPrivateVideo));
+    client.send(JSON.stringify(incomingPrivateVideo));
+    const privateVideoHeader = await waitUntil(() => oneBotCalls.slice(privateVideoStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("好友账号：42") &&
+      JSON.stringify(params.message).includes("[视频]")), "OneBot 原好友视频没有主人摘要。");
+    const privateVideoDelivery = await waitUntil(() => oneBotCalls.slice(privateVideoStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVideoBase64)), "OneBot 原好友视频没有送达。");
+    expect(oneBotCalls.indexOf(privateVideoDelivery)).toBeGreaterThan(oneBotCalls.indexOf(privateVideoHeader));
+    expect(privateVideoDelivery.params.message).toEqual(oneBotVideoDelivery.params.message);
+    const videoReply = "确认视频通知引用回原好友";
+    client.send(JSON.stringify({ ...oneBotPrivate(videoReply), message: [
+      quote(oneBotCalls.indexOf(privateVideoHeader) + 1), text(`#回复 ${videoReply}`),
+    ] }));
+    await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 &&
+      JSON.stringify(params.message).includes(videoReply)), "好友视频摘要引用没有回复原好友。");
+
+    const temporaryVideo = (group: number) => ({
+      ...temporaryMilky("", group), segments: milkyVideo(group, "original-video", expiredNoticeImageUrl).segments,
+    });
+    const tempIncomingVideo = temporaryVideo(79);
+    await webhook("message_receive", tempIncomingVideo);
+    await webhook("message_receive", tempIncomingVideo);
+    const temporaryVideoHeader = await waitUntil(() => milkyCalls.slice(privateVideoStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes("群临时消息") &&
+      JSON.stringify(params.message).includes("[视频]")), "Milky 群临时视频没有向主人发摘要。");
+    const temporaryVideoDelivery = await waitUntil(() => milkyCalls.slice(privateVideoStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVideoBase64)),
+      "Milky 群临时视频没有送达。");
+    expect(milkyCalls.indexOf(temporaryVideoDelivery)).toBeGreaterThan(milkyCalls.indexOf(temporaryVideoHeader));
+    expect(temporaryVideoDelivery.params.message).toEqual(milkyVideoDelivery.params.message);
+    expect(JSON.stringify(temporaryVideoHeader.params.message)).not.toContain("回复 <内容>");
+    await webhook("message_receive", temporaryVideo(96));
+    expect(milkyCalls.slice(privateVideoStart.milky).filter(({ action }) => action === "get_resource_temp_url"))
+      .toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();

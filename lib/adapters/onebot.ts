@@ -474,7 +474,8 @@ async function dispatchMessage(
       message: incoming.message, nickname: stringField(sender?.nickname), signal,
       describeGroup: active => calls.getGroupName(send, groupId, active, true),
       notifyOwners: (reply, active, followup) => notifyVerifiedFriendOwners(calls, send, selfId,
-        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, active]), { followup }),
+        scope => selectNoticeOwners(groupActions, selfId, scope, isMaster), reply, AbortSignal.any([signal, active]),
+        { followup, allowFollowup: id => isMaster(selfId, id) }),
     });
   }
   if (selfId !== undefined && selfId === connectedBotId && "group_id" in target && sender) {

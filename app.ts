@@ -1119,19 +1119,36 @@ if (import.meta.main) {
     return { text, readParts };
   }
 
+  function originalNoticeMedia(message: MessageEvent["message"]) {
+    const voice = standaloneVoicePart(message);
+    if (voice) return {
+      label: "[语音]", unavailable: "（原音不可用）",
+      async read(signal: AbortSignal): Promise<MessageReply | undefined> {
+        const file = await readOriginalQqVoice(voice, signal);
+        if (file) return { type: "record", file };
+      },
+    };
+    const video = standaloneVideoPart(message);
+    if (video) return {
+      label: "[视频]", unavailable: "（原视频不可用）",
+      async read(signal: AbortSignal): Promise<MessageReply | undefined> {
+        const file = await readOriginalQqVideo(video, signal);
+        if (file) return { type: "video", file };
+      },
+    };
+  }
+
   async function forwardFriendMessage(event: MessageEvent, transport: FriendMessageNoticeSession) {
     const registration = friendMessageNotice;
     const { self_id: botId, user_id: userId, message_id: messageId, message, sender } = event;
     if (!registration || event.message_type !== "private" || event.sub_type !== "friend" || event.isDelegated || !botId || !userId ||
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const voice = standaloneVoicePart(message);
+    const media = originalNoticeMedia(message);
     let followup: MessageReply | undefined;
-    const body = voice ? { async readParts() {
-      const original = await readOriginalQqVoice(voice, signal);
-      if (!original) return ["[语音]（原音不可用）"];
-      followup = { type: "record", file: original };
-      return ["[语音]"];
+    const body = media ? { async readParts() {
+      followup = await media.read(signal);
+      return [media.label + (followup ? "" : media.unavailable)];
     } } : readMessageNoticeBody(message, signal);
     if (!body) return;
 
@@ -1158,7 +1175,7 @@ if (import.meta.main) {
         if (!signal.aborted && masterPermissions.isMaster(botId, owner)) {
           await friendNoticeReceipts.record({ adapter: event.adapter ?? "onebot", account: botId, owner, message }, userId, noticeText);
         }
-      }, voice ? { verifyRecipients: true, followup } : undefined);
+      }, media ? { verifyRecipients: true, followup } : undefined);
     });
   }
 
@@ -1169,16 +1186,14 @@ if (import.meta.main) {
     const scope = { self_id: botId, user_id: userId, group_id: groupId };
     if (!groupDispatch.allowsInbound(scope) || !groupDispatch.allows(scope, temporaryMessageNoticeNames)) return;
     const signal = nativeOperationSignal(registration.signal, notice.signal);
-    const voice = standaloneVoicePart(message);
-    const content = voice ? undefined : readMessageNoticeBody(message, signal);
-    if (signal.aborted || (!voice && !content)) return;
+    const media = originalNoticeMedia(message);
+    const content = media ? undefined : readMessageNoticeBody(message, signal);
+    if (signal.aborted || (!media && !content)) return;
     await deliverPrivateNoticeOnce(`temporary:${adapter}:${botId}:${userId}:${messageId}`, async mark => {
       let followup: MessageReply | undefined;
-      const body = voice ? { async readParts() {
-        const original = await readOriginalQqVoice(voice, signal);
-        if (!original) return ["[语音]（原音不可用）"];
-        followup = { type: "record", file: original };
-        return ["[语音]"];
+      const body = media ? { async readParts() {
+        followup = await media.read(signal);
+        return [media.label + (followup ? "" : media.unavailable)];
       } } : content;
       const reply = await registration.policy({ botId, userId, ...body, groupId, reportedGroupId }, signal);
       if (!reply || signal.aborted) return;
@@ -1277,21 +1292,16 @@ if (import.meta.main) {
     const scope = { self_id: botId, group_id: groupId, user_id: userId };
     const signal = groupOwnerNotificationSignal(registration.signal, source.signal, scope, groupMessageNoticeNames);
     if (!signal) return;
-    const voice = standaloneVoicePart(message);
-    const video = standaloneVideoPart(message);
-    const body = voice ? { text: "[语音]" } : video ? { text: "[视频]" } : readMessageNoticeBody(message, signal);
+    const media = originalNoticeMedia(message);
+    const body = media ? { text: media.label } : readMessageNoticeBody(message, signal);
     if (!body) return;
     await deliverPrivateNoticeOnce(`group-message:${adapter}:${botId}:${groupId}:${userId}:${messageId}`, async mark => {
       const reply = await registration.policy({ botId, groupId, userId, ...body, nickname, describeGroup: () => source.describeGroup(signal) }, signal);
       if (!reply || signal.aborted) return;
-      const originalVoice = voice && await readOriginalQqVoice(voice, signal);
-      const originalVideo = video && await readOriginalQqVideo(video, signal);
+      const followup = await media?.read(signal);
       if (signal.aborted) return;
       mark();
-      const notice = voice && !originalVoice ? [...reply, "（原音不可用）"]
-        : video && !originalVideo ? [...reply, "（原视频不可用）"] : reply;
-      const followup = originalVoice ? { type: "record" as const, file: originalVoice }
-        : originalVideo ? { type: "video" as const, file: originalVideo } : undefined;
+      const notice = media && !followup ? [...reply, media.unavailable] : reply;
       await source.notifyOwners(notice, signal, followup);
     });
   }

@@ -368,7 +368,7 @@ function decodeSegments(value: unknown, selfId: number, target: Target, call: Mi
 export function decodeMilkyTemporaryMessage(segments: unknown, account: number, userId: number, call: MilkyCall) {
   if (!Array.isArray(segments) || !segments.every(part => isRecord(part) &&
     (part.type === "text" || part.type === "image" || part.type === "face" || part.type === "face_incoming" ||
-      (part.type === "record" && segments.length === 1)))) return;
+      ((part.type === "record" || part.type === "video") && segments.length === 1)))) return;
   return decodeSegments(segments, account, { user_id: userId }, call)?.message;
 }
 
