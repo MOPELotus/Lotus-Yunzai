@@ -37,6 +37,7 @@ import { createMilkyWebhook } from "./lib/adapters/milky-webhook.ts";
 import { createMilkyWs } from "./lib/adapters/milky-ws.ts";
 import { startOneBot } from "./lib/adapters/onebot.ts";
 import { OneBotGroups } from "./lib/adapters/onebot-groups.ts";
+import { memberDisplayName } from "./lib/adapters/onebot-member-display.ts";
 import { noticeGroupTransport, waitForMilkyNoticeReceipts, type NoticeGroupAccount } from "./lib/adapters/notice-groups.ts";
 import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDuration, type GroupModerationResult, type MemberMuteNotice,
   type NativeGroupMessageSource, type NativeGroupOwnerAdminNotice, type NativeGroupOwnerBanNotice, type NativeGroupOwnerGroupNotice,
@@ -2374,6 +2375,18 @@ if (import.meta.main) {
         if (milky && !milky.signal.aborted) sessions.push({ id: milky.id, startedAt: milky.startedAt });
         sessions.sort((left, right) => left.startedAt - right.startedAt);
         return Object.freeze([...new Set(sessions.map(({ id }) => id))]);
+      },
+      get bots() {
+        const sessions = groups.onlineProfiles();
+        const milky = milkyOnline;
+        if (milky && !milky.signal.aborted) sessions.push({ id: milky.id, startedAt: milky.startedAt,
+          nickname: memberDisplayName(milky.ownGroupCardAccount.nickname) });
+        sessions.sort((left, right) => left.startedAt - right.startedAt);
+        const profiles: Record<number, { readonly nickname: string }> = Object.create(null);
+        for (const { id, nickname } of sessions) {
+          if (nickname !== undefined && !Object.hasOwn(profiles, id)) profiles[id] = Object.freeze({ nickname });
+        }
+        return Object.freeze(profiles);
       },
     }) });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);

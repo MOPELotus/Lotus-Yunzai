@@ -28,11 +28,14 @@ interface Connection {
 interface ConnectedAccount {
   readonly connection: Connection;
   readonly startedAt: number;
+  nickname?: string;
+  nicknameRequested?: boolean;
 }
 
 export class OneBotGroups implements GroupTransport {
   readonly #connected = new Map<number, ConnectedAccount>();
   readonly #now: () => number;
+  #profilesRequested = false;
 
   constructor(now: () => number = () => performance.now()) {
     this.#now = now;
@@ -43,6 +46,7 @@ export class OneBotGroups implements GroupTransport {
     const previous = this.#connected.get(botId);
     this.#connected.set(botId, account);
     previous?.connection.retireMemberDisplay?.();
+    if (this.#profilesRequested) this.#requestNickname(botId, account);
     return () => {
       if (this.#connected.get(botId) === account) this.#connected.delete(botId);
     };
@@ -63,6 +67,23 @@ export class OneBotGroups implements GroupTransport {
 
   onlineBindings(): { id: number; startedAt: number }[] {
     return Array.from(this.#connected, ([id, { startedAt }]) => ({ id, startedAt }));
+  }
+
+  onlineProfiles(): { id: number; startedAt: number; nickname?: string }[] {
+    this.#profilesRequested = true;
+    return Array.from(this.#connected, ([id, account]) => {
+      this.#requestNickname(id, account);
+      return { id, startedAt: account.startedAt, nickname: account.nickname ?? account.connection.ownGroupCardAccount?.nickname };
+    });
+  }
+
+  #requestNickname(id: number, account: ConnectedAccount): void {
+    const { calls, send, ownGroupCardAccount: owner } = account.connection;
+    if (account.nicknameRequested || !owner || owner.signal.aborted || owner.nickname) return;
+    account.nicknameRequested = true;
+    void calls.loginNickname(send, id, owner.signal).then(nickname => {
+      if (this.#connected.get(id) === account && !owner.signal.aborted) account.nickname = nickname;
+    }, () => {});
   }
 
   ownGroupCardAccounts(): readonly OwnGroupCardAccount[] {

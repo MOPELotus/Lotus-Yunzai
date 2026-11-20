@@ -51,3 +51,40 @@ test("同账号替换后重新计时，旧连接关闭不影响新连接与群�
   groups.connect(99, connection(79));
   expect(groups.onlineAccounts()).toEqual([{ id: 99, seconds: 0 }]);
 });
+
+test("按需读取已绑定机器人的昵称，同账号旧回执和其他账号的昵称不可缓存", async () => {
+  const groups = new OneBotGroups(() => 0);
+  function bind() {
+    const calls = new OneBotCalls();
+    const frames: OneBotAction[] = [];
+    const detach = groups.connect(99, { calls, send(frame) { frames.push(frame); return true; }, ownGroupCardAccount: {
+      adapter: "onebot", botId: 99, signal: new AbortController().signal,
+      async groups() { return []; }, async updateSelfCard() { return "rejected"; },
+    } });
+    return { frames, detach, reply(data: { user_id: number; nickname: string }) {
+      calls.receive({ echo: frames[0]?.echo, status: "ok", retcode: 0, data });
+    } };
+  }
+
+  const first = bind();
+  expect(first.frames).toEqual([]);
+  expect(groups.onlineProfiles()[0]?.nickname).toBeUndefined();
+  expect(groups.onlineProfiles()[0]?.nickname).toBeUndefined();
+  expect(first.frames).toHaveLength(1);
+  expect(first.frames[0]).toMatchObject({ action: "get_login_info", params: {} });
+
+  const second = bind();
+  first.reply({ user_id: 99, nickname: "旧连接" });
+  second.reply({ user_id: 100, nickname: "其他账号" });
+  await Bun.sleep(0);
+  expect(groups.onlineProfiles()[0]?.nickname).toBeUndefined();
+
+  const third = bind();
+  second.detach();
+  third.reply({ user_id: 99, nickname: " 当前昵称 " });
+  await Bun.sleep(0);
+  expect(groups.onlineProfiles()).toEqual([{ id: 99, startedAt: 0, nickname: "当前昵称" }]);
+  expect(third.frames).toHaveLength(1);
+  third.detach();
+  expect(groups.onlineProfiles()).toEqual([]);
+});
