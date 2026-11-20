@@ -103,6 +103,18 @@ export interface LiveGroupMember {
 export interface GroupVerificationScope {
   readonly connection: AbortSignal;
   readonly signal: AbortSignal;
+  canConfigure(): Promise<boolean>;
+}
+
+async function groupOwnerCanConfigure(active: () => boolean, isMaster: () => boolean, role: () => Promise<Role | undefined>) {
+  return active() && isMaster() && !!await role().catch(() => undefined) && active() && isMaster();
+}
+
+export function bindGroupVerificationScope(connection: AbortSignal, workflow: AbortSignal, accepting: () => boolean,
+  isMaster: () => boolean, role: (signal: AbortSignal) => Promise<Role | undefined>): GroupVerificationScope {
+  const signal = AbortSignal.any([connection, workflow]);
+  const active = () => !signal.aborted && accepting();
+  return { connection, signal, canConfigure: () => groupOwnerCanConfigure(active, isMaster, () => role(signal)) };
 }
 
 type GroupVoteReply = readonly (string | { readonly type: "at"; readonly qq: number })[];
@@ -367,9 +379,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
         }
         return apply(() => action === "mute" ? mute(target, seconds, voteSignal) : kick(target, false, voteSignal));
       },
-      async canConfigure() {
-        return voting() && isMaster() && !!await role(actor).catch(() => undefined) && voting() && isMaster();
-      },
+      canConfigure: () => groupOwnerCanConfigure(voting, isMaster, () => role(actor)),
       async reply(parts, quote) {
         return voting() && await access.reply(parts, quote, voteSignal).catch(() => false) && voting();
       },

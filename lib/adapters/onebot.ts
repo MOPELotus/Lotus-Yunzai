@@ -4,7 +4,8 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindGroupRuleImageDigest, bindMessageGroupActions, bindMixedGroupImageParts, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
+import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
+  bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -465,8 +466,9 @@ async function dispatchMessage(
         },
       } : undefined,
     })),
-    groupVerification: workflowSignal && likeSession && event.sub_type !== "anonymous"
-      ? { connection: likeSession, signal: AbortSignal.any([likeSession, workflowSignal]) } : undefined,
+    groupVerification: workflowSignal && likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
+      ? bindGroupVerificationScope(likeSession, workflowSignal, () => userId !== selfId && groupActions?.canModerateGroups?.() !== false,
+        () => isMaster(selfId, userId), active => calls.getGroupRole(send, target.group_id, userId, true, active)) : undefined,
     groupMuteRoster: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       if (likeSession.aborted || !await calls.getGroupRole(send, target.group_id, userId, true, likeSession) || likeSession.aborted) return;
       return calls.listMutedMembers(send, target.group_id, likeSession);

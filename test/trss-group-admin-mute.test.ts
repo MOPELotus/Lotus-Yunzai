@@ -1001,6 +1001,19 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       [73, 74, 75].includes(Number(params.user_id))).map(({ params }) => params)).toEqual([{ group_id: 79, user_id: 75 }]);
     expect(milkyCalls.some(({ action, params }) => action === "send_group_message" &&
       JSON.stringify(params.message).includes('"user_id":74') && JSON.stringify(params.message).includes("欢迎！"))).toBe(false);
+
+    const originalVerificationConfig = await readFile(legacyList, "utf8");
+    await webhook("message_receive", milkyTitle("#切换验证模式", 54));
+    await announcementReply("仅当前机器人主人可以设置入群验证模式和时限");
+    expect(await readFile(legacyList, "utf8")).toBe(originalVerificationConfig);
+    updateRole({ group_id: 79, user_id: operator }, false);
+    updateRole({ group_id: 79, user_id: milkyId }, false);
+    await webhook("message_receive", milkyTitle("#切换验证模式", operator));
+    await announcementReply("已切换验证模式为模糊验证");
+    await webhook("message_receive", milkyTitle("#设置验证超时时间7秒", operator));
+    await announcementReply("已将验证超时时间设置为7秒");
+    expect(await readFile(legacyList, "utf8")).toBe(originalVerificationConfig.replace("\n  mode: 精确\n", "\n  mode: 模糊\n")
+      .replace("\n  time: 2\n", "\n  time: 7\n"));
   } finally {
     socket?.close();
     host?.kill();
