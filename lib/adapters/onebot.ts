@@ -1000,8 +1000,9 @@ export function startOneBot(
               const signal = groupActionSignal(socket.data, self_id);
               if (!signal) return;
               options.onFriendRecall({ adapter: "onebot", botId: self_id, userId: user_id, messageId, time, signal,
-                notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(calls, send, self_id,
-                  scope => selectNoticeOwners(options, self_id, scope, options.isMaster), reply, AbortSignal.any([signal, workflow])),
+                notifyOwners: (reply, workflow, followup) => notifyVerifiedFriendOwners(calls, send, self_id,
+                  scope => selectNoticeOwners(options, self_id, scope, options.isMaster), reply, AbortSignal.any([signal, workflow]),
+                  { source: followup === undefined ? undefined : user_id, followup, allowFollowup: id => options.isMaster(self_id, id) }),
               });
             } else if (message.notice_type === "friend_add" && options.onFriendRelationship) {
               const { self_id, user_id, time } = message;

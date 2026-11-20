@@ -321,10 +321,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return deliveries.filter(result => result === "confirmed").length;
   }
 
-  async function notifyVerifiedOwnerReplies(reply: MessageReply, workflow: AbortSignal, followup?: MessageReply) {
+  async function notifyVerifiedOwnerReplies(reply: MessageReply, workflow: AbortSignal, followup?: MessageReply, source?: number) {
     const active = AbortSignal.any([signal, workflow]);
     const friends = await listCurrentFriends(active);
-    return friends ? notifyOwnerReplies(reply, active, undefined, friends, followup) : 0;
+    return friends && (source === undefined || friends.has(source)) ? notifyOwnerReplies(reply, active, undefined, friends, followup) : 0;
   }
 
   async function readVerifiedGroupName(groupId: number, active: AbortSignal) {
@@ -666,7 +666,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (options.onFriendRecall && positiveId(sender_id) && sender_id === peer_id && sender_id === operator_id && sender_id !== account &&
           positiveId(body.time) && hasMessageSequence(message_seq)) {
         options.onFriendRecall({ adapter: "milky", botId: account, userId: sender_id, messageId: message_seq, time: body.time, signal,
-          notifyOwners: (reply, workflow) => notifyVerifiedOwnerReplies(reply, workflow),
+          notifyOwners: (reply, workflow, followup) => notifyVerifiedOwnerReplies(reply, workflow, followup,
+            followup === undefined ? undefined : sender_id),
         });
       }
       return "accepted";

@@ -56,9 +56,9 @@ import { lockFile } from "./lib/file-lock.ts";
 import { readFriendRequests } from "./lib/friend-requests.ts";
 import { createFriendMessageReceipts, friendMessageNoticeSession, type FriendMessageNoticeSession,
   type NativeFriendRelationshipNotice } from "./lib/friend-message-notice.ts";
-import { createMessageRecallCache, maxRecallImageCacheBytes, maxRecallImageCacheEntries, readRecallBody,
+import { createMessageRecallCache, maxRecallMediaCacheBytes, maxRecallMediaCacheEntries, readRecallBody,
   type NativeFriendRecallNotice, type NativeGroupRecallNotice,
-  type RecallBody } from "./lib/message-recall-notice.ts";
+  type RecallBody, type RecallTextBody } from "./lib/message-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
@@ -369,12 +369,12 @@ if (import.meta.main) {
       const redis = globalThis.redis;
       if (!redis) return;
       const prefix = `lotus-yunzai:${feature}-recall-notice:`;
-      const imageExpirations = prefix + "image-expirations";
-      const imageSizes = prefix + "image-sizes";
+      const mediaExpirations = prefix + "image-expirations";
+      const mediaSizes = prefix + "image-sizes";
       return {
         async has(key) { return await redis.exists(prefix + key) !== 0; },
-        async save(key, value, ttl, withImage) {
-          if (!withImage) {
+        async save(key, value, ttl, withMedia) {
+          if (!withMedia) {
             await redis.set(prefix + key, value, { EX: ttl, NX: true });
             return;
           }
@@ -395,8 +395,8 @@ if (import.meta.main) {
             redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]) * 1000, KEYS[1])
             redis.call('HSET', KEYS[3], KEYS[1], size)
             return 1
-          `, { keys: [prefix + key, imageExpirations, imageSizes],
-            arguments: [value, String(ttl), String(maxRecallImageCacheBytes), String(maxRecallImageCacheEntries)] });
+          `, { keys: [prefix + key, mediaExpirations, mediaSizes],
+            arguments: [value, String(ttl), String(maxRecallMediaCacheBytes), String(maxRecallMediaCacheEntries)] });
         },
         async take(key) {
           const result = await redis.eval(`
@@ -406,7 +406,7 @@ if (import.meta.main) {
             redis.call('ZREM', KEYS[2], KEYS[1]);
             redis.call('HDEL', KEYS[3], KEYS[1]);
             return value;
-          `, { keys: [prefix + key, imageExpirations, imageSizes], arguments: [] });
+          `, { keys: [prefix + key, mediaExpirations, mediaSizes], arguments: [] });
           return typeof result === "string" ? result : null;
         },
       };
@@ -414,7 +414,7 @@ if (import.meta.main) {
   }
   const friendRecallCache = recallCache("friend");
   const groupRecallCache = recallCache("group");
-  let activeRecallImageReads = 0;
+  let activeRecallMediaReads = 0;
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
@@ -1239,7 +1239,11 @@ if (import.meta.main) {
         messageId === undefined || !canForwardPrivateNotice(botId, userId) || !groupDispatch.allows(event, friendRecallNoticeNames) ||
         typeof message === "string" || !message.length) return;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
-    const body = recallCaptureContent(message, signal);
+    const voice = standaloneVoicePart(message);
+    const body = voice ? () => readRecallMedia(signal, async () => {
+      const file = await readOriginalQqVoice(voice, signal);
+      if (file) return { voice: file };
+    }) : recallCaptureContent(message, signal);
     if (body === undefined || signal.aborted) return;
     return friendRecallCache.capture({ adapter: event.adapter ?? "onebot", botId, userId, messageId }, body,
       () => registration.policy.retention(botId, signal), signal);
@@ -1268,19 +1272,21 @@ if (import.meta.main) {
     if (typeof message === "string" || !message.some(part => part.type === "image")) return;
     const readParts = readMessageNoticeBody(message, signal)?.readParts;
     if (!readParts) return;
-    return async (): Promise<RecallBody | undefined> => {
-      if (signal.aborted || activeRecallImageReads >= 4) return;
-      activeRecallImageReads++;
-      try {
-        const parts = await readParts();
-        if (!signal.aborted) return parts;
-      } finally {
-        activeRecallImageReads--;
-      }
-    };
+    return () => readRecallMedia(signal, readParts);
   }
 
-  function recallNoticeInput(body: RecallBody) {
+  async function readRecallMedia(signal: AbortSignal, read: () => Promise<RecallBody | undefined>) {
+    if (signal.aborted || activeRecallMediaReads >= 4) return;
+    activeRecallMediaReads++;
+    try {
+      const body = await read();
+      if (!signal.aborted) return body;
+    } finally {
+      activeRecallMediaReads--;
+    }
+  }
+
+  function recallNoticeInput(body: RecallTextBody) {
     if (typeof body === "string") return { text: body };
     return { text: body.filter(part => typeof part === "string").join(""), parts: body };
   }
@@ -1316,8 +1322,13 @@ if (import.meta.main) {
     if (signal.aborted || await registration.policy.retention(botId, signal) === undefined || signal.aborted) return;
     const body = await friendRecallCache.take(notice, signal);
     if (body === undefined || signal.aborted) return;
-    const reply = await registration.policy.format({ botId, userId, time, ...recallNoticeInput(body) }, signal);
-    if (reply && !signal.aborted) await notice.notifyOwners(reply, signal);
+    if (typeof body !== "string" && "voice" in body) {
+      const summary = await registration.policy.format({ botId, userId, time, text: "[语音]" }, signal);
+      if (summary && !signal.aborted) await notice.notifyOwners(summary, signal, { type: "record", file: body.voice });
+    } else {
+      const reply = await registration.policy.format({ botId, userId, time, ...recallNoticeInput(body) }, signal);
+      if (reply && !signal.aborted) await notice.notifyOwners(reply, signal);
+    }
   }
 
   async function forwardGroupRecall(notice: NativeGroupRecallNotice) {
@@ -1329,7 +1340,7 @@ if (import.meta.main) {
     const signal = nativeOperationSignal(registration.signal, notice.signal);
     if (signal.aborted || await registration.policy.retention(botId, groupId, signal) === undefined || signal.aborted) return;
     const body = await groupRecallCache.take(notice, signal);
-    if (body === undefined || signal.aborted) return;
+    if (body === undefined || signal.aborted || (typeof body !== "string" && "voice" in body)) return;
     const description = await notice.describe(signal);
     if (signal.aborted) return;
     const reply = await registration.policy.format({ ...description, botId, userId, groupId, operatorId, time, ...recallNoticeInput(body) }, signal);

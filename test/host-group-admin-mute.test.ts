@@ -2295,6 +2295,44 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", temporaryVideo(96));
     expect(milkyCalls.slice(privateVideoStart.milky).filter(({ action }) => action === "get_resource_temp_url"))
       .toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { PrivateRecall: true }\n');
+    const voiceRecallStart = { oneBot: oneBotCalls.length, milky: milkyCalls.length };
+    const originalFriendVoice = { ...oneBotPrivate("", 42), message: oneBotVoice.message };
+    client.send(JSON.stringify(originalFriendVoice));
+    const recalledFriendVoice = { ...oneBotRecall, message_id: originalFriendVoice.message_id };
+    client.send(JSON.stringify(recalledFriendVoice));
+    client.send(JSON.stringify(recalledFriendVoice));
+    const voiceRecallHeader = await waitUntil(() => oneBotCalls.slice(voiceRecallStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes("好友撤回消息") &&
+      JSON.stringify(params.message).includes("[语音]")), "OneBot 好友撤回没有语音摘要。");
+    const voiceRecallAudio = await waitUntil(() => oneBotCalls.slice(voiceRecallStart.oneBot).find(({ action, params }) =>
+      action === "send_msg" && params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64)), "OneBot 撤回原语音未送达。");
+    expect(oneBotCalls.indexOf(voiceRecallAudio)).toBeGreaterThan(oneBotCalls.indexOf(voiceRecallHeader));
+    expect(voiceRecallAudio.params.message).toEqual([{ type: "record", data: { file: `base64://${noticeVoiceBase64}` } }]);
+
+    const milkyRecalledVoice = () => ({ ...milkyPrivate("", 43), segments: audioEvent(95, "original-voice", expiredVoiceUrl).segments });
+    const milkyVoiceOriginal = milkyRecalledVoice();
+    omitFriendVoiceReceipt = false;
+    await webhook("message_receive", milkyVoiceOriginal);
+    await webhook("message_recall", { ...milkyRecall, message_seq: milkyVoiceOriginal.message_seq });
+    const milkyVoiceRecallAudio = await waitUntil(() => milkyCalls.slice(voiceRecallStart.milky).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64)),
+      "Milky 好友撤回未发送已核原音。");
+    expect(milkyVoiceRecallAudio.params.message).toEqual([{ type: "record", data: { uri: `base64://${noticeVoiceBase64}` } }]);
+    const missingVoiceRecallStart = milkyCalls.length;
+    omitFriendVoiceReceipt = true;
+    const unconfirmedVoiceOriginal = milkyRecalledVoice();
+    await webhook("message_receive", unconfirmedVoiceOriginal);
+    await webhook("message_recall", { ...milkyRecall, message_seq: unconfirmedVoiceOriginal.message_seq });
+    await waitUntil(() => milkyCalls.slice(missingVoiceRecallStart).find(({ action, params }) =>
+      action === "send_private_message" && params.user_id === operator && JSON.stringify(params.message).includes("[语音]")),
+      "Milky 好友撤回没有发出待验证回执的摘要。");
+    await Bun.sleep(100);
+    expect(milkyCalls.slice(voiceRecallStart.milky).filter(({ action, params }) => action === "send_private_message" &&
+      params.user_id === operator && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
+    expect(oneBotCalls.slice(voiceRecallStart.oneBot).filter(({ action, params }) => action === "send_msg" &&
+      params.user_id === 52 && JSON.stringify(params.message).includes(noticeVoiceBase64))).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();
