@@ -1,4 +1,5 @@
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
 import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
@@ -31,6 +32,26 @@ function pm2Executable() {
 async function present(path: string) {
   return lstat(path).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
+  });
+}
+
+async function daemonListening(path: string): Promise<boolean> {
+  if (!(await present(path))?.isSocket()) return false;
+  // Invoking PM2 against a missing or stale socket can start a new daemon.
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(path);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" || error.code === "ECONNREFUSED") resolve(false);
+      else reject(error);
+    });
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      reject(new Error("无法确认 PM2 守护进程状态。"));
+    });
   });
 }
 
@@ -67,38 +88,49 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   const spawnOptions = (path: string) => ({
     cwd: parent, env: { ...env, PM2_HOME: path }, stdin: "ignore", stdout: "inherit", stderr: "inherit",
   } as const);
-  const hasCurrent = await privateHome(home);
+  async function application(path: string) {
+    if (!await privateHome(path) || !await daemonListening(join(path, "rpc.sock"))) return;
+    const lookup = Bun.spawn([binary, "jlist"], { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
+    const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
+    if (code !== 0) throw new Error("无法查询 PM2 应用。");
+    let processes: unknown;
+    try { processes = JSON.parse(result); }
+    catch { throw new Error("无法读取 PM2 应用状态。"); }
+    if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
+    const process = processes.find((item) => item?.name === name);
+    if (!process) return;
+    const status: unknown = process.pm2_env?.status;
+    if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
+    const pid: unknown = process.pid;
+    return { path, active: status !== "stopped" && status !== "errored",
+      pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined };
+  }
+
+  const current = await application(home);
+  const legacy = current?.active ? undefined : await application(legacyHome);
+  const active = [current, legacy].find((entry) => entry?.active);
   if (action !== "start:bg") {
-    const selected = hasCurrent ? home : await privateHome(legacyHome) ? legacyHome : undefined;
+    const selected = active ?? current ?? legacy;
     if (!selected) {
       if (action === "logs") throw new Error("当前目录暂无后台启动日志。");
       console.log("当前目录未启动后台托管。");
       return 0;
     }
     const args = action === "status" ? ["status"] : [action, name, ...options];
-    return Bun.spawn([binary, ...args], spawnOptions(selected)).exited;
+    return Bun.spawn([binary, ...args], spawnOptions(selected.path)).exited;
   }
 
-  async function runningPid(path: string) {
-    if (!(await present(join(path, "rpc.sock")))?.isSocket()) return;
-    const lookup = Bun.spawn([binary, "pid", name], { ...spawnOptions(path), stdout: "pipe" });
-    const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
-    const pid = result.trim();
-    return code === 0 && /^[1-9]\d*$/u.test(pid) ? pid : undefined;
-  }
   function readyPid(path: string) {
     return readFile(join(path, "host-ready"), "utf8").catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
     });
   }
-  for (const path of [home, legacyHome]) {
-    if (!await privateHome(path)) continue;
-    const pid = await runningPid(path);
-    if (pid) {
-      if (pid !== await readyPid(path)) throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
-      console.log("当前目录的后台宿主已运行。");
-      return 0;
+  if (active) {
+    if (!active.pid || active.pid !== await readyPid(active.path)) {
+      throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
     }
+    console.log("当前目录的后台宿主已运行。");
+    return 0;
   }
   await mkdir(home, { mode: 0o700, recursive: true });
   await privateHome(home);

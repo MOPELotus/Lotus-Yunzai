@@ -11,6 +11,66 @@ const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: 
   version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
 } } } } } } });
 
+test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的活跃实例，并忽略孤立状态文件", async () => {
+  const { cwd, start } = await fixture();
+  const parent = dirname(cwd);
+  const bin = join(parent, "bin");
+  const legacy = join(cwd, "data", ".pm2");
+  const current = join(parent, ".checkout.lotus-pm2");
+  const env = { PATH: bin + ":" + process.env.PATH };
+  const atlas = join(cwd, "data/atlas/data");
+  await Promise.all([mkdir(bin), mkdir(legacy, { recursive: true, mode: 0o700 }),
+    mkdir(current, { mode: 0o700 }), mkdir(atlas, { recursive: true })]);
+  await writeFile(join(atlas, "map.json"), index);
+  await writeFile(join(bin, "pm2"), `#!${process.execPath}
+    const action = Bun.argv[2];
+    const home = process.env.PM2_HOME;
+    if (action === "jlist") console.log(await Bun.file(home + "/apps.json").text());
+    else if (action === "start") process.exit(9);
+    else console.log(home);
+  `, { mode: 0o700 });
+  await writeFile(join(current, "host-ready"), "999");
+  await writeFile(join(legacy, "pm2.pid"), "999");
+  const [emptyStatus, emptyOutput] = await start(["status"], env);
+  expect(emptyStatus).toBe(0);
+  expect(emptyOutput).toContain("当前目录未启动后台托管");
+
+  const listeners = [current, legacy].map((path) => Bun.listen({
+    unix: join(path, "rpc.sock"), socket: { data() {} },
+  }));
+  const setApp = (path: string, pid: number, status: string) => writeFile(join(path, "apps.json"),
+    JSON.stringify([{ name: "lotus-yunzai", pid, pm2_env: { status } }]));
+  try {
+    await writeFile(join(current, "apps.json"), "[]");
+    await setApp(legacy, 101, "online");
+    await writeFile(join(legacy, "host-ready"), "101");
+    for (const action of ["status", "logs", "stop"]) {
+      const [code, output, error] = await start([action], env);
+      expect({ code, error }).toEqual({ code: 0, error: "" });
+      expect(output.trim()).toBe(legacy);
+    }
+    const [oldStart, oldOutput] = await start(["start:bg"], env);
+    expect(oldStart).toBe(0);
+    expect(oldOutput).toContain("后台宿主已运行");
+
+    await setApp(legacy, 0, "stopped");
+    expect((await start(["logs", "--nostream"], env))[1].trim()).toBe(legacy);
+
+    await setApp(legacy, 101, "online");
+    await setApp(current, 202, "online");
+    await writeFile(join(current, "host-ready"), "202");
+    expect((await start(["status"], env))[1].trim()).toBe(current);
+    const [currentStart, currentOutput] = await start(["start:bg"], env);
+    expect(currentStart).toBe(0);
+    expect(currentOutput).toContain("后台宿主已运行");
+
+    await setApp(current, 0, "waiting restart");
+    expect((await start(["start:bg"], env))[0]).toBe(1);
+  } finally {
+    for (const listener of listeners) listener.stop(true);
+  }
+});
+
 afterEach(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true });
   roots.clear();
