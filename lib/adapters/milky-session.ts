@@ -258,7 +258,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (!receipt || !active()) return { status: "unrelated" };
     const source = await lookupReply();
     if (source?.user_id !== account || !active()) return { status: "unrelated" };
-    const text = privateNoticeText(source.message, false);
+    const rich = receipt.origin.groupAvatar === true;
+    if (rich && source.message[0]?.type !== "image") return { status: "unrelated" };
+    const text = privateNoticeText(rich ? source.message.slice(1) : source.message, false);
     if (!text || hashPrivateNotice(text) !== receipt.noticeHash) return { status: "unrelated" };
     if (receipt.expires <= Date.now()) return { status: "expired" };
     const { groupId, inviterId, sequence } = receipt.origin;
@@ -776,16 +778,20 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         if (groupReviews.register(request, decision)) {
           groupRequest = invitationReceipts && invitationOrigin ? {
             ...request,
-            async notifyRequestOwners(message: string) {
+            notifyOwners: notifyVerifiedOwnerReplies,
+            async notifyRequestOwners(message: string, rich?: { readonly reply: MessageReply; readonly signal: AbortSignal }) {
               const workflow = options.groupWorkflowSignal?.();
-              const active = workflow ? AbortSignal.any([signal, workflow]) : signal;
-              const owners = options.masterIds?.(account).filter(owner => owner !== account && isMaster(owner)) ?? [];
-              const delivered = await Promise.allSettled(owners.map(owner => sendReply({ user_id: owner }, message, async (messageId) => {
-                if (!active.aborted && isMaster(owner)) await invitationReceipts.record({ account, owner, message: messageId }, invitationOrigin, message);
+              const active = AbortSignal.any([signal, ...(workflow ? [workflow] : []), ...(rich ? [rich.signal] : [])]);
+              const friends = rich && await listCurrentFriends(active);
+              if (active.aborted || (rich && !friends)) return 0;
+              const owners = options.masterIds?.(account).filter(owner => owner !== account && isMaster(owner) && (!friends || friends.has(owner))) ?? [];
+              const origin = rich ? { ...invitationOrigin, groupAvatar: true as const } : invitationOrigin;
+              const delivered = await Promise.allSettled(owners.map(owner => sendReply({ user_id: owner }, rich?.reply ?? message, async (messageId) => {
+                if (!active.aborted && isMaster(owner)) await invitationReceipts.record({ account, owner, message: messageId }, origin, message);
               }, active)));
               return delivered.filter(outcome => outcome.status === "fulfilled" && outcome.value).length;
             },
-          } : kind === "add" ? { ...request, notifyOwners: notifyVerifiedOwnerReplies } : request;
+          } : { ...request, notifyOwners: notifyVerifiedOwnerReplies };
           if (kind === "add") bindGroupModeration(groupRequest, {
             signal,
             joinRequestOrigin,
@@ -801,6 +807,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
               }
             },
           });
+          else bindGroupModeration(groupRequest, { signal });
         }
       }
     }

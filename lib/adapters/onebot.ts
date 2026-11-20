@@ -223,7 +223,7 @@ async function dispatchRequest(
     group_name: stringField(event.group_name),
     nickname: stringField(event.nickname),
     inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
-    notifyOwners: session && sub_type === "add" ? (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
+    notifyOwners: session ? (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
       () => permissions.masterIds(self_id).filter(id => permissions.isMaster(self_id, id)), reply, AbortSignal.any([session, active])) : undefined,
     approve: (approve = true, reason) => confirmJoinReview(joinReview, reviewKey,
       () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
@@ -246,6 +246,7 @@ async function dispatchRequest(
       return status === "unavailable" ? "rejected" : status;
     },
   });
+  else if (session) bindGroupModeration(request, { signal: session });
   await dispatch(request);
 }
 

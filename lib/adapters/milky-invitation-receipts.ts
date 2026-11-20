@@ -5,6 +5,7 @@ export interface MilkyInvitationOrigin {
   readonly groupId: number;
   readonly inviterId: number;
   readonly sequence: number;
+  readonly groupAvatar?: true;
 }
 
 type ReceiptScope = Omit<PrivateNoticeScope, "adapter">;
@@ -15,8 +16,9 @@ function positiveId(value: unknown): value is number {
 
 function isInvitation(value: unknown, account: number): value is MilkyInvitationOrigin {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const { groupId, inviterId, sequence } = value as Record<string, unknown>;
-  return positiveId(groupId) && positiveId(inviterId) && inviterId !== account && positiveId(sequence);
+  const { groupId, inviterId, sequence, groupAvatar } = value as Record<string, unknown>;
+  return positiveId(groupId) && positiveId(inviterId) && inviterId !== account && positiveId(sequence) &&
+    (groupAvatar === undefined || groupAvatar === true);
 }
 
 export function createMilkyInvitationReceipts(getStorage: () => PrivateNoticeReceiptStore | undefined, now = Date.now) {

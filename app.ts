@@ -126,6 +126,7 @@ import type { GroupLeaveBlacklist } from "./plugins/group/group-leave-blacklist.
 import type { GroupOwnerAdminNotice } from "./plugins/group/group-owner-admin-notice.ts";
 import type { GroupOwnerBanNotice } from "./plugins/group/group-owner-ban-notice.ts";
 import type { GroupOwnerGroupNotice } from "./plugins/group/group-owner-group-notice.ts";
+import type { GroupOwnerInvitationNotice } from "./plugins/group/group-owner-invitation-notice.ts";
 import type { GroupOwnerJoinRequestNotice } from "./plugins/group/group-owner-join-request-notice.ts";
 import type { GroupOwnerMemberNotice } from "./plugins/group/group-owner-member-notice.ts";
 import type { CalendarSchedule, CalendarScheduleTarget } from "./plugins/guides/calendar-schedule.ts";
@@ -157,6 +158,7 @@ const groupOwnerAdminNoticeNames = ["[group] 群管理变动通知", "group", "@
 const groupOwnerBanNoticeNames = ["[group] 机器人禁言通知", "group", "@lotus-yunzai/group"];
 const groupOwnerGroupNoticeNames = ["[group] 群聊列表变动通知", "group", "@lotus-yunzai/group"];
 const groupOwnerJoinRequestNoticeNames = ["[group] 加群申请主人通知", "group", "@lotus-yunzai/group"];
+const groupOwnerInvitationNoticeNames = ["[group] 群邀请主人通知", "group", "@lotus-yunzai/group"];
 const noticeSettingsNames = ["[group] 通知设置", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
@@ -328,6 +330,7 @@ if (import.meta.main) {
   let groupOwnerBanNotice: { policy: GroupOwnerBanNotice; signal: AbortSignal } | undefined;
   let groupOwnerGroupNotice: { policy: GroupOwnerGroupNotice; signal: AbortSignal } | undefined;
   let groupOwnerJoinRequestNotice: { policy: GroupOwnerJoinRequestNotice; signal: AbortSignal } | undefined;
+  let groupOwnerInvitationNotice: { policy: GroupOwnerInvitationNotice; signal: AbortSignal } | undefined;
   const notifiedFriendRequests = new Set<string>();
   const notifiedPrivateMessages = new Set<string>();
   const pendingPrivateNotices = new Set<string>();
@@ -1300,11 +1303,35 @@ if (import.meta.main) {
     };
   }
 
+  function withGroupOwnerInvitationNotice(event: GroupRequest): GroupRequest {
+    const registration = groupOwnerInvitationNotice;
+    const { notifyOwners, notifyRequestOwners } = event;
+    const session = groupModerationSession(event)?.signal;
+    if (!registration || !notifyOwners || !session || masterPermissions.isMaster(event.self_id, event.user_id) ||
+        masterPermissions.legacyMasterIds().includes(event.user_id)) return event;
+    const signal = groupOwnerNotificationSignal(registration.signal, session, event, groupOwnerInvitationNoticeNames);
+    if (!signal) return event;
+    return {
+      ...event,
+      async notifyInvitationRequestOwners(ordinary, actions) {
+        if (signal.aborted) return 0;
+        const reply = await registration.policy({ botId: event.self_id, groupId: event.group_id, userId: event.user_id,
+          groupName: event.group_name, nickname: event.nickname }, signal).catch(() => undefined);
+        if (signal.aborted) return 0;
+        if (!reply) return (notifyRequestOwners ?? event.notifyMasters)(ordinary);
+        const content = [...reply, `\n${actions}`];
+        if (!notifyRequestOwners) return notifyOwners(content, signal);
+        const text = content.filter(part => typeof part === "string").join("");
+        return notifyRequestOwners(text, { reply: content, signal });
+      },
+    };
+  }
+
   async function dispatchGroupInvitation(event: GroupRequest, allowed: (names: readonly string[]) => boolean) {
     let reviewed = false;
     let reviewManually: (() => Promise<void>) | undefined;
     const consumed = await legacy.dispatch({
-      ...event,
+      ...withGroupOwnerInvitationNotice(event),
       approve(approve?: boolean, reason?: string) {
         reviewed = true;
         return event.approve(approve, reason);
@@ -2392,6 +2419,15 @@ if (import.meta.main) {
           return () => {
             session.abort();
             if (groupOwnerJoinRequestNotice === registration) groupOwnerJoinRequestNotice = undefined;
+          };
+        },
+        registerGroupOwnerInvitationNotice(policy) {
+          const session = new AbortController();
+          const registration = { policy, signal: session.signal };
+          groupOwnerInvitationNotice = registration;
+          return () => {
+            session.abort();
+            if (groupOwnerInvitationNotice === registration) groupOwnerInvitationNotice = undefined;
           };
         },
         registerGroupVerification(policy) {

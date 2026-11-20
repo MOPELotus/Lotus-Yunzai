@@ -1795,6 +1795,51 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       .toHaveLength(1);
     expect(milkyCalls.filter(({ action, params }) => action === "send_private_message" && params.user_id === operator &&
       JSON.stringify(params.message).includes("合成 Milky 原申请"))).toHaveLength(1);
+
+    await writeFile(noticeFile, 'default: { groupInviteRequest: true }\n"bot:100:97": { groupInviteRequest: false }\n');
+    const oneBotInvite = { post_type: "request", request_type: "group", sub_type: "invite", self_id: oneBotId,
+      group_id: 98, user_id: 84, flag: "owner-invitation-format", group_name: "合成原邀请目标", nickname: "合成原邀请者" };
+    client.send(JSON.stringify(oneBotInvite));
+    const richOneBotInvite = JSON.stringify((await ownerReplyWith("合成原邀请目标")).params.message);
+    expect(richOneBotInvite).toContain("[通知(99) - 邀请机器人进群]");
+    expect(richOneBotInvite).toContain("邀请人群身份：未知");
+    expect(richOneBotInvite).toContain("#同意入群 ");
+    expect(richOneBotInvite).not.toContain("引用");
+    client.send(JSON.stringify({ ...oneBotInvite, user_id: 52, group_id: 97, flag: "do-not-style-owner-invite" }));
+    const ordinaryOwnerInvite = JSON.stringify((await ownerReplyWith("群 97 · 邀请者 52")).params.message);
+    expect(ordinaryOwnerInvite).toContain("待审核群请求");
+    expect(ordinaryOwnerInvite).not.toContain("p.qlogo.cn");
+
+    const milkyInvite = { group_id: 98, initiator_id: 84, invitation_seq: 1810 };
+    await webhook("group_invitation", milkyInvite);
+    await webhook("group_invitation", milkyInvite);
+    await milkyOwnerReply(operator, "[通知(100) - 邀请机器人进群]");
+    const richInvitationReceipt = [...milkyPrivateHistory.entries()].find(([, sent]) =>
+      sent.user_id === operator && JSON.stringify(sent.message).includes("[通知(100) - 邀请机器人进群]"));
+    expect(richInvitationReceipt).toBeDefined();
+    const [invitationReceipt, sentInvitation] = richInvitationReceipt!;
+    const invitationSegments = sentInvitation.message as readonly { type: string }[];
+    expect(invitationSegments[0]?.type).toBe("image");
+    expect(invitationSegments.slice(1).every(segment => segment.type === "text")).toBe(true);
+    expect(JSON.stringify(sentInvitation.message)).toContain("也可引用此通知回复");
+    const quoteInvitation = () => {
+      const response = milkyPrivate("拒绝");
+      return { ...response, segments: [{ type: "reply", data: { message_seq: invitationReceipt } }, ...response.segments] };
+    };
+    const invitationWrites = () => milkyCalls.filter(({ action, params }) => action === "reject_group_invitation" &&
+      params.invitation_seq === 1810);
+    milkyPrivateHistory.set(invitationReceipt, { ...sentInvitation, message: invitationSegments.slice(1) });
+    await webhook("message_receive", quoteInvitation());
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "get_message" && params.message_seq === invitationReceipt),
+      "Milky 未回读当前主人收到的原邀请。");
+    await Bun.sleep(100);
+    expect(invitationWrites()).toHaveLength(0);
+    milkyPrivateHistory.set(invitationReceipt, sentInvitation);
+    await webhook("message_receive", quoteInvitation());
+    const nativeInvitation = await waitUntil(() => invitationWrites()[0], "真实 Milky 图文邀请引用没有审批原事件。");
+    expect(nativeInvitation.params).toEqual({ group_id: 98, invitation_seq: 1810 });
+    await webhook("message_receive", quoteInvitation());
+    expect(invitationWrites()).toHaveLength(1);
   } finally {
     socket?.close();
     host?.kill();
