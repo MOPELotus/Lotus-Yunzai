@@ -4,6 +4,18 @@ import type { GroupRequest } from "./messages.ts";
 
 export type GroupInvitationResult = "confirmed" | "rejected" | "unknown" | "skip" | "duplicate";
 
+export interface PendingGroupInvitation {
+  readonly groupId: number;
+  readonly groupName?: string;
+  readonly inviterId: number;
+  readonly nickname?: string;
+}
+
+export interface PendingGroupInvitationList {
+  readonly entries: readonly PendingGroupInvitation[];
+  readonly complete: boolean;
+}
+
 export async function readGroupInvitations(root: URL) {
   const { autoGroup } = await readLocalConfig(root, "other");
   const masterOnly = autoGroup === 0 || autoGroup === "0";

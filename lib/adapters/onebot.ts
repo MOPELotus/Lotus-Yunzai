@@ -520,6 +520,13 @@ async function dispatchMessage(
         const list = await calls.listPendingGroupJoin(send, target.group_id, signal);
         if (list && await authorize()) return list;
       } : undefined,
+    listPendingGroupInvitations: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment ? async () => {
+      const signal = AbortSignal.any([privateGroupSignal, attachmentSession.signal]);
+      const active = () => !signal.aborted && isMaster(selfId, userId);
+      if (!active()) return;
+      const list = await calls.listPendingGroupInvitations(send, selfId, signal);
+      if (active()) return list;
+    } : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId

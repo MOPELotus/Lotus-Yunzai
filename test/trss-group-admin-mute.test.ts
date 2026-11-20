@@ -267,6 +267,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const removedOneBotAnnouncements = new Set<string>();
     let originalJoinChecked = false;
     let oneBotGatewayName = "NapCat.Onebot";
+    let exposeGroupInvitation = true;
     const nowSeconds = () => Math.floor(Date.now() / 1000);
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
@@ -298,6 +299,11 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false, invitor_nick: "仍在等待", message: "合成待审附言" },
           { request_id: 910001, invitor_uin: 70, group_id: 82, checked: originalJoinChecked },
           { request_id: 910004, invitor_uin: 77, group_id: 83, checked: false, message: "隔壁 OneBot 群附言" },
+        ], invited_requests: [
+          ...(exposeGroupInvitation ? [{ request_id: 921001, invitor_uin: 71, group_id: 91, checked: false,
+            invitor_nick: "合成邀请者", group_name: "合成邀请目标" }] : []),
+          { request_id: 921002, invitor_uin: 73, group_id: 92, checked: true, group_name: "已经处理的邀请" },
+          { request_id: 921003, invitor_uin: 74, group_id: 93, group_name: "状态未核验的邀请" },
         ] }
         : action === "get_group_ignore_add_request" ? [{ request_id: 910003, invitor_uin: 73, group_id: 82, checked: false }]
         : action === "get_msg" ? {
@@ -1146,6 +1152,30 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await milkyOwnerReply(operator, "已将「67」踢出群聊（群 88）");
     expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.group_id === 88).map(({ params }) => params))
       .toEqual([{ group_id: 88, user_id: 67, reject_add_request: false }]);
+
+    const invitationCalls = () => oneBotCalls.filter(({ action }) => action === "get_group_system_msg").length;
+    const beforeInvitations = invitationCalls();
+    send(oneBotMessage("#查看群邀请", 52, 82));
+    client.send(JSON.stringify(oneBotPrivate("#查看群邀请", operator)));
+    client.send(JSON.stringify({ ...oneBotPrivate("#查看群邀请"), sub_type: "group" }));
+    client.send(JSON.stringify(oneBotPrivate("#查看全部群邀请")));
+    const invitations = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("合成邀请目标")), "待处理的群邀请未送达原机器人主人私聊。");
+    const shownInvitations = JSON.stringify(invitations.params.messages);
+    expect(shownInvitations).toContain("合成邀请者");
+    expect(shownInvitations).toContain("91");
+    expect(shownInvitations).not.toContain("已经处理的邀请");
+    expect(shownInvitations).not.toContain("状态未核验的邀请");
+    expect(shownInvitations).not.toContain("合成待审附言");
+    expect(shownInvitations).not.toContain("921001");
+    expect(invitationCalls()).toBe(beforeInvitations + 1);
+
+    exposeGroupInvitation = false;
+    client.send(JSON.stringify(oneBotPrivate("#查看群邀请")));
+    await ownerReplyWith("本次查询范围内未发现待处理的群邀请，未能核验完整列表");
+    expect(invitationCalls()).toBe(beforeInvitations + 2);
+    await webhook("message_receive", milkyPrivate("#查看群邀请"));
+    await milkyOwnerReply(operator, "当前无法核验该机器人的群邀请");
 
     const priorOneBotDecisions = oneBotCalls.filter(({ action }) => action === "set_group_add_request").length;
     send(oneBotMessage("#查看加群申请", 54, 82));

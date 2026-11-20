@@ -7,7 +7,7 @@ export type CommandContext = Readonly<Pick<
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
-    "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" |
+    "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" | "listPendingGroupInvitations" |
     "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
     "groupRuleImageDigest" | "groupVote" | "groupVerification" | "privateGroupMute" | "privateGroupWholeMute" | "privateGroupKick"
 > & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
@@ -94,7 +94,7 @@ function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
-    groupListPendingJoinRequests, groupListAnnouncements,
+    groupListPendingJoinRequests, listPendingGroupInvitations, groupListAnnouncements,
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
@@ -120,6 +120,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupNotifyAll ? { groupNotifyAll } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewQuotedRequest ? { groupReviewQuotedRequest } : {}),
     ...(message_type === "group" && !isDelegated && groupListPendingJoinRequests ? { groupListPendingJoinRequests } : {}),
+    ...(message_type === "private" && isMaster && !isDelegated && listPendingGroupInvitations ? { listPendingGroupInvitations } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewPendingJoin ? { groupReviewPendingJoin } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewAllPendingJoins ? { groupReviewAllPendingJoins } : {}),
     ...(message_type === "group" && !isDelegated && groupListAnnouncements ? { groupListAnnouncements } : {}),

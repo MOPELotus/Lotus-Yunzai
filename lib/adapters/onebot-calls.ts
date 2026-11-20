@@ -3,6 +3,7 @@ import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type 
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
 import type { JoinRequestOrigin, PendingGroupJoinEntry, PendingGroupJoinList } from "../group-join-review.ts";
+import type { PendingGroupInvitation, PendingGroupInvitationList } from "../group-invitations.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 export interface OneBotAction {
@@ -198,6 +199,33 @@ export class OneBotCalls {
       }
     }
     // NapCat exposes bounded screens and omits third-party join notifications.
+    return { entries: [...entries.values()], complete: false };
+  }
+
+  async listPendingGroupInvitations(send: Send, account: number, signal: AbortSignal): Promise<PendingGroupInvitationList | undefined> {
+    if (!await this.isNapCat(send, signal) || signal.aborted) return;
+    const data = await this.#request(send, "get_group_system_msg", { count: 100 }, signal).catch(() => undefined);
+    if (signal.aborted || !isRecord(data) || !Array.isArray(data.invited_requests)) return;
+
+    const entries = new Map<string, PendingGroupInvitation>();
+    const conflicted = new Set<string>();
+    for (const row of data.invited_requests) {
+      if (!isRecord(row) || row.checked !== false || !isPositiveInteger(row.group_id) ||
+          !isPositiveInteger(row.invitor_uin) || row.invitor_uin === account || !isPositiveInteger(row.request_id)) continue;
+      const key = `${row.group_id}:${row.request_id}`;
+      if (conflicted.has(key)) continue;
+      const existing = entries.get(key);
+      if (existing) {
+        if (existing.inviterId !== row.invitor_uin) {
+          entries.delete(key);
+          conflicted.add(key);
+        }
+        continue;
+      }
+      entries.set(key, { groupId: row.group_id, groupName: memberDisplayName(row.group_name),
+        inviterId: row.invitor_uin, nickname: memberDisplayName(row.invitor_nick) });
+    }
+    // The gateway returns a bounded window and does not expose its live invitation-card cache here.
     return { entries: [...entries.values()], complete: false };
   }
 
