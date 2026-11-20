@@ -81,7 +81,7 @@ import { setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, typ
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
-import { panelGroupSettings } from "./lib/panel-group.ts";
+import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
@@ -2678,11 +2678,14 @@ if (import.meta.main) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
       const fallback = createServerRedirect(network.redirect);
-      const likes = panelGroupSettings(plugins.directories);
+      const settingsRoutes = new Map([
+        ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
+        ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
+      ]);
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories);
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
-        (path) => path === "/panel/api/settings/group/likes" ? likes : guoba(path) ?? extensions?.api(path), runtimeVersion);
+        (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
         await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ?? await miyousheWeb?.handle(request) ??

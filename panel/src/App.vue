@@ -5,6 +5,7 @@ import { CredentialsError, pluginStatuses, readPanel, type PanelSnapshot, type P
 import ExtensionPages from "./ExtensionPages.vue";
 import PluginSettings from "./PluginSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
+import GroupNoticeSettings from "./GroupNoticeSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -13,7 +14,7 @@ const error = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "plugin-settings" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -38,7 +39,11 @@ function setView(next: PanelView, discard = false) {
   discardTo.value = undefined;
   view.value = next;
   const heading = {
-    overview: "overview-title", likes: "like-settings-title", "plugin-settings": "plugin-settings-title", extensions: "extensions-title",
+    overview: "overview-title",
+    likes: "like-settings-title",
+    notices: "group-notice-settings-title",
+    "plugin-settings": "plugin-settings-title",
+    extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
 }
@@ -165,6 +170,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">运行概览</ElButton>
       <ElButton v-if="hasGroup" :type="view === 'likes' ? 'primary' : 'default'"
         :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
+      <ElButton v-if="hasGroup" :type="view === 'notices' ? 'primary' : 'default'"
+        :aria-current="view === 'notices' ? 'page' : undefined" @click="setView('notices')">群通知</ElButton>
       <ElButton :type="view === 'plugin-settings' ? 'primary' : 'default'"
         :aria-current="view === 'plugin-settings' ? 'page' : undefined" @click="setView('plugin-settings')">插件配置</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
@@ -176,6 +183,8 @@ onBeforeUnmount(() => {
       <ElButton type="danger" @click="setView(discardTo!, true)">放弃改动</ElButton>
     </div>
     <LikeSettings v-if="view === 'likes'" :token="token" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <GroupNoticeSettings v-else-if="view === 'notices'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <PluginSettings v-else-if="view === 'plugin-settings'" :token="token" @unauthorized="expireSession"
       @dirty-change="updateDirty" />

@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="like-settings" aria-labelledby="like-settings-title" :aria-busy="Boolean(busy)">
+  <section class="group-settings" aria-labelledby="like-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
       <h1 id="like-settings-title" tabindex="-1">群点赞配置</h1>
       <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新载入</ElButton>
@@ -254,17 +254,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.like-settings form, .placeholder { margin-top: 20px; }
-
-.settings-card {
-  min-width: 0;
-  margin: 0 0 16px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  background: var(--surface);
-}
-
 .card-heading { padding-bottom: 12px; }
 .card-heading .setting-help { margin-top: 6px; }
 .setting-help, .placeholder { color: var(--muted); font-size: 14px; line-height: 1.55; }
@@ -301,7 +290,7 @@ input[aria-invalid="true"] { border-color: #a23b30; }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .message-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
-.message-heading, .feedback { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.message-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .message-heading { margin-bottom: 6px; }
 .message-toggle {
   display: inline-flex;
@@ -312,19 +301,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-size: 13px;
 }
 
-.feedback {
-  flex-wrap: wrap;
-  margin-top: 14px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.save-bar > .el-button { margin-inline-start: auto; }
-.action-group { display: flex; flex-wrap: wrap; gap: 8px; }
-.action-group > .el-button { margin: 0; }
-
 @media (max-width: 600px) {
-  .settings-card { padding: 14px; }
   .message-grid { grid-template-columns: 1fr; }
 }
 </style>
