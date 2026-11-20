@@ -147,7 +147,7 @@ test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指�
     const attachment = { name: "UIGF.json", async read() { return undefined; } };
     const context = (normalizedMessage: string) => ({ normalizedMessage, reply() {} });
     const gachaFeature = ["[gacha] 抽卡记录"];
-    for (const raw of ["#抽卡记录2", "#更新抽卡记录", "#强制导出记录", "#更新小助手抽卡记录", "#抽卡帮助", "#导入记录"]) {
+    for (const raw of ["#抽卡记录2", "#更新抽卡记录", "#强制导出记录", "#同步外部抽卡记录", "#同步外部抽卡记录2", "#抽卡帮助", "#导入记录"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual(gachaFeature);
     }
     for (const raw of ["#原神背包", "#原神背包2"]) {
@@ -157,7 +157,7 @@ test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指�
       expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 世界 BOSS"]);
     }
     for (const raw of ["#面板", "#更新面板2", "#芙宁娜面板", "#武器十连", "#原神养成计算 芙宁娜",
-      "#原神练度统计", "#天赋统计", "#芙宁娜排行", "#背包", "#世界boss", "#星铁BOSS击杀"]) {
+      "#原神练度统计", "#天赋统计", "#芙宁娜排行", "#背包", "#世界boss", "#星铁BOSS击杀", "#更新小助手抽卡记录"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual([]);
     }
     expect(module.fallbackFeatures({ ...context(""), attachment })).toEqual(gachaFeature);

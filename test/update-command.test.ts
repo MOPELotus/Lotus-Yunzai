@@ -55,22 +55,23 @@ test("单项更新兼容紧连目标、中文目录及包名，并保留日志�
   expect(replies).toEqual([]);
 });
 
-test("摩拉资源旧指令交给攻略模块，带空格的明确仓库目标仍由宿主更新", async () => {
+test("配队业务更新和已停用的旧指令都不会触发仓库更新", async () => {
   const { dispatch, calls } = fixture();
-  for (const text of [" #更新摩拉资源 ", "#强制更新摩拉资源"]) {
+  for (const text of [" #更新配队资源 ", "#强制更新配队资源", "#更新配队资源 参数", "#强制更新配队资源 参数",
+    "#更新摩拉资源", "#强制更新摩拉资源", "#更新摩拉资源 参数"]) {
     expect(isUpdateCommand(text)).toBe(false);
     expect(hasValidUpdateTarget(text)).toBe(false);
     await dispatch(text);
   }
   expect(calls).toEqual([]);
-  for (const text of ["#更新 摩拉资源", "#强制更新 摩拉资源", "#更新其他资源"]) {
+  for (const text of ["#更新 配队资源", "#强制更新 配队资源", "#更新其他资源"]) {
     expect(isUpdateCommand(text)).toBe(true);
     expect(hasValidUpdateTarget(text)).toBe(true);
     await dispatch(text);
   }
   expect(calls.map(({ target, force }) => ({ target, force }))).toEqual([
-    { target: "摩拉资源", force: false },
-    { target: "摩拉资源", force: true },
+    { target: "配队资源", force: false },
+    { target: "配队资源", force: true },
     { target: "其他资源", force: false },
   ]);
 });
@@ -86,6 +87,16 @@ test("旧角色攻略更新指令交给攻略模块，带空格的明确仓库�
   expect(hasValidUpdateTarget("#更新 钟离攻略")).toBe(true);
   await dispatch("#更新 钟离攻略");
   expect(calls.map(({ target }) => target)).toEqual(["钟离攻略"]);
+});
+
+test("外部抽卡同步和已停用的旧同步指令都不会触发仓库更新", async () => {
+  const { dispatch, calls } = fixture();
+  for (const text of ["#同步外部抽卡记录2", "#更新小助手抽卡记录", "#更新提瓦特小助手祈愿历史2 旧参数"]) {
+    expect(isUpdateCommand(text)).toBe(false);
+    expect(hasValidUpdateTarget(text)).toBe(false);
+    await dispatch(text);
+  }
+  expect(calls).toEqual([]);
 });
 
 test("全量更新传递 all 标志并拒绝插件后缀", async () => {

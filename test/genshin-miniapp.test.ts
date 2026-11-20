@@ -54,7 +54,7 @@ function transport(body: () => Response): HoyoTransport {
   };
 }
 
-test("小助手只向固定站点发送旧导出表单，保持 400 记录与精确编号", () => fixture(async (source) => {
+test("外部同步只向固定站点发送原导出表单，保持 400 记录与精确编号", () => fixture(async (source) => {
   const first = "1735853810000001922";
   const second = "1735853810000001921";
   const calls: string[] = [];
@@ -106,7 +106,7 @@ test("小助手只向固定站点发送旧导出表单，保持 400 记录与精
   expect(JSON.stringify(result)).not.toContain(authkey);
 }));
 
-test("小助手导出须归属当前 UID，校验每项和完整响应后才返回四池", () => fixture(async (source) => {
+test("外部导出须归属当前 UID，校验每项和完整响应后才返回四池", () => fixture(async (source) => {
   const proper = { ...row(), uid };
   for (const malformed of [
     { info: { uid }, uid: "123456789", list: [proper] },
@@ -134,18 +134,18 @@ test("小助手导出须归属当前 UID，校验每项和完整响应后才返�
 test("第三方跳转、异常、超限和档案变化都不泄漏凭据", () => fixture(async (source) => {
   await expect(readGenshinMiniapp(source, transport(() => new Response(authkey, { status: 302,
     headers: { Location: "https://example.invalid/" },
-  })))).rejects.toMatchObject({ code: "http", status: 302, message: "提瓦特小助手导出请求失败。" });
+  })))).rejects.toMatchObject({ code: "http", status: 302, message: "外部抽卡记录导出失败。" });
   await expect(readGenshinMiniapp(source, transport(() => new Response(authkey))))
-    .rejects.toMatchObject({ code: "response", message: "提瓦特小助手未返回有效的 JSON 导出文件。" });
+    .rejects.toMatchObject({ code: "response", message: "外部服务未返回有效的抽卡记录 JSON。" });
   await expect(readGenshinMiniapp(source, transport(() => new Response("{}", { headers: { "Content-Length": "40000000" } }))))
-    .rejects.toMatchObject({ code: "response", message: "提瓦特小助手的导出文件过大。" });
+    .rejects.toMatchObject({ code: "response", message: "外部抽卡记录文件过大。" });
   const oversized = new Uint8Array(1024 * 1024);
   await expect(readGenshinMiniapp(source, transport(() => new Response(new ReadableStream({
     start(controller) {
       for (let index = 0; index < 33; index++) controller.enqueue(oversized);
       controller.close();
     },
-  }))))).rejects.toThrow("导出文件过大");
+  }))))).rejects.toThrow("外部抽卡记录文件过大。");
 
   let calls = 0;
   await expect(readGenshinMiniapp(source, async () => {

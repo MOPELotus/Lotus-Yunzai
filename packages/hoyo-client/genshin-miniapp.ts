@@ -36,24 +36,24 @@ function validTime(value: unknown): value is string {
 function parseExport(value: unknown, uid: string, authkey: string) {
   if (!record(value) || !Array.isArray(value.list) || value.list.length > maxRecords ||
       (value.info != null && !record(value.info)) || (value.retcode != null && value.retcode !== 0 && value.retcode !== "0")) {
-    throw new HoyoRequestError("response", "提瓦特小助手没有返回有效的抽卡列表。");
+    throw new HoyoRequestError("response", "外部服务没有返回有效的抽卡列表。");
   }
   const declared = [value.uid, record(value.info) ? value.info.uid : undefined].filter((entry) => entry != null);
   if (declared.some((entry) => decimal(entry) !== uid)) {
-    throw new HoyoRequestError("response", "提瓦特小助手返回的 UID 与当前档案不一致。");
+    throw new HoyoRequestError("response", "外部抽卡记录的 UID 与当前档案不一致。");
   }
 
   const grouped = new Map<GenshinGachaPool, GenshinGachaRow[]>(genshinGachaPools.map(({ type }) => [type, []]));
   const encodedKey = encodeURIComponent(authkey);
   for (const entry of value.list) {
-    if (!record(entry)) throw new HoyoRequestError("response", "提瓦特小助手记录格式无效。");
+    if (!record(entry)) throw new HoyoRequestError("response", "外部抽卡记录格式无效。");
     if ((entry.uid != null || !declared.length) && decimal(entry.uid) !== uid) {
-      throw new HoyoRequestError("response", "提瓦特小助手记录缺少本档案 UID 或属于其他账号。");
+      throw new HoyoRequestError("response", "外部抽卡记录缺少本档案 UID 或属于其他账号。");
     }
     const raw = decimal(entry.gacha_type);
     const pool = poolFor(raw);
     if (!raw || !pool || (entry.uigf_gacha_type != null && decimal(entry.uigf_gacha_type) !== String(pool))) {
-      throw new HoyoRequestError("response", "提瓦特小助手返回了无效或不受支持的卡池编号。");
+      throw new HoyoRequestError("response", "外部抽卡记录包含无效或不受支持的卡池编号。");
     }
     const id = decimal(entry.id);
     const rank = decimal(entry.rank_type);
@@ -61,7 +61,7 @@ function parseExport(value: unknown, uid: string, authkey: string) {
     if (!id || (rank !== "3" && rank !== "4" && rank !== "5") || !validTime(time) ||
         (item_type !== "角色" && item_type !== "武器") || typeof name !== "string" || !name.trim() ||
         name.length > 200 || /[\u0000-\u001f\u007f]|https?:\/\//iu.test(name) || name.includes(authkey) || name.includes(encodedKey)) {
-      throw new HoyoRequestError("response", "提瓦特小助手记录的编号、名称、类别、星级或时间无效。");
+      throw new HoyoRequestError("response", "外部抽卡记录的编号、名称、类别、星级或时间无效。");
     }
     const row: GenshinGachaRow = { id, uid, gacha_type: raw as GenshinGachaRow["gacha_type"], uigf_gacha_type: String(pool),
       item_type, name, time, rank_type: rank };
@@ -77,13 +77,13 @@ function parseExport(value: unknown, uid: string, authkey: string) {
 }
 
 async function readExport(response: Response, signal: AbortSignal): Promise<unknown> {
-  const sizeError = () => new HoyoRequestError("response", "提瓦特小助手的导出文件过大。");
+  const sizeError = () => new HoyoRequestError("response", "外部抽卡记录文件过大。");
   const claimed = response.headers.get("Content-Length");
   if (claimed && Number(claimed) > maxResponseBytes) {
     await response.body?.cancel().catch(() => undefined);
     throw sizeError();
   }
-  if (!response.body) throw new HoyoRequestError("response", "提瓦特小助手未返回导出文件。");
+  if (!response.body) throw new HoyoRequestError("response", "外部服务未返回抽卡记录文件。");
   const reader = response.body.getReader();
   try {
     const chunks: Uint8Array[] = [];
@@ -100,8 +100,8 @@ async function readExport(response: Response, signal: AbortSignal): Promise<unkn
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;
   } catch (error) {
     if (error instanceof HoyoRequestError) throw error;
-    if (signal.aborted) throw new HoyoRequestError("transport", "提瓦特小助手请求已取消或超时。");
-    throw new HoyoRequestError("response", "提瓦特小助手未返回有效的 JSON 导出文件。");
+    if (signal.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消或超时。");
+    throw new HoyoRequestError("response", "外部服务未返回有效的抽卡记录 JSON。");
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
@@ -115,9 +115,9 @@ export async function readGenshinMiniapp(
   verifyProfile?: () => Promise<void>,
 ): Promise<Awaited<ReturnType<typeof readGenshinGacha>>> {
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "提瓦特小助手请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消。");
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "提瓦特小助手请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消。");
   }
 
   const { uid, region, url } = await readGenshinAuthKey(source, transport, { signal }, verifyProfile);
@@ -134,11 +134,11 @@ export async function readGenshinMiniapp(
       credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
     });
   } catch {
-    throw new HoyoRequestError("transport", "提瓦特小助手请求未完成。");
+    throw new HoyoRequestError("transport", "外部抽卡记录请求未完成。");
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    throw new HoyoRequestError("http", "提瓦特小助手导出请求失败。", response.status);
+    throw new HoyoRequestError("http", "外部抽卡记录导出失败。", response.status);
   }
   const pools = parseExport(await readExport(response, deadline), uid, authkey);
   await guard();
