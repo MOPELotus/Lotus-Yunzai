@@ -7,6 +7,7 @@
     "./character-returns": "./character-returns.ts",
     "./expectation": "./expectation.ts",
     "./file-import": "./file-import.ts",
+    "./literal-exports": "./literal-exports.ts",
     "./miao-data": "./miao-data.ts",
     "./update": "./update.ts"
   },
