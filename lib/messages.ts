@@ -73,6 +73,7 @@ export interface MessageEvent {
   readonly groupListAnnouncements?: () => Promise<readonly GroupAnnouncement[] | undefined>;
   readonly groupPublishAnnouncement?: GroupPublishAnnouncement;
   readonly groupDeleteAnnouncement?: GroupDeleteAnnouncement;
+  readonly groupRuleImageDigest?: (signal: AbortSignal) => Promise<string | undefined>;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;

@@ -853,6 +853,29 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       .toEqual([{ group_id: 79, message_seq: matchedImage.message_seq }]);
     expect(milkyCalls.filter(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "matched-picture"))
       .toHaveLength(1);
+
+    const milkyLookup = milkyTitle("#查看违禁词", 54);
+    await webhook("message_receive", { ...milkyLookup, segments: [...milkyLookup.segments,
+      { type: "image", data: { resource_id: "matched-picture" } },
+    ] });
+    const imageRuleReply = await announcementReply("匹配模式：精确");
+    expect(JSON.stringify(imageRuleReply.params.message)).toContain("屏蔽词：");
+    expect(JSON.stringify(imageRuleReply.params.message)).toContain("[图片]");
+    const milkyUnauthorizedDelete = milkyTitle("#删除违禁词", 54);
+    const beforeDeniedImageReads = milkyCalls.filter(({ action }) => action === "get_resource_temp_url").length;
+    const beforeDeniedReplies = milkyCalls.filter(({ action }) => action === "send_group_message").length;
+    await webhook("message_receive", { ...milkyUnauthorizedDelete, segments: [...milkyUnauthorizedDelete.segments,
+      { type: "image", data: { resource_id: "matched-picture" } },
+    ] });
+    await milkyReply(beforeDeniedReplies + 1);
+    expect(milkyCalls.filter(({ action }) => action === "get_resource_temp_url")).toHaveLength(beforeDeniedImageReads);
+
+    send(oneBotMessage([text("#删除违禁词"), embeddedImage], operator, 82));
+    await groupReplyWith("已删除违禁词");
+    send(oneBotMessage([text("#新增精确撤违禁词"), embeddedImage], operator, 82));
+    await groupReplyWith("已添加违禁词");
+    const editedRules = JSON.parse(await readFile(join(root, "data/group/banned-words/82.json"), "utf8"));
+    expect(editedRules.bannedWords[rawDigest]).toMatchObject({ matchType: 1, penaltyType: 3, addedBy: operator });
   } finally {
     socket?.close();
     host?.kill();

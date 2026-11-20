@@ -4,7 +4,7 @@ import { delegationSession } from "../command-delegation.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
+import { bindGroupModeration, bindGroupRuleImageDigest, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -457,6 +457,9 @@ async function dispatchMessage(
       ? visibility => calls.listGroupActivity(send, target.group_id, selfId, userId, () => isMaster(selfId, userId), likeSession, visibility)
       : undefined,
     groupActivitySignal: likeSession && event.sub_type !== "anonymous" ? likeSession : undefined,
+    groupRuleImageDigest: likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous"
+      ? bindGroupRuleImageDigest(incoming.message, selfId, likeSession, groupActions?.canModerateGroups,
+        active => calls.getGroupRole(send, target.group_id, userId, true, active)) : undefined,
     groupListAnnouncements: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
       const active = () => !likeSession.aborted && groupActions?.canModerateGroups?.() !== false;
       const role = () => calls.getGroupRole(send, target.group_id, userId, true, likeSession);

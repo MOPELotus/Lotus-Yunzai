@@ -160,6 +160,21 @@ export function bindSingleGroupImageDigest(source: MessageEvent["message"]) {
   };
 }
 
+export function bindGroupRuleImageDigest(source: MessageEvent["message"], bot: number, session: AbortSignal,
+  accepting: (() => boolean) | undefined, role: (signal: AbortSignal) => Promise<Role | undefined>) {
+  if (typeof source === "string") return;
+  const digest = bindSingleGroupImageDigest(source.filter(part => part.type !== "text" &&
+    !(part.type === "at" && String(part.qq) === String(bot))));
+  if (!digest) return;
+  return async (request: AbortSignal) => {
+    const signal = AbortSignal.any([session, request]);
+    const active = () => !signal.aborted && accepting?.() !== false;
+    if (!active() || !await role(signal) || !active()) return;
+    const md5 = await digest(signal).catch(() => undefined);
+    if (md5 && active() && await role(signal) && active()) return md5;
+  };
+}
+
 async function buildGroupNotice(parts: readonly InboundSegment[], source: MessageEvent["message"], signal: AbortSignal) {
   if (!Array.isArray(parts) || !parts.length) return;
   let mediaBytes = 0;

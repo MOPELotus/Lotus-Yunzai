@@ -3,7 +3,7 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
+import { bindGroupModeration, bindGroupRuleImageDigest, bindMessageGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -421,6 +421,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,
+      groupRuleImageDigest: positiveId(groupId) && positiveId(cardOwner)
+        ? bindGroupRuleImageDigest(message.message, account, signal, options.canModerateGroups, active => memberRole(groupId, cardOwner, active))
+        : undefined,
       groupListAnnouncements: positiveId(groupId) && positiveId(cardOwner) ? async () => {
         const active = () => !signal.aborted && options.canModerateGroups?.() !== false;
         if (!active() || !await memberRole(groupId, cardOwner) || !active()) return;
