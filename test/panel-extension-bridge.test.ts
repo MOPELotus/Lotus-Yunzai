@@ -34,10 +34,10 @@ test("无接口的锅巴扩展也能使用隔离的临时存储，不开放表�
     expect(policy).not.toContain("allow-same-origin");
     expect(policy).not.toContain("connect-src");
     const body = await frame?.text() ?? "";
-    const bridge = /src="(\/panel\/extensions-bridge\/[^"]+)"/u.exec(body)?.[1];
+    const bridge = /src="([^"\s]+extensions-bridge\/[^"]+)"/u.exec(body)?.[1];
     expect(bridge).toBeDefined();
     expect(body.indexOf(bridge!)).toBeLessThan(body.indexOf("localStorage.getItem"));
-    const script = await routes.assets(new Request(origin + bridge));
+    const script = await routes.assets(new Request(new URL(bridge!, ticket)));
     expect(script?.status).toBe(200);
     const source = await script!.text();
     const first = sandboxedWindow();
@@ -85,4 +85,35 @@ test("扩展脚本执行前恢复原 hash，并限量同步同一帧的数据", 
   expect(messages).toHaveLength(1);
   frame.localStorage.clear();
   expect(messages).toHaveLength(2);
+});
+
+test("扩展脚本在反代前缀内转发当前和旧锅巴 API，并只发送页级票据", async () => {
+  const origin = "https://fixture.example";
+  const prefix = "/bots/my%20lotus";
+  const current = "/panel/extensions-api/fixture";
+  const legacy = "/guoba/api/custom/example";
+  const location = new URL(`${prefix}/panel/extensions/fixture/asset-ticket/nested/page.html?token=page-ticket`, origin);
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const window = Object.assign(sandboxedWindow(), {
+    location,
+    async fetch(url: string | URL | Request, init?: RequestInit) {
+      calls.push({ url: url instanceof Request ? url.url : String(url), init });
+      return new Response(null, { status: 204 });
+    },
+  });
+  runInNewContext(extensionBridge({ apiBase: current, relativeApi: "extensions-api/fixture", legacyApiBase: legacy }), {
+    window, location, document: { currentScript: { src: new URL(`${prefix}/panel/extensions-bridge/fixture/asset-ticket`, origin).href } },
+    URL, URLSearchParams, Request, Headers,
+  });
+  expect(window.__GUOBA__).toMatchObject({ apiBase: prefix + current, token: "page-ticket" });
+  for (const route of [current, legacy, prefix + current, "/guoba/api"]) {
+    await window.fetch(`${origin}${route}/data?item=one`);
+  }
+  expect(calls.map(({ url }) => url)).toEqual(Array(4).fill(`${origin}${prefix}${current}/data?item=one`));
+  for (const call of calls) {
+    expect(new Headers(call.init?.headers).get("guoba-access-token")).toBe("page-ticket");
+    expect(call.init?.credentials).toBe("omit");
+  }
+  await window.fetch("https://other.example/guoba/api/data");
+  expect(calls.at(-1)).toEqual({ url: "https://other.example/guoba/api/data", init: undefined });
 });

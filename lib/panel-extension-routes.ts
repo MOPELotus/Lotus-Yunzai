@@ -153,7 +153,8 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     if (isFrame) {
       if (apis.get(page.plugin)?.length) headers["Content-Security-Policy"] += "; connect-src 'self'";
       if (request.method !== "HEAD") {
-        const src = `${bridgeRoot}/${id}/${ticket}`;
+        const parents = "../".repeat(resource ? resource.split("/").length + 2 : 3);
+        const src = `${parents}extensions-bridge/${id}/${ticket}`;
         body = attachExtensionBridge(typeof body === "string" ? body : await body.text(), src);
       }
     }
@@ -178,6 +179,7 @@ export function panelExtensionRoutes(directories: PluginLoadReport["directories"
     if (!page) return new Response(null, { status: 404, headers: frameHeaders });
     const source = extensionBridge(apis.get(page.plugin)?.length ? {
       apiBase: `${apiRoot}/${id}`,
+      relativeApi: `extensions-api/${id}`,
       legacyApiBase: `/guoba/api/custom/${encodeURIComponent(page.plugin)}`,
     } : undefined);
     return new Response(request.method === "HEAD" ? null : source, {

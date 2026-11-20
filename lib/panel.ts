@@ -82,7 +82,7 @@ export function panelAssets(directory: string) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
     }
-    if (path === "/panel") return new Response(null, { status: 308, headers: { Location: "/panel/" } });
+    if (path === "/panel") return new Response(null, { status: 308, headers: { Location: "panel/" } });
     const index = path === "/panel/";
     const name = index ? "index.html" : path.slice("/panel/".length);
     if (!index && !assetName.test(name)) return new Response(null, { status: 404 });

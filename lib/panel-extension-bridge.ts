@@ -1,7 +1,7 @@
 export const extensionTokenHeader = "guoba-access-token";
 export const extensionTicketLifetimeMs = 5 * 60_000;
 
-export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }): string {
+export function extensionBridge(api?: { apiBase: string; relativeApi: string; legacyApiBase: string }): string {
   // This script runs in the extension frame, whose origin is opaque.
   const configuration = api ? JSON.stringify({ ...api, tokenKey: extensionTokenHeader }) : "null";
   return `(() => {
@@ -51,7 +51,8 @@ export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }
     const config = ${configuration};
     if (!config) return;
     let token = new URLSearchParams(location.search).get("token") || "";
-    const { apiBase, legacyApiBase, tokenKey } = config;
+    const { apiBase: internalApi, relativeApi, legacyApiBase, tokenKey } = config;
+    const apiBase = new URL("../../" + relativeApi, document.currentScript.src).pathname;
     window.__GUOBA__ = { apiBase, token, tokenKey };
     const refreshAfterMs = ${extensionTicketLifetimeMs - 30_000};
     let renewAt = Date.now() + refreshAfterMs;
@@ -89,6 +90,8 @@ export function extensionBridge(api?: { apiBase: string; legacyApiBase: string }
         target.pathname = apiBase + target.pathname.slice(legacyApiBase.length);
       } else if (includesPath(target.pathname, legacy) && !includesPath(target.pathname, legacy + "/custom")) {
         target.pathname = apiBase + target.pathname.slice(legacy.length);
+      } else if (includesPath(target.pathname, internalApi)) {
+        target.pathname = apiBase + target.pathname.slice(internalApi.length);
       } else if (!includesPath(target.pathname, apiBase)) {
         return original(source);
       }

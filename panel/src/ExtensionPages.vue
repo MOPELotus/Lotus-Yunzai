@@ -31,7 +31,7 @@ const issueLabels = {
 const props = defineProps<{ token: string; preferences: Map<string, string> }>();
 const emit = defineEmits<{ unauthorized: [] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/extensions`;
-const assetPrefix = `${import.meta.env.BASE_URL}extensions/`;
+const panelRoot = "/panel/";
 const catalog = shallowRef<Catalog>();
 const selected = shallowRef<ExtensionPage>();
 const frame = shallowRef<HTMLIFrameElement>();
@@ -59,13 +59,20 @@ function isIssue(value: unknown): value is Issue {
 }
 
 function scopedUrl(value: unknown, pageId: string): string | undefined {
-  const pagePrefix = `${assetPrefix}${encodeURIComponent(pageId)}/`;
+  const pagePrefix = `${panelRoot}extensions/${encodeURIComponent(pageId)}/`;
   if (typeof value !== "string" || !value.startsWith(pagePrefix)) return;
   try {
     const url = new URL(value, window.location.origin);
-    if (url.origin === window.location.origin && url.pathname.startsWith(pagePrefix)) {
-      return url.pathname + url.search + url.hash;
+    if (url.origin !== window.location.origin || !url.pathname.startsWith(pagePrefix)) return;
+    const panel = new URL("./", window.location.href);
+    const frame = new URL(url.pathname.slice(panelRoot.length), panel);
+    frame.search = url.search;
+    const api = `${panelRoot}extensions-api/${pageId}`;
+    if (frame.searchParams.get("__apiBase") === api) {
+      frame.searchParams.set("__apiBase", new URL(api.slice(panelRoot.length), panel).pathname);
     }
+    frame.hash = url.hash;
+    return frame.pathname + frame.search + frame.hash;
   } catch {
     return;
   }

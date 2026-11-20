@@ -132,7 +132,9 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       await symlink(broken, join(dist, "assets", "outside.js"));
       const redirect = await fetch(new URL("/panel", statusUrl), { redirect: "manual" });
       expect(redirect.status).toBe(308);
-      expect(redirect.headers.get("Location")).toBe("/panel/");
+      const panelRedirect = redirect.headers.get("Location")!;
+      expect(new URL(panelRedirect, new URL("/panel", statusUrl)).pathname).toBe("/panel/");
+      expect(new URL(panelRedirect, "https://fixture.example/bots/lotus/panel").pathname).toBe("/bots/lotus/panel/");
       const page = await fetch(home);
       expect(page.status).toBe(200);
       expect(page.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
@@ -190,7 +192,7 @@ test("公共 HTTP 和反向 OneBot 可分别监听并独立鉴权", async () => 
       const source = await dynamicPage.text();
       const bridge = /<script src="([^"]+)"/u.exec(source)?.[1];
       expect(bridge).toBeDefined();
-      expect(await (await fetch(new URL(bridge!, statusUrl))).text()).toContain("window.__GUOBA__");
+      expect(await (await fetch(new URL(bridge!, dynamicFrame))).text()).toContain("window.__GUOBA__");
 
       const reportPath = `${dynamicFrame.searchParams.get("__apiBase")}/reports/weekly?range=7`;
       const selectedReport = new URL(reportPath, statusUrl);
