@@ -10,6 +10,14 @@ export interface FriendMessageNoticeSession {
   notifyOwners(message: MessageReply, signal: AbortSignal, onDelivered?: (owner: number, messageId: number) => Promise<void>): Promise<number>;
 }
 
+export interface NativeFriendRelationshipNotice extends FriendMessageNoticeSession {
+  readonly botId: number;
+  readonly userId: number;
+  readonly time: number;
+  readonly kind: "increase";
+  readNickname(signal: AbortSignal): Promise<string | undefined>;
+}
+
 export type QuotedOwnerFriendReplyOutcome = OwnerFriendReplyOutcome | "unrelated" | "expired";
 
 function isFriendId(value: unknown, account: number): value is number {

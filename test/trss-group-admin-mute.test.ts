@@ -125,6 +125,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   let regularFriendReadback = "pending";
   let changingFriendReads = 0;
   let includeNoticeOwnersInFriendList = false;
+  let includeNewFriendProfile = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   const memberJoinTimes = new Map<string, number>();
   const memberLastSentTimes = new Map<string, number>();
@@ -317,7 +318,8 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
       const reply = action === "get_group_member_info" ? member(params)
         : action === "send_msg" ? { message_id: oneBotCalls.length }
-        : action === "get_friend_list" ? [{ user_id: 42 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: 52 }] : [])]
+        : action === "get_friend_list" ? [{ user_id: 42 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: 52 }] : []),
+          ...(includeNewFriendProfile ? [{ user_id: 46, nickname: "合成新增好友昵称" }] : [])]
         : action === "get_friend_msg_history" ? { messages: [...oneBotPrivateHistory].flatMap(([message_id, stored]) =>
           message_id === params.message_seq && stored.user_id === params.user_id ? [{
             message_id, self_id: oneBotId, user_id: oneBotId, sender: { user_id: oneBotId }, message_type: "private", sub_type: "friend",
@@ -1515,6 +1517,24 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await milkyOwnerReply(43, "最终正常好友回执");
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" &&
       /此来源群禁用通知|should-not-forward-temp|不匹配的对端勿转发|临时通知不作为好友回信来源/u.test(JSON.stringify(params.message)))).toBe(false);
+
+    includeNewFriendProfile = true;
+    await writeFile(join(legacyDirectory, "notice.yaml"), 'default: { friendNumberChange: false }\n"bot:99": { friendNumberChange: true }\n');
+    const newFriend = { post_type: "notice", notice_type: "friend_add", self_id: oneBotId, user_id: 46, time: 1_700_000_000 };
+    client.send(JSON.stringify(newFriend));
+    client.send(JSON.stringify(newFriend));
+    client.send(JSON.stringify({ ...newFriend, self_id: milkyId, user_id: 48 }));
+    const relationshipNotice = await ownerReplyWith("合成新增好友昵称");
+    expect(JSON.stringify(relationshipNotice.params.message)).toContain("[通知(99) - 新增好友]");
+    expect(JSON.stringify(relationshipNotice.params.message)).toContain("好友账号：46");
+    client.send(JSON.stringify({ ...newFriend, user_id: 47 }));
+    const missingNickname = JSON.stringify((await ownerReplyWith("好友账号：47")).params.message);
+    expect(missingNickname).toContain("好友昵称：未知");
+    client.send(JSON.stringify({ ...newFriend, notice_type: "friend_decrease", user_id: 46 }));
+    expect(oneBotReplies().filter(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("合成新增好友昵称"))).toHaveLength(1);
+    expect(oneBotReplies().some(({ params }) => params.user_id === 52 &&
+      /好友账号：48|好友减少/u.test(JSON.stringify(params.message)))).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

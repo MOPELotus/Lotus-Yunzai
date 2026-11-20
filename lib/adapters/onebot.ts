@@ -1,7 +1,7 @@
 import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
-import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
+import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
@@ -70,6 +70,7 @@ interface OwnerNoticeOptions {
   readonly masterIds?: (bot: number) => readonly number[];
   readonly friendNoticeReceipts?: FriendMessageReceipts;
   readonly ownerFriendReplyClaim?: ReturnType<typeof createRequestClaim>;
+  readonly onFriendRelationship?: (notice: NativeFriendRelationshipNotice) => void;
 }
 
 function attachmentSize(value: unknown): number | undefined {
@@ -854,7 +855,27 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
-            if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
+            if (message.notice_type === "friend_add" && options.onFriendRelationship) {
+              const { self_id, user_id, time } = message;
+              if (!isId(self_id) || !isId(user_id) || self_id === user_id || !isId(time)) return;
+              const signal = groupActionSignal(socket.data, self_id);
+              if (!signal) return;
+              let profiles: ReturnType<OneBotCalls["listFriendProfiles"]> | undefined;
+              const readProfiles = (workflow: AbortSignal) =>
+                profiles ??= calls.listFriendProfiles(send, AbortSignal.any([signal, workflow])).catch(() => []);
+              options.onFriendRelationship({ botId: self_id, userId: user_id, time, kind: "increase", signal,
+                async readNickname(workflow) {
+                  const entry = (await readProfiles(workflow)).find(profile => String(profile.user_id) === String(user_id));
+                  return stringField(entry?.nickname);
+                },
+                async notifyOwners(reply, workflow) {
+                  const active = AbortSignal.any([signal, workflow]);
+                  const peers = new Set((await readProfiles(active)).map(profile => String(profile.user_id)));
+                  const owners = options.masterIds(self_id).filter(id => peers.has(String(id)) && options.isMaster(self_id, id));
+                  return notifyOwnerReplies(calls, send, self_id, owners, reply, active);
+                },
+              });
+            } else if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
                 isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
               socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
             } else if (message.notice_type === "group_ban" && options.onMemberMute) {

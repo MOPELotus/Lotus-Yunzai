@@ -75,11 +75,14 @@ export class OneBotCalls {
     }
   }
 
-  async isFriend(send: Send, userId: number, signal?: AbortSignal): Promise<boolean> {
+  async listFriendProfiles(send: Send, signal?: AbortSignal) {
     const friends = await this.#request(send, "get_friend_list", {}, signal);
     if (!Array.isArray(friends)) throw new Error("QQ 协议端未返回好友列表。");
-    return friends.some((friend: unknown) =>
-      typeof friend === "object" && friend !== null && "user_id" in friend && String(friend.user_id) === String(userId));
+    return friends.filter(isRecord);
+  }
+
+  async isFriend(send: Send, userId: number, signal?: AbortSignal): Promise<boolean> {
+    return (await this.listFriendProfiles(send, signal)).some(friend => String(friend.user_id) === String(userId));
   }
 
   async getMessage(send: Send, messageId: number) {
