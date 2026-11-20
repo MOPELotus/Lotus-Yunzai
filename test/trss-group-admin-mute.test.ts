@@ -1892,6 +1892,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(milkyCalls.some(({ action, params }) => action === "get_resource_temp_url" && params.resource_id === "disabled-group-notice-image")).toBe(false);
     expect(milkyCalls.some(({ action, params }) => action === "send_private_message" && JSON.stringify(params.message).includes("group-notice-image")))
       .toBe(false);
+
+    const beforeBulkConfig = await readFile(noticeFile, "utf8");
+    const previousOwnerReplies = oneBotReplies().length;
+    client.send(JSON.stringify(oneBotPrivate("#椰奶禁用全部通知")));
+    await waitUntil(() => oneBotReplies().slice(previousOwnerReplies).find(({ params }) => params.user_id === 52 &&
+      JSON.stringify(params.message).includes("当前会话没有修改此通知设置的权限")), "仅当前机器人主人不可关闭其他账号的默认通知。");
+    expect(await readFile(noticeFile, "utf8")).toBe(beforeBulkConfig);
   } finally {
     socket?.close();
     host?.kill();
