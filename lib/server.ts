@@ -125,6 +125,11 @@ function httpsSettings(value: unknown, auth: Headers, oneBotAuth?: Headers): Pic
   }
 }
 
+export async function readServerHttpsPaths(root: URL): Promise<Pick<HttpsListener, "key" | "cert"> | undefined> {
+  const config = await readLocalConfig(root, "server");
+  return httpsSettings(config.https, new Headers()).https;
+}
+
 export async function readServerSettings(root: URL, env: ServerEnvironment): Promise<ServerSettings> {
   const config = await readLocalConfig(root, "server");
   const configured = port(env.LOTUS_HTTP_PORT ?? config.port, "LOTUS_HTTP_PORT 或 server.port");

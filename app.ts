@@ -117,6 +117,7 @@ import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { previousUpdateDirectory } from "./lib/update-activation.ts";
+import { verifyMovedHttpsPaths } from "./lib/update-https-paths.ts";
 import { verifyMovedRuntimePaths } from "./lib/update-runtime-paths.ts";
 import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
@@ -1846,6 +1847,7 @@ if (import.meta.main) {
         return undefined;
       }),
     ]);
+    if (previous) await verifyMovedHttpsPaths(fileURLToPath(root), previous, network.https);
     const canRefresh = accountScopePermission(globalConfig, "checkin.refresh");
     const canRegisterCheckin = accountScopePermission(globalConfig, "checkin.register");
     const canRegisterGroup = accountScopePermission(globalConfig, "checkin.group_register");

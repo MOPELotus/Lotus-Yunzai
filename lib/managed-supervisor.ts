@@ -11,6 +11,7 @@ import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
 import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
 import { stageUpdate } from "./update-staging.ts";
+import { readManagedHttpsPaths } from "./update-https-paths.ts";
 import { readUpdateRuntimePaths } from "./update-runtime-paths.ts";
 
 type Worker = ReturnType<typeof spawnManagedWorker>;
@@ -123,7 +124,11 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         ] : [target];
       let archived: string | undefined;
       const installed = ready.scope === "install" ? ready.plugin : undefined;
-      transition = switchWorker(stage, () => readUpdateRuntimePaths(root, signal, options.env ?? process.env), async (outcome, previous) => {
+      const statePaths = async () => [
+        ...await readUpdateRuntimePaths(root, signal, options.env ?? process.env),
+        ...await readManagedHttpsPaths(rootUrl),
+      ];
+      transition = switchWorker(stage, statePaths, async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
         const at = Date.now();
         const saved = await Promise.allSettled(targets.map((target) => {
