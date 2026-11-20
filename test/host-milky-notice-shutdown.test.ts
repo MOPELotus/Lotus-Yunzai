@@ -77,7 +77,7 @@ test.skipIf(!valkeyServer)("Milky 公告已发送后，SIGTERM 允许有限窗�
     await client.send("SADD", ["notice:whitelist", String(firstGroup), String(secondGroup)]);
     await copyHost(root);
     await cp(new URL("../plugins/notice", import.meta.url), join(root, "plugins", "notice"), {
-      recursive: true, filter: (path) => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
+      recursive: true, filter: (path) => !path.endsWith("/.git"),
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config", "other.yaml"), 'master: ["99:51", "stdin:stdin"]\n');
