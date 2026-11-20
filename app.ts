@@ -48,7 +48,8 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
-import { readLocalConfig, readOptionalLocalConfig } from "./lib/config.ts";
+import { readLocalConfig } from "./lib/config.ts";
+import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
@@ -92,7 +93,7 @@ import { HandlerScope } from "./lib/plugins/handler.ts";
 import { LegacyTasks } from "./lib/plugins/tasks.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
-import { readAccountRefreshPermission, readAccountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
+import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
@@ -183,15 +184,6 @@ const updateFeatureNames = ["更新", "system", systemModuleName];
 const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
 const atlasMaintenanceCommand = /^#?(?:Lotus|lotus|荷花)?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新)$/u;
-const legacyLotusDirectories = ["Lotus-Plugin", "Lotus-ReFactor"];
-
-async function readAtlasUpdateConfig(root: URL, globalConfig: Record<string, unknown>) {
-  if (Object.hasOwn(globalConfig, "atlas")) return globalConfig.atlas;
-  for (const directory of legacyLotusDirectories) {
-    const config = await readOptionalLocalConfig(new URL(`plugins/${directory}/`, root), "global");
-    if (config && Object.hasOwn(config, "atlas")) return config.atlas;
-  }
-}
 
 function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
   return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
@@ -1829,12 +1821,9 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
-    const [network, permissions, canRefresh, canRegisterCheckin, canRegisterGroup, canGenerate, canRunDue, globalConfig, access, friendRequests, routing, invitations, botConfig,
+    const [network, permissions, globalConfig, access, friendRequests, routing, invitations, botConfig,
       runtimeVersion, milky] = await Promise.all([
-      readServerSettings(root, Bun.env), readMasterPermissions(root), readAccountRefreshPermission(root),
-      readAccountScopePermission(root, "checkin.register"), readAccountScopePermission(root, "checkin.group_register"),
-      readAccountScopePermission(root, "scheduler.generate"),
-      readAccountScopePermission(root, "scheduler.run_due"), readLocalConfig(root, "global"),
+      readServerSettings(root, Bun.env), readMasterPermissions(root), readLotusGlobalConfig(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
       readFriendRequests(root),
@@ -1847,6 +1836,11 @@ if (import.meta.main) {
         return undefined;
       }),
     ]);
+    const canRefresh = accountScopePermission(globalConfig, "checkin.refresh");
+    const canRegisterCheckin = accountScopePermission(globalConfig, "checkin.register");
+    const canRegisterGroup = accountScopePermission(globalConfig, "checkin.group_register");
+    const canGenerate = accountScopePermission(globalConfig, "scheduler.generate");
+    const canRunDue = accountScopePermission(globalConfig, "scheduler.run_due");
     masterPermissions = permissions;
     privateAccess = access;
     try {
@@ -2743,9 +2737,7 @@ if (import.meta.main) {
         whenReady: whenModuleTasksActive,
       },
       atlasUpdate: probingUpdate ? undefined : {
-        config: await readAtlasUpdateConfig(root, globalConfig).catch(() => {
-          console.warn("[atlas] 无法读取旧图鉴更新配置。");
-        }),
+        config: globalConfig.atlas,
         register(schedule) {
           const jobs: (() => Promise<void>)[] = [];
           for (const [kind, name] of [["version", "[atlas] 正式资料"], ["challenge", "[atlas] 挑战轮换"]] as const) {

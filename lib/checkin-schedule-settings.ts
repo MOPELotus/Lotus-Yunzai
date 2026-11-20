@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, type Node, type YAMLMap } from "yaml";
 import { checkinScheduleMinute, type CheckinScheduleConfig } from "./checkin-schedule-plan.ts";
 import { lockFile } from "./file-lock.ts";
+import { inheritLotusGlobalConfig } from "./lotus-global-config.ts";
 
 export type CheckinScheduleSettingsChange =
   | { readonly type: "mode"; readonly mode: "random" }
@@ -255,7 +256,7 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
     assertActive();
     const initial = await effectiveFile(root);
     if (!initial.exists && !await named(dirname(initial.file))) {
-      authorize({});
+      authorize(await inheritLotusGlobalConfig(root, {}));
       await mkdir(dirname(initial.file), { mode: 0o700 }).catch((cause: unknown) => {
         if (errno(cause) !== "EEXIST") throw cause;
       });
@@ -269,20 +270,25 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
       const current = await snapshot(location);
       const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current?.bytes);
       const previous = readDocument(content);
-      authorize(previous.config);
+      const effective = await inheritLotusGlobalConfig(root, previous.config);
+      const scheduler = validScheduler(effective.scheduler);
+      authorize(effective);
       assertActive();
       async function verifySnapshot() {
         const active = await effectiveFile(root);
         if (!sameLocation(location, active) || location.exists !== active.exists) error("conflict");
         const latest = await snapshot(active);
         if (current && (!latest || !sameState(current.stat, latest.stat) || !current.bytes.equals(latest.bytes))) error("conflict");
+        const latestEffective = await inheritLotusGlobalConfig(root, previous.config);
+        if (!isDeepStrictEqual(effective, latestEffective)) error("conflict");
         assertActive();
       }
-      if (scheduleFields.every(key => patch[key] === undefined || previous.scheduler[key] === patch[key])) {
+      if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
         await verifySnapshot();
-        return previous.scheduler;
+        return scheduler;
       }
       const next = applyPatch(previous, patch);
+      const nextScheduler = validScheduler({ ...scheduler, ...next.scheduler });
 
       const directory = await mkdtemp(join(dirname(location.file), ".lotus-schedule-settings-"));
       try {
@@ -306,7 +312,7 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
           try { linkSync(staged, location.file); }
           catch (cause) { if (errno(cause) === "EEXIST") error("conflict"); throw cause; }
         }
-        return next.scheduler;
+        return nextScheduler;
       } finally {
         await rm(directory, { recursive: true, force: true }).catch(() => undefined);
       }

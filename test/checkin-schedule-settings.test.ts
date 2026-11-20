@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { persistCheckinScheduleSettings } from "../lib/checkin-schedule-settings.ts";
+import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
+import { accountScopePermission } from "../lib/permissions.ts";
 
 const lockName = ".global.yaml.lotus-global.sqlite";
 const master = { canWrite: () => true };
@@ -25,6 +27,45 @@ async function setup(directory: string, text: string, legacy = false) {
   await writeFile(file, text);
   return file;
 }
+
+test("沿用旧插件的调度与权限，显式改时刻只写主配置并保留旧开关", () => fixture(async (root, directory) => {
+  const legacy = "scheduler: {enable: false, mode: random, run_due_cron: '0 4 * * * *'}\r\n" +
+    "permissions: {default_policy: deny, users: {deny: [42]}, scopes: {scheduler.manage: {policy: master_only}}}\r\n";
+  const renamed = "scheduler: {enable: true, mode: fixed}\ncoin_shop: {enable: false}\natlas: {version: false}\n";
+  const previous = await setup(join(directory, "plugins/Lotus-Plugin"), legacy);
+  const secondary = await setup(join(directory, "plugins/Lotus-ReFactor"), renamed);
+  const primary = join(directory, "config/global.yaml");
+  const permission = (user_id: number) => ({
+    canWrite: (document: Readonly<Record<string, unknown>>) => accountScopePermission(document, "scheduler.manage")({ user_id, isMaster: true }),
+  });
+  const current = await readLotusGlobalConfig(root);
+  expect(current).toMatchObject({ scheduler: { enable: false, mode: "random" },
+    permissions: { default_policy: "deny" }, coin_shop: { enable: false }, atlas: { version: false } });
+  await expect(persistCheckinScheduleSettings(root, { type: "mode", mode: "fixed", time: "7:08" }, permission(42)))
+    .rejects.toMatchObject({ reason: "permission" });
+  expect(await Bun.file(primary).exists()).toBe(false);
+  const edited = await persistCheckinScheduleSettings(root, { type: "mode", mode: "fixed", time: "7:08" }, permission(51));
+  expect(edited).toEqual({ enable: false, mode: "fixed", fixed_time: "07:08", run_due_cron: "0 4 * * * *" });
+  expect(Bun.YAML.parse(await readFile(primary, "utf8"))).toEqual({ scheduler: { mode: "fixed", fixed_time: "07:08" } });
+  expect(await readLotusGlobalConfig(root)).toMatchObject({ scheduler: edited, coin_shop: { enable: false } });
+  expect(await readFile(previous, "utf8")).toBe(legacy);
+  expect(await readFile(secondary, "utf8")).toBe(renamed);
+
+  const before = await readFile(primary, "utf8");
+  await expect(persistCheckinScheduleSettings(root, { type: "mode", mode: "random" }, {
+    canWrite(document) {
+      writeFileSync(previous, legacy.replace("deny: [42]", "deny: [42, 51]"));
+      return permission(51).canWrite(document);
+    },
+  })).rejects.toMatchObject({ reason: "conflict" });
+  expect(await readFile(primary, "utf8")).toBe(before);
+
+  await writeFile(primary, "permissions: {default_policy: allow, scopes: {scheduler.manage: {policy: allow}}}\n" +
+    "scheduler: {enable: true}\ncoin_shop: {enable: true}\n");
+  const overridden = await readLotusGlobalConfig(root);
+  expect(overridden).toMatchObject({ scheduler: { enable: true }, coin_shop: { enable: true } });
+  expect(accountScopePermission(overridden, "scheduler.manage")({ user_id: 42, isMaster: false })).toBe(true);
+}));
 
 test("优先更新平铺全局配置并保留既有调度字段、注释、其他段落和文件权限", () => fixture(async (root, directory) => {
   const legacyContent = "scheduler: {mode: random}\n";

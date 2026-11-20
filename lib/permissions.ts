@@ -1,4 +1,5 @@
 import { readLocalConfig } from "./config.ts";
+import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { persistMaster } from "./master-config.ts";
 
 function readOwnerSnapshot(config: Record<string, unknown>) {
@@ -89,7 +90,7 @@ export function accountScopePermission(document: Readonly<Record<string, unknown
 }
 
 export async function readAccountScopePermission(root: URL, permission: AccountScope) {
-  return accountScopePermission(await readLocalConfig(root, "global"), permission);
+  return accountScopePermission(await readLotusGlobalConfig(root), permission);
 }
 
 export function readAccountRefreshPermission(root: URL) {
