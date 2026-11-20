@@ -38,7 +38,8 @@ function legacyMessage(event: MessageEvent, legacyMessages: WeakMap<MessageEvent
   };
   const access = {
     reply: { value: compatibleReply, enumerable: true, configurable: true, writable: true },
-    runtime: { value: Object.freeze({ ...legacyRuntime, render: legacyTemplateRender(compatibleReply, resolveTemplates) }),
+    runtime: { value: Object.freeze({ ...legacyRuntime,
+      render: legacyTemplateRender({ adapter: event.adapter, reply: compatibleReply }, resolveTemplates) }),
       configurable: true, writable: true },
   };
   const milkyOwner = isMilkyOwnerSession(event);

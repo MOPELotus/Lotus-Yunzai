@@ -30,7 +30,7 @@ test("V3 静态模板按插件资源定位，并保留旧回调与两个图片�
   const sent: MessageReply[] = [];
   const rendered: { name: string; data: object }[] = [];
   let active = true;
-  const render = legacyTemplateRender(reply => { sent.push(reply); return true; },
+  const render = legacyTemplateRender({ reply: reply => { sent.push(reply); return true; } },
     name => active && name === "approved" ? plugin : undefined,
     async (name, data) => { rendered.push({ name, data }); return image; });
 
@@ -69,11 +69,49 @@ test("V3 静态模板按插件资源定位，并保留旧回调与两个图片�
     expect(rendered).toHaveLength(2);
     expect(sent).toEqual([image]);
 
-    const late = legacyTemplateRender(reply => { sent.push(reply); return true; },
+    const late = legacyTemplateRender({ reply: reply => { sent.push(reply); return true; } },
       () => active ? plugin : undefined,
       async () => { active = false; return image; });
     expect(await late("approved", "help/index")).toBe(true);
     expect(sent).toEqual([image]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 msgId 只返回确认编号，保留原协议字段并且不重复发送", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-legacy-render-receipt-"));
+  const resources = join(root, "resources");
+  const image = segment.image(new Uint8Array([1, 4, 9]));
+  const source = () => root;
+  const options = { retType: "msgId" };
+  try {
+    await mkdir(resources);
+    await writeFile(join(resources, "index.html"), "<main></main>");
+    const sent: MessageReply[] = [];
+    const onebot = legacyTemplateRender({ async reply(reply, _quote, settings) {
+      sent.push(reply);
+      await settings?.onDelivered?.(-41);
+      await settings?.onDelivered?.(42);
+      return true;
+    } }, source, async () => image);
+    expect(await onebot("approved", "index", undefined, options)).toEqual({
+      status: "ok", retcode: 0, message_id: -41, data: { message_id: -41 },
+    });
+    expect(sent).toEqual([image]);
+
+    const milky = legacyTemplateRender({ adapter: "milky", async reply(reply, _quote, settings) {
+      sent.push(reply);
+      await settings?.onDelivered?.(0);
+      return true;
+    } }, source, async () => image);
+    expect(await milky("approved", "index", undefined, options)).toEqual({
+      status: "ok", retcode: 0, data: { message_seq: 0 },
+    });
+    const unconfirmed = legacyTemplateRender({ reply(reply) { sent.push(reply); return true; } }, source, async () => image);
+    expect(await unconfirmed("approved", "index", undefined, options)).toBe(false);
+    expect(await unconfirmed("approved", "missing", undefined, options)).toBe(true);
+    expect(sent).toEqual([image, image, image]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

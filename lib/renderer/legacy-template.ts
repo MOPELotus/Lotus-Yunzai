@@ -21,7 +21,7 @@ async function inside(directory: string, file: string): Promise<string | undefin
 }
 
 export function legacyTemplateRender(
-  reply: MessageEvent["reply"], source: (plugin: string) => string | undefined,
+  event: Pick<MessageEvent, "reply" | "adapter">, source: (plugin: string) => string | undefined,
   screenshot: Screenshot = puppeteer.screenshot,
 ) {
   return async (plugin: string, name: string, data: TemplateData = {}, options: RenderOptions = {}) => {
@@ -51,7 +51,18 @@ export function legacyTemplateRender(
     const image = await screenshot(`${plugin}/${path}`, { ...renderData, tplFile: file });
     if (source(plugin) !== directory) return missing;
     if (returnsImage) return image;
-    if (image) await reply(image);
-    return true;
+    if (!image) return true;
+    if (options.retType !== "msgId") {
+      await event.reply(image);
+      return true;
+    }
+
+    let messageId: number | undefined;
+    const confirmed = await event.reply(image, false, { onDelivered: id => { messageId ??= id; } });
+    if (!confirmed || messageId === undefined || source(plugin) !== directory) return false;
+    // Build the legacy fields from the verified native receipt without passing through gateway data.
+    return event.adapter === "milky"
+      ? { status: "ok", retcode: 0, data: { message_seq: messageId } }
+      : { status: "ok", retcode: 0, message_id: messageId, data: { message_id: messageId } };
   };
 }
