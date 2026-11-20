@@ -1,4 +1,5 @@
 import type { GroupRequest, GroupRequestType } from "../messages.ts";
+import type { PendingGroupInvitation, PendingGroupInvitationList } from "../group-invitations.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
 
 type Decision = (approve: boolean, reason?: string) => { action: string; params: Record<string, unknown> } | undefined;
@@ -7,6 +8,8 @@ interface Entry {
   readonly account: number;
   readonly kind: GroupRequestType;
   readonly decision: Decision;
+  readonly invitation?: PendingGroupInvitation;
+  readonly observedAt: number;
   state: "pending" | "sending" | "completed" | "unknown";
 }
 
@@ -15,7 +18,7 @@ export function createMilkyGroupReviews() {
   const maxRequests = 4096;
   const unconfirmed = () => new Error("Milky 群请求审批结果未确认。");
 
-  function register(request: Pick<GroupRequest, "self_id" | "sub_type" | "flag">, decision: Decision): boolean {
+  function register(request: Pick<GroupRequest, "self_id" | "sub_type" | "flag" | "group_id" | "user_id" | "nickname">, decision: Decision): boolean {
     const existing = requests.get(request.flag);
     if (existing) return existing.state === "pending";
     if (requests.size >= maxRequests) {
@@ -25,8 +28,19 @@ export function createMilkyGroupReviews() {
     }
     requests.set(request.flag, {
       account: request.self_id, kind: request.sub_type, decision, state: "pending",
+      invitation: request.sub_type === "invite" ? { groupId: request.group_id, inviterId: request.user_id, nickname: request.nickname } : undefined,
+      observedAt: performance.now(),
     });
     return true;
+  }
+
+  function listObservedInvitations(account: number): PendingGroupInvitationList {
+    const cutoff = performance.now() - 60 * 60 * 1_000;
+    const entries: PendingGroupInvitation[] = [];
+    for (const entry of requests.values()) {
+      if (entry.account === account && entry.state === "pending" && entry.invitation && entry.observedAt >= cutoff) entries.push(entry.invitation);
+    }
+    return { entries: entries.reverse(), complete: false };
   }
 
   async function review(
@@ -51,5 +65,5 @@ export function createMilkyGroupReviews() {
     }
   }
 
-  return { register, review };
+  return { register, review, listObservedInvitations };
 }

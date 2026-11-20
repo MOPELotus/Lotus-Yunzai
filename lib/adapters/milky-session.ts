@@ -562,6 +562,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      listPendingGroupInvitations: privateGroupSignal && positiveId(cardOwner) ? async () => {
+        if (!signal.aborted && !privateGroupSignal.aborted && isMaster(cardOwner)) return groupReviews.listObservedInvitations(account);
+      } : undefined,
       listPendingFriendRequests: privateGroupSignal && positiveId(cardOwner) ? async () => {
         const combined = AbortSignal.any([signal, privateGroupSignal]);
         const active = () => !combined.aborted && isMaster(cardOwner);

@@ -121,7 +121,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupNotifyAll ? { groupNotifyAll } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewQuotedRequest ? { groupReviewQuotedRequest } : {}),
     ...(message_type === "group" && !isDelegated && groupListPendingJoinRequests ? { groupListPendingJoinRequests } : {}),
-    ...(message_type === "private" && isMaster && !isDelegated && listPendingGroupInvitations ? { listPendingGroupInvitations } : {}),
+    ...(message_type === "private" && !isDelegated && listPendingGroupInvitations ? { listPendingGroupInvitations } : {}),
     ...(message_type === "private" && !isDelegated && listPendingFriendRequests ? { listPendingFriendRequests } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewPendingJoin ? { groupReviewPendingJoin } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewAllPendingJoins ? { groupReviewAllPendingJoins } : {}),

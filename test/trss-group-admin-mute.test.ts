@@ -1184,7 +1184,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await ownerReplyWith("本次查询范围内未发现待处理的群邀请，未能核验完整列表");
     expect(invitationCalls()).toBe(beforeInvitations + 2);
     await webhook("message_receive", milkyPrivate("#查看群邀请"));
-    await milkyOwnerReply(operator, "当前无法核验该机器人的群邀请");
+    await milkyOwnerReply(operator, "本次查询范围内未发现待处理的群邀请，未能核验完整列表");
 
     const incomingFriend = { post_type: "request", request_type: "friend", sub_type: "add", self_id: oneBotId,
       user_id: 95, flag: "onebot_fixture_friend_only", comment: "当前连接所见好友附言", time: 1_704_038_405 };

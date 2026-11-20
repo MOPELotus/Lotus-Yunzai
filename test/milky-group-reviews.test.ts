@@ -4,7 +4,7 @@ import { createMilkyGroupReviews } from "../lib/adapters/milky-group-reviews.ts"
 
 test("Milky 审核使用当前连接，结果未知后阻止再次提交", async () => {
   const reviews = createMilkyGroupReviews();
-  const request = { self_id: 99, sub_type: "add", flag: "fixture" } as const;
+  const request = { self_id: 99, sub_type: "add", group_id: 42, user_id: 51, flag: "fixture" } as const;
   const decision = (allow: boolean) => ({
     action: allow ? "accept_group_request" : "reject_group_request", params: { group_id: 42, notification_seq: 1 },
   });

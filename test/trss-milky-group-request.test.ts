@@ -232,6 +232,20 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       expect(pending).not.toContain(direct.id);
       expect(pending).not.toContain(indirect.id);
       expect(pending).not.toContain(String(unknownGroup));
+      await command("#查看群邀请");
+      const invitations = await mock.next("send_private_message") as { user_id: number; message: readonly unknown[] };
+      expect(invitations.user_id).toBe(owner);
+      const shown = JSON.stringify(invitations.message);
+      expect(shown).toContain("本次查到 1 条待处理群邀请，未能核验完整列表");
+      expect(shown).toContain(`邀请群号：${pendingInviteGroup}`);
+      expect(shown).toContain(`邀请人QQ：${outsider}`);
+      for (const omitted of [autoGroup, unknownGroup, directGroup, indirectGroup]) expect(shown).not.toContain(`邀请群号：${omitted}`);
+      expect(shown).not.toContain(outsiderInvite.id);
+      await command(`#同意入群 ${outsiderInvite.id}`);
+      expect(await mock.next("accept_group_invitation")).toEqual({ group_id: pendingInviteGroup, invitation_seq: 102 });
+      expect(await privateText(mock)).toBe("已同意群请求。");
+      await command("#查看全部群邀请");
+      expect(await privateText(mock)).toContain("本次查询范围内未发现待处理的群邀请，未能核验完整列表");
       await Bun.sleep(80);
       expect(mock.calls).toHaveLength(mock.consumed);
     } finally {
