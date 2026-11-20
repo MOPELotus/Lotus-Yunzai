@@ -2745,7 +2745,7 @@ if (import.meta.main) {
         config: globalConfig.atlas,
         register(schedule) {
           const jobs: (() => Promise<void>)[] = [];
-          for (const [kind, name] of [["version", "[atlas] 正式资料"], ["challenge", "[atlas] 挑战轮换"]] as const) {
+          for (const [kind, name] of [["version", "[atlas] 图鉴版本"], ["challenge", "[atlas] 挑战轮换"]] as const) {
             const task = schedule[kind];
             if (task?.issue) console.warn(`${name} ${task.issue}`);
             if (typeof task?.cron !== "string" || typeof task.run !== "function") continue;
