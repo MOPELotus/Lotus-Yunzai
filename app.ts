@@ -117,6 +117,7 @@ import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { previousUpdateDirectory } from "./lib/update-activation.ts";
+import { verifyMovedRuntimePaths } from "./lib/update-runtime-paths.ts";
 import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
@@ -287,10 +288,10 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
+  const previous = !probingUpdate && handoff.managed && !handoff.accepting
+    ? await previousUpdateDirectory(fileURLToPath(root)).catch(() => undefined)
+    : undefined;
   if (!probingUpdate) {
-    const previous = handoff.managed && !handoff.accepting
-      ? await previousUpdateDirectory(fileURLToPath(root)).catch(() => undefined)
-      : undefined;
     whenModuleTasksActive(() => {
       const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
       const running = startImagePreviews(root, active, setImagePreviews, previous ? pathToFileURL(previous + sep) : undefined);
@@ -1829,6 +1830,7 @@ if (import.meta.main) {
     process.once("SIGTERM", terminate);
   }
   try {
+    if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
     const [network, permissions, globalConfig, access, friendRequests, routing, invitations, botConfig,
       runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readLotusGlobalConfig(root),

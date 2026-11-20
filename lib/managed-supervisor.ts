@@ -11,6 +11,7 @@ import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
 import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
 import { stageUpdate } from "./update-staging.ts";
+import { readUpdateRuntimePaths } from "./update-runtime-paths.ts";
 
 type Worker = ReturnType<typeof spawnManagedWorker>;
 type StopSignal = "SIGINT" | "SIGTERM";
@@ -112,6 +113,8 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         expectedPlugins = [...directories.keys(), ready.plugin.name];
       }
       if (stopped || signal.aborted || current !== worker) return;
+      const runtimePaths = await readUpdateRuntimePaths(root, signal, options.env ?? process.env);
+      if (stopped || signal.aborted || current !== worker) return;
       report("switching");
       const target = request.target;
       const targets: readonly ProcessReceipt["target"][] = target.type === "scheduled"
@@ -122,7 +125,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         ] : [target];
       let archived: string | undefined;
       const installed = ready.scope === "install" ? ready.plugin : undefined;
-      transition = switchWorker(stage, undefined, async (outcome, previous) => {
+      transition = switchWorker(stage, runtimePaths, async (outcome, previous) => {
         if (outcome === "updated") archived = previous;
         const at = Date.now();
         const saved = await Promise.allSettled(targets.map((target) => {

@@ -366,7 +366,10 @@ export async function stageUpdate(
         try {
           const state = await collectPluginState();
           await probeStagedUpdate(directory, stagedHead, state, signal);
-          return await activateUpdate(host, directory, verify, [...state, ...unmanaged, ...(additionalStatePaths ?? [])], async (paths) => {
+          const managedState = [...state, ...unmanaged];
+          const extraState = (additionalStatePaths ?? []).filter(path =>
+            !managedState.some(parent => path === parent || path.startsWith(parent + "/")));
+          return await activateUpdate(host, directory, verify, [...managedState, ...extraState], async (paths) => {
             await checkRevisions();
             const activeState = await collectPluginState();
             if (activeState.length !== state.length || activeState.some((path, index) => path !== state[index]) ||
