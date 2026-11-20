@@ -64,7 +64,10 @@ test("沿用旧插件的调度与权限，显式改时刻只写主配置并保�
     "scheduler: {enable: true}\ncoin_shop: {enable: true}\n");
   const overridden = await readLotusGlobalConfig(root);
   expect(overridden).toMatchObject({ scheduler: { enable: true }, coin_shop: { enable: true } });
-  expect(accountScopePermission(overridden, "scheduler.manage")({ user_id: 42, isMaster: false })).toBe(true);
+  expect(accountScopePermission(overridden, "scheduler.manage")({ user_id: 42, isMaster: false })).toBe(false);
+  await writeFile(primary, "permissions: {users: {deny: []}, scopes: {scheduler.manage: {policy: allow}}}\n");
+  const explicitlyCleared = await readLotusGlobalConfig(root);
+  expect(accountScopePermission(explicitlyCleared, "scheduler.manage")({ user_id: 42, isMaster: false })).toBe(true);
 }));
 
 test("优先更新平铺全局配置并保留既有调度字段、注释、其他段落和文件权限", () => fixture(async (root, directory) => {
