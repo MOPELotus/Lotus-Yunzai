@@ -165,8 +165,18 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       recursive: true, filter: (path) => !path.endsWith("/.git"),
     });
     await mkdir(join(root, "config", "config"), { recursive: true });
-    await writeFile(join(root, "config", "config", "other.yaml"), "autoGroup: 0\ndisablePrivate: true\ndisableMsg: 私聊关闭\n" +
+    await writeFile(join(root, "config", "config", "other.yaml"), "autoGroup: '1'\ndisablePrivate: true\ndisableMsg: 私聊关闭\nblackUser: [44]\nblackGroup: [70109]\n" +
       `master: ["${account}:${owner}","100:52"]\n`);
+    await writeFile(join(root, "plugins/invitation-fixture.js"), `
+      export default class InvitationFixture extends plugin {
+        constructor() { super({ event: "request.group.invite", priority: 1 }); }
+        async accept(e) {
+          if (e.group_id !== 70110) return false;
+          await e.approve(false, "旧规则已处理");
+          return "return";
+        }
+      }
+    `);
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
       "connection: webhook", `access_token: ${token}`,
@@ -192,6 +202,9 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       expect(await mock.next("accept_group_invitation")).toEqual({ group_id: autoGroup, invitation_seq: 101 });
       expect(await privateText(mock)).toContain(`已同意加群：${autoGroup}`);
       expect((await webhook(endpoint, "group_invitation", automatic)).status).toBe(200);
+
+      expect((await webhook(endpoint, "group_invitation", invitation(70110, 114))).status).toBe(200);
+      expect(await mock.next("reject_group_invitation")).toEqual({ group_id: 70110, invitation_seq: 114 });
 
       expect((await webhook(endpoint, "group_invitation", invitation(pendingInviteGroup, 102, outsider))).status).toBe(200);
       const outsiderInvite = await manualId(mock, pendingInviteGroup);
@@ -297,6 +310,11 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       expect(await privateText(mock)).toBe(`✅ 已拒绝群 ${quotedGroup} 的邀请`);
       await command(`#同意入群 ${quotedInvite.id}`);
       expect(await privateText(mock)).toBe("未找到当前机器人的待审核群请求。");
+      expect((await webhook(endpoint, "group_invitation", invitation(70108, 112, 44))).status).toBe(200);
+      expect((await webhook(endpoint, "group_invitation", invitation(70109, 113))).status).toBe(200);
+      await command("#入群申请");
+      const filteredPending = await privateText(mock);
+      expect(filteredPending).not.toMatch(/70108|70109/u);
       await Bun.sleep(80);
       expect(mock.calls).toHaveLength(mock.consumed);
     } finally {

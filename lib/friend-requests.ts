@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { readOptionalConfigFile } from "./config.ts";
+import { configuredIds, readOtherSetting } from "./config.ts";
 import type { FriendRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -24,31 +24,19 @@ export interface PendingFriendRequestDecision {
 
 type FriendAutoResult = "confirmed" | "rejected" | "unknown" | "duplicate" | undefined;
 
-function configuredUsers(value: unknown): Set<number> {
-  const entries = Array.isArray(value) ? value : [value];
-  return new Set(entries.flatMap(entry => {
-    const id = typeof entry === "string" && /^\d+$/u.test(entry.trim()) ? Number(entry) : entry;
-    return typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? [id] : [];
-  }));
-}
-
 async function readApprovalPolicy(root: URL): Promise<((userId: number) => boolean) | undefined> {
-  const primary = await readOptionalConfigFile(root, "config/other.yaml");
-  if (primary && Object.hasOwn(primary, "autoFriend")) {
-    if (primary.autoFriend === 1 || primary.autoFriend === "1") return () => true;
+  const config = await readOtherSetting(root, "autoFriend");
+  if (!config) return;
+  if ("primary" in config) {
+    if (config.primary === 1 || config.primary === "1") return () => true;
     return;
   }
-  const legacy = await readOptionalConfigFile(root, "config/config/other.yaml").catch(error => {
-    if (!primary) throw error;
-    return undefined;
-  });
-  if (!legacy) return;
+  const { legacy } = config;
   // The TRSS runtime overlay inherited autoFriend: 1 from its bundled defaults.
   const setting = Object.hasOwn(legacy, "autoFriend") ? legacy.autoFriend : 1;
   if (setting !== 1 && setting !== "1" && setting !== true) return;
-  const masks: Record<string, unknown> = { blackUser: [528_952_540], ...legacy, ...primary };
-  const black = configuredUsers(masks.blackUser);
-  const white = configuredUsers(masks.whiteUser);
+  const black = configuredIds(legacy.blackUser);
+  const white = configuredIds(legacy.whiteUser);
   return userId => !black.has(userId) && (white.size === 0 || white.has(userId));
 }
 

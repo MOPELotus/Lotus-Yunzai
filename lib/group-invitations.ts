@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readLocalConfig } from "./config.ts";
+import { configuredIds, readOtherSetting } from "./config.ts";
 import type { GroupRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -29,18 +29,30 @@ export interface QuotedGroupInvitationDecision {
 }
 
 export async function readGroupInvitations(root: URL) {
-  const { autoGroup } = await readLocalConfig(root, "other");
-  const masterOnly = autoGroup === 0 || autoGroup === "0";
-  const allInviters = autoGroup === 1 || autoGroup === "1";
+  const config = await readOtherSetting(root, "autoGroup");
+  const primary = config && "primary" in config ? config.primary : undefined;
+  const legacy = config && "legacy" in config ? config.legacy : undefined;
+  // The legacy invite plugin recognized only numeric 1 as approval for everyone.
+  const allInviters = legacy ? legacy.autoGroup === 1 : primary === 1 || primary === "1";
+  const masterOnly = legacy ? !allInviters : primary === 0 || primary === "0";
+  const whiteUser = configuredIds(legacy?.whiteUser);
+  const blackUser = configuredIds(legacy?.blackUser);
+  const whiteGroup = configuredIds(legacy?.whiteGroup);
+  const blackGroup = configuredIds(legacy?.blackGroup);
   const inFlightOrUnknown = new Set<string>();
   const settled = new Set<string>();
   const maxAttempts = 4096;
 
-  return async (event: GroupRequest, signal?: AbortSignal): Promise<GroupInvitationResult> => {
-    if ((!allInviters && !masterOnly) || event.sub_type !== "invite" || event.self_id === event.user_id) return "skip";
+  function admits(event: GroupRequest): boolean {
+    return !blackUser.has(event.user_id) && (whiteUser.size === 0 || whiteUser.has(event.user_id)) &&
+      !blackGroup.has(event.group_id) && (whiteGroup.size === 0 || whiteGroup.has(event.group_id));
+  }
+
+  async function review(event: GroupRequest, signal?: AbortSignal): Promise<GroupInvitationResult> {
+    if ((!allInviters && !masterOnly) || event.sub_type !== "invite" || event.self_id === event.user_id || !admits(event)) return "skip";
 
     const key = createHash("sha256")
-      .update(JSON.stringify([event.self_id, event.sub_type, event.group_id, event.flag]))
+      .update(JSON.stringify([event.groupRequestScope ?? "onebot", event.self_id, event.group_id, event.flag]))
       .digest("hex");
     if (inFlightOrUnknown.has(key) || settled.has(key)) return "duplicate";
     if (masterOnly && !event.isMaster) return "skip";
@@ -62,5 +74,7 @@ export async function readGroupInvitations(root: URL) {
       if (settled.size > maxAttempts) settled.delete(settled.values().next().value!);
     }
     return result;
-  };
+  }
+
+  return { admits, review };
 }
