@@ -164,7 +164,7 @@ export interface GroupNotice {
   readonly inviter_id?: number;
   readonly group_name?: string;
   readonly getGroupName?: () => Promise<string | undefined>;
-  readonly inspectAutoQuit?: (maxMembers: number) => Promise<GroupMembership | undefined>;
+  readonly inspectAutoQuit?: (maxMembers: number, signal?: AbortSignal) => Promise<GroupMembership | undefined>;
   readonly leaveGroup?: () => Promise<boolean>;
   readonly nickname?: string;
   readonly member?: { readonly card?: string; readonly nickname?: string };

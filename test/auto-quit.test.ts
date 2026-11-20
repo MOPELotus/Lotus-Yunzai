@@ -6,7 +6,8 @@ import { pathToFileURL } from "node:url";
 import { readAutoQuit } from "../lib/auto-quit.ts";
 import type { GroupNotice } from "../lib/messages.ts";
 
-async function policy(config?: string, masterIds: (bot: number) => readonly number[] = () => []) {
+async function policy(config?: string, masterIds: (bot: number) => readonly number[] = () => [],
+  primary?: string, legacyMasterIds?: () => readonly number[]) {
   const root = await mkdtemp(join(tmpdir(), "lotus-auto-quit-"));
   try {
     if (config !== undefined) {
@@ -14,7 +15,11 @@ async function policy(config?: string, masterIds: (bot: number) => readonly numb
       await mkdir(directory, { recursive: true });
       await writeFile(join(directory, "other.yaml"), config);
     }
-    return await readAutoQuit(pathToFileURL(`${root}/`), masterIds);
+    if (primary !== undefined) {
+      await mkdir(join(root, "config"), { recursive: true });
+      await writeFile(join(root, "config/other.yaml"), primary);
+    }
+    return await readAutoQuit(pathToFileURL(`${root}/`), masterIds, legacyMasterIds);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -30,7 +35,7 @@ function joinNotice(fields: Partial<GroupNotice> = {}): GroupNotice {
   };
 }
 
-test("仅显式正整数启用自身入群检查，缺少入群时间或能力时跳过", async () => {
+test("无旧路径时由显式阈值启用，缺少入群时间或能力时跳过", async () => {
   const inspections: number[] = [];
   const event = joinNotice({ inspectAutoQuit: async (limit) => {
     inspections.push(limit);
@@ -46,6 +51,36 @@ test("仅显式正整数启用自身入群检查，缺少入群时间或能力�
   expect(await handle({ ...event, leaveGroup: undefined })).toBe(false);
   expect(await handle({ ...event, action_sub_type: "approve" })).toBe(true);
   expect(inspections).toEqual([2]);
+});
+
+test.each([
+  { label: "旧空文件沿用 50", legacy: "# 旧默认\n", limit: 50 },
+  { label: "主文件仅有其他字段沿用 50", legacy: "{}", primary: "disablePrivate: false", limit: 50 },
+  { label: "旧明确 0 关闭", legacy: "autoQuit: 0" },
+  { label: "主明确 0 覆盖旧默认", legacy: "{}", primary: "autoQuit: 0" },
+  { label: "主明确阈值覆盖旧值", legacy: "autoQuit: 2", primary: "autoQuit: 3", limit: 3 },
+  { label: "主明确空值关闭", legacy: "{}", primary: "autoQuit:" },
+  { label: "新装主文件只有其他选项保持关闭", primary: "disablePrivate: false" },
+  { label: "无效旧文件不会打开自动退群", legacy: "[]", primary: "disablePrivate: false" },
+  { label: "旧主人字段无法解析时跳过退出", legacy: "master: [other]", primary: "disablePrivate: false" },
+])("旧自动退群的配置来源 $label", async ({ legacy, primary, limit }) => {
+  const inspections: number[] = [];
+  const handle = await policy(legacy, undefined, primary);
+  const event = joinNotice({ inspectAutoQuit: async (threshold) => {
+    inspections.push(threshold);
+    return { memberIds: [10, ...Array.from({ length: threshold - 1 }, (_, index) => 100 + index)], botRole: "member" };
+  } });
+  expect(await handle(event)).toBe(limit !== undefined);
+  expect(inspections).toEqual(limit === undefined ? [] : [limit]);
+});
+
+test("旧自动退群保留混合配置里的主人和群黑白名单", async () => {
+  const legacy = 'master: ["10:33"]\nmasterQQ: [31]\nwhiteGroup: [20, 21, 22, 23, 24, 25]\nblackGroup: [24]\n';
+  const handle = await policy(legacy, () => [32], "disablePrivate: false", () => [34]);
+  for (const [group_id, other] of [[20, 31], [21, 32], [22, 33], [23, 34], [24, 40], [26, 40]] as const) {
+    expect(await handle(joinNotice({ group_id, inspectAutoQuit: async () => ({ botRole: "member", memberIds: [10, other] }) }))).toBe(false);
+  }
+  expect(await handle(joinNotice({ group_id: 25 }))).toBe(true);
 });
 
 test("群内主人无论是否邀请都豁免，其他机器人的主人不自动豁免", async () => {

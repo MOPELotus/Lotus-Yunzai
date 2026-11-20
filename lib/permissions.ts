@@ -2,7 +2,7 @@ import { readLocalConfig } from "./config.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { persistMaster } from "./master-config.ts";
 
-function readOwnerSnapshot(config: Record<string, unknown>) {
+export function readOwnerSnapshot(config: Readonly<Record<string, unknown>>) {
   const owners = new Map<string, Set<string>>();
   const { master, masterQQ } = config;
   const entries = Array.isArray(master) ? master : master == null ? [] : [master];

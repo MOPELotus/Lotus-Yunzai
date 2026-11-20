@@ -448,11 +448,11 @@ export class OneBotCalls {
   }
 
   async inspectAutoQuit(send: Send, groupId: number, userId: number, joinedAt: number,
-    maxMembers: number): Promise<GroupMembership | undefined> {
+    maxMembers: number, signal?: AbortSignal): Promise<GroupMembership | undefined> {
     try {
-      const count = await this.#getGroupSize(send, groupId);
+      const count = await this.#getGroupSize(send, groupId, signal);
       if (count === undefined || count > maxMembers) return;
-      const members = await this.#request(send, "get_group_member_list", { group_id: groupId });
+      const members = await this.#request(send, "get_group_member_list", { group_id: groupId, no_cache: true }, signal);
       if (!Array.isArray(members) || members.length !== count) return;
       const memberIds = new Set<number>();
       let listedRole: unknown;
@@ -462,11 +462,11 @@ export class OneBotCalls {
         if (member.user_id === userId) listedRole = member.role;
       }
       if (!memberIds.has(userId)) return;
-      const bot = await this.#getGroupMember(send, groupId, userId);
+      const bot = await this.#getGroupMember(send, groupId, userId, signal);
       if (!isRecord(bot) || bot.group_id !== groupId || bot.user_id !== userId || bot.role !== listedRole) return;
       if (bot.role !== "admin" && bot.role !== "member") return;
       if (isPositiveInteger(bot.join_time) && bot.join_time > joinedAt) return;
-      if (await this.#getGroupSize(send, groupId) !== count) return;
+      if (await this.#getGroupSize(send, groupId, signal) !== count) return;
       return { memberIds: [...memberIds], botRole: bot.role };
     } catch {
       return undefined;
