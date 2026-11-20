@@ -19,7 +19,8 @@ async function fixture() {
   await Promise.all(["lib", "plugins/atlas", "scripts", "config"].map((path) => mkdir(join(cwd, path), { recursive: true })));
   await Promise.all([
     ...["package.json", "scripts/launcher.ts", "scripts/startup.ts",
-      "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts"].map((path) =>
+      "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
+      "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
     ...["atlas-channel", "file-lock"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
@@ -68,9 +69,10 @@ test("an already prepared installation starts without choosing a channel and rej
   const atlas = join(cwd, "data/atlas/data");
   await mkdir(atlas, { recursive: true });
   await writeFile(join(atlas, "map.json"), "{}");
-  const [code, output] = await start(["start"]);
+  const [code, output, warning] = await start(["start"]);
   expect(code).toBe(0);
   expect(output).toContain("fixture host ready");
+  expect(warning).toContain("缺少 12 个原主题文件");
   expect(await Bun.file(config).exists()).toBe(false);
 
   await writeFile(config, "atlas: [\n");

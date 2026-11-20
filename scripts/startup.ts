@@ -63,19 +63,35 @@ async function loadStartupConfig(root: URL) {
   }
 }
 
+async function prepareTheme(root: URL, signal: AbortSignal) {
+  const { prepareAtlasTheme } = await import("../plugins/atlas/prepare-theme.ts");
+  const { copied, missing } = await prepareAtlasTheme(root, {
+    override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal,
+  });
+  if (copied.length) console.log(`[图鉴] 已从本地恢复 ${copied.length} 个原主题文件。`);
+  if (missing.length) {
+    console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
+  }
+}
+
 export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal) {
   const { persistAtlasChannel, readAtlasChannel } = await loadStartupConfig(root);
   const previous = await readAtlasChannel(root);
   const directory = fileURLToPath(new URL("data/atlas/", root));
   const ready = await atlasReady(directory);
   signal.throwIfAborted();
-  if (ready && requested === undefined) return;
-  const channel = requested ?? previous ?? await askAtlasChannel(signal);
-  if (previous !== channel) {
-    await persistAtlasChannel(root, channel, previous, signal);
+  if (!ready || requested !== undefined) {
+    const channel = requested ?? previous ?? await askAtlasChannel(signal);
+    if (previous !== channel) {
+      await persistAtlasChannel(root, channel, previous, signal);
+    }
+    signal.throwIfAborted();
+    if (!ready) await initializePublicAtlas(root, directory, channel, signal);
   }
-  signal.throwIfAborted();
-  if (ready) return;
+  await prepareTheme(root, signal);
+}
+
+async function initializePublicAtlas(root: URL, directory: string, channel: AtlasChannel, signal: AbortSignal) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
   const download = Bun.spawn([
