@@ -473,7 +473,7 @@ if (import.meta.main) {
 
   async function reportOldMilkySupervisor(event: MessageEvent): Promise<boolean> {
     if (event.adapter !== "milky" || !handoff.managed || handoff.supportsAdapterReceipts) return false;
-    await event.reply("当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun scripts/run-managed.ts 后重试。");
+    await event.reply("当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun run start 后重试。");
     return true;
   }
 
@@ -2807,7 +2807,7 @@ if (import.meta.main) {
       }
       if (handoff.managed) stopUpdateSchedule = scheduleUpdates(botConfig, requestScheduledUpdate);
       else if (botConfig.update_time || botConfig.update_cron) {
-        console.warn("[更新] 定时更新需要通过 bun scripts/run-managed.ts 启动宿主。");
+        console.warn("[更新] 定时更新需要通过 bun run start 启动宿主。");
       }
       console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
       queueStartupMessages();

@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { lstat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-export async function lockFile(file: string, subject: string, waitMs = 2_000): Promise<Database> {
+export async function lockFile(file: string, subject: string, waitMs = 2_000, busy = `${subject}正在更新，请稍后重试。`): Promise<Database> {
   try {
     if (!(await lstat(file)).isFile()) throw new Error(`${subject}锁须为普通文件。`);
   } catch (error) {
@@ -20,7 +20,7 @@ export async function lockFile(file: string, subject: string, waitMs = 2_000): P
         return database;
       } catch (error) {
         if (!(error as NodeJS.ErrnoException | undefined)?.code?.startsWith("SQLITE_BUSY")) throw error;
-        if (performance.now() >= deadline) throw new Error(`${subject}正在更新，请稍后重试。`);
+        if (performance.now() >= deadline) throw new Error(busy);
         await delay(20);
       }
     }

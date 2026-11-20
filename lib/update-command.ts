@@ -90,7 +90,7 @@ export function createUpdateCommand(request: RequestUpdate) {
       return;
     }
     if (!sent) {
-      await event.reply("当前未启用受管更新。请在宿主目录运行 bun scripts/run-managed.ts 后重试。");
+      await event.reply("当前未启用受管更新。请在宿主目录运行 bun run start 后重试。");
       return;
     }
     await pending;
