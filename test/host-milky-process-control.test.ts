@@ -209,7 +209,7 @@ test("旧托管器下 Milky 主人可查看安装目录，更新和安装给出�
     try {
       const command = commands(await deadline(mock.sessions[0]!.promise, "旧托管器夹具未建立 Milky 连接。"));
       const ownerTarget = { user_id: owner };
-      const upgrade = "当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun scripts/run-managed.ts 后重试。";
+      const upgrade = "当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun run start 后重试。";
       command("#安装插件");
       await mock.next(ownerTarget, expect.stringMatching(/可安装插件列表：[\s\S]*隔离插件/u));
       command("#更新");

@@ -230,7 +230,7 @@ test("进度消息按收到顺序发送，静默仅省略正常进度和已是�
 test("IPC 不可用给出受管启动方式，异常不回显底层内容", async () => {
   const offline = fixture(() => false);
   await offline.dispatch("#静更新");
-  expect(offline.replies).toEqual(["当前未启用受管更新。请在宿主目录运行 bun scripts/run-managed.ts 后重试。"]);
+  expect(offline.replies).toEqual(["当前未启用受管更新。请在宿主目录运行 bun run start 后重试。"]);
   const failed = fixture(() => { throw new Error("private fixture error"); });
   await failed.dispatch("#更新");
   expect(failed.replies).toEqual(["发送更新请求失败，请稍后重试。"]);

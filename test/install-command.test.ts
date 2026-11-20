@@ -117,7 +117,7 @@ test("按顺序回复安装状态，清楚处理关闭管理入口、列表及�
 
   const disabled = fixture({ install: () => false });
   await disabled.dispatch("#安装Atlas");
-  expect(disabled.replies).toEqual(["当前未启用受管安装。请在宿主目录运行 bun scripts/run-managed.ts 后重试。"]);
+  expect(disabled.replies).toEqual(["当前未启用受管安装。请在宿主目录运行 bun run start 后重试。"]);
   const failure = fixture({
     list() { throw new Error("fixture token"); },
     async install() { throw new Error("fixture URL"); },
