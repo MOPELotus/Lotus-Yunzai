@@ -1907,7 +1907,10 @@ if (import.meta.main) {
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
-    const previewOptions = { historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal };
+    const previewOptions = {
+      historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal,
+      legacyHistoryFiles: legacyLotusDirectories.map(id => fileURLToPath(new URL(`plugins/${id}/data/redeemCodes/activities.json`, root))),
+    };
     const publicPreview = new RedeemCodeService(previewOptions);
     let previewSettings: Parameters<typeof createMiyousheWeb>[0]["previewSettings"];
     if (probingUpdate) {

@@ -13,7 +13,9 @@ export class RedeemCodeService {
     this.now = options.now || Date.now
     this.providers = { miyolive: new MiyoliveProvider(options) }
     this.historyFile = options.historyFile || null
+    this.legacyHistoryFiles = [...new Set(options.legacyHistoryFiles || [])].filter(file => file !== this.historyFile)
     this.history = null
+    this.legacyHistory = {}
     this.loading = null
     this.inflight = new Map()
     this.persisting = Promise.resolve()
@@ -34,7 +36,8 @@ export class RedeemCodeService {
       await this.loadHistory()
       const provider = this.providers[game.provider]
       if (!provider) throw new Error("该游戏的官方来源尚未接入")
-      const found = await provider.discover(game, this.history[game.id] || [])
+      const remembered = [...new Set([...(this.history[game.id] || []), ...(this.legacyHistory[game.id] || [])])].slice(0, 12)
+      const found = await provider.discover(game, remembered)
       await this.saveHistory(game.id, found.activities || [])
       const { activity, newestVersion, posts, announcement } = found
       const version = activity ? versionOf(activity.live.title) : ""
@@ -114,9 +117,17 @@ export class RedeemCodeService {
   }
 
   async readHistory() {
-    if (!this.historyFile) { this.history = {}; return }
+    const [current, ...past] = await Promise.all([this.historyFile, ...this.legacyHistoryFiles].map(file => this.readHistoryFile(file)))
+    this.legacyHistory = Object.fromEntries(historyGames.map(id => [id,
+      [...new Set(past.flatMap(history => history[id] || []))].slice(0, 12),
+    ]))
+    this.history = current
+  }
+
+  async readHistoryFile(historyFile) {
+    if (!historyFile) return {}
     try {
-      const file = await fs.open(this.historyFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      const file = await fs.open(historyFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
       let parsed
       try {
         const stat = await file.stat()
@@ -125,11 +136,11 @@ export class RedeemCodeService {
       } finally {
         await file.close()
       }
-      this.history = Object.fromEntries(historyGames.filter(id => Array.isArray(parsed?.[id])).map(id => [id,
+      return Object.fromEntries(historyGames.filter(id => Array.isArray(parsed?.[id])).map(id => [id,
         parsed[id].filter(value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value)).slice(0, 12),
       ]))
     } catch {
-      this.history = {}
+      return {}
     }
   }
 

@@ -329,3 +329,30 @@ test("兼容旧活动 ID 文件，重启可恢复活动，且文件不含任何�
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test("旧安装的前瞻缓存只作发现线索，通过官方作者校验后才写入主缓存", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "lotus-redeem-history-"));
+  const historyFile = join(temp, "activities.json");
+  const unverifiedFile = join(temp, "unverified.json");
+  const legacyHistoryFiles = [join(temp, "old.json"), join(temp, "renamed.json")];
+  const oldBytes = [JSON.stringify({ gs: [activity, "invalid/id"] }) + "\r\n",
+    JSON.stringify({ gs: [activity], sr: ["not-checked"] }) + "\n"];
+  try {
+    await Promise.all(legacyHistoryFiles.map((path, index) => writeFile(path, oldBytes[index]!)));
+    await writeFile(historyFile, JSON.stringify({ sr: ["current-id"] }));
+    const options = { historyFile, legacyHistoryFiles, now: () => start + 1_000 };
+    const trusted = officialMock({ nav: [], posts: [] });
+    expect(await new RedeemCodeService({ ...options, fetch: trusted.fetch }).query("gs")).toMatchObject({ status: "available" });
+    expect(trusted.calls.filter(url => url.pathname.endsWith("/index"))).toHaveLength(1);
+    expect(JSON.parse(await readFile(historyFile, "utf8"))).toEqual({ sr: ["current-id"], gs: [activity] });
+    expect(await Promise.all(legacyHistoryFiles.map(path => readFile(path, "utf8")))).toEqual(oldBytes);
+
+    const wrongAuthor = officialMock({ nav: [], posts: [], wrongStreamer: true });
+    expect(await new RedeemCodeService({ ...options, fetch: wrongAuthor.fetch, historyFile: unverifiedFile }).query("gs"))
+      .toMatchObject({ status: "unavailable" });
+    expect(wrongAuthor.calls.some(url => url.pathname.endsWith("/refreshCode"))).toBe(false);
+    expect(await Bun.file(unverifiedFile).exists()).toBe(false);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
