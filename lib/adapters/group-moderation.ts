@@ -150,14 +150,43 @@ async function readMessageMedia(part: InboundSegment, signal: AbortSignal) {
   return readQqMessageMedia(url, signal);
 }
 
+function readGroupImageDigest(image: InboundSegment) {
+  return async (signal: AbortSignal) => {
+    const bytes = await readMessageMedia(image, signal);
+    if (bytes && !signal.aborted) return createHash("md5").update(bytes).digest("hex");
+  };
+}
+
 export function bindSingleGroupImageDigest(source: MessageEvent["message"]) {
   if (typeof source === "string") return;
   const content = source.filter(part => part.type !== "text" || typeof part.text !== "string" || part.text.trim());
   const image = content.length === 1 && content[0]?.type === "image" ? content[0] : undefined;
-  if (image) return async (signal: AbortSignal) => {
-    const bytes = await readMessageMedia(image, signal);
-    if (bytes && !signal.aborted) return createHash("md5").update(bytes).digest("hex");
-  };
+  if (image) return readGroupImageDigest(image);
+}
+
+export type GroupImageRulePart = { readonly type: "text"; readonly text: string } |
+  { readonly type: "face"; readonly id: number } |
+  { readonly type: "image"; readonly readMd5: (signal: AbortSignal) => Promise<string | undefined> };
+
+export function bindMixedGroupImageParts(source: MessageEvent["message"]): readonly GroupImageRulePart[] | undefined {
+  if (typeof source === "string" || !source.some(part => part.type === "image")) return;
+  const parts: GroupImageRulePart[] = [];
+  let images = 0;
+  for (const part of source) {
+    if (part.type === "text" && typeof part.text === "string") {
+      const previous = parts.at(-1);
+      if (previous?.type === "text") parts[parts.length - 1] = { type: "text", text: previous.text + part.text };
+      else parts.push({ type: "text", text: part.text });
+    } else if (part.type === "face") {
+      const id = typeof part.id === "string" && /^(?:0|[1-9]\d*)$/u.test(part.id) ? Number(part.id) : part.id;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) return;
+      parts.push({ type: "face", id });
+    } else if (part.type === "image") {
+      if (++images > 3) return;
+      parts.push({ type: "image", readMd5: readGroupImageDigest(part) });
+    } else return;
+  }
+  if (images > 1 || parts.some(part => part.type === "face" || part.type === "text" && part.text.trim())) return parts;
 }
 
 export function bindGroupRuleImageDigest(source: MessageEvent["message"], bot: number, session: AbortSignal,
@@ -385,6 +414,7 @@ interface GroupModerationSession {
   readonly canModerate?: (signal: AbortSignal) => Promise<boolean>;
   readonly memberMessage?: {
     readImageMd5?(signal: AbortSignal): Promise<string | undefined>;
+    readonly mixedImageParts?: readonly GroupImageRulePart[];
     canAct(signal: AbortSignal): Promise<boolean>;
     botCanAct(signal: AbortSignal): Promise<boolean>;
     mute(seconds: number, signal: AbortSignal): Promise<GroupModerationResult>;

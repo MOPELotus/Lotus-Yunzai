@@ -876,6 +876,31 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await groupReplyWith("已添加违禁词");
     const editedRules = JSON.parse(await readFile(join(root, "data/group/banned-words/82.json"), "utf8"));
     expect(editedRules.bannedWords[rawDigest]).toMatchObject({ matchType: 1, penaltyType: 3, addedBy: operator });
+
+    const mixedCaption = `图前  ${rawDigest}{face:14}图后`;
+    const mixedRule = { matchType: 1, penaltyType: 3 };
+    await writeFile(join(legacyRules, "86.json"), JSON.stringify({ bannedWords: { [mixedCaption]: mixedRule } }));
+    const handwrittenMixed = oneBotMessage(`助理 ${mixedCaption}`, 54, 86);
+    const realMixed = oneBotMessage([text("助理 图前  "), embeddedImage, { type: "face", data: { id: "14" } }, text("图后")], 54, 86);
+    send(handwrittenMixed);
+    send(realMixed);
+    await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "delete_msg" && params.message_id === realMixed.message_id),
+      "OneBot 图文违禁词未定位到真实原消息。");
+    expect(oneBotCalls.some(({ action, params }) => action === "delete_msg" && params.message_id === handwrittenMixed.message_id)).toBe(false);
+
+    const currentRules = JSON.parse(await readFile(milkyRulesFile, "utf8"));
+    const twoImages = `{image_${imageDigest}}间隔${rawDigest}`;
+    await writeFile(milkyRulesFile, JSON.stringify({ ...currentRules, bannedWords: { ...currentRules.bannedWords, [twoImages]: mixedRule } }));
+    const mixedMedia = (first: string) => ({ ...milkyTitle("", 54), segments: [
+      { type: "image", data: { resource_id: first } }, text("间隔"), { type: "image", data: { resource_id: "matched-picture" } },
+    ] });
+    const invalidMixed = mixedMedia("missing-picture");
+    const validMixed = mixedMedia("matched-picture");
+    await webhook("message_receive", invalidMixed);
+    await webhook("message_receive", validMixed);
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "recall_group_message" && params.message_seq === validMixed.message_seq),
+      "Milky 同文不同原图的正确消息被遗漏。");
+    expect(milkyCalls.some(({ action, params }) => action === "recall_group_message" && params.message_seq === invalidMixed.message_seq)).toBe(false);
   } finally {
     socket?.close();
     host?.kill();

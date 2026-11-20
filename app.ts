@@ -716,7 +716,7 @@ if (import.meta.main) {
     }
   }
 
-  async function handleGroupBannedWords(source: MessageEvent, text: string): Promise<boolean> {
+  async function handleGroupBannedWords(source: MessageEvent, text: string, alias?: string): Promise<boolean> {
     const registration = groupBannedWords;
     if (!registration || source.message_type !== "group" || source.isDelegated) return false;
     const { self_id: bot, group_id: group, user_id: user, message_id } = source;
@@ -724,19 +724,32 @@ if (import.meta.main) {
     const transport = groupModerationSession(source);
     if (!transport?.memberMessage || !transport.act) return false;
     const { memberMessage, act } = transport;
-    if (!text && !memberMessage.readImageMd5) return false;
+    if (!text && !memberMessage.readImageMd5 && !memberMessage.mixedImageParts) return false;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
     const active = () => !signal.aborted && bot !== user &&
       !masterPermissions.isMaster(bot, user) && !masterPermissions.legacyMasterIds().includes(user);
     if (!active()) return false;
     const key = moderatedMessageKey(source);
     if (moderatedMessages.has(key)) return true;
-    let imageDigest: Promise<string | undefined> | undefined;
-    const readImage = !text && memberMessage.readImageMd5 ? (current: AbortSignal) => imageDigest ??= (async () => {
-      if (!active() || !await memberMessage.canAct(current).catch(() => false) || !active()) return;
-      return memberMessage.readImageMd5?.(current);
-    })() : undefined;
-    const match = () => registration.policy.match(group, user, text, signal, readImage).catch(() => undefined);
+    let mayReadImage: Promise<boolean> | undefined;
+    const protectImage = (read: (signal: AbortSignal) => Promise<string | undefined>) => {
+      let value: Promise<string | undefined> | undefined;
+      return (current: AbortSignal) => value ??= (async () => {
+        if (!active() || !await (mayReadImage ??= memberMessage.canAct(current).catch(() => false)) || !active()) return;
+        return read(current);
+      })();
+    };
+    const mixed = memberMessage.mixedImageParts?.map((part, index) => {
+      if (part.type === "image") return { ...part, readMd5: protectImage(part.readMd5) };
+      if (part.type === "text" && index === 0 && alias && part.text.trimStart().startsWith(alias)) {
+        return { ...part, text: part.text.trimStart().slice(alias.length) };
+      }
+      return part;
+    });
+    const afterAlias = !text && alias ? mixed?.filter(part => part.type !== "text" || part.text.trim()) : undefined;
+    const singleImage = afterAlias?.length === 1 && afterAlias[0]?.type === "image" ? afterAlias[0].readMd5 : undefined;
+    const readImage = !text && memberMessage.readImageMd5 ? protectImage(memberMessage.readImageMd5) : singleImage;
+    const match = () => registration.policy.match(group, user, text, signal, readImage, mixed).catch(() => undefined);
     if (!await match() || !active() || !await memberMessage.canAct(signal).catch(() => false) || !active()) return false;
     const rule = await match();
     if (!rule || !active()) return false;
@@ -891,7 +904,7 @@ if (import.meta.main) {
   }
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
-    const { event, allowNew } = groupDispatch.prepare(incoming);
+    const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     const atlasCommand = atlasMaintenanceCommand.test(event.msg);
     if (event.msg === "#TodayEatPro20x" && (event.isDelegated || !canManagePackages(event) ||
@@ -1045,7 +1058,7 @@ if (import.meta.main) {
       }
     }
     if (!allowNew) return;
-    if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg)) return;
+    if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg, alias)) return;
 
     const command = normalizeGameCommand(event);
     if (isUpdateLogCommand(command.msg)) {

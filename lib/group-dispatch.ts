@@ -177,9 +177,10 @@ export async function readGroupDispatch(root: URL) {
     const bot = id(event.self_id) ?? "";
     let duplicate = `${bot}:${user ?? ""}:${event.raw_message}`;
     if (event.message_id !== undefined) {
+      const member = groupModerationSession(event)?.memberMessage;
       if (event.groupReviewQuotedRequest && event.reply_id !== undefined && isGroupJoinReviewInput(normalizePrefix(event.msg))) {
         duplicate = `${event.adapter ?? "onebot"}:group-join-review:${bot}:${group}:${user ?? ""}:${event.message_id}`;
-      } else if (!event.msg && groupModerationSession(event)?.memberMessage?.readImageMd5) {
+      } else if (member?.readImageMd5 || member?.mixedImageParts) {
         duplicate = `${event.adapter ?? "onebot"}:image:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (event.adapter === "milky" && event.file) {
         duplicate = `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
@@ -190,7 +191,7 @@ export async function readGroupDispatch(root: URL) {
     return true;
   }
 
-  function prepare(event: MessageEvent): { event: MessageEvent; allowNew: boolean } {
+  function prepare(event: MessageEvent): { event: MessageEvent; allowNew: boolean; alias?: string } {
     const msg = normalizePrefix(event.msg);
     if (!groups || event.message_type !== "group") {
       return { event: msg === event.msg ? event : { ...event, msg }, allowNew: true };
@@ -219,7 +220,7 @@ export async function readGroupDispatch(root: URL) {
       hasAlias: !!alias,
       only_reply_at: allowNew,
     };
-    return { event: normalized, allowNew };
+    return { event: normalized, allowNew, ...(alias ? { alias } : {}) };
   }
 
   function allows(event: GroupRoutingScope, names: readonly string[]): boolean {
