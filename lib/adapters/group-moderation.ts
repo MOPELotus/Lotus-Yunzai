@@ -94,6 +94,25 @@ export function isMemberMuteDuration(duration: unknown): duration is number {
 
 type Role = "member" | "admin" | "owner";
 
+export interface GroupAnnouncement {
+  readonly id: string;
+  readonly text: string;
+}
+
+export function readGroupAnnouncements(rows: unknown, decode: (row: unknown) => GroupAnnouncement | null | undefined) {
+  if (!Array.isArray(rows)) return;
+  const entries: GroupAnnouncement[] = [];
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const entry = decode(row);
+    if (entry === null) continue;
+    if (!entry || typeof entry.id !== "string" || !entry.id.trim() || ids.has(entry.id) || typeof entry.text !== "string") return;
+    entries.push(entry);
+    ids.add(entry.id);
+  }
+  return entries;
+}
+
 export async function groupOperatorAuthority(
   role: (id: number) => Promise<Role | undefined>, bot: number, actor: number, isMaster: () => boolean, active: () => boolean,
 ) {

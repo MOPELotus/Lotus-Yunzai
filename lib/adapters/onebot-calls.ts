@@ -1,7 +1,7 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
-import { readGroupActivity, type GroupActivityVisibility, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
+import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type MutedGroupMember } from "./group-moderation.ts";
 import type { JoinRequestOrigin } from "../group-join-review.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
@@ -169,6 +169,20 @@ export class OneBotCalls {
       const risk = choose(await this.#request(send, "get_group_ignore_add_request", {}, signal));
       return !signal.aborted && risk?.length === 1 && risk[0]?.checked === false ? "risk" as const : "unavailable" as const;
     } catch { return "unavailable" as const; }
+  }
+
+  async listGroupAnnouncements(send: Send, groupId: number, signal: AbortSignal) {
+    try {
+      const version = await this.#request(send, "get_version_info", {}, signal);
+      if (!isRecord(version) || version.app_name !== "NapCat.Onebot" || signal.aborted) return;
+      const rows = await this.#request(send, "_get_group_notice", { group_id: String(groupId) }, signal);
+      return readGroupAnnouncements(rows, row => {
+        if (!isRecord(row) || ("group_id" in row && row.group_id !== groupId && row.group_id !== String(groupId))) return;
+        if (row.send_to_new_member === true) return null;
+        if (typeof row.notice_id !== "string" || !isRecord(row.message) || typeof row.message.text !== "string") return;
+        return { id: row.notice_id, text: row.message.text };
+      });
+    } catch { return undefined; }
   }
 
   async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {

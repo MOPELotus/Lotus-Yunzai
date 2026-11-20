@@ -58,6 +58,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
   const milkyCalls: Call[] = [];
   let milkyJoinState: "pending" | "rejected" = "pending";
   let milkyJoinReceipt: number | undefined;
+  let wrongMilkyAnnouncementGroup = false;
   const rosterChanges = new Map<string, "admin" | "member">();
   let cleanupRosterChanged = false;
   const activity = (group_id: number, bot: number) => {
@@ -106,6 +107,10 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         : action === "get_group_member_list" ? { members: activity(Number(params.group_id), milkyId) }
         : action === "get_group_notifications" ? { notifications: [{ group_id: 79, notification_seq: 901,
           type: "invited_join_request", initiator_id: 72, target_user_id: 74, state: milkyJoinState }] }
+        : action === "get_group_announcements" ? { announcements: params.group_id === 84 ? [] : [{
+          group_id: wrongMilkyAnnouncementGroup ? 82 : params.group_id, announcement_id: "opaque-milky",
+          content: "合成 Milky 公告 👩‍👩‍👧‍👧", image_url: "https://example.test/image",
+        }] }
         : action === "get_message" ? { message: {
           message_scene: "group", peer_id: params.peer_id, message_seq: params.message_seq,
           sender_id: params.message_seq === milkyJoinReceipt ? milkyId : 42,
@@ -123,7 +128,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     });
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config/other.yaml"), 'master: ["100:51", "99:52"]\nmasterQQ: [52]\n');
-    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n");
+    await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶群管-基础]}\n80: {disable: [椰奶群管-黑白名单]}\n81: {disable: [椰奶群管-违禁词]}\n86: {onlyReplyAt: 1, botAlias: [助理]}\n87: {disable: [椰奶群管-群公告]}\n");
     const legacyDirectory = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyDirectory, { recursive: true });
     const legacyList = join(legacyDirectory, "groupAdmin.yaml");
@@ -171,6 +176,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const oneBotCalls: Call[] = [];
     const oneBotJoinReceipts = new Set<number>();
     let originalJoinChecked = false;
+    let oneBotGatewayName = "NapCat.Onebot";
     const nowSeconds = () => Math.floor(Date.now() / 1000);
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
@@ -189,7 +195,12 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           { uin: "45", nick: "已过期", role: 2, shutUpTime: nowSeconds() - 1 },
         ] : action === "get_group_info" ? { group_id: params.group_id, member_count: reportedMembers(params.group_id, oneBotId) }
         : action === "get_group_member_list" ? activity(Number(params.group_id), oneBotId)
-        : action === "get_version_info" ? { app_name: "NapCat.Onebot" }
+        : action === "get_version_info" ? { app_name: oneBotGatewayName }
+        : action === "_get_group_notice" ? [
+          { notice_id: "opaque-welcome", send_to_new_member: true, message: { text: "仅新成员的合成公告" } },
+          { notice_id: "opaque-onebot", message: { text: "合成 OneBot 公告 & 中文" } },
+          { notice_id: "opaque-image", message: { text: "", images: [{ id: "opaque-img" }] } },
+        ]
         : action === "get_group_system_msg" ? { join_requests: [
           { request_id: 910002, invitor_uin: 70, group_id: 82, checked: false },
           { request_id: 910001, invitor_uin: 70, group_id: 82, checked: originalJoinChecked },
@@ -725,6 +736,33 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(savedGroupAdmin).toContain("# 合成旧开关");
     expect((Bun.YAML.parse(savedGroupAdmin) as { groupAddNotice: unknown }).groupAddNotice)
       .toEqual({ openGroup: [79], msg: "合成入群提醒" });
+
+    send(oneBotMessage("#查公告", 54, 82));
+    const announcement = await groupReplyWith("1、合成 OneBot 公告 & 中文");
+    expect(JSON.stringify(announcement.params.message)).toContain("2、（无文字）");
+    expect(JSON.stringify(announcement.params.message)).not.toContain("仅新成员的合成公告");
+    expect(JSON.stringify(announcement.params.message)).not.toContain("opaque");
+    oneBotGatewayName = "Mock Other OneBot";
+    send(oneBotMessage("#查群公告", 54, 82));
+    await groupReplyWith("当前无法获取本群的 QQ 群公告");
+    oneBotGatewayName = "NapCat.Onebot";
+    send(oneBotMessage("#查群公告", 55, 87));
+
+    const announcementReply = (content: string) => waitUntil(() => milkyCalls.find(({ action, params }) =>
+      action === "send_group_message" && JSON.stringify(params.message).includes(content)), `Milky 未回复：${content}`);
+    await webhook("message_receive", milkyTitle("#查群公告", 54));
+    await announcementReply("1、合成 Milky 公告 👩‍👩‍👧‍👧");
+    const emptyAnnouncement = milkyTitle("#查公告", 54);
+    await webhook("message_receive", { ...emptyAnnouncement, peer_id: 84, group_member: { ...emptyAnnouncement.group_member, group_id: 84 } });
+    await announcementReply("本群暂无群公告");
+    wrongMilkyAnnouncementGroup = true;
+    await webhook("message_receive", milkyTitle("#查群公告", 55));
+    await announcementReply("当前无法获取本群的 QQ 群公告");
+    await webhook("message_receive", milkyTitle("#查公告", 45));
+    expect(milkyCalls.filter(({ action }) => action === "get_group_announcements").map(({ params }) => params))
+      .toEqual([{ group_id: 79 }, { group_id: 84 }, { group_id: 79 }]);
+    expect(oneBotCalls.filter(({ action }) => action === "_get_group_notice").map(({ params }) => params))
+      .toEqual([{ group_id: "82" }]);
   } finally {
     socket?.close();
     host?.kill();

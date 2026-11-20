@@ -3,7 +3,7 @@ import { delegationSession, type DelegationSession } from "../command-delegation
 import { notifyReplyDelivery, type BotEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin } from "../group-join-review.ts";
 import { bindGroupCard } from "./group-card.ts";
-import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity,
+import { bindGroupModeration, bindMessageGroupActions, canModerateGroupSubject, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
   runTimedWholeMute, type GroupActionPolicy, type GroupActivityVisibility, type TimedGroupMuteBinding,
   type TimedGroupMuteResult } from "./group-moderation.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
@@ -411,6 +411,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,
+      groupListAnnouncements: positiveId(groupId) && positiveId(cardOwner) ? async () => {
+        const active = () => !signal.aborted && options.canModerateGroups?.() !== false;
+        if (!active() || !await memberRole(groupId, cardOwner) || !active()) return;
+        const result = await call.confirmed("get_group_announcements", { group_id: groupId }, signal);
+        if (result.status !== "confirmed" || !active()) return;
+        const announcements = readGroupAnnouncements(result.data.announcements, row => {
+          if (!record(row) || row.group_id !== groupId || typeof row.announcement_id !== "string" || typeof row.content !== "string") return;
+          return { id: row.announcement_id, text: row.content };
+        });
+        if (announcements && await memberRole(groupId, cardOwner) && active()) return announcements;
+      } : undefined,
       groupReviewQuotedRequest: joinReview && lookupReply && hasMessageSequence(quoted) && positiveId(groupId) && positiveId(cardOwner)
         ? (approve: boolean) => {
           const active = () => !signal.aborted && options.canModerateGroups?.() !== false;

@@ -449,6 +449,13 @@ async function dispatchMessage(
       ? visibility => calls.listGroupActivity(send, target.group_id, selfId, userId, () => isMaster(selfId, userId), likeSession, visibility)
       : undefined,
     groupActivitySignal: likeSession && event.sub_type !== "anonymous" ? likeSession : undefined,
+    groupListAnnouncements: likeSession && "group_id" in target && event.sub_type !== "anonymous" ? async () => {
+      const active = () => !likeSession.aborted && groupActions?.canModerateGroups?.() !== false;
+      const role = () => calls.getGroupRole(send, target.group_id, userId, true, likeSession);
+      if (!active() || !await role() || !active()) return;
+      const announcements = await calls.listGroupAnnouncements(send, target.group_id, likeSession);
+      if (announcements && active() && await role() && active()) return announcements;
+    } : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
     getGroupRole: selfId !== undefined && selfId === connectedBotId
