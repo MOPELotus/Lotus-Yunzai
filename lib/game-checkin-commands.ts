@@ -223,8 +223,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     const key = account.account.ltuid || account.account.stuid || `${qq}/${profileId}`;
     if (active.has(key)) return { status: "busy", reply: "此账号的签到正在执行，请稍后。" };
     active.add(key);
+    let revision = account.revision;
     try {
-      let revision = account.revision;
       function verifyDay() {
         signal.throwIfAborted();
         input.verifyDay?.();
@@ -640,7 +640,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       if (error instanceof HoyoRequestError && error.code === "profile-changed") return { status: "busy", reply: error.message };
       input.verifyDay?.();
       await auditResult("runner", false);
-      return completedRun("runner", false, "签到未完成，请核对米游社状态。");
+      return completedRun("runner", false, "签到未完成，请核对米游社状态。", revision);
     } finally {
       active.delete(key);
     }
