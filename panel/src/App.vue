@@ -13,6 +13,7 @@ import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 import WebLoginSettings from "./WebLoginSettings.vue";
 import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
 import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
+import MusicSettings from "./MusicSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -24,7 +25,7 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "music" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -39,6 +40,9 @@ const extensionPreferences = new Map<string, string>();
 
 const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "group" && plugin.status === "loaded") ?? false);
+
+const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
+  plugin.name === "media" && plugin.status === "loaded") ?? false);
 
 function setView(next: PanelView, discard = false) {
   if (view.value === next) return;
@@ -58,6 +62,7 @@ function setView(next: PanelView, discard = false) {
     "web-login": "web-login-title",
     "checkin-schedule": "checkin-schedule-title",
     "account-permissions": "account-permissions-title",
+    music: "music-settings-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -258,6 +263,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
       <ElButton :type="view === 'account-permissions' ? 'primary' : 'default'"
         :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">签到权限</ElButton>
+      <ElButton v-if="hasMedia" :type="view === 'music' ? 'primary' : 'default'"
+        :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌设置</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
         :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
@@ -279,6 +286,8 @@ onBeforeUnmount(() => {
     <CheckinScheduleSettings v-else-if="view === 'checkin-schedule'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <AccountPermissionsSettings v-else-if="view === 'account-permissions'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <MusicSettings v-else-if="view === 'music'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />

@@ -104,6 +104,7 @@ import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelAtlasUpdate } from "./lib/panel-atlas-update.ts";
+import { panelMusic } from "./lib/panel-music.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions } from "./lib/panel-account-permissions.ts";
@@ -3320,6 +3321,9 @@ if (import.meta.main) {
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
       ]);
+      if (plugins.records.some(plugin => plugin.name === "media" && plugin.status === "loaded")) {
+        settingsRoutes.set("/panel/api/settings/media/music", panelMusic(root));
+      }
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = !panelEnabled ? undefined : panelExtensionRoutes(plugins.directories,
         network.webMount && webMountPage(network.webMount, lifecycle.signal), { loadTimeout, signal: lifecycle.signal });
