@@ -3,7 +3,7 @@ import { createConnection } from "node:net";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
-import { lockFile } from "../lib/file-lock.ts";
+import { lockFile, managedStartupLockPath } from "../lib/file-lock.ts";
 import { stopForeground } from "../lib/foreground-control.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 
@@ -430,7 +430,7 @@ async function run() {
   }
 
   // Managed replacement can rename the checkout while this lock is held.
-  const lock = await lockFile(join(dirname(directory), `.${basename(directory)}.lotus-startup.sqlite`),
+  const lock = await lockFile(managedStartupLockPath(directory),
     "启动操作", 2_000, "当前目录正在执行启动操作，请稍后重试。");
   let lockHeld = true;
   function releaseStartup() {

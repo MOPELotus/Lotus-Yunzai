@@ -7,6 +7,10 @@ export function managedHostLockPath(root: string): string {
   return join(dirname(root), `.${basename(root)}.lotus-host.sqlite`);
 }
 
+export function managedStartupLockPath(root: string): string {
+  return join(dirname(root), `.${basename(root)}.lotus-startup.sqlite`);
+}
+
 export async function lockFile(file: string, subject: string, waitMs = 2_000, busy = `${subject}正在更新，请稍后重试。`): Promise<Database> {
   try {
     if (!(await lstat(file)).isFile()) throw new Error(`${subject}锁须为普通文件。`);
