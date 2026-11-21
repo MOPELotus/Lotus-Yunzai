@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
-import { lockFile } from "../lib/file-lock.ts";
+import { lockFile, managedHostLockPath } from "../lib/file-lock.ts";
 import { backgroundCleanStop, managedProcess, setManagedWorkerReady } from "../lib/managed-exit.ts";
 import { recoverUpdateActivation } from "../lib/update-activation.ts";
 
@@ -18,7 +18,7 @@ await managedProcess(async ready => {
     if (attempt !== current) throw new Error("本次后台启动已取消或被替换。");
   }
   checkAttempt();
-  const lock = await lockFile(join(dirname(root), `.${basename(root)}.lotus-host.sqlite`),
+  const lock = await lockFile(managedHostLockPath(root),
     "托管宿主", 0, "当前目录已有托管宿主运行。");
   try {
     await recoverUpdateActivation(root);

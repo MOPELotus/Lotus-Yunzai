@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { lockFile } from "../lib/file-lock.ts";
+import { lockFile, managedHostLockPath } from "../lib/file-lock.ts";
+import { serveForegroundControl } from "../lib/foreground-control.ts";
 import { managedProcess } from "../lib/managed-exit.ts";
 
 export async function runManaged(directory: string, ready?: () => Promise<void>,
@@ -10,7 +10,7 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
   const { createManagedSupervisor } = await import("../lib/managed-supervisor.ts");
   const root = await realpath(directory);
   // Keep the same lock across a supervised checkout replacement.
-  const lock = await lockFile(join(dirname(root), `.${basename(root)}.lotus-host.sqlite`),
+  const lock = await lockFile(managedHostLockPath(root),
     "托管宿主", 0, "当前目录已有托管宿主运行。");
   const supervisor = createManagedSupervisor(root, { onWorkerReady, powerState });
   let stopping = false;
@@ -22,7 +22,11 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
   const terminate = () => stop("SIGTERM");
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
+  let closeControl: (() => void) | undefined;
+  let started = false;
   try {
+    if (!ready) closeControl = await serveForegroundControl(root, terminate);
+    started = true;
     await supervisor.start();
     if (ready) {
       try {
@@ -36,8 +40,9 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
     return ready && stopping ? 0 : status;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
-    return (await supervisor.done) || 1;
+    return started ? (await supervisor.done) || 1 : 1;
   } finally {
+    closeControl?.();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
     lock.close();

@@ -1,6 +1,11 @@
 import { Database } from "bun:sqlite";
 import { lstat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+
+export function managedHostLockPath(root: string): string {
+  return join(dirname(root), `.${basename(root)}.lotus-host.sqlite`);
+}
 
 export async function lockFile(file: string, subject: string, waitMs = 2_000, busy = `${subject}正在更新，请稍后重试。`): Promise<Database> {
   try {

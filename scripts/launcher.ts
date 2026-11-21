@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
 import { lockFile } from "../lib/file-lock.ts";
+import { stopForeground } from "../lib/foreground-control.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 
 const name = "lotus-yunzai";
@@ -138,7 +139,7 @@ async function preparePm2Entry(home: string) {
   return entry;
 }
 
-async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "restart" | "logs" | "status",
+async function pm2(binary: string | undefined, root: string, action: "start:bg" | "stop" | "restart" | "logs" | "status",
   options: readonly string[] = [], startup?: {
     readonly signal: AbortSignal;
     prepare(): Promise<boolean>;
@@ -163,6 +164,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   } as const);
   async function application(path: string, attempt?: string) {
     if (!await privateHome(path) || !await daemonListening(join(path, "rpc.sock"))) return;
+    if (!binary) throw new Error("发现正在运行的 PM2，无法核实后台登记。请确保 PATH 中有 PM2。");
     const lookup = Bun.spawn([binary, "jlist"], { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
     const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
     if (code !== 0) throw new Error("无法查询 PM2 应用。");
@@ -171,7 +173,9 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     catch { throw new Error("无法读取 PM2 应用状态。"); }
     if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
     const named = processes.filter((item) => item?.name === name);
-    if (action === "restart" && named.length > 1) throw new Error("PM2 中存在多个同名登记，无法确认要重启的宿主。");
+    if ((action === "restart" || action === "stop") && named.length > 1) {
+      throw new Error("PM2 中存在多个同名登记，无法确认要操作的宿主。");
+    }
     const process = named.find((item) => attempt === undefined || item.pm2_env?.env?.[startToken] === attempt);
     if (!process) return;
     const status: unknown = process.pm2_env?.status;
@@ -199,6 +203,21 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   let current = await application(home);
   const legacy = current?.active && action !== "restart" ? undefined : await application(legacyHome);
   const active = [current, legacy].find((entry) => entry?.active);
+  if (action === "stop") {
+    if (!active) {
+      const stopped = await stopForeground(root);
+      console.log(stopped ? "当前目录的前台宿主已停止。" : "当前目录未启动托管宿主。");
+      return 0;
+    }
+    if (!binary || !active.owned || active.id === undefined) throw new Error("无法核实当前目录的 PM2 登记。");
+    const checked = await application(active.path, active.token);
+    if (!checked?.active || !checked.owned || checked.id !== active.id || checked.pid !== active.pid || checked.token !== active.token) {
+      throw new Error("PM2 登记在停止前发生变化，请重新确认状态。");
+    }
+    return Bun.spawn([binary, "stop", active.id], spawnOptions(active.path)).exited;
+  }
+  if (!binary) throw new Error("后台托管需要 PATH 中的 PM2。");
+  const executable = binary;
   if (action !== "start:bg" && action !== "restart") {
     const selected = active ?? current ?? legacy;
     if (!selected) {
@@ -343,7 +362,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
 
   async function stopOwnedApplication(id: string | undefined) {
     if (id === undefined ||
-        await Bun.spawn([binary, "stop", id], { ...spawn, timeout: 25_000 }).exited !== 0) {
+        await Bun.spawn([executable, "stop", id], { ...spawn, timeout: 25_000 }).exited !== 0) {
       throw new Error("未能停止本次后台启动，请运行 bun run status 查看状态。");
     }
   }
@@ -422,7 +441,7 @@ async function run() {
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);
   try {
-    if (command.action === "stop") return await pm2(pm2Executable(), directory, "stop");
+    if (command.action === "stop") return await pm2(Bun.which("pm2") ?? undefined, directory, "stop");
     if (command.action === "start:bg" || command.action === "restart") {
       return await pm2(pm2Executable(), directory, command.action, [], {
         signal: controller.signal,

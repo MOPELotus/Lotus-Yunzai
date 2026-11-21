@@ -178,8 +178,11 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   const listeners = [current, legacy].map((path) => Bun.listen({
     unix: join(path, "rpc.sock"), socket: { data() {} },
   }));
-  const setApp = (path: string, pid: number, status: string, token?: string) => writeFile(join(path, "apps.json"),
-    JSON.stringify([{ name: "lotus-yunzai", pm_id: 0, pid, pm2_env: { status,
+  const setApp = (path: string, pid: number, status: string, token?: string, owned = true) => writeFile(join(path, "apps.json"),
+    JSON.stringify([{ name: "lotus-yunzai", pm_id: 0, pid, pm2_env: { status, exec_interpreter: "none",
+      pm_cwd: !owned ? bin : path === legacy ? cwd : parent,
+      args: path === legacy ? [join(cwd, "scripts/run-managed.ts"), cwd, join(path, "host-ready")]
+        : ["--no-env-file", join(path, "host-entry.js"), cwd, join(path, "host-ready"), ...token ? [token] : []],
       env: token && { LOTUS_PM2_START_TOKEN: token, LOTUS_PM2_WORKER_READINESS: "1" } } }]));
   try {
     await writeFile(join(current, "apps.json"), "[]");
@@ -190,6 +193,12 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
       expect({ code, error }).toEqual({ code: 0, error: "" });
       expect(output.trim()).toBe(legacy);
     }
+    await setApp(legacy, 101, "online", undefined, false);
+    const [unknownStop, unknownOutput, unknownError] = await start(["stop"], env);
+    expect(unknownStop).toBe(1);
+    expect(unknownOutput).toBe("");
+    expect(unknownError).toContain("无法核实当前目录的 PM2 登记");
+    await setApp(legacy, 101, "online");
     const [oldStart, oldOutput] = await start(["start:bg"], env);
     expect(oldStart).toBe(0);
     expect(oldOutput).toContain("后台宿主已运行");
@@ -269,7 +278,7 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   } finally {
     for (const listener of listeners) listener.stop(true);
   }
-});
+}, 15_000);
 
 test.skipIf(process.platform === "win32")("取消后台启动只停止本次注册，信号可以先于 PM2 注册", async () => {
   for (const early of [false, true]) {
@@ -431,7 +440,7 @@ async function fixture() {
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "managed-dispatch-pause", "managed-exit", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
