@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { appendFile, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stageLegacyCoreConfig } from "../lib/migration-core-config.ts";
 import { formatShanghaiDate } from "../lib/shanghai-date.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
@@ -56,6 +57,67 @@ function connect(url: string, botId?: number) {
     },
   };
 }
+
+test.each([
+  ["精简对象和自定义对齐", "log_length: 48\nlog_object: false\nlog_align: abcde\n",
+    "[long.] migration-object [object Object]", "migration-length " + "A".repeat(30) + "…"],
+  ["对象选项和 YAML 空对齐", "log_length: 96\nlog_object: {length: 32, depth: 0, getters: true, unknownAuth: fixture-opaque}\nlog_align:\n",
+    "[long-identity] migration-object { accepted: [Object] }", "migration-length " + "A".repeat(31) + "…"],
+] as const)("旧日志配置迁入后经 OneBot 消息生效：%s", async (_name, configuration, objectLine, lengthLine) => {
+  const fixture = await mkdtemp(join(tmpdir(), "lotus-migrated-log-fixture-"));
+  try {
+    const source = join(fixture, "old"), root = join(fixture, "new");
+    await mkdir(join(source, "config/config"), { recursive: true });
+    await mkdir(root, { mode: 0o700 });
+    await writeFile(join(source, "config/config/bot.yaml"), "cache_group_member: false\n" + configuration);
+    await stageLegacyCoreConfig(source, root);
+    expect(await readFile(join(root, "config/config/bot.yaml"), "utf8")).not.toContain("fixture-opaque");
+    await copyHost(root);
+    await writeFile(join(root, "plugins/migrated-log-fixture.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message", rule: [{ reg: "^#迁移格式联验$", fnc: "sample" }] }); }
+        async sample() {
+          Bot.makeLog("info", ["migration-object", { accepted: { sample: true } }], "long-identity");
+          Bot.makeLog("info", ["migration-length", "A".repeat(80)], false);
+          await this.reply("已记录迁移日志");
+        }
+      }
+    `);
+    const host = Bun.spawn([process.execPath, "app.ts"], { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token } });
+    let client: ReturnType<typeof connect> | undefined;
+    const stop = setTimeout(() => host.kill("SIGKILL"), 7_000);
+    try {
+      const stream = host.stdout.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "", endpoint: string | undefined;
+      try {
+        while (!endpoint) {
+          const next = await stream.read();
+          if (next.done) throw Error("迁移日志夹具没有启动。");
+          buffer += decoder.decode(next.value, { stream: true });
+          endpoint = /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(buffer)?.[0];
+        }
+      } finally { stream.releaseLock(); }
+      const bot = client = connect(endpoint, 99);
+      await until(() => bot.socket.readyState === WebSocket.OPEN ? true : undefined, "迁移日志夹具未绑定网关。");
+      bot.command("#迁移格式联验", 42, 77);
+      expect(JSON.stringify(await bot.next())).toContain("已记录迁移日志");
+      const file = join(root, "logs", `command.${formatShanghaiDate(new Date())}.log`);
+      const log = await until(async () => {
+        const text = await readFile(file, "utf8").catch(() => "");
+        return text.includes("migration-length") ? text : undefined;
+      }, "迁入后没有写入聊天插件日志。");
+      expect(log).toContain(objectLine);
+      expect(log).toContain(lengthLine);
+    } finally {
+      clearTimeout(stop);
+      client?.socket.close();
+      host.kill("SIGTERM");
+      await host.exited;
+    }
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
 
 test.each([["默认日志目录", false], ["历史日志目录软链", true]] as const)("%s 只向授权终端和已绑定机器人的私聊主人发送脱敏内容", async (_label, linked) => {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-log-command-"));

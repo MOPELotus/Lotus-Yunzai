@@ -14,8 +14,10 @@ const otherFields = [
 ] as const;
 const botFields = [
   "/→#", "update_time", "restart_time", "update_cron", "restart_cron", "stop_cron", "start_cron", "file_watch",
-  "cache_group_member", "online_msg_exp", "plugin_load_timeout", "log_level", "msg_type_count", "file_to_url_time", "file_to_url_times",
+  "cache_group_member", "online_msg_exp", "plugin_load_timeout", "log_level", "log_length", "log_object", "log_align",
+  "msg_type_count", "file_to_url_time", "file_to_url_times",
 ] as const;
+const inspectFields = ["length", "depth", "maxArrayLength", "maxStringLength"] as const;
 const inheritedOther = {
   master: ["stdin:stdin"], blackGroup: [213_938_015], blackUser: [528_952_540],
 } as const;
@@ -68,11 +70,18 @@ function projectConfig(config: Config, name: ConfigName, deferred: DeferredOwner
   for (const key of name === "other" ? otherFields : botFields) {
     if (!Object.hasOwn(config, key)) continue;
     const value = config[key];
+    if (key === "log_object" && value != null && typeof value === "object" && !Array.isArray(value)) {
+      const options = value as Config;
+      selected[key] = Object.fromEntries(inspectFields.filter(field => Object.hasOwn(options, field) && scalar(options[field]))
+        .map(field => [field, options[field]]));
+      continue;
+    }
     if (!scalar(value) && !(listFields.has(key) && Array.isArray(value) && value.every(scalar))) {
       throw new Error(`旧 ${name}.yaml 的 ${key} 格式无法安全迁移。`);
     }
     switch (key) {
       case "/→#": selected[key] = Boolean(value); break;
+      case "log_align": selected[key] = value || ""; break;
       case "autoFriend": selected[key] = Number(value) === 1 ? 1 : 0; break;
       case "autoQuit": {
         const threshold = Math.floor(Number(value));
