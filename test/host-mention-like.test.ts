@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -26,7 +26,7 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, la
   throw new Error(label);
 }
 
-test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能名与多目标拒绝", async () => {
+test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成员送赞", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-mention-like-wire-"));
   const milkyCalls: Action[] = [];
   const milky = Bun.serve({
@@ -38,7 +38,8 @@ test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能�
       milkyCalls.push({ action, params });
       const data = action === "get_login_info" ? { uin: 100 }
         : action === "get_group_member_info" ? { member: { group_id: params.group_id, user_id: params.user_id, role: "member" } }
-          : action === "get_friend_info" ? { friend: { user_id: params.user_id } } : { message_seq: 1 };
+          : action === "get_friend_info" ? (params.user_id === target ? { friend: { user_id: target } } : {})
+            : { message_seq: 1 };
       return Response.json({ status: "ok", retcode: 0, data });
     },
   });
@@ -50,11 +51,18 @@ test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能�
       recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
     });
     await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config/group.yaml"), [
-      "enable: true", "count: 3", "strangeThumbUp: false", 'successMsg: "{{at}} {{userId}} 收到 {{thumbUpNum}} 次"',
-      'failsMsg: "当前点赞失败"', 'noFriendMsg: "当前账号无法评价该资料卡"',
-      'default: {groupCD: 0, singleCD: 0}', '78: {disable: [椰奶点赞]}',
-    ].join("\n"));
+    const previous = join(root, "plugins/yenai-plugin/config/config");
+    await mkdir(previous, { recursive: true });
+    const legacy = join(previous, "thumbUp.yaml");
+    const legacySettings = [
+      "count: 7", "strangeThumbUp: false", 'closeTips: "旧配置已关闭点赞"',
+      'successMsg: "{{at}} {{userId}} 收到 {{thumbUpNum}} 次"', 'failsMsg: "当前点赞失败"',
+      'noFriendMsg: "当前账号无法评价该资料卡"',
+    ].join("\n") + "\n";
+    const primary = join(root, "config/group.yaml");
+    const override = "count: 3\ndefault: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶点赞]}\n";
+    await writeFile(legacy, "enable: false\n" + legacySettings);
+    await writeFile(primary, override);
     await writeFile(join(root, "config/milky.yaml"),
       `enable: true\nhost: 127.0.0.1\nport: ${milky.port}\nconnection: webhook\naccess_token: ${token}\n`);
     disableMemberPrewarm(root);
@@ -87,6 +95,29 @@ test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能�
       client.send(JSON.stringify({ self_id: 99, user_id: sender, group_id, post_type: "message",
         message_type: "group", sub_type: "normal", message_id: ++sequence, raw_message: String(sequence), message }));
     }
+    const webhook = (event_type: string, data: object) => fetch(new URL("/milky", http), {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ self_id: 100, time: 1_700_000_000, event_type, data }),
+      signal: AbortSignal.timeout(2_000),
+    });
+    const sendMilky = (message_seq: number, segments: object[]) => webhook("message_receive", {
+      time: 1_700_000_000, sender_id: sender, peer_id: group, message_seq, message_scene: "group", segments,
+    });
+    await waitFor(async () => (await webhook("fixture", {})).status === 200 || undefined, "Milky 点赞测试连接未就绪。");
+    send([{ type: "text", data: { text: "#赞我" } }]);
+    await waitFor(() => oneBotCalls.find(call => call.action === "send_msg" && textOf(call).includes("旧配置已关闭点赞")),
+      "OneBot 未继承旧点赞关闭配置。");
+    expect((await sendMilky(9, [{ type: "text", data: { text: "#赞我" } }])).status).toBe(200);
+    await waitFor(() => milkyCalls.find(call => call.action === "send_group_message" && textOf(call).includes("旧配置已关闭点赞")),
+      "Milky 未继承旧点赞关闭配置。");
+    expect(oneBotCalls.some(call => call.action === "send_like")).toBe(false);
+    expect(milkyCalls.some(call => call.action === "send_profile_like")).toBe(false);
+    await writeFile(legacy, "enable: true\n" + legacySettings);
+    const milkyRepliesBefore = milkyCalls.length;
+    expect((await sendMilky(10, [{ type: "text", data: { text: "#点赞" } }])).status).toBe(200);
+    await waitFor(() => milkyCalls.slice(milkyRepliesBefore).find(call => call.action === "send_group_message" &&
+      textOf(call).includes("当前账号无法评价该资料卡")), "Milky 未继承旧好友限制和原反馈。");
+    expect(milkyCalls.some(call => call.action === "send_profile_like")).toBe(false);
     const mention = (qq: number | string) => ({ type: "at", data: { qq } });
     const command = { type: "text", data: { text: "#赞他" } };
     send([command, mention(99), mention(String(target))]);
@@ -108,16 +139,9 @@ test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能�
       JSON.stringify(call.params.message).includes("只 @ 一位其他群成员")), "未拒绝多个 @。");
     send([command, mention(target)], 78);
 
-    const webhook = (event_type: string, data: object) => fetch(new URL("/milky", http), {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ self_id: 100, time: 1_700_000_000, event_type, data }),
-      signal: AbortSignal.timeout(2_000),
-    });
-    await waitFor(async () => (await webhook("fixture", {})).status === 200 || undefined, "Milky 点赞测试连接未就绪。");
-    expect((await webhook("message_receive", { time: 1_700_000_000, sender_id: sender, peer_id: group,
-      message_seq: 11, message_scene: "group", segments: [
-        { type: "text", data: { text: "赞Ta" } }, { type: "mention", data: { user_id: target } },
-      ] })).status).toBe(200);
+    expect((await sendMilky(11, [
+      { type: "text", data: { text: "赞Ta" } }, { type: "mention", data: { user_id: target } },
+    ])).status).toBe(200);
     const milkyReply = await waitFor(() => milkyCalls.find(call => call.action === "send_group_message" &&
       textOf(call).includes("42 收到 3 次")), "Milky 未确认指定对象与次数。");
     expect((milkyReply.params.message as unknown[]).slice(0, 2)).toMatchObject([
@@ -128,6 +152,8 @@ test("双协议只给当前群经验证的 @ 成员送赞，覆盖旧群功能�
     ]);
     expect(oneBotCalls.filter(call => call.action === "send_like")).toHaveLength(1);
     expect(oneBotCalls.some(call => call.params.group_id === 78)).toBe(false);
+    expect(await readFile(primary, "utf8")).toBe(override);
+    expect(await readFile(legacy, "utf8")).toBe("enable: true\n" + legacySettings);
   } finally {
     socket?.close();
     host?.kill("SIGKILL");
