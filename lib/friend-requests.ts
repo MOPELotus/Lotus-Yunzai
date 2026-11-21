@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { configuredIds, otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./config.ts";
+import { configuredIds } from "./config.ts";
+import { otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { FriendRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 

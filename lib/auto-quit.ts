@@ -1,4 +1,5 @@
-import { configuredIds, otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./config.ts";
+import { configuredIds } from "./config.ts";
+import { otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { GroupNotice } from "./messages.ts";
 import { readOwnerSnapshot } from "./permissions.ts";
 

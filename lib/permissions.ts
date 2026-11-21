@@ -32,7 +32,7 @@ export async function readMasterPermissions(root: URL, signal?: AbortSignal) {
   let snapshot = await read();
   let revision = 0;
   if (signal) {
-    watchConfigFiles(root, "other", signal, async () => {
+    watchConfigFiles(signal, async () => {
       while (!signal.aborted) {
         const before = revision;
         const updated = await read();

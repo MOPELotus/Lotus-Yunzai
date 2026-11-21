@@ -1,31 +1,22 @@
-import { watchFile, unwatchFile } from "node:fs";
-
-export function watchConfigFiles(root: URL, name: "bot" | "group" | "other", signal: AbortSignal, reload: () => Promise<void>, reportFailure: () => void) {
+export function watchConfigFiles(signal: AbortSignal, reload: () => Promise<void>, reportFailure: () => void) {
   if (signal.aborted) return;
-  const paths = [`config/${name}.yaml`, `config/config/${name}.yaml`].map(path => new URL(path, root));
-  let dirty = false;
   let running = false;
   let failed = false;
-  async function changed() {
-    dirty = true;
-    if (running) return;
+  async function refresh() {
+    if (running || signal.aborted) return;
     running = true;
-    while (dirty && !signal.aborted) {
-      dirty = false;
-      try {
-        await reload();
-        failed = false;
-      } catch {
-        if (!failed && !signal.aborted) reportFailure();
-        failed = true;
-      }
+    try {
+      await reload();
+      failed = false;
+    } catch {
+      if (!failed && !signal.aborted) reportFailure();
+      failed = true;
+    } finally {
+      running = false;
     }
-    running = false;
   }
-  for (const path of paths) watchFile(path, { interval: 1_000, persistent: false }, changed);
-  signal.addEventListener("abort", () => {
-    for (const path of paths) unwatchFile(path, changed);
-  }, { once: true });
-  // Catch edits made between the initial read and watcher registration.
-  void changed();
+  // Read the effective contents so same-size rewrites with unchanged timestamps still take effect.
+  const timer = setInterval(() => { void refresh(); }, 1_000).unref();
+  signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+  void refresh();
 }

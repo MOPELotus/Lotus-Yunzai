@@ -154,8 +154,8 @@ async function readRoutingLists(root: URL) {
   };
 }
 
-function watchRoutingFiles(root: URL, name: "bot" | "group" | "other", signal: AbortSignal, reload: () => Promise<void>) {
-  watchConfigFiles(root, name, signal, reload, () => console.warn(`[群派发] ${name}.yaml 重载失败，保留上次有效设置。`));
+function watchRoutingFiles(name: "bot" | "group" | "other", signal: AbortSignal, reload: () => Promise<void>) {
+  watchConfigFiles(signal, reload, () => console.warn(`[群派发] ${name}.yaml 重载失败，保留上次有效设置。`));
 }
 
 export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
@@ -167,15 +167,15 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
   const duplicates = new Cooldowns();
   let listRevision = 0;
   if (watchSignal) {
-    watchRoutingFiles(root, "bot", watchSignal, async () => {
+    watchRoutingFiles("bot", watchSignal, async () => {
       const updated = await readSlashAlias(root);
       if (!watchSignal.aborted) slashAlias = updated;
     });
-    watchRoutingFiles(root, "group", watchSignal, async () => {
+    watchRoutingFiles("group", watchSignal, async () => {
       const updated = await readRoutingConfig(root);
       if (!watchSignal.aborted) groups = updated;
     });
-    watchRoutingFiles(root, "other", watchSignal, async () => {
+    watchRoutingFiles("other", watchSignal, async () => {
       while (!watchSignal.aborted) {
         const revision = listRevision;
         const updated = await readRoutingLists(root);

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readRequestOtherPolicies } from "../lib/config.ts";
+import { readRequestOtherPolicies } from "../lib/request-other-policies.ts";
 import { readAutoQuit } from "../lib/auto-quit.ts";
 import { readGroupInvitations } from "../lib/group-invitations.ts";
 import { readFriendRequests } from "../lib/friend-requests.ts";
