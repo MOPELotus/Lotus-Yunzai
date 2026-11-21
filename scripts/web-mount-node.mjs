@@ -1,5 +1,5 @@
 import { chmod, lstat, readFile, realpath, unlink } from "node:fs/promises";
-import { createServer, STATUS_CODES } from "node:http";
+import { createServer, globalAgent, STATUS_CODES } from "node:http";
 import * as modules from "node:module";
 import { createConnection } from "node:net";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -295,6 +295,9 @@ async function main() {
         if (sameFile(socketFileState, await lookup(socketFile))) await unlink(socketFile);
       }
     } finally {
+      // The original WS proxy only links both sockets after the backend sends 101.
+      // Closing inbound listeners can leave its pending handshake in this process's HTTP agent.
+      globalAgent.destroy();
       lock?.close();
     }
   }

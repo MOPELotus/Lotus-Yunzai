@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { once } from "node:events";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { get } from "node:http";
+import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -239,3 +241,64 @@ test.skipIf(!supported)("保留其他服务仍在监听的同名 Unix socket", (
     await active.stop(true);
   }
 }));
+
+test.skipIf(!supported)("停止端口挂载时关闭未收到 101 的上游握手", () => fixture(async (plugin, root, socket) => {
+  const pending = Promise.withResolvers<string>();
+  const closed = Promise.withResolvers<void>();
+  let headers = "";
+  const backend = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: {
+    data(_socket, data) {
+      headers += Buffer.from(data).toString("utf8");
+      if (headers.includes("\r\n\r\n")) pending.resolve(headers);
+    },
+    close() { closed.resolve(); },
+  } });
+  try {
+    await writeFile(join(plugin, "index.js"), `
+      import Plugin from "../../lib/plugins/plugin.js";
+      import http from "node:http";
+      export default class extends Plugin {
+        init() {
+          Bot.express.use((_req, _res, next) => next());
+          const [fallback] = Bot.server.listeners('upgrade');
+          Bot.server.removeAllListeners('upgrade');
+          Bot.server.on('upgrade', (req, socket, head) => {
+            if (req.url !== '/pending') return fallback(req, socket, head);
+            const upstream = http.request({ host: '127.0.0.1', port: ${backend.port}, path: req.url, headers: req.headers });
+            upstream.on('error', () => socket.destroy());
+            upstream.end();
+          });
+          return true;
+        }
+      }
+    `);
+    const child = start(root, plugin, socket);
+    const killAtDeadline = setTimeout(() => child.kill("SIGKILL"), 4_000);
+    const signal = AbortSignal.timeout(3_000);
+    try {
+      const port = await readPort(child.stdout);
+      const client = createConnection({ host: "127.0.0.1", port });
+      const disconnected = once(client, "close", { signal });
+      try {
+        await once(client, "connect", { signal });
+        client.write("GET /pending HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n");
+        const received = await Promise.race([pending.promise, child.exited.then(() => "")]);
+        expect(received).toMatch(/^GET \/pending HTTP\/1\.1\r\n[\s\S]*\r\nupgrade: websocket\r\n/iu);
+        child.kill("SIGTERM");
+        await Bun.sleep(20);
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        expect(await child.exited).toBe(0);
+        await Promise.all([disconnected, closed.promise]);
+        await expect(lstat(socket)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        client.destroy();
+      }
+    } finally {
+      clearTimeout(killAtDeadline);
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await child.exited;
+    }
+  } finally {
+    backend.stop(true);
+  }
+}), 6_000);
