@@ -1,7 +1,8 @@
+import { projectGroupCleanupConfig } from "./group-cleanup-config.ts";
 import { readOptionalLocalConfig } from "./config.ts";
 
 export const legacyLotusDirectories = ["Lotus-Plugin", "Lotus-ReFactor"] as const;
-const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "music", "bilibili", "douyin", "netease_partner"] as const;
+const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "groups", "music", "bilibili", "douyin", "netease_partner"] as const;
 
 type Config = Record<string, unknown>;
 
@@ -76,14 +77,20 @@ export async function resolveLotusGlobalConfig(current: Readonly<Config>,
   const inherited: Config = {};
   const localScheduler = section(local.scheduler);
   const localPermissions = section(local.permissions);
+  const localGroups = section(local.groups);
   for (const id of legacyLotusDirectories) {
     const pending = inheritedSections.filter(key => !Object.hasOwn(inherited, key) &&
-      (!Object.hasOwn(local, key) || (key === "scheduler" && localScheduler) || (key === "permissions" && localPermissions)));
+      (!Object.hasOwn(local, key) || (key === "scheduler" && localScheduler) || (key === "permissions" && localPermissions) || (key === "groups" && localGroups)));
     if (!pending.length) break;
     const raw = await readLegacy(id);
     if (!raw) continue;
     const legacy = normalizeLotusGlobalConfig(raw);
     for (const key of pending) {
+      if (key === "groups") {
+        const cleanup = projectGroupCleanupConfig(legacy.groups);
+        if (Object.keys(cleanup).length) inherited.groups = { cleanup };
+        continue;
+      }
       if (Object.hasOwn(legacy, key)) inherited[key] = legacy[key];
     }
   }
@@ -92,6 +99,11 @@ export async function resolveLotusGlobalConfig(current: Readonly<Config>,
   const legacyPermissions = section(inherited.permissions);
   if (legacyScheduler && localScheduler) merged.scheduler = { ...legacyScheduler, ...localScheduler };
   if (legacyPermissions && localPermissions) merged.permissions = overlayPermissions(legacyPermissions, localPermissions);
+  if (inherited.groups && localGroups && (!Object.hasOwn(localGroups, "cleanup") || section(localGroups.cleanup))) {
+    merged.groups = { ...localGroups, cleanup: {
+      ...projectGroupCleanupConfig(inherited.groups), ...section(localGroups.cleanup),
+    } };
+  }
   return merged;
 }
 

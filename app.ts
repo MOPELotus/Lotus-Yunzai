@@ -15,6 +15,7 @@ import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } fr
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
+import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
@@ -2342,6 +2343,10 @@ if (import.meta.main) {
       legacyLotusDirectories.map(id => fileURLToPath(new URL(`plugins/${id}/data/audit/checkin.jsonl`, root))));
     const profileDirectory = Bun.env.LOTUS_PROFILE_DIR || undefined;
     const checkinProfiles = createProfileStore(profileDirectory);
+    if (!probingUpdate) commands.registerModule(groupCleanupCommands({
+      profiles: checkinProfiles, auditPath: fileURLToPath(new URL("data/audit/group-cleanup.jsonl", root)),
+      readConfig: () => readLotusGlobalConfig(root), isMaster: permissions.isMaster, activeSignal: nativeOperationSignal,
+    }), "@lotus-yunzai/group");
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);

@@ -1,3 +1,4 @@
+import { projectGroupCleanupConfig } from "./group-cleanup-config.ts";
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { legacyLotusDirectories, resolveLotusGlobalConfig } from "./lotus-global-config.ts";
@@ -54,6 +55,8 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
       ...(legacyDailyNote.message !== undefined && { message: legacyDailyNote.message }),
     };
   }
+  const cleanup = projectGroupCleanupConfig(effective.groups);
+  if (Object.keys(cleanup).length) projected.groups = { cleanup };
   const sections = Object.keys(projected);
   signal?.throwIfAborted();
   if (sections.length) {

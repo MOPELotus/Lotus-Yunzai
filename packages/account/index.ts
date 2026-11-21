@@ -999,6 +999,18 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       });
       return { status: changed ? "updated" as const : "existing" as const, revision };
     },
+    async removeGroupCheckinFallback(qq: string, id: number, expectedRevision: string, groupId: number,
+      signal: AbortSignal, verify: () => Promise<void>) {
+      if (!Number.isSafeInteger(groupId) || groupId < 1) invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, (document) => {
+        const profile = record(document.profile);
+        const notify = record(profile.notify);
+        if (!Array.isArray(notify.fallback_groups)) return document;
+        const filtered = notify.fallback_groups.filter(value => Number(accountId(value)) !== groupId);
+        if (filtered.length === notify.fallback_groups.length) return document;
+        return { ...document, profile: { ...profile, notify: { ...notify, fallback_groups: filtered } } };
+      }, signal, verify);
+    },
     async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange) {
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");

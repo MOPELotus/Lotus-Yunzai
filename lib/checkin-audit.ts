@@ -145,6 +145,19 @@ async function openAudit(file: string, append: boolean): Promise<FileHandle | un
   }
 }
 
+export async function appendPrivateAuditLine(path: string, row: object): Promise<void> {
+  // One O_APPEND write preserves record boundaries. A leading LF separates an interrupted write.
+  const buffer = Buffer.from(`\n${JSON.stringify(row)}\n`);
+  const handle = (await openAudit(resolve(path), true))!;
+  try {
+    const { bytesWritten } = await handle.write(buffer, 0, buffer.length, null);
+    if (bytesWritten !== buffer.length) throw new Error("审计记录未完整写入。");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 function extendLine(prefix: Buffer, suffix: Buffer | undefined): Buffer | undefined {
   if (!suffix || prefix.length + suffix.length > maxLineBytes) return;
   return suffix.length ? Buffer.concat([prefix, suffix]) : prefix;
@@ -205,17 +218,7 @@ export function createCheckinAudit(path: string, now = () => new Date(), history
       const entry = normalizeEntry(input);
       const time = now();
       if (!entry || !Number.isFinite(time.getTime())) throw new TypeError("签到审计记录无效。");
-      // One small O_APPEND write preserves record boundaries across writers.
-      // A leading LF also separates any interrupted previous write.
-      const buffer = Buffer.from(`\n${JSON.stringify(rowFor(time.toISOString(), entry))}\n`);
-      const handle = (await openAudit(file, true))!;
-      try {
-        const { bytesWritten } = await handle.write(buffer, 0, buffer.length, null);
-        if (bytesWritten !== buffer.length) throw new Error("签到审计记录未完整写入。");
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
+      await appendPrivateAuditLine(file, rowFor(time.toISOString(), entry));
     },
     async read(scope: CheckinAuditScope): Promise<readonly CheckinAuditRow[]> {
       const qq = scope?.qq;

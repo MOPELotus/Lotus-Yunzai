@@ -85,7 +85,7 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope) {
+export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope | "group.cleanup") {
   const permissions = configRecord(document.permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
