@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
 import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
+import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
 import { planMigration } from "../lib/plugins/migration-plan.ts";
 
 export async function stageMigration(source: string, target: string, signal?: AbortSignal) {
@@ -14,9 +16,11 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const archiveRoot = join(directory, "plugin-archive");
     await mkdir(archiveRoot, { mode: 0o700 });
     const backup = await stageLegacyPluginBackup(plan, archiveRoot, signal);
+    const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal);
     const state = await stageLegacyState(plan.source, directory, signal);
+    const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
     signal?.throwIfAborted();
-    return { version: 1, mode: "staged", directory, backup, state } as const;
+    return { version: 1, mode: "staged", directory, backup, retained, state, profiles } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

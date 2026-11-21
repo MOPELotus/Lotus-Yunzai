@@ -41,8 +41,14 @@ test.skipIf(!Bun.which("git"))("组合暂存一并归档拒载插件并复制存
   const plugin = "plugins/miao-plugin/package.json";
   const manifest = '{"name":"miao-plugin"}\n';
   await put(source, plugin, manifest);
+  const compatible = "plugins/small-local/index.js";
+  const script = "export const localFixture = true;\n";
+  await put(source, compatible, script);
   await put(source, group, groupBytes);
   await put(source, legacyPool, pool(ids[0]));
+  const profile = "user: {qq: 42}\nprofile: {id: 1}\naccount: {cookie: isolated-fixture}\n";
+  await put(source, "plugins/Lotus-ReFactor/data/users/42.yaml", profile);
+  await put(source, "data/users/42.yaml", profile);
   await put(target, "plugins/system/package.json", '{"name":"@lotus-yunzai/system"}\n');
   for (const args of [["init", "-q"], ["add", "plugins"],
     ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]]) {
@@ -50,13 +56,23 @@ test.skipIf(!Bun.which("git"))("组合暂存一并归档拒载插件并复制存
     expect(result.exitCode).toBe(0);
   }
   const staged = await stageMigration(source, target);
-  expect(staged.backup).toMatchObject({ status: "published", archived: 1 });
+  expect(staged.backup).toMatchObject({ status: "published", archived: 2 });
+  expect(staged.retained).toMatchObject({ status: "published", retained: [{ path: "plugins/small-local" }] });
+  expect(staged.profiles).toEqual({ sources: 2, imported: 1, unchanged: 1 });
   expect(await readFile(join(staged.directory, "plugin-archive", "backup", plugin), "utf8")).toBe(manifest);
+  expect(await readFile(join(staged.directory, "plugin-archive", compatible), "utf8")).toBe(script);
   expect(await readFile(join(staged.state.directory, group))).toEqual(groupBytes);
   expect(await readFile(join(staged.state.directory, legacyPool), "utf8")).toBe(pool(ids[0]));
+  const preparedProfile = join(staged.state.directory, "data/users/42.yaml");
+  expect(await readFile(preparedProfile, "utf8")).toBe(profile);
+  expect((await lstat(preparedProfile)).mode & 0o777).toBe(0o600);
   expect((await readdir(target)).sort()).toEqual([".git", "plugins"]);
 
   const siblings = (await readdir(dirname(target))).sort();
+  await put(source, "data/users/42.yaml", profile.replace("isolated-fixture", "conflicting-fixture"));
+  await expect(stageMigration(source, target)).rejects.toThrow("1 个冲突");
+  expect((await readdir(dirname(target))).sort()).toEqual(siblings);
+  await put(source, "data/users/42.yaml", profile);
   await put(source, legacyPool, "{invalid]");
   await expect(stageMigration(source, target)).rejects.toThrow("星铁旧逐抽卡池");
   expect((await readdir(dirname(target))).sort()).toEqual(siblings);

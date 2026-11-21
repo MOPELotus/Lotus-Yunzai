@@ -190,7 +190,7 @@ export async function planLegacyPlugins(
         plan.push({ path, status: "review", reason: `与 ${duplicate} 声明的插件身份重复。` });
         continue;
       }
-      const scripts = metadata.entry === undefined ? await legacyScripts(source) : [metadata.entry];
+      const scripts = metadata.entry === undefined ? await legacyScripts(source) : [metadata.entry.replace(/^(?:\.\/)+/u, "")];
       const archive: LegacyPluginPlanEntry[] = [];
       for (const script of scripts) {
         const result = scriptPlan(`${path}/${script}`, await readScript(source, script));
