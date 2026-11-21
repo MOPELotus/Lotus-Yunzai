@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
-import { MiyoliveProvider, parseOfficialDate } from "../packages/hoyo-client/redeem-preview/official.js";
+import { MiyoliveProvider, parseOfficialDate } from "../packages/hoyo-client/redeem-preview/official.ts";
 import { CommandRegistry, sendCommandReply } from "../lib/commands.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 import { redeemCodeCommands } from "../lib/redeem-code-commands.ts";

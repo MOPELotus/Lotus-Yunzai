@@ -8,7 +8,7 @@ const OFFICIAL_ROUTES = new Map([
   ["api-takumi-static.mihoyo.com", ["/event/miyolive/refreshCode"]],
 ])
 
-export function officialReadTarget(url) {
+export function officialReadTarget(url: string | URL) {
   const target = new URL(url)
   if (target.protocol !== "https:" || target.username || target.password || target.port
       || !OFFICIAL_ROUTES.get(target.hostname)?.includes(target.pathname)) {
@@ -17,9 +17,15 @@ export function officialReadTarget(url) {
   return target
 }
 
+export interface OfficialJsonOptions {
+  readonly headers?: Readonly<Record<string, string>>
+  readonly timeoutMs?: number
+  readonly signal?: AbortSignal
+}
+
 // Native HTTPS does not use Node's environment proxy dispatcher. Keep this
 // fallback scoped to our public official endpoints; never change global routing.
-export function requestOfficialJson(url, { headers = {}, timeoutMs = 10000, signal = undefined } = {}) {
+export function requestOfficialJson(url: string | URL, { headers = {}, timeoutMs = 10000, signal }: OfficialJsonOptions = {}): Promise<unknown> {
   const target = officialReadTarget(url)
   const timeout = AbortSignal.timeout(timeoutMs)
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout
@@ -30,9 +36,9 @@ export function requestOfficialJson(url, { headers = {}, timeoutMs = 10000, sign
         reject(new Error(`官方接口 HTTP ${response.statusCode}`))
         return
       }
-      const chunks = []
+      const chunks: Buffer[] = []
       let bytes = 0
-      response.on("data", chunk => {
+      response.on("data", (chunk: Buffer) => {
         bytes += chunk.length
         if (bytes > 4 * 1024 * 1024) response.destroy(new Error("官方接口响应过大"))
         else chunks.push(chunk)

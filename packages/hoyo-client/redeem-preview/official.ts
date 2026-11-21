@@ -1,36 +1,110 @@
 // Public official APIs only. No account cookie or redemption API is needed.
-import { officialReadTarget, requestOfficialJson } from "./http.js"
+import { officialReadTarget, requestOfficialJson, type OfficialJsonOptions } from "./http.ts"
 import { setTimeout as delay } from "node:timers/promises"
+import type { RedeemGame } from "./games.ts"
+import type { RedeemPreviewOptions } from "./index.ts"
+
+type DirectRequestOptions = Required<Pick<OfficialJsonOptions, "headers" | "timeoutMs">> & Pick<OfficialJsonOptions, "signal">
+type DirectRequest = (url: string, options: DirectRequestOptions) => Promise<unknown>
+type ProviderOptions = Pick<RedeemPreviewOptions, "fetch" | "now" | "signal"> & {
+  readonly directRequest?: DirectRequest | false
+}
+
+export interface PreviewExpiry {
+  readonly ms: number
+  readonly text: string
+}
+
+interface OfficialPost {
+  readonly post_id: string | number
+  readonly uid?: string | number
+  readonly subject: string
+  readonly created_at: string | number
+  readonly structured_content?: unknown
+  readonly content?: unknown
+}
+
+type PostEnvelope = OfficialPost & { readonly post?: PostEnvelope }
+interface PostPage {
+  readonly list?: readonly unknown[]
+  readonly posts?: readonly unknown[]
+  readonly is_last?: boolean
+  readonly next_offset?: string | number
+}
+
+interface LiveIndex {
+  readonly streamer?: { readonly aid?: string | number }
+  readonly live: {
+    readonly title: string
+    readonly start?: string
+    readonly end?: string
+    readonly remain?: string | number
+    readonly code_ver?: string | number
+  }
+  readonly template?: string | { readonly codeTipText?: unknown } | null
+}
+
+interface LiveActivity extends LiveIndex {
+  readonly actId: string
+}
+
+interface OfficialCode {
+  readonly code?: unknown
+  readonly title?: unknown
+  readonly to_get_time?: string | number
+}
+
+interface PreviewAnnouncement {
+  readonly startAt: number
+  readonly postId: string
+  readonly title: string
+}
+
+interface Discovery {
+  readonly activity: LiveActivity | null
+  readonly posts: readonly OfficialPost[]
+  readonly newestVersion: string
+  readonly activities: readonly string[]
+  readonly announcement: PreviewAnnouncement | null
+}
+
+interface RequestFailure {
+  readonly cause?: { readonly code?: string }
+  readonly code?: string
+  readonly message?: string
+  readonly retryable?: boolean
+}
+
 
 const BBS = "https://bbs-api.mihoyo.com"
 const LIVE = "https://api-takumi.mihoyo.com/event/miyolive"
 const LIVE_STATIC = "https://api-takumi-static.mihoyo.com/event/miyolive"
 
-export function versionOf(text) {
+export function versionOf(text: unknown) {
   return String(text || "").match(/(?:[vV]\s*)?(\d+\.\d+)\s*(?:版本|更新|前瞻|特别节目|「[^」]+」\s*(?:前瞻|特别节目))/)?.[1] || ""
 }
 
-export function compareVersions(a, b) {
+export function compareVersions(a: string, b: string) {
   const aa = a.split(".").map(Number), bb = b.split(".").map(Number)
-  return (aa[0] - bb[0]) || (aa[1] - bb[1])
+  return (aa[0]! - bb[0]!) || (aa[1]! - bb[1]!)
 }
 
-export function plainText(value) {
+export function plainText(value: unknown) {
   const raw = String(value || "")
   try {
-    const flatten = x => typeof x === "string" ? x : Array.isArray(x) ? x.map(flatten).join("")
+    const flatten = (x: unknown): string => typeof x === "string" ? x : Array.isArray(x) ? x.map(flatten).join("")
       : x && typeof x === "object" ? Object.values(x).map(flatten).join("") : ""
     return stripHtml(flatten(JSON.parse(raw)))
   } catch { return stripHtml(raw) }
 }
 
-function stripHtml(text) {
+function stripHtml(text: string) {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&times;/g, "×")
 }
 
 // to_get_time is the release time; never use it to guess an expiry.
 // null means no dated deadline was published; undefined means the dated claim did not validate.
-export function parseExpiry(text, referenceMs) {
+export function parseExpiry(text: unknown, referenceMs: number): PreviewExpiry | null | undefined {
   const datePattern = /(?:(\d{4})\s*[年\-/]\s*)?(\d{1,2})\s*[月\-/]\s*(\d{1,2})\s*日?\s*(\d{1,2})\s*[:：点时]\s*(\d{1,2})?\s*(?:[:：分]\s*(\d{1,2})\s*秒?)?/g
   let invalid = false
   // Scope to sentences mentioning codes and expiry, to exclude launch and broadcast dates.
@@ -56,7 +130,7 @@ export function parseExpiry(text, referenceMs) {
   return invalid ? undefined : null
 }
 
-export function previewAnnouncement(posts, newestVersion, includeUnversioned = false) {
+export function previewAnnouncement(posts: readonly OfficialPost[], newestVersion: string, includeUnversioned = false): PreviewAnnouncement | null {
   for (const post of [...posts].sort((a, b) => Number(b.created_at) - Number(a.created_at))) {
     const version = versionOf(post.subject)
     if ((version !== newestVersion && !(includeUnversioned && !version)) || !/前瞻|特别节目/.test(post.subject)) continue
@@ -66,7 +140,8 @@ export function previewAnnouncement(posts, newestVersion, includeUnversioned = f
     const match = text.match(/(?:前瞻|特别节目)[^。！？\n]{0,35}?将于\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*(?:[（(][^）)\n]{0,12}[）)])?\s*(晚(?:上)?)?\s*(\d{1,2})[:：](\d{2})(?:[^。！？\n]{0,20}?)(?:播出|开播|开启|首播)/)
     if (!match) continue
     const [, explicitYear, monthText, dayText, evening, hourText, minuteText] = match
-    const [month, day, clockHour, minute] = [monthText, dayText, hourText, minuteText].map(Number)
+    const month = Number(monthText), day = Number(dayText)
+    const clockHour = Number(hourText), minute = Number(minuteText)
     const hour = evening && clockHour > 0 && clockHour < 12 ? clockHour + 12 : clockHour
     const published = new Date(reference + 8 * 3600_000)
     const year = Number(explicitYear || (published.getUTCFullYear() + Number(published.getUTCMonth() === 11 && month === 1)))
@@ -79,34 +154,40 @@ export function previewAnnouncement(posts, newestVersion, includeUnversioned = f
   return null
 }
 
-export function activityIds(value) {
+export function activityIds(value: unknown): string[] {
   // Structured posts contain JSON-escaped links. Restrict to official livestream pages.
-  const raw = JSON.stringify(value).replace(/\\+u0026/gi, "&").replace(/\\+u003d/gi, "=").replace(/\\+/g, "").replace(/&amp;/g, "&")
-  return [...raw.matchAll(/https:\/\/(?:webstatic\.mihoyo\.com\/bbs\/event\/live\/index\.html|act\.mihoyo\.com\/[^"\s?]*live[^"\s?]*)\?(?:[^"\s]*?&)?act_id=([a-zA-Z0-9_-]{1,80})(?=&|["#\s]|$)/g)].map(m => m[1])
+  const raw = JSON.stringify(value)!.replace(/\\+u0026/gi, "&").replace(/\\+u003d/gi, "=").replace(/\\+/g, "").replace(/&amp;/g, "&")
+  return [...raw.matchAll(/https:\/\/(?:webstatic\.mihoyo\.com\/bbs\/event\/live\/index\.html|act\.mihoyo\.com\/[^"\s?]*live[^"\s?]*)\?(?:[^"\s]*?&)?act_id=([a-zA-Z0-9_-]{1,80})(?=&|["#\s]|$)/g)].map(m => m[1]!)
 }
 
-function normalizePost(item) {
-  const post = item?.post?.post || item?.post || item
+function normalizePost(item: unknown): OfficialPost | null {
+  const row = item as PostEnvelope | undefined
+  const post = row?.post?.post || row?.post || row
   return post?.post_id ? post : null
 }
 
 export class MiyoliveProvider {
-  constructor(options = {}) {
+  readonly fetch: NonNullable<ProviderOptions["fetch"]>
+  readonly now: () => number
+  readonly signal?: AbortSignal
+  readonly directRequest: DirectRequest | null
+
+  constructor(options: ProviderOptions = {}) {
     this.fetch = options.fetch || globalThis.fetch
     this.now = options.now || Date.now
     this.signal = options.signal
     this.directRequest = options.directRequest === false ? null : options.directRequest || (options.fetch ? null : requestOfficialJson)
   }
 
-  async request(url, actId = "") {
+  async request<T = unknown>(url: string, actId = ""): Promise<T | null> {
     this.signal?.throwIfAborted()
     const target = officialReadTarget(url)
     const deadline = Date.now() + 20000
     const headers = { "x-rpc-client_type": "2", "x-rpc-act_id": actId, Referer: "https://www.miyoushe.com/" }
-    let body
+    let body: unknown
     let liveIndexGone = false
     try {
-      let response
+      let response!: Response
       for (const waitMs of [0, 800, 1800]) {
         if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
         const timeout = AbortSignal.timeout(Math.min(10000, Math.max(1, deadline - Date.now())))
@@ -116,11 +197,12 @@ export class MiyoliveProvider {
         await response.body?.cancel().catch(() => {})
       }
       if (!response.ok) {
-        const error = new Error(`官方接口 HTTP ${response.status}`)
         liveIndexGone = response.status === 410 && target.hostname === "api-takumi.mihoyo.com" &&
           target.pathname === "/event/miyolive/index"
-        error.retryable = response.status >= 500 || response.status === 429 || liveIndexGone
-        error.httpStatus = response.status
+        const error = Object.assign(new Error(`官方接口 HTTP ${response.status}`), {
+          retryable: response.status >= 500 || response.status === 429 || liveIndexGone,
+          httpStatus: response.status,
+        })
         await response.body?.cancel().catch(() => {})
         throw error
       }
@@ -128,9 +210,10 @@ export class MiyoliveProvider {
     } catch (error) {
       this.signal?.throwIfAborted()
       const endpoint = `${target.hostname}${target.pathname}`
-      const detail = error.cause?.code || error.code || error.message
-      if (!this.directRequest || error.retryable === false) throw new Error(`${endpoint}：${detail}`, { cause: error })
-      let lastError
+      const failure = error as RequestFailure
+      const detail = failure.cause?.code || failure.code || failure.message
+      if (!this.directRequest || failure.retryable === false) throw new Error(`${endpoint}：${detail}`, { cause: error })
+      let lastError: RequestFailure | null | undefined
       for (const waitMs of liveIndexGone ? [0] : [0, 150, 350]) {
         if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
         const remainingMs = deadline - Date.now()
@@ -141,31 +224,33 @@ export class MiyoliveProvider {
           break
         } catch (retryError) {
           this.signal?.throwIfAborted()
-          lastError = retryError
+          lastError = retryError as RequestFailure
         }
       }
       if (!body) throw new Error(`${endpoint}：请求及直连重试均失败（${detail}；${lastError?.code || lastError?.message || "超时"}）`, { cause: lastError || error })
     }
-    if ([-500007, -500012].includes(body?.retcode) && target.pathname === "/event/miyolive/index") return null
-    if (body?.retcode !== 0 || !body.data) throw new Error(`官方接口：${body?.retcode ?? "返回格式异常"}`)
-    return body.data
+    const envelope = body as { readonly retcode?: number; readonly data?: T } | null | undefined
+    const code = envelope?.retcode
+    if ((code === -500007 || code === -500012) && target.pathname === "/event/miyolive/index") return null
+    if (code !== 0 || !envelope?.data) throw new Error(`官方接口：${code ?? "返回格式异常"}`)
+    return envelope.data
   }
 
-  async discover(game, remembered = []) {
+  async discover(game: RedeemGame, remembered: readonly string[] = []): Promise<Discovery> {
     const [homeResult, postsResult] = await Promise.allSettled([
-      this.request(`https://bbs-api.miyoushe.com/apihub/api/home/new?gids=${game.gids}&parts=1%2C3%2C4`),
-      this.request(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=0`),
+      this.request<{ readonly navigator?: readonly { readonly name?: string }[] }>(`https://bbs-api.miyoushe.com/apihub/api/home/new?gids=${game.gids}&parts=1%2C3%2C4`),
+      this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=0`),
     ])
-    const errors = [homeResult, postsResult].filter(r => r.status === "rejected").map(r => r.reason.message)
-    const ids = new Set()
-    const navigationIds = new Set()
+    const errors = [homeResult, postsResult].filter(r => r.status === "rejected").map(r => (r.reason as RequestFailure).message)
+    const ids = new Set<string>()
+    const navigationIds = new Set<string>()
     if (homeResult.status === "fulfilled") {
-      for (const nav of homeResult.value.navigator || []) {
+      for (const nav of homeResult.value!.navigator || []) {
         if (/前瞻|特别节目|直播|兑换码/.test(nav.name || "")) activityIds(nav).forEach(id => { ids.add(id); navigationIds.add(id) })
       }
     }
-    const posts = []
-    const addPosts = list => {
+    const posts: OfficialPost[] = []
+    const addPosts = (list?: readonly unknown[]) => {
       for (const item of list || []) {
         const post = normalizePost(item)
         if (!post || String(post.uid) !== game.uid || !(game.postPattern || /前瞻|特别节目|直播|兑换码/).test(post.subject || "")) continue
@@ -174,14 +259,14 @@ export class MiyoliveProvider {
       }
     }
     if (postsResult.status === "fulfilled") {
-      let page = postsResult.value
+      let page = postsResult.value!
       addPosts(page.list)
       // Official accounts can publish many posts between livestreams.
       for (let i = 0; i < 2 && !page.is_last && page.next_offset && !posts.some(p => versionOf(p.subject)); i++) {
         try {
-          page = await this.request(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=${encodeURIComponent(page.next_offset)}`)
+          page = (await this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=${encodeURIComponent(page.next_offset)}`))!
           addPosts(page.list)
-        } catch (error) { errors.push(error.message); break }
+        } catch (error) { errors.push((error as RequestFailure).message); break }
       }
     }
     // Search only the official author's results. This also recovers older preview links
@@ -191,9 +276,9 @@ export class MiyoliveProvider {
       const keyword = game.searchKeyword || (version && `${version} 前瞻 特别节目`)
       if (keyword) {
         try {
-          const search = await this.request(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`)
+          const search = (await this.request<PostPage>(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`))!
           addPosts(search.posts || search.list)
-        } catch (error) { errors.push(error.message) }
+        } catch (error) { errors.push((error as RequestFailure).message) }
       }
     }
     // A post's full structured content sometimes contains links omitted in the list.
@@ -202,10 +287,10 @@ export class MiyoliveProvider {
       const version = versionOf(p.subject)
       return (newestVersion && version === newestVersion) || (game.searchKeyword && !version && /特别节目/.test(p.subject))
     }).sort((a, b) => Number(b.created_at) - Number(a.created_at)).slice(0, 5)
-    const details = await Promise.allSettled(relevant.map(p => this.request(`${BBS}/post/wapi/getPostFull?post_id=${p.post_id}&gids=${game.gids}&read=0`)))
+    const details = await Promise.allSettled(relevant.map(p => this.request<{ readonly post?: unknown }>(`${BBS}/post/wapi/getPostFull?post_id=${p.post_id}&gids=${game.gids}&read=0`)))
     for (const result of details) {
       if (result.status !== "fulfilled") continue
-      const post = normalizePost(result.value.post)
+      const post = normalizePost(result.value!.post)
       if (post && String(post.uid) === game.uid) {
         const i = posts.findIndex(p => p.post_id === post.post_id)
         if (i >= 0) posts[i] = post
@@ -215,38 +300,38 @@ export class MiyoliveProvider {
     const announcement = previewAnnouncement(posts, newestVersion, Boolean(game.searchKeyword))
     // On discovery failures, do not present an old remembered activity as current.
     if (homeResult.status === "rejected" || postsResult.status === "rejected") {
-      if (announcement?.startAt > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
+      if ((announcement?.startAt ?? NaN) > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
       throw new Error(`活动发现不完整：${errors.join("；")}`)
     }
     const candidates = [...new Set([...ids, ...remembered])].slice(0, 12)
     const indexes = await Promise.allSettled(candidates.map(async actId => {
-      const data = await this.request(`${LIVE}/index`, actId)
-      if (String(data?.streamer?.aid) !== game.uid || !data.live) return null
+      const data = await this.request<LiveIndex>(`${LIVE}/index`, actId)
+      if (String(data?.streamer?.aid) !== game.uid || !data?.live) return null
       return { ...data, actId }
     }))
-    if (candidates.some((id, i) => navigationIds.has(id) && indexes[i].status === "rejected")) {
-      if (announcement?.startAt > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
+    if (candidates.some((id, i) => navigationIds.has(id) && indexes[i]!.status === "rejected")) {
+      if ((announcement?.startAt ?? NaN) > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
       throw new Error("官方活动详情暂不可用，请稍后重试")
     }
     const activities = indexes.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : [])
       .sort((a, b) => parseOfficialDate(b.live.start) - parseOfficialDate(a.live.start))
     const activity = activities[0]
     if (!activity) {
-      if (candidates.length && indexes.some(r => r.status === "rejected") && !(announcement?.startAt > this.now())) throw new Error("官方活动详情暂不可用，请稍后重试")
+      if (candidates.length && indexes.some(r => r.status === "rejected") && !((announcement?.startAt ?? NaN) > this.now())) throw new Error("官方活动详情暂不可用，请稍后重试")
       return { activity: null, posts, newestVersion, activities: [], announcement }
     }
     return { activity, posts, newestVersion, activities: activities.map(a => a.actId), announcement }
   }
 
-  async codes(activity) {
+  async codes(activity: LiveActivity): Promise<OfficialCode[]> {
     if (!activity.live.code_ver) return []
-    const data = await this.request(`${LIVE_STATIC}/refreshCode?version=${encodeURIComponent(activity.live.code_ver)}&time=${Math.floor(this.now() / 1000)}`, activity.actId)
+    const data = (await this.request<{ readonly code_list?: OfficialCode[] }>(`${LIVE_STATIC}/refreshCode?version=${encodeURIComponent(activity.live.code_ver)}&time=${Math.floor(this.now() / 1000)}`, activity.actId))!
     if (!Array.isArray(data.code_list)) throw new Error("官方兑换码列表格式异常")
     return data.code_list
   }
 }
 
-export function parseOfficialDate(value) {
+export function parseOfficialDate(value: unknown) {
   if (typeof value !== "string") return 0
   const parts = /^(\d{4})-(\d{2})-(\d{2})[ T]([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/.exec(value)
   if (!parts) return 0

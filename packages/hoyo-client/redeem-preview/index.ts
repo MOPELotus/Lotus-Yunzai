@@ -1,6 +1,6 @@
-export { parseRedeemCommand } from "./games.js";
+export { parseRedeemCommand } from "./games.ts";
 export { planetLaunchMessages } from "./planet-launch.ts";
-export { formatRedeemResult, RedeemCodeService } from "./service.js";
+export { formatRedeemResult, RedeemCodeService, type RedeemPreviewResult } from "./service.ts";
 
 export interface RedeemPreviewOptions {
   readonly historyFile?: string | false;

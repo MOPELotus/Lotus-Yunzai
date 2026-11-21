@@ -1,7 +1,7 @@
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { REDEEM_GAMES } from "../packages/hoyo-client/redeem-preview/games.js";
+import { REDEEM_GAMES } from "../packages/hoyo-client/redeem-preview/games.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
 
 const stores = ["data", ...legacyLotusDirectories.map(id => `plugins/${id}/data`)];

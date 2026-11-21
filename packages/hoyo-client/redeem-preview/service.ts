@@ -2,46 +2,79 @@ import fs from "node:fs/promises"
 import { constants } from "node:fs"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
-import { REDEEM_GAMES } from "./games.js"
-import { MiyoliveProvider, compareVersions, versionOf, plainText, parseExpiry, parseOfficialDate } from "./official.js"
+import { REDEEM_GAMES, type RedeemGame, type RedeemGameId } from "./games.ts"
+import { MiyoliveProvider, compareVersions, versionOf, plainText, parseExpiry, parseOfficialDate, type PreviewExpiry } from "./official.ts"
 
+import type { RedeemPreviewOptions } from "./index.ts"
+
+interface RedeemCode {
+  readonly code: string
+  readonly reward: string
+}
+
+export interface RedeemPreviewResult {
+  readonly game: RedeemGameId
+  readonly gameName: string
+  readonly checkedAt: number
+  readonly codes: readonly RedeemCode[]
+  readonly status: "available" | "unreleased" | "expired" | "expiry-unconfirmed" | "unavailable" | "error"
+  readonly version?: string
+  readonly title?: string
+  readonly startAt?: number
+  readonly source?: string
+  readonly actId?: string
+  readonly codeVersion?: string | number
+  readonly expiry?: PreviewExpiry | null
+  readonly expirySource?: string
+  readonly reason?: string
+}
+
+type PreviewHistory = Partial<Record<RedeemGameId, string[]>>
 const historyGames = REDEEM_GAMES.map(game => game.id)
 
 export class RedeemCodeService {
-  /** @param {import("./index.ts").RedeemPreviewOptions} options */
-  constructor(options = {}) {
+  readonly now: () => number
+  readonly providers: { readonly miyolive: MiyoliveProvider }
+  readonly historyFile: string | null
+  readonly legacyHistoryFiles: readonly string[]
+  history: PreviewHistory | null = null
+  legacyHistory: PreviewHistory = {}
+  loading: Promise<void> | null = null
+  readonly inflight = new Map<RedeemGameId, Promise<RedeemPreviewResult>>()
+  persisting = Promise.resolve()
+
+  constructor(options: RedeemPreviewOptions = {}) {
     this.now = options.now || Date.now
     this.providers = { miyolive: new MiyoliveProvider(options) }
     this.historyFile = options.historyFile || null
     this.legacyHistoryFiles = [...new Set(options.legacyHistoryFiles || [])].filter(file => file !== this.historyFile)
-    this.history = null
-    this.legacyHistory = {}
-    this.loading = null
-    this.inflight = new Map()
-    this.persisting = Promise.resolve()
   }
 
-  async query(gameId) {
+  async query(gameId: string): Promise<RedeemPreviewResult> {
     const game = REDEEM_GAMES.find(item => item.id === gameId)
     if (!game) throw new Error("尚未接入该游戏的官方兑换码来源")
-    if (this.inflight.has(gameId)) return this.inflight.get(gameId)
-    const task = this.collect(game).finally(() => this.inflight.delete(gameId))
-    this.inflight.set(gameId, task)
+    const active = this.inflight.get(game.id)
+    if (active) return active
+    const task = this.collect(game).finally(() => this.inflight.delete(game.id))
+    this.inflight.set(game.id, task)
     return task
   }
 
-  async collect(game) {
-    const base = { game: game.id, gameName: game.name, checkedAt: this.now(), codes: [] }
+  async collect(game: RedeemGame): Promise<RedeemPreviewResult> {
+    const base: Pick<RedeemPreviewResult, "game" | "gameName" | "checkedAt" | "codes"> = {
+      game: game.id, gameName: game.name, checkedAt: this.now(), codes: [],
+    }
     try {
       await this.loadHistory()
       const provider = this.providers[game.provider]
       if (!provider) throw new Error("该游戏的官方来源尚未接入")
-      const remembered = [...new Set([...(this.history[game.id] || []), ...(this.legacyHistory[game.id] || [])])].slice(0, 12)
+      const remembered = [...new Set([...(this.history?.[game.id] || []), ...(this.legacyHistory[game.id] || [])])].slice(0, 12)
       const found = await provider.discover(game, remembered)
       await this.saveHistory(game.id, found.activities || [])
       const { activity, newestVersion, posts, announcement } = found
       const version = activity ? versionOf(activity.live.title) : ""
-      if (announcement?.startAt > this.now() && (!version || compareVersions(newestVersion, version) >= 0)) {
+      const announcementIsUpcoming = (announcement?.startAt ?? NaN) > this.now()
+      if (announcementIsUpcoming && announcement && (!version || compareVersions(newestVersion, version) >= 0)) {
         const start = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(announcement.startAt)
         return { ...base, version: newestVersion, title: announcement.title, status: "unreleased", startAt: announcement.startAt,
           source: `https://www.miyoushe.com/${game.community}/article/${announcement.postId}`, reason: `官宣 ${start}（北京时间）开播，兑换码尚未发放` }
@@ -54,7 +87,7 @@ export class RedeemCodeService {
       if (!activity) {
         // Expired pages can disappear from navigation and the livestream API.
         // A matching official recap can still give a precise expiry without codes.
-        for (const post of posts.filter(p => newestVersion && versionOf(p.subject) === newestVersion).sort((a, b) => b.created_at - a.created_at)) {
+        for (const post of posts.filter(p => newestVersion && versionOf(p.subject) === newestVersion).sort((a, b) => Number(b.created_at) - Number(a.created_at))) {
           const expiry = parseExpiry(post.structured_content || post.content, Number(post.created_at) * 1000 || this.now())
           if (expiry && expiry.ms <= this.now()) {
             return { ...base, version: newestVersion, title: `${game.name} ${newestVersion} 版本前瞻`, status: "expired", expiry,
@@ -63,9 +96,9 @@ export class RedeemCodeService {
         }
         return { ...base, version: newestVersion, status: "unavailable", reason: "暂未找到当前版本的官方前瞻兑换码页面" }
       }
-      let template = activity.template || {}
+      let template: { readonly codeTipText?: unknown } | string = activity.template || {}
       if (typeof template === "string") {
-        try { template = JSON.parse(template) } catch { template = {} }
+        try { template = JSON.parse(template) as { readonly codeTipText?: unknown } } catch { template = {} }
       }
       const startMs = parseOfficialDate(activity.live.start)
       const reference = startMs || this.now()
@@ -74,7 +107,7 @@ export class RedeemCodeService {
       let invalidExpiry = expiry === undefined
       let expirySource = expiry ? pageUrl : ""
       if (!expiry && version) {
-        for (const post of posts.filter(p => versionOf(p.subject) === version).sort((a, b) => b.created_at - a.created_at)) {
+        for (const post of posts.filter(p => versionOf(p.subject) === version).sort((a, b) => Number(b.created_at) - Number(a.created_at))) {
           expiry = parseExpiry(post.structured_content || post.content, reference)
           invalidExpiry ||= expiry === undefined
           if (expiry) { expirySource = `https://www.miyoushe.com/${game.community}/article/${post.post_id}`; break }
@@ -117,45 +150,46 @@ export class RedeemCodeService {
   }
 
   async readHistory() {
-    const [current, ...past] = await Promise.all([this.historyFile, ...this.legacyHistoryFiles].map(file => this.readHistoryFile(file)))
+    const [current = {}, ...past] = await Promise.all([this.historyFile, ...this.legacyHistoryFiles].map(file => this.readHistoryFile(file)))
     this.legacyHistory = Object.fromEntries(historyGames.map(id => [id,
       [...new Set(past.flatMap(history => history[id] || []))].slice(0, 12),
     ]))
     this.history = current
   }
 
-  async readHistoryFile(historyFile) {
+  async readHistoryFile(historyFile: string | null): Promise<PreviewHistory> {
     if (!historyFile) return {}
     try {
       const file = await fs.open(historyFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
-      let parsed
+      let parsed: Partial<Record<RedeemGameId, unknown[]>> | null
       try {
         const stat = await file.stat()
         if (!stat.isFile() || stat.size > 32 * 1024) throw new Error("兑换码活动记录格式无效")
-        parsed = JSON.parse(await file.readFile("utf8"))
+        parsed = JSON.parse(await file.readFile("utf8")) as Partial<Record<RedeemGameId, unknown[]>> | null
       } finally {
         await file.close()
       }
       return Object.fromEntries(historyGames.filter(id => Array.isArray(parsed?.[id])).map(id => [id,
-        parsed[id].filter(value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value)).slice(0, 12),
+        parsed![id]!.filter(value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value)).slice(0, 12),
       ]))
     } catch {
       return {}
     }
   }
 
-  async saveHistory(gameId, activities) {
-    const previous = this.history[gameId] || []
+  async saveHistory(gameId: RedeemGameId, activities: readonly string[]) {
+    const previous = this.history![gameId] || []
     const next = [...new Set([...activities, ...previous])].slice(0, 12)
     if (previous.length === next.length && previous.every((id, index) => id === next[index])) return
-    this.history[gameId] = next
-    if (!this.historyFile) return
+    this.history![gameId] = next
+    const file = this.historyFile
+    if (!file) return
     this.persisting = this.persisting.catch(() => {}).then(async () => {
-      await fs.mkdir(path.dirname(this.historyFile), { recursive: true })
-      const temporary = `${this.historyFile}.${randomUUID()}.tmp`
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      const temporary = `${file}.${randomUUID()}.tmp`
       try {
         await fs.writeFile(temporary, JSON.stringify(this.history), { encoding: "utf8", flag: "wx" })
-        await fs.rename(temporary, this.historyFile)
+        await fs.rename(temporary, file)
       } finally {
         await fs.rm(temporary, { force: true })
       }
@@ -165,13 +199,13 @@ export class RedeemCodeService {
   }
 }
 
-export function formatRedeemResult(result) {
+export function formatRedeemResult(result: RedeemPreviewResult) {
   const title = result.title || `${result.gameName}前瞻兑换码`
   if (result.status === "error") return `${title}\n官方来源查询失败，请稍后重试。\n${result.reason}`
   if (result.status === "unavailable") return `${title}\n${result.reason}，请稍后再查。`
   const lines = [title]
   if (result.status === "expired") lines.push("本次前瞻兑换码已过期，请等待下一版本前瞻。")
-  else if (result.status === "expiry-unconfirmed") lines.push(result.reason)
+  else if (result.status === "expiry-unconfirmed") lines.push(result.reason!)
   else if (result.status === "unreleased") lines.push(result.reason || "兑换码尚未发放。")
   else for (const item of result.codes) lines.push("", item.code, ...(item.reward ? [item.reward] : []))
   if (result.expiry) lines.push("", `有效期至：${result.expiry.text}（北京时间）`)
