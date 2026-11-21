@@ -14,6 +14,7 @@
     "./gacha-pool": "./gacha-pool-card.ts",
     "./gacha-version": "./gacha-version-card.ts",
     "./generated-image": "./generated-image.ts",
+    "./info-card": "./info-card.ts",
     "./passport-qr": "./passport-qr-card.ts",
     "./profile": "./profile-card.ts",
     "./status-card": "./status-card.ts"
