@@ -32,6 +32,7 @@ function updatePrefix(message: string): RegExpExecArray | undefined {
   if (/^#更新\S+(?:攻略|一图流)$/u.test(message.trimEnd())) return;
   if (/^#更新群名片(?:\s|$)/u.test(message)) return;
   if (/^#更新(?:图鉴|抽卡记录(?:[1-9]\d{0,2})?|(?:全部|所有)抽卡记录)$/u.test(message.trimEnd())) return;
+  if (/^#更新(?:充值|消费)(?:记录|统计)$/u.test(message.trimEnd())) return;
   if (/^#更新(?:全部)?面板\s*(?:[1-9]\d{0,2}|[1-9]\d{8,9})?$/u.test(message.trimEnd())) return;
   if (/^#更新(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)(?:[1-9]\d{0,2})?(?:\s|$)/u.test(message)) return;
   const match = command.exec(message);

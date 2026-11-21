@@ -30,6 +30,7 @@ test("单项更新兼容紧连目标、中文目录及包名，并保留日志�
   const { dispatch, calls, replies } = fixture();
   for (const text of ["#更新日志", "#更新日志system", "#静更新日志", "#安静更新日志system", "#强制更新日志", " #更新图鉴 ",
     "#更新抽卡记录", " #更新抽卡记录2 ", "#更新面板", "#更新面板2", "#更新全部面板 500000001",
+    "#更新充值记录", " #更新充值统计 ", "#更新消费记录", "#更新消费统计",
     "#强制静更新", "#静全部强制更新", "请发 #更新"]) {
     expect(isUpdateCommand(text)).toBe(false);
     await dispatch(text);
@@ -40,6 +41,7 @@ test("单项更新兼容紧连目标、中文目录及包名，并保留日志�
   expect(hasValidUpdateTarget("#更新 图鉴")).toBe(true);
   expect(hasValidUpdateTarget("#更新 面板")).toBe(true);
   expect(hasValidUpdateTarget("#更新 抽卡记录")).toBe(true);
+  expect(hasValidUpdateTarget("#更新 充值记录")).toBe(true);
   expect(isUpdateCommand("#静更新")).toBe(true);
   expect(isUpdateCommand("#安静更新 @lotus-yunzai/system")).toBe(true);
   await dispatch("#更新");
