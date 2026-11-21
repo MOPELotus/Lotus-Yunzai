@@ -1576,6 +1576,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(reportedText).toContain("[消息(99) - 群临时消息]");
     expect(reportedText).toContain("来源群号：未核实（协议报告 86）");
     expect(reportedText).not.toContain("加为好友");
+    const activeRequestUnsupported = "当前协议端不支持主动发送好友申请。";
+    const activeRequestStart = oneBotCalls.length;
+    client.send(JSON.stringify({ ...oneBotPrivate("#加为好友"),
+      message: [quote(oneBotCalls.indexOf(reportedNotice) + 1), text("#加为好友")],
+    }));
+    await ownerReplyWith(activeRequestUnsupported);
+    expect(oneBotCalls.slice(activeRequestStart).filter(({ action }) => action !== "send_msg")).toEqual([]);
     client.send(JSON.stringify({ ...oneBotPrivate("固定假群号不显示", 42), sub_type: "group", group_id: 284840486 }));
     const fallbackTempNotice = JSON.stringify((await ownerReplyWith("固定假群号不显示")).params.message);
     expect(fallbackTempNotice).toContain("来源群号：未核实");
@@ -1596,6 +1603,12 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(temporaryText).toContain("来源群号：79");
     expect(temporaryText).not.toContain("回复 <内容>");
     const tempSequence = milkyCalls.indexOf(temporaryDelivery) + 1;
+    const activeMilkyStart = milkyCalls.length;
+    const activeMilkyRequest = milkyPrivate("添加好友");
+    await webhook("message_receive", { ...activeMilkyRequest,
+      segments: [{ type: "reply", data: { message_seq: tempSequence } }, ...activeMilkyRequest.segments] });
+    await milkyOwnerReply(operator, activeRequestUnsupported);
+    expect(milkyCalls.slice(activeMilkyStart).filter(({ action }) => action !== "send_private_message")).toEqual([]);
     const unrelatedTempQuote = milkyPrivate("#回复 临时通知不作为好友回信来源");
     await webhook("message_receive", { ...unrelatedTempQuote,
       segments: [{ type: "reply", data: { message_seq: tempSequence } }, ...unrelatedTempQuote.segments] });
