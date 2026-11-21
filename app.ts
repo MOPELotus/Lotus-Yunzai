@@ -2393,6 +2393,7 @@ if (import.meta.main) {
     }
     if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
     let tlsListener: ManagedTlsListener | undefined;
+    let tlsPort: number | undefined;
     if (https && !probingUpdate) {
       try {
         const [key, cert] = await Promise.all([readFile(https.key), readFile(https.cert)]);
@@ -2400,16 +2401,21 @@ if (import.meta.main) {
           const tls = { key, cert };
           const fetch = httpHandler(https.auth);
           const oneBotAuth = https.oneBotAuth;
+          const port = https.port;
           const server = oneBotAuth
-            ? listenOneBot(https.port, oneBotAuth, fetch, tls)
-            : listenHttp(https.port, fetch, tls);
+            ? listenOneBot(port, oneBotAuth, fetch, tls)
+            : listenHttp(port, fetch, tls);
           tlsListener = oneBotAuth ? "wss" : "https";
+          tlsPort = port;
           fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
           listenerMessages.push(`HTTPS 正在监听 ${server.url.origin}/status`);
         }
       } catch {
         if (!stopping) console.warn("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");
       }
+    }
+    if (milkyWebhook && !http && !tlsListener) {
+      throw new Error("Milky webhook 未能启动可接收入站事件的 HTTP 或 HTTPS 监听。");
     }
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
@@ -2844,7 +2850,9 @@ if (import.meta.main) {
         await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
-        tls: tlsListener, milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
+        // Port 0 is an ephemeral binding and may get a different allocated port on each process.
+        httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
+        milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
       }, plugins.readyScripts);
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();

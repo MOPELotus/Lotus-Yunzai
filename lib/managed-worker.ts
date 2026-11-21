@@ -28,6 +28,10 @@ function validPause(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+function reportedPort(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 65_535 ? value : undefined;
+}
+
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
   const { expectedRevision, expectedPlugins = [], expectedScripts = [], expectedEndpoints = {}, held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
@@ -106,6 +110,9 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           const milky = "milky" in message ? message.milky : undefined;
           endpoints = {
             tls: tls === "https" || tls === "wss" ? tls : undefined,
+            httpPort: "httpPort" in message ? reportedPort(message.httpPort) : undefined,
+            oneBotPort: "oneBotPort" in message ? reportedPort(message.oneBotPort) : undefined,
+            tlsPort: "tlsPort" in message ? reportedPort(message.tlsPort) : undefined,
             milky: milky === "webhook" || milky === "ws" ? milky : undefined,
             valkey: "valkey" in message && message.valkey === true ? true : undefined,
           };
@@ -113,6 +120,13 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
             void stop();
             return;
+          }
+          for (const [key, label] of [["httpPort", "公共 HTTP"], ["oneBotPort", "OneBot"], ["tlsPort", "HTTPS 或 WSS"]] as const) {
+            if (expectedEndpoints[key] !== undefined && endpoints[key] !== expectedEndpoints[key]) {
+              startupError = new ManagedEndpointUnavailableError(`候选宿主未能接回原版本的 ${label} 端口。`);
+              void stop();
+              return;
+            }
           }
           if (expectedEndpoints.milky && endpoints.milky !== expectedEndpoints.milky) {
             startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Milky 入口。");

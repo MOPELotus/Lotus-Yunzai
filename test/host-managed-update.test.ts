@@ -595,7 +595,75 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
   }
 }, 35_000);
 
-async function exerciseTlsUpdate(fault?: "bind" | "wss") {
+async function exercisePublicListenerUpdate(fault?: "http" | "onebot" | "port") {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-plain-listeners-"));
+  try {
+    const { active, old, candidate, writer } = await fixtureRepository(temporary, false);
+    if (fault) {
+      const app = join(writer, "app.ts");
+      const source = await readFile(app, "utf8");
+      const site = "const { hostname, oneBot, https, panelToken } = network;";
+      const originalHttp = "const http = network.http ??";
+      expect(source).toContain(site);
+      expect(source).toContain(originalHttp);
+      let changed = source;
+      if (fault === "http") {
+        changed = source.replace(originalHttp, "const http = !handoff.accepting ? undefined : network.http ??");
+      } else {
+        const oneBot = fault === "onebot" ? "undefined" : "{ ...network.oneBot, port: 0 }";
+        changed = source.replace(site, `const { hostname, https, panelToken } = network;
+          const oneBot = handoff.accepting || !network.oneBot ? network.oneBot : ${oneBot};`);
+      }
+      await writeFile(app, changed);
+      git(writer, "add", "app.ts");
+      git(writer, "commit", "--quiet", "-m", "Fixture loses plain listener only in candidate");
+      git(writer, "push", "--quiet", "origin", "main");
+    }
+    const reserve = () => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    const [http, ws] = [reserve(), reserve()];
+    const [httpPort, wsPort] = [http.port, ws.port];
+    http.stop(true);
+    ws.stop(true);
+    const publicEndpoint = `http://127.0.0.1:${httpPort}/status`;
+    const wsEndpoint = `ws://127.0.0.1:${wsPort}/OneBotv11`;
+    const httpToken = "managed-update-public-http-fixture";
+    const supervisor = bootSupervisor(active, {
+      LOTUS_ONEBOT_PORT: String(wsPort), LOTUS_HTTP_PORT: String(httpPort), LOTUS_HTTP_TOKEN: httpToken,
+    });
+    async function expectPublic(revision: string) {
+      expect((await fetch(publicEndpoint, { signal: AbortSignal.timeout(2_000) })).status).toBe(401);
+      const response = await fetch(publicEndpoint, {
+        headers: { Authorization: `Bearer ${httpToken}` }, signal: AbortSignal.timeout(2_000),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).revision).toBe(revision);
+    }
+    try {
+      expect(await deadline(supervisor.nextEndpoint(), "原宿主未启动。")).toBe(wsEndpoint);
+      const running = await supervisor.open(wsEndpoint, 99);
+      await expectPublic(old);
+      running.command("#静更新", 51);
+      expect(await deadline(supervisor.nextEndpoint(), "交接后缺少 OneBot 启动记录。", 15_000)).toBe(wsEndpoint);
+      const updated = await supervisor.open(wsEndpoint, 99);
+      const expected = fault ? old : candidate;
+      expectText(await updated.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /^更新成功/u);
+      await expectPublic(expected);
+      await expectVersion(updated, expected);
+      expect(git(active, "rev-parse", "HEAD")).toBe(expected);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(!Bun.which("git"))("分开的公共 HTTP 和 OneBot 固定端口在托管更新后继续可用", () => exercisePublicListenerUpdate(), 35_000);
+test.skipIf(!Bun.which("git"))("托管更新在候选丢失公共 HTTP 时回退", () => exercisePublicListenerUpdate("http"), 35_000);
+test.skipIf(!Bun.which("git"))("托管更新在候选丢失 OneBot 监听时回退", () => exercisePublicListenerUpdate("onebot"), 35_000);
+test.skipIf(!Bun.which("git"))("托管更新在候选改用其他 OneBot 端口时回退", () => exercisePublicListenerUpdate("port"), 35_000);
+
+async function exerciseTlsUpdate(fault?: "bind" | "wss" | "port") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));
   try {
     const { active, old, candidate, writer } = await fixtureRepository(temporary, false);
@@ -604,10 +672,14 @@ async function exerciseTlsUpdate(fault?: "bind" | "wss") {
       const source = await readFile(app, "utf8");
       const site = "const oneBotAuth = https.oneBotAuth;";
       expect(source).toContain(site);
-      const injection = fault === "bind"
-        ? "if (!handoff.accepting) throw new Error('fixture TLS listener failure');\n          " + site
-        : "const oneBotAuth = handoff.accepting ? https.oneBotAuth : undefined;";
-      await writeFile(app, source.replace(site, injection));
+      const port = "const port = https.port;";
+      expect(source).toContain(port);
+      const changed = fault === "port"
+        ? source.replace(port, "const port = handoff.accepting ? https.port : 0;")
+        : source.replace(site, fault === "bind"
+          ? "if (!handoff.accepting) throw new Error('fixture TLS listener failure');\n          " + site
+          : "const oneBotAuth = handoff.accepting ? https.oneBotAuth : undefined;");
+      await writeFile(app, changed);
       git(writer, "add", "app.ts");
       git(writer, "commit", "--quiet", "-m", "Fixture TLS listener failure during handoff");
       git(writer, "push", "--quiet", "origin", "main");
@@ -654,6 +726,7 @@ async function exerciseTlsUpdate(fault?: "bind" | "wss") {
 const canTestTlsUpdate = Boolean(Bun.which("git") && Bun.which("openssl"));
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选无法接回 TLS 监听时恢复原版本", () => exerciseTlsUpdate("bind"), 35_000);
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选只接回 HTTPS 但丢失 WSS 时恢复原版本", () => exerciseTlsUpdate("wss"), 35_000);
+test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选改用其他 TLS 端口时恢复原版本", () => exerciseTlsUpdate("port"), 35_000);
 test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选接回 TLS 监听时继续切换", () => exerciseTlsUpdate(), 35_000);
 
 const valkeyServer = Bun.which("valkey-server");

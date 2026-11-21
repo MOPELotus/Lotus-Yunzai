@@ -225,6 +225,86 @@ test("TRSS HTTPS 证书无效时 HTTP、OneBot 和原公开文件地址继续使
   });
 }, 10_000);
 
+test.each([["仅 HTTPS", false], ["显式 HTTP", true]] as const)(
+  "%s 的 Milky Webhook 按实际可用的监听器启动", async (_name, explicitHttp) => {
+    const root = await mkdtemp(join(tmpdir(), "lotus-milky-https-"));
+    const accessToken = "milky-https-fixture";
+    const webhookPath = "/fixture/milky";
+    const account = 99;
+    let loginAttempts = 0;
+    const gateway = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      if (request.method !== "POST" || new URL(request.url).pathname !== "/api/get_login_info") {
+        return new Response(null, { status: 404 });
+      }
+      loginAttempts++;
+      if (request.headers.get("Authorization") !== `Bearer ${accessToken}`) return new Response(null, { status: 401 });
+      return Response.json({ status: "ok", retcode: 0, data: { uin: account, nickname: "Milky 夹具" } });
+    } });
+    try {
+      await copyHost(root);
+      const directory = join(root, "config");
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "server.yaml"), Bun.YAML.stringify({
+        ...(explicitHttp && { port: 0 }),
+        https: { port: 0, key: "missing-fixture.key", cert: "missing-fixture.crt" },
+      }));
+      await writeFile(join(directory, "milky.yaml"), Bun.YAML.stringify({
+        enable: true, host: "127.0.0.1", port: gateway.port, connection: "webhook",
+        access_token: accessToken, webhook: { path: webhookPath },
+      }));
+      const token = crypto.randomUUID();
+      const readiness: { milky: unknown; tls: unknown }[] = [];
+      const host = Bun.spawn([process.execPath, "app.ts"], {
+        cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+        env: { PATH: process.env.PATH, LOTUS_MANAGED_TOKEN: token },
+        ipc(message: unknown) {
+          if (message && typeof message === "object" && "type" in message && message.type === "lotus-ready") {
+            readiness.push({ milky: "milky" in message ? message.milky : undefined, tls: "tls" in message ? message.tls : undefined });
+          }
+        },
+      });
+      const stderr = new Response(host.stderr).text();
+      try {
+        if (!explicitHttp) {
+          expect(await deadline(host.exited, "TLS-only 的 Milky Webhook 未退出。")).toBe(1);
+          expect(await stderr).toContain("Milky webhook 未能启动可接收入站事件的 HTTP 或 HTTPS 监听。");
+          expect(readiness).toEqual([]);
+          expect(loginAttempts).toBe(0);
+          return;
+        }
+
+        const output = await deadline(startupOutput(host), "Milky Webhook HTTP 对照未启动。");
+        expect(output).not.toContain("HTTPS 正在监听");
+        const address = /HTTP 正在监听 (http:\/\/127\.0\.0\.1:\d+)\/status/u.exec(output)?.[1];
+        expect(address).toBeDefined();
+        const webhook = new URL(webhookPath, address!);
+        const post = {
+          method: "POST", body: JSON.stringify({ self_id: account, event_type: "group_admin_change", data: {} }),
+          signal: AbortSignal.timeout(2_000),
+        };
+        expect((await fetch(webhook, { ...post, headers: { "Content-Type": "application/json" } })).status).toBe(401);
+        const headers = { "Content-Type": "application/json", ...auth(accessToken) };
+        let response = await fetch(webhook, { ...post, headers });
+        const readyUntil = Date.now() + 2_000;
+        while (response.status === 503 && Date.now() < readyUntil) {
+          await Bun.sleep(20);
+          response = await fetch(webhook, { ...post, headers });
+        }
+        expect(response.status).toBe(200);
+        expect(loginAttempts).toBe(1);
+        expect(readiness).toEqual([{ milky: "webhook", tls: undefined }]);
+      } finally {
+        if (host.exitCode === null && host.signalCode === null) host.kill();
+        await host.exited;
+      }
+      expect(await stderr).toContain("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");
+    } finally {
+      await gateway.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 10_000,
+);
+
 test.skipIf(!openssl)("TRSS HTTPS 端口被占用时保留 HTTP 和原公开文件地址", async () => {
   const occupied = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   try {

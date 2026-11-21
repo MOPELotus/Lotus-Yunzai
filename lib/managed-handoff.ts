@@ -6,6 +6,9 @@ import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdatePr
 export type ManagedTlsListener = "https" | "wss";
 export interface ManagedEndpoints {
   readonly tls?: ManagedTlsListener;
+  readonly httpPort?: number;
+  readonly oneBotPort?: number;
+  readonly tlsPort?: number;
   readonly milky?: "webhook" | "ws";
   readonly valkey?: true;
 }
