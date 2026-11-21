@@ -125,7 +125,7 @@ import { accountScopePermission, readMasterPermissions } from "./lib/permissions
 import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { takeLegacyProcessReceipt } from "./lib/legacy-process-receipts.ts";
-import { createPublicFiles } from "./lib/public-files.ts";
+import { createPublicFiles, maxPublicFileBytes } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
 import { createMiyousheWeb, isMiyousheWebCommand, MiyoushePreviewSettingsError, MiyousheSettingsError,
@@ -832,7 +832,7 @@ if (import.meta.main) {
     const sessions = [...groups.checkinNotifications()];
     const milky = milkyOnline;
     if (milky?.checkinNotify && !milky.signal.aborted && !sessions.some(bot => bot.botId === milky.id)) {
-      sessions.push({ botId: milky.id, ...milky.checkinNotify });
+      sessions.push({ botId: milky.id, ...milky.checkinNotify, inlineImageByteLimit: maxPublicFileBytes });
     }
     return sessions;
   }

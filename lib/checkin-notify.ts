@@ -19,7 +19,10 @@ export interface CheckinNotifyTransport {
     { readonly userId: number; readonly groupId?: never }, nodes: readonly MessageReply[]) => Promise<CheckinNotifyDelivery>;
 }
 
-export type BotNotifications = CheckinNotifyTransport & { readonly botId: number };
+export type BotNotifications = CheckinNotifyTransport & {
+  readonly botId: number;
+  readonly inlineImageByteLimit?: number;
+};
 
 type FinalDelivery = "confirmed" | "unknown";
 export type CheckinNotifyResult =
