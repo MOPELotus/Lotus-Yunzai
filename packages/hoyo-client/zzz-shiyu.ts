@@ -43,6 +43,7 @@ export interface ZzzShiyuSnapshot {
     readonly battleTime?: number;
   };
   readonly layers: readonly ZzzShiyuLayer[];
+  readonly clearedSRanks?: number;
 }
 
 const layerKeys = ["fitfh", "fourth", "third", "second", "first"] as const;
@@ -156,6 +157,16 @@ function readLayers(data: Json): readonly ZzzShiyuLayer[] {
   });
 }
 
+// The first four defenses may be auto-cleared and omitted by the current CN record.
+function clearedSRanks(data: Json, fifthRating?: ZzzShiyuRating) {
+  const [first, second, third, fourth] = ["first", "second", "third", "fourth"]
+    .map(layer => object(data[`${layer}_layer_detail`]));
+  const prefix = !third && fourth?.rating === "S" ? 4 : undefined;
+  const lower = prefix ?? ([first, second, third, fourth].filter(layer => layer?.rating === "S").length +
+    (!second && third?.rating === "S" ? 2 : !first && second?.rating === "S" ? 1 : 0));
+  return Math.min(lower, 4) + (fifthRating === "S" || fifthRating === "S+" ? 1 : 0);
+}
+
 export function normalizeZzzShiyu(input: unknown, identity: Pick<ZzzShiyuSnapshot, "uid" | "region" | "scheduleType">): ZzzShiyuSnapshot {
   const payload = object(input);
   if (!payload) invalid();
@@ -176,18 +187,19 @@ export function normalizeZzzShiyu(input: unknown, identity: Pick<ZzzShiyuSnapsho
 
   const layers = readLayers(data);
   const brief = object(data.brief);
+  const fifthRating = rating(brief?.rating);
   return {
     ...identity,
     status: layers.length ? "available" : "empty",
     period: start && end ? { start, end } : undefined,
     overall: brief && {
-      rating: rating(brief.rating),
+      rating: fifthRating,
       score: whole(brief.score, 999_999_999),
       rankBasisPoints: whole(brief.rank_percent, 10_000),
       challengeTime: date(brief.challenge_time),
       battleTime: whole(brief.battle_time, 86_400),
     },
-    layers,
+    layers, clearedSRanks: clearedSRanks(data, fifthRating),
   };
 }
 

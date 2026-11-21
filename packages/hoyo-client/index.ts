@@ -520,6 +520,32 @@ export function createHoyoClient(
     fetchZzzDeadly(source: ProfileRequestContext, options: Parameters<typeof readZzzDeadly>[2]) {
       return readForProfile(source, options, readZzzDeadly, isGameRecordCookieExpired);
     },
+    async fetchZzzChallengeStatus(source: ProfileRequestContext, { signal }: { readonly signal?: AbortSignal } = {}) {
+      let current: ProfileAccountContext = source;
+      let refreshAttempted = false;
+      const options = { scheduleType: 1 as const, signal };
+      function mayRefresh(error: unknown) {
+        if (refreshAttempted || !isGameRecordCookieExpired(error)) return false;
+        refreshAttempted = true;
+        return true;
+      }
+      async function read<Data extends object>(reader: (source: ProfileRequestContext, transport: HoyoTransport, request: { scheduleType: 1; signal?: AbortSignal }, verify?: () => Promise<void>) => Promise<Data>)
+        : Promise<PromiseSettledResult<Data>> {
+        signal?.throwIfAborted();
+        try {
+          const value = await readForProfile({ ...source, ...current }, options, reader, mayRefresh, attempt => { current = attempt; });
+          return { status: "fulfilled", value };
+        } catch (reason) {
+          signal?.throwIfAborted();
+          await ensureCurrentProfile(current);
+          return { status: "rejected", reason };
+        }
+      }
+      const shiyu = await read(readZzzShiyu);
+      const deadly = await read(readZzzDeadly);
+      await ensureCurrentProfile(current);
+      return { shiyu, deadly, revision: current.revision };
+    },
     fetchZzzHoloBoss(source: ProfileRequestContext, options: Parameters<typeof readZzzHoloBoss>[2]) {
       return readForProfile(source, options, readZzzHoloBoss, isGameRecordCookieExpired);
     },

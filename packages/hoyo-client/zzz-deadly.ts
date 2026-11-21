@@ -139,12 +139,12 @@ export function normalizeZzzDeadly(input: unknown, identity: Identity): ZzzDeadl
   const data = object(input);
   if (!data || typeof data.has_data !== "boolean") invalid();
   verifyIdentity(data, identity);
-  if (!data.has_data) return { ...identity, status: "empty", trial: [], hard: [] };
-  if (data.has_hard !== undefined && typeof data.has_hard !== "boolean") invalid();
-
   const start = time(data.start_time);
   const end = time(data.end_time);
   if (start && end && start >= end) invalid("官方危局强袭战响应的统计周期无效。");
+  const period = start && end ? { start, end } : undefined;
+  if (!data.has_data) return { ...identity, status: "empty", trial: [], hard: [], ...(period && { period }) };
+  if (data.has_hard !== undefined && typeof data.has_hard !== "boolean") invalid();
   const hard = data.has_hard ? rooms(data.hard_list) : [];
   return {
     ...identity,
@@ -152,7 +152,7 @@ export function normalizeZzzDeadly(input: unknown, identity: Identity): ZzzDeadl
     activityId: count(data.zone_id, 999_999_999),
     nickname: text(data.nick_name, 192),
     avatar: text(data.avatar_icon),
-    period: start && end ? { start, end } : undefined,
+    period,
     totalScore: count(data.total_score, 999_999_999),
     totalStars: count(data.total_star, 99),
     trialRank: count(data.rank_percent, 10_000),
