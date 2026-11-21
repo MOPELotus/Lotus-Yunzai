@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,19 @@ async function setup() {
 }
 
 const paths: ("backup" | "config" | "data")[] = ["backup", "config", "data"];
+const plugins = ["plugins/extra-plugin", "plugins/extra-script.js"];
+
+async function stagedPlugins(stage: string) {
+  await put(stage, "plugins/extra-plugin/index.js", "throw new Error('this fixture is kept, not run');");
+  await put(stage, "plugins/extra-script.js", "export default {};");
+}
+
+async function inspectPluginParents(root: string) {
+  const paths = ["plugins", "plugins/genshin", "plugins/genshin/module.ts"];
+  const inode = await Promise.all(paths.map(async path => (await lstat(join(root, path))).ino));
+  return { inode, native: await readFile(join(root, "plugins/genshin/module.ts"), "utf8") };
+}
+
 
 async function assertState(root: string) {
   for (const [path, contents] of Object.entries(files)) expect(await readFile(join(root, path), "utf8")).toBe(contents);
@@ -149,14 +162,16 @@ test.skipIf(!Bun.which("git"))("keeps a committed batch and repairs the receipt 
   expect(await publishMigrationPayload(root, stage)).toEqual({ status: "already-published", paths });
 });
 
-test.skipIf(!Bun.which("git") || process.platform === "win32")("launcher recovers after a real process death before initialization", async () => {
+test.skipIf(!Bun.which("git") || process.platform === "win32")("launcher recovers plugins and data after a real process death before initialization", async () => {
   const { root, stage } = await setup();
+  await stagedPlugins(stage);
+  const native = await inspectPluginParents(root);
   const apply = new URL("../lib/migration-publication.ts", import.meta.url).href;
   const code = `
     import { publishMigrationPayload } from ${JSON.stringify(apply)};
     await publishMigrationPayload(${JSON.stringify(root)}, ${JSON.stringify(stage)}, async () => {
       process.kill(process.pid, "SIGKILL");
-    });
+    }, ${JSON.stringify(plugins)});
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], { stdout: "ignore", stderr: "ignore" });
   expect(await child.exited).toBe(137);
@@ -164,6 +179,7 @@ test.skipIf(!Bun.which("git") || process.platform === "win32")("launcher recover
     import { readdir } from "node:fs/promises";
     const names = await readdir(".");
     if (["backup", "config", "data"].some(name => names.includes(name))) process.exit(7);
+    if ((await readdir("plugins")).some(name => name !== "genshin")) process.exit(8);
   `);
   await symlink(fileURLToPath(new URL("../lib/", import.meta.url)), join(root, "lib"), "dir");
   await copyFile(new URL("../scripts/launcher.ts", import.meta.url), join(root, "scripts", "launcher.ts"));
@@ -173,7 +189,14 @@ test.skipIf(!Bun.which("git") || process.platform === "win32")("launcher recover
   expect(await launcher.exited).toBe(0);
   await assertEmptyState(root);
   await assertState(stage);
-  expect((await publishMigrationPayload(root, stage)).status).toBe("published");
+  expect(await inspectPluginParents(root)).toEqual(native);
+  expect((await readdir(join(stage, "plugins"))).sort()).toEqual(["extra-plugin", "extra-script.js"]);
+  expect((await publishMigrationPayload(root, stage, undefined, plugins)).status).toBe("published");
+  expect(await inspectPluginParents(root)).toEqual(native);
+  expect(await readFile(join(root, "plugins/extra-script.js"), "utf8")).toBe("export default {};");
+  expect(await readFile(join(root, "plugins/extra-plugin/index.js"), "utf8")).toContain("fixture is kept");
+  expect(await publishMigrationPayload(root, stage, undefined, plugins)).toMatchObject({ status: "already-published", paths: [...paths, ...plugins] });
+  await expect(publishMigrationPayload(root, stage)).rejects.toThrow("核准清单与迁移结果不一致");
 });
 
 test.skipIf(!Bun.which("git"))("refuses unvalidated top-level paths and does not touch symlink targets", async () => {
@@ -186,4 +209,78 @@ test.skipIf(!Bun.which("git"))("refuses unvalidated top-level paths and does not
   await expect(publishMigrationPayload(root, stage)).rejects.toThrow("须为实体目录");
   await assertEmptyState(root);
   await assertState(source);
+});
+
+test.skipIf(!Bun.which("git"))("requires explicit approvals and blocks existing, index and removed tracked paths", async () => {
+  const { root, stage } = await setup();
+  await stagedPlugins(stage);
+  await expect(publishMigrationPayload(root, stage)).rejects.toThrow("暂存与核准清单不一致");
+  await expect(publishMigrationPayload(root, stage, undefined, ["plugins/../genshin"])).rejects.toThrow("核准路径无效");
+  const stagedScript = join(stage, "plugins/extra-script.js");
+  const externalLink = join(stage, "..", "external-hard-link");
+  await link(stagedScript, externalLink);
+  await expect(publishMigrationPayload(root, stage, undefined, plugins)).rejects.toThrow("无硬链接的普通文件");
+  await rm(externalLink);
+
+  await put(root, "plugins/extra-script.js", "keep existing");
+  await expect(publishMigrationPayload(root, stage, undefined, plugins)).rejects.toThrow("已有 plugins/extra-script.js");
+  expect(await readFile(join(root, "plugins/extra-script.js"), "utf8")).toBe("keep existing");
+  expect(Bun.spawnSync(["git", "add", "plugins/extra-script.js"], { cwd: root }).exitCode).toBe(0);
+  await rm(join(root, "plugins/extra-script.js"));
+  await expect(publishMigrationPayload(root, stage, undefined, plugins)).rejects.toThrow("Git 跟踪路径冲突：plugins/extra-script.js");
+  expect(Bun.spawnSync(["git", "reset", "--", "plugins/extra-script.js"], { cwd: root, stdout: "ignore" }).exitCode).toBe(0);
+
+  await rm(join(root, "plugins/genshin"), { recursive: true });
+  await put(stage, "plugins/genshin/index.js", "unrelated old code");
+  await expect(publishMigrationPayload(root, stage, undefined, [...plugins, "plugins/genshin"])).rejects.toThrow("Git 跟踪路径冲突：plugins/genshin");
+  await assertEmptyState(root);
+  await assertState(stage);
+});
+
+test.skipIf(!Bun.which("git"))("never follows a replaced plugin parent during publication or recovery", async () => {
+  const { parent, root, stage } = await setup();
+  await stagedPlugins(stage);
+  const displaced = join(parent, "displaced");
+  await rename(join(root, "plugins"), displaced);
+  await symlink(displaced, join(root, "plugins"));
+  await expect(publishMigrationPayload(root, stage, undefined, plugins)).rejects.toThrow("目标插件根须为实体目录");
+  await assertEmptyState(root);
+  await rm(join(root, "plugins"));
+  await rename(displaced, join(root, "plugins"));
+  const native = await inspectPluginParents(root);
+
+  const snapshot = async (path: string) => {
+    const { dev, ino } = await lstat(path);
+    return { dev, ino };
+  };
+  const pending = join(parent, `.${basename(root)}.lotus-migration-pending.json`);
+  const entry = { version: 1, committed: false, target: await snapshot(root), stage: { path: stage, ...await snapshot(stage) },
+    pluginParents: { target: await snapshot(join(root, "plugins")), stage: await snapshot(join(stage, "plugins")) },
+    state: await Promise.all([...paths, ...plugins].map(async path => ({
+      path, ...await snapshot(join(stage, path)), ...(path.endsWith(".js") && { kind: "file" }),
+    }))) };
+  await writeJournal(pending, entry, true);
+  const temporary = pending + "." + crypto.randomUUID();
+  await link(pending, temporary);
+  await move(join(stage, "config"), join(root, "config"));
+  await move(join(stage, "plugins/extra-script.js"), join(root, "plugins/extra-script.js"));
+
+  const moved = join(parent, "moved-stage-plugins");
+  await rename(join(stage, "plugins"), moved);
+  await symlink(moved, join(stage, "plugins"));
+  const startup = await lockFile(managedStartupLockPath(root), "启动操作", 0);
+  try {
+    await expect(recoverMigrationPublicationForStartup(root)).rejects.toThrow("父目录已变更");
+    expect(await readFile(join(root, "plugins/extra-script.js"), "utf8")).toBe("export default {};");
+    await rm(join(stage, "plugins"));
+    await rename(moved, join(stage, "plugins"));
+    expect(await recoverMigrationPublicationForStartup(root)).toBe(true);
+  } finally {
+    startup.close();
+  }
+  expect(await inspectPluginParents(root)).toEqual(native);
+  await assertEmptyState(root);
+  await assertState(stage);
+  expect(await readFile(join(stage, "plugins/extra-script.js"), "utf8")).toBe("export default {};");
+  await expect(lstat(temporary)).rejects.toMatchObject({ code: "ENOENT" });
 });
