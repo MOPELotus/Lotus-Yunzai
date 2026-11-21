@@ -127,9 +127,9 @@ function milkyGateway(botId: number) {
     port: server.port, calls, confirm: confirmReceipt.resolve,
     open: (generation: number) => waitFor(() => sockets[generation], "模拟 Milky 未连接。"),
     next: () => waitFor(() => calls.shift(), "未收到 Milky 上线通知夹具的回复。"),
-    status(socket: Bun.ServerWebSocket<undefined>) {
+    status(socket: Bun.ServerWebSocket<undefined>, userId: number) {
       socket.send(JSON.stringify({ event_type: "message_receive", self_id: botId, data: {
-        message_scene: "friend", peer_id: 42, sender_id: 42, message_seq: 1,
+        message_scene: "friend", peer_id: userId, sender_id: userId, message_seq: 1,
         segments: [{ type: "text", data: { text: "#状态" } }],
       } }));
     },
@@ -264,9 +264,10 @@ test.skipIf(!valkeyServer)("TRSS 上线通知按绑定机器人和 Valkey 冷却
         await sameBot.status();
         first.close();
         const reconnected = await milky.open(1);
-        milky.status(reconnected);
+        // 同号 OneBot 刚收到用户 42 的同文私聊，Milky 探针使用另一位用户。
+        milky.status(reconnected, 43);
         const status = await milky.next();
-        expect(status).toMatchObject({ action: "send_private_message", params: { user_id: 42 } });
+        expect(status).toMatchObject({ action: "send_private_message", params: { user_id: 43 } });
         expect(status.params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
         await Bun.sleep(100);
         expect(milky.calls).toEqual([]);

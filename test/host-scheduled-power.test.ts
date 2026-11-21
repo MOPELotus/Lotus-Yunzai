@@ -72,10 +72,10 @@ function milkyGateway(botId: number) {
   let messageSeq = 0;
   return {
     port: server.port, frames, close: () => server.stop(true),
-    async probe() {
+    async probe(userId: number) {
       const socket = await waitFor(() => client, "定时开关机的 Milky 网关未连接。");
       socket.send(JSON.stringify({ event_type: "message_receive", self_id: botId, data: {
-        message_scene: "friend", peer_id: 42, sender_id: 42, message_seq: ++messageSeq,
+        message_scene: "friend", peer_id: userId, sender_id: userId, message_seq: ++messageSeq,
         segments: [{ type: "text", data: { text: "#状态" } }],
       } }));
     },
@@ -147,7 +147,7 @@ async function exerciseScheduledPower(milkyId: 100 | 104) {
 
       first.probe(42);
       expect((await first.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
-      await milky.probe();
+      await milky.probe(42);
       await milky.expectMessage(42, /^Lotus-Yunzai 正在运行/u);
 
       async function expectNotification(client: typeof first, owner: number, prefix: RegExp) {
@@ -179,8 +179,9 @@ async function exerciseScheduledPower(milkyId: 100 | 104) {
       await expectScheduledNotification(/^开机成功/u);
       second.probe(42);
       expect((await second.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
-      await milky.probe();
-      await milky.expectMessage(42, /^Lotus-Yunzai 正在运行/u);
+      // 同号 OneBot 已探测用户 42，换一个用户验证独立的 Milky 请求。
+      await milky.probe(43);
+      await milky.expectMessage(43, /^Lotus-Yunzai 正在运行/u);
       expect(milky.frames).toEqual([]);
       expect(unbound.frames).toEqual([]);
       expect(first.frames).toEqual([]);

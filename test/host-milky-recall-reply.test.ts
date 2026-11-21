@@ -176,11 +176,14 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       const privateTarget = { user_id: owner };
       const legacyReply = "旧插件处理撤回 true false";
       let statusSequence = 900;
+      // 撤回重放要经过撤回入口本身的一次性检查。
+      const afterDuplicateWindow = () => Bun.sleep(1_050);
       async function send(value: ReturnType<typeof message>) {
         expect((await webhook(endpoint, "message_receive", value)).status).toBe(200);
       }
       async function barrier() {
-        await send(message("#状态", ++statusSequence, outsider, groupId));
+        const probe = ++statusSequence;
+        await send(message("#状态", probe, probe, groupId));
         await mock.reply(groupTarget, expect.stringMatching(/^Lotus-Yunzai 正在运行/u));
         await Bun.sleep(40);
         mock.expectDrained();
@@ -201,20 +204,24 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       await mock.reply(privateTarget, legacyReply);
       await barrier();
 
+      await afterDuplicateWindow();
       const original = message("#撤回", 310, owner, groupId);
       await send(original);
       await mock.recall(groupTarget, 310);
       await barrier();
+      await afterDuplicateWindow();
       await send(original);
       await barrier();
 
       await send(message("撤回", 320, owner, undefined, 321));
       await mock.recall(privateTarget, 320, 321);
       await barrier();
+      await afterDuplicateWindow();
       await send(message("#撤回", 330, owner, groupId, 330));
       await mock.recall(groupTarget, 330);
       await barrier();
 
+      await afterDuplicateWindow();
       await send(message("#撤回", 401, owner, groupId, rejectedSequence));
       await mock.recall(groupTarget, 401, rejectedSequence);
       await mock.reply(groupTarget, "已撤回 1 条，其余消息未能撤回。");
@@ -222,6 +229,7 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       await send(uncertain);
       await mock.recall(privateTarget, 501, unknownSequence);
       await mock.reply(privateTarget, "已撤回 1 条，其余撤回结果未确认。");
+      await afterDuplicateWindow();
       await send(uncertain);
       await barrier();
     } finally {

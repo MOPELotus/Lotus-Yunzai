@@ -241,7 +241,7 @@ test.skipIf(process.platform !== "linux")("定时重启保留软关机的时间�
     expect(secondAgain.frames).toEqual([]);
     firstAgain.command("#开机", 51);
     expect((await firstAgain.next()).params.message).toMatch(/^开机成功，距离上次关机1分/u);
-    secondAgain.command("#状态", 42);
+    secondAgain.command("#状态", 43);
     expect((await secondAgain.next()).params.message).toMatch(/^Lotus-Yunzai 正在运行/u);
   });
 }, 15_000);

@@ -342,6 +342,7 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
         expectText(await initial.next(), { user_id: 51 }, /^开始更新/u);
         expectText(await initial.next(), { user_id: 51 }, /工作区有未提交的修改/u);
         expect(await captureLocalChanges(active, "app.ts")).toEqual(localHost);
+        await Bun.sleep(1_020);
         await expectVersion(initial, initialHead);
       }
 
@@ -392,6 +393,7 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       }
       await expectVersion(originalBot, expected);
       const reconnect = await open(replacementEndpoint, 99);
+      await Bun.sleep(1_020);
       await expectVersion(reconnect, expected);
       expect(otherBot.frames).toEqual([]);
       expect(reconnect.frames).toEqual([]);
@@ -557,7 +559,7 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
       const until = Date.now() + 10_000;
       let reply: string;
       do {
-        await Bun.sleep(300);
+        await Bun.sleep(1_020);
         reply = await probe(running);
       } while (reply === "旧脚本可用" && Date.now() < until);
       expect(reply).toBe("新版脚本可用");
@@ -567,6 +569,7 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
       expectText(await running.next(), { user_id: 51 }, /^正在准备候选版本/u);
       await writeFile(entry, broken);
       expectText(await running.next(15_000), { user_id: 51 }, /^更新失败，请检查宿主日志。$/u);
+      await Bun.sleep(1_020);
       expect(await probe(running)).toBe("新版脚本可用");
       expect(git(active, "rev-parse", "HEAD")).toBe(old);
       expect(await readFile(entry, "utf8")).toBe(broken);
@@ -575,7 +578,7 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
       const retryUntil = Date.now() + 5_000;
       let status: Frame;
       do {
-        await Bun.sleep(100);
+        await Bun.sleep(1_020);
         running.command("#更新", 51);
         status = await running.next();
       } while (status.params.message.startsWith("已有更新") && Date.now() < retryUntil);
@@ -1200,8 +1203,8 @@ async function exerciseMilkyScheduledUpdate(fail: boolean) {
         if (!fail) expect(frame.params.message).toContain(candidate.slice(0, 12));
       }
       await expect(lstat(persisted)).rejects.toMatchObject({ code: "ENOENT" });
-      updated("#版本", 42);
-      expect(await mock.next({ user_id: 42 }, /^Lotus-Yunzai 版本/u)).toContain(expected.slice(0, 12));
+      updated("#版本", 43);
+      expect(await mock.next({ user_id: 43 }, /^Lotus-Yunzai 版本/u)).toContain(expected.slice(0, 12));
       expect(sameOneBot.frames).toEqual([]);
       expect(mock.frames).toEqual([]);
       await supervisor.stop();

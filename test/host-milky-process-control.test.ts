@@ -108,7 +108,7 @@ test.skipIf(process.platform !== "linux")("Milky 主人可软停启、同 PID �
     await writeFile(join(root, "plugins", "milky-process-fixture.js"), `
       const startup = crypto.randomUUID();
       export default class extends plugin {
-        constructor() { super({ event: "message", rule: [{ reg: "^${probe}$", fnc: "report" }] }); }
+        constructor() { super({ event: "message", rule: [{ reg: "^${probe}( [0-9]+)?$", fnc: "report" }] }); }
         report(e) {
           return e.reply(JSON.stringify({ pid: process.pid, startup, isMaster: e.isMaster, boundAccount: e.boundAccount }));
         }
@@ -123,8 +123,9 @@ test.skipIf(process.platform !== "linux")("Milky 主人可软停启、同 PID �
     try {
       const first = commands(await deadline(mock.sessions[0]!.promise, "Milky 未建立初始连接。"));
       const ownerTarget = { user_id: owner };
+      let probeNumber = 0;
       async function verifyProcess(command: typeof first) {
-        command(probe);
+        command(`${probe} ${++probeNumber}`);
         const value = JSON.parse(await mock.next(ownerTarget, expect.any(String)));
         expect(value).toEqual({ pid: host.pid, startup: expect.any(String), isMaster: true, boundAccount: false });
         return value.startup as string;

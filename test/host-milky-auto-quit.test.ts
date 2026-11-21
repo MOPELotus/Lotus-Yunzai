@@ -149,7 +149,7 @@ async function expectNoLeave(endpoint: URL, mock: Gateway, time: number) {
   const seq = mock.nextMessageId();
   expect((await webhook(endpoint, "message_receive", {
     time, message_scene: "friend", peer_id: userId, sender_id: userId, message_seq: seq,
-    segments: [{ type: "text", data: { text: "#退群夹具" } }],
+    segments: [{ type: "text", data: { text: `#退群夹具 ${seq}` } }],
   }, time)).status).toBe(200);
   const call = await mock.next("send_private_message", {
     user_id: userId, message: [{ type: "text", data: { text: "退群夹具正常" } }],
@@ -175,7 +175,7 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
     await writeFile(join(root, "plugins", "auto-quit-fixture.js"), `
       export default class extends plugin {
         constructor() {
-          super({ event: "message.private", rule: [{ reg: "^#退群夹具$", fnc: "probe" }] });
+          super({ event: "message.private", rule: [{ reg: "^#退群夹具 [0-9]+$", fnc: "probe" }] });
         }
         probe(e) { return e.reply("退群夹具正常"); }
       }

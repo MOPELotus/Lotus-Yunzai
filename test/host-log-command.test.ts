@@ -339,6 +339,7 @@ test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文�
       const error = await forwarded("#错误日志");
       expect(error).toBe("最近 1 条错误日志\nmilky-fixture-error-line");
       await mock.singleText(owner, error);
+      await Bun.sleep(1_020);
       mock.setReceipt("unknown");
       expect(await forwarded(`#日志 1 ${key}`)).toContain(`${key} AuthKey=[已隐藏]`);
       await mock.singleText(owner, "日志转发结果未确认，请在聊天中核对。");

@@ -173,15 +173,19 @@ test("宿主通过当前 OneBot 会话按顺序发送现代与 V3 指令的合�
     }
 
     bot.receipt(await forward("group"), "ok", 0);
+    // 同一机器人和用户的同文请求在群私之间也共用一秒窗口。
+    await Bun.sleep(1_050);
     bot.receipt(await forward("private"), "ok", 0);
     bot.receipt(await forward("group", "#旧版转发"), "ok", 0);
     bot.receipt(await forward("private", "#旧公共转发"), "ok", 0);
 
+    await Bun.sleep(1_050);
     bot.receipt(await forward("group"), "failed", 1404);
     for (const message of [title, [images[0]], [images[1]]]) {
       expect(await bot.next()).toMatchObject({ action: "send_msg", params: { group_id: 77, message } });
     }
 
+    await Bun.sleep(1_050);
     bot.receipt(await forward("private"), "ok", 1);
     expect(await bot.next()).toMatchObject({ action: "send_msg", params: {
       user_id: 42, message: unconfirmed,

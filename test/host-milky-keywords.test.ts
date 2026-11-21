@@ -207,6 +207,7 @@ test("Milky 词条沿用旧文件，按绑定账号鉴权并隔离不同协议�
 
       milky.send("旧全局词", { group: secondGroup });
       expect(await milky.next()).toMatchObject({ group: secondGroup, text: "旧全局内容" });
+      await Bun.sleep(1_020);
       one.send("旧群词", null);
       expect(await one.next()).toMatchObject({ user: moderator, text: "旧群内容" });
       milky.setRole("admin", true);
@@ -214,6 +215,7 @@ test("Milky 词条沿用旧文件，按绑定账号鉴权并隔离不同协议�
       expect((await milky.next()).text).toContain("无法确认管理员权限");
       expect(milky.roleQueries.at(-1)).toEqual({ group_id: secondGroup, user_id: moderator, no_cache: true });
       milky.setRole("admin");
+      await Bun.sleep(1_020);
       milky.send("#添加 私聊词", { group: null });
       expect((await milky.next()).text).toContain("#结束添加");
       milky.send("私聊内容", { group: null });
@@ -403,6 +405,7 @@ test.skipIf(!valkeyServer)("旧最近群按原到期时间供当前双协议和�
     expect((await milky.next()).text).toContain("请先在群内");
     expect(milky.roleQueries).toEqual(queried);
     milky.setRole("member");
+    await Bun.sleep(1_020);
     milky.send("同一词条", { group: null });
     expect((await milky.next()).text).toBe("旧群词条");
     expect(await redis.get(milkyKey)).toBeNull();
@@ -447,6 +450,7 @@ test.skipIf(!valkeyServer)("旧最近群按原到期时间供当前双协议和�
     expect(await one.next()).toMatchObject({ user: 46, text: expect.stringContaining("请先在群内") });
     for (const group of [80, 81]) {
       await redis.send("SET", [oldKey, String(group), "KEEPTTL"]);
+      if (group === 81) await Bun.sleep(1_020);
       one.send("#词条列表", null);
       expect((await one.next()).text).toContain("请先在群内");
     }
@@ -457,9 +461,11 @@ test.skipIf(!valkeyServer)("旧最近群按原到期时间供当前双协议和�
     await redis.send("SET", [milkyKey, String(secondGroup), "EX", "90"]);
     milky.send("同一词条", { group: null });
     expect((await milky.next()).text).toBe("现群词条");
+    await Bun.sleep(1_020);
     one.send("同一词条", secondGroup);
     expect(await one.next()).toMatchObject({ group: secondGroup, text: "现群词条" });
     expect(await redis.get(oneKey)).toBe(String(secondGroup));
+    await Bun.sleep(1_020);
     one.send("同一词条", null);
     expect((await one.next()).text).toBe("现群词条");
     expect(queried).toHaveLength(previousCount);
