@@ -13,7 +13,7 @@ import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { isGameRecordCookieExpired } from "./game-record.ts";
 import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
-  type MiyousheShopOrder } from "./miyoushe-exchange.ts";
+  type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
@@ -301,11 +301,12 @@ export function createHoyoClient(
       }));
     },
     exchangeMiyousheShopGoods(source: ProfileAccountContext, order: MiyousheShopOrder,
-      { signal, verifyBinding }: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
+      { signal, verifyBinding, manual }: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void>;
+        readonly manual?: ShopManualVerification } = {}) {
       return submitMiyousheShopExchange(transport, source, order, signal, async () => {
         await verifyBinding?.();
         await ensureCurrentProfile(source);
-      });
+      }, manual);
     },
     async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal) {
       signal?.throwIfAborted();

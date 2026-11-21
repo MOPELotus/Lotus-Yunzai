@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createMiyousheShopPlans, type MiyousheShopInspection } from "../lib/miyoushe-shop-plans.ts";
+import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 
 const target = { qq: "42", profileId: 1 };
 const other = { qq: "42", profileId: 2 };
@@ -38,6 +39,37 @@ async function inspection(good: MiyousheShopInspection["good"] = mockGood) {
 }
 
 function gate() { return Promise.withResolvers<void>(); }
+
+test("只有原快捷兑换会话能接续。重启不认领其待提交计划，普通预约维持原流程", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const relay = createManualCaptchaRelay({ publicUrl: "https://fixture.example.invalid" });
+    try {
+      const session = { sessionId: "browser-fixture", signal: new AbortController().signal, async verify() {} };
+      let now = startTime;
+      let submissions = 0;
+      const options = { file, profileDirectory, now: () => now, inspect: () => inspection(), manualRelay: () => relay,
+        async submit(_plan: unknown, _signal?: AbortSignal, _verify?: () => Promise<void>, manual?: unknown) {
+          expect(manual).toBeUndefined();
+          submissions++;
+          return "succeeded" as const;
+        } };
+      const first = createMiyousheShopPlans(options);
+      const immediate = await first.reserve(target, { ...body, intentId: crypto.randomUUID() }, undefined, undefined, session);
+      const restarted = createMiyousheShopPlans(options);
+      await restarted.scan();
+      expect(submissions).toBe(0);
+      now += 31_000;
+      await restarted.scan();
+      expect((await restarted.list(target)).plans.find(plan => plan.id === immediate.id)).toMatchObject({ status: "cancelled", attempts: 0 });
+      expect(submissions).toBe(0);
+      const scheduled = await restarted.reserve(target, { ...body, immediate: false, intentId: crypto.randomUUID() }, undefined, undefined, session);
+      restarted.endWebSession(session.sessionId);
+      await restarted.scan();
+      expect(submissions).toBe(1);
+      expect((await restarted.list(target)).plans.find(plan => plan.id === scheduled.id)).toMatchObject({ status: "succeeded", attempts: 1 });
+    } finally { relay.close(); }
+  });
+});
 
 test("导入两个旧目录的兑换计划后保留未确认记录，阻止已有同商品预约提交", async () => {
   await fixture(async ({ file, profileDirectory }) => {

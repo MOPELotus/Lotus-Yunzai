@@ -19,7 +19,7 @@ let expiryTimer;
 let tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
 const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
-const plans = { data: null, loading: null, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+const plans = { data: null, loading: null, timer: undefined, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
 const preview = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
 const checkin = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
 const profileEditors = [checkin, preview];
@@ -335,6 +335,7 @@ function showOverview(data) {
 function switchTab(next) {
   tab = next;
   if (tab !== "overview") clearTimeout(manualCheckin.timer);
+  if (tab !== "plans") clearTimeout(plans.timer);
   for (const name of ["overview", "shop", "trackers", "plans"]) {
     get(name + "-view").hidden = name !== tab;
     get("tab-" + name).setAttribute("aria-pressed", String(name === tab));
@@ -355,6 +356,7 @@ function resetShop() {
   get("shop-detail").close();
   get("shop-detail-content").replaceChildren();
   plans.scope++;
+  clearTimeout(plans.timer);
   plans.data = null;
   plans.loading = null;
   plans.activeForm = null;
@@ -573,11 +575,23 @@ function planRow(plan) {
   const row = add("article", "plan-row", "");
   const copy = add("div", "plan-copy", "");
   const status = Object.hasOwn(planStatus, plan.status) ? plan.status : "unknown";
-  copy.append(add("span", "shop-badge " + status, planStatus[status]), add("h3", "", plan.goodsName),
+  const verification = plan.verification;
+  const destination = verification?.expiresAt > Date.now() && typeof verification.link === "string" ? URL.parse(verification.link) : null;
+  const canOpenVerification = destination && (destination.protocol === "https:" ||
+    (destination.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(destination.hostname)));
+  copy.append(add("span", "shop-badge " + status, canOpenVerification ? "等待人工验证" : planStatus[status]), add("h3", "", plan.goodsName),
     add("p", "muted", "档案 " + plan.profileId + " · " + point(plan.price) + " 米游币 × 1 · " + shopTime(plan.opensAt)));
   if (plan.role) copy.append(add("p", "muted", "游戏角色 UID " + plan.role.uid + " · " + plan.role.region));
   if (plan.addressLabel) copy.append(add("p", "muted", "收货地址 " + plan.addressLabel));
-  if (plan.message) copy.append(add("p", "", plan.message));
+  if (canOpenVerification) {
+    const prompt = add("div", "plan-verification", "");
+    const link = add("a", "secondary", "打开人工验证");
+    link.href = destination.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    prompt.append(link, add("p", "muted", "仅续交本次兑换，验证有效至 " + shopTime(verification.expiresAt)));
+    copy.append(prompt);
+  } else if (plan.message) copy.append(add("p", "", plan.message));
   row.append(copy);
   if (!/^[a-f0-9]{12}$/u.test(plan.id)) return row;
   const actions = add("div", "plan-actions", "");
@@ -610,6 +624,7 @@ function renderPlans() {
 
 function loadPlans() {
   if (plans.loading) return plans.loading;
+  clearTimeout(plans.timer);
   const scope = plans.scope;
   const revision = plans.revision;
   planNote("正在读取兑换记录…");
@@ -624,8 +639,10 @@ function loadPlans() {
       if (!response.ok) throw new Error("读取失败");
       const data = await response.json();
       if (scope !== plans.scope || revision !== plans.revision) return;
+      const rowsChanged = !plans.data || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
       plans.data = data;
-      renderPlans();
+      if (rowsChanged) renderPlans();
+      if (tab === "plans" && data.plans.some(plan => plan.verificationPending)) plans.timer = setTimeout(loadPlans, 1_000);
       const messages = [];
       if (!data.canSubmit) messages.push("预约兑换服务暂未启用。");
       if (plans.intents.size) messages.push("另有提交待确认，可返回商品详情重试原请求。");
@@ -959,6 +976,7 @@ function reservationForm(good, roles, addresses) {
       }
       renderPlans();
       planNote(plan.immediate ? "已创建兑换计划，处理结果见下方记录。" : "预约已创建，结果见下方记录。");
+      if (tab === "plans") void loadPlans();
     } catch {
       draft.uncertain = true;
       draft.note = "提交结果待确认。可以重试原请求或查看兑换记录。";

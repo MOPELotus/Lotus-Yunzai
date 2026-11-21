@@ -26,6 +26,26 @@ export interface MiyousheShopOrder {
   readonly addressId: string;
 }
 
+interface ShopManualChallenge {
+  readonly captchaVersion: 4;
+  readonly captchaId: string;
+  readonly riskType?: string;
+}
+
+interface ShopManualProof {
+  readonly captchaVersion: 4;
+  readonly captchaId: string;
+  readonly lotNumber: string;
+  readonly captchaOutput: string;
+  readonly passToken: string;
+  readonly genTime: string;
+}
+
+export interface ShopManualVerification {
+  readonly waitForProof: (challenge: ShopManualChallenge, signal: AbortSignal) => Promise<ShopManualProof | undefined>;
+  readonly prepareResume: () => Promise<void>;
+}
+
 export class MiyousheExchangeError extends Error {
   constructor(readonly status: 400 | 409 | 429 | 502, readonly reason: Classification | "invalid", message: string) { super(message); }
 }
@@ -113,8 +133,7 @@ function retcodeOf(payload: Json | undefined) {
 }
 
 async function request(transport: HoyoTransport, url: URL, profile: ProfileAccountContext,
-  signal?: AbortSignal, verify?: Verify, body?: string) {
-  const headers = requestHeaders(profile, body !== undefined);
+  signal?: AbortSignal, verify?: Verify, body?: string, headers = requestHeaders(profile, body !== undefined)) {
   signal?.throwIfAborted();
   await verify?.();
   signal?.throwIfAborted();
@@ -131,6 +150,55 @@ async function request(transport: HoyoTransport, url: URL, profile: ProfileAccou
     return { status: response.status, payload: undefined };
   }
   return { status: response.status, payload: await readGameRecordPayload(response, responseLimit, deadline) };
+}
+
+function submitResult(result: Awaited<ReturnType<typeof request>>): MiyousheShopExchangeResult {
+  if (result?.status === 429) return "rate-limited";
+  const code = retcodeOf(result?.payload);
+  if (result?.status !== 200 || code === undefined) return "unknown";
+  if (code === 0) return "succeeded";
+  const rejected = classification(code, result.status, result.payload?.message);
+  return rejected === "expired" ? "failed" : rejected;
+}
+
+function verifiedField(value: unknown, limit: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= limit && /^[!-~]+$/u.test(value);
+}
+
+async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAccountContext, code: 1028 | 1034,
+  cookie: string, signal: AbortSignal, verify: Verify, waitForProof: ShopManualVerification["waitForProof"]) {
+  const headers = new Headers({
+    Accept: "application/json, text/plain, */*",
+    Cookie: cookie,
+    Origin: webOrigin,
+    Referer: `${webOrigin}/`,
+  });
+  const create = new URL("/misc/wapi/createVerification", shopOrigin);
+  create.search = new URLSearchParams({ point_sn: app.point_sn, is_high: String(code === 1034), captcha_version: "v4" }).toString();
+  const created = await request(transport, create, profile, signal, verify, undefined, headers);
+  signal.throwIfAborted();
+  await verify();
+  signal.throwIfAborted();
+  const data = object(created?.payload?.data);
+  if (created?.status !== 200 || retcodeOf(created.payload) !== 0 || !verifiedField(data?.captcha_id, 256)) return;
+  const challenge: ShopManualChallenge = { captchaVersion: 4, captchaId: data.captcha_id,
+    ...(verifiedField(data.risk_type, 128) && { riskType: data.risk_type }) };
+  const proof = await waitForProof(challenge, signal);
+  if (proof?.captchaVersion !== 4 || proof.captchaId !== challenge.captchaId ||
+      ![proof.lotNumber, proof.captchaOutput, proof.passToken].every(value => verifiedField(value, 2048)) ||
+      typeof proof.genTime !== "string" || !/^\d{1,32}$/u.test(proof.genTime)) return;
+  const validate = new URL("/misc/wapi/verifyVerfication", shopOrigin);
+  validate.search = new URLSearchParams({
+    captcha_version: "v4", lot_number: proof.lotNumber, captcha_output: proof.captchaOutput,
+    pass_token: proof.passToken, gen_time: proof.genTime,
+  }).toString();
+  headers.set("Content-Type", "application/json;charset=utf-8");
+  const accepted = await request(transport, validate, profile, signal, verify, JSON.stringify({ point_sn: app.point_sn }), headers);
+  signal.throwIfAborted();
+  await verify();
+  signal.throwIfAborted();
+  const rpcChallenge = object(accepted?.payload?.data)?.challenge;
+  if (accepted?.status === 200 && retcodeOf(accepted.payload) === 0 && verifiedField(rpcChallenge, 2048)) return rpcChallenge;
 }
 
 async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountContext, signal?: AbortSignal, verify?: Verify) {
@@ -180,7 +248,8 @@ export async function readMiyousheShopAddresses(transport: HoyoTransport, profil
 }
 
 export async function submitMiyousheShopExchange(transport: HoyoTransport, profile: ProfileAccountContext,
-  order: MiyousheShopOrder, signal?: AbortSignal, verify?: Verify): Promise<MiyousheShopExchangeResult> {
+  order: MiyousheShopOrder, signal?: AbortSignal, verify?: Verify,
+  manual?: ShopManualVerification): Promise<MiyousheShopExchangeResult> {
   if (!idPattern.test(order.goodsId)) invalid("兑换商品编号无效。");
   let body;
   if (order.type === 1 && !order.role && idPattern.test(order.addressId) && Number.isSafeInteger(Number(order.addressId))) {
@@ -190,12 +259,32 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
     body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: 0,
       uid: order.role.uid, region: order.role.region, game_biz: order.gameBiz };
   } else invalid("兑换目标与商品类型不匹配。");
-  const result = await request(transport, new URL("/common/homushop/v1/web/goods/exchange", shopOrigin),
-    profile, signal, verify, JSON.stringify(body));
-  if (result?.status === 429) return "rate-limited";
+  const endpoint = new URL("/common/homushop/v1/web/goods/exchange", shopOrigin);
+  const payload = JSON.stringify(body);
+  const headers = requestHeaders(profile, true);
+  const result = await request(transport, endpoint, profile, signal, verify, payload, headers);
+  const initial = submitResult(result);
   const code = retcodeOf(result?.payload);
-  if (result?.status !== 200 || code === undefined) return "unknown";
-  if (code === 0) return "succeeded";
-  const rejected = classification(code, result.status, result.payload?.message);
-  return rejected === "expired" ? "failed" : rejected;
+  const cookie = headers.get("Cookie");
+  if (initial !== "verification" || (code !== 1028 && code !== 1034) || !manual || !signal || !verify || !cookie) return initial;
+  // The first request was explicitly refused. Until the next dispatch starts,
+  // any failure still leaves a known non-purchase.
+  try {
+    const rpcChallenge = await verifyShopChallenge(transport, profile, code, cookie, signal, verify, manual.waitForProof);
+    if (!rpcChallenge) return initial;
+    await manual.prepareResume();
+    headers.set("x-rpc-challenge", rpcChallenge);
+  } catch {
+    return initial;
+  }
+  let dispatched = false;
+  const resume: HoyoTransport = (url, init) => {
+    dispatched = true;
+    return transport(url, init);
+  };
+  try {
+    return submitResult(await request(resume, endpoint, profile, signal, verify, payload, headers));
+  } catch {
+    return dispatched ? "unknown" : initial;
+  }
 }

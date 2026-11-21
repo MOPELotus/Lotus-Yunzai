@@ -9,6 +9,7 @@ export interface TrackingGood {
   readonly id: string; readonly name: string; readonly type: number | null; readonly gameBiz: string; readonly game?: string;
   readonly price: number; readonly status: "available" | "scheduled" | "ended" | "sold_out" | "unknown";
   readonly opensAt: number | null; readonly serverNow?: number; readonly limitCycle?: string; readonly roleCycle?: string;
+  readonly endsAt?: number | null;
   readonly saleStartsAt?: number | null; readonly startsAt?: number | null;
   readonly stock?: number | null; readonly unlimited?: boolean;
 }

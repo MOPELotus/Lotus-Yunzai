@@ -2185,10 +2185,11 @@ if (import.meta.main) {
           });
           return { good: { ...good, price: good.price }, balance, roles, addresses };
         },
-        async submit(plan, signal, verifyBinding) {
+        manualRelay: () => manualCaptcha,
+        async submit(plan, signal, verifyBinding, manual) {
           await verifyBinding?.();
           const account = await checkinProfiles.accountContext(plan.qq, plan.profileId);
-          return shopClient.exchangeMiyousheShopGoods(account, plan, { signal, verifyBinding });
+          return shopClient.exchangeMiyousheShopGoods(account, plan, { signal, verifyBinding, manual });
         },
       });
       miyousheWeb = createMiyousheWeb({
@@ -2197,7 +2198,7 @@ if (import.meta.main) {
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
         overview: createMiyousheOverview({ profileDirectory, readTodaySchedule: plans.read, scheduleEnabled: scheduler?.enable !== false }),
-        catalog, plans: shopPlans, previewSettings,
+        catalog, plans: shopPlans, previewSettings, shopVerificationSignal: handoffSession.signal,
         manualCheckin: {
           async revision({ qq, profileId }, signal, verifyLogin) {
             await verifyLogin();

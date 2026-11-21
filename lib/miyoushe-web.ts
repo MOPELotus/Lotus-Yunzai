@@ -132,6 +132,7 @@ interface Options {
   readonly overview: (target: MiyousheOverviewTarget, signal?: AbortSignal, verifyLogin?: () => Promise<void>) => Promise<MiyousheOverview>;
   readonly catalog?: ReturnType<typeof createMiyousheShopCatalog>;
   readonly plans?: ReturnType<typeof createMiyousheShopPlans>;
+  readonly shopVerificationSignal?: AbortSignal;
   readonly shopAddresses?: (target: MiyousheOverviewTarget, signal: AbortSignal, verifyBinding: () => Promise<void>) =>
     Promise<readonly { id: string; label: string }[]>;
   readonly previewSettings?: ProfileSettings<MiyoushePreviewSettingsPatch, MiyoushePreviewSettings>;
@@ -179,7 +180,7 @@ export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   };
 }
 
-export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses,
+export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses, shopVerificationSignal,
   previewSettings, checkinSettings, manualCheckin, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours,
   now = Date.now }: Options) {
   const mount = normalizedPath(path) ?? defaultMount;
@@ -193,6 +194,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
   const jobs = new Map<string, ManualCheckinJob>();
   const stopJobs = new AbortController();
   const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
+  const shopSignal = shopVerificationSignal ? AbortSignal.any([jobsSignal, shopVerificationSignal]) : jobsSignal;
 
   function publicPage() {
     const base = validPublicUrl(publicBase());
@@ -214,6 +216,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
   function abortSessionJobs(token: string) {
     const session = digest(token);
     for (const job of jobs.values()) if (job.session === session && job.status === "running") job.cancel.abort();
+    plans?.endWebSession(session);
   }
   function browserCookie(session: string, age: number, page: URL) {
     const secure = page.protocol === "https:" ? "; Secure" : "";
@@ -462,8 +465,9 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         return Response.json(result, { headers });
       }
       if (plans && part === "api/plans") {
-        const result = method === "GET" ? await plans.list(target, verifyLogin) : await plans.reserve(target,
-          await readPanelJson(request).catch(() => undefined), deadline, verifyLogin);
+        const sessionId = digest(currentToken);
+        const result = method === "GET" ? await plans.list(target, verifyLogin, sessionId) : await plans.reserve(target,
+          await readPanelJson(request).catch(() => undefined), deadline, verifyLogin, { sessionId, signal: shopSignal, verify: verifySession });
         await verifyLogin();
         return Response.json(result, { headers });
       }

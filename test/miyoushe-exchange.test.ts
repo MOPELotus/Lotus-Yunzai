@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
+import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 import type { HoyoTransport } from "../packages/hoyo-client/credentials.ts";
 import { readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange }
   from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
@@ -102,5 +103,173 @@ test("商城兑换区分验证、限流、业务拒绝和不明结果，完全�
     const transport: HoyoTransport = async () => { posts++; return next(); };
     expect(await submitMiyousheShopExchange(transport, profile, virtual)).toBe(expected);
     expect(posts).toBe(1);
+  }
+});
+
+const v4Proof = { captchaVersion: 4, captchaId: "fixture-shop", lotNumber: "fixture-lot", captchaOutput: "fixture-output",
+  passToken: "fixture-pass", genTime: "1760000000" } as const;
+
+test("旧商城 v4 使用本机 GT Manual 一次性人工票据，其他浏览器不会重复领取", async () => {
+  const origin = "https://shop-verify.example.invalid";
+  const relay = createManualCaptchaRelay({ publicUrl: origin });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    return await relay.handlePublic(request) ?? new Response(null, { status: 404 });
+  } });
+  try {
+    const scope = new AbortController();
+    let purchases = 0;
+    const transport: HoyoTransport = async (url) => {
+      if (url.pathname.endsWith("/goods/exchange")) return Response.json({ retcode: ++purchases === 1 ? 1028 : 0 });
+      if (url.pathname.endsWith("/createVerification")) return Response.json({ retcode: 0, data: { captcha_id: v4Proof.captchaId } });
+      expect(url.pathname).toBe("/misc/wapi/verifyVerfication");
+      expect(url.searchParams.get("lot_number")).toBe(v4Proof.lotNumber);
+      return Response.json({ retcode: 0, data: { challenge: "official-fixture" } });
+    };
+    const verify = async () => { scope.signal.throwIfAborted(); };
+    const outcome = await submitMiyousheShopExchange(transport, profile, virtual, scope.signal, verify, {
+      async waitForProof(challenge, signal) {
+        const registration = await relay.register(challenge, signal);
+        expect(registration).toBeDefined();
+        if (!registration) return;
+        const link = new URL(registration.link);
+        const publicFetch = (path: string, init?: RequestInit) => fetch(new URL(path, server.url), {
+          ...init, headers: { Host: link.host, ...init?.headers },
+        });
+        const claim = link.pathname.replace("/GTest/", "/GTest/register/");
+        const first = await publicFetch(claim);
+        expect(first.status).toBe(200);
+        expect(await first.json()).toEqual(challenge);
+        expect((await publicFetch(claim)).status).toBe(409);
+        expect((await publicFetch(link.pathname.replace("/GTest/", "/GTest/validate/"), {
+          method: "POST", body: JSON.stringify(v4Proof), headers: { Origin: origin, "Content-Type": "application/json" },
+        })).status).toBe(200);
+        const result = await relay.readResult(registration.ticket);
+        expect(await relay.readResult(registration.ticket)).toEqual({ status: "unavailable" });
+        if (result.status === "complete" && "captchaId" in result.result) return result.result;
+      },
+      prepareResume: verify,
+    });
+    expect(outcome).toBe("succeeded");
+    expect(purchases).toBe(2);
+  } finally {
+    relay.close();
+    server.stop(true);
+  }
+});
+
+test("商城只在明确未购买后接受人工结果，官方核验后按原兑换目标提交一次", async () => {
+  const orderBodies: string[] = [];
+  const observed: string[] = [];
+  const signal = new AbortController().signal;
+  const verify = async () => { expect(signal.aborted).toBe(false); };
+  const transport: HoyoTransport = async (url, init) => {
+    const headers = new Headers(init.headers);
+    expect(url.origin).toBe("https://bbs-api.miyoushe.com");
+    expect(headers.get("cookie")).toBe("cookie_token_v2=v2_fixture; account_id_v2=123; account_mid_v2=fake-mid");
+    expect(init.redirect).toBe("error");
+    if (url.pathname.endsWith("/goods/exchange")) {
+      orderBodies.push(String(init.body));
+      if (orderBodies.length === 1) {
+        observed.push("purchase");
+        expect(headers.get("x-rpc-challenge")).toBeNull();
+        return Response.json({ retcode: 1034 });
+      }
+      observed.push("resume");
+      expect(headers.get("x-rpc-challenge")).toBe("verified-by-official-fixture");
+      expect(headers.get("x-rpc-device_fp")).toBe("fake-device-fp");
+      return Response.json({ retcode: 0 });
+    }
+    expect(headers.get("x-rpc-device_fp")).toBeNull();
+    expect(headers.get("x-rpc-challenge")).toBeNull();
+    if (init.method === "GET") {
+      observed.push("create");
+      expect(url.pathname).toBe("/misc/wapi/createVerification");
+      expect(Object.fromEntries(url.searchParams)).toEqual({ point_sn: "myb", is_high: "true", captcha_version: "v4" });
+      return Response.json({ retcode: 0, data: { captcha_id: "fixture-shop", risk_type: "slide", ignored: "fixture" } });
+    }
+    observed.push("verify-proof");
+    expect(url.pathname).toBe("/misc/wapi/verifyVerfication");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ captcha_version: "v4", lot_number: "fixture-lot",
+      captcha_output: "fixture-output", pass_token: "fixture-pass", gen_time: "1760000000" });
+    expect(init.body).toBe('{"point_sn":"myb"}');
+    return Response.json({ retcode: 0, data: { challenge: "verified-by-official-fixture" } });
+  };
+  const outcome = await submitMiyousheShopExchange(transport, profile, physical, signal, verify, {
+    async waitForProof(challenge, scope) {
+      observed.push("human");
+      expect(scope).toBe(signal);
+      expect(challenge).toEqual({ captchaVersion: 4, captchaId: "fixture-shop", riskType: "slide" });
+      return v4Proof;
+    },
+    async prepareResume() { observed.push("recheck-original-order"); },
+  });
+  expect(outcome).toBe("succeeded");
+  expect(observed).toEqual(["purchase", "create", "human", "verify-proof", "recheck-original-order", "resume"]);
+  expect(orderBodies).toHaveLength(2);
+  expect(orderBodies[1]).toBe(orderBodies[0]!);
+  expect(JSON.parse(orderBodies[0]!)).toMatchObject({ goods_id: physical.goodsId, address_id: Number(physical.addressId), exchange_num: 1 });
+});
+
+test("限流、未知购买结果及非明确拒绝不能启动人工验证码", async () => {
+  const options = {
+    async waitForProof() { throw new Error("不应请求人工证明"); },
+    async prepareResume() { throw new Error("不应准备重提"); },
+  };
+  for (const [makeResponse, expected] of [
+    [() => Response.json({ retcode: 1028 }, { status: 503 }), "unknown"],
+    [() => Response.json({ retcode: 1034, message: "请求频繁" }), "rate-limited"],
+    [() => Response.json({ retcode: -123 }), "failed"],
+    [() => { throw new Error("connection lost"); }, "unknown"],
+  ] as const) {
+    let dispatched = 0;
+    const transport: HoyoTransport = async () => {
+      dispatched++;
+      return makeResponse();
+    };
+    expect(await submitMiyousheShopExchange(transport, profile, virtual, new AbortController().signal, async () => {}, options))
+      .toBe(expected);
+    expect(dispatched).toBe(1);
+  }
+});
+
+test("不同挑战、退出或重检失败停止。续交结果未知时不再发起人工验证", async () => {
+  for (const kind of ["wrong-proof", "logout", "authority-denied", "authority-missing-proof",
+    "changed-target", "session-ended-before-resume", "unknown-second-post"] as const) {
+    const controller = new AbortController();
+    let purchase = 0;
+    let checks = 0;
+    let solves = 0;
+    let readyToResume = false;
+    const transport: HoyoTransport = async (url) => {
+      if (url.pathname.endsWith("/goods/exchange")) {
+        if (++purchase === 1) return Response.json({ retcode: 1028 });
+        throw new Error("connection lost after dispatch");
+      }
+      if (url.pathname.endsWith("/createVerification")) {
+        expect(url.searchParams.get("is_high")).toBe("false");
+        return Response.json({ retcode: 0, data: { captcha_id: "fixture-shop" } });
+      }
+      checks++;
+      if (kind === "authority-denied") return Response.json({ retcode: 10041 });
+      if (kind === "authority-missing-proof") return Response.json({ retcode: 0, data: {} });
+      return Response.json({ retcode: 0, data: { challenge: "verified-by-official-fixture" } });
+    };
+    const result = await submitMiyousheShopExchange(transport, profile, virtual, controller.signal, async () => {
+      if (readyToResume && kind === "session-ended-before-resume") throw new Error("原网页会话已结束");
+    }, {
+      async waitForProof() {
+        solves++;
+        if (kind === "logout") controller.abort();
+        return kind === "wrong-proof" ? { ...v4Proof, captchaId: "other-session" } : v4Proof;
+      },
+      async prepareResume() {
+        if (kind === "changed-target") throw new Error("预约目标已变化");
+        readyToResume = true;
+      },
+    });
+    expect(result).toBe(kind === "unknown-second-post" ? "unknown" : "verification");
+    expect(purchase).toBe(kind === "unknown-second-post" ? 2 : 1);
+    expect(checks).toBe(kind === "wrong-proof" || kind === "logout" ? 0 : 1);
+    expect(solves).toBe(1);
   }
 });

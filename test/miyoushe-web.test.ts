@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "@lotus-yunzai/account";
+import { submitMiyousheShopExchange } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
+import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import type { MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
 import { createMiyousheShopCatalog } from "../lib/miyoushe-shop-catalog.ts";
@@ -29,6 +31,149 @@ function claim(ticket: string, from = origin.origin) {
 function read(cookie: string, site = "same-origin") {
   return request("api/overview", { headers: { Cookie: cookie, "Sec-Fetch-Site": site } });
 }
+
+test("已登录浏览器即时兑换只能在同一会话查看和续交人工验证码", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-shop-manual-"));
+  const controller = new AbortController();
+  const relay = createManualCaptchaRelay({ publicUrl: origin.origin });
+  const store = createProfileStore(root);
+  const good = { id: "27", name: "隔离商品", gameBiz: "hk4e_cn", price: 300, type: 2, status: "available", opensAt: null } as const;
+  const role = { uid: "1000042", region: "cn_gf01" };
+  let firstPost = 0;
+  let secondPost = 0;
+  let time = Date.now();
+  let endsAt: number | undefined;
+  let saleStartsAt: number | undefined;
+  const planOptions = {
+    file: join(root, "plans.json"), profileDirectory: root, manualRelay: () => relay, now: () => time,
+    async inspect() {
+      return { good: { ...good, endsAt, saleStartsAt, limitCycle: "not_limit", serverNow: time }, balance: 999, roles: [role] };
+    },
+  };
+  const plans = createMiyousheShopPlans({
+    ...planOptions,
+    async submit(plan, signal, verify, manual) {
+      return submitMiyousheShopExchange(async (url, init) => {
+        const headers = new Headers(init.headers);
+        if (url.pathname.endsWith("/goods/exchange")) {
+          if (!headers.has("x-rpc-challenge")) { firstPost++; return Response.json({ retcode: 1028 }); }
+          secondPost++;
+          expect(headers.get("x-rpc-challenge")).toBe("approved-by-fake-shop");
+          return Response.json({ retcode: 0 });
+        }
+        if (url.pathname.endsWith("/createVerification")) return Response.json({ retcode: 0, data: { captcha_id: "fixture" } });
+        return Response.json({ retcode: 0, data: { challenge: "approved-by-fake-shop" } });
+      }, await store.accountContext(plan.qq, plan.profileId), plan, signal, verify, manual);
+    },
+  });
+  const web = createMiyousheWeb({
+    publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: controller.signal,
+    loginIdentity: store.loginIdentity, plans,
+    async overview() { throw new Error("本夹具不读取任务概况"); },
+  });
+  function browse(cookie: string, route: string, body?: object) {
+    return web.handle(request(route, { headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin",
+      ...(body && { Origin: origin.origin, "Content-Type": "application/json" }) },
+      ...(body && { method: "POST", body: JSON.stringify(body) }) }));
+  }
+  async function login() {
+    const reply = await web.commands.fallback!(command, message());
+    const token = /#ticket=([\w-]{43})/u.exec(String(reply))?.[1];
+    expect(token).toBeString();
+    const response = await web.handle(claim(token!));
+    expect(response?.status).toBe(204);
+    return response!.headers.get("Set-Cookie")!.split(";")[0]!;
+  }
+  async function manualLink(cookie: string) {
+    for (let n = 0; n < 100; n++) {
+      const response = await browse(cookie, "api/plans");
+      expect(response?.status).toBe(200);
+      const data = await response!.json();
+      const link = data.plans.find((plan: { verification?: unknown }) => plan.verification)?.verification.link;
+      if (typeof link === "string") return link;
+      await Bun.sleep(15);
+    }
+    throw new Error("没有收到人工验证票据");
+  }
+  const accept = { captchaVersion: 4, captchaId: "fixture", lotNumber: "fixture-lot", captchaOutput: "fixture-output",
+    passToken: "fixture-pass", genTime: "1760000000" };
+  async function postProof(link: string) {
+    const validate = new URL(link);
+    validate.pathname = validate.pathname.replace("/GTest/", "/GTest/validate/");
+    return relay.handlePublic(new Request(validate, { method: "POST", headers: { Origin: origin.origin, "Content-Type": "application/json" },
+      body: JSON.stringify(accept) }));
+  }
+  try {
+    await writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({
+      version: 1, user: { qq: "42" }, profile: { id: 2 },
+      account: { stuid: "123", ltuid: "123", stoken: "v2_fixture", mid: "fixture-mid", updated_at: "2026-01-01",
+        cookie: "cookie_token=fixture;account_id=123" },
+      device: { id: "fixture-id", fp: "fixture-fp" },
+    }));
+    const owner = await login();
+    const otherBrowser = await login();
+    const order = { goodsId: good.id, expectedPrice: good.price, immediate: true, confirmed: true, ...role, intentId: crypto.randomUUID() };
+    const submitted = await browse(owner, "api/plans", order);
+    expect(submitted?.status).toBe(200);
+    const original = await submitted!.json();
+    const running = plans.scan(controller.signal);
+    const link = await manualLink(owner);
+    const foreign = await (await browse(otherBrowser, "api/plans"))!.json();
+    expect(foreign.plans.find((plan: { id: string }) => plan.id === original.id)).not.toHaveProperty("verification");
+    const retried = await (await browse(otherBrowser, "api/plans", order))!.json();
+    expect(retried).toMatchObject({ id: original.id });
+    const uri = new URL(link);
+    uri.pathname = uri.pathname.replace("/GTest/", "/GTest/register/");
+    expect((await relay.handlePublic(new Request(uri)))?.status).toBe(200);
+    expect((await postProof(link))?.status).toBe(200);
+    await running;
+    expect([firstPost, secondPost]).toEqual([1, 1]);
+    expect((await (await browse(owner, "api/plans"))!.json()).plans[0]).toMatchObject({ status: "succeeded", attempts: 2 });
+    expect(await readFile(planOptions.file, "utf8")).not.toContain(link);
+
+    expect((await browse(owner, "api/plans", { ...order, intentId: crypto.randomUUID() }))?.status).toBe(200);
+    const logoutRun = plans.scan(controller.signal);
+    const revoked = await manualLink(owner);
+    expect((await browse(owner, "api/logout", {}))?.status).toBe(204);
+    expect((await postProof(revoked))?.status).toBe(404);
+    await logoutRun;
+    expect([firstPost, secondPost]).toEqual([2, 1]);
+    expect((await browse(owner, "api/plans"))?.status).toBe(401);
+
+    endsAt = time + 2_000;
+    expect((await browse(otherBrowser, "api/plans", { ...order, intentId: crypto.randomUUID() }))?.status).toBe(200);
+    const closingRun = plans.scan(controller.signal);
+    const closing = await manualLink(otherBrowser);
+    const closingClaim = new URL(closing);
+    closingClaim.pathname = closingClaim.pathname.replace("/GTest/", "/GTest/register/");
+    expect((await relay.handlePublic(new Request(closingClaim)))?.status).toBe(200);
+    time += 2_000;
+    expect((await postProof(closing))?.status).toBe(200);
+    await closingRun;
+    expect([firstPost, secondPost]).toEqual([3, 1]);
+    expect((await (await browse(otherBrowser, "api/plans"))!.json()).plans.every((plan: { verification?: unknown }) => !plan.verification))
+      .toBe(true);
+
+    endsAt = undefined;
+    saleStartsAt = time - 2_000;
+    expect((await browse(otherBrowser, "api/plans", { ...order, intentId: crypto.randomUUID() }))?.status).toBe(200);
+    const rotatedRun = plans.scan(controller.signal);
+    const rotated = await manualLink(otherBrowser);
+    const rotatedClaim = new URL(rotated);
+    rotatedClaim.pathname = rotatedClaim.pathname.replace("/GTest/", "/GTest/register/");
+    expect((await relay.handlePublic(new Request(rotatedClaim)))?.status).toBe(200);
+    saleStartsAt = time - 1_000;
+    expect((await postProof(rotated))?.status).toBe(200);
+    await rotatedRun;
+    expect([firstPost, secondPost]).toEqual([4, 1]);
+    expect((await (await browse(otherBrowser, "api/plans"))!.json()).plans[0]).toMatchObject({ status: "failed", attempts: 1 });
+  } finally {
+    controller.abort();
+    relay.close();
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("米游社网页沿用旧挂载地址、开关和网页登录有效期", () => {
   const settings = miyousheWebSettings({ enable: false, path: "/lotus/coin-shop/", public_url: "https://miyoushe.example.org/lotus/coin-shop/",

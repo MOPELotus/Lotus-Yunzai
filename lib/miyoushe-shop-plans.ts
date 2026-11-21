@@ -5,7 +5,8 @@ import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import { createProfileStore } from "@lotus-yunzai/account";
-import { MiyousheExchangeError, type MiyousheShopExchangeResult } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
+import { MiyousheExchangeError, type MiyousheShopExchangeResult, type ShopManualVerification } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
+import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { lockFile } from "./file-lock.ts";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
 import { asTrackerRecord, confirmedTracker, matchesTrackingGood, readTrackingInput, trackingCycle, trackingGame, trackingGames,
@@ -17,6 +18,7 @@ const code = /^[a-zA-Z0-9_]{1,32}$/u;
 const intentPattern = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u;
 const preparingLead = 15_000;
 const maxDelay = 30_000;
+const manualVerificationTimeout = 185_000;
 
 const statusMessage = {
   scheduled: "等待开放兑换",
@@ -39,6 +41,7 @@ const details = {
   stockEmpty: "官方库存已售罄，本轮追踪结束。",
   pending: "该账号此商品有兑换结果待确认，请先核对米游社兑换记录再预约。",
   verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
+  sessionEnded: "发起立即兑换的网页会话已结束，未提交兑换。",
   "rate-limited": "米游社商城请求频繁，请稍后重新预约。",
 } as const;
 const trackerMessages = {
@@ -55,6 +58,17 @@ const publicTrackerMessages = new Set<string>([...Object.values(trackerMessages)
 const publicMessages = new Set([...Object.values(statusMessage), ...Object.values(details)]);
 type Status = keyof typeof statusMessage;
 type Role = { readonly uid: string; readonly region: string; readonly gameBiz: string };
+type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
+interface ManualShopSession {
+  readonly sessionId: string;
+  readonly signal: AbortSignal;
+  verify(signal: AbortSignal): Promise<void>;
+}
+interface ImmediateVerification {
+  readonly session: ManualShopSession;
+  readonly cancel: AbortController;
+  ticket?: { readonly link: string; readonly expiresAt: number };
+}
 
 export interface MiyousheShopPlan extends MiyousheOverviewTarget {
   readonly id: string;
@@ -77,6 +91,7 @@ export interface MiyousheShopPlan extends MiyousheOverviewTarget {
   readonly bindingStamp?: string;
   readonly intentId?: string;
   readonly intentFingerprint?: string;
+  readonly manualSessionExpected?: true;
   status: Status;
   opensAt: number;
   message: string;
@@ -99,7 +114,8 @@ interface Options {
   readonly inspect: (target: MiyousheOverviewTarget, goodsId: string, signal?: AbortSignal,
     verifyBinding?: () => Promise<void>) => Promise<MiyousheShopInspection>;
   readonly submit?: (plan: Readonly<MiyousheShopPlan>, signal?: AbortSignal,
-    verifyBinding?: () => Promise<void>) => Promise<MiyousheShopExchangeResult>;
+    verifyBinding?: () => Promise<void>, manual?: ShopManualVerification) => Promise<MiyousheShopExchangeResult>;
+  readonly manualRelay?: () => ManualRelay | undefined;
   readonly tracking?: {
     readonly catalog: (target: MiyousheOverviewTarget, game: string, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
@@ -129,6 +145,10 @@ function clean(value: string, limit: number) {
   return value.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, limit);
 }
 function active(status: Status) { return status === "scheduled" || status === "preparing" || status === "submitting"; }
+
+function localSaleEnd(good: TrackingGood, now: number) {
+  return natural(good.endsAt) ? now + good.endsAt - (natural(good.serverNow) ? good.serverNow : now) : Infinity;
+}
 
 function validPlan(value: unknown): value is MiyousheShopPlan {
   const plan = asRecord(value);
@@ -313,9 +333,10 @@ function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   return plan;
 }
 
-export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirectory, now = Date.now, inspect, submit, tracking }: Options) {
+export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirectory, now = Date.now, inspect, submit, manualRelay, tracking }: Options) {
   const store = createStore(resolvePath(file), legacyFiles);
   const profiles = createProfileStore(profileDirectory);
+  const immediateVerification = new Map<string, ImmediateVerification>();
   type Verify = () => Promise<void>;
 
   async function binding(target: MiyousheOverviewTarget) {
@@ -596,12 +617,24 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
             (other.status === "unknown" || other.status === "submitting"))) finish(current, "cancelled", details.pending);
         else Object.assign(current, { status: "preparing", message: statusMessage.preparing });
       });
-      if (claimed?.status !== "preparing") return;
+      const immediate = immediateVerification.get(plan.id);
+      if (claimed?.status !== "preparing") {
+        immediate?.cancel.abort();
+        immediateVerification.delete(plan.id);
+        return;
+      }
+      const activeSignal = immediate ? AbortSignal.any([immediate.session.signal, immediate.cancel.signal, ...(signal ? [signal] : [])]) : signal;
       let started = false;
       let submitting = false;
       let message: string = details.unavailable;
+      let resumeDeadline: number | undefined;
+      let saleClose = Infinity;
       try {
         signal?.throwIfAborted();
+        if (plan.manualSessionExpected && (!immediate || activeSignal?.aborted)) {
+          await update(plan.id, "preparing", current => finish(current, "cancelled", details.sessionEnded));
+          return;
+        }
         if (now() > plan.opensAt + maxDelay) {
           await update(plan.id, "preparing", current => finish(current, "missed"));
           return;
@@ -614,18 +647,22 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         }
         if (booked.accountId !== plan.accountId || booked.stamp !== plan.bindingStamp) conflict(details.changed);
         const verifyBinding = async () => {
-          signal?.throwIfAborted();
+          activeSignal?.throwIfAborted();
+          if (resumeDeadline !== undefined && now() >= resumeDeadline) conflict(details.verification);
+          if (immediate && activeSignal) await immediate.session.verify(activeSignal);
           await verifyCurrent(target, booked);
           if (plan.trackingId) {
             const data = await store.read();
             if (!trackerIsCurrent(data, plan)) conflict("持续追踪已暂停或当前商品已兑换。");
             await verifyRole(target, trackingRule(findTracker(data, plan.trackingId))!);
           }
-          signal?.throwIfAborted();
+          activeSignal?.throwIfAborted();
+          if (resumeDeadline !== undefined && now() >= resumeDeadline) conflict(details.verification);
         };
         const inspectCurrent = async () => {
           message = details.unavailable;
-          const snapshot = await inspect(target, plan.goodsId, signal, verifyBinding);
+          const snapshot = await inspect(target, plan.goodsId, activeSignal, verifyBinding);
+          saleClose = localSaleEnd(snapshot.good, now());
           message = details.conditions;
           const trackingStatus = plan.trackingId && (snapshot.good.status === "unknown" || snapshot.good.status === "sold_out");
           const good = trackingStatus ? snapshot.good : validateInspection(snapshot, plan.goodsId, plan.immediate);
@@ -671,6 +708,43 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
           await update(plan.id, "preparing", current => finish(current, "missed"));
           return;
         }
+        const purchaseCycle = immediate ? trackingCycle(good, now()) : undefined;
+        const manual: ShopManualVerification | undefined = immediate && activeSignal ? {
+          async waitForProof(challenge, requestSignal) {
+            const relay = manualRelay?.();
+            if (!relay || now() > plan.opensAt + maxDelay) return;
+            const time = now();
+            const deadline = Math.min(time + manualVerificationTimeout, saleClose);
+            if (deadline <= time) return;
+            const scope = AbortSignal.any([requestSignal, AbortSignal.timeout(deadline - time)]);
+            const registration = await relay.register(challenge, scope);
+            if (!registration) return;
+            const expiresAt = Math.min(deadline, registration.expiresAt);
+            resumeDeadline = expiresAt;
+            immediate.ticket = { link: registration.link, expiresAt };
+            try {
+              while (now() < expiresAt && !scope.aborted) {
+                await verifyBinding();
+                const read = await relay.readResult(registration.ticket);
+                if (read.status === "complete" && "captchaId" in read.result && now() < expiresAt) return read.result;
+                if (read.status !== "pending") return;
+                await delay(500, undefined, { signal: scope, ref: false });
+              }
+            } finally {
+              immediate.ticket = undefined;
+            }
+          },
+          async prepareResume() {
+            const updated = await inspectCurrent();
+            if (updated.status !== "available" ||
+                (purchaseCycle !== undefined && trackingCycle(updated, now()) !== purchaseCycle)) conflict(details.conditions);
+            const time = now();
+            resumeDeadline = Math.min(resumeDeadline ?? time, saleClose);
+            if (time >= resumeDeadline) conflict(details.verification);
+            const marked = await update(plan.id, "submitting", current => { current.attempts++; });
+            if (!marked) conflict(details.conditions);
+          },
+        } : undefined;
         const submitted = await update(plan.id, "preparing", (current, data) => {
           if (!trackerIsCurrent(data, current)) finish(current, "cancelled");
           else Object.assign(current, { status: "submitting", message: statusMessage.submitting, attempts: current.attempts + 1 });
@@ -679,7 +753,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         submitting = true;
         await verifyBinding();
         started = true;
-        const result = await submit(Object.freeze(submitted), signal, verifyBinding);
+        const result = await submit(Object.freeze(submitted), activeSignal, verifyBinding, manual);
         await update(plan.id, "submitting", (current, data) => {
           if (result === "verification" || result === "rate-limited") finish(current, "failed", details[result]);
           else finish(current, result === "succeeded" || result === "failed" ? result : "unknown");
@@ -693,6 +767,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
             finish(current, "unknown");
             pauseTracks(data, current.accountId, current.message);
           }
+          else if (plan.manualSessionExpected && activeSignal?.aborted) finish(current, "cancelled", details.sessionEnded);
           else if (signal?.aborted) {
             Object.assign(current, { status: "scheduled", message: statusMessage.scheduled });
           } else if (error instanceof MiyousheExchangeError && (error.reason === "verification" || error.reason === "rate-limited")) {
@@ -700,6 +775,9 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
             pauseTracks(data, current.accountId, current.message);
           } else finish(current, "failed", message);
         });
+      } finally {
+        immediate?.cancel.abort();
+        immediateVerification.delete(plan.id);
       }
     });
   }
@@ -712,6 +790,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
       if (!submit || signal?.aborted) return [];
       for (const plan of (await store.read()).plans.sort((a, b) => a.opensAt - b.opensAt)) {
         if (plan.status === "scheduled" && (!plan.trackingId || (tracking && plan.bindingStamp)) &&
+            (!plan.manualSessionExpected || immediateVerification.has(plan.id) || now() > plan.opensAt + maxDelay) &&
             plan.opensAt <= now() + (plan.trackingId && natural(plan.preStartMs) ? Math.max(preparingLead, Math.min(30_000, plan.preStartMs)) : preparingLead) &&
             !running.has(plan.accountId)) {
           const job = run(plan, signal).finally(() => { running.delete(plan.accountId); });
@@ -873,15 +952,27 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         return publicTracker(trackingRule(raw)!, data);
       });
     },
-    async list(target: MiyousheOverviewTarget, verifyLogin?: Verify) {
+    async list(target: MiyousheOverviewTarget, verifyLogin?: Verify, sessionId?: string) {
       const matches = (plan: MiyousheShopPlan) => plan.qq === target.qq && plan.profileId === target.profileId;
       await verifyLogin?.();
       await recover(matches);
       const plans = (await store.read()).plans.filter(matches);
       await verifyLogin?.();
-      return { now: now(), canSubmit: Boolean(submit), plans: plans.sort((a, b) => b.createdAt - a.createdAt).slice(0, 30).map(publicPlan) };
+      return { now: now(), canSubmit: Boolean(submit), plans: plans.sort((a, b) => b.createdAt - a.createdAt).slice(0, 30).map(plan => {
+        const immediate = immediateVerification.get(plan.id);
+        const scoped = immediate && immediate.session.sessionId === sessionId && !immediate.cancel.signal.aborted &&
+          !immediate.session.signal.aborted ? immediate : undefined;
+        const ticket = scoped?.ticket;
+        return { ...publicPlan(plan), ...(scoped && { verificationPending: true }),
+          ...(ticket && ticket.expiresAt > now() ? { verification: ticket } : {}) };
+      }) };
     },
-    async reserve(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
+    endWebSession(sessionId: string) {
+      for (const immediate of immediateVerification.values()) {
+        if (immediate.session.sessionId === sessionId) immediate.cancel.abort();
+      }
+    },
+    async reserve(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, session?: ManualShopSession) {
       const input = reservationInput(value);
       if (!submit) throw new MiyousheShopPlanError(503, "预约兑换服务暂未启用。");
       await verifyLogin?.();
@@ -915,6 +1006,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         (!input.region || item.region === input.region) && matching(item.region, code)) : undefined;
       const address = good.type === 1 ? snapshot.addresses?.find(item => item.id === input.addressId) : undefined;
       if (good.type === 2 ? !role || input.addressId : !address || input.uid || input.region) bad("兑换目标不属于当前档案。");
+      let createdSessionPlan: string | undefined;
       const plan = await store.change(async data => {
         await verifyBinding();
         const prior = previousIntent(data);
@@ -926,17 +1018,21 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         if (opensAt < createdAt) conflict("商品开放时间已过，请刷新商品状态。");
         let id: string;
         do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
+        const manualSessionExpected = input.immediate && input.intentId && session && manualRelay?.() ? true : undefined;
         const plan: MiyousheShopPlan = {
           id, qq: target.qq, profileId: target.profileId, accountId: booked.accountId, botId: "", bindingStamp: booked.stamp,
           ...(input.intentId ? { intentId: input.intentId, intentFingerprint } : {}),
+          ...(manualSessionExpected ? { manualSessionExpected } : {}),
           goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz, price: good.price, type: good.type,
           role: role ? { uid: role.uid, region: role.region, gameBiz: good.gameBiz } : null,
           addressId: address?.id ?? "", addressLabel: addressLabel(address?.label), immediate: input.immediate,
           createdAt, opensAt, status: "scheduled", message: statusMessage.scheduled, attempts: 0,
         };
+        if (manualSessionExpected) createdSessionPlan = id;
         data.plans.push(plan);
         return plan;
       });
+      if (createdSessionPlan && session) immediateVerification.set(createdSessionPlan, { session, cancel: new AbortController() });
       return publicPlan(plan);
     },
     async cancel(target: MiyousheOverviewTarget, id: string, verifyLogin?: Verify) {
@@ -945,6 +1041,8 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         const plan = owned(data, target, id);
         if (plan.status !== "scheduled" && plan.status !== "preparing") conflict("当前状态下无法取消兑换计划。");
         finish(plan, "cancelled");
+        immediateVerification.get(id)?.cancel.abort();
+        immediateVerification.delete(id);
         return publicPlan(plan);
       });
     },
