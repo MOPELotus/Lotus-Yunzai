@@ -18,7 +18,7 @@ import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, ty
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
-import { createGenshinPersonalRecordReader, readGenshinPanel, type GenshinPanelOptions } from "./genshin-panel.ts";
+import { createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
@@ -90,6 +90,11 @@ export function isCookieExpired(error: unknown): boolean {
 
 function isGenshinAuthExpired(error: unknown): boolean {
   return error instanceof GenshinAuthKeyRequestError && isCookieExpired(error);
+}
+
+function isGenshinPersonalRecordCookieExpired(error: unknown) {
+  return error instanceof GameRecordRequestError && error.reason === "expired" &&
+    error.retcode !== 10101 && error.retcode !== 10102;
 }
 
 interface CookieRecovery {
@@ -460,9 +465,11 @@ export function createHoyoClient(
     fetchGenshinPanel(source: ProfileRequestContext, options: GenshinPanelOptions = {}) {
       return readForProfile(source, options, readGenshinPanel, isGameRecordCookieExpired);
     },
+    fetchGenshinTalents(source: ProfileRequestContext, options: GenshinPanelOptions & { readonly characterIds: readonly number[] }) {
+      return readForProfile(source, options, readGenshinTalents, isGenshinPersonalRecordCookieExpired);
+    },
     fetchGenshinPersonalRecord(source: ProfileRequestContext, { includeRoster, ...options }: GenshinPanelOptions & { readonly includeRoster: boolean }) {
-      return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster), error =>
-        error instanceof GameRecordRequestError && error.reason === "expired" && error.retcode !== 10101 && error.retcode !== 10102);
+      return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster), isGenshinPersonalRecordCookieExpired);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);

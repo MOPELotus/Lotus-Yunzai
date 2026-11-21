@@ -46,7 +46,7 @@ async function readCharacterIds(source: ProfileRequestContext, transport: HoyoTr
 }
 
 async function readCharacterDetails(source: ProfileRequestContext, transport: HoyoTransport, characterIds: readonly number[],
-  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>) {
+  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>, allowMissing = false) {
   if (!characterIds.length) return [];
   const detail = await readCnGameRecord(source, transport, { kind: "genshin-panel-detail", characterIds, signal }, verifyProfile);
   verifyRole(detail.data, source.role.uid, detail.region);
@@ -58,8 +58,11 @@ async function readCharacterDetails(source: ProfileRequestContext, transport: Ho
     }
     avatars.set(id, row);
   }
-  if (avatars.size !== characterIds.length) throw new HoyoRequestError("response", "原神面板角色详情不完整。");
-  return characterIds.map(id => avatars.get(id)!);
+  if (!allowMissing && avatars.size !== characterIds.length) throw new HoyoRequestError("response", "原神面板角色详情不完整。");
+  return characterIds.flatMap(id => {
+    const avatar = avatars.get(id);
+    return avatar ? [avatar] : [];
+  });
 }
 
 export async function readGenshinPanel(source: ProfileRequestContext, transport: HoyoTransport,
@@ -84,4 +87,12 @@ export function createGenshinPersonalRecordReader(includeRoster: boolean) {
     ids ??= await readCharacterIds(source, transport, signal, verifyProfile);
     return { overview, avatars: await readCharacterDetails(source, transport, ids, signal, verifyProfile) };
   };
+}
+
+export async function readGenshinTalents(source: ProfileRequestContext, transport: HoyoTransport,
+  { characterIds, signal }: GenshinPanelOptions & { readonly characterIds: readonly number[] }, verifyProfile?: () => Promise<void>) {
+  if (new Set(characterIds).size !== characterIds.length) {
+    throw new HoyoRequestError("invalid-input", "原神天赋角色编号重复。");
+  }
+  return { avatars: await readCharacterDetails(source, transport, characterIds, signal, verifyProfile, true) };
 }
