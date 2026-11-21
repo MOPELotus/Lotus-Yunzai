@@ -33,8 +33,8 @@ function listOf(data: Json): Json[] {
   return list;
 }
 
-export async function readGenshinPanel(source: ProfileRequestContext, transport: HoyoTransport,
-  { signal }: GenshinPanelOptions, verifyProfile?: () => Promise<void>) {
+async function readCharacterIds(source: ProfileRequestContext, transport: HoyoTransport,
+  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>) {
   const list = await readCnGameRecord(source, transport, { kind: "genshin-panel-list", signal }, verifyProfile);
   verifyRole(list.data, source.role.uid, list.region);
   const ids = listOf(list.data).map(row => characterId(row.id));
@@ -42,7 +42,12 @@ export async function readGenshinPanel(source: ProfileRequestContext, transport:
   if (ids.length !== characterIds.length || new Set(characterIds).size !== ids.length) {
     throw new HoyoRequestError("response", "原神面板角色编号缺失或重复。");
   }
-  if (!characterIds.length) return { avatars: [] as readonly Json[] };
+  return characterIds;
+}
+
+async function readCharacterDetails(source: ProfileRequestContext, transport: HoyoTransport, characterIds: readonly number[],
+  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>) {
+  if (!characterIds.length) return [];
   const detail = await readCnGameRecord(source, transport, { kind: "genshin-panel-detail", characterIds, signal }, verifyProfile);
   verifyRole(detail.data, source.role.uid, detail.region);
   const avatars = new Map<number, Json>();
@@ -54,5 +59,29 @@ export async function readGenshinPanel(source: ProfileRequestContext, transport:
     avatars.set(id, row);
   }
   if (avatars.size !== characterIds.length) throw new HoyoRequestError("response", "原神面板角色详情不完整。");
-  return { avatars: characterIds.map(id => avatars.get(id)!) };
+  return characterIds.map(id => avatars.get(id)!);
+}
+
+export async function readGenshinPanel(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal }: GenshinPanelOptions, verifyProfile?: () => Promise<void>) {
+  const ids = await readCharacterIds(source, transport, signal, verifyProfile);
+  return { avatars: await readCharacterDetails(source, transport, ids, signal, verifyProfile) };
+}
+
+export function createGenshinPersonalRecordReader(includeRoster: boolean) {
+  // One reader per caller. Already verified stages can be reused when the same
+  // profile retries with its refreshed cookie.
+  let overview: Json | undefined;
+  let ids: readonly number[] | undefined;
+  return async (source: ProfileRequestContext, transport: HoyoTransport, { signal }: GenshinPanelOptions,
+    verifyProfile?: () => Promise<void>) => {
+    if (!overview) {
+      const index = await readCnGameRecord(source, transport, { kind: "genshin-index", signal }, verifyProfile);
+      verifyRole(index.data, source.role.uid, index.region);
+      overview = index.data;
+    }
+    if (!includeRoster) return { overview, avatars: [] as readonly Json[] };
+    ids ??= await readCharacterIds(source, transport, signal, verifyProfile);
+    return { overview, avatars: await readCharacterDetails(source, transport, ids, signal, verifyProfile) };
+  };
 }

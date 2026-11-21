@@ -11,14 +11,14 @@ import { openHoYoLabNxxCheckin } from "./hoyolab-nxx-checkin.ts";
 import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
-import { isGameRecordCookieExpired } from "./game-record.ts";
+import { GameRecordRequestError, isGameRecordCookieExpired } from "./game-record.ts";
 import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
-import { readGenshinPanel, type GenshinPanelOptions } from "./genshin-panel.ts";
+import { createGenshinPersonalRecordReader, readGenshinPanel, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
@@ -456,6 +456,10 @@ export function createHoyoClient(
     },
     fetchGenshinPanel(source: ProfileRequestContext, options: GenshinPanelOptions = {}) {
       return readForProfile(source, options, readGenshinPanel, isGameRecordCookieExpired);
+    },
+    fetchGenshinPersonalRecord(source: ProfileRequestContext, { includeRoster, ...options }: GenshinPanelOptions & { readonly includeRoster: boolean }) {
+      return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster), error =>
+        error instanceof GameRecordRequestError && error.reason === "expired" && error.retcode !== 10101 && error.retcode !== 10102);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
