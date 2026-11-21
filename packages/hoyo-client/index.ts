@@ -26,6 +26,7 @@ import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts"
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
+import { readZzzExploration } from "./zzz-exploration.ts";
 import { readZzzZenkov } from "./zzz-zenkov.ts";
 import { readZzzHollowZero } from "./zzz-hollow-zero.ts";
 import { readZzzClimbingTower } from "./zzz-climbing-tower.ts";
@@ -46,6 +47,8 @@ export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
 export type { ZzzHoloBossRoom, ZzzHoloBossSnapshot } from "./zzz-holo-boss.ts";
+export { zzzExplorationColumns } from "./zzz-exploration.ts";
+export type { ZzzExplorationSnapshot, ZzzExplorationArea, ZzzExplorationMap } from "./zzz-exploration.ts";
 export { zzzZenkovPageSize } from "./zzz-zenkov.ts";
 export type { ZzzZenkovItem, ZzzZenkovMap, ZzzZenkovMode, ZzzZenkovRank, ZzzZenkovRun, ZzzZenkovSnapshot } from "./zzz-zenkov.ts";
 export type { ZzzHollowChallenge, ZzzHollowFighter, ZzzHollowMode, ZzzHollowProgress, ZzzHollowSnapshot } from "./zzz-hollow-zero.ts";
@@ -499,6 +502,9 @@ export function createHoyoClient(
     },
     fetchZzzZenkov(source: ProfileRequestContext, options: Parameters<typeof readZzzZenkov>[2]) {
       return readForProfile(source, options, readZzzZenkov, isGameRecordCookieExpired);
+    },
+    fetchZzzExploration(source: ProfileRequestContext, options: Parameters<typeof readZzzExploration>[2]) {
+      return readForProfile(source, options, readZzzExploration, isGameRecordCookieExpired);
     },
     fetchZzzPanel(source: ProfileRequestContext, options: ZzzPanelOptions = {}) {
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);

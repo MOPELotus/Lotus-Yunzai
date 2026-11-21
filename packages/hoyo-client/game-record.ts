@@ -43,6 +43,7 @@ const zzzCardPaths = {
   "zzz-hollow-lost": "abysss2_abstract",
   "zzz-zenkov": "zenkov_abstract_info",
   "zzz-zenkov-detail": "zenkov_detail",
+  "zzz-exploration": "exploration_detail",
 } as const;
 const genshinPanelPaths = {
   "genshin-panel-list": "character/list",
@@ -155,10 +156,11 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const hollowDetail = kind === "zzz-hollow-detail";
   const hollow = hollowLost || hollowDetail || kind === "zzz-hollow-abstract";
   const zenkov = kind === "zzz-zenkov" || kind === "zzz-zenkov-detail";
+  const exploration = kind === "zzz-exploration";
   const forZzz = Object.hasOwn(zzzCardPaths, kind);
   const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
-    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : forZzz ? "绝区零战绩" :
+    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : forZzz ? "绝区零战绩" :
     forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
@@ -177,7 +179,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   }
   const regionalPeriod = options.kind === "zzz-deadly" || options.kind === "zzz-holo-boss" || options.kind === "zzz-void-front";
   const zzzPeriod = options.kind === "zzz-hadal" || regionalPeriod;
-  const usesRegion = regionalPeriod || climbingTower || hollowLost || zenkov;
+  const usesRegion = regionalPeriod || climbingTower || hollowLost || zenkov || exploration;
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
     throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
   }
@@ -190,7 +192,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     body = JSON.stringify({ role_id: uid, server: region,
       ...(options.kind === "genshin-panel-detail" && { character_ids: options.characterIds }) });
   } else {
-    if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
+    if (forZzz && !exploration) endpoint.searchParams.set("lang", "zh-cn");
     if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
     endpoint.searchParams.set(usesRegion ? "uid" : "role_id", uid);
     endpoint.searchParams.set(usesRegion ? "region" : "server", region);
@@ -229,7 +231,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || kind === "zzz-avatar") {
+  if (forStarRail || forGenshinPanel || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || kind === "zzz-avatar") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);
@@ -246,7 +248,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
   if (forStarRail && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
-  const data = (climbingTower || hollow || zenkov) && payload?.data === null ? {} : object(payload?.data);
+  const data = (climbingTower || hollow || zenkov || exploration) && payload?.data === null ? {} : object(payload?.data);
   if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);
   return { data, region };
 }
