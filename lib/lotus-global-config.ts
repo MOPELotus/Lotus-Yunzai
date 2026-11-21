@@ -70,7 +70,8 @@ function overlayPermissions(historical: Config, local: Config): Config {
   return merged;
 }
 
-export async function inheritLotusGlobalConfig(root: URL, current: Readonly<Config>) {
+export async function resolveLotusGlobalConfig(current: Readonly<Config>,
+  readLegacy: (id: (typeof legacyLotusDirectories)[number]) => Promise<Config | undefined>) {
   const local = normalizeLotusGlobalConfig(current);
   const inherited: Config = {};
   const localScheduler = section(local.scheduler);
@@ -79,7 +80,7 @@ export async function inheritLotusGlobalConfig(root: URL, current: Readonly<Conf
     const pending = inheritedSections.filter(key => !Object.hasOwn(inherited, key) &&
       (!Object.hasOwn(local, key) || (key === "scheduler" && localScheduler) || (key === "permissions" && localPermissions)));
     if (!pending.length) break;
-    const raw = await readOptionalLocalConfig(new URL(`plugins/${id}/`, root), "global");
+    const raw = await readLegacy(id);
     if (!raw) continue;
     const legacy = normalizeLotusGlobalConfig(raw);
     for (const key of pending) {
@@ -92,6 +93,10 @@ export async function inheritLotusGlobalConfig(root: URL, current: Readonly<Conf
   if (legacyScheduler && localScheduler) merged.scheduler = { ...legacyScheduler, ...localScheduler };
   if (legacyPermissions && localPermissions) merged.permissions = overlayPermissions(legacyPermissions, localPermissions);
   return merged;
+}
+
+export async function inheritLotusGlobalConfig(root: URL, current: Readonly<Config>) {
+  return resolveLotusGlobalConfig(current, id => readOptionalLocalConfig(new URL(`plugins/${id}/`, root), "global"));
 }
 
 export async function readLotusGlobalConfig(root: URL) {
