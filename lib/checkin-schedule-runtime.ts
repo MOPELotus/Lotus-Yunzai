@@ -19,8 +19,12 @@ interface TomorrowPlan {
   readonly plan: CheckinSchedulePlan;
   readonly notices?: Awaited<ReturnType<typeof notifyCheckinPlan>>;
 }
-const dueCron = "0 * * * * *";
-const planCron = "0 0 0 * * *";
+export const defaultCheckinCrons = {
+  plan_generate_cron: "0 0 0 * * *",
+  run_due_cron: "0 * * * * *",
+  catch_up_cron: "0 */10 * * * *",
+} as const;
+const { plan_generate_cron: planCron, run_due_cron: dueCron } = defaultCheckinCrons;
 
 function normalizeCron(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return;
@@ -30,6 +34,15 @@ function normalizeCron(value: unknown): string | undefined {
   if (fields.length !== 6) return;
   for (const index of [3, 5]) if (fields[index] === "?") fields[index] = "*";
   return fields.join(" ");
+}
+
+export function validCheckinCron(value: string) {
+  const rule = normalizeCron(value);
+  if (!rule) return false;
+  const job = new Job(() => {});
+  try { return job.schedule({ rule, tz: "Asia/Shanghai" }); }
+  catch { return false; }
+  finally { job.cancel(); }
 }
 
 function dailySecond(rule: string) {
@@ -174,7 +187,7 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       if (!canRun(config) || started) return;
       started = true;
       const due = schedule(config.run_due_cron, dueCron, "到期任务", trigger);
-      const fallback = schedule(config.catch_up_cron, "0 */10 * * * *", "计划补偿", catchUp);
+      const fallback = schedule(config.catch_up_cron, defaultCheckinCrons.catch_up_cron, "计划补偿", catchUp);
       const finalRetry = schedule(undefined, "0 50,59 23 * * *", "签到补跑", () =>
         operation ? operation.then(() => trigger(true)) : trigger(true));
       if (due.job) jobs.push(due.job);

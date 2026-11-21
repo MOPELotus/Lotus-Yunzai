@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, type Node, type YAMLMap } from "yaml";
 import { checkinScheduleMinute, type CheckinScheduleConfig } from "./checkin-schedule-plan.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
+import { defaultCheckinCrons, validCheckinCron } from "./checkin-schedule-runtime.ts";
+import { scheduleCronFields, type CheckinSchedulePanelSettings, type CheckinSchedulePanelSnapshot } from "./panel-checkin-schedule-schema.ts";
 
 export type CheckinScheduleSettingsChange =
   | { readonly type: "mode"; readonly mode: "random" }
@@ -28,8 +31,8 @@ export class CheckinScheduleSettingsError extends Error {
   }
 }
 
-const scheduleFields = ["mode", "fixed_time", "plan_generate_cron"] as const;
-type SchedulePatch = Partial<Record<typeof scheduleFields[number], string>>;
+const scheduleFields = ["mode", "fixed_time", "enable", ...scheduleCronFields] as const;
+type SchedulePatch = Partial<CheckinSchedulePanelSettings>;
 
 function error(reason: SettingsErrorReason): never {
   throw new CheckinScheduleSettingsError(reason);
@@ -72,7 +75,7 @@ function validScheduler(input: unknown): CheckinScheduleConfig {
   if (Object.hasOwn(scheduler, "fixed_time") && !Number.isInteger(checkinScheduleMinute(scheduler.fixed_time))) error("config");
   for (const key of ["plan_generate_cron", "run_due_cron", "catch_up_cron"]) {
     const value = scheduler[key];
-    if (Object.hasOwn(scheduler, key) && (typeof value !== "string" || !value.trim())) error("config");
+    if (Object.hasOwn(scheduler, key) && typeof value !== "string") error("config");
   }
   checkWindow(scheduler.random, "00:00", "23:30", ["notify_before"]);
   checkWindow(scheduler.late_registration, "23:30", "23:59", ["enable", "notify"]);
@@ -101,13 +104,14 @@ interface SourceEdit {
   readonly value: string;
 }
 
-function scalarText(key: string, value: string, node?: Node) {
+function scalarText(key: string, value: string | boolean, node?: Node) {
+  if (typeof value === "boolean") return String(value);
   if (isScalar(node) && node.type === Scalar.QUOTE_SINGLE) return `'${value}'`;
   if (key === "mode" && (!node || (isScalar(node) && node.type === Scalar.PLAIN))) return value;
   return JSON.stringify(value);
 }
 
-function replaceScalar(text: string, key: string, value: string, node: Node): SourceEdit {
+function replaceScalar(text: string, key: string, value: string | boolean, node: Node): SourceEdit {
   if (!node.range || (!isScalar(node) && !isAlias(node))) error("config");
   const [start, end] = node.range;
   const token = node.srcToken;
@@ -196,13 +200,8 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
       },
       signal,
       prepare(content, _local, effective) {
-        const previous = readDocument(content);
-        const scheduler = validScheduler(effective.scheduler);
-        if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
-          return { value: scheduler };
-        }
-        const next = applyPatch(previous, patch);
-        return { yaml: next.yaml, value: validScheduler({ ...scheduler, ...next.scheduler }) };
+        const { yaml, settings } = patchScheduler(content, effective.scheduler, patch);
+        return { yaml, value: settings };
       },
     });
   } catch (cause) {
@@ -210,4 +209,75 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
     if (cause instanceof CheckinScheduleSettingsError) throw cause;
     error("config");
   }
+}
+
+function patchScheduler(content: string, source: unknown, patch: SchedulePatch) {
+  const previous = readDocument(content);
+  const scheduler = validScheduler(source);
+  if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
+    return { settings: scheduler };
+  }
+  const next = applyPatch(previous, patch);
+  return { yaml: next.yaml, settings: validScheduler({ ...scheduler, ...next.scheduler }) };
+}
+
+export function checkinSchedulePanelSnapshot(source: unknown): CheckinSchedulePanelSnapshot {
+  const current = validScheduler(source);
+  const settings: CheckinSchedulePanelSettings = {
+    enable: current.enable !== false,
+    mode: current.mode ?? "fixed",
+    fixed_time: current.fixed_time ?? "04:30",
+    ...defaultCheckinCrons,
+  };
+  const invalidCrons: CheckinSchedulePanelSnapshot["invalidCrons"][number][] = [];
+  for (const key of scheduleCronFields) {
+    const value = current[key]?.trim();
+    if (!value) continue;
+    if (validCheckinCron(value)) settings[key] = value;
+    else invalidCrons.push(key);
+  }
+  const revision = createHash("sha256").update(JSON.stringify([settings, invalidCrons])).digest("hex");
+  return { revision, settings, invalidCrons };
+}
+
+export function parseCheckinSchedulePanelPatch(input: unknown): SchedulePatch {
+  const source = record(input);
+  if (!source || !Object.keys(source).length ||
+      Object.keys(source).some(key => !(scheduleFields as readonly string[]).includes(key))) error("invalid-input");
+  const patch: SchedulePatch = {};
+  if (Object.hasOwn(source, "enable")) {
+    if (typeof source.enable !== "boolean") error("invalid-input");
+    patch.enable = source.enable;
+  }
+  if (Object.hasOwn(source, "mode")) {
+    if (source.mode !== "fixed" && source.mode !== "random") error("invalid-input");
+    patch.mode = source.mode;
+  }
+  if (Object.hasOwn(source, "fixed_time")) {
+    if (typeof source.fixed_time !== "string" || !Number.isInteger(checkinScheduleMinute(source.fixed_time))) error("invalid-input");
+    patch.fixed_time = source.fixed_time;
+  }
+  for (const key of scheduleCronFields) {
+    if (!Object.hasOwn(source, key)) continue;
+    const value = source[key];
+    if (typeof value !== "string" || (value.trim() && !validCheckinCron(value))) error("invalid-input");
+    patch[key] = value.trim() || defaultCheckinCrons[key];
+  }
+  return patch;
+}
+
+export function persistCheckinSchedulePanelSettings(root: URL, revision: string, patch: SchedulePatch,
+  { canWrite, signal }: { readonly canWrite: () => boolean; readonly signal: AbortSignal },
+) {
+  const authorize = () => !signal.aborted && canWrite();
+  return updateLotusGlobalConfig(root, {
+    canWrite: authorize,
+    canCommit: authorize,
+    signal,
+    prepare(content, _local, effective) {
+      if (checkinSchedulePanelSnapshot(effective.scheduler).revision !== revision) throw new GlobalConfigWriteError("conflict");
+      const { yaml, settings } = patchScheduler(content, effective.scheduler, patch);
+      return { yaml, value: checkinSchedulePanelSnapshot(settings) };
+    },
+  });
 }

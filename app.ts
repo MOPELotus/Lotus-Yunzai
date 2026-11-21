@@ -103,6 +103,7 @@ import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
+import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
@@ -3295,6 +3296,7 @@ if (import.meta.main) {
       }
       const fallback = createServerRedirect(network.redirect);
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
+        ["/panel/api/settings/checkin/schedule", panelCheckinSchedule(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],

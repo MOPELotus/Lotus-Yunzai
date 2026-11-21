@@ -11,6 +11,7 @@ import LikeSettings from "./LikeSettings.vue";
 import GroupNoticeSettings from "./GroupNoticeSettings.vue";
 import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 import WebLoginSettings from "./WebLoginSettings.vue";
+import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -22,7 +23,7 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -54,6 +55,7 @@ function setView(next: PanelView, discard = false) {
     "plugin-settings": "plugin-settings-title",
     atlas: "atlas-channel-title",
     "web-login": "web-login-title",
+    "checkin-schedule": "checkin-schedule-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -250,6 +252,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'atlas' ? 'page' : undefined" @click="setView('atlas')">图鉴设置</ElButton>
       <ElButton :type="view === 'web-login' ? 'primary' : 'default'"
         :aria-current="view === 'web-login' ? 'page' : undefined" @click="setView('web-login')">网页登录</ElButton>
+      <ElButton :type="view === 'checkin-schedule' ? 'primary' : 'default'"
+        :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
         :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
@@ -267,6 +271,8 @@ onBeforeUnmount(() => {
     <AtlasChannelSettings v-else-if="view === 'atlas'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <WebLoginSettings v-else-if="view === 'web-login'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <CheckinScheduleSettings v-else-if="view === 'checkin-schedule'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />
