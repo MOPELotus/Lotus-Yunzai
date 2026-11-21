@@ -44,6 +44,19 @@ function verify(data: Json, uid: string, region: string) {
   }
 }
 
+function card(row: Json): GenshinDeckCard {
+  const raw = Array.isArray(row.action_cost) ? row.action_cost.slice(0, 6) : [];
+  const costs = raw.flatMap(entry => {
+    const cost = record(entry);
+    const name = label(cost?.cost_type);
+    const type = costTypes.has(name) ? name === "CostTypeDendro" ? "CostTypeDenro" : name : undefined;
+    const value = whole(cost?.cost_value, 99);
+    return value === undefined ? [] : [{ type, value }];
+  });
+  return { name: label(row.name) || label(row.card_name), image: normalizeProfileRoleArtworkUrl(row.image),
+    hp: whole(row.hp, 99), copies: whole(row.num, 99), costs };
+}
+
 function cards(value: unknown, max: number): readonly GenshinDeckCard[] | undefined {
   if (value == null) return;
   if (!Array.isArray(value) || value.length > max) {
@@ -52,16 +65,7 @@ function cards(value: unknown, max: number): readonly GenshinDeckCard[] | undefi
   return value.map(entry => {
     const row = record(entry);
     if (!row) throw new HoyoRequestError("response", "七圣召唤牌组的卡牌格式无效。");
-    const raw = Array.isArray(row.action_cost) ? row.action_cost.slice(0, 6) : [];
-    const costs = raw.flatMap(entry => {
-      const cost = record(entry);
-      const name = label(cost?.cost_type);
-      const type = costTypes.has(name) ? name === "CostTypeDendro" ? "CostTypeDenro" : name : undefined;
-      const value = whole(cost?.cost_value, 99);
-      return value === undefined ? [] : [{ type, value }];
-    });
-    return { name: label(row.name) || label(row.card_name), image: normalizeProfileRoleArtworkUrl(row.image),
-      hp: whole(row.hp, 99), copies: whole(row.num, 99), costs };
+    return card(row);
   });
 }
 
@@ -82,4 +86,57 @@ export async function readGenshinDecks(source: ProfileRequestContext, transport:
     return { id, characters: cards(row.avatar_cards, 3), actions: cards(row.action_cards, 30) };
   });
   return { uid, nickname: label(data.nickname), level: whole(data.level, 99), decks };
+}
+
+
+export type GenshinGcgCollectionScope = "all" | "character" | "action";
+export interface GenshinGcgCollectionCard extends GenshinDeckCard {
+  readonly copies: number;
+  readonly wins?: number;
+  readonly uses?: number;
+}
+export interface GenshinGcgCollection {
+  readonly uid: string;
+  readonly nickname: string;
+  readonly level?: number;
+  readonly characterCount?: readonly [gained: number, total: number];
+  readonly actionCount?: readonly [gained: number, total: number];
+  readonly characters?: readonly GenshinGcgCollectionCard[];
+  readonly actions?: readonly GenshinGcgCollectionCard[];
+}
+
+export async function readGenshinGcgCollection(source: ProfileRequestContext, transport: HoyoTransport,
+  { scope, signal }: { readonly scope: GenshinGcgCollectionScope; readonly signal?: AbortSignal },
+  verifyProfile?: () => Promise<void>,
+): Promise<GenshinGcgCollection> {
+  const { uid } = source.role;
+  const { data, region } = await readCnGameRecord(source, transport,
+    { kind: "genshin-gcg-collection-summary", signal }, verifyProfile);
+  verify(data, uid, region);
+
+  async function collect(collection: "character" | "action"): Promise<readonly GenshinGcgCollectionCard[]> {
+    const { data: result } = await readCnGameRecord(source, transport, { kind: "genshin-gcg-cards", collection, signal }, verifyProfile);
+    verify(result, uid, region);
+    if (!Array.isArray(result.card_list) || result.card_list.length > 999 || result.has_more === true) {
+      throw new HoyoRequestError("response", "七圣召唤收藏响应未返回完整卡牌列表。");
+    }
+    return result.card_list.flatMap(value => {
+      const row = record(value);
+      if (row && row.num == null) return [];
+      const copies = whole(row?.num, 9999);
+      if (!row || copies === undefined) throw new HoyoRequestError("response", "七圣召唤收藏的持有张数格式无效。");
+      return copies > 0 ? [{ ...card(row), copies, wins: whole(row.proficiency, 9999), uses: whole(row.use_count, 9999) }] : [];
+    });
+  }
+  const count = (prefix: "avatar" | "action") => {
+    const gained = whole(data[`${prefix}_card_num_gained`], 9999);
+    const total = whole(data[`${prefix}_card_num_total`], 9999);
+    return gained !== undefined && total !== undefined && gained <= total ? [gained, total] as const : undefined;
+  };
+  return {
+    uid, nickname: label(data.nickname), level: whole(data.level, 99),
+    characterCount: count("avatar"), actionCount: count("action"),
+    characters: scope === "action" ? undefined : await collect("character"),
+    actions: scope === "character" ? undefined : await collect("action"),
+  };
 }
