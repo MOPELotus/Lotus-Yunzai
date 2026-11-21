@@ -445,7 +445,7 @@ function pagingNote(model: GachaVersionModel, game: Game) {
 
 export async function renderGachaVersion(
   game: Game, model: GachaVersionModel,
-  { mode = "auto", scale = 1.4, themeDirectory }: GachaVersionOptions,
+  { mode = "auto", scale = 4, themeDirectory }: GachaVersionOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("版本统计缩放比例须在 1 至 4 之间。");
   const config = games[game];

@@ -477,7 +477,7 @@ function portraitPath(path: string, game: Game) {
 
 export async function renderGachaDetail(
   game: Game, model: GachaDetailModel,
-  { mode = "auto", scale = 1.4, themeDirectory }: GachaDetailOptions,
+  { mode = "auto", scale = 4, themeDirectory }: GachaDetailOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
   const root = await realpath(themeDirectory).catch(() => undefined);

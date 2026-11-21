@@ -65,7 +65,7 @@ async function decodeIcon(source: Uint8Array) {
 }
 
 export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel,
-  { mode = "auto", scale = 1 }: GenshinBackpackCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4 }: GenshinBackpackCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("原神背包卡缩放比例须在 1 至 4 之间。");
 
   const metrics = new Canvas(1, 1).getContext("2d");

@@ -246,7 +246,7 @@ export async function renderGachaPoolCard(model: GachaPoolCardModel, { themeDire
   const poolHeight = model.pools.reduce((height, pool, index) => height + sizePool(pool).height + (index ? 5 : 0), 0);
   const footerY = poolTop + poolHeight + 10;
   const height = footerY + 37;
-  const scale = Math.min(1.4, 24_000 / height);
+  const scale = Math.min(4, 24_000 / height);
   return renderPng(Math.round(width * scale), Math.round(height * scale), ctx => {
     ctx.scale(scale, scale);
     ctx.imageSmoothingEnabled = true;

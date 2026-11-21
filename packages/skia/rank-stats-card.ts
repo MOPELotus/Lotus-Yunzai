@@ -58,7 +58,7 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
   }
   const width = 1200;
   const height = 793;
-  const scale = 1.4;
+  const scale = 4;
   const chart = { left: 119, right: 1135, top: 204, bottom: 560 };
   const maximum = Math.max(1, Math.ceil(Math.max(...stats.scores) * 1.15));
   const points = rankPercentiles.map((percent, index) => ({

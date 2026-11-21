@@ -334,7 +334,7 @@ function drawPool(ctx: Context, p: PositionedPool, model: GachaSpecialView, them
 
 export async function renderGachaSpecialCard(
   game: Game, model: GachaSpecialView,
-  { mode = "auto", scale = 1.5, themeDirectory, genshinResourceDirectory }: GachaSpecialCardOptions,
+  { mode = "auto", scale = 4, themeDirectory, genshinResourceDirectory }: GachaSpecialCardOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
   const { panels, width, bottom, crossPool } = positions(model, game);

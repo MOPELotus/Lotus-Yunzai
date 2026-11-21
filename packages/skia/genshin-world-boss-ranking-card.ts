@@ -54,7 +54,7 @@ function nameLines(ctx: Context, name: string, available: number) {
 }
 
 export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossRankingCardModel,
-  { mode = "auto", scale = 1 }: GenshinWorldBossRankingCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4 }: GenshinWorldBossRankingCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("世界 BOSS 榜单缩放比例须在 1 至 4 之间。");
 
   const metrics = new Canvas(1, 1).getContext("2d");

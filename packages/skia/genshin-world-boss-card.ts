@@ -76,7 +76,7 @@ async function drawIcon(ctx: Context, source: Uint8Array | undefined, x: number,
 }
 
 export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardModel,
-  { mode = "auto", scale = 1 }: GenshinWorldBossCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4 }: GenshinWorldBossCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("世界 BOSS 卡缩放比例须在 1 至 4 之间。");
 
   const metrics = new Canvas(1, 1).getContext("2d");
