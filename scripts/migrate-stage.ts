@@ -34,7 +34,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal);
     const state = await stageLegacyState(plan.source, directory, signal);
     const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
-    const dailyNoteReminders = await stageLegacyDailyNoteReminders(plan.source, state.directory, signal);
+    const stagedReminders = await stageLegacyDailyNoteReminders(plan.source, state.directory, signal);
     const shopAudit = await stageLegacyShopAudit(plan.source, state.directory, signal);
     const redeem = await stageLegacyRedeemState(plan.source, state.directory, signal);
     const schedules = await stageLegacyCheckinSchedules(plan.source, state.directory, signal);
@@ -44,7 +44,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
     const keywords = await stageLegacyKeywords(plan.source, state.directory, signal);
     const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
-    const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal, dailyNoteReminders);
+    const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal, stagedReminders.settings);
     const tuneweave = (await readOptionalLocalConfig(Bun.pathToFileURL(`${state.directory}/`), "global"))?.tuneweave;
     const apiUrl = tuneweave && typeof tuneweave === "object" && "api_url" in tuneweave ? tuneweave.api_url : undefined;
     const mediaState = await stageLegacyMediaState(plan.source, state.directory, {
@@ -59,7 +59,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
       sharedGameHistory, coreConfig, groupConfig, keywords, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
-      shopAudit, redeem, dailyNoteReminders, deferredPlugins } as const;
+      shopAudit, redeem, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

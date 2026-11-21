@@ -1,7 +1,8 @@
 import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createProfileStore, profileGames, type Game } from "@lotus-yunzai/account";
-import { dailyNoteReminderBinding, dailyNoteReminderCooldown, writeMigratedDailyNoteReminders, type DailyNoteReminderEnrollment } from "./daily-note-reminders.ts";
+import { dailyNoteReminderBinding, dailyNoteReminderCooldown, dailyNoteReminderCron, dailyNoteReminderMessage,
+  writeMigratedDailyNoteReminders, type DailyNoteReminderEnrollment } from "./daily-note-reminders.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
 
@@ -9,7 +10,16 @@ const configDirectory = "plugins/bujidao/config";
 const maxSourceBytes = 1024 * 1024;
 const hour = 60 * 60_000;
 const defaultCooldown = 12 * hour;
+const defaultCron = "0 0/30 * * * ?";
+const defaultMessage = "哥哥（姐姐）你的体力快满了哦~";
 const uidPattern = /^[1-9]\d{7,9}$/u;
+
+export interface LegacyDailyNoteReminderSettings {
+  readonly enabled: boolean;
+  readonly cooldownHours?: number;
+  readonly cron: string | null;
+  readonly message?: string;
+}
 
 function mapping(input: unknown) {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined;
@@ -42,9 +52,18 @@ export async function stageLegacyDailyNoteReminders(sourcePath: string, stagePat
     loadYaml(source, "defnote.yaml", signal), loadYaml(source, "config.yaml", signal),
   ]);
   const duration = dailyNoteReminderCooldown(config?.sendCD);
+  const rawCron = config && Object.hasOwn(config, "TaskTime") ? config.TaskTime : defaultCron;
+  const oldCron = typeof rawCron === "string" ? rawCron.trim().split(/\s+/u).slice(0, 6).join(" ") : "";
+  const cron = config && dailyNoteReminderCron(oldCron) ? oldCron : null;
+  const rawMessage = config && Object.hasOwn(config, "TaskMsg") ? config.TaskMsg : defaultMessage;
+  const message = config && dailyNoteReminderMessage(rawMessage);
+  const enabled = config?.NoteTask === true;
+  const cooldownHours = duration === undefined ? undefined : Number(config?.sendCD);
   const counts = { files: Number(!!registrations) + Number(!!config), enrolled: 0, invalid: 0, unverified: 0, ambiguous: 0,
-    duplicates: 0, enabled: config?.NoteTask === true, cooldownHours: duration === undefined ? undefined : duration / hour };
-  if (!registrations) return counts;
+    duplicates: 0, enabled, cooldownHours, invalidCron: !!config && cron === null, invalidMessage: !!config && message === undefined };
+  const settings: LegacyDailyNoteReminderSettings | undefined = config ? { enabled, cooldownHours, cron, message } : undefined;
+  const result = { counts, settings };
+  if (!registrations) return result;
   const legacyUntil = Math.min(Number.MAX_SAFE_INTEGER, now() + (duration ?? defaultCooldown));
   const profiles = createProfileStore(join(stage, "data", "users"));
   const saved = new Map<string, Promise<Map<string, { profile: number; binding: string }[]>>>();
@@ -113,7 +132,7 @@ export async function stageLegacyDailyNoteReminders(sourcePath: string, stagePat
     }
   }
   counts.enrolled = rows.size;
-  if (!rows.size) return counts;
+  if (!rows.size) return result;
   const data = join(stage, "data");
   const destination = join(data, "daily-note", "reminders.sqlite");
   for (const folder of [data, dirname(destination)]) {
@@ -134,5 +153,5 @@ export async function stageLegacyDailyNoteReminders(sourcePath: string, stagePat
     await rm(destination, { force: true });
     throw error;
   }
-  return counts;
+  return result;
 }

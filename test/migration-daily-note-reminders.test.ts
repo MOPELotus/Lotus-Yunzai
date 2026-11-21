@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { scheduledJobs } from "node-schedule";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
+import { encodeMilkyReply } from "../lib/adapters/milky-message.ts";
+import { encodeOneBotReply } from "../lib/adapters/onebot-message.ts";
 import { createDailyNoteReminders } from "../lib/daily-note-reminders.ts";
 import { stageLegacyDailyNoteReminders } from "../lib/migration-daily-note-reminders.ts";
 import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
@@ -18,6 +21,8 @@ const sr = { uid: "500012345", region: "prod_qd_cn", game_biz: "hkrpg_cn" };
 const zzz = { uid: "12001234", region: "prod_gf_cn", game_biz: "nap_cn" };
 const path = "data/daily-note/reminders.sqlite";
 const hour = 3_600_000;
+const oldMessage = "[CQ:at,qq=all] #重启 @全体成员";
+const oldCron = "0 1 8 * * ?";
 
 async function put(root: string, local: string, text: string) {
   const file = join(root, local);
@@ -64,20 +69,23 @@ test.skipIf(!valkey || !Bun.which("git"))("一体化旧提醒登记承接 Valkey
       },
     });
     await put(source, `${oldConfig}/defnote.yaml`, fixture);
-    await put(source, `${oldConfig}/config.yaml`, "Note: false\nNoteTask: true\nsendCD: 2\n");
+    await put(source, `${oldConfig}/config.yaml`, Bun.YAML.stringify({
+      Note: false, NoteTask: true, sendCD: 2, TaskTime: oldCron + " 2099", TaskMsg: oldMessage,
+    }));
     await put(source, "plugins/Lotus-Plugin/data/users/42-2.yaml", profile("42", 2, { gs: [gs], sr: [sr], zzz: [zzz] }));
     await put(source, "plugins/Lotus-Plugin/data/users/44.yaml", profile("44", 1, { gs: [gs] }, "352"));
     await put(source, "plugins/Lotus-Plugin/data/users/44-2.yaml", profile("44", 2, { gs: [gs] }, "352"));
     const migrated = await migrateInstallation(source, target);
     const file = join(target, path);
-    const report = { files: 2, enrolled: 3, invalid: 1, unverified: 1, ambiguous: 1, duplicates: 1, enabled: true, cooldownHours: 2 };
+    const report = { files: 2, enrolled: 3, invalid: 1, unverified: 1, ambiguous: 1, duplicates: 1, enabled: true, cooldownHours: 2, invalidCron: false, invalidMessage: false };
+    expect(JSON.stringify(migrated)).not.toContain(oldMessage);
     expect(migrated).toMatchObject({ status: "published", dailyNoteReminders: report });
     expect(await migrateInstallation(source, target)).toMatchObject({ status: "already-published", dailyNoteReminders: report });
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     const applied = Bun.YAML.parse(await readFile(join(target, "config/global.yaml"), "utf8")) as {
-      daily_note_reminders: { enable: boolean; cooldown_hours: number };
+      daily_note_reminders: { enable: boolean; cooldown_hours: number; cron: string; message: string };
     };
-    expect(applied.daily_note_reminders).toEqual({ enable: true, cooldown_hours: 2 });
+    expect(applied.daily_note_reminders).toEqual({ enable: true, cooldown_hours: 2, cron: oldCron, message: oldMessage });
 
     const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const { port } = listener;
@@ -112,6 +120,7 @@ test.skipIf(!valkey || !Bun.which("git"))("一体化旧提醒登记承接 Valkey
     runtime = createDailyNoteReminders({
       directory: join(target, "data/users"), file, enabled: applied.daily_note_reminders.enable, signal: control.signal,
       cooldownHours: applied.daily_note_reminders.cooldown_hours,
+      cron: applied.daily_note_reminders.cron, message: applied.daily_note_reminders.message,
       activeSignal: () => control.signal, allowed: row => row.bot === 99 && row.group_id === 77 && row.qq === 42, now: () => at,
       async legacyTimeToLive(key) {
         ttlKeys.push(key);
@@ -131,6 +140,15 @@ test.skipIf(!valkey || !Bun.which("git"))("一体化旧提醒登记承接 Valkey
         return Response.json({ retcode: 0, data: { role_id: uid, server: url.searchParams.get("server"), ...stamina } });
       },
     });
+    const before = new Set(Object.keys(scheduledJobs));
+    runtime.start();
+    runtime.start();
+    const jobs = Object.entries(scheduledJobs).filter(([key]) => !before.has(key)).map(([, candidate]) => candidate);
+    expect(jobs).toHaveLength(1);
+    const next = jobs[0]!.nextInvocation();
+    if (!next) throw new Error("体力推送没有预期的下一次运行。");
+    expect(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }).format(next.getTime()))
+      .toBe("08:01");
     await runtime.runDue();
     expect(reads).toEqual([zzz.uid]);
     expect(notifications).toHaveLength(1);
@@ -156,6 +174,16 @@ test.skipIf(!valkey || !Bun.which("git"))("一体化旧提醒登记承接 Valkey
     await runtime.runDue();
     expect(reads).toEqual([zzz.uid, gs.uid, sr.uid]);
     expect(notifications).toHaveLength(3);
+    for (const [index, title] of ["绝区零电量", "原神树脂", "星铁开拓力"].entries()) {
+      const reply = notifications[index]!;
+      const onebot = encodeOneBotReply(reply);
+      const milky = encodeMilkyReply(reply);
+      expect(Array.isArray(onebot) && onebot.filter(part => part.type === "at")).toEqual([{ type: "at", data: { qq: "42" } }]);
+      expect(milky?.filter(part => part.type === "mention" || part.type === "mention_all"))
+        .toEqual([{ type: "mention", data: { user_id: 42 } }]);
+      expect(Array.isArray(onebot) && onebot.at(-1)).toMatchObject({ type: "text", data: { text: expect.stringContaining(oldMessage + "\n" + title) } });
+      expect(milky?.at(-1)).toMatchObject({ type: "text", data: { text: expect.stringContaining(oldMessage + "\n" + title) } });
+    }
     expect(ttlKeys.some(key => key.startsWith("78:"))).toBe(false);
     expect(await readFile(join(source, oldConfig, "defnote.yaml"), "utf8")).toBe(fixture);
   } finally {
@@ -177,14 +205,17 @@ test("只移植证据明确的登记文件，显式全局关闭不被旧任务�
     const yaml = Bun.YAML.stringify({ 99: { 42: { 77: { gs: [gs.uid], gs_Resin: 180 } } } });
     await put(source, legacyPath, yaml);
     await put(source, `${oldConfig}/config.yaml`, "NoteTask: true\n");
-    await put(source, "config/config/global.yaml", "daily_note_reminders:\n  enable: false\n");
+    await put(source, "config/config/global.yaml", Bun.YAML.stringify({
+      daily_note_reminders: { enable: false, cron: "0 2 9 * * *", message: "新版通知文字" },
+    }));
     await put(source, "plugins/Lotus-Plugin/data/users/42.yaml", profile("42", 1, { gs: [gs] }));
     await stageLegacyProfiles(source, stage);
     const result = await stageLegacyDailyNoteReminders(source, stage);
-    expect(result).toMatchObject({ enrolled: 1, enabled: true });
-    await stageLegacyGlobalConfig(source, stage, undefined, result);
+    expect(result.counts).toMatchObject({ enrolled: 1, enabled: true });
+    expect(result.settings).toMatchObject({ cron: "0 0/30 * * * ?", message: "哥哥（姐姐）你的体力快满了哦~" });
+    await stageLegacyGlobalConfig(source, stage, undefined, result.settings);
     expect(Bun.YAML.parse(await readFile(join(stage, "config/global.yaml"), "utf8")))
-      .toMatchObject({ daily_note_reminders: { enable: false } });
+      .toEqual({ daily_note_reminders: { enable: false, cron: "0 2 9 * * *", message: "新版通知文字" } });
     await expect(stageLegacyDailyNoteReminders(source, stage)).rejects.toMatchObject({ code: "EEXIST" });
     await rm(join(source, legacyPath));
     await symlink(join(stage, "config/global.yaml"), join(source, legacyPath));
@@ -217,6 +248,63 @@ test("旧版新版宿主数据库原地补列并保留既有提醒冷却", async
   } finally {
     control.abort();
     await runtime.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("实际 cron 唤醒已有群登记，无效旧配置不会排入调度", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-reminder-cron-"));
+  const source = join(root, "old");
+  const stage = join(root, "stage");
+  const control = new AbortController();
+  const timers = new Set(Object.keys(scheduledJobs));
+  const file = join(stage, path);
+  let runtime: ReturnType<typeof createDailyNoteReminders> | undefined;
+  try {
+    await mkdir(stage);
+    await put(source, oldConfig + "/config.yaml", "NoteTask: true\nTaskTime: '0 0 31 * * ?'\nTaskMsg: {type: 'at', qq: all}\n");
+    const invalid = await stageLegacyDailyNoteReminders(source, stage);
+    expect(invalid.counts).toMatchObject({ invalidCron: true, invalidMessage: true });
+    await stageLegacyGlobalConfig(source, stage, undefined, invalid.settings);
+    const invalidConfig = Bun.YAML.parse(await readFile(join(stage, "config/global.yaml"), "utf8"));
+    expect(invalidConfig).toEqual({ daily_note_reminders: { enable: true, cron: null } });
+    const blocked = createDailyNoteReminders({ file, signal: control.signal, enabled: true,
+      cron: null, activeSignal: () => control.signal, allowed: () => true, transports: () => [] });
+    try {
+      blocked.start();
+      expect(Object.keys(scheduledJobs).filter(key => !timers.has(key))).toEqual([]);
+    } finally { await blocked.stop(); }
+
+    await put(source, oldConfig + "/config.yaml", "NoteTask: true\nTaskTime: '* * * * * *'\nTaskMsg: ''\n");
+    await put(source, oldConfig + "/defnote.yaml", Bun.YAML.stringify({ 99: { 42: { 77: { gs: [gs.uid], gs_Resin: 180 } } } }));
+    await put(source, "plugins/Lotus-Plugin/data/users/42.yaml", profile("42", 1, { gs: [gs] }));
+    await stageLegacyProfiles(source, stage);
+    const migrated = await stageLegacyDailyNoteReminders(source, stage);
+    expect(migrated.settings).toMatchObject({ cron: "* * * * * *", message: "" });
+    const receipt = Promise.withResolvers<MessageReply>();
+    runtime = createDailyNoteReminders({
+      file, directory: join(stage, "data/users"), signal: control.signal, enabled: true,
+      cron: migrated.settings!.cron, message: migrated.settings!.message,
+      activeSignal: () => control.signal, allowed: row => row.bot === 99 && row.group_id === 77 && row.qq === 42,
+      legacyTimeToLive: async () => -2,
+      transports: () => [{ botId: 99, async isFriend() { return false; }, async sendPrivate() { return "rejected"; },
+        async isGroupMember(gid, qq) { return gid === 77 && qq === 42; },
+        async sendGroup(gid, reply) { expect(gid).toBe(77); receipt.resolve(reply); return "confirmed"; },
+      }],
+      async transport(url, options) {
+        expect(url.searchParams.get("role_id")).toBe(gs.uid);
+        expect(new Headers(options.headers).get("Cookie")).toContain("account_id=351");
+        return Response.json({ retcode: 0, data: { role_id: gs.uid, server: gs.region, current_resin: 190, max_resin: 200 } });
+      },
+    });
+    runtime.start();
+    const reply = await Promise.race([receipt.promise, Bun.sleep(3500).then(() => undefined)]);
+    expect(reply).toEqual([{ type: "at", qq: 42 }, "\n", "原神树脂已达到提醒阈值（190/200）。"]);
+    await runtime.stop();
+    expect(Object.keys(scheduledJobs).filter(key => !timers.has(key))).toEqual([]);
+  } finally {
+    control.abort();
+    await runtime?.stop();
     await rm(root, { recursive: true, force: true });
   }
 });

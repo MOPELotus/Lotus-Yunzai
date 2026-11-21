@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { Job } from "node-schedule";
 import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -7,6 +8,7 @@ import { createProfileStore, MAX_PROFILE_ID, profileCookieAccountId, type Game, 
 import { createProfileHoyoClient, type DailyNoteSnapshot } from "@lotus-yunzai/hoyo-client";
 import { notifyCheckin, type BotNotifications } from "./checkin-notify.ts";
 import type { CommandModule } from "./commands.ts";
+import { legacyHostCronTimeZone } from "./plugins/tasks.ts";
 
 export const dailyNoteReminderFeatureNames = ["体力推送", "@lotus-yunzai/daily-note-reminders"] as const;
 
@@ -25,6 +27,30 @@ export function dailyNoteReminderCooldown(hours: unknown) {
   const milliseconds = seconds * 1000;
   return seconds > 0 && Number.isSafeInteger(seconds) && Number.isSafeInteger(milliseconds) ? milliseconds : undefined;
 }
+function reminderJob(rule: unknown, run: () => Promise<void> | undefined) {
+  if (typeof rule !== "string" || rule.length > 160) return;
+  const fields = rule.trim().split(/\s+/u);
+  if (fields.length === 5) fields.unshift("0");
+  if (fields.length !== 6 || !fields.slice(0, 3).every(field => /^[0-9*,/?-]+$/u.test(field)) ||
+      !fields.slice(3).every(field => /^[0-9A-Za-z*,/?#-]+$/u.test(field))) return;
+  const job = new Job(run);
+  try { if (job.schedule({ rule: fields.join(" "), tz: legacyHostCronTimeZone })) return job; }
+  catch {}
+  job.cancel();
+}
+
+export function dailyNoteReminderCron(rule: unknown) {
+  const job = reminderJob(rule, () => undefined);
+  if (!job) return false;
+  job.cancel();
+  return true;
+}
+
+export function dailyNoteReminderMessage(value: unknown) {
+  if (typeof value !== "string" || Buffer.byteLength(value) > 512 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/u.test(value)) return;
+  return value.replace(/\r\n?/gu, "\n");
+}
+
 const enrollment = /^#?(原神|星铁|绝区零)?(开启|关闭)体力推送(?:\s*([1-9]\d{7,9}))?(?:\s+档案\s*([1-9]\d{0,2}))?$/u;
 const threshold = /^#?(原神|星铁|绝区零)?体力推送(?:阈值)?\s*([1-9]\d{0,2})$/u;
 
@@ -106,13 +132,15 @@ export function writeMigratedDailyNoteReminders(file: string, rows: readonly Dai
 }
 
 export function createDailyNoteReminders({
-  directory, file, signal, enabled, cooldownHours, activeSignal, allowed, transports, transport, legacyTimeToLive, now = Date.now,
+  directory, file, signal, enabled, cooldownHours, cron, message, activeSignal, allowed, transports, transport, legacyTimeToLive, now = Date.now,
 }: {
   readonly directory?: string;
   readonly file: string;
   readonly signal: AbortSignal;
   readonly enabled: boolean;
   readonly cooldownHours?: unknown;
+  readonly cron?: unknown;
+  readonly message?: unknown;
   readonly activeSignal: () => AbortSignal;
   readonly allowed: (target: Destination) => boolean;
   readonly transports: () => readonly BotNotifications[];
@@ -121,10 +149,13 @@ export function createDailyNoteReminders({
   readonly now?: () => number;
 }) {
   const cooldown = dailyNoteReminderCooldown(cooldownHours) ?? defaultCooldown;
+  const prefix = dailyNoteReminderMessage(message);
   const profiles = createProfileStore(directory);
   const client = createProfileHoyoClient(profiles, transport);
   let database: Database | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let job: Job | undefined;
+  let started = false;
   let running: Promise<void> | undefined;
   let stopped = false;
   const active = (current: AbortSignal) => enabled && !stopped && !signal.aborted && !current.aborted;
@@ -194,10 +225,11 @@ export function createDailyNoteReminders({
       const { current: points, max } = note.snapshot.stamina;
       const sql = { ...groupKey(target), $uid: target.uid, $binding: target.binding, $threshold: target.threshold };
       let claimed: number | undefined;
+      const description = `${gameNames[target.game]}${resources[target.game]}已达到提醒阈值（${points}/${max}）。`;
       const result = await notifyCheckin({
         userId: target.qq, transports: [gateway], signal: current,
         settings: { enabled: true, prefer: "group", fallbackGroups: [target.group_id] },
-        reply: `${gameNames[target.game]}${resources[target.game]}已达到提醒阈值（${points}/${max}）。`,
+        reply: prefix ? { type: "text", text: `${prefix}\n${description}` } : description,
         async verifySend() {
           const latest = await sourceFor(target);
           if (latest?.revision !== note.revision || !active(current) || !allowed(target)) return false;
@@ -303,13 +335,21 @@ export function createDailyNoteReminders({
   return {
     commands, runDue,
     start() {
-      if (!enabled || stopped || timer) return;
-      timer = setInterval(() => { void runDue()?.catch(() => console.warn("[体力推送] 无法读取本轮设置。")); }, pollInterval);
-      timer.unref();
+      if (!enabled || stopped || started || signal.aborted) return;
+      started = true;
+      const tick = () => runDue()?.catch(() => console.warn("[体力推送] 无法读取本轮设置。"));
+      if (cron !== undefined) {
+        job = reminderJob(cron, tick);
+        if (!job) console.warn("[体力推送] 定时配置无效。");
+      } else {
+        timer = setInterval(() => { void tick(); }, pollInterval);
+        timer.unref();
+      }
     },
     async stop() {
       stopped = true;
       clearInterval(timer);
+      job?.cancel();
       await running?.catch(() => {});
       database?.close();
       database = undefined;
