@@ -145,7 +145,7 @@ test("没有全局配置时按权限写入首选位置，空注释文件可原�
   expect(Bun.YAML.parse(await readFile(flat, "utf8"))).toEqual({ scheduler: { mode: "random" } });
 }));
 
-test("无效时间、损坏配置或共享别名会拒绝保存，避免覆盖或回退到旧文件", () => fixture(async (root, directory) => {
+test("无效时间、损坏配置或会改动其他引用的锚点拒绝保存", () => fixture(async (root, directory) => {
   const legacy = await setup(directory, "legacy: true\n", true);
   const flat = await setup(directory, "scheduler: {mode: fixed}\n");
   for (const time of ["24:00", "23:60", "9:0", " 9:00", "九点"]) {
@@ -168,6 +168,23 @@ test("无效时间、损坏配置或共享别名会拒绝保存，避免覆盖�
   await expect(persistCheckinScheduleSettings(root, { type: "mode", mode: "random" }, master))
     .rejects.toMatchObject({ reason: "config" });
   expect(await readFile(legacy, "utf8")).toBe("legacy: true\n");
+}));
+
+test("签到调度覆盖共享配置的选定字段并继续继承其他值", () => fixture(async (root, directory) => {
+  const before = "\uFEFF# 旧配置\r\nshared: &shared {mode: random, enable: false, fixed_time: '04:30'}\r\n" +
+    "scheduler: *shared # 签到调度\r\nother: *shared\r\n";
+  const file = await setup(directory, before, true);
+  expect(await persistCheckinScheduleSettings(root, { type: "mode", mode: "fixed", time: "9:30" }, master))
+    .toEqual({ mode: "fixed", enable: false, fixed_time: "09:30" });
+  const edited = before.replace("scheduler: *shared", 'scheduler: {<<: *shared, mode: fixed, fixed_time: "09:30"}');
+  expect(await readFile(file, "utf8")).toBe(edited);
+
+  await writeFile(file, edited.replace("enable: false", "enable: true"));
+  expect(await persistCheckinScheduleSettings(root, { type: "mode", mode: "random" }, master))
+    .toEqual({ mode: "random", enable: true, fixed_time: "09:30" });
+  const after = await readFile(file, "utf8");
+  expect(after).toBe(edited.replace("enable: false", "enable: true").replace("mode: fixed", "mode: random"));
+  expect(Bun.YAML.parse(after)).toMatchObject({ other: { mode: "random", enable: true, fixed_time: "04:30" } });
 }));
 
 test("锁内重新检查最新权限，外部编辑或取消后不发布暂存配置", () => fixture(async (root, directory) => {

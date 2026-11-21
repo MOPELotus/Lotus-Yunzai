@@ -145,7 +145,7 @@ function applyPatch(current: ReturnType<typeof readDocument>, patch: SchedulePat
   const { text, root, values, config } = current;
   const original = values.get("scheduler");
   const node = root?.get("scheduler", true);
-  if (original !== undefined && (!(original instanceof Map) || !isMap(node))) error("config");
+  if (original !== undefined && (!(original instanceof Map) || (!isMap(node) && !isAlias(node)))) error("config");
   const expectedValues = new Map(values);
   const expectedScheduler = new Map(original as Map<unknown, unknown> | undefined);
   const expectedConfig = { ...config, scheduler: { ...current.scheduler, ...patch } };
@@ -164,7 +164,13 @@ function applyPatch(current: ReturnType<typeof readDocument>, patch: SchedulePat
   }
   if (additions.length) {
     if (isMap(node)) edits.push(insertPairs(text, node, additions));
-    else {
+    else if (isAlias(node)) {
+      if (!node.range) error("config");
+      const [start, end] = node.range;
+      const overrides = additions.map(({ key, flow }) => `${key}: ${flow}`).join(", ");
+      // Inherit the shared mapping and override only the selected scheduler settings.
+      edits.push({ start, end, value: `{<<: ${text.slice(start, end)}, ${overrides}}` });
+    } else {
       const flow = additions.flatMap(pair => pair.block).join(", ");
       edits.push(insertPairs(text, root, [{
         key: "scheduler", flow: `{${flow}}`, block: ["scheduler:", ...additions.flatMap(pair => pair.block.map(line => `  ${line}`))],
