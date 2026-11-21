@@ -16,6 +16,7 @@ import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalan
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
+import { readGenshinDecks } from "./genshin-gcg.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents, type GenshinPanelOptions } from "./genshin-panel.ts";
@@ -64,6 +65,7 @@ export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinP
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot, GenshinGrowthItem, GenshinGrowthOptions, GenshinGrowthSnapshot } from "./genshin-backpack.ts";
+export type { GenshinDeck, GenshinDeckCard, GenshinDeckList } from "./genshin-gcg.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
@@ -472,6 +474,9 @@ export function createHoyoClient(
     },
     fetchGenshinTalents(source: ProfileRequestContext, options: GenshinPanelOptions & { readonly characterIds: readonly number[] }) {
       return readForProfile(source, options, readGenshinTalents, isGenshinPersonalRecordCookieExpired);
+    },
+    fetchGenshinDecks(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readGenshinDecks, isGenshinPersonalRecordCookieExpired);
     },
     fetchGenshinPersonalRecord(source: ProfileRequestContext, { includeRoster, ...options }: GenshinPanelOptions & { readonly includeRoster: boolean }) {
       return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster), isGenshinPersonalRecordCookieExpired);

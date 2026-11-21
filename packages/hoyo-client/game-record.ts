@@ -51,7 +51,7 @@ const genshinPanelPaths = {
 } as const;
 type ZzzPeriodRecord = "zzz-hadal" | "zzz-deadly" | "zzz-holo-boss" | "zzz-void-front";
 type RecordOptions = { readonly signal?: AbortSignal } & (
-  { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" |
+  { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "starrail-avatar-info" | "genshin-panel-list" |
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
   { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
@@ -150,6 +150,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const { game, role: { uid, gameBiz } } = source;
   const forNote = kind === "daily-note";
   const forStarRail = kind === "starrail-avatar-info";
+  const forDeck = kind === "genshin-gcg-deck";
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
   const zzzPanelDetail = kind === "zzz-panel-detail";
   const climbingTower = kind === "zzz-climbing-tower";
@@ -163,7 +164,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
     hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : monthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
-    forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
+    forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -188,7 +189,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const path = forNote ? route.path : forStarRail ? "/game_record/app/hkrpg/api/avatar/info"
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
     : monthly ? "/event/nap_ledger/month_info"
-    : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}` : "/game_record/app/genshin/api/index";
+    : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}`
+    : forDeck ? "/game_record/app/genshin/api/gcg/deckList" : "/game_record/app/genshin/api/index";
   const endpoint = new URL(path, monthly ? "https://api-takumi.mihoyo.com" : origin);
   let body: string | undefined;
   if (forGenshinPanel) {
@@ -241,7 +243,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
+  if (forStarRail || forGenshinPanel || forDeck || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);
