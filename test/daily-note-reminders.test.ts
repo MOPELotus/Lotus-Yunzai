@@ -6,6 +6,7 @@ import { createMilkyWebhook } from "../lib/adapters/milky-webhook.ts";
 import type { MilkyTransportOptions } from "../lib/adapters/milky-session.ts";
 import { createDailyNoteReminders } from "../lib/daily-note-reminders.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
+import type { MessageReply } from "../lib/messages.ts";
 
 test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久且未知不重发", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-note-reminder-"));
@@ -62,8 +63,9 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
     apiBase: new URL("api/", gateway.url), eventUrl, connection: "webhook", webhookPath: "/milky",
     accessToken: credential, reconnectMs: 20, heartbeatMs: 1_000, timeoutMs: 2_000,
   }, { signal: life.signal, async dispatch() {}, onOnline(...session) { online.resolve(session); } });
-  const settings = (enabled: boolean, transports: Parameters<typeof createDailyNoteReminders>[0]["transports"]) => createDailyNoteReminders({
-    directory, file, signal: life.signal, enabled, activeSignal: () => active.signal, allowed: () => allowed, transports,
+  type ReminderOptions = Parameters<typeof createDailyNoteReminders>[0];
+  const settings = (enabled: boolean, transports: ReminderOptions["transports"], reminderImage?: ReminderOptions["reminderImage"]) => createDailyNoteReminders({
+    directory, file, signal: life.signal, enabled, activeSignal: () => active.signal, allowed: () => allowed, transports, reminderImage,
     async transport(url, init) {
       expect(url.origin).toBe("https://api-takumi-record.mihoyo.com");
       const response = await fetch(new URL(url.pathname + url.search, upstream.url), init);
@@ -156,6 +158,24 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
     const before = reads.length;
     await reminders.runDue();
     expect(reads).toHaveLength(before);
+
+    const picture = Buffer.from("isolated group card");
+    const visual: MessageReply[] = [];
+    const withImage = settings(true, () => [{ botId, ...gateway, inlineImageByteLimit: 4_096,
+      async sendGroup(groupId, reply) {
+        expect(groupId).toBe(77);
+        visual.push(reply);
+        return "confirmed";
+      },
+    }], async (data, options) => {
+      expect(data).toEqual({ game: "gs", current: 175, max: 200 });
+      expect(options.inlineImageByteLimit).toBe(4_096);
+      return picture;
+    });
+    runtimes.push(withImage);
+    at += 12 * 60 * 60_000;
+    await withImage.runDue();
+    expect(visual).toEqual([[{ type: "at", qq: 42 }, "\n", expect.objectContaining({ type: "image", file: picture })]]);
   } finally {
     life.abort();
     await Promise.all(runtimes.map(runtime => runtime.stop()));

@@ -8,6 +8,7 @@ import { createProfileStore, MAX_PROFILE_ID, profileCookieAccountId, type Game, 
 import { createProfileHoyoClient, type DailyNoteSnapshot } from "@lotus-yunzai/hoyo-client";
 import { notifyCheckin, type BotNotifications } from "./checkin-notify.ts";
 import type { CommandModule } from "./commands.ts";
+import { segment } from "./messages.ts";
 import { legacyHostCronTimeZone } from "./plugins/tasks.ts";
 
 export const dailyNoteReminderFeatureNames = ["体力推送", "@lotus-yunzai/daily-note-reminders"] as const;
@@ -61,7 +62,9 @@ export type DailyNoteReminderEnrollment = Key & {
   readonly uid: string; readonly profile: number; readonly binding: string; readonly threshold: number; readonly legacyUntil: number;
 };
 type ReadNote = { readonly snapshot: DailyNoteSnapshot; readonly revision: string };
-type PendingNote = { readonly target: Target; readonly note: ReadNote };
+type PendingNote = { readonly target: Target; readonly note: ReadNote; readonly image?: Buffer };
+type ReminderImage = (data: { game: Game; current: number; max: number },
+  options: { inlineImageByteLimit?: number; signal: AbortSignal }) => Promise<Buffer | undefined>;
 
 function noticeDescription({ snapshot: { game, stamina: { current, max } } }: ReadNote) {
   return `${gameNames[game]}${resources[game]}已达到提醒阈值（${current}/${max}）。`;
@@ -137,7 +140,7 @@ export function writeMigratedDailyNoteReminders(file: string, rows: readonly Dai
 }
 
 export function createDailyNoteReminders({
-  directory, file, signal, enabled, cooldownHours, cron, message, activeSignal, allowed, transports, transport, legacyTimeToLive, now = Date.now,
+  directory, file, signal, enabled, cooldownHours, cron, message, activeSignal, allowed, transports, transport, legacyTimeToLive, reminderImage, now = Date.now,
 }: {
   readonly directory?: string;
   readonly file: string;
@@ -151,6 +154,7 @@ export function createDailyNoteReminders({
   readonly transports: () => readonly BotNotifications[];
   readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
   readonly legacyTimeToLive?: (key: string) => Promise<number | undefined>;
+  readonly reminderImage?: ReminderImage;
   readonly now?: () => number;
 }) {
   const cooldown = dailyNoteReminderCooldown(cooldownHours) ?? defaultCooldown;
@@ -219,6 +223,12 @@ export function createDailyNoteReminders({
       userId: destination.qq, transports: [gateway], signal: current,
       settings: { enabled: true, prefer: "group", fallbackGroups: [destination.group_id] },
       reply() {
+        if (claimed.some(row => row.image)) {
+          return [
+            ...(prefix ? [segment.text(prefix + "\n")] : []),
+            ...claimed.map(({ image, note }) => image ? segment.image(image) : segment.text(noticeDescription(note) + "\n")),
+          ];
+        }
         const text = [prefix, ...claimed.map(({ note }) => noticeDescription(note))].filter(Boolean).join("\n");
         return { type: "text", text };
       },
@@ -275,7 +285,11 @@ export function createDailyNoteReminders({
         const key = target.binding;
         if (!readings.has(key)) readings.set(key, await readNote(target, current).catch(() => undefined));
         const note = readings.get(key);
-        if (note && note.snapshot.stamina.current >= target.threshold) candidates.push({ target, note });
+        if (!note || note.snapshot.stamina.current < target.threshold) continue;
+        const { game, stamina: { current: points, max } } = note.snapshot;
+        const image = await reminderImage?.({ game, current: points, max }, { inlineImageByteLimit: gateway.inlineImageByteLimit, signal: current })
+          .catch(() => undefined);
+        candidates.push({ target, note, image });
       }
       if (!active(current)) return;
       if (candidates.length) await notifyGroup(db, destination, candidates, gateway, current);

@@ -9,6 +9,7 @@ import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
+import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
@@ -2352,11 +2353,19 @@ if (import.meta.main) {
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     if (!probingUpdate) {
       const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean; readonly cooldown_hours?: unknown; readonly cron?: unknown; readonly message?: unknown } | undefined;
+      const reminderThemeDirectory = Bun.env.LOTUS_DAILY_NOTE_REMINDER_THEME_DIR?.trim() ||
+        fileURLToPath(new URL("backup/plugins/bujidao/resources/", root));
       dailyNoteReminders = createDailyNoteReminders({
         directory: profileDirectory, file: fileURLToPath(new URL("data/daily-note/reminders.sqlite", root)),
         signal: lifecycle.signal, enabled: settings?.enable === true, activeSignal: nativeOperationSignal,
         transports: subscriptionTransport, transport: hoyoTransport,
         cooldownHours: settings?.cooldown_hours, cron: settings?.cron, message: settings?.message,
+        async reminderImage(model, { signal, inlineImageByteLimit }) {
+          signal.throwIfAborted();
+          const card = await renderDailyNoteReminderCard(model, { resourceDirectory: reminderThemeDirectory, inlineImageByteLimit });
+          signal.throwIfAborted();
+          return card?.png;
+        },
         async legacyTimeToLive(key) {
           const redis = globalThis.redis;
           if (redis?.isReady) return redis.pTTL(key);
