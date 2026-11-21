@@ -108,6 +108,7 @@ h2 { font-size: 20px; line-height: 1.35; }
 
 .panel-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
 .panel-nav .el-button + .el-button { margin-left: 0; }
+.media-nav { margin-top: -12px; }
 .panel-discard { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
 
 .section-heading, .plugins-heading {

@@ -14,6 +14,7 @@ import WebLoginSettings from "./WebLoginSettings.vue";
 import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
 import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 import MusicSettings from "./MusicSettings.vue";
+import BilibiliSettings from "./BilibiliSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -25,8 +26,10 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "music" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "music" | "bilibili" | "extensions";
 const view = ref<PanelView>("overview");
+const mediaSection = ref<"music" | "bilibili">("bilibili");
+const viewingMedia = computed(() => view.value === "music" || view.value === "bilibili");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
 const clock = new Intl.DateTimeFormat("zh-CN", {
@@ -48,11 +51,24 @@ function setView(next: PanelView, discard = false) {
   if (view.value === next) return;
   if (settingsDirty.value && !discard) {
     discardTo.value = next;
+    void nextTick(() => {
+      if (discardTo.value === next) document.getElementById("panel-continue-editing")?.focus();
+    });
     return;
   }
   settingsDirty.value = false;
   discardTo.value = undefined;
   view.value = next;
+  if (next === "music" || next === "bilibili") mediaSection.value = next;
+  focusView(next);
+}
+
+function continueEditing() {
+  discardTo.value = undefined;
+  focusView(view.value);
+}
+
+function focusView(next: PanelView) {
   const heading = {
     overview: "overview-title",
     likes: "like-settings-title",
@@ -63,6 +79,7 @@ function setView(next: PanelView, discard = false) {
     "checkin-schedule": "checkin-schedule-title",
     "account-permissions": "account-permissions-title",
     music: "music-settings-title",
+    bilibili: "bilibili-settings-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -263,14 +280,20 @@ onBeforeUnmount(() => {
         :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
       <ElButton :type="view === 'account-permissions' ? 'primary' : 'default'"
         :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">签到权限</ElButton>
-      <ElButton v-if="hasMedia" :type="view === 'music' ? 'primary' : 'default'"
-        :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌设置</ElButton>
+      <ElButton v-if="hasMedia" :type="viewingMedia ? 'primary' : 'default'"
+        :aria-current="viewingMedia ? 'true' : undefined" @click="setView(mediaSection)">媒体设置</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
         :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
+    <nav v-if="hasMedia && viewingMedia" class="panel-nav media-nav" aria-label="媒体设置">
+      <ElButton :type="view === 'bilibili' ? 'primary' : 'default'"
+        :aria-current="view === 'bilibili' ? 'page' : undefined" @click="setView('bilibili')">B 站视频</ElButton>
+      <ElButton :type="view === 'music' ? 'primary' : 'default'"
+        :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌</ElButton>
+    </nav>
     <div v-if="discardTo" class="panel-discard" role="alert">
       <span>当前配置还有未保存的改动。</span>
-      <ElButton @click="discardTo = undefined">继续编辑</ElButton>
+      <ElButton id="panel-continue-editing" @click="continueEditing">继续编辑</ElButton>
       <ElButton type="danger" @click="setView(discardTo!, true)">放弃改动</ElButton>
     </div>
     <LikeSettings v-if="view === 'likes'" :auth="auth" @unauthorized="expireSession"
@@ -288,6 +311,8 @@ onBeforeUnmount(() => {
     <AccountPermissionsSettings v-else-if="view === 'account-permissions'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <MusicSettings v-else-if="view === 'music'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <BilibiliSettings v-else-if="view === 'bilibili'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />
