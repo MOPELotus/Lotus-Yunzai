@@ -74,8 +74,11 @@ else {
 
 if (!process.exitCode) {
   try {
-    const { verifyStaticRenderer } = await import("../lib/renderer/shotium.ts");
-    await verifyStaticRenderer();
+    // This launcher may have started before node_modules existed.
+    const probe = Bun.spawn([process.execPath, "--eval",
+      'const { verifyStaticRenderer } = await import("./lib/renderer/shotium.ts"); await verifyStaticRenderer();',
+    ], { ...options, stdout: "ignore", stderr: "ignore" });
+    if (await probe.exited !== 0) throw new Error("Shotium 探测失败。");
     console.log("[初始化] Shotium 原生库已加载。");
   } catch {
     console.error("Shotium 原生库加载失败，请检查支持的平台及系统运行库。");
