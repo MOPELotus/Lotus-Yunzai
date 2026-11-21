@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { panelApi } from "../lib/panel.ts";
+import { createMiyousheWeb } from "../lib/miyoushe-web.ts";
+import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
+import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { panelWebLogin } from "../lib/panel-web-login.ts";
 import type { WebLoginSnapshot } from "../lib/panel-web-login-schema.ts";
 
@@ -40,7 +43,7 @@ test("网页登录按字段保存，保留继承的旧网站配置、挂载前�
     expect((await request("GET", undefined, {}))?.status).toBe(401);
     const first = await state();
     expect(first.settings).toEqual({
-      enable: true, path: "/players", public_url: "https://old.example.invalid/players", ticket_minutes: 13,
+      enable: true, path: "/players", public_url: "https://old.example.invalid/players", icp_number: "", ticket_minutes: 13,
       session_hours: 8, panel_ticket_minutes: 10, panel_session_hours: 2,
     });
     expect((await request("PUT", { revision: first.revision, patch: { enable: false } }, {}))?.status).toBe(401);
@@ -86,4 +89,69 @@ test("网页登录遇到 YAML 别名只覆盖选中的字段，隐藏不安全�
       defaults: { ticket_minutes: 31 }, coin_shop: { ticket_minutes: 32, public_url: "https://example:legacy-secret@old.invalid/" },
     });
   } finally { await close(); }
+});
+
+test("备案号沿用旧配置并经既有鉴权修改，用户站只将它作为固定链接的文本渲染", async () => {
+  const { root, url, file, request, state, save, close } = await fixture();
+  const site = createMiyousheWeb({
+    publicBase: () => new URL(origin), databasePath: join(root, "user-site.sqlite"), assetDirectory: "web/miyoushe",
+    signal: new AbortController().signal, loginIdentity: async () => { throw new Error("Static footer has no login read"); },
+    async overview() { throw new Error("Static footer has no user-specific data"); },
+    readLoginConfig: async () => (await readLotusGlobalConfig(url)).coin_shop,
+  });
+  const page = () => site.handle(new Request(origin + "/miyoushe/"));
+  try {
+    const inherited = join(root, "plugins/Lotus-ReFactor/config");
+    await mkdir(inherited, { recursive: true });
+    const inheritedFile = join(inherited, "global.yaml");
+    const sample = "coin_shop: {icp_number: '示例备案号', ticket_minutes: 13, private_fixture: fixture-kept}\n";
+    await writeFile(inheritedFile, sample);
+    expect((await state()).settings.icp_number).toBe("示例备案号");
+    const firstPage = (await page())!;
+    expect(firstPage.headers.get("Cache-Control")).toBe("no-store");
+    expect(await firstPage.text()).toContain('<footer class="site-footer"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">示例备案号</a></footer>');
+    const staged = join(root, "stage");
+    await stageLegacyGlobalConfig(root, staged);
+    expect(Bun.YAML.parse(await readFile(join(staged, "config/global.yaml"), "utf8"))).toEqual({
+      coin_shop: { icp_number: "示例备案号", ticket_minutes: 13 },
+    });
+    const before = await state();
+    expect((await request("PUT", { revision: before.revision, patch: { icp_number: "fixture" } }, {}))?.status).toBe(401);
+    for (const icp_number of [null, 1234, "a\nb", "a\u0000b", "a\u2028b", "a".repeat(257)]) {
+      expect((await save(before.revision, { icp_number }))?.status).toBe(400);
+    }
+    const plain = `样本 $& <img src="test" alt='tag'>`;
+    expect((await save(before.revision, { icp_number: ` ${plain} ` }))?.status).toBe(200);
+    expect((await save(before.revision, { icp_number: "another" }))?.status).toBe(409);
+    const current = await state();
+    expect(current.settings.icp_number).toBe(plain);
+    expect(current.settings.ticket_minutes).toBe(13);
+    const html = await (await page())!.text();
+    expect(html).toContain("样本 $&amp; &lt;img src=&quot;test&quot; alt=&#39;tag&#39;&gt;");
+    expect(html).not.toContain('<img src="test"');
+    expect(html).not.toContain("fixture-kept");
+    expect((await site.handle(new Request(origin + "/miyoushe/", { method: "HEAD" })))?.body).toBeNull();
+    expect(await readFile(inheritedFile, "utf8")).toBe(sample);
+    expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ coin_shop: { private_fixture: "fixture-kept" } });
+
+    let owner = true;
+    const ownerApi = panelApi(undefined, [], path => path === "/panel/api/settings/web/login" ? panelWebLogin(url) : undefined,
+      undefined, { handle: () => undefined, authorize: () => owner });
+    expect((await ownerApi(new Request(origin + path)))?.headers.get("Cache-Control")).toBe("no-store");
+    owner = false;
+    expect((await ownerApi(new Request(origin + path)))?.status).toBe(401);
+    expect((await save(current.revision, { icp_number: "   " }))?.status).toBe(200);
+    expect((await state()).settings.icp_number).toBe("");
+    expect(await (await page())!.text()).not.toContain('class="site-footer"');
+
+    await writeFile(file, "coin_shop: {icp_number: 1234}\n");
+    expect((await state()).settings.icp_number).toBe("1234");
+    expect(await (await page())!.text()).toContain(">1234</a></footer>");
+    const numericStage = join(root, "numeric-stage");
+    await stageLegacyGlobalConfig(root, numericStage);
+    expect(Bun.YAML.parse(await readFile(join(numericStage, "config/global.yaml"), "utf8"))).toEqual({ coin_shop: { icp_number: "1234" } });
+  } finally {
+    site.close();
+    await close();
+  }
 });

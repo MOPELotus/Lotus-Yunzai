@@ -2,6 +2,7 @@ export interface WebLoginSettings {
   enable: boolean;
   public_url: string;
   path: string;
+  icp_number: string;
   ticket_minutes: number;
   session_hours: number;
   panel_ticket_minutes: number;

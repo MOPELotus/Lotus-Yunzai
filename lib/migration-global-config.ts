@@ -5,6 +5,7 @@ import { legacyLotusDirectories, resolveLotusGlobalConfig } from "./lotus-global
 import { MigrationSourceFileError, readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyDailyNoteReminderSettings } from "./migration-daily-note-reminders.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
+import { configuredSiteIcpNumber } from "./web-icp.ts";
 
 type Config = Record<string, unknown>;
 
@@ -16,7 +17,7 @@ function projectSettings(value: unknown, fields: readonly string[]) {
 const supported = {
   scheduler: ["enable", "run_due_cron", "plan_generate_cron", "catch_up_cron", "mode", "fixed_time", "random", "late_registration"],
   permissions: ["default_policy", "users", "groups", "scopes"],
-  coin_shop: ["enable", "path", "public_url", "ticket_minutes", "session_hours", "panel_ticket_minutes", "panel_session_hours"],
+  coin_shop: ["enable", "path", "public_url", "icp_number", "ticket_minutes", "session_hours", "panel_ticket_minutes", "panel_session_hours"],
   daily_note_reminders: ["enable", "cooldown_hours", "cron", "message"],
 } as const;
 
@@ -47,6 +48,13 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
   const projected: Config = { ...media.config };
   for (const [key, fields] of Object.entries(supported)) {
     if (Object.hasOwn(effective, key)) projected[key] = projectSettings(effective[key], fields);
+  }
+  const shop = projected.coin_shop;
+  if (shop && typeof shop === "object" && Object.hasOwn(shop, "icp_number")) {
+    const settings = shop as Config;
+    const icpNumber = configuredSiteIcpNumber(settings.icp_number);
+    if (icpNumber === undefined) delete settings.icp_number;
+    else settings.icp_number = icpNumber;
   }
   if (legacyDailyNote && !Object.hasOwn(effective, "daily_note_reminders")) {
     projected.daily_note_reminders = {

@@ -3,6 +3,7 @@ import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import type { WebLoginSettings, WebLoginSnapshot } from "../../lib/panel-web-login-schema.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import { siteIcpLink, siteIcpMaxLength } from "../../lib/web-icp.ts";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
@@ -53,7 +54,7 @@ function isSnapshot(input: unknown): input is WebLoginSnapshot {
       typeof input.revision !== "string" || !/^[a-f0-9]{64}$/u.test(input.revision) ||
       !input.settings || typeof input.settings !== "object") return false;
   const item = input.settings as Partial<WebLoginSettings>;
-  return typeof item.enable === "boolean" && typeof item.public_url === "string" && typeof item.path === "string" &&
+  return typeof item.enable === "boolean" && typeof item.public_url === "string" && typeof item.path === "string" && typeof item.icp_number === "string" &&
     durations.every(({ key }) => typeof item[key] === "number" && Number.isFinite(item[key]));
 }
 
@@ -79,7 +80,7 @@ async function request(method: "GET" | "PUT") {
       return;
     }
     if (response.status === 400 || response.status === 422) {
-      error.value = response.status === 400 ? "请检查访问地址、挂载路径和有效期。" : "用户网页路径与已配置的 Milky Webhook 冲突。";
+      error.value = response.status === 400 ? "请检查访问地址、挂载路径、备案号或有效期。" : "用户网页路径与已配置的 Milky Webhook 冲突。";
       return;
     }
     if (!response.ok) throw new Error();
@@ -151,6 +152,15 @@ onBeforeUnmount(() => {
           <input v-model="draft[field.key]" type="number" :step="field.step" :min="field.step === '1' ? 1 : 0" required />
         </label>
       </fieldset>
+      <fieldset :disabled="Boolean(busy) || confirmReload">
+        <legend>网页页脚</legend>
+        <label>
+          ICP 备案号
+          <input id="web-icp-number" v-model="draft.icp_number" type="text" :maxlength="siteIcpMaxLength"
+            placeholder="留空不显示" aria-describedby="web-icp-note" />
+        </label>
+        <p id="web-icp-note" class="login-note">保存后显示在米游社用户网页与此设置页的页脚。</p>
+      </fieldset>
       <p class="login-note">新链接和新登录立即使用保存的有效期。用户网页的启用状态、地址和路径在重启宿主后生效。</p>
       <div class="login-settings-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
@@ -158,10 +168,15 @@ onBeforeUnmount(() => {
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>
+    <footer v-if="saved?.settings.icp_number" class="site-footer">
+      <a :href="siteIcpLink" target="_blank" rel="noopener noreferrer">{{ saved.settings.icp_number }}</a>
+    </footer>
   </section>
 </template>
 
 <style scoped>
+.site-footer { max-width: 660px; margin-top: 24px; text-align: center; overflow-wrap: anywhere; }
+.site-footer a { color: var(--muted); text-underline-offset: 3px; }
 .login-settings { display: grid; gap: 12px; max-width: 660px; margin-top: 20px; }
 .login-settings fieldset {
   display: grid; gap: 10px; min-width: 0; margin: 0; padding: 14px;

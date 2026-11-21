@@ -7,9 +7,10 @@ import { miyousheWebLifetimes, miyousheWebMountPath, miyousheWebPublicUrl, miyou
 import { panelOwnerLifetimes } from "./panel-owner-session.ts";
 import { readPanelJson } from "./panel.ts";
 import type { WebLoginSettings, WebLoginSnapshot } from "./panel-web-login-schema.ts";
+import { configuredSiteIcpNumber, siteIcpNumber } from "./web-icp.ts";
 
 type Config = Readonly<Record<string, unknown>>;
-const keys = ["enable", "public_url", "path", "ticket_minutes", "session_hours", "panel_ticket_minutes",
+const keys = ["enable", "public_url", "path", "icp_number", "ticket_minutes", "session_hours", "panel_ticket_minutes",
   "panel_session_hours"] as const satisfies readonly (keyof WebLoginSettings)[];
 const allowed = new Set<string>(keys);
 
@@ -29,6 +30,7 @@ function snapshot(config: Config): WebLoginSnapshot {
     enable: source.enable !== false,
     public_url: publicUrl(source.public_url)?.href ?? "",
     path: miyousheWebMountPath(source.path) ?? "",
+    icp_number: configuredSiteIcpNumber(source.icp_number) ?? "",
     ticket_minutes: user.ticketMinutes,
     session_hours: user.sessionHours,
     panel_ticket_minutes: owner.ticketMinutes,
@@ -60,6 +62,12 @@ function patchSettings(value: unknown): Partial<WebLoginSettings> {
         const path = miyousheWebMountPath(entry.trim());
         if (entry.trim() && !path) throw new Error();
         patch[key] = path ?? "";
+        break;
+      }
+      case "icp_number": {
+        const text = siteIcpNumber(entry);
+        if (text === undefined) throw new Error();
+        patch[key] = text;
         break;
       }
       case "ticket_minutes":

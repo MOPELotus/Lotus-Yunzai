@@ -41,6 +41,9 @@ h1, h2, h3, p { margin: 0; }
 .text-button { border: 0; padding: 0 6px; background: none; color: var(--accent); }
 .workspace { max-width: 1340px; margin-inline: auto; padding: 42px 32px; }
 
+.site-footer { padding: 12px 20px 26px; text-align: center; overflow-wrap: anywhere; }
+.site-footer a { color: var(--muted); text-underline-offset: 3px; }
+
 .intro {
   display: flex;
   justify-content: space-between;

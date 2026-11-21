@@ -1,3 +1,4 @@
+import { renderSiteIcpFooter } from "./web-icp.ts";
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -332,9 +333,13 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         }
       }
       const asset = Bun.file(join(assetDirectory, part || "index.html"));
-      return await asset.exists()
-        ? new Response(method === "HEAD" ? null : asset, { headers: assetHeaders })
-        : error(404);
+      if (!await asset.exists()) return error(404);
+      if (method === "HEAD") return new Response(null, { headers: assetHeaders });
+      if (part === "") {
+        const config = await readLoginConfig?.().catch(() => undefined);
+        return new Response(renderSiteIcpFooter(await asset.text(), config), { headers: assetHeaders });
+      }
+      return new Response(asset, { headers: assetHeaders });
     }
     if (part === "api/claim" || part === "api/logout" || editingPlans || ((settingsRoute || manualCheckinRoute) && method !== "GET")) {
       if (method !== "POST") return error(405);
