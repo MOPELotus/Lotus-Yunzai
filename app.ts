@@ -1935,6 +1935,14 @@ if (import.meta.main) {
         }
       }
     }
+    if (/^#(?:原神)?(?:删除全部面板|删除面板(?:数据)?)\s*(?:[1-9]\d{8,9}(?:\s+档案\s*[1-9]\d{0,2})?|(?:档案\s*)?[1-9]\d{0,2})?$/u.test(event.msg)) {
+      if (allowNew) {
+        const reply = await commands.dispatchFallback(event, names => names[0] === "@lotus-yunzai/genshin" && allowed(names),
+          user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
+        if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
     if (!event.isDelegated && await legacy.dispatchContext(event, allowed)) {
       handled?.();
       return;

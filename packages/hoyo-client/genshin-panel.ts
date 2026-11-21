@@ -34,16 +34,22 @@ function listOf(data: Json): Json[] {
   return list;
 }
 
-async function readCharacterIds(source: ProfileRequestContext, transport: HoyoTransport,
-  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>) {
+export async function readGenshinCharacterList(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal }: GenshinPanelOptions, verifyProfile?: () => Promise<void>) {
   const list = await readCnGameRecord(source, transport, { kind: "genshin-panel-list", signal }, verifyProfile);
   verifyRole(list.data, source.role.uid, list.region);
-  const ids = listOf(list.data).map(row => characterId(row.id));
+  const avatars = listOf(list.data);
+  const ids = avatars.map(row => characterId(row.id));
   const characterIds = ids.filter(id => id !== undefined);
   if (ids.length !== characterIds.length || new Set(characterIds).size !== ids.length) {
     throw new HoyoRequestError("response", "原神面板角色编号缺失或重复。");
   }
-  return characterIds;
+  return { avatars, characterIds };
+}
+
+async function readCharacterIds(source: ProfileRequestContext, transport: HoyoTransport,
+  signal: AbortSignal | undefined, verifyProfile?: () => Promise<void>) {
+  return (await readGenshinCharacterList(source, transport, { signal }, verifyProfile)).characterIds;
 }
 
 async function readCharacterDetails(source: ProfileRequestContext, transport: HoyoTransport, characterIds: readonly number[],

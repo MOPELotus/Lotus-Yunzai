@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { cp, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -95,7 +95,10 @@ async function withHost(
     disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, ...preloads.flatMap(path => ["--preload", path]), "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "group-routing-fixture" },
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "group-routing-fixture",
+        LOTUS_PROFILE_DIR: join(root, "data", "profile"),
+        LOTUS_GENSHIN_PANEL_DIR: join(root, "data", "panel-archive"),
+        LOTUS_GENSHIN_LEGACY_PANEL_DIR: join(root, "data", "panel-legacy") },
     });
     const stderr = new Response(host.stderr).text();
     try {
@@ -549,3 +552,47 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
     await service.stop(true);
   }
 }, 12_000);
+
+test("原神删面板经真实网关抢先于旧会话和关键词，尊重功能开关", async () => {
+  const uid = "100123456";
+  await withHost(async root => {
+    const source = join(import.meta.dir, "../plugins/genshin");
+    const destination = join(root, "plugins", "genshin");
+    await cp(source, destination, { recursive: true, filter: path => ![".git", "node_modules"].includes(path.split("/").at(-1)!) });
+    await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
+    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    const profiles = join(root, "data", "profile");
+    const old = join(root, "data", "panel-legacy");
+    await Promise.all([mkdir(profiles, { recursive: true }), mkdir(old, { recursive: true }),
+      mkdir(join(root, "config", "config"), { recursive: true })]);
+    await writeFile(join(root, "config/config/group.yaml"),
+      'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"78": { disable: ["[genshin] 角色面板"] }\n');
+    await writeFile(join(root, "plugins", "legacy-panel-route.js"), `
+      export default class LegacyPanelRoute extends plugin {
+        constructor() { super({ name: "测试旧版删面板", event: "message", rule: [
+          { reg: /^#(?:原神)?删除面板(?:\\d{9,10})?$/, fnc: "caught" },
+        ] }); }
+        caught() { return this.reply("误入旧版删面板"); }
+      }
+    `);
+    await writeFile(join(profiles, "42.yaml"), Bun.YAML.stringify({
+      user: { qq: "42" }, profile: { id: 1 }, account: {
+        cookie: "account_id=900000002;cookie_token=fixture;ltuid=900000002;ltoken=fixture",
+        stuid: "900000002", stoken: "fixture", current_uid: { gs: uid },
+        game_roles: { gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }] },
+      },
+    }));
+    await writeFile(join(old, `${uid}.json`), JSON.stringify({ uid, avatars: {} }));
+  }, async (connect, root) => {
+    const client = await connect(99);
+    client.send("#删除面板", 77);
+    await client.reply(expect.stringContaining(`#删除面板${uid}`), 77);
+    client.send(`#原神删除面板${uid}`, 78);
+    client.send("#删除普通关键词", 78);
+    await client.reply(expect.stringContaining("没有添加此关键词"), 78);
+    client.send(`#原神删除面板${uid}`, 77);
+    await client.reply(expect.stringContaining("本地面板已删除"), 77);
+    expect(await readFile(join(root, "data/panel-legacy", `${uid}.json`), "utf8")).toBe(JSON.stringify({ uid, avatars: {} }));
+    expect(JSON.parse(await readFile(join(root, "data/panel-archive/42", `${uid}.json`), "utf8"))).toMatchObject({ uid, avatars: {} });
+  });
+}, 10_000);

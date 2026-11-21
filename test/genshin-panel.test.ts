@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProfileRequestContext } from "../packages/account/index.ts";
+import { createProfileStore, type ProfileRequestContext } from "../packages/account/index.ts";
 import { lockFile } from "../lib/file-lock.ts";
 import { createModule } from "../plugins/genshin/index.ts";
-import { createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
+import { createGenshinPanelArchive, createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
 import { artifactProperties, matchGenshinPanel, officialPanel, readPanel, selectAvatar } from "../plugins/genshin/panel/model.ts";
 
 const uid = "100123456";
@@ -164,5 +164,78 @@ test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指�
     expect(module.fallbackFeatures({ ...context(""), attachment: { ...attachment, name: "表情.png" } })).toEqual([]);
   } finally {
     controller.abort();
+  }
+});
+
+test("删除原神面板在本人档案内确认 UID，阻止在途更新和旧共享缓存复活", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-gs-panel-discard-"));
+  const legacyDirectory = join(root, "legacy");
+  const archiveDirectory = join(root, "archive");
+  const profiles = join(root, "profiles");
+  const otherUid = "100123457";
+  const deniedUid = "100123458";
+  const contents = JSON.stringify(legacy);
+  const qq = "42";
+  const messageContext = { user_id: Number(qq), message_type: "group" };
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let now = 3000;
+  let calls = 0;
+  try {
+    await Promise.all([mkdir(legacyDirectory), mkdir(profiles)]);
+    await writeFile(join(legacyDirectory, `${uid}.json`), contents);
+    const profile = (user: string, id: number, current = otherUid,
+      roles = [uid, otherUid]) => Bun.YAML.stringify({ user: { qq: user }, profile: { id }, account: {
+        cookie: "account_id=900000002;cookie_token=fixture;ltuid=900000002;ltoken=fixture",
+        stuid: "900000002", stoken: "fixture", current_uid: { gs: current },
+        game_roles: { gs: roles.map(uid => ({ uid, region: "cn_gf01", game_biz: "hk4e_cn" })) },
+      } });
+    await writeFile(join(profiles, "42-2.yaml"), profile(qq, 2));
+    await writeFile(join(profiles, "43-2.yaml"), profile("43", 2));
+    await writeFile(join(profiles, "44.yaml"), profile("44", 1, uid, []));
+    const profileStore = createProfileStore(profiles);
+    const archive = createGenshinPanelArchive(lockFile, { archiveDirectory, legacyDirectory });
+    const query = createGenshinPanelQuery(profileStore, {
+      async fetchGenshinPanel(source) {
+        if (++calls === 1) {
+          started.resolve();
+          await release.promise;
+        }
+        return { avatars: [avatar], revision: source.revision };
+      },
+    }, lockFile, new AbortController().signal, {
+      archiveDirectory, legacyDirectory, now: () => now,
+      theme: async () => ({ ...catalog, async picture() { return undefined; } }),
+      render: { async list() { return { png: Buffer.from("fixture") }; }, async detail() { throw new Error("unexpected"); } },
+    });
+    const own = { ...messageContext, message_type: "private" };
+    expect(await query("#删除面板2", messageContext)).toContain(`#删除面板${otherUid} 档案2`);
+    expect(await query(`#原神删除全部面板${uid} 档案2`, { ...own, isDelegated: true })).toContain("本人 QQ");
+    expect(await query(`#原神删除面板${deniedUid} 档案2`, own)).toContain("已同步");
+    expect(await query(`#删除面板${uid}`, { ...own, user_id: 44 })).toContain("已同步");
+    expect(await archive.discardedAt(qq, uid)).toBe(0);
+    await writeFile(join(profiles, "42-2.yaml"), profile(qq, 2, uid));
+    expect(await archive.readPanel(qq, uid, catalog)).toBeDefined();
+    const refresh = query("#更新面板2", messageContext);
+    await Promise.race([started.promise, refresh.then(reply => { throw new Error(String(reply)); })]);
+    now++;
+    expect(await query(`#原神删除面板数据${uid} 档案2`, messageContext)).toContain("本地面板已删除");
+    release.resolve();
+    expect(await refresh).toContain("重新发起更新");
+    expect(await query("#面板2", own)).toContain("本地暂无原神角色面板");
+    expect(await archive.readPanel("43", uid, catalog)).toBeDefined();
+    expect(await readFile(join(legacyDirectory, `${uid}.json`), "utf8")).toBe(contents);
+
+    now++;
+    expect(await query("#更新面板2", messageContext)).toMatchObject({ type: "image" });
+    expect(Object.keys((await archive.readPanel(qq, uid, catalog))!.avatars)).toEqual(["10000089"]);
+    expect(await archive.discardedAt(qq, uid)).toBe(3001);
+    now++;
+    await expect(query(`#删除面板${uid} 档案2`, own)).resolves.toContain("本地面板已删除");
+    expect(await archive.readPanel(qq, uid, catalog)).toBeUndefined();
+    expect(await archive.discardedAt(qq, uid)).toBe(3003);
+  } finally {
+    release.resolve();
+    await rm(root, { recursive: true, force: true });
   }
 });
