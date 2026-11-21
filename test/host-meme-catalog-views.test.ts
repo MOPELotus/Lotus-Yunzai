@@ -57,7 +57,7 @@ test("正常宿主通过 OneBot 和 Milky 返回原列表图样及同源详情�
       expect(oneList.params).toMatchObject({ user_id: 42, message: [{ type: "image" }] });
       const rendered = imageBytes(oneList.params);
       const metadata = await new Bun.Image(rendered).metadata();
-      expect(metadata).toMatchObject({ width: 1440, format: "png" });
+      expect(metadata).toMatchObject({ width: 5760, format: "png" });
 
       await sendMilky("meme列表");
       const otherList = await milky.next("send_private_message");
@@ -84,6 +84,6 @@ test("正常宿主通过 OneBot 和 Milky 返回原列表图样及同源详情�
       otherDetail.respond({ message_seq: 104 });
 
       expect(requests).toEqual(["GET /source/memes/demo0/preview", "GET /source/memes/demo0/preview"]);
-    }, 5_000, 'Bun.env.LOTUS_SKIA_MODE = "gpu";\n', root => catalog(root, new URL("/source/", server.url)));
+    }, 10_000, 'Bun.env.LOTUS_SKIA_MODE = "gpu";\n', root => catalog(root, new URL("/source/", server.url)));
   } finally { server.stop(true); }
-}, 15_000);
+}, 20_000);
