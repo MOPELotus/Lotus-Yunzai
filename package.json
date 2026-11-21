@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "bootstrap": "bun scripts/bootstrap.ts",
+    "migrate:plan": "bun --no-env-file scripts/migrate-plan.ts",
     "init": "bun --no-env-file scripts/launcher.ts init",
     "start": "bun --no-env-file scripts/launcher.ts start",
     "start:bg": "bun --no-env-file scripts/launcher.ts start:bg",

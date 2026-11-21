@@ -34,9 +34,11 @@ interface PluginMetadata {
   readonly name: string;
   readonly declaredName: string;
   readonly repositoryKeys: readonly string[];
+  readonly repositoryNames: readonly string[];
   readonly identities: readonly string[];
   readonly entry?: string;
   readonly rejection?: string;
+  readonly rejectionKind?: "policy" | "built-in-directory";
   readonly rejectionIdentity?: string;
 }
 
@@ -57,16 +59,28 @@ export function inspectPluginMetadata(directory: string, source: string | undefi
   const declaredName = typeof manifest.name === "string" ? manifest.name.trim().toLowerCase() : "";
   const name = declaredName || directory.toLowerCase();
   const repository = typeof manifest.repository === "string" ? manifest.repository : record(manifest.repository).url;
-  const repositories = (typeof repository === "string" ? [...urls, repository] : urls)
-    .map(repositoryKey).filter((key) => key !== undefined);
+  const sources = typeof repository === "string" ? [...urls, repository] : urls;
+  const repositories = sources.map(repositoryKey).filter(key => key !== undefined);
+  const repositoryNames = sources.map(source => {
+    const key = repositoryKey(source);
+    if (key) return key.split("/").at(-1);
+    try {
+      // Some legacy protocol repositories sit directly at the root of their Git host.
+      const url = new URL(source.trim().replace(/^git\+/iu, ""));
+      if (!["https:", "http:", "ssh:", "git:"].includes(url.protocol)) return;
+      return /^\/([\w.-]+)\/?$/u.exec(url.pathname)?.[1]?.replace(/\.git$/iu, "").toLowerCase();
+    } catch {
+      return;
+    }
+  }).filter(name => name !== undefined);
   const result = {
-    name, declaredName, repositoryKeys: repositories, identities: [`name:${name}`, ...repositories.map((key) => `repo:${key}`)],
+    name, declaredName, repositoryKeys: repositories, repositoryNames, identities: [`name:${name}`, ...repositories.map((key) => `repo:${key}`)],
   };
   const names = [directory.toLowerCase(), name, name.split("/").at(-1) ?? "",
     ...repositories, ...repositories.map((key) => key.split("/")[1] ?? "")];
   const games = Array.isArray(meta.games) ? meta.games.filter((game) => typeof game === "string") : [];
   const rejection = rejectionReason(names, games);
-  if (rejection) return { ...result, rejection, rejectionIdentity: declaredName || repositories[0] || directory };
+  if (rejection) return { ...result, rejection, rejectionKind: "policy", rejectionIdentity: declaredName || repositories[0] || directory };
 
   const { entry } = meta;
   if (entry !== undefined && (typeof entry !== "string" || !declaredName)) {
@@ -74,7 +88,7 @@ export function inspectPluginMetadata(directory: string, source: string | undefi
   }
   const builtInDirectory = builtInDirectories.get(name);
   if (builtInDirectory !== undefined && directory !== builtInDirectory) {
-    return { ...result, rejection: `${name} 的内置目录为 plugins/${builtInDirectory}。` };
+    return { ...result, rejection: `${name} 的内置目录为 plugins/${builtInDirectory}。`, rejectionKind: "built-in-directory" };
   }
   return { ...result, entry };
 }

@@ -12,6 +12,7 @@ test("清单检查统一规范化包名及 Git 来源，保留原入口与重复
   expect(result).toEqual({
     name: "@publisher/example", declaredName: "@publisher/example", entry: "./index.ts",
     repositoryKeys: ["publisher/example-fork", "publisher/example"],
+    repositoryNames: ["example-fork", "example"],
     identities: ["name:@publisher/example", "repo:publisher/example-fork", "repo:publisher/example"],
   });
   expect(urls).toEqual(["git@github.com:Publisher/Example-Fork.git", "invalid remote"]);
