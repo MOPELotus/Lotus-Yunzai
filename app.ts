@@ -12,6 +12,7 @@ import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-cli
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { readQqMessageMedia } from "./lib/chat-files.ts";
+import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
@@ -343,6 +344,7 @@ if (import.meta.main) {
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let otherPolicies: Awaited<ReturnType<typeof readRequestOtherPolicies>>;
+  const imageOcr = createImageOcr();
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
     policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
@@ -1859,6 +1861,14 @@ if (import.meta.main) {
     }
     const useKeywords = allowed(keywordFeatureNames);
     if (!event.isDelegated && useKeywords && await keywords.continue(event)) {
+      handled?.();
+      return;
+    }
+    const imageOcrNames = ["[group] 图片文字识别", "group", "@lotus-yunzai/group"];
+    if (allowed(imageOcrNames) && await imageOcr(event, {
+      allowNew, signal: nativeOperationSignal(),
+      permitted: async () => groupDispatch.allowsInbound(event) && allowed(imageOcrNames) && !await privateAccess.blocked(event),
+    })) {
       handled?.();
       return;
     }

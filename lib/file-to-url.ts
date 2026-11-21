@@ -100,6 +100,11 @@ async function verifyLocalRaster(bytes: Buffer, mime: RasterMime): Promise<boole
   }
 }
 
+export async function isVerifiedRaster(bytes: Uint8Array): Promise<boolean> {
+  const raster = rasterFile(bytes);
+  return raster !== undefined && await verifyLocalRaster(Buffer.from(bytes), raster.mime);
+}
+
 export function createFileToUrl(
   files: ReturnType<typeof createPublicFiles>, config: Record<string, unknown>, baseUrl: () => URL | undefined,
 ) {
