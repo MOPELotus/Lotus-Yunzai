@@ -170,6 +170,20 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
   const memberCooldowns = new Cooldowns();
   const duplicates = new Cooldowns();
   let listRevision = 0;
+
+  async function refreshLists() {
+    while (!watchSignal?.aborted) {
+      const revision = listRevision;
+      const updated = await readRoutingLists(root);
+      if (revision !== listRevision) continue;
+      if (!watchSignal?.aborted) {
+        lists = updated;
+        listRevision++;
+      }
+      break;
+    }
+  }
+
   if (watchSignal) {
     watchRoutingFiles("bot", watchSignal, async () => {
       const updated = await readSlashAlias(root);
@@ -179,15 +193,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
       const updated = await readRoutingConfig(root);
       if (!watchSignal.aborted) groups = updated;
     });
-    watchRoutingFiles("other", watchSignal, async () => {
-      while (!watchSignal.aborted) {
-        const revision = listRevision;
-        const updated = await readRoutingLists(root);
-        if (revision !== listRevision) continue;
-        if (!watchSignal.aborted) lists = updated;
-        break;
-      }
-    });
+    watchRoutingFiles("other", watchSignal, refreshLists);
   }
 
   function normalizePrefix(text: string): string {
@@ -348,5 +354,5 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     }
   }
 
-  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, blockUser, keywordSettings };
+  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, refreshLists, blockUser, keywordSettings };
 }

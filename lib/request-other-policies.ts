@@ -47,10 +47,10 @@ export async function readRequestOtherPolicies(root: URL, watchSignal?: AbortSig
     if (!isDeepStrictEqual(current, next)) current = next;
   }
 
-  async function refresh() {
-    if (!watchSignal || watchSignal.aborted) return;
+  async function refresh(force = false) {
+    if ((!watchSignal && !force) || watchSignal?.aborted) return;
     if (pending) await pending;
-    if (!watchSignal.aborted) return pending ??= reload().finally(() => { pending = undefined; });
+    if (!watchSignal?.aborted) return pending ??= reload().finally(() => { pending = undefined; });
   }
 
   if (watchSignal) watchConfigFiles(watchSignal, refresh,

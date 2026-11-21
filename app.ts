@@ -14,6 +14,7 @@ import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.
 import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
+import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -81,7 +82,7 @@ import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
 import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
-import { appendBlackUser } from "./lib/master-config.ts";
+import { appendBlackUser, updateHostAccessList } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
 import { pokeDeliverySession, setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest,
@@ -338,6 +339,7 @@ if (import.meta.main) {
   let privateAccess: Awaited<ReturnType<typeof readPrivateAccess>>;
   let autoFriend: Awaited<ReturnType<typeof readFriendRequests>>;
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
+  let otherPolicies: Awaited<ReturnType<typeof readRequestOtherPolicies>>;
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
     policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
@@ -859,7 +861,13 @@ if (import.meta.main) {
     if (await handleManagedBlacklist(event)) return;
     if (event.post_type === "message" && event.message_type === "group" && groupDispatch.allowsInbound(event) &&
         await handleGroupVerificationAnswer(event)) return;
-    if (groupDispatch.admit(event)) await handleEvent(event);
+    if (groupDispatch.admit(event)) {
+      await handleEvent(event);
+    } else if (event.post_type === "message" && event.message_type === "private" && !groupDispatch.allowsInbound(event)) {
+      // A verified owner can recover the host lists from a friend session even after excluding themselves.
+      const prepared = groupDispatch.prepare(event);
+      await handleHostAccessList(prepared.event, prepared.allowNew);
+    }
   }
 
   async function handleGroupVerificationNotice(event: GroupNotice) {
@@ -1619,6 +1627,48 @@ if (import.meta.main) {
     }
   }
 
+  async function handleHostAccessList(event: MessageEvent, allowNew: boolean) {
+    const command = hostAccessListCommand(event);
+    if (!command) return false;
+    if (event.isDelegated || event.attachmentOnly || !allowNew || stopping || !handoff.accepting || dispatchPower.paused ||
+        !groupDispatch.allows(event, hostAccessListNames)) return true;
+
+    const { adapter, self_id: botId, user_id: userId, sender, message_type } = event;
+    const local = message_type === "terminal";
+    const transport = event[delegationSession]?.signal;
+    if (!local && (botId === undefined || userId === undefined || !transport || event.message_id === undefined ||
+        (message_type === "private" && (event.sub_type !== "friend" || event.group_id !== undefined)) ||
+        (sender?.user_id !== undefined && sender.user_id !== userId && sender.user_id !== String(userId)))) return true;
+    const active = nativeOperationSignal(transport ?? lifecycle.signal);
+    const isCurrent = () => !active.aborted && (local ? masterPermissions.terminal :
+      canManagePackages(event) && (adapter !== "milky" || onlineMilkyBotId() === botId) &&
+      masterPermissions.isMaster(botId!, userId!));
+    if (!isCurrent()) return true;
+    const { key, target, remove, label, currentGroup } = command;
+    if (target === undefined) {
+      await event.reply(`${label}失败，请指定有效的${key.endsWith("Group") ? "群号" : "QQ 号或单个 @成员"}。`);
+      return true;
+    }
+
+    let message: string;
+    try {
+      const result = await updateHostAccessList(root, key, target, remove, local ? "stdin" : { botId: botId!, userId: userId! }, isCurrent);
+      switch (result) {
+        case "protected": message = "不能拉黑已配置的机器人主人。"; break;
+        case "existing": message = `${target} 已进行过${label}处理。`; break;
+        case "missing": message = `${target} 未在对应名单内。`; break;
+        default:
+          message = await Promise.all([groupDispatch.refreshLists(), otherPolicies.refresh(true)])
+            .then(() => currentGroup ? `已将当前群（${target}）进行${label}处理。` : `已将 ${target} 进行${label}处理。`)
+            .catch(() => "名单已保存，运行时重读失败，请核对 other.yaml。");
+      }
+    } catch {
+      message = `${label}未能完成，请核对 other.yaml 和当前主人配置。`;
+    }
+    if (isCurrent()) await event.reply(message);
+    return true;
+  }
+
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
@@ -1738,6 +1788,7 @@ if (import.meta.main) {
       if (allowNew && allowedToLeave()) await leaveGroup(event, groupToLeave, allowedToLeave, nativeOperationSignal());
       return;
     }
+    if (await handleHostAccessList(event, allowNew)) return;
     const contactList = ownerContactListCommand(event.msg);
     if (contactList) {
       if (allowNew && allowed([`${contactList.kind}列表`, "group", "@lotus-yunzai/group"])) {
@@ -2010,6 +2061,7 @@ if (import.meta.main) {
       console.warn("[日志] 无法启用本地日志写入。");
     }
     autoFriend = await readFriendRequests(root, undefined, requestPolicies);
+    otherPolicies = requestPolicies;
     groupDispatch = routing;
     keywords = createKeywords(createKeywordStore(root), routing.keywordSettings, undefined, {
       async read(actor) {

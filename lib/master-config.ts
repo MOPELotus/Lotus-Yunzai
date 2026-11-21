@@ -3,7 +3,7 @@ import { mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { isNode, isScalar, isSeq, parseDocument } from "yaml";
+import { isMap, isNode, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { lockFile } from "./file-lock.ts";
 
 const ownerFields = new Set(["master", "masterQQ"]);
@@ -56,7 +56,7 @@ function readDocument(text: string) {
     }
     const config = runtime as Record<string, unknown>;
     if ([...ownerFields].some((key) => !isDeepStrictEqual(values.get(key), config[key]))) throw new Error();
-    return { document, values: values as Map<unknown, unknown>, config };
+    return { document, values: values as Map<unknown, unknown>, config, text };
   } catch {
     throw new Error("主人配置的 YAML 无效。");
   }
@@ -176,33 +176,107 @@ function configuredId(value: unknown): number | undefined {
   return isId(number) ? number : undefined;
 }
 
-export async function appendBlackUser(
-  root: URL, user: number, isCurrent: () => boolean,
-): Promise<"added" | "existing" | "protected"> {
-  if (!isId(user)) throw new Error("全局黑名单须指定有效的 QQ 账号。");
-  return editOtherConfig<"added" | "existing" | "protected">(root, ({ document, values, config }) => {
-    if (valuesOf(config.masterQQ).some(entry => configuredId(entry) === user) ||
+export type HostAccessList = "blackUser" | "whiteUser" | "blackGroup" | "whiteGroup";
+type Added = "added" | "existing" | "protected";
+type ListResult = Added | "removed" | "missing";
+
+function replaceListText(text: string, oldNode: Node | undefined, document: ReturnType<typeof readDocument>["document"], key: HostAccessList) {
+  const rendered = document.toString();
+  const nextNode = parseDocument(rendered).get(key, true);
+  if (!isSeq(nextNode) || !nextNode.range) throw new Error("无法写入全局名单。");
+  const [newStart, newEnd] = nextNode.range;
+  const value = rendered.slice(newStart, newEnd);
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  if (oldNode?.range) {
+    const [start, end] = oldNode.range;
+    const oldIndent = start - text.lastIndexOf("\n", start - 1) - 1;
+    const newIndent = newStart - rendered.lastIndexOf("\n", newStart - 1) - 1;
+    const aligned = value.split("\n").map((line, index) => {
+      if (index === 0 || !line) return line;
+      return " ".repeat(oldIndent) + line.slice(newIndent);
+    }).join(eol);
+    const before = start === end && text[start - 1] === ":" ? " " : "";
+    const after = start === end && text[start] === "#" ? " "
+      : text.slice(start, end).endsWith("\n") && !aligned.endsWith("\n") ? eol : "";
+    return text.slice(0, start) + before + aligned + after + text.slice(end);
+  }
+  const body = document.contents;
+  if (!isMap(body) || !body.range) return rendered;
+  const [start, end] = body.range;
+  if (body.flow && text[start] === "{") {
+    return text.slice(0, start + 1) + `${key}: ${value}, ` + text.slice(start + 1);
+  }
+  const before = text.slice(0, end);
+  const newline = before && !before.endsWith("\n") ? eol : "";
+  const indentation = " ".repeat(start - text.lastIndexOf("\n", start - 1) - 1);
+  return before + newline + indentation + `${key}: ${value}${eol}` + text.slice(end);
+}
+
+function editAccessList(root: URL, key: HostAccessList, target: number, remove: false,
+  isCurrent: () => boolean, owner?: string): Promise<Added>;
+function editAccessList(root: URL, key: HostAccessList, target: number, remove: boolean,
+  isCurrent: () => boolean, owner?: string): Promise<ListResult>;
+function editAccessList(root: URL, key: HostAccessList, target: number, remove: boolean,
+  isCurrent: () => boolean, owner?: string): Promise<ListResult> {
+  if (!isId(target)) throw new Error("全局名单须指定有效的 QQ 账号或群号。");
+  return editOtherConfig<ListResult>(root, ({ document, values, config, text }) => {
+    if (owner && !valuesOf(config.master).some(entry => typeof entry === "string" && entry.trim() === owner)) {
+      throw new Error("当前操作者未获得这台机器人的主人授权。");
+    }
+    if (key === "blackUser" && !remove && (valuesOf(config.masterQQ).some(entry => configuredId(entry) === target) ||
         valuesOf(config.master).some(entry => typeof entry === "string" && ownerPair.test(entry.trim()) &&
-          entry.trim().endsWith(`:${user}`))) {
+          entry.trim().endsWith(`:${target}`)))) {
       return { result: "protected" };
     }
 
-    const entries = valuesOf(config.blackUser);
-    if (!isDeepStrictEqual(values.get("blackUser"), config.blackUser) ||
+    const entries = valuesOf(config[key]);
+    if (!isDeepStrictEqual(values.get(key), config[key]) ||
         !entries.every(entry => configuredId(entry) !== undefined)) {
-      throw new Error("other.yaml 的 blackUser 包含无效账号或引用。");
+      throw new Error(`other.yaml 的 ${key} 包含无效账号或引用。`);
     }
-    if (entries.some(entry => configuredId(entry) === user)) return { result: "existing" };
+    const remaining = entries.filter(entry => configuredId(entry) !== target);
+    if (remove && remaining.length === entries.length) return { result: "missing" };
+    if (!remove && remaining.length !== entries.length) return { result: "existing" };
 
-    append(document, "blackUser", entries, user);
-    const yaml = document.toString();
+    const node = document.get(key, true);
+    if (remove) {
+      if (isSeq(node)) {
+        for (let position = entries.length - 1; position >= 0; position--) {
+          if (configuredId(entries[position]) === target) node.delete(position);
+        }
+      } else if (isScalar(node) && !node.anchor) {
+        const sequence = document.createNode([]);
+        sequence.comment = node.comment;
+        sequence.commentBefore = node.commentBefore;
+        sequence.spaceBefore = node.spaceBefore;
+        document.set(key, sequence);
+      } else {
+        throw new Error("无法安全修改全局名单的 YAML 引用。");
+      }
+    } else {
+      append(document, key, entries, target);
+    }
+    const destination = document.get(key, true);
+    if (isSeq(destination) && !isSeq(node)) destination.flow = true;
+    const yaml = replaceListText(text, isNode(node) ? node : undefined, document, key);
     const next = readDocument(yaml);
-    const otherFields = (map: Map<unknown, unknown>) => new Map([...map].filter(([key]) => key !== "blackUser"));
+    const otherFields = (map: Map<unknown, unknown>) => new Map([...map].filter(([name]) => name !== key));
     if (!isDeepStrictEqual(otherFields(values), otherFields(next.values)) ||
-        !isDeepStrictEqual(next.values.get("blackUser"), next.config.blackUser) ||
-        !isDeepStrictEqual(next.config.blackUser, [...entries, user])) {
+        !isDeepStrictEqual(next.values.get(key), next.config[key]) ||
+        !isDeepStrictEqual(next.config[key], remove ? remaining : [...entries, target])) {
       throw new Error("写入全局黑名单将改变其他 YAML 字段或引用。");
     }
-    return { result: "added", yaml };
+    return { result: remove ? "removed" : "added", yaml };
   }, isCurrent);
+}
+
+export function appendBlackUser(root: URL, user: number, isCurrent: () => boolean) {
+  return editAccessList(root, "blackUser", user, false, isCurrent);
+}
+
+export function updateHostAccessList(root: URL, key: HostAccessList, target: number, remove: boolean,
+  actor: { botId: number; userId: number } | "stdin", isCurrent: () => boolean) {
+  if (actor !== "stdin" && (!isId(actor.botId) || !isId(actor.userId))) throw new Error("主人会话无效。");
+  const owner = actor === "stdin" ? "stdin:stdin" : `${actor.botId}:${actor.userId}`;
+  return editAccessList(root, key, target, remove, isCurrent, owner);
 }
