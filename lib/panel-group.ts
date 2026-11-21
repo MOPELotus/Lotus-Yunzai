@@ -4,11 +4,7 @@ import { lockFile } from "./file-lock.ts";
 import { readPanelJson } from "./panel.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
-interface LikeSettingsModule {
-  readLikeSettings(): Promise<unknown>;
-  saveLikeSettings(patch: unknown, options: { revision: string }): Promise<unknown>;
-  LikeSettingsError: new (...args: never[]) => Error & { code: "invalid" | "conflict" };
-}
+type LikeSettingsModule = typeof import("../plugins/group/like-settings.ts");
 
 type NoticeSettingsModule = typeof import("../plugins/group/group-notice-panel-settings.ts");
 
@@ -51,6 +47,13 @@ export function panelGroupNoticeSettings(root: URL, directories: PluginLoadRepor
   };
 }
 
+export async function readGroupLikeSettingsModule(directories: PluginLoadReport["directories"]): Promise<LikeSettingsModule | undefined> {
+  const group = directories.get("group");
+  if (group?.packageName === "@lotus-yunzai/group") {
+    return await import(pathToFileURL(join(group.path, "like-settings.ts")).href) as LikeSettingsModule;
+  }
+}
+
 export function panelGroupSettings(directories: PluginLoadReport["directories"]) {
   return async (request: Request): Promise<Response> => {
     const group = directories.get("group");
@@ -61,7 +64,9 @@ export function panelGroupSettings(directories: PluginLoadReport["directories"])
 
     let service: LikeSettingsModule;
     try {
-      service = await import(pathToFileURL(join(group.path, "like-settings.ts")).href) as LikeSettingsModule;
+      const module = await readGroupLikeSettingsModule(directories);
+      if (!module) return new Response(null, { status: 404 });
+      service = module;
     } catch {
       return new Response(null, { status: 500 });
     }

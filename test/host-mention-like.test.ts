@@ -26,7 +26,7 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, la
   throw new Error(label);
 }
 
-test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成员送赞", async () => {
+test("双协议继承旧点赞和状态配置，主人聊天修改即时作用于这两个功能", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-mention-like-wire-"));
   const milkyCalls: Action[] = [];
   let milkyFriends: unknown = [{ user_id: target }];
@@ -55,6 +55,8 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
     const previous = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(previous, { recursive: true });
     const legacy = join(previous, "thumbUp.yaml");
+    const legacyStatus = join(previous, "state.yaml");
+    const status = join(root, "config/system-status.yaml");
     const legacySettings = [
       "count: 7", "strangeThumbUp: false", 'closeTips: "旧配置已关闭点赞"',
       'successMsg: "{{at}} {{userId}} 收到 {{thumbUpNum}} 次"', 'failsMsg: "当前点赞失败"',
@@ -63,7 +65,10 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
     const primary = join(root, "config/group.yaml");
     const override = "count: 3\ndefault: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶点赞]}\n";
     await writeFile(legacy, "enable: false\n" + legacySettings);
+    await writeFile(legacyStatus, "# 旧状态配置\ndefaultState: true\nnoPro: true\n");
     await writeFile(primary, override);
+    await writeFile(join(root, "config/other.yaml"), "master: ['99:51', '100:51']\n");
+    await writeFile(join(root, "config/bot.yaml"), "file_watch: false\n");
     await writeFile(join(root, "config/milky.yaml"),
       `enable: true\nhost: 127.0.0.1\nport: ${milky.port}\nconnection: webhook\naccess_token: ${token}\n`);
     disableMemberPrewarm(root);
@@ -93,8 +98,8 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
     };
     await waitFor(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 点赞测试连接未就绪。");
     let sequence = 2;
-    function send(message: unknown, group_id = group) {
-      client.send(JSON.stringify({ self_id: 99, user_id: sender, group_id, post_type: "message",
+    function send(message: unknown, group_id = group, user_id = sender) {
+      client.send(JSON.stringify({ self_id: 99, user_id, group_id, post_type: "message",
         message_type: "group", sub_type: "normal", message_id: ++sequence, raw_message: String(sequence), message }));
     }
     const webhook = (event_type: string, data: object) => fetch(new URL("/milky", http), {
@@ -185,6 +190,45 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
     expect(textOf(unresolvedMilky)).not.toContain("可以添加");
     expect(oneBotCalls.filter(call => call.action === "send_like")).toHaveLength(3);
     expect(milkyCalls.filter(call => call.action === "send_profile_like")).toHaveLength(3);
+
+    const text = (value: string) => ({ type: "text", data: { text: value } });
+    async function commandOneBot(value: string, response: string, user = sender) {
+      const start = oneBotCalls.length;
+      send([text(value)], group, user);
+      return waitFor(() => oneBotCalls.slice(start).find(call => textOf(call).includes(response)), `OneBot ${value} 未收到 ${response}`);
+    }
+    async function commandMilky(value: string, response: string) {
+      const start = milkyCalls.length;
+      expect((await sendMilky(++sequence, [text(value)])).status).toBe(200);
+      return waitFor(() => milkyCalls.slice(start).find(call => textOf(call).includes(response)), `Milky ${value} 未收到 ${response}`);
+    }
+    sequence += 100;
+    const card = await commandOneBot("#设置", "Lotus-Yunzai 设置");
+    expect(textOf(card)).toContain("陌生人点赞 已开启");
+    expect(textOf(card)).toContain("默认状态 已开启");
+    await commandOneBot("状态", "Lotus-Yunzai 正在运行");
+    await commandOneBot("#设置状态关闭", "暂无权限", 44);
+    expect(await Bun.file(status).exists()).toBe(false);
+    await commandMilky("#设置状态关闭", "默认状态 已关闭");
+    expect(Bun.YAML.parse(await readFile(status, "utf8"))).toEqual({ defaultState: false });
+    const disabledStart = oneBotCalls.length;
+    send([text("状态")]);
+    await commandOneBot("#帮助", "Lotus-Yunzai 系统指令");
+    expect(oneBotCalls.slice(disabledStart).map(textOf).join("\n")).not.toContain("Lotus-Yunzai 正在运行");
+    await commandOneBot("#设置状态开启", "默认状态 已开启");
+    await commandMilky("状态", "Lotus-Yunzai 正在运行");
+    expect(await readFile(legacyStatus, "utf8")).toBe("# 旧状态配置\ndefaultState: true\nnoPro: true\n");
+
+    oneBotFriends = [];
+    milkyFriends = [];
+    await commandOneBot("#设置陌生人点赞关闭", "陌生人点赞 已关闭");
+    await commandMilky("#给我点赞", "当前账号无法评价该资料卡");
+    expect(milkyCalls.filter(call => call.action === "send_profile_like")).toHaveLength(3);
+    await commandMilky("#设置陌生人点赞开启", "陌生人点赞 已开启");
+    await commandOneBot("#我要点赞", "收到 3 次");
+    expect(oneBotCalls.filter(call => call.action === "send_like")).toHaveLength(4);
+    expect(Bun.YAML.parse(await readFile(primary, "utf8"))).toMatchObject({ count: 3, strangeThumbUp: true });
+    await commandOneBot("#设置渲染精度100", "没有全局渲染精度设置");
   } finally {
     socket?.close();
     host?.kill("SIGKILL");

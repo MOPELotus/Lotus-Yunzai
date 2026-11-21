@@ -1,6 +1,6 @@
 import { constants, linkSync, renameSync, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { lockFile } from "./file-lock.ts";
@@ -34,10 +34,22 @@ interface Location {
   readonly exists: boolean;
 }
 
-async function effectiveFile(root: URL, name: "global" | "bot"): Promise<Location> {
-  const primary = fileURLToPath(new URL(`config/${name}.yaml`, root));
-  const legacy = fileURLToPath(new URL(`config/config/${name}.yaml`, root));
-  for (const source of [primary, legacy]) {
+type ConfigurationName = "global" | "bot" | "system-status";
+
+async function canonicalDirectory(path: string): Promise<string> {
+  const state = await named(path);
+  if (state) {
+    const location = await realpath(path);
+    if (!(await named(location))?.isDirectory()) error("config");
+    return location;
+  }
+  return join(await canonicalDirectory(dirname(path)), basename(path));
+}
+
+async function effectiveFile(root: URL, name: ConfigurationName, override?: string): Promise<Location> {
+  const primary = override ? resolve(override) : fileURLToPath(new URL(`config/${name}.yaml`, root));
+  const legacy = name === "system-status" ? [] : [fileURLToPath(new URL(`config/config/${name}.yaml`, root))];
+  for (const source of [primary, ...legacy]) {
     const state = await named(source);
     if (!state) continue;
     if (!state.isFile() && !state.isSymbolicLink()) error("config");
@@ -45,10 +57,8 @@ async function effectiveFile(root: URL, name: "global" | "bot"): Promise<Locatio
     if (!(await named(file))?.isFile()) error("config");
     return { source, file, exists: true };
   }
-  const parent = await named(dirname(primary));
-  const directory = parent ? await realpath(dirname(primary)) : join(await realpath(fileURLToPath(root)), "config");
-  if (parent && !(await named(directory))?.isDirectory()) error("config");
-  return { source: primary, file: join(directory, `${name}.yaml`), exists: false };
+  const directory = await canonicalDirectory(dirname(primary));
+  return { source: primary, file: join(directory, basename(primary)), exists: false };
 }
 
 function sameLocation(a: Location, b: Location) {
@@ -84,6 +94,7 @@ interface UpdateOptions<T> {
   readonly prepare: (text: string, local: GlobalDocument, effective: GlobalDocument) => { yaml?: string; value: T };
   readonly signal?: AbortSignal;
   readonly onCommitted?: (value: T) => void;
+  readonly override?: string;
 }
 
 export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>): Promise<T> {
@@ -91,7 +102,7 @@ export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>)
 }
 
 export async function updateLocalConfiguration<T>(
-  root: URL, name: "global" | "bot", { canWrite, prepare, signal, onCommitted }: UpdateOptions<T>,
+  root: URL, name: ConfigurationName, { canWrite, prepare, signal, onCommitted, override }: UpdateOptions<T>,
 ): Promise<T> {
   function assertActive() {
     if (signal?.aborted) error("cancelled");
@@ -106,18 +117,18 @@ export async function updateLocalConfiguration<T>(
   }
 
   assertActive();
-  const initial = await effectiveFile(root, name);
+  const initial = await effectiveFile(root, name, override);
   if (!initial.exists && !await named(dirname(initial.file))) {
     authorize(await inherited({}));
-    await mkdir(dirname(initial.file), { mode: 0o700 }).catch((cause: unknown) => {
+    await mkdir(dirname(initial.file), { mode: 0o700, recursive: name === "system-status" }).catch((cause: unknown) => {
       if (errno(cause) !== "EEXIST") throw cause;
     });
   }
   const sidecar = join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
-  const database = await lockFile(sidecar, name === "global" ? "全局配置" : "bot.yaml").catch(() => error("conflict"));
+  const database = await lockFile(sidecar, name === "global" ? "全局配置" : `${name}.yaml`).catch(() => error("conflict"));
   try {
     assertActive();
-    const location = await effectiveFile(root, name);
+    const location = await effectiveFile(root, name, override);
     if (!sameLocation(initial, location)) error("conflict");
     const current = await snapshot(location);
     const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current?.bytes);
@@ -129,13 +140,13 @@ export async function updateLocalConfiguration<T>(
     const next = prepare(content, previous, effective);
 
     async function verifySnapshot() {
-      const active = await effectiveFile(root, name);
+      const active = await effectiveFile(root, name, override);
       if (!sameLocation(location, active) || location.exists !== active.exists) error("conflict");
       const latest = await snapshot(active);
       if (current && (!latest || !sameState(current.stat, latest.stat) || !current.bytes.equals(latest.bytes))) error("conflict");
       const latestEffective = await inherited(previous);
       if (!isDeepStrictEqual(effective, latestEffective)) error("conflict");
-      if (name === "bot") authorize(latestEffective);
+      if (name !== "global") authorize(latestEffective);
       assertActive();
     }
     if (next.yaml === undefined) {

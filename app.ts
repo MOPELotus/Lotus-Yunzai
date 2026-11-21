@@ -84,6 +84,7 @@ import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
 import { isLogLevel, isLogLevelCommand, logLevels, persistLogLevel, requestedLogLevel } from "./lib/log-level-command.ts";
+import { chatSetting, createChatSettings } from "./lib/chat-settings.ts";
 import { watchConfigFiles } from "./lib/config-watch.ts";
 import { createManagedHandoff, type ManagedTlsListener } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
@@ -193,6 +194,7 @@ const groupOwnerGroupNoticeNames = ["[group] 群聊列表变动通知", "group",
 const groupOwnerJoinRequestNoticeNames = ["[group] 加群申请主人通知", "group", "@lotus-yunzai/group"];
 const groupOwnerInvitationNoticeNames = ["[group] 群邀请主人通知", "group", "@lotus-yunzai/group"];
 const noticeSettingsNames = ["[group] 通知设置", "group", "@lotus-yunzai/group"];
+const chatSettingsNames = ["[group] 设置", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
 function isPrivateCredentialMessage(text: string): boolean {
@@ -1846,6 +1848,20 @@ if (import.meta.main) {
     })) return;
     if (isLogLevelCommand(event.msg)) {
       if (allowNew && allowed(["日志等级", "system", systemModuleName])) await setRuntimeLogLevel(event);
+      return;
+    }
+    const setting = chatSetting(event.msg);
+    if (setting) {
+      if (!allowNew || !plugins || !allowed(chatSettingsNames) || event.attachmentOnly) return;
+      const terminal = event.message_type === "terminal";
+      const session = event[delegationSession]?.signal;
+      const signal = session ? nativeOperationSignal(session) : nativeOperationSignal();
+      const canWrite = () => !signal.aborted && !stopping && handoff.accepting && !event.isDelegated &&
+        canManagePackages(event) && groupDispatch.allowsInbound(event) && allowed(chatSettingsNames) &&
+        (terminal ? masterPermissions.terminal : session?.aborted === false && event.self_id !== undefined &&
+          event.user_id !== undefined && masterPermissions.isMaster(event.self_id, event.user_id));
+      const reply = await createChatSettings(root, plugins.directories)(setting, canWrite, signal);
+      if (reply !== undefined && !signal.aborted) await event.reply(reply);
       return;
     }
     if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {
