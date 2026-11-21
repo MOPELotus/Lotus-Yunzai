@@ -30,11 +30,11 @@ test("原石札记注册独立月查询，保留中文月份并正确跨年", ()
   for (const command of ["#原石统计", "#去年札记统计", "#原石任务", "*星琼", "#星铁原石", "看札记", "#更新充值记录"]) {
     expect(matchGenshinMonthly(command)).toBeUndefined();
   }
-  expect(genshinMonthlyPeriod(12, now())).toEqual({ month: 12, title: "12月札记" });
-  expect(genshinMonthlyPeriod(11, now())).toEqual({ month: 11, title: "11月札记" });
+  expect(genshinMonthlyPeriod(12, now())).toEqual({ year: 2026, month: 12, finalized: true, title: "12月札记" });
+  expect(genshinMonthlyPeriod(11, now())).toEqual({ year: 2026, month: 11, finalized: true, title: "11月札记" });
   expect(genshinMonthlyPeriod(10, now())).toBeUndefined();
   expect(genshinMonthlyPeriod(2, now())).toBeUndefined();
-  expect(genshinMonthlyPeriod(undefined, Date.UTC(2026, 11, 31, 16))).toEqual({ month: 1, title: "1月1号札记" });
+  expect(genshinMonthlyPeriod(undefined, Date.UTC(2026, 11, 31, 16))).toEqual({ year: 2027, month: 1, finalized: false, title: "1月1号札记" });
 });
 
 test("本人国服旧请求签名使用选月及角色，拒绝错月和错 UID", async () => {

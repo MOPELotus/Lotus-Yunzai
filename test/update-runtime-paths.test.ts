@@ -179,6 +179,8 @@ test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，�
   const group = "settings/likes.yaml ";
   const database = "database/catalog.db";
   const settings = {
+    LOTUS_GENSHIN_MONTHLY_DIR: "  custom/genshin-monthly  ",
+    LOTUS_GENSHIN_LEGACY_MONTHLY_DIR: "  custom/genshin-note-old  ",
     LOTUS_GENSHIN_PANEL_DIR: "  custom/genshin-panels  ",
     LOTUS_GENSHIN_PANEL_RANK_DIR: "custom/genshin-panels/ranks",
     LOTUS_GENSHIN_WISH_STATE_DIR: "custom/genshin-wishes",
@@ -190,7 +192,8 @@ test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，�
     LOTUS_GROUP_CONFIG: group,
   } as const;
   const state = [
-    "custom/genshin-panels/ranks", "custom/genshin-wishes", "custom/starrail-warps",
+    "custom/genshin-monthly", "custom/genshin-note-old", "custom/genshin-panels/ranks",
+    "custom/genshin-wishes", "custom/starrail-warps",
     "custom/zzz panels ", "custom/guides/add_ons", "data/zzz-showcase",
   ];
   try {
@@ -217,7 +220,8 @@ test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，�
 
     const paths = await readUpdateRuntimePaths(active, AbortSignal.timeout(2_000), { PATH: process.env.PATH });
     expect(paths).toEqual([
-      "custom/genshin-panels", "custom/genshin-wishes", "custom/guides", "custom/starrail-warps",
+      "custom/genshin-monthly", "custom/genshin-note-old", "custom/genshin-panels",
+      "custom/genshin-wishes", "custom/guides", "custom/starrail-warps",
       "custom/zzz panels ", database, database + "-shm", database + "-wal", group,
     ]);
     await mkdir(join(candidate, "database"));

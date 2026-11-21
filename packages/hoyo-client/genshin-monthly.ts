@@ -40,7 +40,8 @@ function record(value: unknown): Json {
   return value as Json;
 }
 
-function normalize(data: Json, month: number, uid: string, region: string): GenshinMonthlySnapshot | undefined {
+export function normalizeGenshinMonthly(value: unknown, month: number, uid: string, region: string): GenshinMonthlySnapshot | undefined {
+  const data = record(value);
   for (const field of ["uid", "role_id", "bind_uid"]) {
     if (data[field] != null && String(data[field]) !== uid) invalid();
   }
@@ -62,12 +63,16 @@ function normalize(data: Json, month: number, uid: string, region: string): Gens
     if (!name || name.length > 64 || /[\p{Cc}\p{Cf}]/u.test(name) || count === undefined || (percent !== undefined && (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0 || percent > 100))) invalid();
     return { id: whole(item.action_id), name, count, percent };
   });
-  return { month, primogems: whole(row.current_primogems), mora: whole(row.current_mora),
-    priorPrimogems: whole(row.last_primogems), priorMora: whole(row.last_mora), sources };
+  const primogems = whole(row.current_primogems);
+  const mora = whole(row.current_mora);
+  const priorPrimogems = whole(row.last_primogems);
+  const priorMora = whole(row.last_mora);
+  if (!sources.length && [primogems, mora, priorPrimogems, priorMora].every(value => value === undefined)) return;
+  return { month, primogems, mora, priorPrimogems, priorMora, sources };
 }
 
 export async function readGenshinMonthly(source: ProfileRequestContext, transport: HoyoTransport,
   { month, signal }: GenshinMonthlyOptions, verifyProfile?: () => Promise<void>) {
   const { data, region } = await readCnGameRecord(source, transport, { kind: "genshin-monthly", month, signal }, verifyProfile);
-  return { snapshot: normalize(data, month, source.role.uid, region) };
+  return { snapshot: normalizeGenshinMonthly(data, month, source.role.uid, region) };
 }
