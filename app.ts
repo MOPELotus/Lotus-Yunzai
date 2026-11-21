@@ -2040,9 +2040,11 @@ if (import.meta.main) {
         return;
       }
     }
+    const teamDamageSession = /^#星铁\s*(?:队伍伤害|队伤|伤害)/u.test(command.msg)
+      ? event[delegationSession]?.signal : undefined;
     const fallbackEvent = bareStatus && runtimeStatusScope ? {
       ...event, runtimeStatusScope, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" as const : undefined,
-    } : event;
+    } : teamDamageSession ? { ...event, calculationSignal: nativeOperationSignal(teamDamageSession) } : event;
     const fallback = await commands.dispatchFallback(fallbackEvent,
       (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (fallback !== undefined) {
