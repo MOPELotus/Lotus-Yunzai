@@ -115,6 +115,45 @@ test("Milky 私聊文件放行使用真实扩展名和全部文件段", async ()
   }
 });
 
+test("私聊限制热读取旧配置，解析失败时保留当前限制", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-private-policy-"));
+  try {
+    const legacy = join(root, "config", "config");
+    await mkdir(legacy, { recursive: true });
+    const file = join(legacy, "other.yaml");
+    await writeFile(file, "disablePrivate: false\n");
+    const url = pathToFileURL(`${root}/`);
+    const live = await readPrivateAccess(url, undefined, true);
+    const frozen = await readPrivateAccess(url);
+    const { call } = fixture();
+    const incoming = (text: string) => {
+      const event = milkyMessage(envelope("friend", { type: "text", data: { text } }), selfId, call);
+      if (!event) throw new Error("缺少好友消息。");
+      return event;
+    };
+    const normal = incoming("普通私聊");
+    const poke = { isMaster: false, reply: () => true as const };
+    expect(await live.blocked(normal)).toBe(false);
+
+    await writeFile(file, 'disablePrivate: true\ndisableMsg: ""\ndisableAdopt: ["^夹具放行$"]\n');
+    await Bun.sleep(1_050);
+    expect(await Promise.all([live.blocked(normal), live.blockedPoke(poke)])).toEqual([true, true]);
+    expect(await live.blocked(incoming("夹具放行"))).toBe(false);
+    expect(await frozen.blocked(normal)).toBe(false);
+
+    await writeFile(file, 'disablePrivate: true\ndisableAdopt: ["("]\n');
+    await Bun.sleep(1_050);
+    expect(await live.blocked(normal)).toBe(true);
+    expect(await live.blocked(incoming("夹具放行"))).toBe(false);
+
+    await writeFile(join(root, "config/other.yaml"), "disablePrivate: false\n");
+    await Bun.sleep(1_050);
+    expect(await live.blocked(normal)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 8_000);
+
 test("Milky 好友上传通知可查询附件和普通回复，只在内部保留关联哈希", async () => {
   const url = "https://files.example.invalid/f";
   const { call, calls } = fixture({ download_url: url, message_seq: 17 });

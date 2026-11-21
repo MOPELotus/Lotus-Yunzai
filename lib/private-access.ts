@@ -16,7 +16,7 @@ const maxCooldownEntries = 10_000;
 
 type ClaimTip = (userId: number) => Promise<boolean>;
 
-export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
+async function readPolicy(root: URL) {
   const config = await readLocalConfig(root, "other");
   const enabled = Boolean(config.disablePrivate);
   const tip = typeof config.disableMsg === "string" ? config.disableMsg : defaultMessage;
@@ -31,10 +31,38 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
       throw new Error("other.yaml 的 disableAdopt 包含无效的正则表达式。");
     }
   }
+  return { enabled, tip, custom };
+}
+
+export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatch = false) {
+  let policy = await readPolicy(root);
   const tips = new Map<number, number>();
+  let nextRefresh = performance.now() + 1_000;
+  let reloading: Promise<void> | undefined;
+  let reloadFailed = false;
+
+  function refresh() {
+    if (!fileWatch) return;
+    if (reloading) return reloading;
+    if (performance.now() < nextRefresh) return;
+    reloading = readPolicy(root).then(candidate => {
+      policy = candidate;
+      reloadFailed = false;
+    }).catch(() => {
+      if (!reloadFailed) console.warn("[私聊限制] 配置重载失败，保留上次有效设置。");
+      reloadFailed = true;
+    }).finally(() => {
+      nextRefresh = performance.now() + 1_000;
+      reloading = undefined;
+    });
+    return reloading;
+  }
 
   async function blocked(event: MessageEvent): Promise<boolean> {
-    if (!enabled || event.message_type !== "private" || event.isMaster || isMilkyOwnerSession(event)) return false;
+    if (event.message_type !== "private" || event.isMaster || isMilkyOwnerSession(event)) return false;
+    await refresh();
+    const { enabled, tip, custom } = policy;
+    if (!enabled) return false;
     if (event.groupRequestScope === "milky" && event.canReviewGroupRequests === true && groupReviewEntry.test(event.msg)) return false;
     const files = typeof event.message === "string" ? [] : event.message.filter(({ type }) => type === "file");
     const text = event.raw_message || event.msg;
@@ -63,10 +91,13 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip) {
   }
 
   async function blockedPoke(event: Pick<MessageEvent, "isMaster" | "reply">): Promise<boolean> {
-    if (!enabled || event.isMaster) return false;
+    if (event.isMaster) return false;
+    await refresh();
+    const { enabled, tip } = policy;
+    if (!enabled) return false;
     if (tip) await event.reply(tip);
     return true;
   }
 
-  return { disabled: enabled, blocked, blockedPoke };
+  return { get disabled() { return policy.enabled; }, refresh, blocked, blockedPoke };
 }

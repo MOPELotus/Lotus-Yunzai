@@ -1576,14 +1576,17 @@ if (import.meta.main) {
       if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
     }
-    if (privateAccess.disabled && event.message_type === "private" && isMilkyOwnerSession(event)) {
-      if (hasValidUpdateTarget(event.msg)) {
-        if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
-        return;
-      }
-      if (hasValidInstallTarget(event.msg)) {
-        if (allowNew && allowed(installFeatureNames)) await installCommand(event);
-        return;
+    if (event.message_type === "private" && isMilkyOwnerSession(event)) {
+      await privateAccess.refresh();
+      if (privateAccess.disabled) {
+        if (hasValidUpdateTarget(event.msg)) {
+          if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
+          return;
+        }
+        if (hasValidInstallTarget(event.msg)) {
+          if (allowNew && allowed(installFeatureNames)) await installCommand(event);
+          return;
+        }
       }
     }
     const statusCard = /^#状态(?:[Pp]ro)?$/u.test(event.msg);
@@ -1864,15 +1867,16 @@ if (import.meta.main) {
   }
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
-    const [network, permissions, globalConfig, access, friendRequests, routing, invitations, botConfig,
+    const botConfig = await readLocalConfig(root, "bot");
+    const [network, permissions, globalConfig, access, friendRequests, routing, invitations,
       runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readLotusGlobalConfig(root),
       readPrivateAccess(root, async (userId) =>
-        !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK"),
+        !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK",
+      botConfig.file_watch !== false && !probingUpdate),
       readFriendRequests(root),
       readGroupDispatch(root),
       readGroupInvitations(root),
-      readLocalConfig(root, "bot"),
       readRuntimeVersion(root),
       probingUpdate ? undefined : readMilkySettings(root).catch(() => {
         console.warn("[Milky] 无法读取有效的适配器配置。");
