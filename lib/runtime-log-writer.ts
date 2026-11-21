@@ -6,7 +6,7 @@ import { formatWithOptions, inspect, types } from "node:util";
 import { archiveRuntimeLogs } from "./runtime-log-archive.ts";
 import { runtimeLogDirectory, runtimeLogFilename, sanitizeRuntimeLog } from "./runtime-logs.ts";
 
-const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "off"];
+const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "mark", "off"];
 const consoleLevels = { debug: "debug", log: "info", info: "info", warn: "warn", error: "error" } as const;
 const pendingLimit = 512;
 const defaultLabel = "Lotus-Yunzai";
@@ -26,9 +26,16 @@ const compatibilityLevels = {
 } as const;
 type PluginLogLevel = keyof typeof compatibilityLevels;
 
+export function runtimePluginLogger(config: Readonly<Record<string, unknown>>,
+  write?: (level: PluginLogLevel, message: string) => void) {
+  // The global V3 logger historically exposed mark as INFO in the host's files.
+  const log = createPluginLog(config, write && ((level, message) => write(level === "mark" ? "info" : level, message)));
+  const levels = Object.keys(compatibilityLevels) as PluginLogLevel[];
+  return Object.freeze(Object.fromEntries(levels.map(level => [level, (...args: unknown[]) => log(level, args, false)])));
+}
+
 export function createPluginLog(config: Readonly<Record<string, unknown>>,
   write: (level: PluginLogLevel, message: string) => void = (level, message) => console[compatibilityLevels[level]](message)) {
-  const minimum = minimumLevel(config);
   const limit = configuredLogLength(config.log_length) ?? 10_000;
   const setting = config.log_object;
   const objectOptions = setting && typeof setting === "object" ? setting as Record<string, unknown> : {};
@@ -68,7 +75,7 @@ export function createPluginLog(config: Readonly<Record<string, unknown>>,
   return (level: unknown, message: unknown, id?: unknown, force?: unknown): void => {
     if (typeof level !== "string" || !Object.hasOwn(compatibilityLevels, level)) return;
     const severity = priorities.indexOf(level);
-    if (severity >= 0 && severity < priorities.indexOf("warn") && severity < minimum) return;
+    if (severity >= 0 && severity < priorities.indexOf("warn") && severity < minimumLevel(config)) return;
     const args = !types.isProxy(message) && Array.isArray(message) ? message : [message];
     const tag = identifier(id, force);
     const parts = [tag];
@@ -98,7 +105,6 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
   await mkdir(configured, { recursive: true, mode: 0o700 });
   const directory = await runtimeLogDirectory(host);
 
-  const minimum = minimumLevel(config);
   const maxLength = configuredLogLength(config.log_length) ?? 10_000;
   const warn = console.warn.bind(console);
   const restorations: (() => void)[] = [];
@@ -142,10 +148,9 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
   for (const method of Object.keys(consoleLevels) as (keyof typeof consoleLevels)[]) {
     const original = originalConsole[method];
     const level = consoleLevels[method];
-    if (priorities.indexOf(level) < minimum) continue;
     const proxy = (...args: unknown[]) => {
       original.apply(console, args);
-      if (closed || queued >= pendingLimit) return;
+      if (closed || queued >= pendingLimit || priorities.indexOf(level) < minimumLevel(config)) return;
       try {
         const formatted = formatWithOptions({ colors: false, customInspect: false, getters: false }, ...args);
         enqueue(level, sanitizeRuntimeLog(formatted.replace(/[\r\n]+/gu, " "), maxLength));

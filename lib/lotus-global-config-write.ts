@@ -34,9 +34,9 @@ interface Location {
   readonly exists: boolean;
 }
 
-async function effectiveFile(root: URL): Promise<Location> {
-  const primary = fileURLToPath(new URL("config/global.yaml", root));
-  const legacy = fileURLToPath(new URL("config/config/global.yaml", root));
+async function effectiveFile(root: URL, name: "global" | "bot"): Promise<Location> {
+  const primary = fileURLToPath(new URL(`config/${name}.yaml`, root));
+  const legacy = fileURLToPath(new URL(`config/config/${name}.yaml`, root));
   for (const source of [primary, legacy]) {
     const state = await named(source);
     if (!state) continue;
@@ -48,7 +48,7 @@ async function effectiveFile(root: URL): Promise<Location> {
   const parent = await named(dirname(primary));
   const directory = parent ? await realpath(dirname(primary)) : join(await realpath(fileURLToPath(root)), "config");
   if (parent && !(await named(directory))?.isDirectory()) error("config");
-  return { source: primary, file: join(directory, "global.yaml"), exists: false };
+  return { source: primary, file: join(directory, `${name}.yaml`), exists: false };
 }
 
 function sameLocation(a: Location, b: Location) {
@@ -83,9 +83,16 @@ interface UpdateOptions<T> {
   readonly canWrite: (document: GlobalDocument) => boolean;
   readonly prepare: (text: string, local: GlobalDocument, effective: GlobalDocument) => { yaml?: string; value: T };
   readonly signal?: AbortSignal;
+  readonly onCommitted?: (value: T) => void;
 }
 
-export async function updateLotusGlobalConfig<T>(root: URL, { canWrite, prepare, signal }: UpdateOptions<T>): Promise<T> {
+export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>): Promise<T> {
+  return updateLocalConfiguration(root, "global", options);
+}
+
+export async function updateLocalConfiguration<T>(
+  root: URL, name: "global" | "bot", { canWrite, prepare, signal, onCommitted }: UpdateOptions<T>,
+): Promise<T> {
   function assertActive() {
     if (signal?.aborted) error("cancelled");
   }
@@ -94,46 +101,52 @@ export async function updateLotusGlobalConfig<T>(root: URL, { canWrite, prepare,
     if (canWrite(structuredClone(document)) !== true) error("permission");
   }
 
+  function inherited(document: GlobalDocument) {
+    return name === "global" ? inheritLotusGlobalConfig(root, document) : document;
+  }
+
   assertActive();
-  const initial = await effectiveFile(root);
+  const initial = await effectiveFile(root, name);
   if (!initial.exists && !await named(dirname(initial.file))) {
-    authorize(await inheritLotusGlobalConfig(root, {}));
+    authorize(await inherited({}));
     await mkdir(dirname(initial.file), { mode: 0o700 }).catch((cause: unknown) => {
       if (errno(cause) !== "EEXIST") throw cause;
     });
   }
-  const sidecar = join(dirname(initial.file), `.${basename(initial.file)}.lotus-global.sqlite`);
-  const database = await lockFile(sidecar, "全局配置").catch(() => error("conflict"));
+  const sidecar = join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
+  const database = await lockFile(sidecar, name === "global" ? "全局配置" : "bot.yaml").catch(() => error("conflict"));
   try {
     assertActive();
-    const location = await effectiveFile(root);
+    const location = await effectiveFile(root, name);
     if (!sameLocation(initial, location)) error("conflict");
     const current = await snapshot(location);
     const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current?.bytes);
     const parsed: unknown = Bun.YAML.parse(content);
     const previous = parsed == null ? {} : record(parsed) ?? error("config");
-    const effective = await inheritLotusGlobalConfig(root, previous);
+    const effective = await inherited(previous);
     authorize(effective);
     assertActive();
     const next = prepare(content, previous, effective);
 
     async function verifySnapshot() {
-      const active = await effectiveFile(root);
+      const active = await effectiveFile(root, name);
       if (!sameLocation(location, active) || location.exists !== active.exists) error("conflict");
       const latest = await snapshot(active);
       if (current && (!latest || !sameState(current.stat, latest.stat) || !current.bytes.equals(latest.bytes))) error("conflict");
-      const latestEffective = await inheritLotusGlobalConfig(root, previous);
+      const latestEffective = await inherited(previous);
       if (!isDeepStrictEqual(effective, latestEffective)) error("conflict");
+      if (name === "bot") authorize(latestEffective);
       assertActive();
     }
     if (next.yaml === undefined) {
       await verifySnapshot();
+      onCommitted?.(next.value);
       return next.value;
     }
 
-    const directory = await mkdtemp(join(dirname(location.file), ".lotus-global-settings-"));
+    const directory = await mkdtemp(join(dirname(location.file), `.lotus-${name}-settings-`));
     try {
-      const staged = join(directory, "global.yaml");
+      const staged = join(directory, `${name}.yaml`);
       const output = await open(staged, "wx", 0o600);
       try {
         await output.writeFile(next.yaml, "utf8");
@@ -153,6 +166,8 @@ export async function updateLotusGlobalConfig<T>(root: URL, { canWrite, prepare,
         try { linkSync(staged, location.file); }
         catch (cause) { if (errno(cause) === "EEXIST") error("conflict"); throw cause; }
       }
+      // Publish runtime state while later mutations still wait for the same lock.
+      onCommitted?.(next.value);
       return next.value;
     } finally {
       await rm(directory, { recursive: true, force: true }).catch(() => undefined);

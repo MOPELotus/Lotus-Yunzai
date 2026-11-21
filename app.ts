@@ -78,6 +78,8 @@ import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
 import { createLogCommand, isLogCommand } from "./lib/log-command.ts";
+import { isLogLevel, isLogLevelCommand, logLevels, persistLogLevel, requestedLogLevel } from "./lib/log-level-command.ts";
+import { watchConfigFiles } from "./lib/config-watch.ts";
 import { createManagedHandoff, type ManagedTlsListener } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
@@ -121,7 +123,7 @@ import { trackingGame, trackingGames } from "./lib/miyoushe-shop-tracking.ts";
 import { createCommandDelegation, delegationSession } from "./lib/command-delegation.ts";
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
-import { attachRuntimeLog, createPluginLog } from "./lib/runtime-log-writer.ts";
+import { attachRuntimeLog, createPluginLog, runtimePluginLogger } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { createRuntimeStatus } from "./lib/runtime-status.ts";
@@ -457,6 +459,38 @@ if (import.meta.main) {
   let onlineCooldown: number | undefined;
   let onlineVersion: string | undefined;
   let runtimeLog: Awaited<ReturnType<typeof attachRuntimeLog>> | undefined;
+  let runtimeLogConfig: Record<string, unknown> = {};
+  let runtimeLogRevision = 0;
+
+  async function setRuntimeLogLevel(event: MessageEvent) {
+    const terminal = event.message_type === "terminal";
+    const session = event[delegationSession]?.signal;
+    const canWrite = () => {
+      if (stopping || !handoff.accepting || event.isDelegated || !canManagePackages(event)) return false;
+      if (terminal) return masterPermissions.terminal;
+      return session?.aborted === false && event.self_id !== undefined && event.user_id !== undefined &&
+        masterPermissions.isMaster(event.self_id, event.user_id);
+    };
+    if (!canWrite()) {
+      await event.reply("暂无权限，只有主人才能操作");
+      return;
+    }
+    const level = requestedLogLevel(event.msg);
+    if (!level) {
+      await event.reply(`请输入正确的日志等级，可选：\n${logLevels.join(",")}`);
+      return;
+    }
+    const signal = session ? AbortSignal.any([session, lifecycle.signal]) : lifecycle.signal;
+    try {
+      const changed = await persistLogLevel(root, level, canWrite, signal, () => {
+        runtimeLogRevision++;
+        runtimeLogConfig.log_level = level;
+      });
+      if (!signal.aborted) await event.reply(changed ? `已将日志等级设置为${level}` : `日志等级已是${level}了`);
+    } catch {
+      if (!signal.aborted) await event.reply("无法保存日志等级，请检查 bot.yaml 后重试。");
+    }
+  }
   const logCommand = createLogCommand(async (kind, query) => {
     await runtimeLog?.flush();
     return readRuntimeLogs(root, kind, query);
@@ -1680,7 +1714,8 @@ if (import.meta.main) {
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         (await import("./plugins/execute/index.ts")).isNestedExecution(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
-        atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) || isRecallCommand(event) ||
+        atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
+        isLogLevelCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || zzzLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
@@ -1774,6 +1809,10 @@ if (import.meta.main) {
       }
     }
     if (await privateAccess.blocked(event)) return;
+    if (isLogLevelCommand(event.msg)) {
+      if (allowNew && allowed(["日志等级", "椰奶助手-其他", "system", systemModuleName])) await setRuntimeLogLevel(event);
+      return;
+    }
     if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {
       if (event.attachment) {
         const { self_id } = event;
@@ -2049,6 +2088,7 @@ if (import.meta.main) {
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
     const botConfig = await readLocalConfig(root, "bot", { update_time: 1440 });
+    runtimeLogConfig = botConfig;
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
     const [network, permissions, globalConfig, access, requestPolicies, routing,
       runtimeVersion, milky] = await Promise.all([
@@ -2081,6 +2121,13 @@ if (import.meta.main) {
     } catch {
       console.warn("[日志] 无法启用本地日志写入。");
     }
+    if (watchConfig) watchConfigFiles(watchConfig, async () => {
+      const revision = runtimeLogRevision;
+      const { log_level } = await readLocalConfig(root, "bot");
+      const level = typeof log_level === "string" ? log_level.toLowerCase() : log_level;
+      if (level !== undefined && !isLogLevel(level)) throw new Error("无效的日志等级。");
+      if (!watchConfig.aborted && revision === runtimeLogRevision) runtimeLogConfig.log_level = level;
+    }, () => console.warn("[日志] bot.yaml 日志等级重载失败，保留上次有效设置。"));
     autoFriend = await readFriendRequests(root, undefined, requestPolicies);
     otherPolicies = requestPolicies;
     groupDispatch = routing;
@@ -2661,6 +2708,7 @@ if (import.meta.main) {
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
     const imageToUrl = createImageToUrl(fileToUrl, Bun.env.LOTUS_PUBLIC_IMAGE_DIR?.trim());
     const makeLog = createPluginLog(botConfig, runtimeLog?.writePluginLog);
+    Object.assign(globalThis, { logger: runtimePluginLogger(botConfig, runtimeLog?.writePluginLog) });
     legacyBot = Object.freeze({
       fileToUrl, imageToUrl, makeLog, express: legacy.httpRoutes.express,
       on(event: unknown, listener: unknown) {

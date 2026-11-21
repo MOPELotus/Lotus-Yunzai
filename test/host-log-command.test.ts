@@ -439,3 +439,140 @@ test("宿主兼容插件日志格式、原 ID 对齐和选项，不影响普通�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("日志等级两协议即时生效，停机后由新进程读回，外改失败保留并可恢复", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-host-log-level-"));
+  const accessToken = "milky-log-level-fixture";
+  const mock = milkyLogGateway(accessToken);
+  const config = join(root, "config/config/bot.yaml");
+  try {
+    await copyHost(root);
+    await mkdir(join(root, "config/config"), { recursive: true });
+    await writeFile(join(root, "config/config/other.yaml"), 'master: ["99:51", "99:53"]\n');
+    await writeFile(join(root, "config/milky.yaml"), [
+      "enable: true", "host: 127.0.0.1", `port: ${mock.server.url.port}`, "connection: webhook",
+      `access_token: ${accessToken}`, "",
+    ].join("\n"));
+    const original = "# preserve-log-fixture\nfile_watch: false\ncache_group_member: false\nonline_msg_exp: 0\nlog_level: info\n";
+    await writeFile(config, original);
+    await writeFile(join(root, "plugins/log-level-fixture.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message", rule: [{ reg: "^#测试等级标记[0-9]+$", fnc: "sample" }] }); }
+        async sample() {
+          const id = this.e.msg.slice(-1);
+          console.debug("native-probe-" + id + "-debug");
+          for (const level of ["trace", "debug", "info", "mark", "error"]) {
+            Bot.makeLog(level, "bot-probe-" + id + "-" + level, false);
+            logger[level]("logger-probe-" + id + "-" + level);
+          }
+          await this.reply("已记录测试日志");
+        }
+      }
+    `);
+    const runtime = join(root, "logs", `command.${new Date().toISOString().slice(0, 10)}.log`);
+    async function withHost(run: (gateway: ReturnType<typeof connect>, endpoint: URL) => Promise<void>) {
+      const child = Bun.spawn([process.execPath, "app.ts"], {
+        cwd: root, stdin: "ignore", stdout: "pipe", stderr: "ignore",
+        env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+      });
+      let gateway: ReturnType<typeof connect> | undefined;
+      let output = "";
+      const capture = (async () => {
+        const reader = child.stdout.getReader();
+        const decoder = new TextDecoder();
+        for (;;) {
+          const item = await reader.read();
+          if (item.done) break;
+          output += decoder.decode(item.value, { stream: true });
+        }
+      })();
+      try {
+        await until(() => output.includes("Lotus-Yunzai 已启动") ? true : undefined, "日志等级宿主未就绪。");
+        const ws = /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(output)?.[0];
+        const http = /http:\/\/127\.0\.0\.1:\d+\/status/u.exec(output)?.[0];
+        if (!ws || !http) throw new Error("日志等级宿主缺监听。");
+        gateway = connect(ws, 99);
+        await until(() => gateway?.socket.readyState === WebSocket.OPEN ? true : undefined, "日志等级 OneBot 未连接。");
+        await run(gateway, new URL("/milky", http));
+      } finally {
+        gateway?.socket.close();
+        child.kill("SIGTERM");
+        await child.exited;
+        await capture;
+      }
+    }
+    async function oneBot(gateway: ReturnType<typeof connect>, text: string, reply: string, user = 51) {
+      gateway.command(text, user);
+      const message = await gateway.next();
+      expect(message.params.message).toContain(reply);
+      gateway.confirm(message);
+    }
+    async function check(gateway: ReturnType<typeof connect>, sample: number, low: readonly string[]) {
+      await oneBot(gateway, `#测试等级标记${sample}`, "已记录测试日志");
+      const contents = await until(async () => {
+        const contents = await readFile(runtime, "utf8");
+        return contents.includes(`logger-probe-${sample}-error`) ? contents : undefined;
+      }, "等待等级测试落盘超时。");
+      for (const prefix of ["bot", "logger"]) {
+        for (const level of ["trace", "debug", "info", "mark", "error"]) {
+          expect(contents.includes(`${prefix}-probe-${sample}-${level}`)).toBe(low.includes(level) || level === "mark" || level === "error");
+        }
+      }
+      expect(contents.includes(`native-probe-${sample}-debug`)).toBe(low.includes("debug"));
+    }
+
+    await withHost(async (gateway, endpoint) => {
+      await oneBot(gateway, "#设置日志等级 off", "暂无权限", 41);
+      expect(await readFile(config, "utf8")).toBe(original);
+      await oneBot(gateway, "设置日志等级debug", "已将日志等级设置为debug");
+      expect(await readFile(config, "utf8")).toBe(original.replace("log_level: info", "log_level: debug"));
+      await check(gateway, 1, ["debug", "info"]);
+      function deliver(event_type: string, data: object) {
+        return fetch(endpoint, {
+          method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ time: Math.floor(Date.now() / 1000), self_id: 99, event_type, data }),
+          signal: AbortSignal.timeout(2_000),
+        });
+      }
+      await until(async () => (await deliver("fixture_unsupported", {})).status === 200 ? true : undefined, "Milky 未绑定。");
+      let sequence = 0;
+      async function milky(text: string, reply: string, peerId = 53) {
+        const message_scene = peerId === 53 ? "friend" : "group";
+        const response = await deliver("message_receive", {
+          message_seq: ++sequence, sender_id: 53, peer_id: peerId, message_scene,
+          segments: [{ type: "text", data: { text } }],
+        });
+        expect(response.status).toBe(200);
+        await mock.singleText(message_scene === "group" ? { group_id: peerId } : { user_id: peerId }, reply);
+      }
+      await milky("#修改日志等级 mark", "已将日志等级设置为mark", 77);
+      await check(gateway, 6, []);
+      await Promise.all([
+        oneBot(gateway, "#修改日志等级 debug", "已将日志等级设置为debug"),
+        milky("#修改日志等级 off", "已将日志等级设置为off"),
+      ]);
+      const saved = (Bun.YAML.parse(await readFile(config, "utf8")) as Record<string, unknown>).log_level;
+      expect(saved === "debug" || saved === "off").toBe(true);
+      await check(gateway, 2, saved === "debug" ? ["debug", "info"] : []);
+      if (saved !== "off") await oneBot(gateway, "#设置日志等级off", "已将日志等级设置为off");
+    });
+    expect(await readFile(config, "utf8")).toBe(original.replace("log_level: info", "log_level: off"));
+
+    const watching = original.replace("file_watch: false", "file_watch: true");
+    await writeFile(config, watching.replace("log_level: info", "log_level: off"));
+    await withHost(async gateway => {
+      await check(gateway, 3, []);
+      await writeFile(config, "[malformed\n");
+      await oneBot(gateway, "#设置日志等级 trace", "无法保存日志等级");
+      await check(gateway, 4, []);
+      await writeFile(config, watching.replace("log_level: info", "log_level: trace"));
+      await Bun.sleep(1_150);
+      await check(gateway, 5, ["trace", "debug", "info"]);
+      await oneBot(gateway, "#修改日志等级 trace", "日志等级已是trace了");
+      expect(await readFile(config, "utf8")).toBe(watching.replace("log_level: info", "log_level: trace"));
+    });
+  } finally {
+    mock.server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 14_000);
