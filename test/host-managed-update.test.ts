@@ -10,7 +10,7 @@ const startupLine = "Lotus-Yunzai 已启动。";
 
 type Target = { readonly user_id: number } | { readonly group_id: number };
 type UpdateTarget = "host" | "plugin" | "all";
-type Schedule = "interval" | "cron";
+type Schedule = "interval" | "legacy-default" | "cron";
 interface Frame {
   readonly action: string;
   readonly echo?: string;
@@ -180,6 +180,19 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
     const app = join(writer, "app.ts");
     await writeFile(app, cronClock + await readFile(app, "utf8"));
   }
+  if (schedule === "legacy-default") {
+    const app = join(writer, "app.ts");
+    await writeFile(app, `
+      const fixtureSetTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = new Proxy(fixtureSetTimeout, {
+        apply(target, self, args) {
+          if (args[1] === 86_400_000) args[1] = 1_500;
+          return Reflect.apply(target, self, args);
+        },
+      });
+      ${await readFile(app, "utf8")}
+    `);
+  }
   git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", remote);
   git(writer, "init", "--quiet", "--initial-branch=main");
   git(writer, "add", "--all");
@@ -212,8 +225,12 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
   await writeFile(join(active, "config/config/other.yaml"), schedule
     ? 'master: ["99:51", "100:52"]\n' : 'master: ["99:51", "100:51"]\n');
   if (schedule) {
-    await writeFile(join(active, "config/config/bot.yaml"), schedule === "interval"
-      ? "update_time: 0.025\n" : 'update_cron: "0 * * * * *"\n');
+    const botConfig = {
+      interval: "update_time: 0.025\n",
+      "legacy-default": "file_watch: false\n",
+      cron: 'update_cron: "0 * * * * *"\n',
+    };
+    await writeFile(join(active, "config/config/bot.yaml"), botConfig[schedule]);
   }
   disableMemberPrewarm(active);
   if (audit) {
@@ -1170,6 +1187,7 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
 }
 
 test.skipIf(!Bun.which("git"))("update_time 在软关机期间静默更新并向各机器人主人回执", () => exerciseScheduledUpdate("interval", false), 35_000);
+test.skipIf(!Bun.which("git"))("旧 bot.yaml 省略 update_time 仍可静默更新和发送原会话回执", () => exerciseScheduledUpdate("legacy-default", false), 35_000);
 test.skipIf(!Bun.which("git"))("update_cron 启动失败后恢复旧提交和原关机时间并向各机器人主人回执", () => exerciseScheduledUpdate("cron", true), 35_000);
 
 async function exerciseMilkyScheduledUpdate(fail: boolean) {

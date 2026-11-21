@@ -1,12 +1,12 @@
-export async function readLocalConfig(root: URL, name: string): Promise<Record<string, unknown>> {
-  return await readOptionalLocalConfig(root, name) ?? {};
+export async function readLocalConfig(root: URL, name: string, legacyDefaults?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return await readOptionalLocalConfig(root, name, legacyDefaults) ?? {};
 }
 
-export async function readOptionalLocalConfig(root: URL, name: string): Promise<Record<string, unknown> | undefined> {
-  for (const path of [`config/${name}.yaml`, `config/config/${name}.yaml`]) {
-    const value = await readOptionalConfigFile(root, path);
-    if (value !== undefined) return value;
-  }
+export async function readOptionalLocalConfig(root: URL, name: string, legacyDefaults?: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
+  const modern = await readOptionalConfigFile(root, `config/${name}.yaml`);
+  if (modern !== undefined) return modern;
+  const legacy = await readOptionalConfigFile(root, `config/config/${name}.yaml`);
+  if (legacy !== undefined) return legacyDefaults ? { ...legacyDefaults, ...legacy } : legacy;
 }
 
 export async function readOptionalConfigFile(root: URL, path: string): Promise<Record<string, unknown> | undefined> {

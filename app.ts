@@ -1958,7 +1958,7 @@ if (import.meta.main) {
   }
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
-    const botConfig = await readLocalConfig(root, "bot");
+    const botConfig = await readLocalConfig(root, "bot", { update_time: 1440 });
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
     const [network, permissions, globalConfig, access, requestPolicies, routing,
       runtimeVersion, milky] = await Promise.all([

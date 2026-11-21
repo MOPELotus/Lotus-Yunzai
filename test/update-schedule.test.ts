@@ -1,4 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { readLocalConfig } from "../lib/config.ts";
 import { LegacyTasks } from "../lib/plugins/tasks.ts";
 import { scheduleUpdates } from "../lib/update-schedule.ts";
 
@@ -35,6 +40,35 @@ test("必须显式配置正的十进制分钟数，默认和零不调度", async
   } finally {
     timers.restore();
     warn.mockRestore();
+  }
+});
+
+test("旧 bot.yaml 省略更新间隔时保留每天更新，新路径和显式禁用不继承", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-legacy-update-"));
+  const legacyPath = join(directory, "config/config/bot.yaml");
+  const modernPath = join(directory, "config/bot.yaml");
+  const root = pathToFileURL(directory + "/");
+  const read = () => readLocalConfig(root, "bot", { update_time: 1440 });
+  try {
+    expect(await read()).toEqual({});
+    await mkdir(join(directory, "config/config"), { recursive: true });
+    await writeFile(legacyPath, "file_watch: false\n");
+    const imported = await read();
+    const timers = captureTimers();
+    try {
+      await scheduleUpdates(imported, () => { throw new Error("滴答需由试验显式触发。"); })();
+      expect(timers.scheduled.map(({ delay }) => delay)).toEqual([86_400_000]);
+    } finally {
+      timers.restore();
+    }
+    await writeFile(legacyPath, "update_time: 0\n");
+    expect(await read()).toEqual({ update_time: 0 });
+    await writeFile(legacyPath, "update_time: 48\n");
+    expect(await read()).toEqual({ update_time: 48 });
+    await writeFile(modernPath, "file_watch: false\n");
+    expect(await read()).toEqual({ file_watch: false });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
