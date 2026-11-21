@@ -957,12 +957,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       } as const;
     },
     async cloudCheckin(qq: string, id: number) {
-      const { document, revision } = await readDocument(qq, id);
-      const settings = record(record(document.cloud_games).cn);
-      return { revision, wallets: (["genshin", "zzz"] as const).flatMap(game => {
-        const { enable, token } = record(settings[game]);
+      const { document, state, revision } = await readDocument(qq, id);
+      const settings = record(document.cloud_games);
+      const domestic = record(settings.cn);
+      const wallets = (["genshin", "zzz"] as const).flatMap(game => {
+        const { enable, token } = record(domestic[game]);
         return enable === true ? [{ game, token: typeof token === "string" ? token : "" }] : [];
-      }) };
+      });
+      const overseas = record(settings.os);
+      const genshin = record(overseas.genshin);
+      const international = overseas.enable !== false && genshin.enable === true ? [{
+        game: "genshin-os" as const, token: text(genshin.token), language: text(overseas.lang) || "zh-cn",
+        deviceId: state.device.id, deviceModel: state.device.model, androidVersion: state.device.androidVersion,
+      }] : [];
+      return { revision, wallets: [...wallets, ...international] };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();

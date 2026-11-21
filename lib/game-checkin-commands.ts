@@ -591,26 +591,38 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         await verifyCurrent();
         if (walletRevision !== revision) throw new ProfileError("changed", changed);
         const balances: string[] = [];
-        for (const { game, token } of wallets) {
-          const name = game === "genshin" ? "云原神" : "云绝区零";
+        for (const wallet of wallets) {
+          const { game, token } = wallet;
+          const name = game === "genshin-os" ? "云原神国际服" : game === "genshin" ? "云原神" : "云绝区零";
           if (!token) {
-            balances.push(`请先在私聊绑定${name}凭据。`);
+            if (game === "genshin-os") {
+              count("failed");
+              notes.push("请检查当前档案中的云原神国际服凭据。");
+            } else balances.push(`请先在私聊绑定${name}凭据。`);
             continue;
           }
           try {
             const options = { signal, verifyProfile: verifyCurrent };
-            const state = game === "genshin"
-              ? await client.readCloudGenshinWallet(token, { ...options, browserDeviceId: cloudDeviceId })
-              : await client.readCloudZzzWallet(token, options);
-            await verifyCurrent();
-            balances.push(`${name}剩余免费时长：${state.freeTimeMinutes} 分钟`);
+            if (wallet.game === "genshin-os") {
+              const { language, deviceId, deviceModel, androidVersion } = wallet;
+              const state = await client.readInternationalCloudGenshinWallet(token, { ...options, language, deviceId, deviceModel, androidVersion });
+              await verifyCurrent();
+              const minutes = (value?: number) => value === undefined ? "未知" : `${value} 分钟`;
+              balances.push(`${name}剩余免费时长：${minutes(state.freeTimeMinutes)}，本次赠送：${minutes(state.grantedMinutes)}`);
+            } else {
+              const state = game === "genshin"
+                ? await client.readCloudGenshinWallet(token, { ...options, browserDeviceId: cloudDeviceId })
+                : await client.readCloudZzzWallet(token, options);
+              await verifyCurrent();
+              balances.push(`${name}剩余免费时长：${state.freeTimeMinutes} 分钟`);
+            }
           } catch (error) {
             await verifyCurrent();
             count("failed");
             if ((error instanceof CloudGenshinWalletError || error instanceof CloudZzzWalletError) && error.reason === "expired") {
-              notes.push(error.message);
+              notes.push(game === "genshin-os" ? "云原神国际服凭据已失效，请在官方客户端重新登录后更新档案。" : error.message);
             } else if (error instanceof HoyoRequestError && error.code === "invalid-input") {
-              notes.push(`请在私聊重新绑定${name}凭据。`);
+              notes.push(game === "genshin-os" ? error.message : `请在私聊重新绑定${name}凭据。`);
             } else {
               notes.push(`暂时无法读取${name}剩余免费时长。`);
             }
