@@ -1,8 +1,8 @@
 import { HandlerScope } from "./plugins/handler.ts";
-import { LegacyTasks } from "./plugins/tasks.ts";
+import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
 
 export function scheduleDispatchPower(config: Record<string, unknown>, setPaused: (paused: boolean) => void | Promise<void>) {
-  const tasks = new LegacyTasks();
+  const tasks = new LegacyTasks(undefined, legacyHostCronTimeZone);
   const owner = new HandlerScope();
   for (const [field, name, paused] of [
     ["stop_cron", "定时关机", true],

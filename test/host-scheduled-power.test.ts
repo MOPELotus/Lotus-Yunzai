@@ -107,7 +107,7 @@ async function exerciseScheduledPower(milkyId: 100 | 104) {
       // Move this child close to a minute boundary. The actual scheduler and its timers still run.
       writeFile(join(root, "fixture-clock.js"), `
         const DateConstructor = Date;
-        const origin = DateConstructor.parse("2032-04-14T12:59:56.000Z") - performance.now();
+        const origin = DateConstructor.parse("2032-04-14T04:59:56.000Z") - performance.now();
         const now = () => Math.floor(origin + performance.now());
         globalThis.Date = new Proxy(DateConstructor, {
           get: (target, key, receiver) => key === "now" ? now : Reflect.get(target, key, receiver),

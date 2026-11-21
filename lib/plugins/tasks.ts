@@ -1,6 +1,8 @@
 import { Job, scheduledJobs } from "node-schedule";
 import type { HandlerScope } from "./handler.ts";
 
+export const legacyHostCronTimeZone = "Asia/Shanghai";
+
 interface TaskDefinition {
   readonly key: string;
   readonly name: string;
@@ -65,7 +67,10 @@ export class LegacyTasks {
   readonly #preparations = new Set<() => void>();
   #stopping?: Promise<void>;
 
-  constructor(private readonly accepting: () => boolean = () => true) {}
+  constructor(
+    private readonly accepting: () => boolean = () => true,
+    private readonly timeZone?: string,
+  ) {}
 
   register(owner: HandlerScope, app: Record<string, unknown>): void {
     if (this.#stopping) return;
@@ -147,7 +152,7 @@ export class LegacyTasks {
     });
     let scheduled = false;
     try {
-      scheduled = job.schedule(cron);
+      scheduled = job.schedule(this.timeZone ? { rule: cron, tz: this.timeZone } : cron);
     } finally {
       if (!scheduled) job.cancel();
     }

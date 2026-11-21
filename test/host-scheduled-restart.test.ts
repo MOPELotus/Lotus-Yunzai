@@ -211,7 +211,7 @@ const cronClock = `
   const epoch = new URL("./fixture-epoch", import.meta.url);
   const restarted = existsSync(epoch);
   if (!restarted) writeFileSync(epoch, String(DateConstructor.now()));
-  const offset = DateConstructor.parse("2032-04-14T12:59:56.000Z") - Number(readFileSync(epoch, "utf8"));
+  const offset = DateConstructor.parse("2032-04-14T04:59:56.000Z") - Number(readFileSync(epoch, "utf8"));
   const now = () => DateConstructor.now() + offset + (restarted ? 60_000 : 0);
   globalThis.Date = new Proxy(DateConstructor, {
     get: (target, key, receiver) => key === "now" ? now : Reflect.get(target, key, receiver),

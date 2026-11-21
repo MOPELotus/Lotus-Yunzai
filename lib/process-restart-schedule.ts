@@ -1,5 +1,5 @@
 import { HandlerScope } from "./plugins/handler.ts";
-import { LegacyTasks } from "./plugins/tasks.ts";
+import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
 
 const maxTimerDelay = 2_147_483_647;
 
@@ -7,7 +7,7 @@ export function scheduleProcessRestart(
   config: Record<string, unknown>,
   restart: () => void | Promise<void>,
 ): () => Promise<void> {
-  const tasks = new LegacyTasks();
+  const tasks = new LegacyTasks(undefined, legacyHostCronTimeZone);
   const owner = new HandlerScope();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let running: Promise<void> | undefined;
