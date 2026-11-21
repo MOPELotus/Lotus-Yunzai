@@ -9,6 +9,7 @@ import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
 import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
+import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
 import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-history.ts";
 import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
@@ -29,6 +30,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const state = await stageLegacyState(plan.source, directory, signal);
     const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
     const shopAudit = await stageLegacyShopAudit(plan.source, state.directory, signal);
+    const redeem = await stageLegacyRedeemState(plan.source, state.directory, signal);
     const schedules = await stageLegacyCheckinSchedules(plan.source, state.directory, signal);
     const gameData = await stageLegacyGameData(plan.source, state.directory, signal);
     const sharedGameHistory = await stageLegacySharedGameHistory(plan.source, state.directory, signal);
@@ -41,7 +43,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, atlas, shopAudit, deferredPlugins } as const;
+      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, atlas, shopAudit, redeem, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

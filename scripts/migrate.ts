@@ -24,6 +24,7 @@ interface PreparedMigration {
     readonly globalConfig: Staged["globalConfig"];
     readonly atlas: Staged["atlas"];
     readonly shopAudit: Staged["shopAudit"];
+    readonly redeem: Staged["redeem"];
     readonly state: Staged["state"]["plan"];
     readonly heldPlugins: Staged["retained"]["held"];
     readonly deferredPlugins: Staged["deferredPlugins"];
@@ -76,6 +77,7 @@ async function prepare(source: string, target: string, directory: string, signal
         globalConfig: staged.globalConfig,
         atlas: staged.atlas,
         shopAudit: staged.shopAudit,
+        redeem: staged.redeem,
         state: staged.state.plan,
         heldPlugins: staged.retained.held,
         deferredPlugins: staged.deferredPlugins,
