@@ -9,7 +9,7 @@ type LikeSettingsModule = typeof import("../plugins/group/like-settings.ts");
 type NoticeSettingsModule = typeof import("../plugins/group/group-notice-panel-settings.ts");
 
 export function panelGroupNoticeSettings(root: URL, directories: PluginLoadReport["directories"]) {
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const group = directories.get("group");
     if (!group || group.packageName !== "@lotus-yunzai/group") return new Response(null, { status: 404 });
     if (request.method !== "GET" && request.method !== "PUT") {
@@ -36,9 +36,12 @@ export function panelGroupNoticeSettings(root: URL, directories: PluginLoadRepor
         typeof payload.revision !== "string" || Object.keys(payload).length !== 2) {
       return new Response(null, { status: 400 });
     }
+    const active = () => !request.signal.aborted && stillAuthorized();
+    const registered = () => directories.get("group") === group;
     try {
-      return Response.json(await service.write(payload.revision, payload.patch));
+      return Response.json(await service.write(payload.revision, payload.patch, () => active() && registered()));
     } catch (error) {
+      if (error instanceof module.GroupNoticePanelSettingsPermission) return new Response(null, { status: active() ? 409 : 401 });
       if (error instanceof module.GroupNoticePanelSettingsConflict) return new Response(null, { status: 409 });
       if (error instanceof module.GroupNoticePanelSettingsInputError) return new Response(null, { status: 400 });
       if (error instanceof module.GroupNoticePanelSettingsUnavailable) return new Response(null, { status: 503 });
@@ -55,7 +58,7 @@ export async function readGroupLikeSettingsModule(directories: PluginLoadReport[
 }
 
 export function panelGroupSettings(directories: PluginLoadReport["directories"]) {
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const group = directories.get("group");
     if (!group || group.packageName !== "@lotus-yunzai/group") return new Response(null, { status: 404 });
     if (request.method !== "GET" && request.method !== "PUT") {
@@ -89,11 +92,16 @@ export function panelGroupSettings(directories: PluginLoadReport["directories"])
         !("revision" in payload) || typeof payload.revision !== "string") {
       return new Response(null, { status: 400 });
     }
+    const active = () => !request.signal.aborted && stillAuthorized();
+    const registered = () => directories.get("group") === group;
     try {
-      return Response.json(await service.saveLikeSettings(payload.patch, { revision: payload.revision }));
+      return Response.json(await service.saveLikeSettings(payload.patch, {
+        revision: payload.revision,
+        canWrite: () => active() && registered(),
+      }));
     } catch (error) {
       if (error instanceof service.LikeSettingsError) {
-        return Response.json({ message: error.message }, { status: error.code === "conflict" ? 409 : 400 });
+        return Response.json({ message: error.message }, { status: error.code === "conflict" ? (active() ? 409 : 401) : 400 });
       }
       return new Response(null, { status: 500 });
     }

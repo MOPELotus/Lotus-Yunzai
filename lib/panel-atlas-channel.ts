@@ -7,7 +7,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 export function panelAtlasChannel(root: URL) {
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
       try { return Response.json({ channel: await readAtlasChannel(root) }); }
       catch { return new Response(null, { status: 500 }); }
@@ -21,10 +21,10 @@ export function panelAtlasChannel(root: URL) {
         (body.previous !== null && !isAtlasChannel(body.previous))) return new Response(null, { status: 400 });
     const { channel, previous } = body;
     try {
-      return Response.json({ channel: await persistAtlasChannel(root, channel, previous, request.signal) });
+      return Response.json({ channel: await persistAtlasChannel(root, channel, previous, { signal: request.signal, canWrite: stillAuthorized }) });
     } catch (error) {
       const reason = error instanceof GlobalConfigWriteError ? error.reason : undefined;
-      return new Response(null, { status: reason === "conflict" ? 409 : 500 });
+      return new Response(null, { status: reason === "conflict" ? 409 : reason === "permission" || reason === "cancelled" ? 401 : 500 });
     }
   };
 }

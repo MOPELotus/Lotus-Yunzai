@@ -57,10 +57,14 @@ export async function readAtlasChannel(root: URL): Promise<AtlasChannel | null> 
   return readChannel(await readLotusGlobalConfig(root));
 }
 
-export function persistAtlasChannel(root: URL, channel: AtlasChannel, previous: AtlasChannel | null, signal?: AbortSignal) {
+export function persistAtlasChannel(root: URL, channel: AtlasChannel, previous: AtlasChannel | null,
+  { signal, canWrite }: { readonly signal: AbortSignal; readonly canWrite: () => boolean },
+) {
+  const authorized = () => !signal.aborted && canWrite();
   return updateLotusGlobalConfig(root, {
-    canWrite: () => true,
+    canWrite: authorized,
     signal,
+    canCommit: authorized,
     prepare(content, local, effective) {
       const saved = readChannel(effective);
       if (saved !== previous) throw new GlobalConfigWriteError("conflict");

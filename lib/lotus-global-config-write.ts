@@ -93,6 +93,7 @@ interface UpdateOptions<T> {
   readonly canWrite: (document: GlobalDocument) => boolean;
   readonly prepare: (text: string, local: GlobalDocument, effective: GlobalDocument) => { yaml?: string; value: T };
   readonly signal?: AbortSignal;
+  readonly canCommit?: () => boolean;
   readonly onCommitted?: (value: T) => void;
   readonly override?: string;
 }
@@ -102,7 +103,7 @@ export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>)
 }
 
 export async function updateLocalConfiguration<T>(
-  root: URL, name: ConfigurationName, { canWrite, prepare, signal, onCommitted, override }: UpdateOptions<T>,
+  root: URL, name: ConfigurationName, { canWrite, prepare, signal, canCommit, onCommitted, override }: UpdateOptions<T>,
 ): Promise<T> {
   function assertActive() {
     if (signal?.aborted) error("cancelled");
@@ -151,6 +152,7 @@ export async function updateLocalConfiguration<T>(
     }
     if (next.yaml === undefined) {
       await verifySnapshot();
+      if (canCommit && !canCommit()) error("permission");
       onCommitted?.(next.value);
       return next.value;
     }
@@ -172,6 +174,7 @@ export async function updateLocalConfiguration<T>(
       }
 
       await verifySnapshot();
+      if (canCommit && !canCommit()) error("permission");
       if (current) renameSync(staged, location.file);
       else {
         try { linkSync(staged, location.file); }

@@ -174,6 +174,7 @@ export function panelWebLogin(root: URL, milkyWebhookPath?: string) {
     try {
       const updated = await updateLotusGlobalConfig(root, {
         canWrite: stillAuthorized,
+        canCommit: stillAuthorized,
         signal: request.signal,
         prepare(text, local, effective) {
           const previous = snapshot(effective);
