@@ -29,7 +29,7 @@ device: { id: fixture-device, fp: fixture-fp }
       normalizedMessage: message, message_type: "private", user_id: 42, self_id: 99, reply: () => true,
     });
     await save("32345678");
-    for (const command of ["%card3", "%获取抽卡链接3", "%迷宫战绩3 页 2", "%探索度3", "%临界3", "%爬塔3", "%迷失3"]) {
+    for (const command of ["%card3", "%获取抽卡链接3", "%更新抽卡记录3", "%迷宫战绩3 页 2", "%探索度3", "%临界3", "%爬塔3", "%迷失3"]) {
       expect(await run(command)).toContain("未选中已认证的绝区零 UID");
     }
     expect(request).not.toHaveBeenCalled();
