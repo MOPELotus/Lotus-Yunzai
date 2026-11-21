@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
+import { accountScopePermission, readMasterPermissions } from "../lib/permissions.ts";
+import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
 import { planLegacyState, stageLegacyState } from "../lib/migration-state.ts";
 import { stageMigration } from "../scripts/migrate-stage.ts";
 import { migrateInstallation } from "../scripts/migrate.ts";
@@ -52,6 +54,11 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   await put(source, group, groupBytes);
   await put(source, legacyPool, pool(ids[0]));
   await put(source, "data/textJson/fixture.json", "{}\n");
+  const oldGlobal = "plugins/Lotus-Plugin/config/global.yaml";
+  const exampleGlobal = "schedule: '0 30 4 * * ?'\npermissionControl: {mode: whitelist, whitelist: [42]}\ncoin_shop: {enable: false, panel_session_hours: 15, host: external-local-only}\nremote: {enable: true}\n";
+  await put(source, oldGlobal, exampleGlobal);
+  await put(source, "config/global.yaml", "scheduler: {enable: false}\n");
+  await put(source, "config/config/other.yaml", 'master: ["99:42"]\nautoGroup: 0\n');
   const profile = "user: {qq: 42}\nprofile: {id: 1}\naccount: {cookie: isolated-fixture}\n";
   await put(source, "plugins/Lotus-ReFactor/data/users/42.yaml", profile);
   await put(source, "data/users/42.yaml", profile);
@@ -106,6 +113,20 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(await readFile(join(target, "backup", plugin), "utf8")).toBe(manifest);
   expect(result.gameData.archived).toEqual([{ path: "backup/legacy-data/textJson", files: 1, bytes: 3 }]);
   expect(await readFile(join(target, "backup/legacy-data/textJson/fixture.json"), "utf8")).toBe("{}\n");
+  expect(result.globalConfig.sections.sort()).toEqual(["coin_shop", "permissions", "scheduler"]);
+  expect(result.coreConfig).toEqual({ files: 1, deferredOwners: { master: 0, masterQQ: 0 } });
+  const migratedRoot = Bun.pathToFileURL(`${target}/`);
+  expect((await readMasterPermissions(migratedRoot)).isMaster(99, 42)).toBe(true);
+  const globalConfig = await readLotusGlobalConfig(migratedRoot);
+  expect(globalConfig).toEqual({
+    scheduler: { enable: false, mode: "fixed", fixed_time: "04:30" },
+    permissions: { default_policy: "deny", users: { allow: ["42"], deny: [] } },
+    coin_shop: { enable: false, panel_session_hours: 15 },
+  });
+  const allowed = accountScopePermission(globalConfig, "checkin.refresh");
+  expect(allowed({ user_id: 42, isMaster: false })).toBe(true);
+  expect(allowed({ user_id: 43, isMaster: false })).toBe(false);
+  expect(await readFile(join(target, "backup", oldGlobal), "utf8")).toBe(exampleGlobal);
   expect(await readFile(join(target, compatible), "utf8")).toBe(script);
   expect(await Bun.file(join(target, "plugins", held)).exists()).toBe(false);
   expect(await readFile(join(target, "backup/held-plugins", held), "utf8")).toBe(heldScript);

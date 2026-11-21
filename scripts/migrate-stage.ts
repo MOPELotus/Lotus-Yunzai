@@ -1,9 +1,13 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageLegacyAtlasState } from "../lib/migration-atlas-state.ts";
 import { stageLegacyCheckinSchedules } from "../lib/migration-checkin-schedules.ts";
+import { stageLegacyCoreConfig } from "../lib/migration-core-config.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
+import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
+import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
 import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
 import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
@@ -21,12 +25,17 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal);
     const state = await stageLegacyState(plan.source, directory, signal);
     const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
+    const shopAudit = await stageLegacyShopAudit(plan.source, state.directory, signal);
     const schedules = await stageLegacyCheckinSchedules(plan.source, state.directory, signal);
     const gameData = await stageLegacyGameData(plan.source, state.directory, signal);
+    const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal);
+    const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal);
+    const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal);
     signal?.throwIfAborted();
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
-    return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData, deferredPlugins } as const;
+    return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
+      coreConfig, globalConfig, atlas, shopAudit, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

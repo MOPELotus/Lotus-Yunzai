@@ -17,6 +17,10 @@ interface PreparedMigration {
     readonly profiles: Staged["profiles"];
     readonly schedules: Staged["schedules"];
     readonly gameData: Staged["gameData"];
+    readonly coreConfig: Staged["coreConfig"];
+    readonly globalConfig: Staged["globalConfig"];
+    readonly atlas: Staged["atlas"];
+    readonly shopAudit: Staged["shopAudit"];
     readonly state: Staged["state"]["plan"];
     readonly heldPlugins: Staged["retained"]["held"];
     readonly deferredPlugins: Staged["deferredPlugins"];
@@ -62,6 +66,10 @@ async function prepare(source: string, target: string, directory: string, signal
         profiles: staged.profiles,
         schedules: staged.schedules,
         gameData: staged.gameData,
+        coreConfig: staged.coreConfig,
+        globalConfig: staged.globalConfig,
+        atlas: staged.atlas,
+        shopAudit: staged.shopAudit,
         state: staged.state.plan,
         heldPlugins: staged.retained.held,
         deferredPlugins: staged.deferredPlugins,
