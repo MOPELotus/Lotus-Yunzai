@@ -1,5 +1,4 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
-import { maxOcrImageBytes } from "../image-ocr.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
@@ -282,23 +281,6 @@ export class OneBotCalls {
       const version = await this.#request(send, "get_version_info", {}, signal);
       return isRecord(version) && version.app_name === "NapCat.Onebot";
     } catch { return false; }
-  }
-
-  async recognizeImageText(send: Send, bytes: Uint8Array, signal: AbortSignal): Promise<string | undefined> {
-    if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > maxOcrImageBytes) return;
-    const image = "base64://" + Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-    try {
-      const result = await this.#request(send, "ocr_image", { image }, signal);
-      const lines: unknown = isRecord(result) ? result.texts : result;
-      if (!Array.isArray(lines) || !lines.length || lines.length > 250) return;
-      const text: string[] = [];
-      for (const line of lines) {
-        if (!isRecord(line) || typeof line.text !== "string" || line.text.length > 4_000) return;
-        const clean = line.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "").trim();
-        if (clean) text.push(clean);
-      }
-      return text.join("\n").slice(0, 4_000).toWellFormed() || undefined;
-    } catch { return; }
   }
 
   publishGroupAnnouncement(send: Send, groupId: number, content: string, image: string | undefined, signal: AbortSignal) {

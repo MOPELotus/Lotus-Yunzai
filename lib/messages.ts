@@ -4,7 +4,6 @@ import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./m
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "./owner-contact-list.ts";
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "./manual-group-leave.ts";
-import { imageOcrSession, type ImageOcrSession } from "./image-ocr.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
@@ -60,7 +59,6 @@ export interface MessageEvent {
   readonly [delegationSession]?: DelegationSession;
   readonly [ownerContactListSession]?: OwnerContactListSession;
   readonly [manualGroupLeaveSession]?: ManualGroupLeaveSession;
-  readonly [imageOcrSession]?: ImageOcrSession;
   readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly canDelegate?: boolean;
   readonly delegationSignal?: AbortSignal;

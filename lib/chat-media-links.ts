@@ -1,4 +1,4 @@
-import { readQqMessageMedia, type IncomingChatFile } from "./chat-files.ts";
+import { readQqMessageImage, type IncomingChatFile } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { sendCommandReply } from "./commands.ts";
 import { isVerifiedRaster, type FileToUrl } from "./file-to-url.ts";
@@ -13,27 +13,6 @@ const maxWaiting = 128;
 interface Waiting {
   readonly expires: number;
   readonly signal: AbortSignal;
-}
-
-function qqImageSource(value: unknown): value is string {
-  if (typeof value !== "string" || value.length > 8192 || /[\s\\]/u.test(value)) return false;
-  const url = URL.parse(value);
-  if (!url || url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return false;
-  const { hostname, pathname } = url;
-  if (hostname === "gchat.qpic.cn") return pathname === "/download" || pathname.startsWith("/gchatpic_new/");
-  if (hostname === "c2cpicdw.qpic.cn") return pathname.startsWith("/offpic_new/");
-  return hostname === "multimedia.nt.qq.com.cn" && pathname === "/download";
-}
-
-async function readImage(part: InboundSegment, signal: AbortSignal) {
-  if (qqImageSource(part.url)) {
-    const image = await readQqMessageMedia(part.url, signal);
-    if (image) return image;
-  }
-  const download = part.getDownloadUrl;
-  if (signal.aborted || typeof download !== "function") return;
-  const renewed: unknown = await Promise.resolve().then(() => download()).catch(() => undefined);
-  if (qqImageSource(renewed) && renewed !== part.url) return readQqMessageMedia(renewed, signal);
 }
 
 function imageParts(message: MessageEvent["message"]) {
@@ -135,7 +114,7 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
     let bytes = 0;
     for (const image of selected) {
       if (!active()) return true;
-      const data = await readImage(image, signal);
+      const data = await readQqMessageImage(image, signal);
       if (!data || (bytes += data.length) > maxPublicFileBytes || !await isVerifiedRaster(data)) {
         await reply("无法读取当前会话的图片或图片过大。", true);
         return true;

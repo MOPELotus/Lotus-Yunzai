@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -22,14 +22,17 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, wh
   throw new Error(what);
 }
 
-test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能力时不读取图片", async () => {
+test("两协议用本地 OCR 处理当前图、同会话引用、缺模型与群权限", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-ocr-host-"));
   const milkyFrames: Frame[] = [];
   const milky = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const action = new URL(request.url).pathname.split("/").at(-1)!;
     const params = await request.json() as Frame["params"];
     milkyFrames.push({ action, params });
-    const data = action === "get_login_info" ? { uin: 100 } : { message_seq: 2 };
+    const data = action === "get_login_info" ? { uin: 100 } :
+      action === "get_message" ? { message: { message_scene: "group", peer_id: 180, sender_id: 52, message_seq: params.message_seq,
+        segments: [{ type: "image", data: { temp_url: "https://gchat.qpic.cn/download?expired", resource_id: "refresh-image" } }] } } :
+      action === "get_resource_temp_url" ? { url: "https://gchat.qpic.cn/download?quote" } : { message_seq: 2 };
     return Response.json({ status: "ok", retcode: 0, data });
   }});
   const sockets: WebSocket[] = [];
@@ -40,6 +43,21 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
       recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
     });
     await mkdir(join(root, "config"), { recursive: true });
+    const marker = join(root, "models-ready");
+    const inputs = join(root, "engine-inputs");
+    const held = join(root, "engine-held");
+    await writeFile(inputs, "");
+    await writeFile(join(root, "tesseract"), String.raw`#!${process.execPath}
+import { appendFileSync, existsSync } from "node:fs";
+if (Bun.argv[2] === "--list-langs") {
+  console.log(existsSync(${JSON.stringify(marker)}) ? "chi_sim\neng" : "eng");
+} else {
+  if (JSON.stringify(Bun.argv.slice(2)) !== JSON.stringify(["stdin","stdout","-l","chi_sim+eng","--oem","1","--psm","3"])) process.exit(1);
+  appendFileSync(${JSON.stringify(inputs)}, Buffer.from(await Bun.stdin.arrayBuffer()).toString("base64") + "\n");
+  while (existsSync(${JSON.stringify(held)})) await Bun.sleep(15);
+  console.log("第一行\n[CQ:at,qq=all]");
+}
+`, { mode: 0o700 });
     await writeFile(join(root, "config/group.yaml"),
       "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶助手-其他]}\n");
     await writeFile(join(root, "config/milky.yaml"),
@@ -51,6 +69,7 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
         if (url.hostname === "127.0.0.1") return actual(input, options);
         if (url.origin !== "https://gchat.qpic.cn" || url.pathname !== "/download" || options?.redirect !== "error" ||
             options?.credentials !== "omit" || new Headers(options?.headers).has("Cookie")) throw Error("fixture network guard");
+        if (url.search === "?expired") return Promise.resolve(new Response(null, { status: 404 }));
         const source = url.search === "?quote" ? ${JSON.stringify(alternatePng)} : ${JSON.stringify(png)};
         return Promise.resolve(new Response(Buffer.from(source, "base64"), { headers: {"Content-Type":"image/png"} }));
       };
@@ -58,7 +77,7 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
     disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "--no-env-file", "--preload", "./preload.ts", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+      env: { PATH: root + ":" + process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
     });
     let startup = "";
     const decoder = new TextDecoder();
@@ -67,8 +86,7 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
     const http = await waitFor(() => /HTTP 正在监听 (http:\/\/127\.0\.0\.1:\d+)\/status/u.exec(startup)?.[1], "HTTP OCR host");
     const headers = { Authorization: "Bearer " + token };
     const WebSocketWithHeaders = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
-    let nativeOcrAvailable = true;
-    const makeClient = async (identity: number, napcat: boolean) => {
+    const makeClient = async (identity: number) => {
       const socket = new WebSocketWithHeaders(ws, { headers: { ...headers, "X-Client-Role": "Universal", "X-Self-ID": String(identity) } });
       sockets.push(socket);
       const frames: Frame[] = [];
@@ -77,15 +95,9 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
         frames.push(frame);
         const { action, params, echo } = frame;
         if (!echo || socket.readyState !== WebSocket.OPEN) return;
-        if (action === "ocr_image" && !nativeOcrAvailable) {
-          socket.send(JSON.stringify({ echo, status: "failed", retcode: 1200, message: "OCR unavailable" }));
-          return;
-        }
         const result = action === "get_login_info" ? { user_id: identity } :
-          action === "get_version_info" ? { app_name: napcat ? "NapCat.Onebot" : "unknown" } :
           action === "get_msg" ? { message_id: params.message_id, self_id: identity, message_type: "group",
             sender: { user_id: 52 }, group_id: params.message_id === 401 ? 77 : 91, message: [image("quote")] } :
-          action === "ocr_image" ? { texts: [{ text: "第一行" }, { text: "[CQ:at,qq=all]" }] } :
           action === "get_group_list" || action === "get_friend_list" ? [] : { message_id: 122 };
         socket.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: result }));
       };
@@ -101,42 +113,38 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
         await Bun.sleep(100);
       }};
     };
-    const client = await makeClient(99, true);
-    const calls = () => client.frames.filter(frame => frame.action === "ocr_image");
+    const client = await makeClient(99);
+    const reads = async () => (await readFile(inputs, "utf8")).split("\n").filter(Boolean);
+    await client.send([text("#提取文字"), image("without-model")], /缺少简体中文或英语模型/u, undefined, 53);
+    expect(await reads()).toEqual([]);
+    await writeFile(marker, "installed");
     const reply = await client.send([text("#ocr"),image("current")], /第一行/u);
     expect(reply?.params.message).toEqual([
       expect.objectContaining({ type: "reply" }),
       { type: "text", data: { text: "第一行\n[CQ:at,qq=all]" } },
     ]);
-    expect(calls().map(frame => frame.params.image)).toEqual(["base64://" + png]);
+    expect(await reads()).toEqual([png]);
 
     await client.send([quote(401),text("#提取文字"),image("current")], /第一行/u, 77);
     expect(client.frames.find(frame => frame.action === "get_msg")?.params).toEqual({ message_id: 401 });
-    expect(calls().at(-1)?.params.image).toBe("base64://" + alternatePng);
+    expect((await reads()).at(-1)).toBe(alternatePng);
 
     await client.send([quote(402),text("#取文字")], /请发送图片或取消/u, 77);
     await client.send([image("other-group")], undefined, 79);
     await client.send([image("other-actor")], undefined, 77, 52);
-    expect(calls()).toHaveLength(2);
+    expect(await reads()).toHaveLength(2);
     await client.send([text("取消")], /已取消图片文字识别/u, 77);
     await client.send([image("after-cancel")], undefined, 77);
-    expect(calls()).toHaveLength(2);
+    expect(await reads()).toHaveLength(2);
 
     await Bun.sleep(1_020);
     await client.send([text("#取文字")], /请发送图片或取消/u, 77);
     await client.send([image("continuation")], /第一行/u, 77);
-    expect(calls()).toHaveLength(3);
+    expect(await reads()).toHaveLength(3);
 
     await client.send([text("#ocr"),image("blocked")], undefined, 78);
     await client.send([text("#ocr"), { type: "image", data: { file: "/private/image.png" } }], /无法读取这张图片/u);
-    expect(calls()).toHaveLength(3);
-    nativeOcrAvailable = false;
-    await client.send([text("#提取文字"),image("native-unsupported")], /图片文字识别失败/u);
-    expect(calls()).toHaveLength(4);
-    const other = await makeClient(101, false);
-    await other.send([text("#ocr"),image("another-gateway")], /当前协议端暂不支持/u);
-    expect(other.frames.some(frame => frame.action === "ocr_image")).toBe(false);
-
+    expect(await reads()).toHaveLength(3);
     const webhook = (event_type: string, data: object) => fetch(http + "/milky", {
       method: "POST", headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ self_id: 100, time: 1_700_000_000, event_type, data }),
@@ -144,12 +152,41 @@ test("旧 OCR 用同会话原图和真实引用，继承群禁用，Milky 无能
     await waitFor(async () => (await webhook("fixture", {})).status === 200 || undefined, "Milky OCR session");
     const milkyResponse = await webhook("message_receive", { time: 1_700_000_000, sender_id: 51, peer_id: 51,
       message_seq: 12, message_scene: "friend", segments: [text("#提取文字"),
-        { type: "image", data: { uri: "https://gchat.qpic.cn/download?unsupported" } }],
+        { type: "image", data: { temp_url: "https://gchat.qpic.cn/download?from-milky" } }],
     });
     expect(milkyResponse.status).toBe(200);
     await waitFor(() => milkyFrames.find(frame => frame.action === "send_private_message" &&
-      /当前协议端暂不支持/u.test(content(frame))), "Milky OCR unsupported reply");
-    expect(milkyFrames.some(frame => frame.action === "ocr_image" || frame.action === "get_message")).toBe(false);
+      /第一行/u.test(content(frame))), "Milky local OCR reply");
+    expect(await reads()).toHaveLength(4);
+    expect((await reads()).at(-1)).toBe(png);
+    expect((await webhook("message_receive", { time: 1_700_000_000, sender_id: 51, peer_id: 180,
+      message_seq: 13, message_scene: "group", segments: [
+        { type: "reply", data: { message_seq: 10 } }, text("#取文字"),
+      ] })).status).toBe(200);
+    await waitFor(() => milkyFrames.find(frame => frame.action === "send_group_message" &&
+      /第一行/u.test(content(frame))), "Milky quote OCR reply");
+    expect(milkyFrames.find(frame => frame.action === "get_message")?.params).toEqual({
+      message_scene: "group", peer_id: 180, message_seq: 10,
+    });
+    expect(milkyFrames.find(frame => frame.action === "get_resource_temp_url")?.params).toEqual({ resource_id: "refresh-image" });
+    expect((await reads()).at(-1)).toBe(alternatePng);
+
+    await writeFile(held, "hold current local OCR");
+    const heldReply = client.send([text("#ocr"), image("held")], /第一行/u, undefined, 54);
+    await waitFor(async () => (await reads()).length === 6 || undefined, "active local OCR");
+    try {
+      const before = milkyFrames.length;
+      expect((await webhook("message_receive", { time: 1_700_000_000, sender_id: 56, peer_id: 56, message_seq: 14,
+        message_scene: "friend", segments: [text("#ocr"), { type: "image", data: { temp_url: "https://gchat.qpic.cn/download?busy" } }],
+      })).status).toBe(200);
+      await waitFor(() => milkyFrames.slice(before).find(frame => frame.action === "send_private_message" &&
+        /识别正在处理/u.test(content(frame))), "Milky received bounded-busy notice");
+      expect(await reads()).toHaveLength(6);
+    } finally {
+      await rm(held);
+      await heldReply;
+    }
+    expect([...client.frames, ...milkyFrames].some(frame => frame.action === "ocr_image")).toBe(false);
   } finally {
     for (const socket of sockets) socket.close();
     host?.kill("SIGKILL");

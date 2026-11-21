@@ -83,7 +83,7 @@ function rasterFile(bytes: Uint8Array): { mime: RasterMime; extension: string } 
   return rasterSignatures.find((signature) => signature.bytes.every((byte, index) => bytes[index] === byte));
 }
 
-async function verifyLocalRaster(bytes: Buffer, mime: RasterMime): Promise<boolean> {
+async function verifyLocalRaster(bytes: Buffer, mime: RasterMime, pixels = maxImagePixels, side = Infinity): Promise<boolean> {
   const complete = mime === "image/png" ? bytes.subarray(-pngEnd.length).equals(pngEnd)
     : mime === "image/jpeg" ? bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9
     : mime === "image/gif" ? bytes.at(-1) === 0x3b
@@ -92,7 +92,7 @@ async function verifyLocalRaster(bytes: Buffer, mime: RasterMime): Promise<boole
   try {
     const image = new Bun.Image(bytes);
     const { width, height, format } = await image.metadata();
-    if (`image/${format}` !== mime || width < 1 || height < 1 || width * height > maxImagePixels) return false;
+    if (`image/${format}` !== mime || width < 1 || height < 1 || width * height > pixels || width > side || height > side) return false;
     await image.resize(1, 1).png().bytes();
     return true;
   } catch {
@@ -100,9 +100,9 @@ async function verifyLocalRaster(bytes: Buffer, mime: RasterMime): Promise<boole
   }
 }
 
-export async function isVerifiedRaster(bytes: Uint8Array): Promise<boolean> {
+export async function isVerifiedRaster(bytes: Uint8Array, pixels?: number, side?: number): Promise<boolean> {
   const raster = rasterFile(bytes);
-  return raster !== undefined && await verifyLocalRaster(Buffer.from(bytes), raster.mime);
+  return raster !== undefined && await verifyLocalRaster(Buffer.from(bytes), raster.mime, pixels, side);
 }
 
 export function createFileToUrl(

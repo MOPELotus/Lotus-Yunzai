@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { chatFileRelaySource, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
-import { imageOcrSession } from "../image-ocr.ts";
 import { ownerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
@@ -585,9 +584,6 @@ async function dispatchMessage(
   const lookupReply = quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
     (messageType === "group" || event.sub_type === "friend")
     ? () => quoted ??= readOneBotQuote(calls, send, quotedId, selfId, target) : undefined;
-  const ocrSignal = !noticeAttachment && connection && selfId !== undefined &&
-    (messageType === "group" && event.sub_type !== "anonymous" || event.sub_type === "friend")
-    ? groupActionSignal(connection, selfId) : undefined;
   const joinReview = groupActions?.joinReview;
   const workflowSignal = likeSession ? groupActions?.groupWorkflowSignal?.() : undefined;
   const privateGroupSignal = owner && boundAccount && messageType === "private" && event.sub_type === "friend" && selfId !== undefined
@@ -689,11 +685,6 @@ async function dispatchMessage(
         groupName: (groupId, active) => calls.getGroupName(send, groupId, active, true),
       })),
     likeSelf: (count) => calls.likeSelf(send, userId, count),
-    [imageOcrSession]: ocrSignal ? {
-      signal: ocrSignal,
-      available: signal => calls.isNapCat(send, signal),
-      recognize: (bytes, signal) => calls.recognizeImageText(send, bytes, signal),
-    } : undefined,
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
       (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,
     mentionLike: likeSession && mentioned !== undefined && "group_id" in target

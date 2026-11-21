@@ -61,17 +61,39 @@ export async function readQqChatFile(value: unknown, size?: number, signal?: Abo
   return readQqResource(url, size, signal);
 }
 
-export async function readQqMessageMedia(value: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+export async function readQqMessageMedia(value: unknown, signal?: AbortSignal, maxBytes = maxChatFileBytes): Promise<Uint8Array | undefined> {
   const url = qqResourceUrl(value);
   if (!url || typeof value !== "string" || /[\\\s]/u.test(value)) return;
   const { hostname, pathname } = url;
   const qqImage = (hostname === "gchat.qpic.cn" && (pathname === "/download" || pathname.startsWith("/gchatpic_new/"))) ||
     (hostname === "c2cpicdw.qpic.cn" && pathname.startsWith("/offpic_new/"));
   if (!qqFileHost(url) && !qqImage) return;
-  const bytes = await readQqResource(url, undefined, signal, true);
+  const bytes = await readQqResource(url, undefined, signal, true, maxBytes);
   if (!bytes) return;
   const prefix = new TextDecoder().decode(bytes.subarray(0, 128));
   if (!/^\s*(?:<!doctype html|<html\b|<\?xml|\{|\[)/iu.test(prefix)) return bytes;
+}
+
+function qqImageSource(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 8192 || /[\s\\]/u.test(value)) return false;
+  const url = URL.parse(value);
+  if (!url || url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return false;
+  const { hostname, pathname } = url;
+  if (hostname === "gchat.qpic.cn") return pathname === "/download" || pathname.startsWith("/gchatpic_new/");
+  if (hostname === "c2cpicdw.qpic.cn") return pathname.startsWith("/offpic_new/");
+  return hostname === "multimedia.nt.qq.com.cn" && pathname === "/download";
+}
+
+export async function readQqMessageImage(part: Readonly<Record<string, unknown>>, signal: AbortSignal, options?: { maxBytes: number; fallback?: unknown }) {
+  const url = part.url ?? options?.fallback;
+  if (qqImageSource(url)) {
+    const image = await readQqMessageMedia(url, signal, options?.maxBytes);
+    if (image) return image;
+  }
+  const download = part.getDownloadUrl;
+  if (signal.aborted || typeof download !== "function") return;
+  const renewed: unknown = await Promise.resolve().then(() => download()).catch(() => undefined);
+  if (qqImageSource(renewed) && renewed !== url) return readQqMessageMedia(renewed, signal, options?.maxBytes);
 }
 
 export async function readQqMessageSegmentMedia(part: Readonly<Record<string, unknown>>, signal: AbortSignal) {
@@ -91,7 +113,7 @@ export async function readQqMessageSegmentMedia(part: Readonly<Record<string, un
   } catch { return; }
 }
 
-async function readQqResource(url: URL, size?: number, signal?: AbortSignal, media = false) {
+async function readQqResource(url: URL, size?: number, signal?: AbortSignal, media = false, maxBytes = maxChatFileBytes) {
   const timeout = AbortSignal.timeout(30_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -102,7 +124,7 @@ async function readQqResource(url: URL, size?: number, signal?: AbortSignal, med
     });
     const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
     const textual = media && /^(?:text\/|application\/(?:[a-z0-9.-]+\+)?(?:json|xml)$)/iu.test(mediaType);
-    if (!response.ok || !response.body || Number(response.headers.get("content-length")) > maxChatFileBytes || textual) {
+    if (!response.ok || !response.body || Number(response.headers.get("content-length")) > maxBytes || textual) {
       await response.body?.cancel();
       return;
     }
@@ -114,7 +136,7 @@ async function readQqResource(url: URL, size?: number, signal?: AbortSignal, med
       const { done, value: chunk } = await reader.read();
       if (done) break;
       sizeRead += chunk.byteLength;
-      if (sizeRead > (size ?? maxChatFileBytes)) return;
+      if (sizeRead > (size ?? maxBytes)) return;
       chunks.push(chunk);
     }
     deadline.throwIfAborted();
