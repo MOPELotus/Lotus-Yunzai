@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { configuredIds, readOtherSetting } from "./config.ts";
+import { configuredIds, otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./config.ts";
 import type { FriendRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -24,8 +24,8 @@ export interface PendingFriendRequestDecision {
 
 type FriendAutoResult = "confirmed" | "rejected" | "unknown" | "duplicate" | undefined;
 
-async function readApprovalPolicy(root: URL): Promise<((userId: number) => boolean) | undefined> {
-  const config = await readOtherSetting(root, "autoFriend");
+function approvalPolicy(files: ReturnType<RequestOtherPolicies["current"]>): ((userId: number) => boolean) | undefined {
+  const config = otherPolicySetting(files, "autoFriend");
   if (!config) return;
   if ("primary" in config) {
     if (config.primary === 1 || config.primary === "1") return () => true;
@@ -40,17 +40,27 @@ async function readApprovalPolicy(root: URL): Promise<((userId: number) => boole
   return userId => !black.has(userId) && (white.size === 0 || white.has(userId));
 }
 
-export async function readFriendRequests(root: URL, delayMs = 3_000) {
-  const allows = await readApprovalPolicy(root);
+export async function readFriendRequests(root: URL, delayMs = 3_000, other?: RequestOtherPolicies) {
+  const source = other ?? await readRequestOtherPolicies(root);
+  let files = source.current();
+  let allows = approvalPolicy(files);
+  function admitted(userId: number) {
+    const latest = source.current();
+    if (files !== latest) {
+      files = latest;
+      allows = approvalPolicy(files);
+    }
+    return allows?.(userId) === true;
+  }
   const pending = new Map<string, AbortSignal | undefined>();
   const unconfirmed = new Set<string>();
   const handled = new Set<string>();
   const maxRequests = 4096;
 
-  return async (event: FriendRequest, workflow?: AbortSignal): Promise<FriendAutoResult> => {
+  return async (event: FriendRequest, workflow?: AbortSignal, eligible?: () => boolean): Promise<FriendAutoResult> => {
     const connection = event.approvalSignal;
     const signal = workflow && connection ? AbortSignal.any([workflow, connection]) : workflow ?? connection;
-    if (!allows?.(event.user_id) || signal?.aborted) return;
+    if (!admitted(event.user_id) || signal?.aborted) return;
 
     const key = createHash("sha256").update(JSON.stringify([event.adapter ?? "onebot", event.self_id, event.flag])).digest("hex");
     if ((pending.has(key) && pending.get(key)?.aborted !== true) || unconfirmed.has(key) || handled.has(key)) return "duplicate";
@@ -59,7 +69,8 @@ export async function readFriendRequests(root: URL, delayMs = 3_000) {
 
     try {
       await delay(delayMs, undefined, { signal });
-      if (signal?.aborted) return;
+      await source.refresh();
+      if (signal?.aborted || !admitted(event.user_id) || eligible?.() === false) return;
       pending.delete(key);
       unconfirmed.add(key);
       try {

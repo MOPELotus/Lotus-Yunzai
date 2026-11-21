@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { configuredIds, readOtherSetting } from "./config.ts";
+import { configuredIds, otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./config.ts";
 import type { GroupRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -28,8 +28,8 @@ export interface QuotedGroupInvitationDecision {
   readonly resolvedFlag?: string;
 }
 
-export async function readGroupInvitations(root: URL) {
-  const config = await readOtherSetting(root, "autoGroup");
+function invitationPolicy(files: ReturnType<RequestOtherPolicies["current"]>) {
+  const config = otherPolicySetting(files, "autoGroup");
   const primary = config && "primary" in config ? config.primary : undefined;
   const legacy = config && "legacy" in config ? config.legacy : undefined;
   // The legacy invite plugin recognized only numeric 1 as approval for everyone.
@@ -39,16 +39,32 @@ export async function readGroupInvitations(root: URL) {
   const blackUser = configuredIds(legacy?.blackUser);
   const whiteGroup = configuredIds(legacy?.whiteGroup);
   const blackGroup = configuredIds(legacy?.blackGroup);
-  const inFlightOrUnknown = new Set<string>();
-  const settled = new Set<string>();
-  const maxAttempts = 4096;
-
   function admits(event: GroupRequest): boolean {
     return !blackUser.has(event.user_id) && (whiteUser.size === 0 || whiteUser.has(event.user_id)) &&
       !blackGroup.has(event.group_id) && (whiteGroup.size === 0 || whiteGroup.has(event.group_id));
   }
+  return { allInviters, masterOnly, admits };
+}
+
+export async function readGroupInvitations(root: URL, other?: RequestOtherPolicies) {
+  const source = other ?? await readRequestOtherPolicies(root);
+  let files = source.current();
+  let policy = invitationPolicy(files);
+  const inFlightOrUnknown = new Set<string>();
+  const settled = new Set<string>();
+  const maxAttempts = 4096;
+
+  function currentPolicy() {
+    const latest = source.current();
+    if (files !== latest) {
+      files = latest;
+      policy = invitationPolicy(files);
+    }
+    return policy;
+  }
 
   async function review(event: GroupRequest, signal?: AbortSignal): Promise<GroupInvitationResult> {
+    const { allInviters, masterOnly, admits } = currentPolicy();
     if ((!allInviters && !masterOnly) || event.sub_type !== "invite" || event.self_id === event.user_id || !admits(event)) return "skip";
 
     const key = createHash("sha256")
@@ -76,5 +92,5 @@ export async function readGroupInvitations(root: URL) {
     return result;
   }
 
-  return { admits, review };
+  return { admits: (event: GroupRequest) => currentPolicy().admits(event), review };
 }

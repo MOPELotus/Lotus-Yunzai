@@ -48,7 +48,7 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
-import { readLocalConfig } from "./lib/config.ts";
+import { readLocalConfig, readRequestOtherPolicies } from "./lib/config.ts";
 import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
@@ -1133,7 +1133,8 @@ if (import.meta.main) {
         },
       }, allowed);
       if (reviewed || consumed || active.aborted) return;
-      const result = allowed(["autoFriend"]) ? await autoFriend(event, active) : undefined;
+      const canAutoApprove = () => groupDispatch.allowsInbound(event) && allowed(["autoFriend"]);
+      const result = canAutoApprove() ? await autoFriend(event, active, canAutoApprove) : undefined;
       const registration = friendRequestNotice;
       if (result === "duplicate" || !registration || !event.notifyOwners || !allowed(friendRequestNoticeNames)) return;
       const signal = AbortSignal.any([active, registration.signal]);
@@ -1908,15 +1909,15 @@ if (import.meta.main) {
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
     const botConfig = await readLocalConfig(root, "bot");
-    const [network, permissions, globalConfig, access, friendRequests, routing, invitations,
+    const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
+    const [network, permissions, globalConfig, access, requestPolicies, routing,
       runtimeVersion, milky] = await Promise.all([
       readServerSettings(root, Bun.env), readMasterPermissions(root), readLotusGlobalConfig(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK",
-      botConfig.file_watch !== false && !probingUpdate),
-      readFriendRequests(root),
-      readGroupDispatch(root, botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined),
-      readGroupInvitations(root),
+      watchConfig !== undefined),
+      readRequestOtherPolicies(root, watchConfig),
+      readGroupDispatch(root, watchConfig),
       readRuntimeVersion(root),
       probingUpdate ? undefined : readMilkySettings(root).catch(() => {
         console.warn("[Milky] 无法读取有效的适配器配置。");
@@ -1940,7 +1941,7 @@ if (import.meta.main) {
     } catch {
       console.warn("[日志] 无法启用本地日志写入。");
     }
-    autoFriend = friendRequests;
+    autoFriend = await readFriendRequests(root, undefined, requestPolicies);
     groupDispatch = routing;
     keywords = createKeywords(createKeywordStore(root), routing.keywordSettings, undefined, {
       async read(actor) {
@@ -1967,8 +1968,8 @@ if (import.meta.main) {
         },
       },
     });
-    reviewInvitation = invitations;
-    autoQuit = await readAutoQuit(root, permissions.masterIds, permissions.legacyMasterIds);
+    reviewInvitation = await readGroupInvitations(root, requestPolicies);
+    autoQuit = await readAutoQuit(root, permissions.masterIds, permissions.legacyMasterIds, requestPolicies);
     masterEnrollment = createMasterEnrollment({
       isMaster: permissions.isMaster, masterIds: permissions.masterIds,
       isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
