@@ -596,3 +596,37 @@ test("原神删面板经真实网关抢先于旧会话和关键词，尊重功�
     expect(JSON.parse(await readFile(join(root, "data/panel-archive/42", `${uid}.json`), "utf8"))).toMatchObject({ uid, avatars: {} });
   });
 }, 10_000);
+
+test("宿主体力提醒旧指令按群开关和登录角色登记", async () => {
+  const uid = "100001234";
+  await withHost(async root => {
+    const config = join(root, "config", "config");
+    const profiles = join(root, "data", "profile");
+    await Promise.all([mkdir(config, { recursive: true }), mkdir(profiles, { recursive: true })]);
+    await writeFile(join(config, "global.yaml"), "daily_note_reminders:\n  enable: true\n");
+    await writeFile(join(config, "group.yaml"),
+      'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"78": { disable: [体力推送] }\n');
+    await writeFile(join(profiles, "42-2.yaml"), Bun.YAML.stringify({
+      user: { qq: "42" }, profile: { id: 2 }, account: {
+        cookie: "account_id=982;cookie_token=fixture", stuid: "982", stoken: "fixture-login",
+        game_roles: { gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }] },
+      },
+    }));
+  }, async (connect, root) => {
+    const bot = await connect(99);
+    bot.send("#原神开启体力推送", 78);
+    bot.send(`#开启体力推送${uid} 档案2`, 77);
+    const member = await bot.action();
+    expect(member).toMatchObject({ action: "get_group_member_info", params: { user_id: 42, group_id: 77, no_cache: true } });
+    bot.sendFrame({ echo: member.echo, status: "ok", retcode: 0, data: { group_id: 77, user_id: 42, role: "member" } });
+    await bot.reply("本群原神体力推送已开启，1 个角色，阈值 160。", 77);
+    const db = new Database(join(root, "data/daily-note/reminders.sqlite"), { readonly: true });
+    try {
+      expect(db.query("SELECT bot,group_id,qq,game,uid,profile,threshold FROM daily_note_reminders").all()).toEqual([
+        { bot: 99, group_id: 77, qq: 42, game: "gs", uid, profile: 2, threshold: 160 },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+});

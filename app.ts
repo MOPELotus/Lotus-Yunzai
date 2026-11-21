@@ -60,6 +60,7 @@ import { readLocalConfig } from "./lib/config.ts";
 import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
 import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
+import { createDailyNoteReminders, dailyNoteReminderFeatureNames } from "./lib/daily-note-reminders.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster, readLegacyDispatchPause } from "./lib/dispatch-power.ts";
 import { groupRecallPermission, quotedRecallSessions, readGroupRecallPermissions } from "./lib/quoted-recall.ts";
@@ -315,6 +316,7 @@ if (import.meta.main) {
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
   let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
+  let dailyNoteReminders: ReturnType<typeof createDailyNoteReminders> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
   let panelOwnerSession: ReturnType<typeof createPanelOwnerSession> | undefined;
@@ -2337,6 +2339,18 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    if (!probingUpdate) {
+      const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean } | undefined;
+      dailyNoteReminders = createDailyNoteReminders({
+        directory: profileDirectory, file: fileURLToPath(new URL("data/daily-note/reminders.sqlite", root)),
+        signal: lifecycle.signal, enabled: settings?.enable === true, activeSignal: nativeOperationSignal,
+        transports: subscriptionTransport, transport: hoyoTransport,
+        allowed: ({ bot, group_id, qq }) => handoff.accepting && !stopping && !dispatchPower.paused &&
+          groupDispatch.allowsInbound({ post_type: "message", message_type: "group", self_id: bot, group_id, user_id: qq }) &&
+          groupDispatch.allowsScheduledGroup(bot, group_id, dailyNoteReminderFeatureNames),
+      });
+      commands.registerModule(dailyNoteReminders.commands);
+    }
     const zzzRankClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore });
@@ -3337,6 +3351,7 @@ if (import.meta.main) {
       pendingModuleTasks.clear();
       milkyTransport?.start();
       checkinRuntime?.start();
+      dailyNoteReminders?.start();
       shopPlans?.start(lifecycle.signal, () => console.warn("[米游币商城] 未能读取或恢复预约。"));
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
@@ -3409,7 +3424,7 @@ if (import.meta.main) {
         legacyExitHooksRan = await legacy.exitHooks.run(legacyBot, exitReason);
       }
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
-        moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
+        moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop(), dailyNoteReminders?.stop()]);
       miyousheWeb?.close();
       panelOwnerSession?.close();
       await mediaDelivery.close();
