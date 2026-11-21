@@ -5,7 +5,7 @@ import { rejectionReason, repositoryKey } from "./policy.ts";
 export const pluginScriptExtensions: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredScripts = new Map([
   ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98",
-    { name: "图库管理器", reason: "图库管理已归并到 atlas。", module: "@lotus-yunzai/atlas" }],
+    { name: "图库管理器", reason: "Atlas 提供三款支持游戏的图库和原图。独立图库管理后台需要适配 Lotus-Yunzai。", module: "@lotus-yunzai/atlas" }],
   ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
     { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
   ["9d03582599fff6214732f963fceccde151a1307169c956e28c2f52327734180f",
