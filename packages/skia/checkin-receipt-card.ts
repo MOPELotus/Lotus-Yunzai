@@ -197,5 +197,5 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
       ctx.restore();
     }
     text(ctx, footer, width / 2, footerTop + 15, small, 18, white, { center: true, shadow: true });
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

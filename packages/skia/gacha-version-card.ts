@@ -482,7 +482,7 @@ export async function renderGachaVersion(
     const image = await readImage(root, path);
     if (image) images.set(path, image);
   }
-  const zoom = Math.min(scale, 24_000 / height);
+  const zoom = scale;
   return renderPng(Math.round(width * zoom), Math.round(height * zoom), (ctx) => {
     fontFamilies.set(ctx, theme.family);
     ctx.scale(zoom, zoom);
@@ -513,5 +513,5 @@ export async function renderGachaVersion(
       ["Lotus-Yunzai", "#90ee90"],
     ], 375, footer + 8.5, 14, true);
     ctx.restore();
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

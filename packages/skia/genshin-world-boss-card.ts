@@ -145,5 +145,5 @@ export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardMode
     ctx.font = `14px ${fontFamily}`;
     ctx.textAlign = "center";
     ctx.fillText(footer, width / 2, footerTop + 51);
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

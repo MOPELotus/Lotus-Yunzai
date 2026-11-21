@@ -246,7 +246,7 @@ export async function renderGachaPoolCard(model: GachaPoolCardModel, { themeDire
   const poolHeight = model.pools.reduce((height, pool, index) => height + sizePool(pool).height + (index ? 5 : 0), 0);
   const footerY = poolTop + poolHeight + 10;
   const height = footerY + 37;
-  const scale = Math.min(4, 24_000 / height);
+  const scale = 4;
   return renderPng(Math.round(width * scale), Math.round(height * scale), ctx => {
     ctx.scale(scale, scale);
     ctx.imageSmoothingEnabled = true;
@@ -264,5 +264,5 @@ export async function renderGachaPoolCard(model: GachaPoolCardModel, { themeDire
     ctx.shadowOffsetY = 1;
     ctx.shadowBlur = 1;
     text(ctx, "Created By Lotus-Yunzai", 375, footerY + 8.5, theme.fontFamily, 14, "white", { center: true });
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

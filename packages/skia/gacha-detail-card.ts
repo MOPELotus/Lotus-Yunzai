@@ -508,7 +508,7 @@ export async function renderGachaDetail(
   const bottom = top + panelHeight;
   const height = bottom + 47;
   if (height > 24_000) throw new RangeError(`${games[game].name}抽卡记录超出可渲染高度。`);
-  const zoom = Math.min(scale, 24_000 / height);
+  const zoom = scale;
   const pixelHeight = game === "gs" ? Math.round(height * zoom) : Math.ceil(height * zoom);
 
   return renderPng(Math.round(width * zoom), pixelHeight, (ctx) => {
@@ -535,5 +535,5 @@ export async function renderGachaDetail(
       { value: "Lotus-Yunzai", color: "#90ee90", size: 14, bold: true },
     ], 375, bottom + 19, true);
     ctx.restore();
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

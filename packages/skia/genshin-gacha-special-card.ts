@@ -357,7 +357,7 @@ export async function renderGachaSpecialCard(
     if (art) portraits.set(path, art);
   }
 
-  const zoom = Math.min(scale, 24_000 / height);
+  const zoom = scale;
   const pixelWidth = Math.round(width * zoom);
   const pixelHeight = Math.round(height * zoom);
   return renderPng(pixelWidth, pixelHeight, (ctx) => {
@@ -372,5 +372,5 @@ export async function renderGachaSpecialCard(
       width / 2, bottom + 9, 14, muted, "center");
     text(ctx, "Created By Lotus-Yunzai", width / 2 + 5, bottom + (page ? 29.5 : 7.5),
       12, "#7994a7", "center", true);
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

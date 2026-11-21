@@ -173,5 +173,5 @@ export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel,
     ctx.fillStyle = "#888";
     ctx.font = `14px ${fontFamily}`;
     ctx.fillText(footer, width / 2, footerTop + 51);
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

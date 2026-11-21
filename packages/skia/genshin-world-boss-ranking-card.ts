@@ -154,5 +154,5 @@ export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossR
       ctx.fillText(row.uid, cellLeft(uidColumn), middle + 5);
       ctx.fillText(row.count, cellLeft(countColumn), middle + 5);
     }
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

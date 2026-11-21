@@ -179,5 +179,5 @@ export async function renderPassportQrCard(model: PassportQrCardModel,
     textAt(ctx, notice, 35, panelTop + qrSize + 90, textFont, 16, 24);
     ctx.restore();
     textAt(ctx, footer, width / 2, bottom + 15, textFont, 12, 18, { center: true, shadow: true });
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

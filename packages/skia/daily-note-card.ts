@@ -261,5 +261,5 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
       drawing.restore();
     }
     textAt(drawing, footer, width / 2, bottom + 15, textFont, "#597487", 12, 18, "center");
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }

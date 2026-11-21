@@ -153,5 +153,5 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
       label(ctx, format.format(value), x + 52, 723, 17, index < 3 ? cyan : "#ffffff", 99);
     }
     label(ctx, footer, 600, 772, 12, "#c0cbe0");
-  }, mode);
+  }, mode, { allowHalfScale: scale === 4 });
 }
