@@ -72,7 +72,7 @@ else {
   process.exitCode = 1;
 }
 
-if (!process.exitCode) {
+if (!process.exitCode && Bun.argv.includes("--verify-v3-renderer")) {
   try {
     // This launcher may have started before node_modules existed.
     const probe = Bun.spawn([process.execPath, "--eval",

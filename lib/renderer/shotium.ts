@@ -2,12 +2,20 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Runtime, type PageGotoParams, type ScreenshotOptions } from "@pixel.js/shotium";
+import type { PageGotoParams, Runtime, ScreenshotOptions } from "@pixel.js/shotium";
 
-const template = require("art-template") as {
+interface TemplateCompiler {
   compile(source: string, options: { filename: string }): (data: object) => string;
-};
-const runtime = new Runtime();
+}
+
+let legacyRuntime: Promise<Runtime> | undefined;
+
+function loadLegacyRuntime(): Promise<Runtime> {
+  return legacyRuntime ??= import("@pixel.js/shotium").then(({ Runtime }) => new Runtime()).catch((error: unknown) => {
+    legacyRuntime = undefined;
+    throw error;
+  });
+}
 
 interface LegacyPageGotoParams {
   readonly waitUntil?: string | readonly string[];
@@ -47,13 +55,15 @@ function baseFor(html: string, directory: string): string {
   return html.replace(/^(\s*<!doctype[^>]*>)?/iu, (doctype) => doctype + base);
 }
 
-export function verifyStaticRenderer(): Promise<void> {
+export async function verifyStaticRenderer(): Promise<void> {
+  const runtime = await loadLegacyRuntime();
   runtime.start({ cacheDir: null });
-  return runtime.stop();
+  await runtime.stop();
 }
 
-export function stopStaticRenderer(): Promise<void> {
-  return runtime.running ? runtime.stop() : Promise.resolve();
+export async function stopStaticRenderer(): Promise<void> {
+  const runtime = await legacyRuntime?.catch(() => undefined);
+  if (runtime?.running) await runtime.stop();
 }
 
 export async function renderTemplate(data: TemplateData): Promise<Buffer[] | false> {
@@ -62,12 +72,14 @@ export async function renderTemplate(data: TemplateData): Promise<Buffer[] | fal
   const file = resolve(data.tplFile);
   const temporary = await mkdtemp(join(tmpdir(), "lotus-shotium-"));
   try {
+    const template = require("art-template") as TemplateCompiler;
     const html = template.compile(await readFile(file, "utf8"), { filename: file })({
       resPath: "./resources/",
       ...data,
     });
     const expanded = join(temporary, "index.html");
     await writeFile(expanded, baseFor(html, dirname(file)), { mode: 0o600 });
+    const runtime = await loadLegacyRuntime();
     if (!runtime.running) {
       runtime.start({ cacheDir: null });
       console.log("[渲染] Shotium 静态 HTML CPU 后端已启动。");
