@@ -78,9 +78,13 @@ export function isManagedLegacyScript(value: unknown): value is string {
 }
 
 export function parseManagedLegacyScripts(value: unknown): readonly string[] | undefined {
-  if (!Array.isArray(value) || value.length > managedLegacyScriptLimit || !value.every(isManagedLegacyScript)) return;
-  const distinct = new Set(value);
-  return distinct.size === value.length ? [...distinct] : undefined;
+  if (!Array.isArray(value) || value.length > managedLegacyScriptLimit) return;
+  const scripts = new Set<string>();
+  for (const script of value) {
+    if (!isManagedLegacyScript(script) || scripts.has(script)) return;
+    scripts.add(script);
+  }
+  return [...scripts];
 }
 
 function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined {

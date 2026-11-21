@@ -45,7 +45,7 @@ test("托管更新按插件根目录记录保留的 V3 脚本入口", () => {
   }
   const limit = Array.from({ length: 512 }, (_, index) => `entry-${index}.js`);
   expect(parseManagedUpdateRequest({ ...request, scripts: limit })?.scripts).toEqual(limit);
-  for (const invalid of [null, {}, [scripts[0], scripts[0]], [...limit, "overflow.js"]]) {
+  for (const invalid of [null, {}, Array(1), [scripts[0], scripts[0]], [...limit, "overflow.js"]]) {
     expect(parseManagedUpdateRequest({ ...request, scripts: invalid })).toBeUndefined();
   }
 });
