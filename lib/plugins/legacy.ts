@@ -8,7 +8,7 @@ import common, { isLegacyForward } from "../common/common.js";
 import { segment, type BotEvent, type MessageEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
 import { legacyTemplateRender } from "../renderer/legacy-template.ts";
 import { PluginContexts } from "./contexts.ts";
-import Handler, { HandlerScope, type HandlerCallback } from "./handler.ts";
+import Handler, { HandlerScope, UnsupportedLegacyHandlerError, type HandlerCallback } from "./handler.ts";
 import { LegacyHttpRoutes } from "./legacy-http.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
@@ -397,6 +397,17 @@ export class LegacyPlugins {
   }
 
   async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
+    try {
+      return await this.#dispatch(incoming, allowed, onDenied);
+    } catch (error) {
+      if (!(error instanceof UnsupportedLegacyHandlerError)) throw error;
+      console.error(error.message);
+      if (incoming.post_type === "message") await incoming.reply(error.message);
+      return true;
+    }
+  }
+
+  async #dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
     const event = incoming.post_type === "message" ? this.#message(incoming) : incoming;
     const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
     for (const app of matching) {

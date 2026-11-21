@@ -22,6 +22,19 @@ interface Entry {
 const scopes = new AsyncLocalStorage<HandlerScope>();
 const handlers = new Map<string, Entry[]>();
 
+export class UnsupportedLegacyHandlerError extends Error {
+  constructor() {
+    super("旧接口 mys.req.err 不受支持，插件需要适配 Lotus Yunzai 才能使用。");
+    this.name = "UnsupportedLegacyHandlerError";
+  }
+}
+
+function requireSupportedHandler(key: string): void {
+  if (typeof key === "string" && key.trim().toLowerCase() === "mys.req.err") {
+    throw new UnsupportedLegacyHandlerError();
+  }
+}
+
 function insert(registry: Map<string, Entry[]>, key: string, entry: Entry, replacing?: HandlerScope): void {
   const entries = registry.get(key) ?? [];
   const previous = replacing === undefined ? -1 : entries.findIndex((candidate) =>
@@ -63,10 +76,7 @@ export class HandlerScope {
   add(config: Registration): void {
     const key = config.key || config.event;
     if (!this.#active || typeof key !== "string" || !key.trim() || typeof config.fn !== "function") return;
-    if (key.trim().toLowerCase() === "mys.req.err") {
-      console.warn("[Handler] mys.req.err 由内置服务保留，忽略插件注册。");
-      return;
-    }
+    requireSupportedHandler(key);
 
     this.del(config.ns, key);
     insert(this.#staged ?? handlers, key, {
@@ -129,6 +139,7 @@ const Handler = {
     return handlers.has(key);
   },
   async call(key: string, event?: unknown, args?: unknown, all = false): Promise<unknown> {
+    requireSupportedHandler(key);
     let result: unknown;
     for (const entry of [...(handlers.get(key) ?? [])]) {
       if (!handlers.get(key)?.includes(entry)) continue;

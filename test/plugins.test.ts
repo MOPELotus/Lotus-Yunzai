@@ -903,14 +903,12 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
         second: class extends plugin {
           constructor() {
             super({ priority: 20, handler: {
-              answer: { key: "fixture.answer", fn: "answer" },
-              reserved: { key: "mys.req.err", fn: "answer" }
+              answer: { key: "fixture.answer", fn: "answer" }
             } });
           }
           async init() {
             await Promise.resolve();
             Handler.add({ ns: "init", event: "fixture.answer", fn: () => "最后", priority: 30 });
-            Handler.add({ ns: "init", event: " mys.req.err ", fn: () => "不应接管" });
           }
           answer(e, args) { return this.name + ":" + e.msg + ":" + args; }
         },
@@ -926,7 +924,11 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
       import Handler from "../lib/plugins/handler.js";
       export default class extends plugin {
         constructor() {
-          super({ name: "调用方", rule: [{ reg: "^#调用$", fnc: "run" }] });
+          super({ name: "调用方", rule: [
+            { reg: "^#调用$", fnc: "run" },
+            { reg: "^#旧验证$", fnc: "unsupported" },
+            { reg: "^#旧验证全部$", fnc: "unsupportedAll" }
+          ] });
         }
         async run(e) {
           Handler.del("init");
@@ -934,15 +936,33 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
           this.reply(await Handler.callAll("fixture.answer", e, "参数"));
           return this.reply(JSON.stringify([
             Handler.has("fixture.failed-init"), Handler.has("fixture.failed-class"),
-            Handler.has("mys.req.err"), Handler.has(" mys.req.err ")
+            Handler.has("mys.req.err"), Handler.has(" mys.req.err "),
+            Handler.has("fixture.rolled-back-unsupported")
           ]));
+        }
+        unsupported(e) { return Handler.call("mys.req.err", e, { cookie: "cookie-marker" }); }
+        unsupportedAll(e) { return Handler.callAll(" MYS.REQ.ERR ", e); }
+      };
+    `);
+    await writeFile(join(plugins, "d-unsupported-class.js"), `
+      export default class extends plugin {
+        constructor() { super({ handler: [{ key: "mys.req.err", fn: "verify" }] }); }
+        verify() { console.log("不应运行旧验证处理器"); }
+      };
+    `);
+    await writeFile(join(plugins, "e-unsupported-init.js"), `
+      import Handler from "../lib/plugins/handler.js";
+      export default class extends plugin {
+        init() {
+          Handler.add({ key: "fixture.rolled-back-unsupported", fn: () => "残留" });
+          Handler.add({ event: " mys.req.err ", fn: () => "不应接管" });
         }
       };
     `);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
-      stdin: new Blob(["#调用\n"]),
+      stdin: new Blob(["#旧验证\n#旧验证全部\n#调用\n"]),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -950,12 +970,18 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
       new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
     ]);
     expect(exit).toBe(0);
-    expect(stdout.trim().split("\n").slice(-5)).toEqual([
+    const unsupported = "旧接口 mys.req.err 不受支持，插件需要适配 Lotus Yunzai 才能使用。";
+    expect(stdout.trim().split("\n").slice(-7)).toEqual([
+      unsupported, unsupported,
       "第一项交给下一项", "未命名插件:#调用:参数",
-      "第一项交给下一项", "最后", "[false,false,false,false]",
+      "第一项交给下一项", "最后", "[false,false,false,false,false]",
     ]);
     expect(stderr).toContain("Handler 初始化回滚样例");
-    expect(stderr).toContain("mys.req.err 由内置服务保留");
+    expect(stderr).toContain("d-unsupported-class.js");
+    expect(stderr).toContain("e-unsupported-init.js");
+    expect(stderr.split(unsupported)).toHaveLength(5);
+    expect(stdout + stderr).not.toContain("cookie-marker");
+    expect(stdout + stderr).not.toContain("不应运行旧验证处理器");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
