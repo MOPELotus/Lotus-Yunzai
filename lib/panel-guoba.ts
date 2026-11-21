@@ -429,6 +429,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
         } catch {
           return { ok: false, status: 400, message: "插件表单包含未知字段或无效值。" };
         }
+        const changedFields = Object.freeze(Object.keys(values));
 
         const before = saveQueues.get(file);
         const saving: Promise<GuobaSaveResult> = Promise.resolve(before).then(async () => {
@@ -451,7 +452,8 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
               const existing = getValue(current, field, parts);
               if (existing !== undefined) values[field] = inputValue(schema, existing);
             }
-            const result: unknown = await setConfigData.call(configInfo, values, { Result });
+            // Legacy setters still receive the expanded form. Opt-in setters can edit only the submitted fields.
+            const result: unknown = await setConfigData.call(configInfo, values, { Result, changedFields });
             if (result instanceof Result && !result.isOk) {
               const status = result.httpStatus;
               return { ok: false, status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 400,

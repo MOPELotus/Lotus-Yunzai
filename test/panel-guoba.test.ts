@@ -9,6 +9,7 @@ test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改�
   try {
     await writeFile(join(directory, "guoba.support.js"), `
       const lastSaved = new URL("saved.json", import.meta.url);
+      const submittedFields = new URL("submitted-fields.json", import.meta.url);
       let config = {
         settings: { count: 0, enabled: false, note: null, password: "fixture-private-password" },
         "settings.count": 5,
@@ -34,10 +35,11 @@ test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改�
             { component: "CustomControl", field: "hidden", label: "未适配字段" }
           ],
           getConfigData() { return config; },
-          async setConfigData(data, { Result }) {
+          async setConfigData(data, { Result, changedFields }) {
             if (data["settings.note"] === "error-result") return Result.error("fixture-private-rejection", 422);
             if (data["settings.note"] === "throw") throw new Error("fixture-private-write");
             await Bun.write(lastSaved, JSON.stringify(data));
+            await Bun.write(submittedFields, JSON.stringify({ changedFields, frozen: Object.isFrozen(changedFields) }));
             config = data;
             return Result.ok("fixture-private-result", "fixture-private-message");
           }
@@ -101,6 +103,9 @@ test("旧锅巴表单筛选字段、兼容带括号的路径并保留未修改�
     expect(JSON.parse(await readFile(join(directory, "saved.json"), "utf8"))).toEqual({
       "settings.count": 2, "settings.password": "new-fixture-password", "settings.note": null,
       "settings.enabled": false, [policy]: "inherit",
+    });
+    expect(JSON.parse(await readFile(join(directory, "submitted-fields.json"), "utf8"))).toEqual({
+      changedFields: ["settings.count"], frozen: true,
     });
     expect(await form.save({ "settings.password": null })).toMatchObject({ ok: true });
     expect((await form.read()).configuredPasswords).toEqual([]);
