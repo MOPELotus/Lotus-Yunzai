@@ -1,6 +1,7 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
+import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "../manual-group-leave.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
   type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
 import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageReply, type PokeDeliverySession,
@@ -306,6 +307,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     confirmSent(target, result.data, message);
     await notifyReplyDelivery(onDelivered, result.data.message_seq);
     return "confirmed";
+  }
+
+  async function leaveGroup(group_id: number, active = signal) {
+    return (await call.confirmed("quit_group", { group_id }, active)).status;
   }
 
   async function readFriendProfiles(active: AbortSignal) {
@@ -923,6 +928,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      [manualGroupLeaveSession]: !message.attachmentOnly && (message.isGroup || message.sub_type === "friend") && positiveId(cardOwner) ? {
+        botId: account, userId: cardOwner, groupId, signal,
+        isMaster: () => isMaster(cardOwner),
+        groups: active => noticeAccount.listGroups(active),
+        leave: leaveGroup,
+        reply: (text, active) => sendConfirmed(groupId === undefined ? { user_id: cardOwner } : { group_id: groupId }, text, undefined, active),
+      } satisfies ManualGroupLeaveSession : undefined,
       [ownerContactListSession]: ownerSignal && positiveId(cardOwner) ? {
         botId: account, ownerId: cardOwner, signal: ownerSignal,
         authorized: () => isMaster(cardOwner),
@@ -1120,9 +1132,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           AbortSignal.any([signal, privateGroupSignal]), () => isMaster(cardOwner)) : undefined,
     };
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
-      const result = await call.confirmed("quit_group", { group_id });
-      if (result.status === "unknown") throw new Error("Milky 退群回执未确认。");
-      return result.status === "confirmed";
+      const status = await leaveGroup(group_id);
+      if (status === "unknown") throw new Error("Milky 退群回执未确认。");
+      return status === "confirmed";
     });
     if (event?.post_type === "notice" && event.notice_type === "group" && event.sub_type !== "poke") {
       const { group_id, user_id } = event;

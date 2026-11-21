@@ -2,6 +2,7 @@ import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { ownerContactListSession } from "../owner-contact-list.ts";
+import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
@@ -566,6 +567,10 @@ async function dispatchMessage(
     ? groupActions?.groupWorkflowSignal?.() : undefined;
   const ownerSignal = privateGroupSignal && attachmentSession && !noticeAttachment
     ? AbortSignal.any([privateGroupSignal, attachmentSession.signal]) : undefined;
+  const leaveSignal = !noticeAttachment && temporaryMessageId !== undefined &&
+      (!sender || sender.user_id === undefined || sender.user_id === userId) &&
+      (messageType === "group" ? event.sub_type === "normal" : event.sub_type === "friend" && !isId(event.group_id)) &&
+      connection && selfId !== undefined && groupActionSignal(connection, selfId);
   const ownerFriendReplyClaim = groupActions?.ownerFriendReplyClaim;
   const ownerFriendReply = ownerSignal && selfId !== undefined ? bindOwnerFriendReply({
     account: selfId, signal: ownerSignal, isOwner: () => isMaster(selfId, userId), source: incoming.message,
@@ -604,6 +609,18 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: owner,
     boundAccount,
+    [manualGroupLeaveSession]: leaveSignal && selfId !== undefined ? {
+      botId: selfId, userId, groupId: "group_id" in target ? target.group_id : undefined,
+      signal: leaveSignal,
+      isMaster: () => isMaster(selfId, userId),
+      groups: active => calls.listGroups(send, active),
+      async leave(groupId, active) {
+        const result = await calls.leaveGroupConfirmed(send, groupId, active);
+        if (result === "confirmed") display?.forget(groupId);
+        return result;
+      },
+      reply: (text, active) => calls.sendConfirmed(send, target, text, active),
+    } : undefined,
     [ownerContactListSession]: ownerSignal && selfId !== undefined && temporaryMessageId !== undefined && !isId(event.group_id) &&
         (!sender || sender.user_id === undefined || sender.user_id === userId) ? {
       botId: selfId, ownerId: userId, signal: ownerSignal,

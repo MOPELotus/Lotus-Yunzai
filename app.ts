@@ -13,6 +13,7 @@ import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
+import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -211,6 +212,7 @@ if (import.meta.main) {
   const publicFiles = createPublicFiles();
   let fileBase: URL | undefined;
   const groups = new OneBotGroups();
+  const leaveGroup = createManualGroupLeave();
   const pending = new Set<Promise<void>>();
   const boundDeliveries = new Map<string, Promise<void>>();
   const pendingCounts = new Set<Promise<void>>();
@@ -1728,6 +1730,12 @@ if (import.meta.main) {
           self_id !== undefined && masterPermissions.isMaster(self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
+      return;
+    }
+    const groupToLeave = manualGroupLeaveInput(event.msg);
+    if (groupToLeave !== undefined) {
+      const allowedToLeave = () => groupDispatch.allowsInbound(event) && allowed(["退群", "group", "@lotus-yunzai/group"]);
+      if (allowNew && allowedToLeave()) await leaveGroup(event, groupToLeave, allowedToLeave, nativeOperationSignal());
       return;
     }
     const contactList = ownerContactListCommand(event.msg);

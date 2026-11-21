@@ -333,9 +333,9 @@ export class OneBotCalls {
     }
   }
 
-  async #confirmAction(send: Send, action: string, params: object): Promise<boolean> {
+  async #confirmAction(send: Send, action: string, params: object, signal?: AbortSignal): Promise<boolean> {
     try {
-      await this.#request(send, action, params);
+      await this.#request(send, action, params, signal);
       return true;
     } catch (error) {
       if (error instanceof OneBotRejectedError) return false;
@@ -488,8 +488,17 @@ export class OneBotCalls {
     }
   }
 
-  leaveGroup(send: Send, groupId: number): Promise<boolean> {
-    return this.#confirmAction(send, "set_group_leave", { group_id: groupId, is_dismiss: false });
+  leaveGroup(send: Send, groupId: number, signal?: AbortSignal): Promise<boolean> {
+    return this.#confirmAction(send, "set_group_leave", { group_id: groupId, is_dismiss: false }, signal);
+  }
+
+  async leaveGroupConfirmed(send: Send, groupId: number, signal: AbortSignal): Promise<ChatFileResult> {
+    if (signal.aborted) return "rejected";
+    try {
+      return await this.leaveGroup(send, groupId, signal) ? "confirmed" : "rejected";
+    } catch (error) {
+      return error instanceof OneBotNotSentError ? "rejected" : "unknown";
+    }
   }
 
   async sendGroup(send: Send, groupId: number, message: unknown): Promise<number> {
