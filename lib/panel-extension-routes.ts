@@ -22,6 +22,7 @@ const apiHeaders = {
   "Access-Control-Allow-Origin": "null",
   "Cache-Control": "no-store",
   "Vary": "Origin",
+  "X-Content-Type-Options": "nosniff",
 };
 const assetRoot = "/panel/extensions";
 const apiRoot = "/panel/extensions-api";

@@ -6,10 +6,13 @@ export interface GuobaApiRequest {
   readonly params: Record<string, string>;
   readonly query: Record<string, string | string[]>;
   readonly body: unknown;
+  readonly headers: Readonly<Record<string, string | undefined>>;
+  get(name: string): string | undefined;
 }
 
 export interface GuobaApiResponse {
   readonly headersSent: boolean;
+  setHeader(name: string, value: string | number | readonly string[]): GuobaApiResponse;
   status(code: number): GuobaApiResponse;
   json(data?: unknown): GuobaApiResponse;
   send(data?: unknown): GuobaApiResponse;
@@ -30,6 +33,16 @@ export interface GuobaApiDefinition {
 
 const methods = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"];
 const parameter = /^:([A-Za-z_][A-Za-z0-9_]*)$/u;
+const requestHeaderNames = ["content-type", "host", "origin", "sec-fetch-site"] as const;
+
+function extensionRequestHeaders(request: Request): GuobaApiRequest["headers"] {
+  const headers: Record<string, string> = Object.create(null);
+  for (const name of requestHeaderNames) {
+    const value = request.headers.get(name);
+    if (value !== null) headers[name] = value;
+  }
+  return Object.freeze(headers);
+}
 
 function pathSegments(path: string): string[] {
   if (!path.startsWith("/") || path.startsWith("//")) throw new Error();
@@ -106,19 +119,18 @@ async function runHandlers(
   let reply: Response | undefined;
   let skipped = false;
   let failed = false;
+  const headers = new Headers();
 
   function send(value: unknown, json: boolean): GuobaApiResponse {
     if (reply || failed || skipped) return response;
     if (value === undefined || [204, 205, 304].includes(status)) {
-      reply = new Response(null, { status });
+      reply = new Response(null, { status, headers });
     } else if (json) {
-      reply = request.method === "HEAD"
-        ? new Response(null, { status, headers: { "Content-Type": "application/json" } })
-        : Response.json(value, { status });
+      headers.set("Content-Type", "application/json");
+      reply = request.method === "HEAD" ? new Response(null, { status, headers }) : Response.json(value, { status, headers });
     } else {
-      reply = new Response(request.method === "HEAD" ? null : String(value), {
-        status, headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
+      headers.set("Content-Type", "text/plain; charset=utf-8");
+      reply = new Response(request.method === "HEAD" ? null : String(value), { status, headers });
     }
     return response;
   }
@@ -126,6 +138,12 @@ async function runHandlers(
   const response: GuobaApiResponse = {
     get headersSent() {
       return reply !== undefined;
+    },
+    setHeader(name, value) {
+      // The host owns API policy headers. Providers can request the same non-cacheable policy.
+      if (!reply && !failed && !skipped && typeof name === "string" && name.toLowerCase() === "cache-control" &&
+          typeof value === "string" && value.trim().toLowerCase() === "no-store") headers.set("Cache-Control", "no-store");
+      return response;
     },
     status(code) {
       if (!Number.isInteger(code) || code < 200 || code > 599) throw new Error();
@@ -223,8 +241,12 @@ export async function dispatchGuobaApi(
       }
     }
     const query = queryParams(new URL(request.url).searchParams);
+    const headers = extensionRequestHeaders(request);
     for (const { definition, params } of matches) {
-      const response = await runHandlers({ method, path: pathname, query, params, body }, definition.handlers);
+      const response = await runHandlers({
+        method, path: pathname, query, params, body, headers,
+        get: name => typeof name === "string" ? headers[name.toLowerCase()] : undefined,
+      }, definition.handlers);
       if (response) return response;
     }
   }

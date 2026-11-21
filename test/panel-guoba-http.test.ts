@@ -94,3 +94,39 @@ test("锅巴接口拒绝歧义路径、超限请求与内部错误详情", async
     expect(await response.json()).toEqual({ ok: false, error: "扩展接口处理失败。" });
   }
 });
+
+test("锅巴接口可读有限请求头，保留 opaque 来源及宿主响应策略", async () => {
+  const routes: GuobaApiDefinition[] = [{
+    method: "post",
+    route: "/headers",
+    handlers: [(req, res) => {
+      expect(Object.isFrozen(req.headers)).toBe(true);
+      expect(Object.getPrototypeOf(req.headers)).toBeNull();
+      expect(req.headers).toEqual({
+        "content-type": "application/json", host: "lotus.test", origin: "null", "sec-fetch-site": "cross-site",
+      });
+      expect(req.get("OrIgIn")).toBe("null");
+      expect(req.get("Content-Type")).toBe("application/json");
+      for (const name of ["Authorization", "Cookie", "X-Lotus-Panel-Session", "Guoba-Access-Token",
+        "X-Forwarded-Host", "X-Unrelated", "constructor"]) expect(req.get(name)).toBeUndefined();
+      expect(res.setHeader("CACHE-CONTROL", "no-store")).toBe(res);
+      for (const [name, value] of Object.entries({
+        "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true", "Cache-Control": "public",
+        "Content-Type": "text/html", "Content-Security-Policy": "default-src *", "X-Content-Type-Options": "detect",
+        "Set-Cookie": "owned=yes", "WWW-Authenticate": "Basic", "Location": "https://other.test",
+      })) res.setHeader(name, value);
+      res.send("<script>fixture</script>");
+    }],
+  }];
+  const request = new Request("https://lotus.test/example", {
+    method: "POST", body: "{}",
+    headers: {
+      "Content-Type": "application/json", Host: "lotus.test", Origin: "null", "Sec-Fetch-Site": "cross-site",
+      Authorization: "Bearer host-fixture", Cookie: "lotus_panel=private", "X-Lotus-Panel-Session": "1",
+      "Guoba-Access-Token": "page-fixture", "X-Forwarded-Host": "proxy.test", "X-Unrelated": "other",
+    },
+  });
+  const response = await dispatchGuobaApi(request, "/headers", routes);
+  expect([...response.headers]).toEqual([["cache-control", "no-store"], ["content-type", "text/plain; charset=utf-8"]]);
+  expect(await response.text()).toBe("<script>fixture</script>");
+});
