@@ -34,7 +34,7 @@ interface Location {
   readonly exists: boolean;
 }
 
-type ConfigurationName = "global" | "bot" | "system-status" | "genshin-damage";
+type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage";
 
 async function canonicalDirectory(path: string): Promise<string> {
   const state = await named(path);
@@ -56,6 +56,7 @@ async function effectiveFile(root: URL, name: ConfigurationName, override?: stri
     if (!state.isFile() && !state.isSymbolicLink()) error("config");
     const file = await realpath(source);
     if (!(await named(file))?.isFile()) error("config");
+    if (name === "server" && (file !== source || (state.mode & 0o077) !== 0)) error("config");
     return { source, file, exists: true };
   }
   const directory = await canonicalDirectory(dirname(primary));

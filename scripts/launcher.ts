@@ -15,10 +15,10 @@ const listenTimeoutMs = 120_000;
 const registrationGraceMs = 5_000;
 const cancelledRegistrationGraceMs = 750;
 
-async function prepareStartup(directory: string, channel: "live" | "latest" | undefined, signal: AbortSignal) {
+async function prepareStartup(directory: string, channel: "live" | "latest" | undefined, signal: AbortSignal, initialize = false) {
   signal.throwIfAborted();
   // Bun reads dotenv in the initialization and worker processes, not in their long-lived parent.
-  const setup = Bun.spawn([process.execPath, "scripts/startup.ts", ...(channel ? [channel] : [])], {
+  const setup = Bun.spawn([process.execPath, "scripts/startup.ts", ...(initialize ? ["--initialize"] : []), ...(channel ? [channel] : [])], {
     cwd: directory, stdin: "inherit", stdout: "inherit", stderr: "inherit",
   });
   const stop = () => setup.kill("SIGTERM");
@@ -453,7 +453,8 @@ async function run() {
         release: releaseStartup,
       });
     }
-    if (!await prepareStartup(directory, command.action === "init" ? command.channel : undefined, controller.signal)) return 1;
+    if (!await prepareStartup(directory, command.action === "init" ? command.channel : undefined,
+      controller.signal, command.action === "init")) return 1;
     if (command.action === "init") {
       console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
       return 0;

@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
+import { readServerSettings } from "../lib/server.ts";
 
 const roots = new Set<string>();
 const source = fileURLToPath(new URL("../", import.meta.url));
@@ -460,7 +461,7 @@ async function fixture() {
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migration-publication", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup", "migration-publication", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
@@ -587,6 +588,37 @@ test("first initialization can fetch the original Star Rail theme while a prepar
   expect((await start(["init", "live"]))[0]).toBe(0);
   expect((await start(["start"]))[0]).toBe(0);
   expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
+});
+
+test("a migrated OneBot listener without authentication gets one private token through init", async () => {
+  const { cwd, start } = await fixture();
+  const atlas = join(cwd, "data/atlas/data");
+  await mkdir(atlas, { recursive: true });
+  await writeFile(join(atlas, "map.json"), index);
+  const file = join(cwd, "config/server.yaml");
+  const legacy = "port: 9020 # retain the previous listener\nonebot_token: null\n";
+  await writeFile(file, legacy, { mode: 0o600 });
+  const [unprepared, output, error] = await start(["start"]);
+  expect(unprepared).toBe(1);
+  expect(output).not.toContain("fixture host ready");
+  expect(error).toContain("bun run init");
+  expect((await start(["start"], { LOTUS_ONEBOT_TOKEN: "provided-fixture-token" }))[0]).toBe(0);
+  expect(await readFile(file, "utf8")).toBe(legacy);
+  const [prepared, initialization] = await start(["init"]);
+  expect(prepared).toBe(0);
+  const content = await readFile(file, "utf8");
+  const settings = Bun.YAML.parse(content) as { port: number; onebot_token: string };
+  expect(settings.port).toBe(9020);
+  expect(settings.onebot_token).toMatch(/^[\w-]{43}$/u);
+  expect(content).toContain("# retain the previous listener");
+  expect(initialization).not.toContain(settings.onebot_token);
+  const network = await readServerSettings(Bun.pathToFileURL(`${cwd}/`), {});
+  expect(network.oneBot?.auth.get("Authorization")).toBe(`Bearer ${settings.onebot_token}`);
+  expect(network.http?.auth.has("Authorization")).toBe(false);
+  expect((await lstat(file)).mode & 0o777).toBe(0o600);
+  expect((await start(["init"]))[0]).toBe(0);
+  expect(await readFile(file, "utf8")).toBe(content);
+  expect((await start(["start"]))[0]).toBe(0);
 });
 
 test("simultaneous startup and initialization publish only once", async () => {

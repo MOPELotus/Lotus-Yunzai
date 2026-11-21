@@ -72,7 +72,7 @@ export function projectLegacyNetworkConfig(source: NetworkConfig, policy: Networ
   let server = parseServerSettings({}, env);
 
   if (source.server) {
-    const projected = pick(source.server, ["url", "port", "auth", "redirect"]);
+    const projected = pick(source.server, ["url", "port", "auth", "redirect", "onebot_token"]);
     server = parseServerSettings(projected, env);
     if (server.http && server.oneBot) {
       notes.push(server.http.port === server.oneBot.port ? "server.listeners.shared" : "server.listeners.separate");
@@ -205,6 +205,9 @@ export async function stageLegacyNetworkConfig(sourcePath: string, stagePath: st
   const projected = projectLegacyNetworkConfig(raw, { remoteMilky: true, remoteRedis: true });
   const deferred = projected.deferred.filter(item => item !== "server.https.files");
   const outputs = new Map<string, string | Buffer>();
+  if (deferred.includes("server.onebot.authorization")) {
+    projected.config.server = { ...projected.config.server, onebot_token: null };
+  }
   if (projected.deferred.includes("server.https.files") && !deferred.includes("server.https.port-collision")) {
     const https = parseServerSettings({ https: raw.server?.https }, {}).https;
     if (https) {

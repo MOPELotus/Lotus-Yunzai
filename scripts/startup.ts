@@ -86,8 +86,14 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   }
 }
 
-export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal) {
+export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal, initialize = requested !== undefined) {
   const { persistAtlasChannel, readAtlasChannel } = await loadStartupConfig(root);
+  if (await Bun.file(new URL("config/server.yaml", root)).exists()) {
+    const { prepareMigratedOneBot } = await import("../lib/migrated-onebot-setup.ts");
+    if (await prepareMigratedOneBot(root, Bun.env, initialize, signal)) {
+      console.log("[初始化] 已生成 OneBot 接入令牌。请用 config/server.yaml 的 onebot_token 配置网关连接。");
+    }
+  }
   const previous = await readAtlasChannel(root);
   const directory = fileURLToPath(new URL("data/atlas/", root));
   const ready = await atlasReady(directory);
@@ -100,11 +106,13 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
     signal.throwIfAborted();
     if (!ready) await initializePublicAtlas(root, directory, channel, signal);
   }
-  await prepareThemes(root, signal, !ready || requested !== undefined);
+  await prepareThemes(root, signal, !ready || initialize);
 }
 
 if (import.meta.main) {
-  const [channel, ...remaining] = Bun.argv.slice(2);
+  const args = Bun.argv.slice(2);
+  const initialize = args[0] === "--initialize";
+  const [channel, ...remaining] = initialize ? args.slice(1) : args;
   const controller = new AbortController();
   const interrupt = () => controller.abort(new Error("启动操作已中止。"));
   process.on("SIGINT", interrupt);
@@ -113,7 +121,7 @@ if (import.meta.main) {
     if (remaining.length || (channel !== undefined && channel !== "live" && channel !== "latest")) {
       throw new Error("图鉴版本来源须为正式版 live 或最新版 latest。");
     }
-    await prepareStartup(new URL("../", import.meta.url), channel, controller.signal);
+    await prepareStartup(new URL("../", import.meta.url), channel, controller.signal, initialize || channel !== undefined);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "初始化失败。");
     process.exitCode = 1;

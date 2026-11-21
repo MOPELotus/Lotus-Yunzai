@@ -153,7 +153,12 @@ export function parseServerSettings(config: Readonly<Record<string, unknown>>, e
   const oneBotOverride = port(env.LOTUS_ONEBOT_PORT, "LOTUS_ONEBOT_PORT");
   const legacyAuth = authHeaders(config.auth);
   const httpAuth = withToken(legacyAuth, env.LOTUS_HTTP_TOKEN, "LOTUS_HTTP_TOKEN");
-  const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN, "LOTUS_ONEBOT_TOKEN");
+  const oneBotToken = config.onebot_token;
+  if (oneBotToken !== undefined && oneBotToken !== null && typeof oneBotToken !== "string") {
+    throw new Error("config/server.yaml 的 onebot_token 须为文本。");
+  }
+  const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN ?? oneBotToken ?? undefined,
+    env.LOTUS_ONEBOT_TOKEN === undefined ? "config/server.yaml 的 onebot_token" : "LOTUS_ONEBOT_TOKEN");
   const panelToken = env.LOTUS_PANEL_TOKEN;
   withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
   const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL, "LOTUS_PANEL_PUBLIC_URL");
