@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
-import { checkinHandbackHoldStage, checkinScheduleClock, legacyUnconfirmedStage, parseCheckinSchedulePlan,
-  type CheckinCommunityWriteStatus, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
+import { checkinHandbackHoldStage, checkinScheduleClock, legacyGameWriteKey, legacyUnconfirmedStage, parseCheckinSchedulePlan,
+  type CheckinCommunityWriteStatus, type CheckinGameWriteStatus, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 
 export const checkinHandbackVersions = ["e28c6df", "5aa3a70"] as const;
 type LegacyVersion = typeof checkinHandbackVersions[number];
@@ -97,7 +97,8 @@ export async function prepareLegacyCheckinSchedule(
       const current = representable && accountAtExecution && source.date === today && retry.verifiedUnsent &&
         checkinScheduleClock(Date.parse(retry.nextAt)).date === today &&
         await accountAtExecution(candidate.qq, candidate.profileId);
-      if (current && matchesAccount(candidate, retry.accountKey, current)) {
+      if (current && matchesAccount(candidate, retry.accountKey, current) &&
+          (!candidate.gameWriteAccount || matchesAccount(candidate, candidate.gameWriteAccount, current))) {
         const forums = retry.forums.filter(forum => canRetryForum(candidate.communityWrites, forum));
         const games = retry.games?.filter(game => gameVerifiedUnsent(candidate, game));
         if (forums.length || games?.length) {
@@ -204,12 +205,23 @@ function applyReceipt(entry: Entry, row: ValidatedReceiptEntry,
     if (state === "unknown") oldWrites[id] = "unconfirmed";
     return pending && state === "unsent";
   });
-  const games = (communityRetry.games || []).filter(key => pending && row.outcomes.get(`game:${key}`) === "unsent");
+  const oldGameWrites: Record<string, CheckinGameWriteStatus> = {};
+  const games = (communityRetry.games || []).filter(key => {
+    const state = row.outcomes.get(`game:${key}`);
+    if (state === "completed") oldGameWrites[legacyGameWriteKey(key)] = "confirmed";
+    if (state === "unknown") oldGameWrites[legacyGameWriteKey(key)] = "unconfirmed";
+    return pending && state === "unsent";
+  });
   const unknown = [...row.outcomes.values()].includes("unknown");
   const stopped = [...row.outcomes.values()].includes("stopped") || (!pending && [...row.outcomes.values()].includes("unsent"));
   const otherFailure = Boolean(communityRetry.otherFailure || unknown || stopped);
   const ok = !otherFailure && !forums.length && !games.length;
-  const logs = Object.keys(oldWrites).length ? { communityWrites: oldWrites, communityWriteAccount: row.accountKey } : {};
+  const logs = {
+    ...(Object.keys(oldWrites).length > 0 && { communityWrites: oldWrites, communityWriteAccount: row.accountKey }),
+    ...(Object.keys(oldGameWrites).length > 0 && {
+      gameWrites: { ...entry.gameWrites, ...oldGameWrites }, gameWriteAccount: row.accountKey,
+    }),
+  };
   if (forums.length || games.length) {
     return { ...previous, ...logs, done: false, ok: false, stage: "checkin",
       message: "旧版签到回接后已安排剩余项目补跑。",
@@ -235,6 +247,7 @@ async function guardedScopes(source: CheckinSchedulePlan, legacy: CheckinSchedul
     if (previous && (previous.done || hasProgress(previous))) continue;
     const current = await loadAccount(entry.qq, entry.profileId);
     if (!matchesAccount(entry, retry.accountKey, current) ||
+        (entry.gameWriteAccount && !matchesAccount(entry, entry.gameWriteAccount, current)) ||
         (entry.communityWriteAccount && !matchesAccount(entry, entry.communityWriteAccount, current))) continue;
     const allowed = current?.checkinTargets;
     const forums = retry.forums.filter(id => canRetryForum(entry.communityWrites, id) && (!allowed || allowed.forums.includes(id)));

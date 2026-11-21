@@ -8,7 +8,7 @@ import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type CheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
-import type { CheckinScheduleGame } from "./checkin-schedule-plan.ts";
+import { legacyGameWriteKey, type CheckinScheduleGame } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
 import { CheckinScheduleWriteError, withManualCheckinJournals, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
 import { segment, type MessageReply } from "./messages.ts";
@@ -272,15 +272,19 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       function gameTarget(game: CheckinScheduleGame, role: { uid: string; region: string }) {
         return `${game}:cn:${digest([role.region, role.uid])}`;
       }
-      async function runGame(target: string, sequence: CheckinSequence, compatibleOwner = true): Promise<GameCheckinResult> {
+      async function runGame(target: string, sequence: CheckinSequence,
+        { compatibleOwner = true, legacyGame }: { readonly compatibleOwner?: boolean; readonly legacyGame?: CheckinScheduleGame } = {},
+      ): Promise<GameCheckinResult> {
         if (!gameJournal) return runGameCheckinSequence(sequence);
         const owner = gameAccountKey;
         if (!compatibleOwner) return { status: "unconfirmed" };
         const previous = owner ? gameJournal.previous[target] : undefined;
+        const legacyScope = legacyGame && gameJournal.previous[legacyGameWriteKey(legacyGame)];
         previousUnconfirmed.delete(target);
         if (previous === "confirmed") return { status: "already" };
         let started = false;
-        const allowed = Boolean(owner && !gameJournal.unknown && (!previous || (previous === "rejected" && input.source === "manual")));
+        const allowed = Boolean(owner && !gameJournal.unknown && !legacyScope &&
+          (!previous || (previous === "rejected" && input.source === "manual")));
         const result = await runGameCheckinSequence({ ...sequence, canSubmit: allowed,
           beforeSubmit: async () => {
             await gameJournal.start(target, owner!);
@@ -497,7 +501,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               signal, verifyCurrent,
               readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
               submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
-            });
+            }, { legacyGame: key });
             results.push(result);
             count(result.status);
           }
@@ -546,14 +550,14 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               if (remote.roles.length && !remote.roles.some(role => blocked.has(role.uid))) {
                 results.push(await runGame(owned + digest(["account"]), {
                   signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),
-                }, sameBinding));
+                }, { compatibleOwner: sameBinding }));
               }
             } else {
               const remote = await roleCheckins[game](overseas, options);
               for (const role of remote.roles) {
                 if (blocked.has(role.uid)) continue;
                 const result = await runGame(owned + digest([role.region, role.uid]),
-                  { ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent }, sameBinding);
+                  { ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent }, { compatibleOwner: sameBinding });
                 results.push(result);
                 if (result.status === "failed" && result.error instanceof GameRecordRequestError) break;
               }

@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
-import { checkinScheduleClock } from "../lib/checkin-schedule-plan.ts";
+import { runGuardedLegacyCheckinTransfer } from "../lib/checkin-schedule-handback.ts";
+import { checkinScheduleClock, generateCheckinSchedulePlan, legacyGameWriteKey } from "../lib/checkin-schedule-plan.ts";
 import { createCheckinScheduleRuntime } from "../lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 import { gameCheckinCommands } from "../lib/game-checkin-commands.ts";
@@ -20,6 +22,7 @@ async function fixture(run: (helpers: {
   lock: <Value>(operation: () => Promise<Value>) => Promise<unknown>;
   advance: (at: number) => void;
   acknowledgeGameWrite: () => void;
+  importLegacyGame: (status: "unknown" | "completed") => Promise<void>;
   writes: string[];
   reads: string[];
 }) => Promise<void>, { disabled = false, succeed = false, extraForum = false } = {}) {
@@ -43,6 +46,21 @@ async function fixture(run: (helpers: {
       read: () => store.read(date), lock: operation => store.withExecutionLock(date, operation), writes, reads,
       advance: value => { at = value; },
       acknowledgeGameWrite: () => { signed = true; },
+      async importLegacyGame(status) {
+        const accountKey = createHash("sha256").update(JSON.stringify([qq, profileId, "81526"])).digest("hex");
+        const plan = generateCheckinSchedulePlan({ date, now: at, profiles: [{ qq, profileId, enabled: true }] });
+        await store.update(date, () => ({ plan: { ...plan, entries: [{ ...plan.entries[0]!, communityRetry: {
+          forums: ["6"], games: ["genshin"], attempts: 1, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true,
+        } }] }, result: undefined }));
+        expect(await runGuardedLegacyCheckinTransfer(store, date, {
+          now: () => at, loadAccount: profiles.accountContext, async runInline({ entries, ...offer }) {
+            return { ...offer, entries: entries.map(({ qq, profileId, accountKey }) => ({
+              qq, profileId, accountKey, attempts: 2, nextAt: new Date(at + 60_000).toISOString(),
+              outcomes: [{ target: "game:genshin", status }, { target: "community:6", status: "unsent" }],
+            })) };
+          },
+        })).toEqual({ acquired: true, value: 1 });
+      },
       async run(origin) {
         const controller = new AbortController();
         const module = gameCheckinCommands(root, controller.signal, {
@@ -148,3 +166,21 @@ test("跨入口回读发现原游戏确已签到时确认原记录", () => fixtu
   expect(Object.values((await read())!.entries[0]!.gameWrites!)).toEqual(["confirmed"]);
   expect(writes).toEqual(["game:scheduled", "community:scheduled"]);
 }));
+
+for (const imported of ["unknown", "completed"] as const) {
+  test(`旧回执游戏 ${imported} 后手动只回读该游戏，社区照常补跑`, () => fixture(async ({ run, read, importLegacyGame, advance, reads, writes }) => {
+    await importLegacyGame(imported);
+    const pending = (await read())!.entries[0]!;
+    const gameState = imported === "unknown" ? "unconfirmed" : "confirmed";
+    expect(pending).toMatchObject({ done: false, gameWrites: { [legacyGameWriteKey("genshin")]: gameState },
+      communityRetry: { forums: ["6"], verifiedUnsent: true } });
+    await run("web");
+    expect(reads).toEqual(["web"]);
+    expect(writes).toEqual(["community:web"]);
+    advance(Date.parse(pending.communityRetry!.nextAt));
+    expect(await run("scheduled")).toMatchObject({ completed: 1 });
+    expect((await read())?.entries[0]).toMatchObject({ done: true, communityWrites: { "6": "accepted" },
+      gameWrites: { [legacyGameWriteKey("genshin")]: gameState } });
+    expect(writes).toEqual(["community:web"]);
+  }, { succeed: true }));
+}

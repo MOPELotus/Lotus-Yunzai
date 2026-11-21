@@ -50,7 +50,11 @@ export type CheckinCommunityWriteStatus = typeof communityWriteStatuses[number];
 const communityWriteForums = new Set(["1", "2", "3", "4", "5", "6", "8", "9", "10"]);
 const gameWriteStatuses = ["pending", "confirmed", "unconfirmed", "rejected"] as const;
 export type CheckinGameWriteStatus = typeof gameWriteStatuses[number];
-const gameWriteKey = /^(?:genshin|honkai_sr|zzz|tears_of_themis|honkai3rd|honkai2):(?:cn|os:[0-9a-f]{64}):[0-9a-f]{64}$/u;
+const gameWriteKey = /^(?:genshin|honkai_sr|zzz|tears_of_themis|honkai3rd|honkai2):(?:cn:(?:[0-9a-f]{64}|legacy)|os:[0-9a-f]{64}:[0-9a-f]{64})$/u;
+
+export function legacyGameWriteKey(game: CheckinScheduleGame) {
+  return `${game}:cn:legacy`;
+}
 
 export interface CheckinScheduleEntry {
   readonly qq: string;
