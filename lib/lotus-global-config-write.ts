@@ -98,6 +98,8 @@ interface UpdateOptions<T> {
   readonly canCommit?: () => boolean;
   readonly onCommitted?: (value: T) => void;
   readonly override?: string;
+  // Read-only resolver for a namespace with its own inheritance rules. It runs again before commit.
+  readonly resolveEffective?: () => Promise<GlobalDocument>;
 }
 
 export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>): Promise<T> {
@@ -105,7 +107,7 @@ export function updateLotusGlobalConfig<T>(root: URL, options: UpdateOptions<T>)
 }
 
 export async function updateLocalConfiguration<T>(
-  root: URL, name: ConfigurationName, { canWrite, prepare, signal, canCommit, onCommitted, override }: UpdateOptions<T>,
+  root: URL, name: ConfigurationName, { canWrite, prepare, signal, canCommit, onCommitted, override, resolveEffective }: UpdateOptions<T>,
 ): Promise<T> {
   function assertActive() {
     if (signal?.aborted) error("cancelled");
@@ -116,6 +118,7 @@ export async function updateLocalConfiguration<T>(
   }
 
   function inherited(document: GlobalDocument) {
+    if (resolveEffective) return resolveEffective();
     return name === "global" ? inheritLotusGlobalConfig(root, document) : document;
   }
 
