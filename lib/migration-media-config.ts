@@ -52,7 +52,7 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
         break;
       }
       case "tuneweave": {
-        const result = scalars(source, ["request_timeout_ms"]);
+        const result = scalars(source, ["request_timeout_ms", "update_delay_ms"]);
         const address = endpoint(source.api_url);
         if (address) {
           const url = URL.parse(address);

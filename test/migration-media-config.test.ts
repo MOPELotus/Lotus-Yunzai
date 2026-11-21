@@ -7,12 +7,12 @@ test("keeps the active media settings and TuneWeave selection in legacy preceden
     music: { enable: true, default_platform: "netease" }, tuneweave: { request_timeout_ms: 4000 },
   }, {
     music: { enable: true }, douyin: { enable: true },
-    tuneweave: { api_url: "http://127.0.0.1:7832/relay/", request_timeout_ms: 8000, old_token: "ignored" },
+    tuneweave: { api_url: "http://127.0.0.1:7832/relay/", request_timeout_ms: 8000, update_delay_ms: 90000, old_token: "ignored" },
   }]);
   expect(result).toEqual({ config: {
     music: {}, douyin: { enable: false, download: { enable: false } },
     bilibili: { search_limit: 4, download: { enable: false, resolution: 80, duration_limit_seconds: 30 } },
-    tuneweave: { api_url: "http://127.0.0.1:7832/relay/", request_timeout_ms: 8000 },
+    tuneweave: { api_url: "http://127.0.0.1:7832/relay/", request_timeout_ms: 8000, update_delay_ms: 90000 },
   }, deferred: [] });
   expect(projectLegacyMediaConfig({ tuneweave: {} }, [{ tuneweave: { api_url: "https://example.test" } }]))
     .toEqual({ config: { tuneweave: {} }, deferred: [] });
