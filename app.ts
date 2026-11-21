@@ -16,6 +16,7 @@ import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
+import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
 import { createChatMediaLinks } from "./lib/chat-media-links.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
@@ -1833,6 +1834,13 @@ if (import.meta.main) {
       if (allowNew && allowed([avatar.group ? "群头像" : "头像", "group", "@lotus-yunzai/group"])) {
         const reply = qqAvatarReply(event, avatar);
         if (reply !== undefined) await event.reply(reply, true);
+      }
+      return;
+    }
+    if (isQqFaceCommand(event.msg)) {
+      if (allowNew && allowed(["取face", "group", "@lotus-yunzai/group"])) {
+        const reply = qqFaceReply(event);
+        if (reply !== undefined) await sendCommandReply(event, reply);
       }
       return;
     }
