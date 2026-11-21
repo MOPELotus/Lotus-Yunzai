@@ -1,18 +1,19 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createLocalOcr } from "../lib/local-ocr.ts";
 
 test("本机 OCR 截止或连接退出时终止并回收识别子进程", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-local-ocr-"));
   try {
-    const executable = join(root, "tesseract");
+    const module = join(root, "local-ocr.ts");
+    await copyFile(new URL("../lib/local-ocr.ts", import.meta.url), module);
+    const { createLocalOcr } = await import(module) as typeof import("../lib/local-ocr.ts");
     const pidPath = join(root, "pid");
-    await writeFile(executable, `#!${process.execPath}
+    await writeFile(join(root, "local-ocr-worker.ts"), `
 await Bun.write(${JSON.stringify(pidPath)}, String(process.pid));
-await Bun.sleep(60_000);
-`, { mode: 0o700 });
+for (;;) {}
+`);
     async function noChild() {
       const pid = Number(await readFile(pidPath, "utf8"));
       expect(pid).toBeGreaterThan(0);
@@ -21,11 +22,11 @@ await Bun.sleep(60_000);
     }
     const image = new Uint8Array([1]);
     const ocr = createLocalOcr(1_000);
-    expect(await ocr.recognize(executable, image, new AbortController().signal)).toContain("识别超时");
+    expect(await ocr.recognize(image, new AbortController().signal)).toContain("识别超时");
     await noChild();
 
     const controller = new AbortController();
-    const waiting = ocr.recognize(executable, image, controller.signal);
+    const waiting = ocr.recognize(image, controller.signal);
     for (let i = 0; i < 50 && !await Bun.file(pidPath).exists(); ++i) await Bun.sleep(10);
     expect(await Bun.file(pidPath).exists()).toBe(true);
     controller.abort();

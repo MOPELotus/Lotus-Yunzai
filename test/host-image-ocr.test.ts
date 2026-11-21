@@ -47,17 +47,16 @@ test("两协议用本地 OCR 处理当前图、同会话引用、缺模型与群
     const inputs = join(root, "engine-inputs");
     const held = join(root, "engine-held");
     await writeFile(inputs, "");
-    await writeFile(join(root, "tesseract"), String.raw`#!${process.execPath}
-import { appendFileSync, existsSync } from "node:fs";
-if (Bun.argv[2] === "--list-langs") {
-  console.log(existsSync(${JSON.stringify(marker)}) ? "chi_sim\neng" : "eng");
+    await writeFile(join(root, "lib/local-ocr-worker.ts"), String.raw`import { appendFileSync, existsSync } from "node:fs";
+if (Bun.argv[2] === "prepare") {
+  if (!existsSync(${JSON.stringify(marker)})) process.exit(3);
 } else {
-  if (JSON.stringify(Bun.argv.slice(2)) !== JSON.stringify(["stdin","stdout","-l","chi_sim+eng","--oem","1","--psm","3"])) process.exit(1);
+  if (Bun.argv[2] !== "recognize") process.exit(1);
   appendFileSync(${JSON.stringify(inputs)}, Buffer.from(await Bun.stdin.arrayBuffer()).toString("base64") + "\n");
   while (existsSync(${JSON.stringify(held)})) await Bun.sleep(15);
   console.log("第一行\n[CQ:at,qq=all]");
 }
-`, { mode: 0o700 });
+`);
     await writeFile(join(root, "config/group.yaml"),
       "default: {groupCD: 0, singleCD: 0}\n78: {disable: [椰奶助手-其他]}\n");
     await writeFile(join(root, "config/milky.yaml"),
@@ -77,7 +76,7 @@ if (Bun.argv[2] === "--list-langs") {
     disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "--no-env-file", "--preload", "./preload.ts", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: root + ":" + process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
     });
     let startup = "";
     const decoder = new TextDecoder();

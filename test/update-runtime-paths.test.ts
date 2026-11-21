@@ -11,6 +11,39 @@ import { readUpdateRuntimePaths, verifyMovedRuntimePaths } from "../lib/update-r
 import { createProfileStore } from "../packages/account/index.ts";
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
 
+test("托管切换保留原神算伤设置和正在使用的两份 OCR 模型", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-update-local-models-"));
+  const active = join(directory, "active");
+  const candidate = join(directory, "candidate");
+  const external = join(directory, "eng.traineddata");
+  const models = "local/ocr";
+  const settings = "local/genshin-damage.yaml";
+  try {
+    await mkdir(join(active, models), { recursive: true });
+    await mkdir(candidate);
+    await writeFile(join(active, ".env"), `TESSDATA_PREFIX=${models}\nLOTUS_GENSHIN_DAMAGE_CONFIG=${settings}\n`);
+    await writeFile(join(active, settings), "templateteam: true\n");
+    await writeFile(join(active, models, "chi_sim.traineddata"), "中文模型");
+    await writeFile(join(active, models, "unrelated"), "其他文件");
+    await writeFile(external, "英语模型");
+    await symlink(external, join(active, models, "eng.traineddata"));
+    const state = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), { PATH: process.env.PATH });
+    expect(state).toEqual([settings, `${models}/chi_sim.traineddata`, `${models}/eng.traineddata`].sort());
+    const switched = await activateUpdate(active, candidate, async (root) => {
+      const previous = await previousUpdateDirectory(root);
+      expect(previous).toBeDefined();
+      await verifyMovedRuntimePaths(root, previous!, { TESSDATA_PREFIX: models, LOTUS_GENSHIN_DAMAGE_CONFIG: settings });
+    }, state);
+    expect(await readFile(join(active, settings), "utf8")).toBe("templateteam: true\n");
+    expect(await readFile(join(active, models, "chi_sim.traineddata"), "utf8")).toBe("中文模型");
+    expect(await readFile(join(active, models, "eng.traineddata"), "utf8")).toBe("英语模型");
+    expect(await readFile(external, "utf8")).toBe("英语模型");
+    expect(await readFile(join(switched.previous, models, "unrelated"), "utf8")).toBe("其他文件");
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("受管切换按 Bun 的显式路径移动独立图鉴和档案，失败后还原", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-update-runtime-"));
   const active = join(dir, "active");

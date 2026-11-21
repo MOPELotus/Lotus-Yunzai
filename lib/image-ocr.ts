@@ -1,10 +1,9 @@
 import { readQqMessageImage } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { isVerifiedRaster } from "./file-to-url.ts";
-import { createLocalOcr } from "./local-ocr.ts";
+import { createLocalOcr, localOcrImageBytes } from "./local-ocr.ts";
 import type { InboundSegment, MessageEvent } from "./messages.ts";
 
-const maxOcrImageBytes = 8 * 1024 * 1024;
 const maxOcrPixels = 12_000_000;
 const maxOcrSide = 4096;
 const ocrCommand = /^#(?:ocr|提?取文字)\s*$/iu;
@@ -56,7 +55,7 @@ export function createImageOcr() {
     try {
       const engineState = await engine.prepare(signal);
       if (!await active()) return true;
-      if (engineState.executable === undefined) {
+      if (!engineState.ready) {
         await event.reply(engineState.failure, true);
         return true;
       }
@@ -79,13 +78,13 @@ export function createImageOcr() {
       }
       if (!started && !current?.delete(scope)) return true;
       if (started) pending.get(connection)?.delete(scope);
-      const bytes = await readQqMessageImage(image, transfer, { maxBytes: maxOcrImageBytes, fallback: image.file }).catch(() => undefined);
+      const bytes = await readQqMessageImage(image, transfer, { maxBytes: localOcrImageBytes, fallback: image.file }).catch(() => undefined);
       if (!bytes || !await isVerifiedRaster(bytes, maxOcrPixels, maxOcrSide)) {
         if (await active()) await event.reply("无法读取这张图片，请重新发送。", true);
         return true;
       }
       if (!await active()) return true;
-      const result = await engine.recognize(engineState.executable, bytes, signal);
+      const result = await engine.recognize(bytes, signal);
       if (await active()) await event.reply(result, true);
     } finally {
       running = false;

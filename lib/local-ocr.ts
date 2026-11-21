@@ -1,17 +1,24 @@
-type RunResult = { status: "ok"; output: string } | { status: "failed" | "timeout" | "cancelled" };
+import { isAbsolute } from "node:path";
+import { devNull } from "node:os";
+import { fileURLToPath } from "node:url";
 
-const maxOutput = 32 * 1024;
-const requiredLanguages = ["chi_sim", "eng"] as const;
+type RunResult = { status: "ok"; output: string } | { status: "failed" | "timeout" | "cancelled" | "missing-engine" | "missing-model" };
 
-async function runTesseract(executable: string, args: string[], image: Uint8Array | undefined, signal: AbortSignal,
-  timeoutMs: number, tessdata: string | undefined): Promise<RunResult> {
+export const localOcrImageBytes = 8 * 1024 * 1024;
+export const localOcrOutputBytes = 32 * 1024;
+const missingEngine = "本机 OCR 未安装 Tesseract 5 原生库，请联系管理员。";
+const missingModel = "本机 OCR 缺少简体中文或英语模型（chi_sim、eng），请联系管理员。";
+const worker = fileURLToPath(new URL("./local-ocr-worker.ts", import.meta.url));
+
+async function runLocalOcr(image: Uint8Array | undefined, signal: AbortSignal,
+  timeoutMs: number, env: NodeJS.ProcessEnv): Promise<RunResult> {
   if (signal.aborted) return { status: "cancelled" };
 
   let child: Bun.Subprocess<"ignore" | Uint8Array, "pipe", "ignore">;
   try {
-    child = Bun.spawn([executable, ...args], {
-      stdin: image ?? "ignore", stdout: "pipe", stderr: "ignore",
-      env: { LANG: "C.UTF-8", OMP_THREAD_LIMIT: "1", ...(tessdata !== undefined ? { TESSDATA_PREFIX: tessdata } : {}) },
+    child = Bun.spawn([process.execPath, "--no-env-file", "--config=" + devNull, "--no-install",
+      worker, image === undefined ? "prepare" : "recognize"], {
+      stdin: image ?? "ignore", stdout: "pipe", stderr: "ignore", env,
     });
   } catch { return { status: "failed" }; }
 
@@ -28,7 +35,7 @@ async function runTesseract(executable: string, args: string[], image: Uint8Arra
       const { done, value } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > maxOutput) {
+      if (size > localOcrOutputBytes) {
         interrupt();
         return { status: "failed" };
       }
@@ -37,6 +44,8 @@ async function runTesseract(executable: string, args: string[], image: Uint8Arra
     const exit = await child.exited;
     if (signal.aborted) return { status: "cancelled" };
     if (clock.aborted) return { status: "timeout" };
+    if (exit === 2) return { status: "missing-engine" };
+    if (exit === 3) return { status: "missing-model" };
     return exit === 0 ? { status: "ok", output: output + decoder.decode() } : { status: "failed" };
   } catch { return { status: "failed" }; }
   finally {
@@ -47,30 +56,37 @@ async function runTesseract(executable: string, args: string[], image: Uint8Arra
   }
 }
 
-export function createLocalOcr(timeoutMs = 12_000) {
-  const tessdata = process.env.TESSDATA_PREFIX;
-  let ready: { executable: string; until: number } | undefined;
+function loaderPath(value: string | undefined) {
+  return value?.split(/[:;]/u).filter(isAbsolute).join(":") || undefined;
+}
 
+export function createLocalOcr(timeoutMs = 12_000) {
+  const env = {
+    LANG: "C.UTF-8",
+    OMP_THREAD_LIMIT: "1",
+    TESSDATA_PREFIX: process.env.TESSDATA_PREFIX,
+    LD_LIBRARY_PATH: loaderPath(process.env.LD_LIBRARY_PATH),
+    DYLD_LIBRARY_PATH: loaderPath(process.env.DYLD_LIBRARY_PATH),
+  };
+  let readyUntil = 0;
   return {
     async prepare(signal: AbortSignal) {
-      if (ready && ready.until > performance.now()) return { executable: ready.executable };
-      const executable = Bun.which("tesseract");
-      if (!executable) return { failure: "本机 OCR 未安装 Tesseract，请联系管理员。" };
-      const models = await runTesseract(executable, ["--list-langs"], undefined, signal, 2_000, tessdata);
-      if (models.status !== "ok") return { failure: "本机 OCR 暂时无法检查语言模型，请联系管理员。" };
-      const installed = models.output.split(/\r?\n/u).map(line => line.trim());
-      if (!requiredLanguages.every(language => installed.includes(language))) {
-        return { failure: "本机 OCR 缺少简体中文或英语模型（chi_sim、eng），请联系管理员。" };
-      }
-      ready = { executable, until: performance.now() + 30_000 };
-      return { executable };
+      if (readyUntil > performance.now()) return { ready: true as const };
+      const probe = await runLocalOcr(undefined, signal, 2_000, env);
+      if (probe.status === "missing-engine") return { failure: missingEngine };
+      if (probe.status === "missing-model") return { failure: missingModel };
+      if (probe.status !== "ok") return { failure: "本机 OCR 暂时无法检查语言模型，请联系管理员。" };
+      readyUntil = performance.now() + 30_000;
+      return { ready: true as const };
     },
-    async recognize(executable: string, image: Uint8Array, signal: AbortSignal) {
-      const result = await runTesseract(executable,
-        ["stdin", "stdout", "-l", requiredLanguages.join("+"), "--oem", "1", "--psm", "3"], image, signal, timeoutMs, tessdata);
+    async recognize(image: Uint8Array, signal: AbortSignal) {
+      if (image.byteLength === 0 || image.byteLength > localOcrImageBytes) return "无法读取这张图片，请重新发送。";
+      const result = await runLocalOcr(image, signal, timeoutMs, env);
       if (result.status === "timeout") return "图片文字识别超时，请缩小图片后重试。";
       if (result.status !== "ok") {
-        ready = undefined;
+        readyUntil = 0;
+        if (result.status === "missing-engine") return missingEngine;
+        if (result.status === "missing-model") return missingModel;
         return "本机图片文字识别失败，请换一张图片后重试。";
       }
       return result.output.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "").trim().slice(0, 4_000).toWellFormed() || "未识别到文字。";

@@ -14,7 +14,8 @@ const trimmedPathKeys = [
   "LOTUS_GENSHIN_WISH_STATE_DIR", "LOTUS_STAR_RAIL_WARP_STATE_DIR", "LOTUS_GUIDES_ROLE_DIR",
 ] as const;
 const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
-  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR", "LOTUS_DEVICE_INFO_APK", "LOTUS_MEME_CONFIG_DIR"];
+  "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR", "LOTUS_DEVICE_INFO_APK", "LOTUS_MEME_CONFIG_DIR",
+  "TESSDATA_PREFIX"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set<string>(persistentDirectories);
 const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
@@ -136,6 +137,14 @@ async function configuredRuntimePaths(root: string, source: string, env: Runtime
       for (const name of ["meme", "access", "protect", "server", "stat", "other"]) {
         await resolveState(join(directory, `${name}.yaml`));
       }
+    }
+  }
+  if (env.TESSDATA_PREFIX) {
+    const models = resolve(root, env.TESSDATA_PREFIX);
+    for (const model of ["chi_sim.traineddata", "eng.traineddata"]) {
+      const target = join(models, model);
+      const physical = await resolveLinkedPath(target, { readLink: location => readSnapshot(location, readPathLink) });
+      if (physical && (await readSnapshot(physical, location => lstat(location))).isFile()) await resolveState(target);
     }
   }
   for (const value of new Set(configured)) {
