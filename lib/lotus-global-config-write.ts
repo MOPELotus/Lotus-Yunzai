@@ -34,7 +34,7 @@ interface Location {
   readonly exists: boolean;
 }
 
-type ConfigurationName = "global" | "bot" | "system-status";
+type ConfigurationName = "global" | "bot" | "system-status" | "genshin-damage";
 
 async function canonicalDirectory(path: string): Promise<string> {
   const state = await named(path);
@@ -48,7 +48,8 @@ async function canonicalDirectory(path: string): Promise<string> {
 
 async function effectiveFile(root: URL, name: ConfigurationName, override?: string): Promise<Location> {
   const primary = override ? resolve(override) : fileURLToPath(new URL(`config/${name}.yaml`, root));
-  const legacy = name === "system-status" ? [] : [fileURLToPath(new URL(`config/config/${name}.yaml`, root))];
+  const legacy = name === "global" || name === "bot"
+    ? [fileURLToPath(new URL(`config/config/${name}.yaml`, root))] : [];
   for (const source of [primary, ...legacy]) {
     const state = await named(source);
     if (!state) continue;
@@ -121,7 +122,7 @@ export async function updateLocalConfiguration<T>(
   const initial = await effectiveFile(root, name, override);
   if (!initial.exists && !await named(dirname(initial.file))) {
     authorize(await inherited({}));
-    await mkdir(dirname(initial.file), { mode: 0o700, recursive: name === "system-status" }).catch((cause: unknown) => {
+    await mkdir(dirname(initial.file), { mode: 0o700, recursive: name === "system-status" || name === "genshin-damage" }).catch((cause: unknown) => {
       if (errno(cause) !== "EEXIST") throw cause;
     });
   }
