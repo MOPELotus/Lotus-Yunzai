@@ -26,6 +26,9 @@ watch(dirty, value => emit("dirty-change", value));
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
   if (mode === "load" && dirty.value && !window.confirm("放弃未保存的媒体环境设置？")) return;
+  const changedFields = Object.keys(changes.value);
+  const startsNextBoot = changedFields.includes("update_delay_ms");
+  const hasOtherChanges = changedFields.some(field => field !== "update_delay_ms");
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -45,7 +48,7 @@ async function sync(mode: "load" | "save") {
       return;
     }
     if (response.status === 400) {
-      error.value = "请填写有效的正整数。每项超时不超过 2147483647 毫秒。";
+      error.value = "请填写有效的正整数。时间设置最多为 2147483647 毫秒。";
       return;
     }
     if (!response.ok) {
@@ -61,7 +64,12 @@ async function sync(mode: "load" | "save") {
     }
     saved.value = result;
     draft.value = { ...result.settings };
-    if (mode === "save") feedback.value = "已保存，下次工具安装或 TuneWeave 请求时生效。";
+    if (mode === "save") {
+      if (startsNextBoot) feedback.value = hasOtherChanges
+        ? "已保存。维护延迟在下次启动时生效，其余设置在下次安装或请求时生效。"
+        : "已保存，维护延迟在下次启动时生效。";
+      else feedback.value = "已保存，下次工具安装或 TuneWeave 请求时生效。";
+    }
   } catch {
     if (active === controller) error.value = "暂时无法连接宿主，请重试。";
   } finally {
@@ -93,7 +101,11 @@ onBeforeUnmount(() => {
         <template v-for="field in group.fields" :key="field.key">
           <label :for="`media-environment-${field.key}`">{{ field.label }}</label>
           <input :id="`media-environment-${field.key}`" v-model.number="draft[field.key]" type="number" min="1"
-            :max="field.max" step="1" required />
+            :max="field.max" step="1" required
+            :aria-describedby="field.key === 'update_delay_ms' ? 'media-startup-delay-note' : undefined" />
+          <p v-if="field.key === 'update_delay_ms'" id="media-startup-delay-note" class="subtitle">
+            宿主重启后，首轮工具与 TuneWeave 环境维护按此时间等待。
+          </p>
         </template>
       </fieldset>
       <div class="media-environment-actions">
@@ -109,6 +121,7 @@ onBeforeUnmount(() => {
 fieldset { display: grid; gap: 7px; padding: 0; border: 0; margin: 0; min-width: 0; }
 fieldset + fieldset { margin-top: 16px; }
 legend { padding: 0; margin-bottom: 9px; font-weight: 650; }
+fieldset .subtitle { margin: 0; }
 fieldset input[type="number"] { border: 1px solid var(--line); padding: 8px; border-radius: 6px; color: inherit; background: var(--surface); }
 .media-environment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .media-environment-actions span { color: var(--accent); }

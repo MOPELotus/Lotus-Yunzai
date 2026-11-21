@@ -5,6 +5,7 @@ export const mediaEnvironmentGroups = [
   ] },
   { section: "tuneweave", label: "TuneWeave 服务", fields: [
     { key: "request_timeout_ms", field: "request_timeout_ms", label: "接口请求超时（毫秒）", defaultValue: 30000, max: 2_147_483_647 },
+    { key: "update_delay_ms", field: "update_delay_ms", label: "开机首次环境维护延迟（毫秒）", defaultValue: 180000, max: 2_147_483_647 },
   ] },
 ] as const;
 

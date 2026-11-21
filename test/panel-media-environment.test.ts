@@ -10,6 +10,7 @@ import { panelApi } from "../lib/panel.ts";
 import { loadGlobalConfig } from "../plugins/media/core/config/global.ts";
 import { normalizeToolsConfig, ToolInstallerService } from "../plugins/media/services/tools/installer.ts";
 import { TuneWeaveService } from "../plugins/media/services/tuneweave/service.ts";
+import { startMediaMaintenance } from "../plugins/media/services/tuneweave/startup.ts";
 
 const path = "/panel/api/settings/media/environment";
 const token = "media-environment-fixture";
@@ -20,7 +21,7 @@ function request(method = "GET", data?: unknown, authenticated = true) {
   });
 }
 
-test("面板仅改三项运行参数，旧路径、服务来源与已存在的安装权限保持", async () => {
+test("面板可只改安装与请求参数，旧路径、服务来源与已存在的安装权限保持", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-panel-media-environment-"));
   try {
     const root = pathToFileURL(`${dir}/`);
@@ -45,13 +46,13 @@ test("面板仅改三项运行参数，旧路径、服务来源与已存在的�
     const admin = panelApi(token, [], endpoint => endpoint === path ? route : undefined);
     expect((await admin(request("GET", undefined, false)))?.status).toBe(401);
     const raw = await (await admin(request()))!.text();
-    for (const hidden of [toolsDir, binDir, "private-release", "tune-path", "test-repo", "fixture-command", "update_delay_ms"]) {
+    for (const hidden of [toolsDir, binDir, "private-release", "tune-path", "test-repo", "fixture-command"]) {
       expect(raw).not.toContain(hidden);
     }
     const before = JSON.parse(raw);
-    expect(before.settings).toEqual({ tool_timeout_ms: 300000, download_retries: 4, request_timeout_ms: 22000 });
+    expect(before.settings).toEqual({ tool_timeout_ms: 300000, download_retries: 4, request_timeout_ms: 22000, update_delay_ms: 180000 });
     for (const patch of [{ api_url: "https://fixture.invalid/" }, { tools_path: "fixture" }, { ffmpeg: { command: "fixture" } },
-      { update_delay_ms: 1 }, { request_timeout_ms: 0 }, { tool_timeout_ms: 2_147_483_648 }, { download_retries: 1.5 }]) {
+      { update_delay_ms: 0 }, { update_delay_ms: "1000" }, { request_timeout_ms: 0 }, { tool_timeout_ms: 2_147_483_648 }, { download_retries: 1.5 }]) {
       expect((await admin(request("PUT", { patch, revision: before.revision })))?.status).toBe(400);
     }
     const patch = { tool_timeout_ms: 7500, download_retries: 2, request_timeout_ms: 15 };
@@ -75,7 +76,7 @@ test("面板仅改三项运行参数，旧路径、服务来源与已存在的�
     const saved = (await admin(request("PUT", { patch, revision: before.revision })))!;
     expect(saved.status).toBe(200);
     const after = await saved.json();
-    expect(after.settings).toEqual(patch);
+    expect(after.settings).toEqual({ ...patch, update_delay_ms: before.settings.update_delay_ms });
     expect((await admin(request("PUT", { patch: { download_retries: 3 }, revision: before.revision })))?.status).toBe(409);
     expect(await readFile(join(legacyDir, "global.yaml"), "utf8")).toBe(source);
     expect(await readFile(selectedFile, "utf8")).toBe(selected);
@@ -136,5 +137,73 @@ test("同时保存末尾 YAML 工具组和新增 TuneWeave 组；旧来源冲突
     expect((await route(request("PUT", { patch: { request_timeout_ms: 31 }, revision: before.revision }), () => true)).status).toBe(500);
     expect(await readFile(file, "utf8")).toBe(local);
     expect((await readLotusGlobalConfig(root)).tools).toEqual({ bin_dir: "fixture-tool-directory" });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("面板只保存下次启动的首轮维护等待，保留已开始的维护与旧字符串配置", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-panel-media-startup-delay-"));
+  try {
+    const root = pathToFileURL(`${dir}/`);
+    const legacyDirectory = join(dir, "plugins/Lotus-Plugin/config");
+    await mkdir(legacyDirectory, { recursive: true });
+    await mkdir(join(dir, "config"));
+    const legacy = "tuneweave: { api_url: https://fixture.invalid/unchanged, request_timeout_ms: 22000, update_delay_ms: ' 13500 ' }\n";
+    const legacyFile = join(legacyDirectory, "global.yaml");
+    await writeFile(legacyFile, legacy);
+    const route = panelMediaEnvironment(root);
+    const before = await (await route(request(), () => true)).json();
+    expect(before.settings.update_delay_ms).toBe(13500);
+    expect(JSON.stringify(before)).not.toContain("fixture.invalid");
+    let resumed = 0;
+    let prepared = 0;
+    let releaseStartup: (() => void) | undefined;
+    const waits: number[] = [];
+    function start() {
+      const reachedWait = Promise.withResolvers<void>();
+      const runtime = startMediaMaintenance({ mediaRuntime: {
+        disconnect: new AbortController().signal,
+        whenReady(onReady) { releaseStartup = onReady; return () => { releaseStartup = undefined; }; },
+      } }, {
+        load: () => loadGlobalConfig(root),
+        createTune() {
+          return {
+            localUrl: () => new URL("http://127.0.0.1:7832"),
+            async resume() { resumed++; return { skipped: true }; },
+            async initialize() { throw new Error("No TuneWeave connection in this fixture"); },
+          };
+        },
+        async prepareTools() { prepared++; throw new Error("No install in this fixture"); },
+        async wait(ms, signal) {
+          waits.push(ms);
+          reachedWait.resolve();
+          await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+          signal.throwIfAborted();
+        },
+      });
+      releaseStartup?.();
+      return { dispose: () => runtime?.dispose(), reachedWait: reachedWait.promise };
+    }
+    const existing = start();
+    await existing.reachedWait;
+    expect(resumed).toBe(1);
+    expect(waits).toEqual([13500]);
+    for (const value of [-1, 2_147_483_648, 1.25]) {
+      expect((await route(request("PUT", { patch: { update_delay_ms: value }, revision: before.revision }), () => true)).status).toBe(400);
+    }
+    const saved = await route(request("PUT", { patch: { update_delay_ms: 5800 }, revision: before.revision }), () => true);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).settings).toEqual({ ...before.settings, update_delay_ms: 5800 });
+    expect(waits).toEqual([13500]);
+    expect(resumed).toBe(1);
+    expect(prepared).toBe(0);
+    await existing.dispose();
+    const next = start();
+    await next.reachedWait;
+    expect(waits).toEqual([13500, 5800]);
+    expect(resumed).toBe(2);
+    expect(prepared).toBe(0);
+    await next.dispose();
+    expect(await readFile(legacyFile, "utf8")).toBe(legacy);
+    expect((await loadGlobalConfig(root)).tuneweave).toEqual({ api_url: "https://fixture.invalid/unchanged", request_timeout_ms: 22000, update_delay_ms: 5800 });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
