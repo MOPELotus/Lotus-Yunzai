@@ -61,14 +61,14 @@ test("the native host gives the original weapon aliases to the correct OneBot an
     const group = await onebot.next("send_msg");
     expect(group.params).toMatchObject({ group_id: 601, message: [{ type: "image" }] });
     const five = imageBytes(group.params);
-    expect(await new Bun.Image(five).metadata()).toMatchObject({ format: "png" });
+    expect(await new Bun.Image(five).metadata()).toMatchObject({ width: 1260, height: 1236, format: "png" });
     group.respond({ message_id: 166 });
 
     await sendMilky("#4星武器");
     const friend = await milky.next("send_private_message");
     expect(friend.params).toMatchObject({ user_id: 43, message: [{ type: "image" }] });
     const four = imageBytes(friend.params);
-    expect(await new Bun.Image(four).metadata()).toMatchObject({ format: "png" });
+    expect(await new Bun.Image(four).metadata()).toMatchObject({ width: 1260, height: 1236, format: "png" });
     expect(four).not.toEqual(five);
     friend.respond({ message_seq: 167 });
 
