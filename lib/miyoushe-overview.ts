@@ -127,7 +127,7 @@ export function createMiyousheOverview({ profileDirectory, readTodaySchedule,
 
     const { date } = checkinScheduleClock(now());
     const plan = await readTodaySchedule?.(date).catch(() => null);
-    const entry = plan?.date === date ? plan.entries.find(item => item.qq === qq && item.profileId === profileId) : undefined;
+    const entry = plan?.date === date ? plan.entries.find(item => !item.manualOnly && item.qq === qq && item.profileId === profileId) : undefined;
     const profile = await profiles.describe(qq, profileId);
     const current = await profiles.checkinSettings(qq, profileId);
     signal?.throwIfAborted();

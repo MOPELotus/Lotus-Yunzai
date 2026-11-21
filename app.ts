@@ -2324,7 +2324,7 @@ if (import.meta.main) {
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
-      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport });
+      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore });
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = {
       historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal,

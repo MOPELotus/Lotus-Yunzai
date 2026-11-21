@@ -9,7 +9,8 @@ import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type CheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
 import type { CheckinScheduleGame } from "./checkin-schedule-plan.ts";
-import { CheckinScheduleWriteError, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
+import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
+import { CheckinScheduleWriteError, withManualCheckinJournals, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
 import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
@@ -93,13 +94,14 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
 }
 
 export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
-  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit,
+  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit, scheduleStore,
     waitForReadRetry = (milliseconds, signal) => setTimeout(milliseconds, undefined, { signal }) }: {
     readonly makeClient?: typeof createProfileHoyoClient;
     readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
     readonly renderReceipt?: typeof renderCheckinReceiptCard;
     readonly manualRelay?: () => ManualRelay | undefined;
     readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
+    readonly scheduleStore?: ReturnType<typeof createCheckinScheduleStore>;
     readonly waitForReadRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   } = {}) {
   const profiles = createProfileStore(directory);
@@ -278,7 +280,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         previousUnconfirmed.delete(target);
         if (previous === "confirmed") return { status: "already" };
         let started = false;
-        const allowed = Boolean(owner && !gameJournal.unknown && !previous);
+        const allowed = Boolean(owner && !gameJournal.unknown && (!previous || (previous === "rejected" && input.source === "manual")));
         const result = await runGameCheckinSequence({ ...sequence, canSubmit: allowed,
           beforeSubmit: async () => {
             await gameJournal.start(target, owner!);
@@ -342,17 +344,20 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             count(previous === "already" ? "community-already" : "community-accepted");
             continue;
           }
-          if (previous === "retryable" && !scoped) {
+          if (previous === "retryable" && !scoped && input.source !== "manual") {
             deferRemaining();
             notes.push("上次请求遇到限流，待社区补跑。");
             break;
           }
-          if (previous && previous !== "retryable") {
+          if (previous && previous !== "retryable" && (previous !== "rejected" || input.source !== "manual")) {
             const rejected = previous === "rejected" || previous === "blocked";
             row.community = rejected ? "失败" : "未确认";
             count(rejected ? "failed" : "unconfirmed");
             notes.push(`${row.label}社区：${rejected ? "上次提交已失败。" : "上次提交结果未确认，请在官方客户端核对。"}`);
-            if (previous === "pending" || previous === "unconfirmed") deferRemaining();
+            if (previous === "pending" || previous === "unconfirmed") {
+              if (input.source === "manual") continue;
+              deferRemaining();
+            }
             if (previous !== "rejected") break;
             continue;
           }
@@ -637,6 +642,19 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     }
   }
 
+  async function runManual(qq: string, profileId: number, input: Pick<Parameters<typeof runProfile>[2],
+    "signal" | "verifySession" | "notify" | "textOnly">): Promise<CheckinRun> {
+    if (!scheduleStore) return completedRun("precheck", false, "签到记录暂不可用。");
+    try {
+      const run = await withManualCheckinJournals(scheduleStore, qq, profileId, input.signal,
+        scope => runProfile(qq, profileId, { ...input, ...scope, source: "manual" }));
+      return run.acquired ? run.value : { status: "busy", reply: "有签到正在执行，请稍后再试。" };
+    } catch (error) {
+      if (input.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return { status: "busy" };
+      return completedRun("precheck", false, error instanceof CheckinScheduleWriteError ? error.message : "无法核对当天签到记录。");
+    }
+  }
+
   const commands: CommandModule = {
     name: "@lotus-yunzai/checkin", commands: {},
     async fallback(_message, context) {
@@ -646,8 +664,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话发送签到指令。";
       const connection = context.privateCredentialSignal;
-      const result = await runProfile(String(context.user_id), profileId, {
-        source: "manual", signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
+      const result = await runManual(String(context.user_id), profileId, {
+        signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
         notify: context.message_type === "private" ? message => context.reply(message) : undefined,
       });
       return result.reply;
@@ -660,8 +678,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       readonly signal: AbortSignal; readonly verifySession: () => Promise<void>;
       readonly notify?: (message: string) => unknown;
     }) {
-      const result = await runProfile(qq, profileId, {
-        source: "manual", signal: AbortSignal.any([lifecycleSignal, signal]), verifySession, notify, textOnly: true,
+      const result = await runManual(qq, profileId, {
+        signal: AbortSignal.any([lifecycleSignal, signal]), verifySession, notify, textOnly: true,
       });
       return {
         status: result.status === "busy" ? "busy" as const : result.ok ? "completed" as const : "failed" as const,

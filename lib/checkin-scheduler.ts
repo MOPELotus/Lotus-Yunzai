@@ -75,7 +75,7 @@ function sameProfile(left: CheckinScheduleEntry, right: CheckinScheduleEntry) {
 }
 
 function due(entry: CheckinScheduleEntry, date: string, at: number) {
-  if (entry.done || entry.runningAt) return false;
+  if (entry.done || entry.runningAt || entry.manualOnly) return false;
   const retry = entry.communityRetry;
   if (retry) {
     const next = Date.parse(retry.nextAt);
@@ -97,6 +97,86 @@ function clearRunning(entry: CheckinScheduleEntry): CheckinScheduleEntry {
   if (entry.stage === legacyUnconfirmedStage) return entry;
   const { runningAt: _runningAt, ...rest } = entry;
   return entry.runningAt && entry.gameWrites === undefined ? { ...rest, gameWritesUnknown: true } : rest;
+}
+
+type CheckinJournals = Pick<CheckinScheduledRunContext, "communityAccountKey" | "communityWrites" | "gameWrites">;
+type UpdateJournal = (change: (entry: CheckinScheduleEntry) => CheckinScheduleEntry) => Promise<void>;
+
+function checkinWriteJournals(initial: CheckinScheduleEntry, update: UpdateJournal, manual = false): CheckinJournals {
+  async function community(forum: string, status: CheckinCommunityWriteStatus, accountKey?: string) {
+    try {
+      await update(entry => {
+        const previous = entry.communityWrites?.[forum];
+        const retry = (previous === "retryable" && (manual || initial.communityRetry?.forums.includes(forum))) ||
+          (previous === "rejected" && manual);
+        if ((status === "pending" ? previous !== undefined && !retry : previous !== "pending") ||
+            (accountKey && entry.communityWriteAccount && accountKey !== entry.communityWriteAccount)) {
+          throw new Error("社区签到提交记录已变化。");
+        }
+        return { ...entry, communityWrites: { ...entry.communityWrites, [forum]: status },
+          ...(accountKey && { communityWriteAccount: accountKey }) };
+      });
+    } catch {
+      throw new CheckinScheduleWriteError("无法确认社区签到提交记录已保存。");
+    }
+  }
+  async function game(target: string, status: CheckinGameWriteStatus, accountKey: string) {
+    try {
+      await update(entry => {
+        const previous = entry.gameWrites?.[target];
+        const allowed = status === "pending" ? !entry.gameWritesUnknown && (previous === undefined || (previous === "rejected" && manual))
+          : previous === "pending" || (status === "confirmed" && previous === "unconfirmed");
+        if (!allowed || (entry.gameWriteAccount && entry.gameWriteAccount !== accountKey)) {
+          throw new Error("游戏签到提交记录已变化。");
+        }
+        return { ...entry, gameWriteAccount: accountKey, gameWrites: { ...entry.gameWrites, [target]: status } };
+      });
+    } catch {
+      throw new CheckinScheduleWriteError("无法确认游戏签到提交记录已保存。");
+    }
+  }
+  return {
+    communityAccountKey: initial.communityRetry?.accountKey ?? initial.communityWriteAccount,
+    communityWrites: { previous: initial.communityWrites ?? {}, start: (forum, owner) => community(forum, "pending", owner), settle: community },
+    gameWrites: { previous: initial.gameWrites ?? {}, accountKey: initial.gameWriteAccount, unknown: initial.gameWritesUnknown === true,
+      start: (target, owner) => game(target, "pending", owner), settle: game },
+  };
+}
+
+export async function withManualCheckinJournals<Result>(
+  store: Pick<ReturnType<typeof createCheckinScheduleStore>, "read" | "update" | "withExecutionLock">,
+  qq: string, profileId: number, signal: AbortSignal,
+  run: (context: CheckinJournals & { readonly verifyDay: () => void }) => Promise<Result>,
+  now = Date.now,
+) {
+  const started = now();
+  const clock = checkinScheduleClock(started);
+  const { date } = clock;
+  function verifyDay() {
+    signal.throwIfAborted();
+    if (checkinScheduleClock(now()).date !== date) throw new DOMException("签到日期已切换。", "AbortError");
+  }
+  return store.withExecutionLock(date, async () => {
+    verifyDay();
+    const dormant: CheckinScheduleEntry = { qq, profileId, name: "", time: clock.time, mode: "fixed", notified: false,
+      done: false, gameWrites: {}, manualOnly: true };
+    const locate = (entries: readonly CheckinScheduleEntry[]) => entries.find(item => sameProfile(item, dormant));
+    const initial = locate((await store.read(date))?.entries ?? []) ?? dormant;
+    if (initial.stage === legacyUnconfirmedStage) throw new CheckinScheduleWriteError("旧版当天签到结果待核对。");
+    const journal = checkinWriteJournals(clearRunning(initial), async change => {
+      await store.update(date, previous => {
+        verifyDay();
+        const plan = previous ?? { ...generateCheckinSchedulePlan({ date, now: started }), manualSeed: true as const };
+        const stored = locate(plan.entries);
+        if (stored?.stage === legacyUnconfirmedStage) throw new Error("旧版当天签到结果待核对。");
+        const entry = stored ?? dormant;
+        const next = change(stored?.runningAt && stored.gameWrites === undefined ? { ...entry, gameWritesUnknown: true } : entry);
+        const entries = stored ? plan.entries.map(item => item === stored ? next : item) : [...plan.entries, next];
+        return { plan: { ...plan, entries }, result: undefined };
+      });
+    }, true);
+    return run({ ...journal, verifyDay });
+  });
 }
 
 export function createCheckinScheduler({ store, config, listProfiles, runProfile, onComplete, now = Date.now, random }: SchedulerOptions) {
@@ -155,66 +235,24 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
           });
           if (!claim) continue;
           verifyDay();
-          const currentClaim = claim;
-          async function recordCommunityWrite(forum: string, status: CheckinCommunityWriteStatus, accountKey?: string) {
-            try {
-              await store.update(date, plan => {
-                verifyDay();
-                const entry = plan?.entries.find(item => sameProfile(item, currentClaim));
-                if (!plan || !entry || entry.runningAt !== currentClaim.runningAt || entry.done) {
-                  throw new Error("自动签到档案已失去执行资格。");
-                }
-                const previous = entry.communityWrites?.[forum];
-                const retry = previous === "retryable" && currentClaim.communityRetry?.forums.includes(forum);
-                if ((status === "pending" ? previous !== undefined && !retry : previous !== "pending") ||
-                    (accountKey && entry.communityWriteAccount && accountKey !== entry.communityWriteAccount)) {
-                  throw new Error("社区签到提交记录已变化。");
-                }
-                const next = { ...entry, communityWrites: { ...entry.communityWrites, [forum]: status },
-                  ...(accountKey && { communityWriteAccount: accountKey }) };
-                return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
-              });
-            } catch {
-              throw new CheckinScheduleWriteError("无法确认社区签到提交记录已保存。");
-            }
-          }
-          async function recordGameWrite(target: string, status: CheckinGameWriteStatus, accountKey: string) {
-            try {
-              await store.update(date, plan => {
-                verifyDay();
-                const entry = plan?.entries.find(item => sameProfile(item, currentClaim));
-                if (!plan || !entry || entry.runningAt !== currentClaim.runningAt || entry.done ||
-                    (entry.gameWriteAccount !== undefined && entry.gameWriteAccount !== accountKey)) {
-                  throw new Error("游戏签到档案已失去执行资格。");
-                }
-                const previous = entry.gameWrites?.[target];
-                const allowed = status === "pending" ? !entry.gameWritesUnknown && previous === undefined
-                  : previous === "pending" || (status === "confirmed" && previous === "unconfirmed");
-                if (!allowed) throw new Error("游戏签到提交记录已变化。");
-                const next = { ...entry, gameWriteAccount: accountKey, gameWrites: { ...entry.gameWrites, [target]: status } };
-                return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
-              });
-            } catch {
-              throw new CheckinScheduleWriteError("无法确认游戏签到提交记录已保存。");
-            }
-          }
+          const journal = checkinWriteJournals(claim, async change => {
+            await store.update(date, plan => {
+              verifyDay();
+              const entry = plan?.entries.find(item => sameProfile(item, claim));
+              if (!plan || !entry || entry.runningAt !== claim.runningAt || entry.done) {
+                throw new Error("自动签到档案已失去执行资格。");
+              }
+              const next = change(entry);
+              return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
+            });
+          });
           let outcome: CheckinScheduledOutcome;
           try {
             outcome = await runProfile(claim, {
               ...context,
               communityRetryForums: claim.communityRetry?.forums,
               gameRetryKeys: claim.communityRetry?.games,
-              communityAccountKey: claim.communityRetry?.accountKey ?? claim.communityWriteAccount,
-              communityWrites: {
-                previous: claim.communityWrites ?? {},
-                start: (forum, accountKey) => recordCommunityWrite(forum, "pending", accountKey),
-                settle: recordCommunityWrite,
-              },
-              gameWrites: {
-                previous: claim.gameWrites ?? {}, accountKey: claim.gameWriteAccount, unknown: claim.gameWritesUnknown === true,
-                start: (target, accountKey) => recordGameWrite(target, "pending", accountKey),
-                settle: recordGameWrite,
-              },
+              ...journal,
             });
           } catch {
             // The request may have been sent. Leave the claim for a later read-backed recovery.

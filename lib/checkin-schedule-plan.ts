@@ -74,6 +74,7 @@ export interface CheckinScheduleEntry {
   readonly gameWrites?: Readonly<Record<string, CheckinGameWriteStatus>>;
   readonly gameWriteAccount?: string;
   readonly gameWritesUnknown?: true;
+  readonly manualOnly?: true;
 }
 
 export interface CheckinSchedulePlan {
@@ -83,6 +84,7 @@ export interface CheckinSchedulePlan {
   readonly window: ScheduleWindow & { readonly notify_before: boolean };
   readonly generatedAt: string;
   readonly entries: readonly CheckinScheduleEntry[];
+  readonly manualSeed?: true;
 }
 
 export const legacyUnconfirmedStage = "legacy-unconfirmed";
@@ -289,12 +291,28 @@ function entryIndex(entries: readonly CheckinScheduleEntry[]) {
   return result;
 }
 
+function withManualJournal(planned: CheckinScheduleEntry, manual: CheckinScheduleEntry) {
+  const { manualOnly: _manualOnly, ...journal } = manual;
+  return { ...journal, ...planned };
+}
+
 function inLateWindow(date: string, scheduler: Scheduler, clock: Clock) {
   return date === clock.tomorrow || (date === clock.date && clock.minute <= requiredMinute(scheduler.late.window_end));
 }
 
 export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
   { profiles = [], config, now, random = Math.random }: ReconcileContext = {}): CheckinSchedulePlan {
+  if (existing.manualSeed) {
+    const initial = generateCheckinSchedulePlan({ date: existing.date, profiles, config, now, random });
+    const previous = entryIndex(existing.entries);
+    const planned = initial.entries.map(entry => {
+      const key = keyFor(entry);
+      const current = previous.get(key);
+      previous.delete(key);
+      return current?.manualOnly ? withManualJournal(entry, current) : current ?? entry;
+    });
+    return { ...initial, entries: [...planned, ...previous.values()].sort(compareEntries) };
+  }
   const scheduler = configOf(config);
   const clock = checkinScheduleClock(now);
   const previous = entryIndex(existing.entries);
@@ -308,7 +326,11 @@ export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
     const current = previous.get(key);
     previous.delete(key);
     const slot = mode === "random" ? randomIndex++ : 0;
-    if (current && (current.done || current.runningAt || current.communityRetry || current.communityWrites || current.gameWriteAccount || current.gameWritesUnknown ||
+    if (current?.manualOnly) {
+      const planned = mode === "fixed" ? entryFor(profile, fixedTime(profile, scheduler), mode)
+        : scheduler.late.enabled && inLateWindow(existing.date, scheduler, clock) ? lateEntry(profile, scheduler, lateCount++, clock) : undefined;
+      entries.push(planned ? withManualJournal(planned, current) : current);
+    } else if (current && (current.done || current.runningAt || current.communityRetry || current.communityWrites || current.gameWriteAccount || current.gameWritesUnknown ||
         (mode === "random" && (current.mode === "random" || current.mode === "late_random")))) {
       entries.push(current);
     } else if (mode === "fixed") {
@@ -337,7 +359,8 @@ export function addLateCheckinScheduleProfile(plan: CheckinSchedulePlan | null |
   if (!profile.enabled) return { plan: plan ?? null, reason: "profile_disabled" };
   if (!plan) return { plan: null, reason: "plan_not_found" };
   const previous = entryIndex(plan.entries);
-  if (previous.has(key)) return { plan, reason: "entry_exists" };
+  const current = previous.get(key);
+  if (current && !current.manualOnly) return { plan, reason: "entry_exists" };
   const scheduler = configOf(config);
   if (!scheduler.late.enabled) return { plan, reason: "late_registration_disabled" };
   const clock = checkinScheduleClock(now);
@@ -346,9 +369,11 @@ export function addLateCheckinScheduleProfile(plan: CheckinSchedulePlan | null |
       (mode === "random" && !inLateWindow(plan.date, scheduler, clock))) {
     return { plan, reason: "late_window_expired" };
   }
-  const entry = mode === "fixed" ? entryFor(profile, fixedTime(profile, scheduler), mode)
+  const planned = mode === "fixed" ? entryFor(profile, fixedTime(profile, scheduler), mode)
     : lateEntry(profile, scheduler, [...previous.values()].filter(item => item.mode === "late_random").length, clock);
-  return { plan: { ...plan, entries: [...previous.values(), entry].sort(compareEntries) }, entry };
+  const entry = current ? withManualJournal(planned, current) : planned;
+  previous.set(key, entry);
+  return { plan: { ...plan, entries: [...previous.values()].sort(compareEntries) }, entry };
 }
 
 function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | undefined {
@@ -391,7 +416,7 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
   const entry = record(value);
   if (!entry) invalid();
   const { qq, profileId = 1, name = "", time, mode, notified = false, noticeAttemptedAt, done = false,
-    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt, communityWriteAccount, gameWriteAccount, gameWritesUnknown } = entry;
+    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt, communityWriteAccount, gameWriteAccount, gameWritesUnknown, manualOnly } = entry;
   if (typeof qq !== "string" || !validIdentity(qq, profileId) || (mode !== "late_random" && !isMode(mode)) ||
       typeof time !== "string" || !Number.isInteger(checkinScheduleMinute(time)) ||
       typeof name !== "string" || typeof notified !== "boolean" || typeof done !== "boolean" ||
@@ -402,7 +427,7 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
       (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt)) ||
       (communityWriteAccount !== undefined && (typeof communityWriteAccount !== "string" || !communityAccountPattern.test(communityWriteAccount))) ||
       (gameWriteAccount !== undefined && (typeof gameWriteAccount !== "string" || !communityAccountPattern.test(gameWriteAccount))) ||
-      (gameWritesUnknown !== undefined && gameWritesUnknown !== true)) invalid();
+      (gameWritesUnknown !== undefined && gameWritesUnknown !== true) || (manualOnly !== undefined && manualOnly !== true)) invalid();
   const communityRetry = parseCommunityRetry(entry.communityRetry);
   const communityWrites = parseWrites(entry.communityWrites, communityWriteStatuses, key => communityWriteForums.has(key));
   const gameWrites = parseWrites(entry.gameWrites, gameWriteStatuses, key => gameWriteKey.test(key));
@@ -411,19 +436,20 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
     ...(lateRegisteredAt && { lateRegisteredAt }), ...(runningAt && { runningAt }), ...(doneAt && { doneAt }),
     ...(ok !== undefined && { ok }), ...(stage !== undefined && { stage }), ...(message !== undefined && { message }),
     ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }), ...(communityWriteAccount && { communityWriteAccount }),
-    ...(gameWrites && { gameWrites }), ...(gameWriteAccount && { gameWriteAccount }), ...(gameWritesUnknown && { gameWritesUnknown }) };
+    ...(gameWrites && { gameWrites }), ...(gameWriteAccount && { gameWriteAccount }), ...(gameWritesUnknown && { gameWritesUnknown }),
+    ...(manualOnly && { manualOnly }) };
 }
 
 /** Validate the on-disk version 1 shape before its entries can be scheduled. */
 export function parseCheckinSchedulePlan(value: unknown): CheckinSchedulePlan {
   const plan = record(value);
   if (!plan) invalid();
-  const { version, date, mode, generatedAt, entries } = plan;
+  const { version, date, mode, generatedAt, entries, manualSeed } = plan;
   const window = record(plan.window);
   if (version !== 1 || !isCheckinScheduleDate(date) || !isMode(mode) || !isTimestamp(generatedAt) ||
       !window || typeof window.window_start !== "string" || typeof window.window_end !== "string" ||
-      typeof window.notify_before !== "boolean" || !Array.isArray(entries)) invalid();
+      typeof window.notify_before !== "boolean" || !Array.isArray(entries) || (manualSeed !== undefined && manualSeed !== true)) invalid();
   const bounds = checkedWindow(window.window_start, window.window_end);
-  return { version, date, mode, window: { ...bounds, notify_before: window.notify_before }, generatedAt,
+  return { version, date, mode, window: { ...bounds, notify_before: window.notify_before }, generatedAt, ...(manualSeed && { manualSeed }),
     entries: [...entryIndex(entries.map(parseEntry)).values()].sort(compareEntries) };
 }
