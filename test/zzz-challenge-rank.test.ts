@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { normalizeZzzDeadly, normalizeZzzShiyu } from "@lotus-yunzai/hoyo-client";
+import { normalizeZzzDeadly, normalizeZzzHoloBoss, normalizeZzzShiyu } from "@lotus-yunzai/hoyo-client";
 import { rankCommand, rankRow, sortedRankRows, type RankMode, type RankProfile, type RankRow } from "../plugins/zzz/challenge-rank-model.ts";
 import { parseRankConfig } from "../plugins/zzz/challenge-rank-store.ts";
 
@@ -78,4 +78,29 @@ test("危局试炼先比较星级，绝境合计真实分数，缺绝境或错�
     const players: readonly RankRow[] = [row, { ...row, bonus: 8, score: 140000 }];
     expect(sortedRankRows(mode, players)[0]?.score).toBe(mode === "DEADLY" ? 140000 : 163000);
   }
+});
+
+test("拟境榜校验本期，按星数、总耗时、无伤数和记录时间评分", () => {
+  expect(rankCommand("%拟境排名")).toEqual({ kind: "board", mode: "HOLO_BOSS" });
+  expect(rankCommand("/ZZZ湮灭战排名")).toEqual({ kind: "board", mode: "HOLO_BOSS" });
+  expect(rankCommand("%开启拟境湮灭战群排名2")).toEqual({ kind: "visibility", enabled: true, profileId: 2, types: ["HOLO_BOSS"] });
+  expect(rankCommand("%off湮灭排名")).toEqual({ kind: "visibility", enabled: false, profileId: 1, types: ["HOLO_BOSS"] });
+  expect(rankCommand("%上期拟境排名")).toBeUndefined();
+  const snapshot = normalizeZzzHoloBoss({
+    unlock: true, start_time: start, end_time: end,
+    list: [{ star: 4, challenge_time: { minute: 0, second: 0 }, boss: { medal: { is_no_injured: true } } },
+      { star: 3, challenge_time: { minute: 1, second: 5 } }],
+  }, identity);
+  const entry = rankRow("HOLO_BOSS", role, snapshot, now, "legacy", now - 1234)!;
+  expect(entry).toMatchObject({ bonus: 7, score: 65, latest: now - 1234, holo: { undamaged: 1 } });
+  expect(rankRow("HOLO_BOSS", role, { ...snapshot, scheduleType: 2 }, now, "current")).toBeUndefined();
+  expect(rankRow("HOLO_BOSS", role, snapshot, lastMillis + 1, "current")).toBeUndefined();
+  expect(rankRow("HOLO_BOSS", role, { ...snapshot, totalDuration: undefined }, now, "current")).toBeUndefined();
+  expect(sortedRankRows("HOLO_BOSS", [
+    { ...entry, nickname: "同一成绩较晚", latest: now - 1000 },
+    { ...entry, nickname: "无伤多", holo: { ...entry.holo!, undamaged: 2 } },
+    { ...entry, nickname: "同一成绩较早" },
+    { ...entry, nickname: "总耗时少", score: 64 },
+    { ...entry, nickname: "星数多", bonus: 8, score: 70 },
+  ]).map(item => item.nickname)).toEqual(["星数多", "总耗时少", "无伤多", "同一成绩较早", "同一成绩较晚"]);
 });
