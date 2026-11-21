@@ -1,6 +1,7 @@
-import { link, lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { lockFile } from "./file-lock.ts";
+import { exists, move, removeJournal, syncDirectory, writeJournal } from "./filesystem-transaction.ts";
 
 interface Activation {
   readonly id: string;
@@ -22,20 +23,6 @@ export function isUpdateDotenvPath(name: string): boolean {
 }
 const idPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 
-function filesystemCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException | undefined)?.code;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if (filesystemCode(error) === "ENOENT") return false;
-    throw error;
-  }
-}
-
 function within(parent: string, path: string): boolean {
   const part = relative(parent, path);
   return !isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`);
@@ -54,52 +41,12 @@ function statePaths(paths: readonly string[]): string[] {
   return unique;
 }
 
-async function syncDirectory(path: string) {
-  const handle = await open(path, "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
-async function move(source: string, destination: string) {
-  if (await exists(destination)) throw new Error("版本切换目标已存在。");
-  await rename(source, destination);
-  const parent = dirname(source);
-  await syncDirectory(parent);
-  if (dirname(destination) !== parent) await syncDirectory(dirname(destination));
-}
-
 function journalPath(root: string) {
   return join(dirname(root), `.${basename(root)}.lotus-update.json`);
 }
 
 function backupPath(root: string, id: string) {
   return join(dirname(root), `.${basename(root)}.lotus-previous-${id}`);
-}
-
-async function writeJournal(path: string, entry: Activation, exclusive: boolean) {
-  const temporary = `${path}.${crypto.randomUUID()}`;
-  try {
-    const handle = await open(temporary, "wx", 0o600);
-    try {
-      await handle.writeFile(JSON.stringify(entry));
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    if (exclusive) await link(temporary, path);
-    else await rename(temporary, path);
-    await syncDirectory(dirname(path));
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-async function removeJournal(path: string) {
-  await rm(path);
-  await syncDirectory(dirname(path));
 }
 
 async function checkedParents(root: string, path: string, create: boolean) {

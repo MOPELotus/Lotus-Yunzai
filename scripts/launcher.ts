@@ -6,6 +6,7 @@ import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
 import { lockFile, managedStartupLockPath } from "../lib/file-lock.ts";
 import { stopForeground } from "../lib/foreground-control.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
+import { recoverMigrationPublicationForStartup } from "../lib/migration-publication.ts";
 
 const name = "lotus-yunzai";
 const startToken = "LOTUS_PM2_START_TOKEN";
@@ -444,6 +445,7 @@ async function run() {
   process.on("SIGTERM", interrupt);
   try {
     if (command.action === "stop") return await pm2(Bun.which("pm2") ?? undefined, directory, "stop");
+    await recoverMigrationPublicationForStartup(directory);
     if (command.action === "start:bg" || command.action === "restart") {
       return await pm2(pm2Executable(), directory, command.action, [], {
         signal: controller.signal,

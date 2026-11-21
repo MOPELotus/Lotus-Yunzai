@@ -11,6 +11,7 @@ import { legacyScriptHash, readFlatScript } from "./plugins/file-watch.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./process-receipts.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
+import { recoverMigrationPublicationWithHostLock } from "./migration-publication.ts";
 import { prepareAllUpdates, prepareUpdate, type ReadyBatchUpdate, type ReadyUpdate } from "./update-preflight.ts";
 import { stageUpdate } from "./update-staging.ts";
 import { readManagedHttpsPaths } from "./update-https-paths.ts";
@@ -336,6 +337,7 @@ export function createManagedSupervisor(directory: string, options: {
       started = true;
       initial = (async () => {
         await recoverUpdateActivation(root);
+        await recoverMigrationPublicationWithHostLock(root);
         await startWorker();
       })().catch((error: unknown) => {
         if (!current && !stopped) completion.resolve(1);
