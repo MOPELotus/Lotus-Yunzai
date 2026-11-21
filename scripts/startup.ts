@@ -84,7 +84,7 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   if (!ready || requested !== undefined) {
     const channel = requested ?? previous ?? await askAtlasChannel(signal);
     if (previous !== channel) {
-      await persistAtlasChannel(root, channel, previous, signal);
+      await persistAtlasChannel(root, channel, previous, { signal, canWrite: () => true });
     }
     signal.throwIfAborted();
     if (!ready) await initializePublicAtlas(root, directory, channel, signal);
