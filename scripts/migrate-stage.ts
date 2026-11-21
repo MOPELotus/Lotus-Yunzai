@@ -8,6 +8,7 @@ import { stageLegacyCoreConfig } from "../lib/migration-core-config.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
 import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
+import { stageLegacyKeywords } from "../lib/migration-keywords.ts";
 import { stageLegacyMediaState } from "../lib/migration-media-state.ts";
 import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
@@ -39,6 +40,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const sharedGameHistory = await stageLegacySharedGameHistory(plan.source, state.directory, signal);
     const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal);
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
+    const keywords = await stageLegacyKeywords(plan.source, state.directory, signal);
     const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
     const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal);
     const tuneweave = (await readOptionalLocalConfig(Bun.pathToFileURL(`${state.directory}/`), "global"))?.tuneweave;
@@ -54,7 +56,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
+      sharedGameHistory, coreConfig, groupConfig, keywords, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
       shopAudit, redeem, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
