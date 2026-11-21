@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { cp, link, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,12 +7,15 @@ import { fileURLToPath } from "node:url";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 import { accountScopePermission, readMasterPermissions } from "../lib/permissions.ts";
 import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
+import { stageLegacyOfficialBindings } from "../lib/migration-official-bindings.ts";
 import { readServerSettings } from "../lib/server.ts";
 import { planLegacyState, stageLegacyState } from "../lib/migration-state.ts";
 import { stageMigration } from "../scripts/migrate-stage.ts";
 import { migrateInstallation } from "../scripts/migrate.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
+const oldOfficial = "data/db/data.db";
+const sqliteArchive = "backup/legacy-official-bindings";
 const group = "config/config/group.yaml";
 const user = 42;
 const uid = "100000002";
@@ -42,10 +46,92 @@ async function fixture(run: (source: string, target: string) => Promise<void>) {
   }
 }
 
+async function frozenSqlite(source: string, wal: boolean) {
+  const writer = await mkdtemp(join(dirname(source), "sqlite-writer-"));
+  const database = join(writer, "data.db");
+  const db = new Database(database);
+  try {
+    db.run("CREATE TABLE Users (id TEXT PRIMARY KEY, ltuids TEXT)");
+    db.run("CREATE TABLE MysUsers (ltuid INTEGER PRIMARY KEY, ck TEXT)");
+    if (wal) {
+      db.run("PRAGMA journal_mode=WAL");
+      db.run("PRAGMA wal_autocheckpoint=0");
+    }
+    db.run("INSERT INTO Users VALUES (?, ?)", ["42", "102"]);
+    db.run("INSERT INTO MysUsers VALUES (?, ?)", [102, "fixture-cookie"]);
+    const suffixes = wal ? ["", "-wal", "-shm"] : [""];
+    const snapshots = new Map<string, Buffer<ArrayBuffer>>();
+    for (const suffix of suffixes) {
+      const bytes = await readFile(database + suffix);
+      await put(source, oldOfficial + suffix, bytes);
+      snapshots.set(suffix, bytes);
+    }
+    return snapshots;
+  } finally {
+    db.close();
+    await rm(writer, { recursive: true, force: true });
+  }
+}
+
+test("默认路径的旧 SQLite 只保全原件，缺件或损坏降级，链接不跟随", () => fixture(async (source, target) => {
+  expect(await stageLegacyOfficialBindings(source, target)).toEqual({ type: "absent", files: 0 });
+  const originals = await frozenSqlite(source, false);
+  expect(await stageLegacyOfficialBindings(source, target)).toEqual({ type: "sqlite", files: 1 });
+  expect(await readdir(join(target, sqliteArchive))).toEqual(["data.db"]);
+  expect(await readFile(join(target, sqliteArchive, "data.db"))).toEqual(originals.get("")!);
+  expect((await lstat(join(target, sqliteArchive))).mode & 0o777).toBe(0o700);
+  expect((await lstat(join(target, sqliteArchive, "data.db"))).mode & 0o777).toBe(0o600);
+  async function archivePartially(files: Record<string, string | Buffer>) {
+    const next = await mkdtemp(join(dirname(target), "partial-stage-"));
+    expect(await stageLegacyOfficialBindings(source, next)).toEqual({ type: "incomplete", files: Object.keys(files).length });
+    const archive = join(next, sqliteArchive);
+    expect((await readdir(archive)).sort()).toEqual(Object.keys(files).sort());
+    for (const [name, bytes] of Object.entries(files)) expect(await readFile(join(archive, name))).toEqual(Buffer.from(bytes));
+  }
+  await put(source, oldOfficial + "-shm", "fixture-orphan-shm");
+  await archivePartially({ "data.db": originals.get("")! });
+  await rm(join(source, oldOfficial + "-shm"));
+  await put(source, oldOfficial + "-journal", "fixture-rollback-journal");
+  await archivePartially({ "data.db": originals.get("")!, "data.db-journal": "fixture-rollback-journal" });
+  await rm(join(source, oldOfficial + "-journal"));
+  await rm(join(source, oldOfficial));
+  await put(source, oldOfficial + "-wal", "fixture-orphan-wal");
+  await archivePartially({ "data.db-wal": "fixture-orphan-wal" });
+  await rm(join(source, oldOfficial + "-wal"));
+  const corrupt = Buffer.from(originals.get("")!);
+  corrupt.write("invalid", 0);
+  await put(source, oldOfficial, corrupt);
+  await archivePartially({ "data.db": corrupt });
+  await rm(join(source, oldOfficial));
+  await symlink(join(target, sqliteArchive, "data.db"), join(source, oldOfficial));
+  const next = await mkdtemp(join(dirname(target), "link-stage-"));
+  expect(await stageLegacyOfficialBindings(source, next)).toEqual({ type: "unreadable", files: 0 });
+  expect(await readdir(next)).toEqual([]);
+}));
+
+test("截断或校验不通过的 WAL 仍按原字节保全，标记为不完整", () => fixture(async (source, target) => {
+  const originals = await frozenSqlite(source, true);
+  const wal = originals.get("-wal")!;
+  const corrupted = Buffer.from(wal);
+  corrupted[56] = corrupted[56]! ^ 7;
+  for (const invalid of [wal.subarray(0, wal.length - 1), corrupted]) {
+    await put(source, oldOfficial + "-wal", invalid);
+    const next = await mkdtemp(join(dirname(target), "partial-wal-"));
+    expect(await stageLegacyOfficialBindings(source, next)).toEqual({ type: "incomplete", files: 2 });
+    expect(await readFile(join(next, sqliteArchive, "data.db-wal"))).toEqual(invalid);
+  }
+  await put(source, oldOfficial + "-wal", wal);
+  await rm(join(source, oldOfficial + "-shm"));
+  expect(await stageLegacyOfficialBindings(source, target)).toEqual({ type: "sqlite-with-wal", files: 2 });
+  expect(await readFile(join(target, sqliteArchive, "data.db-wal"))).toEqual(wal);
+  expect(await Bun.file(join(source, oldOfficial + "-shm")).exists()).toBe(false);
+}));
+
 test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据和插件，可重试且不改旧安装", () => fixture(async (source, target) => {
   const plugin = "plugins/miao-plugin/package.json";
   const manifest = '{"name":"miao-plugin"}\n';
   await put(source, plugin, manifest);
+  const official = await frozenSqlite(source, true);
   const compatible = "plugins/small-local/index.js";
   const script = "export const localFixture = true;\n";
   await put(source, compatible, script);
@@ -87,6 +173,7 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(staged.backup).toMatchObject({ status: "published", archived: 3 });
   expect(staged.retained).toMatchObject({ status: "published", retained: [{ path: "plugins/small-local" }] });
   expect(staged.profiles).toEqual({ sources: 2, imported: 1, unchanged: 1 });
+  expect(staged.officialBindings).toEqual({ type: "sqlite-with-wal", files: 2 });
   expect(staged.schedules).toEqual({ days: 1, entries: 2, emptyFiles: 1 });
   expect(await readFile(join(staged.directory, "plugin-archive", "backup", plugin), "utf8")).toBe(manifest);
   expect(await readFile(join(staged.directory, "plugin-archive", compatible), "utf8")).toBe(script);
@@ -108,11 +195,40 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(await readFile(join(source, plugin), "utf8")).toBe(manifest);
 
   await put(source, legacyPool, pool(ids[0]));
+  const invalidWal = Buffer.from("incomplete-wal-fixture");
+  await put(source, oldOfficial + "-wal", invalidWal);
+  const partial = await stageMigration(source, target);
+  expect(partial.officialBindings).toEqual({ type: "incomplete", files: 2 });
+  expect(await readFile(join(partial.state.directory, sqliteArchive, "data.db-wal"))).toEqual(invalidWal);
+  expect(await readFile(join(partial.state.directory, "data/users/42.yaml"), "utf8")).toBe(profile);
+  await put(source, oldOfficial + "-wal", official.get("-wal")!);
   const result = await migrateInstallation(source, target);
   expect(result).toMatchObject({ status: "published", archiveCount: 3, profiles: { imported: 1 },
     schedules: { days: 1, entries: 2, emptyFiles: 1 },
     heldPlugins: [{ path: "plugins/missing-dependency", reason: "unresolved-dependency" }] });
   expect(result.paths).toEqual(["backup", "config", "data", "plugins/small-local"]);
+  expect(result.officialBindings).toEqual({ type: "sqlite-with-wal", files: 2 });
+  const archive = join(target, sqliteArchive);
+  expect((await lstat(join(target, "backup"))).mode & 0o777).toBe(0o700);
+  expect((await lstat(archive)).mode & 0o777).toBe(0o700);
+  expect((await readdir(archive)).sort()).toEqual(["data.db", "data.db-wal"]);
+  for (const [suffix, bytes] of official) {
+    expect(await readFile(join(source, oldOfficial + suffix))).toEqual(bytes);
+    if (suffix !== "-shm") {
+      const file = join(archive, "data.db" + suffix);
+      expect(await readFile(file)).toEqual(bytes);
+      expect((await lstat(file)).mode & 0o777).toBe(0o600);
+    }
+  }
+  expect(await Bun.file(join(target, oldOfficial)).exists()).toBe(false);
+  const inspection = await mkdtemp(join(dirname(target), "official-backup-check-"));
+  await cp(archive, inspection, { recursive: true });
+  const db = new Database(join(inspection, "data.db"), { readonly: true });
+  try {
+    expect(db.query("SELECT count(*) AS count FROM MysUsers").get()).toEqual({ count: 1 });
+  } finally {
+    db.close();
+  }
   expect(await readFile(join(target, "backup", plugin), "utf8")).toBe(manifest);
   expect(result.gameData.archived).toEqual([{ path: "backup/legacy-data/textJson", files: 1, bytes: 3 }]);
   expect(await readFile(join(target, "backup/legacy-data/textJson/fixture.json"), "utf8")).toBe("{}\n");
@@ -148,7 +264,10 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(await readFile(join(target, "backup", oldSchedule), "utf8")).toBe(originalSchedule);
   expect(await Bun.file(join(target, plugin)).exists()).toBe(false);
   expect(await readFile(join(source, plugin), "utf8")).toBe(manifest);
-  expect(await migrateInstallation(source, target)).toMatchObject({ status: "already-published", paths: result.paths });
+  expect(await migrateInstallation(source, target)).toMatchObject({ status: "already-published", paths: result.paths,
+    officialBindings: { type: "sqlite-with-wal", files: 2 } });
+  expect(await readFile(join(archive, "data.db-wal"))).toEqual(official.get("-wal")!);
+  expect(await readdir(join(target, "data/users"))).toEqual(["42.yaml"]);
 }));
 
 test("旧群配置和星铁逐抽可独立暂存，并由隔离宿主原指令实际读取", () => fixture(async (source, target) => {

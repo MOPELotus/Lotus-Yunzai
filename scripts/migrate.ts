@@ -15,6 +15,7 @@ interface PreparedMigration {
   readonly report: {
     readonly archiveCount: number;
     readonly profiles: Staged["profiles"];
+    readonly officialBindings?: Staged["officialBindings"];
     readonly schedules: Staged["schedules"];
     readonly gameData: Staged["gameData"];
     readonly sharedGameHistory: Staged["sharedGameHistory"];
@@ -72,6 +73,7 @@ async function prepare(source: string, target: string, directory: string, signal
       report: {
         archiveCount: staged.backup.archived,
         profiles: staged.profiles,
+        officialBindings: staged.officialBindings,
         schedules: staged.schedules,
         gameData: staged.gameData,
         sharedGameHistory: staged.sharedGameHistory,

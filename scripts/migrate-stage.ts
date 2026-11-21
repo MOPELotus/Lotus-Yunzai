@@ -12,6 +12,7 @@ import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
 import { stageLegacyKeywords } from "../lib/migration-keywords.ts";
 import { stageLegacyMediaState } from "../lib/migration-media-state.ts";
 import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
+import { stageLegacyOfficialBindings } from "../lib/migration-official-bindings.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
 import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-history.ts";
@@ -34,6 +35,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal);
     const state = await stageLegacyState(plan.source, directory, signal);
     const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
+    const officialBindings = await stageLegacyOfficialBindings(plan.source, state.directory, signal);
     const stagedReminders = await stageLegacyDailyNoteReminders(plan.source, state.directory, signal);
     const shopAudit = await stageLegacyShopAudit(plan.source, state.directory, signal);
     const redeem = await stageLegacyRedeemState(plan.source, state.directory, signal);
@@ -59,7 +61,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
       sharedGameHistory, coreConfig, groupConfig, keywords, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
-      shopAudit, redeem, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
+      shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;
