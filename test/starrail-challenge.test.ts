@@ -7,7 +7,7 @@ import { createProfileStore } from "../packages/account/index.ts";
 import { createHoyoClient } from "../packages/hoyo-client/index.ts";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import { readStarRailChallenge } from "../packages/hoyo-client/starrail-challenge.ts";
-import { buildStarRailAbyssSections } from "../plugins/starrail/challenge-card.js";
+import { buildStarRailAbyssSections } from "../plugins/starrail/challenge-card.ts";
 import { normalizeStarRailChallenge, parseChallengeQuery } from "../plugins/starrail/challenge-model.ts";
 
 const profile: ProfileRequestContext = {
