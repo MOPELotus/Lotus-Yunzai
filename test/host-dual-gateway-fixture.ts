@@ -61,7 +61,7 @@ interface Gateways {
 }
 
 export async function withDualGatewayFixture(token: string, ownerConfig: string, run: (gateway: Gateways) => Promise<void>,
-  timeoutMs = 2_000, preload?: string,
+  timeoutMs = 2_000, preload?: string, prepare?: (root: string) => Promise<void>,
 ) {
   const root = await mkdtemp(join(tmpdir(), "lotus-dual-gateway-"));
   const milky = queue(timeoutMs);
@@ -90,6 +90,7 @@ export async function withDualGatewayFixture(token: string, ownerConfig: string,
     ].join("\n"));
     disableMemberPrewarm(root);
     if (preload) await writeFile(join(root, "offline.ts"), preload);
+    await prepare?.(root);
     const host = Bun.spawn([process.execPath, ...(preload ? ["--preload", "./offline.ts"] : []), "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
