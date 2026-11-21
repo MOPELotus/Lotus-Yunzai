@@ -3,7 +3,7 @@ import { constants, linkSync, unlinkSync, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { isCheckinScheduleDate, legacyUnconfirmedStage, parseCheckinSchedulePlan,
+import { checkinHandbackHoldStage, isCheckinScheduleDate, legacyUnconfirmedStage, parseCheckinSchedulePlan,
   type CheckinScheduleEntry, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 import { lockFile } from "./file-lock.ts";
 
@@ -98,6 +98,15 @@ function mergePlan(current: CheckinSchedulePlan | undefined, source: CheckinSche
     }
     if (!previous || isDeepStrictEqual(previous, original)) {
       entries.set(key(original), historical);
+      continue;
+    }
+    // A handback placeholder is a stop marker for the old scheduler. A verified,
+    // inactive retry in the original plan remains the authority for modern recovery.
+    if (original.stage === checkinHandbackHoldStage && original.done && !original.runningAt &&
+        !previous.done && !previous.runningAt && previous.communityRetry?.verifiedUnsent) {
+      const noticeAttemptedAt = previous.noticeAttemptedAt ?? original.noticeAttemptedAt;
+      entries.set(key(original), { ...previous, notified: previous.notified || original.notified,
+        ...(noticeAttemptedAt && { noticeAttemptedAt }) });
       continue;
     }
     if (previous.stage === legacyUnconfirmedStage && historical.stage === legacyUnconfirmedStage && !previous.runningAt) {

@@ -80,6 +80,7 @@ export interface CheckinSchedulePlan {
 }
 
 export const legacyUnconfirmedStage = "legacy-unconfirmed";
+export const checkinHandbackHoldStage = "handoff-held";
 
 interface PlanContext {
   readonly config?: CheckinScheduleConfig;
