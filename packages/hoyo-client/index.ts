@@ -19,7 +19,7 @@ import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions 
 import { readGenshinDecks, readGenshinGcgCollection, type GenshinGcgCollectionScope } from "./genshin-gcg.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
-import { createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents, type GenshinPanelOptions } from "./genshin-panel.ts";
+import { createGenshinChallengeReader, createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents, type GenshinChallengeOptions, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailPersonalRoster, type StarRailRosterOptions } from "./starrail-roster.ts";
@@ -516,6 +516,9 @@ export function createHoyoClient(
       readonly includeExploration?: boolean;
     }) {
       return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster, includeExploration), isGenshinPersonalRecordCookieExpired);
+    },
+    fetchGenshinChallenge(source: ProfileRequestContext, options: GenshinChallengeOptions) {
+      return readForProfile(source, options, createGenshinChallengeReader(), isGenshinPersonalRecordCookieExpired);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);

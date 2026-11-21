@@ -53,6 +53,8 @@ type ZzzPeriodRecord = "zzz-hadal" | "zzz-deadly" | "zzz-holo-boss" | "zzz-void-
 type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "starrail-index" | "starrail-avatar-basic" | "starrail-monthly" | "genshin-panel-list" |
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
+  { readonly kind: "genshin-abyss"; readonly scheduleType: 1 | 2 } |
+  { readonly kind: "genshin-theater" } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
   { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
@@ -156,6 +158,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const forStarRail = starRailPanel || starRailMonthly || starRailRoster;
   const forDeck = kind === "genshin-gcg-deck";
   const forGcgCards = kind === "genshin-gcg-cards" || kind === "genshin-gcg-collection-summary";
+  const forGenshinChallenge = kind === "genshin-abyss" || kind === "genshin-theater";
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
   const zzzPanelDetail = kind === "zzz-panel-detail";
   const climbingTower = kind === "zzz-climbing-tower";
@@ -170,7 +173,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
     hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
-    starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
+    starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -198,6 +201,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
     throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
   }
+  if (kind === "genshin-abyss" && options.scheduleType !== 1 && options.scheduleType !== 2) {
+    throw new HoyoRequestError("invalid-input", "深境螺旋查询期次无效。");
+  }
   const path = forNote ? route.path : starRailPanel ? "/game_record/app/hkrpg/api/avatar/info"
     : starRailRoster ? `/game_record/app/hkrpg/api/${kind === "starrail-index" ? "index" : "avatar/basic"}`
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
@@ -205,6 +211,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}`
     : forDeck ? "/game_record/app/genshin/api/gcg/deckList"
     : forGcgCards ? `/game_record/app/genshin/api/gcg/${kind === "genshin-gcg-cards" ? "cardList" : "basicInfo"}`
+    : forGenshinChallenge ? `/game_record/app/genshin/api/${kind === "genshin-abyss" ? "spiralAbyss" : "role_combat"}`
     : "/game_record/app/genshin/api/index";
   const endpoint = new URL(path, monthly ? "https://api-takumi.mihoyo.com" : origin);
   let body: string | undefined;
@@ -222,6 +229,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       endpoint.searchParams.set("offset", "0");
     }
     endpoint.searchParams.set(usesRegion ? "uid" : "role_id", uid);
+    if (options.kind === "genshin-abyss") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
+    if (kind === "genshin-theater") endpoint.searchParams.set("need_detail", "true");
     endpoint.searchParams.set(usesRegion ? "region" : "server", region);
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
@@ -267,7 +276,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || forDeck || forGcgCards || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
+  if (forStarRail || forGenshinPanel || forGenshinChallenge || forDeck || forGcgCards || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);

@@ -16,12 +16,12 @@ function characterId(value: unknown) {
   if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) return id;
 }
 
-function verifyRole(data: Json, uid: string, region: string) {
+function verifyRole(data: Json, uid: string, region: string, label = "原神面板") {
   for (const row of [data, object(data.role)]) {
     if (!row) continue;
     if (["role_id", "game_uid", "uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
         ["region", "server"].some(key => Object.hasOwn(row, key) && row[key] !== region)) {
-      throw new HoyoRequestError("response", "原神面板响应的角色或服务器不一致。");
+      throw new HoyoRequestError("response", `${label}响应的角色或服务器不一致。`);
     }
   }
 }
@@ -103,4 +103,26 @@ export async function readGenshinTalents(source: ProfileRequestContext, transpor
     throw new HoyoRequestError("invalid-input", "原神天赋角色编号重复。");
   }
   return { avatars: await readCharacterDetails(source, transport, characterIds, signal, verifyProfile, true) };
+}
+
+export type GenshinChallengeOptions = GenshinPanelOptions &
+  ({ readonly mode: "abyss"; readonly scheduleType: 1 | 2 } | { readonly mode: "theater" });
+
+export function createGenshinChallengeReader() {
+  // A retry for a refreshed Cookie can reuse the verified index of the same owned role.
+  let overview: Json | undefined;
+  return async (source: ProfileRequestContext, transport: HoyoTransport, options: GenshinChallengeOptions,
+    verifyProfile?: () => Promise<void>) => {
+    const { signal } = options;
+    if (!overview) {
+      const index = await readCnGameRecord(source, transport, { kind: "genshin-index", signal }, verifyProfile);
+      verifyRole(index.data, source.role.uid, index.region, "原神战绩");
+      overview = index.data;
+    }
+    const { data, region } = await readCnGameRecord(source, transport, options.mode === "abyss"
+      ? { kind: "genshin-abyss", scheduleType: options.scheduleType, signal }
+      : { kind: "genshin-theater", signal }, verifyProfile);
+    verifyRole(data, source.role.uid, region, "原神战绩");
+    return { overview, challenge: data };
+  };
 }

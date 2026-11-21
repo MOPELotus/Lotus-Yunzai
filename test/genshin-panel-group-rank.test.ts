@@ -38,9 +38,9 @@ test("原神旧角色排名别名及 103 级默认情景，排除公开统计与
     expect(matchGroupPanelRank(raw)).toBeUndefined();
   }
   const result = await projectRankAvatar(avatar, theme);
-  const estimate = await estimatePanelDamage(avatar, theme, 2, 103);
+  const estimate = await estimatePanelDamage(avatar, theme, undefined, 103, { includeComparison: false });
   if (!("rows" in estimate)) throw new Error(estimate.message);
-  const expected = estimate.rows[1];
+  const expected = estimate.rows.find(row => row.title === "「蝶引来生」半血重击蒸发");
   if (!expected || typeof expected.average !== "number") throw new Error("测试场景缺少原版伤害值");
   expect(result?.damage).toEqual({ title: expected.title, score: expected.average });
   expect(result?.artifacts?.score).toBeGreaterThan(0);

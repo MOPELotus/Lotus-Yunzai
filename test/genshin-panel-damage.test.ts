@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
-import { estimatePanelDamage } from "../plugins/genshin/panel/damage.ts";
+import { estimatePanelDamage, type DamageSummary } from "../plugins/genshin/panel/damage.ts";
 import { createDamagePreferences, matchEnemyLevel } from "../plugins/genshin/panel/damage-preferences.ts";
 import { matchGenshinPanel, officialPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import { createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
@@ -34,6 +34,10 @@ function theme(data = actor(), asset: Json = weapon): PanelTheme {
   };
 }
 
+function estimateMiaoDamage(avatar: PanelAvatar, assets: PanelTheme, row?: number, enemy?: number) {
+  return estimatePanelDamage(avatar, assets, row, enemy, { useMiao: true });
+}
+
 test("旧伤害序号和绑定档案号相互独立，并保留显式 UID 校验入口", () => {
   expect(matchGenshinPanel("#胡桃伤害2")).toMatchObject({ mode: "damage", damageRow: 2, profileId: 1 });
   expect(matchGenshinPanel("#原神胡桃伤害2 档案3")).toMatchObject({ mode: "damage", damageRow: 2, profileId: 3 });
@@ -43,7 +47,7 @@ test("旧伤害序号和绑定档案号相互独立，并保留显式 UID 校验
 });
 
 test("原版胡桃旧公式保留低血量、E 攻击力增益、蒸发及词条对照", async () => {
-  const result = await estimatePanelDamage(avatar, theme());
+  const result = await estimateMiaoDamage(avatar, theme());
   if (!("rows" in result)) throw new Error(result.message);
   const hp = 10_000 + 3.885 * (1.875 * 41) * (1.2 + 0.34 * 20) * 2;
   const defense = 190 / 393;
@@ -57,23 +61,23 @@ test("原版胡桃旧公式保留低血量、E 攻击力增益、蒸发及词条
   expect(result.comparison?.axes).toEqual(["生命值", "攻击力", "暴击率", "暴击伤害", "元素精通"]);
   expect(result.comparison?.cells[0]?.[0]).toEqual({});
   expect(result.comparison?.cells[0]?.[1]?.average).not.toBe(result.rows[1]?.average);
-  expect(await estimatePanelDamage(avatar, theme(), 4)).toMatchObject({ message: expect.stringContaining("3种") });
+  expect(await estimateMiaoDamage(avatar, theme(), 4)).toMatchObject({ message: expect.stringContaining("3种") });
 });
 
 test("缺失倍率不会作为零伤害，已知零数值及其他完整情景仍可查询", async () => {
-  const partial = await estimatePanelDamage(avatar, theme(actor({ q: false })), 3);
+  const partial = await estimateMiaoDamage(avatar, theme(actor({ q: false })), 3);
   if (!("rows" in partial)) throw new Error(partial.message);
   expect(partial.selected).toBe(2);
   expect(partial.rows[2]).toEqual({ title: "半血开E后Q", unavailable: true, buffs: [] });
   expect(partial.rows[0]?.average).toBeGreaterThan(0);
   expect(partial.comparison).toBeUndefined();
 
-  const zero = await estimatePanelDamage(avatar, theme(actor({ attack: 0 })), 1);
+  const zero = await estimateMiaoDamage(avatar, theme(actor({ attack: 0 })), 1);
   if (!("rows" in zero)) throw new Error(zero.message);
   expect(zero.rows[0]).toMatchObject({ average: 0, crit: 0 });
-  expect(await estimatePanelDamage({ ...avatar, talent: { ...avatar.talent, e: undefined } }, theme()))
+  expect(await estimateMiaoDamage({ ...avatar, talent: { ...avatar.talent, e: undefined } }, theme()))
     .toEqual({ message: "天赋等级或旧版倍率表不完整，请先更新面板。" });
-  expect(await estimatePanelDamage(avatar, theme(actor(), {}))).toEqual({ message: "旧主题缺少当前武器的属性表。" });
+  expect(await estimateMiaoDamage(avatar, theme(actor(), {}))).toEqual({ message: "旧主题缺少当前武器的属性表。" });
 });
 
 test("丝柯克的旧档战技加一级，官方面板中的实显等级不重复加成", async () => {
@@ -92,9 +96,9 @@ test("丝柯克的旧档战技加一级，官方面板中的实显等级不重�
     { base: { id: skirk.id, level: 90, promote_level: 6, actived_constellation_num: 0 },
       skills: [10, 11, 10].map(level => ({ level, skill_type: 1 })) },
   ], catalog, 1).avatars[skirk.id]!;
-  const original = await estimatePanelDamage(skirk, catalog, 1);
-  const lower = await estimatePanelDamage({ ...skirk, talent: { ...skirk.talent, e: 9 } }, catalog, 1);
-  const official = await estimatePanelDamage({ ...builtIn, weapon: skirk.weapon, artis: skirk.artis }, catalog, 1);
+  const original = await estimateMiaoDamage(skirk, catalog, 1);
+  const lower = await estimateMiaoDamage({ ...skirk, talent: { ...skirk.talent, e: 9 } }, catalog, 1);
+  const official = await estimateMiaoDamage({ ...builtIn, weapon: skirk.weapon, artis: skirk.artis }, catalog, 1);
   if (!("rows" in original) || !("rows" in lower) || !("rows" in official)) throw new Error("测试缺少丝柯克旧情景");
   expect(original.rows[0]?.average).toBeCloseTo(Number(lower.rows[0]?.average) * 2, 8);
   expect(official.rows).toEqual(original.rows);
@@ -105,7 +109,7 @@ test("夜兰的弓藏保留固定重击减伤，其他技能继续走原伤害�
   const yelan = { ...avatar, id: 10000060, name: "夜兰", elem: "hydro" };
   const data = { ...actor(), name: yelan.name, weapon: "bow",
     talentData: { a: { 破局矢伤害: [3] }, e: { 技能伤害: [5] }, q: { 玄掷玲珑伤害: [12] } } };
-  const build = (name: string, affix = 1) => estimatePanelDamage({ ...yelan, weapon: { ...yelan.weapon, name, affix } },
+  const build = (name: string, affix = 1) => estimateMiaoDamage({ ...yelan, weapon: { ...yelan.weapon, name, affix } },
     theme(data, { ...weapon, name }), 1);
   const base = await build("猎弓");
   const rust = await build("弓藏");
@@ -123,8 +127,8 @@ test("旧敌人等级命令、场景结果和词条对照使用相同的目标�
   for (const invalid of ["#星铁敌人等级80", "#敌人等级1000", "#敌人等级-1", "#怪物等级80 档案256"]) {
     expect(matchEnemyLevel(invalid)).toBeUndefined();
   }
-  const original = await estimatePanelDamage(avatar, theme(), 2);
-  const changed = await estimatePanelDamage(avatar, theme(), 2, 90);
+  const original = await estimateMiaoDamage(avatar, theme(), 2);
+  const changed = await estimateMiaoDamage(avatar, theme(), 2, 90);
   if (!("rows" in original) || !("rows" in changed)) throw new Error("测试面板缺少伤害结果");
   const multiplier = 393 / 380;
   expect(changed.enemyLevel).toBe(90);
@@ -181,12 +185,15 @@ test.skipIf(!valkey)("本地敌人等级按 QQ 持久化，继承旧键优先级
   }
 });
 
-test("普通详情只附有效的伤害表，按同档敌人偏好保留有效零和缺数据情景", async () => {
+const calculationFixture = "普通面板命令验证默认洛洛米与旧喵喵伤害模式";
+
+test(calculationFixture, async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-damage-summary-"));
   const uid = "100123456";
   const role = { uid, nickname: "", region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true };
   let selected = actor({ attack: 0, q: false });
   const detail: Record<string, unknown>[] = [];
+  const damage: DamageSummary[] = [];
   const query = createGenshinPanelQuery({ async savedRole() { return role; },
     async requestContext() { throw new ProfileError("login-required", "只读取已绑定 UID"); },
   }, { async fetchGenshinPanel() { throw new Error("详情不刷新面板"); } }, lockFile, new AbortController().signal, {
@@ -194,13 +201,39 @@ test("普通详情只附有效的伤害表，按同档敌人偏好保留有效�
     theme: async () => theme(selected),
     render: {
       async list() { throw new Error("详情不渲染列表"); },
+      async damage(_snapshot, _avatar, _theme, model) { damage.push(model); return { png: new Uint8Array([1]) }; },
       async detail(_snapshot, _avatar, _theme, options) { detail.push({ ...options }); return { png: new Uint8Array([1]) }; },
     },
   });
   try {
+    const engine = Bun.env.LOTUS_TEST_GENSHIN_PANEL_DAMAGE_ENGINE;
+    if (engine !== "auto" && engine !== "miao") {
+      for (const mode of ["auto", "miao"] as const) {
+        const config = join(directory, `${mode}.yaml`);
+        await writeFile(config, mode === "auto" ? "{}\n" : "engineMode: miao\nlolomicalc: false\n");
+        const child = Bun.spawn([process.execPath, "test", import.meta.path, "-t", calculationFixture], {
+          stdout: "pipe", stderr: "pipe",
+          env: { ...process.env, LOTUS_GENSHIN_DAMAGE_CONFIG: config, LOTUS_TEST_GENSHIN_PANEL_DAMAGE_ENGINE: mode },
+        });
+        const [status, stdout, stderr] = await Promise.all([
+          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+        ]);
+        if (status !== 0) throw new Error(`${mode} 面板验证失败\n${stdout}${stderr}`);
+        expect(status).toBe(0);
+      }
+      return;
+    }
     await mkdir(join(directory, "panels"));
     await writeFile(join(directory, `${uid}.json`), JSON.stringify({ uid, avatars: { 10000046: avatar } }));
     expect(await query("#敌人等级90 档案2", { user_id: 42 })).toBe("敌人等级已经设置为90");
+    if (engine === "auto") {
+      expect(await query("#胡桃伤害3 档案2", { user_id: 42 })).toMatchObject({ type: "image" });
+      expect(damage[0]).toMatchObject({ selected: 2, enemyLevel: 90, ruleAuthors: ["洛洛米"] });
+      const result = damage[0];
+      expect(result?.rows[2]).toMatchObject({ title: "「蝶引来生」半血重击蒸发" });
+      expect(result?.rows[2]?.average).toBeGreaterThan(0);
+      return;
+    }
     expect(await query("#胡桃详情2", { user_id: 42 })).toMatchObject({ type: "image" });
     expect(detail[0]).toMatchObject({ pane: "profile", profileId: 2, damage: {
       enemyLevel: 90, enemyName: "小宝", rows: [
