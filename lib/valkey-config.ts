@@ -36,7 +36,10 @@ export async function readStorageConnection(
   if (url !== undefined) return url;
   const config = await readOptionalLocalConfig(root, "redis");
   if (!config) return;
+  return parseStorageSettings(config);
+}
 
+export function parseStorageSettings(config: Readonly<Record<string, unknown>>): StorageConnectionOptions {
   return {
     host: readHost(config.host),
     port: readInteger(config.port, "port", 6379, 1, 65535),

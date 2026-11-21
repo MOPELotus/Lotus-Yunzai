@@ -70,7 +70,10 @@ function token(value: unknown): string | undefined {
 }
 
 export async function readMilkySettings(root: URL): Promise<MilkySettings | undefined> {
-  const config = await readLocalConfig(root, "milky");
+  return parseMilkySettings(await readLocalConfig(root, "milky"));
+}
+
+export function parseMilkySettings(config: Readonly<Record<string, unknown>>): MilkySettings | undefined {
   if (config.enable === undefined || config.enable === null || config.enable === false || config.enable === 0) return;
   if (config.enable !== true && config.enable !== 1) return invalid("enable");
 

@@ -7,6 +7,7 @@ import { stageLegacyCoreConfig } from "../lib/migration-core-config.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
 import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
+import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-history.ts";
 import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
@@ -33,13 +34,14 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const sharedGameHistory = await stageLegacySharedGameHistory(plan.source, state.directory, signal);
     const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal);
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
+    const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
     const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal);
     const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal);
     signal?.throwIfAborted();
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, globalConfig, atlas, shopAudit, deferredPlugins } as const;
+      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, atlas, shopAudit, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

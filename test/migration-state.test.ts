@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 import { accountScopePermission, readMasterPermissions } from "../lib/permissions.ts";
 import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
+import { readServerSettings } from "../lib/server.ts";
 import { planLegacyState, stageLegacyState } from "../lib/migration-state.ts";
 import { stageMigration } from "../scripts/migrate-stage.ts";
 import { migrateInstallation } from "../scripts/migrate.ts";
@@ -59,6 +60,8 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   await put(source, oldGlobal, exampleGlobal);
   await put(source, "config/global.yaml", "scheduler: {enable: false}\n");
   await put(source, "config/config/other.yaml", 'master: ["99:42"]\nautoGroup: 0\n');
+  await put(source, "config/config/server.yaml", "port: 9123\nhttps: null\n");
+  await put(source, "config/config/milky.yaml", "enable: false\n");
   const profile = "user: {qq: 42}\nprofile: {id: 1}\naccount: {cookie: isolated-fixture}\n";
   await put(source, "plugins/Lotus-ReFactor/data/users/42.yaml", profile);
   await put(source, "data/users/42.yaml", profile);
@@ -117,6 +120,9 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(result.coreConfig).toEqual({ files: 1, deferredOwners: { master: 0, masterQQ: 0 } });
   const migratedRoot = Bun.pathToFileURL(`${target}/`);
   expect((await readMasterPermissions(migratedRoot)).isMaster(99, 42)).toBe(true);
+  expect(result.networkConfig).toEqual({ groups: ["server", "milky"], deferred: ["server.onebot.authorization"] });
+  expect((await readServerSettings(migratedRoot, {})).http?.port).toBe(9123);
+  expect((await readServerSettings(migratedRoot, { LOTUS_ONEBOT_TOKEN: "fixture" })).oneBot?.port).toBe(9123);
   const globalConfig = await readLotusGlobalConfig(migratedRoot);
   expect(globalConfig).toEqual({
     scheduler: { enable: false, mode: "fixed", fixed_time: "04:30" },

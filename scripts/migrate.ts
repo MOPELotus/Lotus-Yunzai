@@ -20,6 +20,7 @@ interface PreparedMigration {
     readonly sharedGameHistory: Staged["sharedGameHistory"];
     readonly coreConfig: Staged["coreConfig"];
     readonly groupConfig: Staged["groupConfig"];
+    readonly networkConfig: Staged["networkConfig"];
     readonly globalConfig: Staged["globalConfig"];
     readonly atlas: Staged["atlas"];
     readonly shopAudit: Staged["shopAudit"];
@@ -71,6 +72,7 @@ async function prepare(source: string, target: string, directory: string, signal
         sharedGameHistory: staged.sharedGameHistory,
         coreConfig: staged.coreConfig,
         groupConfig: staged.groupConfig,
+        networkConfig: staged.networkConfig,
         globalConfig: staged.globalConfig,
         atlas: staged.atlas,
         shopAudit: staged.shopAudit,

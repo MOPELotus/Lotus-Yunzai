@@ -2,7 +2,7 @@ import { isAbsolute } from "node:path";
 import { readLocalConfig } from "./config.ts";
 import { isReservedServerPath, readServerRedirect } from "./server-redirect.ts";
 
-type ServerEnvironment = Readonly<Record<string, string | undefined>>;
+export type ServerEnvironment = Readonly<Record<string, string | undefined>>;
 
 interface Listener {
   readonly port: number;
@@ -145,7 +145,10 @@ export async function readServerHttpsPaths(root: URL): Promise<Pick<HttpsListene
 }
 
 export async function readServerSettings(root: URL, env: ServerEnvironment): Promise<ServerSettings> {
-  const config = await readLocalConfig(root, "server");
+  return parseServerSettings(await readLocalConfig(root, "server"), env);
+}
+
+export function parseServerSettings(config: Readonly<Record<string, unknown>>, env: ServerEnvironment): ServerSettings {
   const configured = port(env.LOTUS_HTTP_PORT ?? config.port, "LOTUS_HTTP_PORT 或 server.port");
   const oneBotOverride = port(env.LOTUS_ONEBOT_PORT, "LOTUS_ONEBOT_PORT");
   const legacyAuth = authHeaders(config.auth);
