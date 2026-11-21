@@ -80,6 +80,7 @@ export function createManagedHandoff(): ManagedHandoff {
   const pausedAt = paused && /^[1-9]\d*$/u.test(paused) ? Number(paused) : 0;
   const send = process.send.bind(process);
   const handlers = new Set<() => void>();
+  const replacementHandlers = new Set<() => void>();
   let accepting = !held;
   let disconnected = false;
   let restarting = false;
@@ -112,8 +113,13 @@ export function createManagedHandoff(): ManagedHandoff {
           "type" in message && message.type === "lotus-stop-for-replacement" &&
           "token" in message && message.token === token) handler();
     }
+    const unsubscribe = () => {
+      replacementHandlers.delete(unsubscribe);
+      process.off("message", receive);
+    };
+    replacementHandlers.add(unsubscribe);
     process.on("message", receive);
-    return () => { process.off("message", receive); };
+    return unsubscribe;
   }
 
   function notify(message: Notice, onFailure?: () => void, sent?: (error?: Error) => void): boolean {
@@ -134,7 +140,8 @@ export function createManagedHandoff(): ManagedHandoff {
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
     const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
-    const message = { type: "lotus-ready", replacementNotice: true, ...(revision === undefined ? {} : { revision }),
+    const message = { type: "lotus-ready", ...(replacementHandlers.size ? { replacementNotice: true as const } : {}),
+      ...(revision === undefined ? {} : { revision }),
       ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}),
       ...(activationAck ? { activationAck: true as const } : {}), ...endpoints } as const;
     if (!held) {
