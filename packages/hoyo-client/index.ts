@@ -26,6 +26,7 @@ import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts"
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
+import { readZzzMonthly } from "./zzz-monthly.ts";
 import { readZzzExploration } from "./zzz-exploration.ts";
 import { readZzzZenkov } from "./zzz-zenkov.ts";
 import { readZzzHollowZero } from "./zzz-hollow-zero.ts";
@@ -47,6 +48,7 @@ export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
 export type { ZzzHoloBossRoom, ZzzHoloBossSnapshot } from "./zzz-holo-boss.ts";
+export { normalizeZzzMonthly, zzzMonthlyKey, type ZzzMonthlyRecord } from "./zzz-monthly.ts";
 export { zzzExplorationColumns } from "./zzz-exploration.ts";
 export type { ZzzExplorationSnapshot, ZzzExplorationArea, ZzzExplorationMap } from "./zzz-exploration.ts";
 export { zzzZenkovPageSize } from "./zzz-zenkov.ts";
@@ -512,6 +514,9 @@ export function createHoyoClient(
     },
     fetchZzzExploration(source: ProfileRequestContext, options: Parameters<typeof readZzzExploration>[2]) {
       return readForProfile(source, options, readZzzExploration, isGameRecordCookieExpired);
+    },
+    fetchZzzMonthly(source: ProfileRequestContext, options: Parameters<typeof readZzzMonthly>[2]) {
+      return readForProfile(source, options, readZzzMonthly, isGameRecordCookieExpired);
     },
     fetchZzzPanel(source: ProfileRequestContext, options: ZzzPanelOptions = {}) {
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);
