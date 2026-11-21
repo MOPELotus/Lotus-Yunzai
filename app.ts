@@ -2166,8 +2166,9 @@ if (import.meta.main) {
       ...event, runtimeStatusScope, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" as const : undefined,
     } : teamDamageSession ? { ...event, calculationSignal: nativeOperationSignal(teamDamageSession) } : event;
     const deliveryEvent = deliverMedia ? { ...fallbackEvent, deliverMedia } : fallbackEvent;
+    const packageManagement = !event.isDelegated && canManagePackages(event) ? { canManagePackages: true as const } : undefined;
     const fallback = await commands.dispatchFallback(deliveryEvent,
-      (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
+      (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg, packageManagement);
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
       return;
