@@ -57,6 +57,18 @@ async function present(path: string) {
   });
 }
 
+async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited">): Promise<number> {
+  const interrupt = () => child.kill("SIGINT");
+  const terminate = () => child.kill("SIGTERM");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  try { return await child.exited; }
+  finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", terminate);
+  }
+}
+
 async function readBackgroundLogFiles(home: string, options: readonly string[]): Promise<number | undefined> {
   const directory = join(home, "logs");
   if (!(await present(directory))?.isDirectory()) return;
@@ -83,17 +95,9 @@ async function readBackgroundLogFiles(home: string, options: readonly string[]):
 
   const tail = Bun.which("tail");
   if (!tail) throw new Error("读取 PM2 历史日志需要 PATH 中的 tail。");
-  const log = Bun.spawn([tail, "-n", lines, ...(follow ? ["-F"] : []), ...files], {
+  return waitForLogs(Bun.spawn([tail, "-n", lines, ...(follow ? ["-F"] : []), ...files], {
     stdin: "ignore", stdout: "inherit", stderr: "inherit",
-  });
-  const stop = () => log.kill("SIGTERM");
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  try { return await log.exited; }
-  finally {
-    process.off("SIGINT", stop);
-    process.off("SIGTERM", stop);
-  }
+  }));
 }
 
 async function daemonListening(path: string): Promise<boolean> {
@@ -198,7 +202,8 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
       return 0;
     }
     const args = action === "status" ? ["status"] : [action, name, ...options];
-    return Bun.spawn([binary, ...args], spawnOptions(selected.path)).exited;
+    const client = Bun.spawn([binary, ...args], spawnOptions(selected.path));
+    return action === "logs" ? waitForLogs(client) : client.exited;
   }
 
   signal?.throwIfAborted();

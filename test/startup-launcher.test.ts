@@ -11,6 +11,62 @@ const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: 
   version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
 } } } } } } });
 
+test.skipIf(process.platform === "win32")("中止实时日志时将信号转交当前 PM2 客户端并等待退出", async () => {
+  const { cwd, launch } = await fixture();
+  const parent = dirname(cwd);
+  const home = join(parent, ".checkout.lotus-pm2");
+  const bin = join(parent, "bin");
+  const env = { PATH: bin + ":" + process.env.PATH };
+  await Promise.all([mkdir(bin), mkdir(home, { mode: 0o700 })]);
+  await writeFile(join(bin, "pm2"), `#!${process.execPath}
+    import { writeFileSync } from "node:fs";
+    const [command] = Bun.argv.slice(2);
+    if (command === "jlist") {
+      console.log(JSON.stringify([{ name: "lotus-yunzai", pm_id: 0, pid: 123, pm2_env: { status: "online" } }]));
+    } else if (command === "logs") {
+      const home = Bun.env.PM2_HOME;
+      for (const signal of ["SIGINT", "SIGTERM"]) {
+        process.on(signal, () => {
+          writeFileSync(home + "/forwarded", signal);
+          process.exit(12);
+        });
+      }
+      writeFileSync(home + "/log-client", String(process.pid));
+      await new Promise(() => setInterval(() => {}, 100));
+    } else process.exit(9);
+  `, { mode: 0o700 });
+  const daemon = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+  const clientFile = join(home, "log-client");
+  const forwarded = join(home, "forwarded");
+  try {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      await Promise.all([rm(clientFile, { force: true }), rm(forwarded, { force: true })]);
+      const launcher = launch(["logs"], env);
+      const output = Promise.all([launcher.exited, new Response(launcher.stdout).text(), new Response(launcher.stderr).text()]);
+      try {
+        for (let attempt = 0; attempt < 80 && !await Bun.file(clientFile).exists(); attempt++) await Bun.sleep(20);
+        expect(await Bun.file(clientFile).exists()).toBe(true);
+        launcher.kill(signal);
+        for (let attempt = 0; attempt < 80 && !await Bun.file(forwarded).exists(); attempt++) await Bun.sleep(20);
+        expect(await readFile(forwarded, "utf8")).toBe(signal);
+        expect((await output)[0]).toBe(12);
+      } finally {
+        if (!await Bun.file(forwarded).exists()) {
+          const pid = Number(await readFile(clientFile, "utf8").catch(() => "0"));
+          if (pid > 0) {
+            try { process.kill(pid, "SIGKILL"); }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+          }
+        }
+        if (launcher.exitCode === null) launcher.kill("SIGKILL");
+        await output;
+      }
+    }
+  } finally {
+    daemon.stop(true);
+  }
+});
+
 test.skipIf(process.platform === "win32")("PM2 登记丢失后仍可读后台历史日志", async () => {
   const { cwd, launch } = await fixture();
   const parent = dirname(cwd);
