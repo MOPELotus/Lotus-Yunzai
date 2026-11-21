@@ -8,7 +8,7 @@ export function containsPath(directory: string, path: string) {
   return child === "" || (!isAbsolute(child) && child !== ".." && !child.startsWith(".." + sep));
 }
 
-export async function publishGachaExport(parent: string, prefix: "starrail" | "zzz", content: Buffer) {
+export async function publishLegacyJsonExport(parent: string, prefix: "starrail" | "zzz" | "zzz-monthly", content: Buffer) {
   const hash = createHash("sha256").update(content).digest("hex");
   const path = join(parent, `${prefix}-${hash}.json`);
   const staged = join(parent, `.${prefix}-export-${randomUUID()}.tmp`);

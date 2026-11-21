@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { lockFile } from "../lib/file-lock.ts";
 import { createStarRailGachaRecordArchive } from "../plugins/starrail/gacha-record-archive.ts";
-import { containsPath, publishGachaExport } from "./legacy-gacha-output.ts";
+import { containsPath, publishLegacyJsonExport } from "./legacy-gacha-output.ts";
 
 const maxOutputBytes = 32 * 1024 * 1024;
 
@@ -25,7 +25,7 @@ try {
   const { document, format, counts } = await archive.prepareLegacyHandback({ qq, uid }, Number(timezone));
   const content = Buffer.from(JSON.stringify(document, null, 2) + "\n");
   if (content.length > maxOutputBytes) throw new Error("交还文件超过可导出大小。");
-  const result = output ? await publishGachaExport(output, "starrail", content) : { written: false };
+  const result = output ? await publishLegacyJsonExport(output, "starrail", content) : { written: false };
   console.log(JSON.stringify({ mode: exporting ? "export" : "dry-run", format, counts, ...result }));
 } catch (error) {
   console.error(error instanceof Error && (!("code" in error) || ["corrupt", "conflict"].includes(String(error.code)))

@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { lockFile } from "../lib/file-lock.ts";
 import { prepareZzzGachaHandback } from "../plugins/zzz/gacha-handback.ts";
-import { containsPath, publishGachaExport } from "./legacy-gacha-output.ts";
+import { containsPath, publishLegacyJsonExport } from "./legacy-gacha-output.ts";
 
 const maxOutputBytes = 32 * 1024 * 1024;
 
@@ -33,7 +33,7 @@ try {
   const { document, counts } = await prepareZzzGachaHandback({ managed: managedRoot, legacy: legacyRoot, qq, uid, region }, lockFile);
   const content = Buffer.from(JSON.stringify(document, null, 2) + "\n");
   if (content.length > maxOutputBytes) throw new Error("交还文件超过可导出大小。");
-  const result = output ? await publishGachaExport(output, "zzz", content) : { written: false };
+  const result = output ? await publishLegacyJsonExport(output, "zzz", content) : { written: false };
   console.log(JSON.stringify({ mode: exporting ? "export" : "dry-run", format: "ZZZ-Plugin 2057599", counts, ...result }));
 } catch (error) {
   console.error(error instanceof Error && (!("code" in error) || ["corrupt", "io", "invalid-input"].includes(String(error.code)))
