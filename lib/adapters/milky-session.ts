@@ -142,6 +142,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           },
         });
       }
+    } else if (event.post_type === "notice" && event.sub_type === "poke" && event.notice_type === "group") {
+      event = { ...event, adapter: "milky", isMaster: isMaster(event.user_id) };
     } else if (event.post_type === "notice" && event.notice_type === "friend") {
       const userId = event.user_id;
       event = { ...event, adapter: "milky", isMaster: isMaster(userId), [friendMessageNoticeSession]: {
@@ -1086,7 +1088,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       if (result.status === "unknown") throw new Error("Milky 退群回执未确认。");
       return result.status === "confirmed";
     });
-    if (event?.post_type === "notice" && event.notice_type === "group") {
+    if (event?.post_type === "notice" && event.notice_type === "group" && event.sub_type !== "poke") {
       const { group_id, user_id } = event;
       if (user_id === account && event.dismiss !== true && positiveId(event.time)) {
         const operatorId = event.operator_id === account ? undefined : event.operator_id;

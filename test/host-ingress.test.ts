@@ -21,7 +21,7 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
     await mkdir(join(root, "config/config"), { recursive: true });
     const other = [
       'master: ["99:51"]', "disablePrivate: true", "disableMsg: 当前只接受账号资料",
-      "disableAdopt: ['^#通行[0-9]+$']", "",
+      "disableAdopt: ['^#通行[0-9]+$']", "blackGroup: [78]", "",
     ].join("\n");
     await writeFile(join(root, "config/other.yaml"), other);
     await writeFile(join(root, "config/config/other.yaml"), "blackUser: [63]\n");
@@ -47,6 +47,10 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
         poke: class extends plugin {
           constructor() { super({ event: "notice.friend.poke", rule: [{ fnc: "poke" }] }); }
           poke(e) { return e.reply("旧戳一戳"); }
+        },
+        groupPoke: class extends plugin {
+          constructor() { super({ event: "notice.group.poke", rule: [{ fnc: "poke" }] }); }
+          poke(e) { return e.reply("群戳一戳 " + e.operator_id + " " + e.target_id); }
         },
       };
     `);
@@ -131,6 +135,11 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
     await reply("当前只接受账号资料", { user_id: 42 });
     send({ ...poke, user_id: 51 });
     await reply("旧戳一戳", { user_id: 51 });
+    send({ ...poke, user_id: 42, group_id: 77 });
+    await reply("群戳一戳 42 99", { group_id: 77, message_type: "group" });
+    send({ ...poke, user_id: 42, group_id: 78 });
+    send({ ...poke, user_id: 42, group_id: 77, self_id: 100 });
+    await silence();
 
     const request = { post_type: "request", request_type: "friend", user_id: 62 };
     send({ ...request, flag: 1234 });

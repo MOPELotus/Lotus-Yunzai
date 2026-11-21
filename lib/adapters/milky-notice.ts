@@ -1,4 +1,4 @@
-import type { FriendPoke, GroupNotice, MessageReply } from "../messages.ts";
+import type { FriendPoke, GroupNotice, GroupPoke, MessageReply } from "../messages.ts";
 import { inspectMilkyAutoQuit, type MilkyAutoQuitCall } from "./milky-auto-quit.ts";
 
 type SendReply = (target: { group_id: number } | { user_id: number }, reply: MessageReply) => Promise<boolean>;
@@ -13,10 +13,21 @@ function isId(value: unknown): value is number {
 
 export function milkyNotice(
   value: unknown, selfId: number, call: MilkyAutoQuitCall, sendReply: SendReply, leaveGroup?: (groupId: number) => Promise<boolean>,
-): GroupNotice | FriendPoke | undefined {
+): GroupNotice | GroupPoke | FriendPoke | undefined {
   if (!isId(selfId) || !isRecord(value) || value.self_id !== selfId || !isRecord(value.data)) return;
   const { event_type: type, time, data } = value;
   const { user_id, group_id } = data;
+  if (type === "group_nudge") {
+    const { sender_id, receiver_id } = data;
+    if (!isId(group_id) || !isId(sender_id) || !isId(receiver_id)) return;
+    return {
+      post_type: "notice", notice_type: "group", sub_type: "poke",
+      self_id: selfId, group_id, user_id: sender_id, operator_id: sender_id, target_id: receiver_id,
+      time: isId(time) ? time : undefined,
+      isGroup: true, isPrivate: false, isMaster: false,
+      reply: (reply) => sendReply({ group_id }, reply),
+    };
+  }
   if (!isId(user_id)) return;
 
   if (type === "friend_nudge") {

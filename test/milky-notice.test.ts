@@ -34,7 +34,7 @@ test("Milky 入群区分真实邀请者与操作者，延迟核实群名", async
     isGroup: true, isPrivate: false, isMaster: false,
   });
   expect(requests).toEqual([]);
-  if (notice?.notice_type !== "group") throw new Error("缺少群通知。");
+  if (notice?.notice_type !== "group" || notice.sub_type !== "increase") throw new Error("缺少入群通知。");
   expect(await notice.getGroupName?.()).toBe("测试群");
   expect(requests).toEqual([{ action: "get_group_info", params: { group_id: groupId, no_cache: true } }]);
   result = { group: { group_id: groupId + 1, group_name: "其他群" } };
@@ -67,7 +67,7 @@ test("Milky 群成员事件保留可证实的加入、退群和移出原因", ()
   });
   expect(decrease({})).toMatchObject({ decrease_type: "leave", operator_id: undefined });
   const selfJoined = increase({ user_id: selfId });
-  if (selfJoined?.notice_type !== "group") throw new Error("缺少机器人入群通知。");
+  if (selfJoined?.notice_type !== "group" || selfJoined.sub_type !== "increase") throw new Error("缺少机器人入群通知。");
   expect(selfJoined.inspectAutoQuit).toBeUndefined();
   expect(selfJoined.leaveGroup).toBeUndefined();
   expect(milkyNotice(envelope("group_disband", { group_id: groupId, operator_id: operatorId }), selfId, offline, notSent))
@@ -102,7 +102,7 @@ test("Milky 通知区分明确未送达与结果未知", async () => {
   expect(await milkyNotice(event, selfId, offline, notSent)?.reply("内容")).toBe(false);
   const failure = new Error("结果未知");
   const uncertain = milkyNotice(event, selfId, async () => { throw failure; }, async () => { throw failure; });
-  if (uncertain?.notice_type !== "group") throw new Error("缺少群通知。");
+  if (uncertain?.notice_type !== "group" || uncertain.sub_type !== "decrease") throw new Error("缺少退群通知。");
   expect(await uncertain.getGroupName?.()).toBeUndefined();
   await expect(Promise.resolve(uncertain.reply("内容"))).rejects.toBe(failure);
 });

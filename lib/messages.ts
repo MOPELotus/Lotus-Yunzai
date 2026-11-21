@@ -247,7 +247,24 @@ export interface FriendPoke {
   readonly reply: MessageEvent["reply"];
 }
 
-export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke;
+export interface GroupPoke {
+  readonly post_type: "notice";
+  readonly notice_type: "group";
+  readonly sub_type: "poke";
+  readonly adapter?: "milky";
+  readonly self_id: number;
+  readonly group_id: number;
+  readonly user_id: number;
+  readonly operator_id: number;
+  readonly target_id: number;
+  readonly time?: number;
+  readonly isGroup: true;
+  readonly isPrivate: false;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
+
+export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

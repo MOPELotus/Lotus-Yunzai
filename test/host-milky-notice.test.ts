@@ -141,11 +141,20 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
       "connection: webhook", `access_token: ${token}`,
     ].join("\n") + "\n");
     await writeFile(join(root, "plugins", "milky-nudge-fixture.js"), `
-      export default class extends plugin {
-        constructor() { super({ event: "notice.friend.poke" }); }
-        async accept(e) {
-          await e.reply("好友戳一戳 " + e.user_id + " " + e.operator_id + " " + e.target_id);
-          return "return";
+      export const apps = {
+        privatePoke: class extends plugin {
+          constructor() { super({ event: "notice.friend.poke" }); }
+          async accept(e) {
+            await e.reply("好友戳一戳 " + e.user_id + " " + e.operator_id + " " + e.target_id);
+            return "return";
+          }
+        },
+        groupPoke: class extends plugin {
+          constructor() { super({ event: "notice.group.poke" }); }
+          async accept(e) {
+            await e.reply("群戳一戳 " + e.user_id + " " + e.operator_id + " " + e.target_id);
+            return "return";
+          }
         }
       }
     `);
@@ -194,10 +203,17 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
       expect(await mock.next("send_private_message")).toEqual({
         user_id: memberId, message: [text(`好友戳一戳 ${memberId} ${memberId} ${botId}`)],
       });
+      const groupPoke = { group_id: groupId, sender_id: memberId, receiver_id: botId };
+      expect((await webhook(endpoint, "group_nudge", groupPoke, botId + 1)).status).toBe(403);
+      expect((await webhook(endpoint, "group_nudge", { ...groupPoke, receiver_id: "99" })).status).toBe(200);
+      expect((await webhook(endpoint, "group_nudge", groupPoke)).status).toBe(200);
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text(`群戳一戳 ${memberId} ${memberId} ${botId}`)],
+      });
       await Bun.sleep(80);
       expect(mock.calls.map(({ action }) => action)).toEqual([
         "get_login_info", "get_group_info", "send_group_message", "send_group_message", "send_group_message",
-        "send_group_message", "send_private_message",
+        "send_group_message", "send_private_message", "send_group_message",
       ]);
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();

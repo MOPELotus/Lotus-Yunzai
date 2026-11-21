@@ -2,7 +2,7 @@ import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
-import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
+import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
@@ -432,6 +432,30 @@ async function dispatchFriendPoke(
       const message = encodeOneBotReply(reply);
       return message !== undefined && send({
         action: "send_msg", params: { message_type: "private", user_id, message, auto_escape: true },
+      });
+    },
+  });
+}
+
+async function dispatchGroupPoke(
+  dispatch: (event: GroupPoke) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, group_id, target_id, time } = event;
+  const user_id = event.user_id ?? event.operator_id;
+  if (!isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(target_id)) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  await dispatch({
+    post_type: "notice", notice_type: "group", sub_type: "poke",
+    self_id, group_id, user_id, operator_id: user_id, target_id,
+    time: isId(time) ? time : undefined,
+    isGroup: true, isPrivate: false, isMaster: isMaster(self_id, user_id),
+    reply(reply) {
+      if (signal.aborted) return false;
+      const message = encodeOneBotReply(reply);
+      return message !== undefined && send({
+        action: "send_msg", params: { message_type: "group", group_id, message, auto_escape: true },
       });
     },
   });
@@ -1088,8 +1112,9 @@ export function startOneBot(
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
                 message: [{ type: "file", data: message.file }],
               }, calls, options.isMaster, undefined, attachment);
-            } else if (message.notice_type === "notify" && message.sub_type === "poke" && !message.group_id) {
-              await dispatchFriendPoke(dispatch, send, message, socket.data, options);
+            } else if (message.notice_type === "notify" && message.sub_type === "poke") {
+              if (isId(message.group_id)) await dispatchGroupPoke(dispatch, send, message, socket.data, options.isMaster);
+              else if (!message.group_id) await dispatchFriendPoke(dispatch, send, message, socket.data, options);
             } else {
               await dispatchGroupNotice(dispatch, send, message, calls, options, socket.data);
             }
