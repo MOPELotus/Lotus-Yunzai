@@ -3,8 +3,10 @@ import { cp, link, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 import { planLegacyState, stageLegacyState } from "../lib/migration-state.ts";
 import { stageMigration } from "../scripts/migrate-stage.ts";
+import { migrateInstallation } from "../scripts/migrate.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const group = "config/config/group.yaml";
@@ -37,28 +39,44 @@ async function fixture(run: (source: string, target: string) => Promise<void>) {
   }
 }
 
-test.skipIf(!Bun.which("git"))("组合暂存一并归档拒载插件并复制存量，后段失败清理整个临时目录", () => fixture(async (source, target) => {
+test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据和插件，可重试且不改旧安装", () => fixture(async (source, target) => {
   const plugin = "plugins/miao-plugin/package.json";
   const manifest = '{"name":"miao-plugin"}\n';
   await put(source, plugin, manifest);
   const compatible = "plugins/small-local/index.js";
   const script = "export const localFixture = true;\n";
   await put(source, compatible, script);
+  const held = "missing-dependency/index.js";
+  const heldScript = 'import "lotus-migration-unavailable-test-dependency";\n';
+  await put(source, `plugins/${held}`, heldScript);
   await put(source, group, groupBytes);
   await put(source, legacyPool, pool(ids[0]));
   const profile = "user: {qq: 42}\nprofile: {id: 1}\naccount: {cookie: isolated-fixture}\n";
   await put(source, "plugins/Lotus-ReFactor/data/users/42.yaml", profile);
   await put(source, "data/users/42.yaml", profile);
+  const date = "2026-11-21";
+  const oldSchedule = `plugins/Lotus-ReFactor/data/schedules/${date}.json`;
+  const scheduled = { qq: "42", profileId: 1, name: "", time: "04:30", mode: "fixed", notified: false };
+  const originalSchedule = JSON.stringify({
+    version: 1, date, mode: "fixed", window: { window_start: "00:00", window_end: "23:30", notify_before: true },
+    generatedAt: `${date}T00:00:00.000+08:00`,
+    entries: [{ ...scheduled, done: false, runningAt: `${date}T04:30:00.000+08:00` },
+      { ...scheduled, profileId: 2, done: true, ok: true }],
+  });
+  await put(source, oldSchedule, originalSchedule);
+  await put(source, "plugins/Lotus-Plugin/data/schedules/2026-11-20.json", "");
+  await put(target, "package.json", '{"name":"lotus-yunzai"}\n');
   await put(target, "plugins/system/package.json", '{"name":"@lotus-yunzai/system"}\n');
-  for (const args of [["init", "-q"], ["add", "plugins"],
+  for (const args of [["init", "-q"], ["add", "package.json", "plugins"],
     ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]]) {
     const result = Bun.spawnSync(["git", ...args], { cwd: target, stdout: "ignore", stderr: "ignore" });
     expect(result.exitCode).toBe(0);
   }
   const staged = await stageMigration(source, target);
-  expect(staged.backup).toMatchObject({ status: "published", archived: 2 });
+  expect(staged.backup).toMatchObject({ status: "published", archived: 3 });
   expect(staged.retained).toMatchObject({ status: "published", retained: [{ path: "plugins/small-local" }] });
   expect(staged.profiles).toEqual({ sources: 2, imported: 1, unchanged: 1 });
+  expect(staged.schedules).toEqual({ days: 1, entries: 2, emptyFiles: 1 });
   expect(await readFile(join(staged.directory, "plugin-archive", "backup", plugin), "utf8")).toBe(manifest);
   expect(await readFile(join(staged.directory, "plugin-archive", compatible), "utf8")).toBe(script);
   expect(await readFile(join(staged.state.directory, group))).toEqual(groupBytes);
@@ -66,7 +84,7 @@ test.skipIf(!Bun.which("git"))("组合暂存一并归档拒载插件并复制存
   const preparedProfile = join(staged.state.directory, "data/users/42.yaml");
   expect(await readFile(preparedProfile, "utf8")).toBe(profile);
   expect((await lstat(preparedProfile)).mode & 0o777).toBe(0o600);
-  expect((await readdir(target)).sort()).toEqual([".git", "plugins"]);
+  expect((await readdir(target)).sort()).toEqual([".git", "package.json", "plugins"]);
 
   const siblings = (await readdir(dirname(target))).sort();
   await put(source, "data/users/42.yaml", profile.replace("isolated-fixture", "conflicting-fixture"));
@@ -77,6 +95,30 @@ test.skipIf(!Bun.which("git"))("组合暂存一并归档拒载插件并复制存
   await expect(stageMigration(source, target)).rejects.toThrow("星铁旧逐抽卡池");
   expect((await readdir(dirname(target))).sort()).toEqual(siblings);
   expect(await readFile(join(source, plugin), "utf8")).toBe(manifest);
+
+  await put(source, legacyPool, pool(ids[0]));
+  const result = await migrateInstallation(source, target);
+  expect(result).toMatchObject({ status: "published", archiveCount: 3, profiles: { imported: 1 },
+    schedules: { days: 1, entries: 2, emptyFiles: 1 },
+    heldPlugins: [{ path: "plugins/missing-dependency", reason: "unresolved-dependency" }] });
+  expect(result.paths).toEqual(["backup", "config", "data", "plugins/small-local"]);
+  expect(await readFile(join(target, "backup", plugin), "utf8")).toBe(manifest);
+  expect(await readFile(join(target, compatible), "utf8")).toBe(script);
+  expect(await Bun.file(join(target, "plugins", held)).exists()).toBe(false);
+  expect(await readFile(join(target, "backup/held-plugins", held), "utf8")).toBe(heldScript);
+  expect(await readFile(join(target, group))).toEqual(groupBytes);
+  expect(await readFile(join(target, legacyPool), "utf8")).toBe(pool(ids[0]));
+  expect(await readFile(join(target, "data/users/42.yaml"), "utf8")).toBe(profile);
+  expect((await createCheckinScheduleStore(join(target, "data/schedules")).read(date))?.entries).toEqual([
+    expect.objectContaining({ profileId: 1, done: true, stage: "legacy-unconfirmed" }),
+    expect.objectContaining({ profileId: 2, done: true, ok: true }),
+  ]);
+  expect(await readdir(join(target, "data/schedules"))).toEqual([`${date}.json`]);
+  expect(await readFile(join(source, oldSchedule), "utf8")).toBe(originalSchedule);
+  expect(await readFile(join(target, "backup", oldSchedule), "utf8")).toBe(originalSchedule);
+  expect(await Bun.file(join(target, plugin)).exists()).toBe(false);
+  expect(await readFile(join(source, plugin), "utf8")).toBe(manifest);
+  expect(await migrateInstallation(source, target)).toMatchObject({ status: "already-published", paths: result.paths });
 }));
 
 test("旧群配置和星铁逐抽可独立暂存，并由隔离宿主原指令实际读取", () => fixture(async (source, target) => {
