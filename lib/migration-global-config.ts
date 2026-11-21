@@ -15,7 +15,7 @@ const supported = {
   scheduler: ["enable", "run_due_cron", "plan_generate_cron", "catch_up_cron", "mode", "fixed_time", "random", "late_registration"],
   permissions: ["default_policy", "users", "groups", "scopes"],
   coin_shop: ["enable", "path", "public_url", "ticket_minutes", "session_hours", "panel_ticket_minutes", "panel_session_hours"],
-  daily_note_reminders: ["enable"],
+  daily_note_reminders: ["enable", "cooldown_hours"],
 } as const;
 
 async function readGlobal(root: string, prefix: string): Promise<Config | undefined> {
@@ -36,7 +36,7 @@ async function readGlobal(root: string, prefix: string): Promise<Config | undefi
 }
 
 /** Materialize settings whose running consumers previously reached into rejected plugin directories. */
-export async function stageLegacyGlobalConfig(source: string, stage: string, signal?: AbortSignal) {
+export async function stageLegacyGlobalConfig(source: string, stage: string, signal?: AbortSignal, legacyDailyNote?: { readonly enabled: boolean; readonly cooldownHours?: number }) {
   signal?.throwIfAborted();
   const [local, ...legacy] = await Promise.all([readGlobal(source, ""),
     ...legacyLotusDirectories.map(id => readGlobal(source, `plugins/${id}`))]);
@@ -45,6 +45,10 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
   const projected: Config = { ...media.config };
   for (const [key, fields] of Object.entries(supported)) {
     if (Object.hasOwn(effective, key)) projected[key] = projectSettings(effective[key], fields);
+  }
+  if (!Object.hasOwn(effective, "daily_note_reminders") && (legacyDailyNote?.enabled || legacyDailyNote?.cooldownHours !== undefined)) {
+    projected.daily_note_reminders = { enable: legacyDailyNote.enabled, ...(legacyDailyNote.cooldownHours !== undefined &&
+      { cooldown_hours: legacyDailyNote.cooldownHours }) };
   }
   const sections = Object.keys(projected);
   signal?.throwIfAborted();

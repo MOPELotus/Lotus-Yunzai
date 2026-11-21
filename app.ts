@@ -2346,11 +2346,16 @@ if (import.meta.main) {
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     if (!probingUpdate) {
-      const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean } | undefined;
+      const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean; readonly cooldown_hours?: unknown } | undefined;
       dailyNoteReminders = createDailyNoteReminders({
         directory: profileDirectory, file: fileURLToPath(new URL("data/daily-note/reminders.sqlite", root)),
         signal: lifecycle.signal, enabled: settings?.enable === true, activeSignal: nativeOperationSignal,
         transports: subscriptionTransport, transport: hoyoTransport,
+        cooldownHours: settings?.cooldown_hours,
+        async legacyTimeToLive(key) {
+          const redis = globalThis.redis;
+          if (redis?.isReady) return redis.pTTL(key);
+        },
         allowed: ({ bot, group_id, qq }) => handoff.accepting && !stopping && !dispatchPower.paused &&
           groupDispatch.allowsInbound({ post_type: "message", message_type: "group", self_id: bot, group_id, user_id: qq }) &&
           groupDispatch.allowsScheduledGroup(bot, group_id, dailyNoteReminderFeatureNames),

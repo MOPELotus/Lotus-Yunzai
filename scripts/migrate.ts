@@ -28,6 +28,7 @@ interface PreparedMigration {
     readonly starRailTheme: Staged["starRailTheme"];
     readonly shopAudit: Staged["shopAudit"];
     readonly redeem: Staged["redeem"];
+    readonly dailyNoteReminders?: Staged["dailyNoteReminders"];
     readonly state: Staged["state"]["plan"];
     readonly heldPlugins: Staged["retained"]["held"];
     readonly deferredPlugins: Staged["deferredPlugins"];
@@ -84,6 +85,7 @@ async function prepare(source: string, target: string, directory: string, signal
         starRailTheme: staged.starRailTheme,
         shopAudit: staged.shopAudit,
         redeem: staged.redeem,
+        dailyNoteReminders: staged.dailyNoteReminders,
         state: staged.state.plan,
         heldPlugins: staged.retained.held,
         deferredPlugins: staged.deferredPlugins,
