@@ -103,6 +103,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
+import { panelAtlasUpdate } from "./lib/panel-atlas-update.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions } from "./lib/panel-account-permissions.ts";
@@ -246,11 +247,11 @@ if (import.meta.main) {
     return () => pendingModuleTasks.delete(start);
   }
 
-  function validateGroupTimedCron(cron: string) {
+  function validateModuleCron(cron: string) {
     if (stopping || lifecycle.signal.aborted) return false;
     try {
       const candidate = moduleTasks.prepare([{ owner: new HandlerScope(), app: {
-        name: "[group] 定时群禁言校验", task: { cron, fnc() {}, log: false },
+        name: "模块定时任务校验", task: { cron, fnc() {}, log: false },
       } }]);
       candidate.cancel();
       return true;
@@ -2970,9 +2971,9 @@ if (import.meta.main) {
         },
         groupTimedMute: {
           async readLegacy() { return await globalThis.redis?.get("yenai:MuteTasks") ?? null; },
-          validateCron: validateGroupTimedCron,
+          validateCron: validateModuleCron,
           register(name, cron, run) {
-            if (!validateGroupTimedCron(cron)) throw new Error("定时群禁言配置无效。");
+            if (!validateModuleCron(cron)) throw new Error("定时群禁言配置无效。");
             return registerModuleTask(name, cron, run);
           },
           async execute(binding, signal) {
@@ -3314,6 +3315,7 @@ if (import.meta.main) {
         ["/panel/api/settings/checkin/schedule", panelCheckinSchedule(root)],
         ["/panel/api/settings/checkin/permissions", panelAccountPermissions(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
+        ["/panel/api/settings/atlas/update", panelAtlasUpdate(root, validateModuleCron)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],

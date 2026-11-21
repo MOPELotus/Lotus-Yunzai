@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
+import AtlasUpdateSettings from "./AtlasUpdateSettings.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
@@ -15,6 +16,7 @@ const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>
 const endpoint = `${import.meta.env.BASE_URL}api/settings/atlas/channel`;
 const saved = ref<Channel | null>();
 const draft = ref<Channel | null>(null);
+const updateDirty = ref(false);
 const busy = ref<"load" | "save">();
 const feedback = ref("");
 const error = ref("");
@@ -22,7 +24,7 @@ const dirty = computed(() => saved.value !== undefined && draft.value !== saved.
 const savedLabel = computed(() => options.find(({ value }) => value === saved.value)?.label ?? "尚未选择");
 let active: AbortController | undefined;
 
-watch(dirty, (value) => emit("dirty-change", value));
+watch(() => dirty.value || updateDirty.value, (value) => emit("dirty-change", value));
 
 async function synchronize(mode: "load" | "save") {
   if (active || (mode === "save" && (!dirty.value || !draft.value))) return;
@@ -107,6 +109,7 @@ onBeforeUnmount(() => {
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>
+    <AtlasUpdateSettings :auth="auth" @unauthorized="emit('unauthorized')" @dirty-change="updateDirty = $event" />
   </section>
 </template>
 
