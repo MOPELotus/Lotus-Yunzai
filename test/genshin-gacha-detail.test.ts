@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { GenshinGachaPool } from "../packages/hoyo-client/index.ts";
 import { buildGenshinGachaDetail, resolveGenshinDetailPool } from "../plugins/genshin/gacha-detail.ts";
+import { mergeGenshinGachaHistory } from "../plugins/genshin/gacha-history.ts";
 
 const uid = "100000002";
 const now = new Date("2026-11-19T08:00:00+08:00");
@@ -127,4 +128,25 @@ test("keeps unknown time and UP unknown, accepts old 400 and deduplicates precis
   expect(buildGenshinGachaDetail({ ...options, records: {} })).toBeUndefined();
   expect(() => buildGenshinGachaDetail({ ...options, records: { 301: [{ ...oldRows[0], uid: "100000003" }] } })).toThrow("当前角色或卡池");
   expect(() => buildGenshinGachaDetail({ ...options, records: { 301: [{ ...oldRows[0], id: 1700000000000000000 }] } })).toThrow("编号无效");
+});
+
+test("keeps source order for same-second legacy pulls and descending IDs after a merge", () => {
+  const [first, five, four, ...rest] = records[301];
+  const time = first!.time;
+  const legacy = [{ ...five!, time }, { ...four!, time }, first!, ...rest];
+  const detail = (pool: unknown) => buildGenshinGachaDetail({ ...options, records: { 301: pool } })!.gacha;
+  const old = detail(legacy);
+  expect(old.stat).toMatchObject({ allNum: 8, noFiveNum: 0, noFourNum: 1 });
+  expect(old.fiveLog[0]).toMatchObject({ id: 10000089, count: 4 });
+
+  const written = mergeGenshinGachaHistory({ 301: legacy }, {
+    uid, region: "cn_gf01", pools: [
+      { type: 301, records: [] }, { type: 302, records: [] }, { type: 200, records: [] }, { type: 500, records: [] },
+    ],
+  }).records[301];
+  expect(written.slice(0, 3).map(({ id }) => id)).toEqual([first!.id, five!.id, four!.id]);
+  expect(detail(written).stat).toMatchObject({ allNum: 8, noFiveNum: 1, noFourNum: 2 });
+  expect(detail(written).fiveLog[1]).toMatchObject({ id: 10000089, count: 3 });
+  expect(detail([{ ...legacy[0], time: "" }, ...legacy.slice(1)]).stat)
+    .toMatchObject({ allNum: 8, noFiveNum: 1, noFourNum: 2 });
 });
