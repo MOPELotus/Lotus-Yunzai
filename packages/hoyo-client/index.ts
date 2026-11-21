@@ -57,6 +57,7 @@ export type { ZzzExplorationSnapshot, ZzzExplorationArea, ZzzExplorationMap } fr
 export { zzzZenkovPageSize } from "./zzz-zenkov.ts";
 export type { ZzzZenkovItem, ZzzZenkovMap, ZzzZenkovMode, ZzzZenkovRank, ZzzZenkovRun, ZzzZenkovSnapshot } from "./zzz-zenkov.ts";
 export type { ZzzHollowChallenge, ZzzHollowFighter, ZzzHollowMode, ZzzHollowProgress, ZzzHollowSnapshot } from "./zzz-hollow-zero.ts";
+export { normalizeZzzClimbingTower } from "./zzz-climbing-tower.ts";
 export type { ZzzClimbingTowerSnapshot, ZzzTowerAvatar, ZzzTowerSeason } from "./zzz-climbing-tower.ts";
 export { normalizeZzzVoidFront } from "./zzz-void-front.ts";
 export type { ZzzVoidFrontRound, ZzzVoidFrontSnapshot, ZzzVoidFrontStage } from "./zzz-void-front.ts";
