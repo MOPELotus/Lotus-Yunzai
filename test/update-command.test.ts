@@ -80,13 +80,14 @@ test("配队业务更新和已停用的旧指令都不会触发仓库更新", as
 
 test("旧角色攻略更新指令交给攻略模块，带空格的明确仓库目标仍由宿主更新", async () => {
   const { dispatch, calls } = fixture();
-  for (const text of [" #更新钟离攻略 ", "#更新钟离一图流"]) {
+  for (const text of [" #更新钟离攻略 ", "#更新钟离一图流", "#更新心海攻略4", "#更新早柚攻略7"]) {
     expect(isUpdateCommand(text)).toBe(false);
     expect(hasValidUpdateTarget(text)).toBe(false);
     await dispatch(text);
   }
   expect(calls).toEqual([]);
   expect(hasValidUpdateTarget("#更新 钟离攻略")).toBe(true);
+  expect(hasValidUpdateTarget("#更新 心海攻略4")).toBe(true);
   await dispatch("#更新 钟离攻略");
   expect(calls.map(({ target }) => target)).toEqual(["钟离攻略"]);
 });
