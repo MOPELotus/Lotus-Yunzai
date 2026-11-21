@@ -30,7 +30,18 @@ fi
 
 从新版仓库根目录运行上述命令。将 `old_source_repo`、`modern_sample` 和 `legacy_sample` 分别设为已有的旧源码仓库路径和两份独立样本根目录。旧副本保持分离 HEAD 和补丁的三处未提交改动。命令会核对旧 Git 根、HEAD、三份文件摘要以及其他文件的工作区状态。
 
-新版使用本仓 `packageManager` 固定的 Bun 版本。旧副本的包管理器为 `pnpm@10.12.4`，依赖来自其检出提交的 `pnpm-lock.yaml`。提前在旧副本执行 `pnpm install --frozen-lockfile`；运输离线副本时可在缓存完整的环境加 `--offline`。执行前用 `bun --version`、`pnpm --version` 和 `git -C "$workspace/legacy" rev-parse HEAD` 对照固定版本。运行依赖装入该副本的 `node_modules`。
+新版使用本仓 `packageManager` 固定的 Bun 版本。旧副本使用 `pnpm@10.12.4` 和检出提交的 `pnpm-lock.yaml`。先冻结安装，再用本仓的原生库恢复工具准备旧版 Skia。工具按旧包标记的版本下载对应平台构建并核对 SHA-256。以下命令从新版根目录运行。
+
+```sh
+(cd "$workspace/legacy" && pnpm install --frozen-lockfile --ignore-scripts)
+LOTUS_CHECKIN_LEGACY_ROOT="$workspace/legacy" bun --no-env-file -e '
+  import { pathToFileURL } from "node:url";
+  import { recoverSkiaBinary } from "./scripts/skia-binary.ts";
+  await recoverSkiaBinary(pathToFileURL(Bun.env.LOTUS_CHECKIN_LEGACY_ROOT + "/"));
+'
+```
+
+离线副本应在联网环境提前完成以上两步。执行前在各自代码目录用 `bun --version`、`pnpm --version` 和 `git rev-parse HEAD` 对照固定版本。
 
 ## 预检、执行和回接
 
