@@ -299,7 +299,7 @@ test("实际 cron 唤醒已有群登记，无效旧配置不会排入调度", as
     });
     runtime.start();
     const reply = await Promise.race([receipt.promise, Bun.sleep(3500).then(() => undefined)]);
-    expect(reply).toEqual([{ type: "at", qq: 42 }, "\n", "原神树脂已达到提醒阈值（190/200）。"]);
+    expect(reply).toEqual([{ type: "at", qq: 42 }, "\n", { type: "text", text: "原神树脂已达到提醒阈值（190/200）。" }]);
     await runtime.stop();
     expect(Object.keys(scheduledJobs).filter(key => !timers.has(key))).toEqual([]);
   } finally {

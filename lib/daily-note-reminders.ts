@@ -61,6 +61,11 @@ export type DailyNoteReminderEnrollment = Key & {
   readonly uid: string; readonly profile: number; readonly binding: string; readonly threshold: number; readonly legacyUntil: number;
 };
 type ReadNote = { readonly snapshot: DailyNoteSnapshot; readonly revision: string };
+type PendingNote = { readonly target: Target; readonly note: ReadNote };
+
+function noticeDescription({ snapshot: { game, stamina: { current, max } } }: ReadNote) {
+  return `${gameNames[game]}${resources[game]}已达到提醒阈值（${current}/${max}）。`;
+}
 
 function gameOf(name?: string): Game {
   return name === "星铁" ? "sr" : name === "绝区零" ? "zzz" : "gs";
@@ -191,6 +196,56 @@ export function createDailyNoteReminders({
     } finally { pending.abort(); }
   }
 
+  async function legacyCooldownActive(db: Database, target: Target, current: AbortSignal) {
+    if (!target.legacyUntil) return false;
+    const legacyKey = `${target.group_id}:${target.bot}:${target.game}_NoteTask:${target.uid}`;
+    const ttl = await legacyCooldown(legacyKey, current);
+    if (!active(current)) return true;
+    if (typeof ttl === "number" && Number.isSafeInteger(ttl) && ttl > 0) {
+      const at = now();
+      const until = Math.min(Number.MAX_SAFE_INTEGER, at + ttl);
+      db.query(`UPDATE daily_note_reminders SET nextAt=$until WHERE ${targetSql}
+        AND binding=$binding AND legacyUntil=$legacyUntil AND nextAt <= $at`)
+        .run({ ...groupKey(target), $uid: target.uid, $binding: target.binding, $legacyUntil: target.legacyUntil, $at: at, $until: until });
+      return true;
+    }
+    return ttl === -1 || (ttl !== -2 && ttl !== 0 && now() < target.legacyUntil);
+  }
+
+  async function notifyGroup(db: Database, destination: Destination, candidates: readonly PendingNote[], gateway: BotNotifications, current: AbortSignal) {
+    let claimed: readonly PendingNote[] = [];
+    let until = 0;
+    const result = await notifyCheckin({
+      userId: destination.qq, transports: [gateway], signal: current,
+      settings: { enabled: true, prefer: "group", fallbackGroups: [destination.group_id] },
+      reply() {
+        const text = [prefix, ...claimed.map(({ note }) => noticeDescription(note))].filter(Boolean).join("\n");
+        return { type: "text", text };
+      },
+      async verifySend() {
+        const verified = await Promise.all(candidates.map(async ({ target, note }) => (await sourceFor(target))?.revision === note.revision));
+        if (!active(current) || !allowed(destination)) return false;
+        const at = now();
+        until = Math.min(Number.MAX_SAFE_INTEGER, at + cooldown);
+        const claim = db.query(`UPDATE daily_note_reminders SET nextAt=$until WHERE ${targetSql}
+          AND binding=$binding AND profile=$profile AND threshold=$threshold AND legacyUntil=$legacyUntil AND nextAt <= $at`);
+        claimed = db.transaction(() => candidates.filter(({ target }, index) => verified[index] &&
+          claim.run({ ...groupKey(target), $uid: target.uid, $binding: target.binding, $profile: target.profile,
+            $threshold: target.threshold, $legacyUntil: target.legacyUntil, $at: at, $until: until }).changes === 1)).immediate();
+        return claimed.length > 0;
+      },
+    });
+    if (!claimed.length) return;
+    const release = result.status === "unavailable" || result.status === "skipped";
+    const update = db.query(`UPDATE daily_note_reminders SET ${release ? "nextAt=0" : "legacyUntil=0"}
+      WHERE ${targetSql} AND binding=$binding AND nextAt=$until`);
+    db.transaction(() => {
+      for (const { target } of claimed) {
+        update.run({ ...groupKey(target), $uid: target.uid, $binding: target.binding, $until: until });
+      }
+    }).immediate();
+  }
+
   async function scan() {
     const current = activeSignal();
     if (!active(current)) return;
@@ -198,57 +253,32 @@ export function createDailyNoteReminders({
     if (!db) return;
     const due = db.query<Target, [number]>(
       "SELECT * FROM daily_note_reminders WHERE nextAt <= ? ORDER BY bot,group_id,qq,game,uid").all(now());
-    const readings = new Map<string, ReadNote | undefined>();
+    const groups = new Map<string, Target[]>();
     for (const target of due) {
+      const key = `${target.bot}:${target.group_id}:${target.qq}`;
+      const group = groups.get(key) ?? [];
+      group.push(target);
+      groups.set(key, group);
+    }
+    const readings = new Map<string, ReadNote | undefined>();
+    for (const targets of groups.values()) {
       if (!active(current)) return;
-      if (!allowed(target)) continue;
-      const gateway = transports().find(item => item.botId === target.bot);
-      if (!gateway || !await gateway.isGroupMember(target.group_id, target.qq).catch(() => false) || !active(current)) continue;
-      if (target.legacyUntil > 0) {
-        const legacyKey = `${target.group_id}:${target.bot}:${target.game}_NoteTask:${target.uid}`;
-        const ttl = await legacyCooldown(legacyKey, current);
+      const destination = targets[0]!;
+      if (!allowed(destination)) continue;
+      const gateway = transports().find(item => item.botId === destination.bot);
+      if (!gateway || !await gateway.isGroupMember(destination.group_id, destination.qq).catch(() => false)) continue;
+      const candidates: PendingNote[] = [];
+      for (const target of targets) {
         if (!active(current)) return;
-        if (typeof ttl === "number" && Number.isSafeInteger(ttl) && ttl > 0) {
-          const at = now();
-          const until = Math.min(Number.MAX_SAFE_INTEGER, at + ttl);
-          db.query(`UPDATE daily_note_reminders SET nextAt=$until WHERE ${targetSql}
-            AND binding=$binding AND legacyUntil=$legacyUntil AND nextAt <= $at`)
-            .run({ ...groupKey(target), $uid: target.uid, $binding: target.binding, $legacyUntil: target.legacyUntil, $at: at, $until: until });
-          continue;
-        }
-        if (ttl === -1 || (ttl !== -2 && ttl !== 0 && now() < target.legacyUntil)) continue;
+        if (!allowed(destination)) break;
+        if (await legacyCooldownActive(db, target, current)) continue;
+        const key = target.binding;
+        if (!readings.has(key)) readings.set(key, await readNote(target, current).catch(() => undefined));
+        const note = readings.get(key);
+        if (note && note.snapshot.stamina.current >= target.threshold) candidates.push({ target, note });
       }
-      const key = target.binding;
-      if (!readings.has(key)) readings.set(key, await readNote(target, current).catch(() => undefined));
-      const note = readings.get(key);
-      if (!note || note.snapshot.stamina.current < target.threshold || !active(current)) continue;
-      const { current: points, max } = note.snapshot.stamina;
-      const sql = { ...groupKey(target), $uid: target.uid, $binding: target.binding, $threshold: target.threshold };
-      let claimed: number | undefined;
-      const description = `${gameNames[target.game]}${resources[target.game]}已达到提醒阈值（${points}/${max}）。`;
-      const result = await notifyCheckin({
-        userId: target.qq, transports: [gateway], signal: current,
-        settings: { enabled: true, prefer: "group", fallbackGroups: [target.group_id] },
-        reply: prefix ? { type: "text", text: `${prefix}\n${description}` } : description,
-        async verifySend() {
-          const latest = await sourceFor(target);
-          if (latest?.revision !== note.revision || !active(current) || !allowed(target)) return false;
-          const at = now();
-          const until = Math.min(Number.MAX_SAFE_INTEGER, at + cooldown);
-          if (db.query(`UPDATE daily_note_reminders SET nextAt=$until WHERE ${targetSql}
-              AND binding=$binding AND threshold=$threshold AND nextAt <= $at`)
-            .run({ ...sql, $at: at, $until: until }).changes !== 1) return false;
-          claimed = until;
-          return true;
-        },
-      });
-      if (claimed !== undefined && (result.status === "unavailable" || result.status === "skipped")) {
-        db.query(`UPDATE daily_note_reminders SET nextAt=0 WHERE ${targetSql}
-          AND binding=$binding AND threshold=$threshold AND nextAt=$until`).run({ ...sql, $until: claimed });
-      } else if (claimed !== undefined) {
-        db.query(`UPDATE daily_note_reminders SET legacyUntil=0 WHERE ${targetSql}
-          AND binding=$binding AND threshold=$threshold AND nextAt=$until`).run({ ...sql, $until: claimed });
-      }
+      if (!active(current)) return;
+      if (candidates.length) await notifyGroup(db, destination, candidates, gateway, current);
     }
   }
 

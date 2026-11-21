@@ -16,15 +16,17 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
   let allowed = true;
   let member = true;
   let changed = false;
+  let groupChecks = 0;
   let sendMode = 503;
   const online = Promise.withResolvers<Parameters<NonNullable<MilkyTransportOptions["onOnline"]>>>();
   const sent: { group_id: number; message: unknown }[] = [];
   const reads: string[] = [];
   const gs = { uid: "100001234", region: "cn_gf01", game_biz: "hk4e_cn" };
+  const secondGs = { uid: "100001235", region: "cn_gf01", game_biz: "hk4e_cn" };
   const sr = { uid: "500001234", region: "prod_qd_cn", game_biz: "hkrpg_cn" };
   const zzz = { uid: "12345678", region: "prod_gf_cn", game_biz: "nap_cn" };
-  const profile = (qq: number, account: number, roles = { gs: [gs], sr: [sr], zzz: [zzz] }) => writeFile(join(directory, `${qq}-2.yaml`),
-    Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id: 2 }, account: {
+  const profile = (qq: number, account: number, roles = { gs: [gs], sr: [sr], zzz: [zzz] }, profileId = 2) => writeFile(join(directory, `${qq}-${profileId}.yaml`),
+    Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id: profileId }, account: {
       cookie: `account_id=${account};cookie_token=fixture`, stuid: String(account), ltuid: String(account), stoken: "fixture-login",
       game_roles: roles,
     } }));
@@ -35,10 +37,13 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
     if (request.method !== "POST" || request.headers.get("Authorization") !== `Bearer ${credential}`) return new Response(null, { status: 401 });
     const body = await request.json() as { group_id: number; user_id: number; message: unknown };
     if (action === "get_login_info") return ok({ uin: 99 });
-    if (action === "get_group_member_info" && member) return ok({ member: { group_id: body.group_id, user_id: body.user_id } });
+    if (action === "get_group_member_info" && member) {
+      if (changed && body.group_id === 77 && ++groupChecks === 2) await profile(42, 883);
+      return ok({ member: { group_id: body.group_id, user_id: body.user_id } });
+    }
     if (action !== "send_group_message") return new Response(null, { status: 404 });
     sent.push(body);
-    return sendMode === 503 ? new Response(null, { status: 503 }) : ok({ message_seq: sent.length });
+    return sendMode !== 200 ? new Response(null, { status: sendMode }) : ok({ message_seq: sent.length });
   } });
   const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const url = new URL(request.url);
@@ -46,8 +51,8 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
     expect(request.headers.get("cookie")).toBe("account_id=882;cookie_token=fixture");
     const uid = url.searchParams.get("role_id");
     reads.push(uid ?? "");
-    if (uid === gs.uid && changed) await profile(42, 883);
     const stamina = uid === gs.uid ? { current_resin: 160, max_resin: 200, current_home_coin: 891, max_home_coin: 1000 }
+      : uid === secondGs.uid ? { current_resin: 175, max_resin: 200 }
       : uid === sr.uid ? { current_stamina: 259, max_stamina: 300 } : { energy: { progress: { current: 211, max: 240 } } };
     return ok({ role_id: uid, server: url.searchParams.get("server"), ...stamina });
   } });
@@ -74,6 +79,7 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
   }
   try {
     await profile(42, 882);
+    await profile(42, 882, { gs: [secondGs], sr: [], zzz: [] }, 3);
     await profile(43, 884, { gs: [], sr: [], zzz: [] });
     webhook.start();
     const [botId, , , gateway] = await online.promise;
@@ -93,47 +99,60 @@ test("三游戏只向有效订阅群提醒，同档角色隔离，冷却持久�
     expect(reads).toEqual([]);
     expect(sent).toEqual([]);
     expect(await command(`#原神开启体力推送${gs.uid} 档案2`)).toContain("阈值 160");
+    expect(await command("#原神开启体力推送" + secondGs.uid + " 档案3")).toContain("阈值 160");
     expect(await command("#星铁开启体力推送")).toContain("阈值 260");
     expect(await command("#绝区零开启体力推送")).toContain("阈值 200");
     expect(await command("#星铁体力推送阈值149")).toContain("不能小于 150");
-    expect(await command("#原神开启体力推送", { group_id: 78 })).toContain("阈值 160");
+    expect(await command("#原神开启体力推送" + gs.uid + " 档案2", { group_id: 78 })).toContain("阈值 160");
     allowed = false;
     await reminders.runDue();
     expect(reads).toEqual([]);
     allowed = true;
     await reminders.runDue();
-    expect(reads.sort()).toEqual([gs.uid, sr.uid, zzz.uid].sort());
-    expect(sent.map(item => item.group_id)).toEqual([77, 77, 78]);
+    expect(reads.sort()).toEqual([gs.uid, secondGs.uid, sr.uid, zzz.uid].sort());
+    expect(sent.map(item => item.group_id)).toEqual([77, 78]);
     expect(JSON.stringify(sent)).toContain("原神树脂已达到提醒阈值（160/200）");
-    expect(JSON.stringify(sent)).toContain("绝区零电量已达到提醒阈值（211/240）");
+    const combined = sent[0]!.message as { type: string; data: { user_id?: number; text?: string } }[];
+    expect(combined.filter(segment => segment.type === "mention" || segment.type === "mention_all"))
+      .toEqual([{ type: "mention", data: { user_id: 42 } }]);
+    expect(combined.at(-1)?.data.text?.split("\n")).toEqual([
+      "原神树脂已达到提醒阈值（160/200）。", "原神树脂已达到提醒阈值（175/200）。", "绝区零电量已达到提醒阈值（211/240）。",
+    ]);
     expect(JSON.stringify(sent)).toContain('"user_id":42');
-    expect(JSON.stringify(sent)).not.toMatch(/891|500001234|12345678|fixture|开拓力/);
+    expect(JSON.stringify(sent)).not.toMatch(/891|100001234|100001235|500001234|12345678|fixture|开拓力/);
     await reminders.stop();
     reminders = open(true, () => [{ botId, ...gateway }]);
     await reminders.runDue();
-    expect(sent).toHaveLength(3);
+    expect(sent).toHaveLength(2);
     sendMode = 200;
     expect(await command("#星铁体力推送259")).toContain("已设为 259");
     await reminders.runDue();
-    expect(JSON.stringify(sent[3])).toContain("星铁开拓力已达到提醒阈值（259/300）");
+    expect(JSON.stringify(sent[2])).toContain("星铁开拓力已达到提醒阈值（259/300）");
     at += 12 * 60 * 60_000;
     active.abort();
     await reminders.runDue();
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(3);
     active = new AbortController();
     member = false;
     await reminders.runDue();
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(3);
     member = true;
     expect(await command("#星铁关闭体力推送")).toContain("已关闭");
     expect(await command("#绝区零关闭体力推送")).toContain("已关闭");
+    sendMode = 415;
+    await reminders.runDue();
+    expect(sent.slice(3).map(item => item.group_id)).toEqual([77, 78]);
+    sendMode = 200;
     const contender = open(true, () => [{ botId, ...gateway }]);
     await Promise.all([reminders.runDue(), contender.runDue()]);
-    expect(sent.slice(4).map(item => item.group_id).sort()).toEqual([77, 78]);
+    expect(sent.slice(5).map(item => item.group_id).sort()).toEqual([77, 78]);
     at += 12 * 60 * 60_000;
     changed = true;
     await reminders.runDue();
-    expect(sent).toHaveLength(6);
+    expect(sent).toHaveLength(8);
+    expect(sent.at(-1)?.group_id).toBe(77);
+    expect(JSON.stringify(sent.at(-1))).toContain("175/200");
+    expect(JSON.stringify(sent.at(-1))).not.toContain("160/200");
     const before = reads.length;
     await reminders.runDue();
     expect(reads).toHaveLength(before);

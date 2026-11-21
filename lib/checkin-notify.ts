@@ -33,7 +33,7 @@ export type CheckinNotifyResult =
 interface CheckinNotifyOptions {
   readonly userId: number;
   readonly settings: CheckinNotifySettings;
-  readonly reply: MessageReply;
+  readonly reply: MessageReply | (() => MessageReply);
   readonly transports: readonly CheckinNotifyTransport[];
   readonly signal?: AbortSignal;
   readonly verifySend?: () => Promise<boolean>;
@@ -48,6 +48,7 @@ export async function notifyCheckin({
 }: CheckinNotifyOptions): Promise<CheckinNotifyResult> {
   if (!settings.enabled || signal?.aborted) return { status: "skipped" };
   if (!validId(userId)) return { status: "unavailable" };
+  const readyReply = () => typeof reply === "function" ? reply() : reply;
 
   async function attempt(check: () => Promise<boolean>, send: () => Promise<CheckinNotifyDelivery>): Promise<FinalDelivery | undefined> {
     if (signal?.aborted) return;
@@ -71,16 +72,18 @@ export async function notifyCheckin({
   if (settings.prefer === "private") {
     for (const transport of transports) {
       if (signal?.aborted) return { status: "skipped" };
-      const status = await attempt(() => transport.isFriend(userId), () => transport.sendPrivate(userId, reply));
+      const status = await attempt(() => transport.isFriend(userId), () => transport.sendPrivate(userId, readyReply()));
       if (status) return { status, channel: "private" };
     }
   }
 
-  const groupReply: MessageReply = [segment.at(userId), "\n", ...(Array.isArray(reply) ? reply : [reply])];
   for (const groupId of new Set(settings.fallbackGroups.filter(validId))) {
     for (const transport of transports) {
       if (signal?.aborted) return { status: "skipped" };
-      const status = await attempt(() => transport.isGroupMember(groupId, userId), () => transport.sendGroup(groupId, groupReply));
+      const status = await attempt(() => transport.isGroupMember(groupId, userId), () => {
+        const content = readyReply();
+        return transport.sendGroup(groupId, [segment.at(userId), "\n", ...(Array.isArray(content) ? content : [content])]);
+      });
       if (status) return { status, channel: "group", groupId };
     }
   }
