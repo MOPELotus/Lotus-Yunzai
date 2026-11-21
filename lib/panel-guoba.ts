@@ -76,11 +76,17 @@ interface GuobaResult {
   message: string;
 }
 
+interface GuobaSaveGuard {
+  verify(): boolean;
+  registered(): boolean;
+  readonly signal: AbortSignal;
+}
+
 export interface GuobaForm {
   readonly schemas: readonly GuobaField[];
   readonly writable: boolean;
   read(): Promise<GuobaValues>;
-  save(data: unknown): Promise<GuobaResult>;
+  save(data: unknown, guard?: GuobaSaveGuard): Promise<GuobaResult>;
   action(data: unknown, verify: () => boolean, registered: () => boolean, signal: AbortSignal): Promise<GuobaResult>;
 }
 
@@ -479,7 +485,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
           throw new Error("无法读取插件配置。");
         }
       },
-      async save(data) {
+      async save(data, guard) {
         if (!writable || typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
         let values: Record<string, unknown>;
         try {
@@ -491,6 +497,9 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
 
         return queueWrite(file, async () => {
           try {
+            if (guard && (guard.signal.aborted || !guard.verify())) {
+              return { ok: false, status: 401, message: "面板登录已失效。" };
+            }
             let current: Record<string, unknown> | undefined;
             for (const [field, { schema, parts }] of compiled.fields) {
               if (schema.component === "GSubForm") {
@@ -508,6 +517,17 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
               current ??= await readData();
               const existing = getValue(current, field, parts);
               if (existing !== undefined) values[field] = inputValue(schema, existing);
+            }
+            if (guard) {
+              const sameProvider = providerVersions.get(file) === version &&
+                await supportFile(pluginDirectory).catch(() => undefined) === file &&
+                await providerVersion(file).catch(() => undefined) === version;
+              if (!sameProvider || !guard.registered()) {
+                return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+              }
+              if (guard.signal.aborted || !guard.verify()) {
+                return { ok: false, status: 401, message: "面板登录已失效。" };
+              }
             }
             // Legacy setters still receive the expanded form. Opt-in setters can edit only the submitted fields.
             const result: unknown = await setConfigData.call(configInfo, values, { Result, changedFields });

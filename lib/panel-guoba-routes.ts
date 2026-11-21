@@ -14,7 +14,7 @@ export function panelGuobaRoutes(directories: PluginLoadReport["directories"]) {
     return Response.json({ plugins: forms.filter((name) => name !== undefined).sort() });
   }
 
-  async function form(request: Request, directory: string): Promise<Response> {
+  async function form(request: Request, directory: string, verify: () => boolean, registered: () => boolean): Promise<Response> {
     if (request.method !== "GET" && request.method !== "PUT") {
       return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
     }
@@ -31,7 +31,7 @@ export function panelGuobaRoutes(directories: PluginLoadReport["directories"]) {
       } catch {
         return new Response(null, { status: 400 });
       }
-      const { ok, status, message } = await support.save(data);
+      const { ok, status, message } = await support.save(data, { verify, registered, signal: request.signal });
       return Response.json({ ok, message }, { status });
     } catch {
       return new Response(null, { status: 500 });
@@ -68,8 +68,9 @@ export function panelGuobaRoutes(directories: PluginLoadReport["directories"]) {
     }
     const plugin = directories.get(name);
     if (!plugin) return;
-    if (!match[2]) return (request: Request) => form(request, plugin.path);
-    return (request: Request, verify: () => boolean) =>
-      action(request, plugin.path, verify, () => directories.get(name) === plugin);
+    const registered = () => directories.get(name) === plugin;
+    return (request: Request, verify: () => boolean) => match[2]
+      ? action(request, plugin.path, verify, registered)
+      : form(request, plugin.path, verify, registered);
   };
 }

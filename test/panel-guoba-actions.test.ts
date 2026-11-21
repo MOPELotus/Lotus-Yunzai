@@ -43,7 +43,14 @@ async function setup() {
         { component: "GButtons", ifShow: false, componentProps: { buttons: [{ label:"隐藏", action:"preview" }] } },
         { field: "note", label: "备注", component: "Input" },
       ],
-      getConfigData() { return values; },
+      async getConfigData() {
+        const hold = new URL("hold-read", import.meta.url);
+        if (await Bun.file(hold).exists()) {
+          await Bun.write(new URL("read-started", import.meta.url), "yes");
+          for (let attempt = 0; attempt < 200 && await Bun.file(hold).exists(); attempt++) await Bun.sleep(5);
+        }
+        return values;
+      },
       async setConfigData(data, { Result }) {
         if (data.note === "hold") {
           await Bun.write(started, "yes");
@@ -187,6 +194,37 @@ test("按钮动作排在保存之后核对表单与主人，加载目录更替�
     await appendFile(join(provider, "guoba.support.js"), "\n// 模拟宿主外部替换。\n");
     expect((await action(data, token)).status).toBe(404);
     expect(await Bun.file(join(provider, "action.json")).exists()).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+test("表单保存补读不变字段后仍需当前面板权限及同一提供器", async () => {
+  const { provider, auth, request, close, setOwner, directories } = await setup();
+  const hold = join(provider, "hold-read");
+  const started = join(provider, "read-started");
+  const token = { Authorization: "Bearer " + bearer };
+  async function expectRefused(headers: Record<string, string>, interrupt: () => unknown, status: number) {
+    await Bun.write(hold, "yes");
+    const saving = request(path, "PUT", { note: "待保存" }, headers);
+    try {
+      for (let attempt = 0; attempt < 100 && !await Bun.file(started).exists(); attempt++) await Bun.sleep(5);
+      expect(await Bun.file(started).exists()).toBe(true);
+      await interrupt();
+    } finally {
+      await rm(hold);
+    }
+    expect((await saving).status).toBe(status);
+    await rm(started);
+    const body = await (await request(path, "GET", undefined, token)).json();
+    expect(body).toMatchObject({ values: { note: "before" } });
+  }
+
+  try {
+    await expectRefused(auth, () => setOwner(false), 401);
+    await expectRefused(token, () => directories.set("fixture", { ...directories.get("fixture")! }), 409);
+    await expectRefused(token, () => appendFile(join(provider, "guoba.support.js"), "// 表单文件变更\n"), 409);
+    expect((await request(path, "PUT", { note: "待保存" }, token)).status).toBe(409);
   } finally {
     await close();
   }
