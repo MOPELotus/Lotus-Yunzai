@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -56,7 +56,7 @@ function connect(url: string, botId?: number) {
   };
 }
 
-test("日志指令只向授权终端和已绑定机器人的私聊主人发送脱敏内容", async () => {
+test.each([["默认日志目录", false], ["历史日志目录软链", true]] as const)("%s 只向授权终端和已绑定机器人的私聊主人发送脱敏内容", async (_label, linked) => {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-log-command-"));
   const clients: ReturnType<typeof connect>[] = [];
   let host: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined;
@@ -64,6 +64,10 @@ test("日志指令只向授权终端和已绑定机器人的私聊主人发送�
   try {
     await copyHost(root);
     await mkdir(join(root, "config/config"), { recursive: true });
+    if (linked) {
+      await mkdir(join(root, "data/logs"), { recursive: true });
+      await symlink("data/logs", join(root, "logs"));
+    }
     await Promise.all([
       writeFile(join(root, "config/config/other.yaml"), 'master: ["99:51", "stdin:stdin"]\n'),
       writeFile(join(root, "plugins/log-fixture.js"), `throw new Error(${JSON.stringify(startupMarker)});`),
@@ -104,6 +108,7 @@ test("日志指令只向授权终端和已绑定机器人的私聊主人发送�
         });
         return content.includes("Lotus-Yunzai 已启动") ? content : undefined;
       }, "宿主未创建当日运行日志。");
+      if (linked) expect(await readlink(join(root, "logs"))).toBe("data/logs");
       expect(readyLog).toContain(startupMarker);
       expect(readyLog).toContain("fixture-new-error token=[已隐藏]");
       const errorLog = await readFile(join(root, "logs/error.log"), "utf8");

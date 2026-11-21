@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { archiveRuntimeLogs } from "../lib/runtime-log-archive.ts";
+import { attachRuntimeLog } from "../lib/runtime-log-writer.ts";
 import { readRuntimeLogs, runtimeLogFilename, sanitizeRuntimeLog } from "../lib/runtime-logs.ts";
 
 const time = new Date(2026, 0, 3, 0, 7);
@@ -101,6 +102,35 @@ test("拒绝符号链接逃出日志目录或宿主目录", () => fixture(async 
     await expect(readRuntimeLogs(pathToFileURL(`${another}/`), "error", { limit: 10 }, time)).rejects.toThrow("无法安全读取运行日志");
   } finally {
     await rm(outside, { recursive: true, force: true });
+  }
+}));
+
+test("日志写入固定启动时的内部软链目录，运行中改指及外部链接拒绝写入", () => fixture(async (root, directory, logs) => {
+  await rm(logs, { recursive: true });
+  await mkdir(join(directory, "stored-logs"));
+  await mkdir(join(directory, "other-logs"));
+  await symlink("stored-logs", logs);
+  const writer = await attachRuntimeLog(root, {});
+  try {
+    writer.writePluginLog("error", "保留在原日志目录");
+    await writer.flush();
+    const before = await readFile(join(directory, "stored-logs/error.log"), "utf8");
+    expect(before).toContain("保留在原日志目录");
+
+    await rm(logs);
+    await symlink("other-logs", logs);
+    writer.writePluginLog("error", "切换后拒绝写入");
+    await writer.flush();
+    expect(await readdir(join(directory, "other-logs"))).toEqual([]);
+    expect(await readFile(join(directory, "stored-logs/error.log"), "utf8")).toBe(before);
+  } finally {
+    await writer.close();
+  }
+
+  for (const target of [".", ".."]) {
+    await rm(logs);
+    await symlink(target, logs);
+    await expect(attachRuntimeLog(root, {})).rejects.toThrow("日志目录须位于宿主目录内");
   }
 }));
 

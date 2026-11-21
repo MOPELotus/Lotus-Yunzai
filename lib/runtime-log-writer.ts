@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatWithOptions, inspect, types } from "node:util";
 import { archiveRuntimeLogs } from "./runtime-log-archive.ts";
-import { runtimeLogFilename, sanitizeRuntimeLog } from "./runtime-logs.ts";
+import { runtimeLogDirectory, runtimeLogFilename, sanitizeRuntimeLog } from "./runtime-logs.ts";
 
 const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "off"];
 const consoleLevels = { debug: "debug", log: "info", info: "info", warn: "warn", error: "error" } as const;
@@ -93,9 +93,10 @@ async function append(file: string, line: string): Promise<void> {
 }
 
 export async function attachRuntimeLog(root: URL, config: Readonly<Record<string, unknown>>) {
-  const directory = join(await realpath(fileURLToPath(root)), "logs");
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  if (await realpath(directory) !== directory) throw new Error("日志目录须位于宿主目录内。");
+  const host = await realpath(fileURLToPath(root));
+  const configured = join(host, "logs");
+  await mkdir(configured, { recursive: true, mode: 0o700 });
+  const directory = await runtimeLogDirectory(host);
 
   const minimum = minimumLevel(config);
   const maxLength = configuredLogLength(config.log_length) ?? 10_000;
@@ -117,7 +118,7 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
     const exceptional = level === "error" || level === "fatal";
     queued++;
     tail = tail.then(async () => {
-      if (await realpath(directory) !== directory) throw new Error("日志目录已变更。");
+      if (await realpath(configured) !== directory) throw new Error("日志目录已变更。");
       const dailyFile = runtimeLogFilename("runtime", time);
       const writes = await Promise.allSettled([
         append(join(directory, dailyFile), line),

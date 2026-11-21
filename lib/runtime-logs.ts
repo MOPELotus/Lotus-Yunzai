@@ -58,11 +58,16 @@ function inside(directory: string, target: string): boolean {
   return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
 
+export async function runtimeLogDirectory(host: string): Promise<string> {
+  const directory = await realpath(join(host, "logs"));
+  if (!inside(host, directory)) throw new Error("日志目录须位于宿主目录内。");
+  return directory;
+}
+
 async function loadTail(root: URL, filename: string) {
   try {
     const host = await realpath(fileURLToPath(root));
-    const directory = await realpath(join(host, "logs"));
-    if (!inside(host, directory)) throw new Error();
+    const directory = await runtimeLogDirectory(host);
     const target = await realpath(join(directory, filename));
     if (!inside(directory, target)) throw new Error();
 
