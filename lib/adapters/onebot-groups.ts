@@ -1,5 +1,6 @@
 import type { MessageReply } from "../messages.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
+import type { ChatFile, ChatFileResult } from "../chat-files.ts";
 import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
 import { OneBotNotSentError, type OneBotCalls, type Send } from "./onebot-calls.ts";
 import type { OwnGroupCardAccount } from "./own-group-card.ts";
@@ -150,6 +151,14 @@ export class OneBotGroups implements GroupTransport {
   async listGroups(botId: number): Promise<readonly GroupTarget[]> {
     const { calls, send } = this.#connection(botId);
     return calls.listGroups(send);
+  }
+
+  captureFileUpload(botId: number) {
+    const current = this.#connected.get(botId);
+    if (!current) return;
+    const { calls, send } = current.connection;
+    return (target: { group_id: number } | { user_id: number }, file: ChatFile, signal: AbortSignal): Promise<ChatFileResult> =>
+      signal.aborted || this.#connected.get(botId) !== current ? Promise.resolve("rejected") : calls.uploadFile(send, target, file, signal);
   }
 
   noticeAccounts(): readonly NoticeGroupAccount[] {

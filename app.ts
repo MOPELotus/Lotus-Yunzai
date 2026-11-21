@@ -316,7 +316,7 @@ if (import.meta.main) {
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
     checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
-    timedWholeMute: MilkySession["timedWholeMute"]; noticeAccount: NoticeGroupAccount } | undefined;
+    timedWholeMute: MilkySession["timedWholeMute"]; noticeAccount: NoticeGroupAccount; uploadFile: MilkySession["uploadFile"] } | undefined;
   let stopping = false;
   let legacyBot: object | undefined;
   let legacyProcessReady = false;
@@ -412,17 +412,19 @@ if (import.meta.main) {
     privateCredential: isPrivateCredentialMessage,
     resolveAccount(botId, adapter) {
       const candidates: OwnerRelayAccount[] = [];
-      function add(adapterName: OwnerRelayAccount["adapter"], gateway: CheckinNotifyTransport | undefined, notice: NoticeGroupAccount | undefined) {
+      function add(adapterName: OwnerRelayAccount["adapter"], gateway: CheckinNotifyTransport | undefined, notice: NoticeGroupAccount | undefined,
+        uploadFile: MilkySession["uploadFile"] | undefined) {
         if (!gateway?.friendship || !notice) return;
         candidates.push({
           botId, adapter: adapterName, friendship: gateway.friendship, groups: notice.listGroups,
           send: (kind, target, reply) => kind === "friend" ? gateway.sendPrivate(target, reply) : gateway.sendGroup(target, reply),
+          uploadFile,
         });
       }
       if (adapter !== "milky") add("onebot", groups.checkinNotifications().find(account => account.botId === botId),
-        groups.noticeAccounts().find(account => account.botId === botId));
+        groups.noticeAccounts().find(account => account.botId === botId), groups.captureFileUpload(botId));
       const milky = milkyOnline;
-      if (adapter !== "onebot" && milky?.id === botId && !milky.signal.aborted) add("milky", milky.checkinNotify, milky.noticeAccount);
+      if (adapter !== "onebot" && milky?.id === botId && !milky.signal.aborted) add("milky", milky.checkinNotify, milky.noticeAccount, milky.uploadFile);
       return candidates.length === 1 ? candidates[0] : undefined;
     },
   });
@@ -2666,8 +2668,9 @@ if (import.meta.main) {
       invitationReceipts,
       onSent: (event, message) => recordCount("send", event, message),
       masterIds: permissions.masterIds,
-      onOnline: (botId, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute, noticeAccount) => {
-        milkyOnline = { id: botId, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute, noticeAccount };
+      onOnline: (botId, signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute, noticeAccount, uploadFile) => {
+        milkyOnline = { id: botId, startedAt: performance.now(), signal, send, checkinNotify, ownGroupCardAccount, timedWholeMute,
+          noticeAccount, uploadFile };
         queueStartupMessages(botId, "milky", signal);
       },
       isMaster: permissions.isMaster,

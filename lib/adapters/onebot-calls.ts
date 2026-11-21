@@ -553,16 +553,18 @@ export class OneBotCalls {
     }
   }
 
-  async uploadFile(send: Send, target: { group_id: number } | { user_id: number }, file: ChatFile): Promise<ChatFileResult> {
+  async uploadFile(send: Send, target: { group_id: number } | { user_id: number }, file: ChatFile,
+    signal?: AbortSignal): Promise<ChatFileResult> {
     const uri = encodeChatFile(file);
     if (uri === undefined) return "rejected";
-    return this.uploadFileUri(send, target, uri, file.name);
+    return this.uploadFileUri(send, target, uri, file.name, signal);
   }
 
-  async uploadFileUri(send: Send, target: { group_id: number } | { user_id: number }, uri: string, name: string): Promise<ChatFileResult> {
+  async uploadFileUri(send: Send, target: { group_id: number } | { user_id: number }, uri: string, name: string,
+    signal?: AbortSignal): Promise<ChatFileResult> {
     const action = "group_id" in target ? "upload_group_file" : "upload_private_file";
     try {
-      const result = await this.#request(send, action, { ...target, file: uri, name });
+      const result = await this.#request(send, action, { ...target, file: uri, name }, signal);
       return isRecord(result) && typeof result.file_id === "string" && result.file_id.trim()
         ? "confirmed" : "unknown";
     } catch (error) {

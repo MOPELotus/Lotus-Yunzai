@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
+import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { generatedImagePreview, notifyReplyDelivery, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
@@ -441,11 +441,13 @@ async function uploadMilkyFile(target: Target, confirm: MilkyConfirmedCall, file
   }
 }
 
+export async function uploadMilkyChatFile(target: Target, file: ChatFile, confirm: MilkyConfirmedCall) {
+  const fileUri = encodeChatFile(file);
+  return fileUri ? uploadMilkyFile(target, confirm, fileUri, file.name) : "rejected";
+}
+
 function uploadToMilky(target: Target, confirm: MilkyConfirmedCall): NonNullable<MessageEvent["uploadFile"]> {
-  return async (file) => {
-    const file_uri = encodeChatFile(file);
-    return file_uri ? uploadMilkyFile(target, confirm, file_uri, file.name) : "rejected";
-  };
+  return file => uploadMilkyChatFile(target, file, confirm);
 }
 
 export function milkyFriendFileUpload(

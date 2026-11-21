@@ -1,4 +1,5 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
+import type { ChatFile, ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "../manual-group-leave.ts";
@@ -27,7 +28,8 @@ import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import type { createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
-import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
+import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage,
+  uploadMilkyChatFile } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
@@ -53,7 +55,8 @@ export interface MilkyTransportOptions extends GroupActionPolicy {
   readonly onSent?: (identity: MessageRecipient & { readonly self_id: number }, message: unknown) => void;
   readonly masterIds?: (botId: number) => readonly number[];
   readonly onOnline?: (botId: number, signal: AbortSignal, send: MilkySession["send"], checkinNotify: CheckinNotifyTransport,
-    ownGroupCardAccount: OwnGroupCardAccount, timedWholeMute: MilkySession["timedWholeMute"], noticeAccount: NoticeGroupAccount) => void;
+    ownGroupCardAccount: OwnGroupCardAccount, timedWholeMute: MilkySession["timedWholeMute"], noticeAccount: NoticeGroupAccount,
+    uploadFile: MilkySession["uploadFile"]) => void;
   readonly isMaster?: (botId: number, userId: number) => boolean;
   readonly groupReviews?: ReturnType<typeof createMilkyGroupReviews>;
 }
@@ -63,6 +66,7 @@ export interface MilkySession {
   readonly checkinNotify: CheckinNotifyTransport;
   readonly ownGroupCardAccount: OwnGroupCardAccount;
   readonly noticeAccount: NoticeGroupAccount;
+  uploadFile(target: { group_id: number } | { user_id: number }, file: ChatFile, active: AbortSignal): Promise<ChatFileResult>;
   timedWholeMute(binding: TimedGroupMuteBinding, signal: AbortSignal): Promise<TimedGroupMuteResult>;
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
@@ -684,7 +688,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
   };
 
-  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), noticeAccount, async timedWholeMute(binding, jobSignal) {
+  return { botId: account, checkinNotify, ownGroupCardAccount: bindCard(), noticeAccount, uploadFile(target, file, active) {
+    const operation = AbortSignal.any([signal, active]);
+    if (operation.aborted || options.accepting?.() === false) return Promise.resolve("rejected");
+    return uploadMilkyChatFile(target, file, (action, params) => call.confirmed(action, params, operation));
+  }, async timedWholeMute(binding, jobSignal) {
     if (binding.adapter !== "milky" || binding.botId !== account) return "unavailable";
     const active = AbortSignal.any([signal, jobSignal]);
     return runTimedWholeMute(binding, {

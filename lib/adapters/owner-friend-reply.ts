@@ -6,7 +6,8 @@ export type OwnerFriendReplyBody = string | readonly (string | { readonly source
 export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable" | "unsupported";
 type FriendReplyPart = string | { readonly type: "image"; readonly file: Uint8Array } |
   { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };
-type GroupReplyPart = FriendReplyPart | { readonly type: "at"; readonly qq: string };
+type RelayReplyPart = FriendReplyPart | { readonly type: "at"; readonly qq: string } |
+  { readonly type: "record" | "video"; readonly file: Uint8Array };
 
 interface OwnerFriendReplySession {
   readonly account: number;
@@ -21,12 +22,12 @@ interface OwnerFriendReplySession {
 export function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
   signal: AbortSignal): Promise<FriendReplyPart[] | undefined>;
 export function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
-  signal: AbortSignal, group: boolean): Promise<GroupReplyPart[] | undefined>;
+  signal: AbortSignal, group: boolean): Promise<RelayReplyPart[] | undefined>;
 export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
-  signal: AbortSignal, group = false): Promise<GroupReplyPart[] | undefined> {
+  signal: AbortSignal, group?: boolean): Promise<RelayReplyPart[] | undefined> {
   if (typeof source === "string" || !Array.isArray(body) || !body.length || body.length > 128) return;
-  const parts: GroupReplyPart[] = [];
-  let imageBytes = 0;
+  const parts: RelayReplyPart[] = [];
+  let mediaBytes = 0;
   for (const value of body) {
     if (signal.aborted) return;
     if (typeof value === "string") { parts.push(value); continue; }
@@ -36,12 +37,12 @@ export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, s
       const { id, is_large } = part;
       if ((typeof id !== "string" && typeof id !== "number") || !/^\d+$/u.test(String(id)) || !Number.isSafeInteger(Number(id))) return;
       parts.push({ type: "face", data: { id, ...(typeof is_large === "boolean" ? { is_large } : {}) } });
-    } else if (part?.type === "image") {
+    } else if (part?.type === "image" || (group !== undefined && (part?.type === "record" || part?.type === "audio" || part?.type === "video"))) {
       const bytes = await readQqMessageSegmentMedia(part, signal).catch(() => undefined);
       if (!bytes) return;
-      imageBytes += bytes.byteLength;
-      if (imageBytes > maxChatFileBytes) return;
-      parts.push({ type: "image", file: bytes });
+      mediaBytes += bytes.byteLength;
+      if (mediaBytes > maxChatFileBytes) return;
+      parts.push({ type: part.type === "audio" ? "record" : part.type, file: bytes });
     } else if (group && part?.type === "at") {
       const target = typeof part.qq === "string" || typeof part.qq === "number" ? String(part.qq) : "";
       if (target !== "all" && (!/^[1-9]\d*$/u.test(target) || !Number.isSafeInteger(Number(target)))) return;

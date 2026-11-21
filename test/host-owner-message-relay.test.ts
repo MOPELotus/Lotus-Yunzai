@@ -8,6 +8,15 @@ const token = "owner-relay-fixture";
 const time = 1_700_000_000;
 const image = "https://gchat.qpic.cn/download?relay-fixture";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+kds0AAAAASUVORK5CYII=";
+const audio = "https://multimedia.nt.qq.com.cn/record?relay-fixture";
+const video = "https://multimedia.nt.qq.com.cn/video?relay-fixture";
+const file = "https://multimedia.nt.qq.com.cn/file?relay-fixture";
+const fixtures = {
+  [image]: ["image/png", png],
+  [audio]: ["audio/wav", "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="],
+  [video]: ["video/mp4", "AAAAFGZ0eXBpc29tAAAAAGlzb20AAAAIbWRhdA=="],
+  [file]: ["application/octet-stream", Buffer.from("附件原字节").toString("base64")],
+} as const;
 type Call = { action: string; params: Record<string, unknown>; echo?: string };
 
 async function endpoints(stream: ReadableStream<Uint8Array>) {
@@ -41,9 +50,11 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
   const root = await mkdtemp(join(tmpdir(), "lotus-owner-relay-"));
   const oneBotCalls: Call[] = [];
   const milkyCalls: Call[] = [];
+  const attachmentReads: Call[] = [];
   let groupOrder = [771, 772];
   let unknownGroup = 0;
   let rejectedGroup = 0;
+  let unknownUpload = false;
   let blockMilkyGroupLookup: { requested: ReturnType<typeof Promise.withResolvers<void>>;
     resume: ReturnType<typeof Promise.withResolvers<void>> } | undefined;
   const gateway = Bun.serve({
@@ -54,6 +65,10 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
       if (action === "get_login_info") return Response.json({ status: "ok", retcode: 0, data: { uin: 100 } });
       const params = await request.json() as Call["params"];
       if (action === "get_friend_list") return Response.json({ status: "ok", retcode: 0, data: { friends: [{ user_id: 781 }] } });
+      if (action === "get_private_file_download_url") {
+        attachmentReads.push({ action, params });
+        return Response.json({ status: "ok", retcode: 0, data: { download_url: file } });
+      }
       if (action === "get_group_list") {
         const blocked = blockMilkyGroupLookup;
         if (blocked) {
@@ -63,6 +78,9 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
         return Response.json({ status: "ok", retcode: 0, data: { groups: [{ group_id: 773 }] } });
       }
       milkyCalls.push({ action, params });
+      if (action === "upload_group_file") {
+        return Response.json({ status: "ok", retcode: 0, data: { file_id: "destination-upload-id" } });
+      }
       return Response.json({ status: "ok", retcode: 0, data: { message_seq: 300 } });
     },
   });
@@ -80,9 +98,10 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
       const actual = globalThis.fetch;
       globalThis.fetch = (input, options) => {
         const url = new URL(input instanceof Request ? input.url : input);
-        if (url.href === ${JSON.stringify(image)}) {
-          return Promise.resolve(new Response(Buffer.from(${JSON.stringify(png)}, "base64"), {
-            headers: { "content-type": "image/png" }
+        const fixture = ${JSON.stringify(fixtures)}[url.href];
+        if (fixture) {
+          return Promise.resolve(new Response(Buffer.from(fixture[1], "base64"), {
+            headers: { "content-type": fixture[0] }
           }));
         }
         if (url.hostname !== "127.0.0.1") throw new Error("unexpected network");
@@ -110,8 +129,13 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
         let result: unknown = { message_id: 200 };
         if (call.action === "get_friend_list") result = [{ user_id: 780 }];
         else if (call.action === "get_group_list") result = groupOrder.map(group_id => ({ group_id, group_name: `群${group_id}` }));
+        else if (call.action === "get_private_file_url") {
+          attachmentReads.push(call);
+          result = { url: file };
+        }
         else {
           oneBotCalls.push(call);
+          if (call.action === "upload_private_file") result = unknownUpload ? {} : { file_id: "destination-upload-id" };
           if (call.params.group_id === unknownGroup) result = {};
         }
         const rejected = call.params.group_id === rejectedGroup;
@@ -163,6 +187,33 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
       await oneBotReply("780 的私聊消息已送达。");
       sendOneBot("#发好友 780 authkey=synthetic");
       await oneBotReply("已停止发送，请勿转发登录凭据。");
+      sendOneBot([
+        { type: "text", data: { text: "#发好友780 原语音" } }, { type: "record", data: { file: "original-voice-id", url: audio } },
+      ]);
+      expect(await next(oneBotCalls, "send_msg")).toMatchObject({ user_id: 780, message: [
+        { type: "text", data: { text: "原语音" } },
+        { type: "record", data: { file: `base64://${fixtures[audio][1]}` } },
+      ] });
+      await oneBotReply("780 的私聊消息已送达。");
+      const oneBotFile = { type: "file", data: { file: "原件.dat", file_id: "old-source-file",
+        file_size: Buffer.from(fixtures[file][1], "base64").byteLength } };
+      sendOneBot([{ type: "text", data: { text: "#发好友780" } }, oneBotFile]);
+      expect(await next(oneBotCalls, "upload_private_file")).toEqual({
+        user_id: 780, name: "原件.dat", file: `base64://${fixtures[file][1]}`,
+      });
+      await oneBotReply("780 的私聊消息已送达。");
+      expect(await next(attachmentReads, "get_private_file_url")).toEqual({ file_id: "old-source-file" });
+      sendOneBot([{ type: "text", data: { text: "#发好友780 文件与文字" } }, oneBotFile]);
+      await oneBotReply("文件须单独发送，本次含其他内容的代发未发出。");
+      sendOneBot([{ type: "reply", data: { id: "70" } }, { type: "text", data: { text: "#发好友 780 带引用" } }]);
+      await oneBotReply("引用属于来源会话。请直接发送正文或原件，本次代发未发出。");
+      expect(attachmentReads).toEqual([]);
+      unknownUpload = true;
+      sendOneBot([{ type: "text", data: { text: "#发好友 780" } }, oneBotFile]);
+      expect(await next(oneBotCalls, "upload_private_file")).toMatchObject({ user_id: 780 });
+      await oneBotReply("780 的发送结果未确认，请先核对原会话。");
+      await next(attachmentReads, "get_private_file_url");
+      unknownUpload = false;
       sendOneBot("#发好友 999 不存在");
       await oneBotReply("当前发送账号的名单中没有这个目标。");
       sendOneBot("#发好友 780 禁止群临时发送", { sub_type: "group" });
@@ -188,6 +239,31 @@ test("真实双协议宿主发送、取消、跨授权账号及编号群名单�
         { type: "text", data: { text: "续问正文" } }, { type: "face", data: { face_id: "14" } },
       ] });
       await milkyReply("773 的群聊消息已送达。");
+      await sendMilky("", { segments: [
+        { type: "text", data: { text: "#发群聊773 原视频" } }, { type: "video", data: { temp_url: video } },
+      ] });
+      expect(await next(milkyCalls, "send_group_message")).toMatchObject({ group_id: 773, message: [
+        { type: "text", data: { text: "原视频" } },
+        { type: "video", data: { uri: `base64://${fixtures[video][1]}` } },
+      ] });
+      await milkyReply("773 的群聊消息已送达。");
+      await sendMilky("", { segments: [
+        { type: "text", data: { text: "#发群聊773 混合坏段" } },
+        { type: "video", data: { temp_url: "https://example.invalid/denied-video" } },
+      ] });
+      await milkyReply("无法读取或发送这种消息内容。");
+      await sendMilky("", { segments: [
+        { type: "text", data: { text: "#发群聊773" } },
+        { type: "file", data: { file_name: "原附件.dat", file_id: "milky-source-id", file_hash: "source-hash",
+          file_size: Buffer.from(fixtures[file][1], "base64").byteLength } },
+      ] });
+      expect(await next(milkyCalls, "upload_group_file")).toEqual({
+        group_id: 773, parent_folder_id: "/", file_name: "原附件.dat", file_uri: `base64://${fixtures[file][1]}`,
+      });
+      await milkyReply("773 的群聊消息已送达。");
+      expect(await next(attachmentReads, "get_private_file_download_url")).toEqual({
+        user_id: 43, file_id: "milky-source-id", file_hash: "source-hash",
+      });
 
       await sendMilky("#99发好友780 没有这台机器人授权");
       await milkyReply("未能确认发送账号及主人权限。");

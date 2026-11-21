@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { delegationSession } from "./command-delegation.ts";
 import { readFriendReplyParts, type OwnerFriendReplyBody } from "./adapters/owner-friend-reply.ts";
+import { isChatFileName, maxChatFileBytes, type ChatFile } from "./chat-files.ts";
 import type { CheckinNotifyDelivery } from "./checkin-notify.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 import type { createRequestClaim } from "./request-claim.ts";
@@ -17,6 +18,7 @@ export interface OwnerRelayAccount {
   friendship(id: number): Promise<boolean | undefined>;
   groups(signal: AbortSignal): Promise<readonly Group[]>;
   send(kind: Kind, id: number, body: MessageReply): Promise<CheckinNotifyDelivery>;
+  uploadFile?(target: { group_id: number } | { user_id: number }, file: ChatFile, signal: AbortSignal): Promise<CheckinNotifyDelivery>;
 }
 
 interface Scope {
@@ -84,7 +86,7 @@ function messageParts(event: MessageEvent, text: string | undefined): OwnerFrien
       const clipped = piece.slice(start);
       return clipped ? [clipped] : [];
     }
-    if (position < offset || (part.type === "at" && String(part.qq) === String(event.self_id) && text !== undefined)) return [];
+    if (part.type === "at" && String(part.qq) === String(event.self_id) && text !== undefined) return [];
     return [{ sourceIndex: index }];
   });
   return parts.every(part => typeof part === "string") ? parts.join("") : parts;
@@ -196,6 +198,23 @@ export function createOwnerMessageRelay({
       await reply("无法识别要发送的消息正文。");
       return true;
     }
+    const source = event.message;
+    const indexedParts = typeof part === "string" || typeof source === "string" ? [] : part.flatMap(value => {
+      const segment = typeof value === "string" ? undefined : source[value.sourceIndex];
+      return segment ? [segment] : [];
+    });
+    if (indexedParts.some(segment => segment.type === "reply")) {
+      clearDraft();
+      await reply("引用属于来源会话。请直接发送正文或原件，本次代发未发出。");
+      return true;
+    }
+    const includesFile = indexedParts.some(segment => segment.type === "file");
+    if (includesFile && (indexedParts.length !== 1 || typeof part === "string" ||
+        part.some(value => typeof value === "string" && value.trim()))) {
+      clearDraft();
+      await reply("文件须单独发送，本次含其他内容的代发未发出。");
+      return true;
+    }
     const empty = typeof part === "string" ? !part.trim() : !part.some(item => typeof item !== "string" || item.trim());
     if (privateCredential(event.msg) || privateCredential(event.raw_message)) {
       clearDraft();
@@ -231,9 +250,20 @@ export function createOwnerMessageRelay({
     }
     clearDraft();
     if (empty) return true;
-    const body = typeof part === "string" ? part : await readFriendReplyParts(part, event.message, signal, kind === "group");
+    let body: MessageReply | undefined;
+    let file: ChatFile | undefined;
+    if (includesFile) {
+      const attachment = event.canReadAttachments && event.attachment;
+      if (account.uploadFile && attachment && isChatFileName(attachment.name)) {
+        const bytes = await attachment.read(signal).catch(() => undefined);
+        if (bytes && bytes.byteLength > 0 && bytes.byteLength <= maxChatFileBytes &&
+            (attachment.size === undefined || attachment.size === bytes.byteLength)) file = { name: attachment.name, bytes };
+      }
+    } else {
+      body = typeof part === "string" ? part : await readFriendReplyParts(part, source, signal, kind === "group");
+    }
     if (!permitted()) return true;
-    if (!body) {
+    if (!body && !file) {
       await reply("无法读取或发送这种消息内容。");
       return true;
     }
@@ -252,7 +282,13 @@ export function createOwnerMessageRelay({
       const status = await claim({
         adapter: origin.adapter, botId: origin.botId,
         flag: JSON.stringify([origin.actorId, origin.groupId, origin.messageId, account.adapter, account.botId, kind, id]),
-      }, () => permitted() ? account.send(kind, id, body) : Promise.resolve("unavailable"));
+      }, () => {
+        if (!permitted()) return Promise.resolve("unavailable");
+        if (file && account.uploadFile) {
+          return account.uploadFile(kind === "friend" ? { user_id: id } : { group_id: id }, file, signal);
+        }
+        return body === undefined ? Promise.resolve("unavailable") : account.send(kind, id, body);
+      });
       await reply(status === "confirmed" ? `${id} 的${kind === "friend" ? "私聊" : "群聊"}消息已送达。`
         : status === "unknown" ? `${id} 的发送结果未确认，请先核对原会话。`
           : `${id} 的消息未发出。`);
