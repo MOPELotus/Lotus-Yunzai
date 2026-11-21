@@ -22,7 +22,7 @@ const verifyFields = ["openGroup", "mode", "times", "remindAtLastMinute", "time"
 const noticeFields = ["privateMessage", "grouptemporaryMessage", "groupRecall", "PrivateRecall", "friendRequest", "friendNumberChange",
   "groupMemberNumberChange", "groupAdminChange", "botBeenBanned", "groupNumberChange", "addGroupApplication", "groupInviteRequest",
   "groupMessage", "notificationsAll", "msgSaveDeltime"];
-const routingFields = ["groupCD", "singleCD", "onlyReplyAt", "botAlias", "addPrivate", "addReply", "addRecall", "enable", "disable"];
+const routingFields = ["groupCD", "singleCD", "onlyReplyAt", "botAlias", "addLimit", "addPrivate", "addReply", "addAt", "addRecall", "enable", "disable"];
 
 interface ConfigSnapshot { readonly info: Stats; readonly bytes: Buffer }
 

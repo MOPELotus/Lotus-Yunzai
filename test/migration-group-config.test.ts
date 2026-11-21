@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readGroupDispatch } from "../lib/group-dispatch.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
+import { stageLegacyKeywords } from "../lib/migration-keywords.ts";
+import { stageLegacyState } from "../lib/migration-state.ts";
 import { readGroupRecallPermissions } from "../lib/quoted-recall.ts";
 import { createAutoGroupCard } from "../plugins/group/auto-group-card.ts";
 import { readGroupLeaveBlacklist } from "../plugins/group/group-leave-blacklist.ts";
@@ -12,6 +14,7 @@ import { readLikeSettings } from "../plugins/group/like-settings.ts";
 import { createManagedBlacklist } from "../plugins/group/managed-blacklist.ts";
 import { configuredPrivateNotice, createPrivateNoticeReader, privateNoticeSetting } from "../plugins/group/private-notice-config.ts";
 import { configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const yenai = "plugins/yenai-plugin/config/config/";
 const archive = "backup/legacy-group-config/";
@@ -102,4 +105,44 @@ test("current full-scope settings win, while ambiguous schedule aliases and link
   expect(await readFile(join(state, "config/group-notice.yaml"), "utf8")).not.toContain("friendRequest");
   expect(await readFile(join(state, archive, `${yenai}notice.yaml`), "utf8")).toBe("obsolete: [bad YAML\n");
   expect(configuredNoticeSchedule(pathToFileURL(state + sep), "")).toEqual({ start: 555, end: 575 });
+}));
+
+test("旧安装的顶层群配置迁移后，实际 OneBot 词条保留主人限制和触发者提及", () => fixture(async (source, state) => {
+  const path = "config/group.yaml";
+  const original = "# 旧安装顶层群路由\n" +
+    "default: { groupCD: 0, singleCD: 0, addLimit: 0, addAt: false, addReply: false, addRecall: 0 }\n" +
+    "'99:77': { addLimit: 2, addAt: true }\n";
+  await file(source, path, original);
+  await file(source, "config/config/group.yaml", "default: { addLimit: 0, addAt: false }\n");
+  const keywordPath = "data/messageJson/77.json";
+  const keywords = JSON.stringify({ 旧词: [[{ type: "text", text: "原词条" }]] });
+  await file(source, keywordPath, keywords);
+  const { directory } = await stageLegacyState(source, state);
+  const { active } = await stageLegacyGroupConfig(source, directory);
+  expect(active).toEqual([path]);
+  await stageLegacyKeywords(source, directory);
+
+  await withDualGatewayFixture("migration-legacy-keyword-routing", "", async ({ onebot, sendOneBot, root }) => {
+    const group = { message_type: "group", sub_type: "normal", group_id: 77, sender: { user_id: 42, role: "member" } };
+    sendOneBot("旧词", group);
+    const trigger = await onebot.next("send_msg");
+    expect(trigger.params.group_id).toBe(77);
+    trigger.respond({ message_id: 101 });
+    sendOneBot("#添加新词", group);
+    const edit = await onebot.next("send_msg");
+    expect(edit.params.group_id).toBe(77);
+    edit.respond({ message_id: 102 });
+    const message = trigger.params.message;
+    expect({
+      text: JSON.stringify(message).includes("原词条"),
+      mentioned: Array.isArray(message) && message.some(part => part.type === "at" && part.data?.qq === "42"),
+      limited: String(edit.params.message).includes("只有主人才能操作"),
+    }).toEqual({ text: true, mentioned: true, limited: true });
+    expect(await readFile(join(root, keywordPath), "utf8")).toBe(keywords);
+  }, 2_500, undefined, async root => {
+    for (const path of ["config", "data"]) await cp(join(directory, path), join(root, path), { recursive: true });
+    await file(root, "config/bot.yaml", "cache_group_member: false\nupdate_time: 0\nfile_watch: false\n");
+  });
+  expect(await readFile(join(directory, archive, path), "utf8")).toBe(original);
+  expect(await readFile(join(source, path), "utf8")).toBe(original);
 }));
