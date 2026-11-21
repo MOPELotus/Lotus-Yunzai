@@ -16,6 +16,7 @@ interface PreparedMigration {
     readonly archiveCount: number;
     readonly profiles: Staged["profiles"];
     readonly schedules: Staged["schedules"];
+    readonly gameData: Staged["gameData"];
     readonly state: Staged["state"]["plan"];
     readonly heldPlugins: Staged["retained"]["held"];
     readonly deferredPlugins: Staged["deferredPlugins"];
@@ -60,6 +61,7 @@ async function prepare(source: string, target: string, directory: string, signal
         archiveCount: staged.backup.archived,
         profiles: staged.profiles,
         schedules: staged.schedules,
+        gameData: staged.gameData,
         state: staged.state.plan,
         heldPlugins: staged.retained.held,
         deferredPlugins: staged.deferredPlugins,

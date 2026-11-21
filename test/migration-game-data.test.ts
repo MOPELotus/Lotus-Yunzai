@@ -1,0 +1,130 @@
+import { expect, test } from "bun:test";
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { lockFile } from "../lib/file-lock.ts";
+import { stageLegacyGameData } from "../lib/migration-game-data.ts";
+import { createGenshinGachaHistoryStore } from "../plugins/genshin/gacha-store.ts";
+import { createGenshinPanelArchive } from "../plugins/genshin/panel/panel.ts";
+import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
+import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
+
+const qq = "42";
+const uid = "512345678";
+const longId = "9223372036854775807";
+const gacha = `data/gachaJson/${qq}/${uid}`;
+const gsPanel = `data/PlayerData/gs/${uid}.json`;
+const srPanel = `data/PlayerData/sr/${uid}.json`;
+const zzzUid = "1300000002";
+const zzzGacha = `data/ZZZ-Plugin/gacha/${zzzUid}.json`;
+
+async function put(root: string, path: string, data: string) {
+  const output = join(root, path);
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, data);
+}
+
+async function fixture(check: (source: string, state: string) => Promise<void>) {
+  const parent = await mkdtemp(join(tmpdir(), "lotus-migration-games-"));
+  const source = join(parent, "old");
+  const state = join(parent, "state");
+  try {
+    await Promise.all([mkdir(source), mkdir(state, { mode: 0o700 })]);
+    await check(source, state);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+}
+
+test("发布到游戏目前读取的旧目录，长记录编号和原 JSON 保持完全相同", () => fixture(async (source, state) => {
+  const gachaPool = [{ uid, id: longId, gacha_type: "301" }];
+  const zzzRecord = { uid: zzzUid, id: longId, gacha_id: "751403", gacha_type: "2001", item_id: "14101", count: "1",
+    time: "2025-03-09 02:30:00", name: "测试频段", lang: "zh-cn", item_type: "代理人", rank_type: "4" };
+  const data = {
+    [`${gacha}/301.json`]: `${JSON.stringify(gachaPool)}\r\n`,
+    [`${gacha}/100.json`]: "[]\n",
+    [gsPanel]: JSON.stringify({ uid, avatars: {} }),
+    [srPanel]: JSON.stringify({ uid: Number(uid), avatars: {} }),
+    [zzzGacha]: JSON.stringify({ 独家频段: [zzzRecord] }),
+  };
+  for (const [path, content] of Object.entries(data)) await put(source, path, content);
+
+  const exportFile = `${gacha}/12345.json`;
+  const longPanel = "data/PlayerData/gs/123456789012345.json";
+  const archived = {
+    [exportFile]: '{"info":{},"hk4e":[]}',
+    [longPanel]: '{"uid":"123456789012345","avatars":{}}',
+    [`data/textJson/${qq}.json`]: '{"旧本地数据":[]}',
+  };
+  for (const [path, content] of Object.entries(archived)) await put(source, path, content);
+
+  const result = await stageLegacyGameData(source, state);
+  expect(result.active.map(({ path, files }) => [path, files])).toEqual([
+    ["data/gachaJson", 2], ["data/PlayerData/gs", 1], ["data/PlayerData/sr", 1], ["data/ZZZ-Plugin/gacha", 1],
+  ]);
+  expect(result.archived.map(({ path, files }) => [path, files])).toEqual([
+    ["backup/legacy-data/gachaJson", 1], ["backup/legacy-data/PlayerData/gs", 1], ["backup/legacy-data/textJson", 1],
+  ]);
+  for (const [path, content] of Object.entries(data)) {
+    expect(await readFile(join(state, path), "utf8")).toBe(content);
+    expect((await lstat(join(state, path))).mode & 0o777).toBe(0o600);
+    expect(await readFile(join(source, path), "utf8")).toBe(content);
+  }
+  for (const [path, content] of Object.entries(archived)) {
+    expect(await readFile(join(state, "backup/legacy-data", path.slice(5)), "utf8")).toBe(content);
+    expect(await Bun.file(join(state, path)).exists()).toBe(false);
+    expect(await readFile(join(source, path), "utf8")).toBe(content);
+  }
+
+  const genshin = createGenshinGachaHistoryStore(join(state, "data/gachaJson"), lockFile);
+  expect(await genshin.read(qq, uid)).toEqual({ 301: gachaPool });
+  expect(await genshin.read("43", uid)).toEqual({});
+  expect(await genshin.readBeginner(qq, uid)).toEqual([]);
+  const genshinPanel = createGenshinPanelArchive(lockFile, {
+    archiveDirectory: join(state, "data/genshin/panels"), legacyDirectory: join(state, "data/PlayerData/gs"),
+  });
+  expect(await genshinPanel.readLegacy(uid, { characters: {}, artifacts: new Map(), artifactSets: new Map() }))
+    .toMatchObject({ uid, avatars: {} });
+  expect(readLegacyPanel(uid, await Bun.file(join(state, srPanel)).json())).toMatchObject({ uid, avatars: [] });
+  const zzz = await readZzzFlatLegacyGacha([join(state, "data/ZZZ-Plugin/gacha")], zzzUid);
+  expect(zzz?.pools.flatMap(pool => pool.records)).toMatchObject([{ id: longId, time: zzzRecord.time }]);
+}));
+
+test("旧数据的文件或目录链接以及目标软链不会产生可加载拷贝", () => fixture(async (source, state) => {
+  const pool = join(source, gacha, "301.json");
+  await put(source, "source.json", "[]");
+  await mkdir(dirname(pool), { recursive: true });
+  await symlink(join(source, "source.json"), pool);
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("无硬链接的普通文件");
+  await rm(pool);
+  await link(join(source, "source.json"), pool);
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("无硬链接的普通文件");
+  await rm(pool);
+  await rm(dirname(pool), { recursive: true });
+  await symlink(state, dirname(pool));
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("副本的实体目录");
+  await rm(dirname(pool));
+  await put(source, `${gacha}/301.json`, "[]");
+
+  const outside = join(dirname(source), "outside");
+  await mkdir(outside, { mode: 0o700 });
+  await symlink(outside, join(state, "data"));
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("暂存路径须为私有实体目录");
+  expect(await readdir(outside)).toEqual([]);
+  expect(await readFile(pool, "utf8")).toBe("[]");
+}));
+
+test("未完成写入、损坏的活跃卡池和取消需要保留原副本供核对", () => fixture(async (source, state) => {
+  const abort = AbortSignal.abort(new Error("取消游戏暂存"));
+  await expect(stageLegacyGameData(source, state, abort)).rejects.toThrow("取消游戏暂存");
+  const journal = `${gacha}/.lotus-genshin-gacha-journal.json`;
+  await put(source, journal, "{}");
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("未恢复的写入");
+  expect(await readdir(state)).toEqual([]);
+  await rm(join(source, journal));
+
+  const invalid = `${gacha}/301.json`;
+  await put(source, invalid, '{"invalid":true}');
+  await expect(stageLegacyGameData(source, state)).rejects.toThrow("含无法由当前版本读取的文件");
+  expect(await readFile(join(source, invalid), "utf8")).toBe('{"invalid":true}');
+}));

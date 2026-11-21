@@ -51,6 +51,7 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   await put(source, `plugins/${held}`, heldScript);
   await put(source, group, groupBytes);
   await put(source, legacyPool, pool(ids[0]));
+  await put(source, "data/textJson/fixture.json", "{}\n");
   const profile = "user: {qq: 42}\nprofile: {id: 1}\naccount: {cookie: isolated-fixture}\n";
   await put(source, "plugins/Lotus-ReFactor/data/users/42.yaml", profile);
   await put(source, "data/users/42.yaml", profile);
@@ -103,6 +104,8 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
     heldPlugins: [{ path: "plugins/missing-dependency", reason: "unresolved-dependency" }] });
   expect(result.paths).toEqual(["backup", "config", "data", "plugins/small-local"]);
   expect(await readFile(join(target, "backup", plugin), "utf8")).toBe(manifest);
+  expect(result.gameData.archived).toEqual([{ path: "backup/legacy-data/textJson", files: 1, bytes: 3 }]);
+  expect(await readFile(join(target, "backup/legacy-data/textJson/fixture.json"), "utf8")).toBe("{}\n");
   expect(await readFile(join(target, compatible), "utf8")).toBe(script);
   expect(await Bun.file(join(target, "plugins", held)).exists()).toBe(false);
   expect(await readFile(join(target, "backup/held-plugins", held), "utf8")).toBe(heldScript);
