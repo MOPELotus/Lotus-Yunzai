@@ -24,7 +24,9 @@ async function catalog(root: string, server: URL) {
   try {
     db.run(`CREATE TABLE meme (key TEXT PRIMARY KEY, keyWords TEXT, min_images INTEGER, max_images INTEGER,
       min_texts INTEGER, max_texts INTEGER, params TEXT, defText TEXT, tags TEXT);
-      CREATE TABLE preset (name TEXT PRIMARY KEY, key TEXT);`);
+      CREATE TABLE preset (name TEXT PRIMARY KEY, key TEXT);
+      CREATE TABLE stat (key TEXT PRIMARY KEY, "all" INTEGER NOT NULL);
+      INSERT INTO stat VALUES ('demo0', 9), ('demo1', 4);`);
     const insert = db.query("INSERT INTO meme VALUES (?, ?, 1, 2, 1, 1, ?, ?, ?)");
     for (let index = 0; index < 13; index++) {
       insert.run(`demo${index}`, JSON.stringify([`别名${index}`]), JSON.stringify({
@@ -42,7 +44,7 @@ function imageBytes(value: unknown) {
   return Uint8Array.fromBase64(encoded);
 }
 
-test("正常宿主通过 OneBot 和 Milky 返回原列表图样及同源详情图片", async () => {
+test("正常宿主通过 OneBot 和 Milky 返回目录、统计信息卡及同源详情原图", async () => {
   const requests: string[] = [];
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
     const path = new URL(request.url).pathname;
@@ -57,13 +59,25 @@ test("正常宿主通过 OneBot 和 Milky 返回原列表图样及同源详情�
       expect(oneList.params).toMatchObject({ user_id: 42, message: [{ type: "image" }] });
       const rendered = imageBytes(oneList.params);
       const metadata = await new Bun.Image(rendered).metadata();
-      expect(metadata).toMatchObject({ width: 5760, format: "png" });
+      expect(metadata).toMatchObject({ width: 3600, format: "png" });
 
       await sendMilky("meme列表");
       const otherList = await milky.next("send_private_message");
       expect(otherList.params).toMatchObject({ user_id: 43, message: [{ type: "image" }] });
       expect(imageBytes(otherList.params)).toEqual(rendered);
       otherList.respond({ message_seq: 102 });
+
+      sendOneBot("#表情统计");
+      const oneUsage = await onebot.next("send_msg");
+      expect(oneUsage.params).toMatchObject({ user_id: 42, message: [{ type: "image" }] });
+      const usage = imageBytes(oneUsage.params);
+      expect(await new Bun.Image(usage).metadata()).toMatchObject({ width: 4608, format: "png" });
+
+      await sendMilky("meme统计");
+      const otherUsage = await milky.next("send_private_message");
+      expect(otherUsage.params).toMatchObject({ user_id: 43, message: [{ type: "image" }] });
+      expect(imageBytes(otherUsage.params)).toEqual(usage);
+      otherUsage.respond({ message_seq: 105 });
 
       sendOneBot("#表情列表 2");
       expect((await onebot.next("send_msg")).params).toMatchObject({ user_id: 42, message: expect.stringContaining("表情列表 2/2") });

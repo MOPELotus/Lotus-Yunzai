@@ -3189,10 +3189,11 @@ if (import.meta.main) {
       memeRuntime: probingUpdate ? undefined : {
         whenReady: whenModuleTasksActive,
         registerTask: (cron, run) => registerModuleTask("[meme] 自动更新表情包数据", cron, run),
-        async renderCatalogPng(width, height, draw) {
-          const { renderPng } = await import("@lotus-yunzai/skia");
+        async loadInfoCard() {
+          const info = await import("@lotus-yunzai/skia/info-card");
           const configured = Bun.env.LOTUS_SKIA_MODE;
-          return renderPng(width, height, draw, configured === "gpu" || configured === "cpu" ? configured : "auto");
+          const mode = configured === "gpu" || configured === "cpu" ? configured : "auto";
+          return { ...info, renderInfoCard: (header, buildBody) => info.renderInfoCard(header, buildBody, { mode }) };
         },
       },
       registerMemePoke(run, signal) {
