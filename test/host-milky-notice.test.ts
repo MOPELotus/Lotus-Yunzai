@@ -45,6 +45,10 @@ function mockGateway() {
           return Response.json({ status: "ok", retcode: 0, data: { uin: botId, nickname: "测试机器人" } });
         case "get_group_info":
           return Response.json({ status: "ok", retcode: 0, data: { group: { group_id: groupId, group_name: groupName } } });
+        case "get_group_member_info":
+          return Response.json({ status: "ok", retcode: 0, data: {
+            member: { group_id: groupId, user_id: botId, role: "admin" },
+          } });
         case "send_group_message": {
           const receipt = groupReceipt;
           groupReceipt = "confirmed";
@@ -53,6 +57,8 @@ function mockGateway() {
           break;
         }
         case "send_private_message":
+        case "set_group_member_card":
+        case "recall_group_message":
           break;
         default:
           return new Response(null, { status: 404 });
@@ -127,7 +133,7 @@ function nudge(sent: boolean, received: boolean, userId = memberId) {
   };
 }
 
-test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => {
+test("Milky Webhook 分发真实群进退、群名片、主动和自动复读，以及好友戳一戳通知", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-notice-"));
   const mock = mockGateway();
   try {
@@ -151,6 +157,7 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
       }
     `);
     await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config", "other.yaml"), `master: ["${botId}:${memberId}"]\n`);
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
       "connection: webhook", `access_token: ${token}`,
@@ -236,6 +243,50 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
         "get_login_info", "get_group_info", "send_group_message", "send_group_message", "send_group_message",
         "send_group_message", "send_private_message", "send_group_message", "send_group_message",
       ]);
+
+      let sequence = 250;
+      async function send(sender: number, body: string) {
+        expect((await webhook(endpoint, "message_receive", {
+          message_scene: "group", peer_id: groupId, message_seq: ++sequence,
+          sender_id: sender, time: timestamp, segments: [text(body)],
+        })).status).toBe(200);
+      }
+
+      await send(otherMember, "#复读");
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text("暂无权限执行此指令。")],
+      });
+      await send(memberId, "#复读");
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [
+          { type: "mention", data: { user_id: memberId } }, text("\n"), text("请发送要复读的内容"),
+        ],
+      });
+      await send(otherMember, "隔离发言者");
+      await send(memberId, "Milky 复读正文");
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text("Milky 复读正文")],
+      });
+      const echoedSeq = 100 + mock.calls.length;
+
+      await send(otherMember, "连续复读证明");
+      await send(memberId, "连续复读证明");
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text("连续复读证明")],
+      });
+
+      await send(otherMember, "#改群名片拒绝");
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text("❎ 该命令仅限主人可用")],
+      });
+      await send(memberId, "#改群名片新名片");
+      expect(await mock.next("get_group_member_info")).toEqual({ group_id: groupId, user_id: botId, no_cache: true });
+      expect(await mock.next("set_group_member_card")).toEqual({ group_id: groupId, user_id: botId, card: "新名片" });
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text("✅ 群名片修改成功")],
+      });
+      await Bun.sleep(4_900);
+      expect(await mock.next("recall_group_message")).toEqual({ group_id: groupId, message_seq: echoedSeq });
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();
       await host.exited;

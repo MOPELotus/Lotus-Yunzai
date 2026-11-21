@@ -12,6 +12,7 @@ import Handler, { HandlerScope, UnsupportedLegacyHandlerError, type HandlerCallb
 import { LegacyHttpRoutes } from "./legacy-http.ts";
 import Plugin, { PluginCleanup, PluginContext } from "./plugin.js";
 import { LegacyTasks } from "./tasks.ts";
+import type { NativePluginEvent } from "./native-events.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
 type PluginEvent = BotEvent;
@@ -65,6 +66,7 @@ interface Rule {
 
 interface App {
   readonly label: string;
+  readonly order: number;
   readonly create: PluginClass;
   readonly initializer: PluginInstance;
   readonly scope: HandlerScope;
@@ -75,6 +77,27 @@ interface App {
   readonly names: readonly string[];
   readonly templates?: { readonly name: string; readonly directory: string };
   published: boolean;
+}
+
+interface NativeApp {
+  readonly order: number;
+  readonly native: NativePluginEvent;
+  readonly event: string;
+  readonly priority: number;
+  readonly names: readonly string[];
+  readonly contexts: PluginContexts;
+  readonly scope: HandlerScope;
+  published: boolean;
+}
+
+type RoutedApp = App | NativeApp;
+
+function nativeMessage(event: MessageEvent): MessageEvent {
+  return Object.create(Object.getPrototypeOf(event), {
+    ...Object.getOwnPropertyDescriptors(event),
+    reply: { value: event.reply.bind(event), enumerable: true, configurable: true, writable: true },
+    isMaster: { value: event.isMaster || isMilkyOwnerSession(event), enumerable: true, configurable: true, writable: true },
+  }) as MessageEvent;
 }
 
 type Registration = "loaded" | "skipped" | "empty";
@@ -145,6 +168,9 @@ export class LegacyPlugins {
   readonly httpRoutes = new LegacyHttpRoutes();
   readonly exitHooks = new LegacyExitHooks();
   #apps: App[] = [];
+  #ordered: RoutedApp[] = [];
+  #nextOrder = 0;
+  readonly #nativeApps = new Set<NativeApp>();
   #initializers: App[] = [];
   readonly #messages = new WeakMap<MessageEvent, MessageEvent>();
   readonly #tasks: LegacyTasks;
@@ -170,6 +196,31 @@ export class LegacyPlugins {
     return this.#install(exports, label, packageName, true, signal, validate, directory);
   }
 
+  registerNative(events: readonly NativePluginEvent[], label: string, packageName: string): () => Promise<void> {
+    const order = this.#nextOrder++;
+    const apps = events.map(native => {
+      if (typeof native.name !== "string" || typeof native.event !== "string" || !Number.isFinite(native.priority)) {
+        throw new Error("原生事件名称、种类或优先级无效。");
+      }
+      return {
+        order, native, event: native.event, priority: native.priority, names: [native.name, label, packageName],
+        contexts: new PluginContexts(), scope: new HandlerScope(), published: true,
+      };
+    });
+    for (const app of apps) this.#nativeApps.add(app);
+    this.#refreshApps();
+    return async () => {
+      for (const app of apps) {
+        app.published = false;
+        app.contexts.close();
+        app.scope.dispose();
+        this.#nativeApps.delete(app);
+      }
+      this.#refreshApps();
+      await Promise.all(apps.map(app => app.scope.drain()));
+    };
+  }
+
   async #install(
     exports: Record<string, unknown>, label: string, packageName: string, replace: boolean,
     externalSignal?: AbortSignal, validate?: () => Promise<boolean>, directory?: string,
@@ -180,6 +231,7 @@ export class LegacyPlugins {
     const transaction = new AbortController();
     const previous = replace ? this.#initializers.filter((app) => app.label === label) : [];
     const oldScopes = new Set(previous.map(({ scope }) => scope));
+    const order = previous[0]?.order ?? this.#nextOrder++;
     this.#preparing.get(label)?.abort(new Error("插件入口有更新的加载请求。"));
     this.#preparing.set(label, transaction);
     const signal = externalSignal ? AbortSignal.any([externalSignal, transaction.signal]) : transaction.signal;
@@ -237,7 +289,7 @@ export class LegacyPlugins {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
         staged.push({
-          label, create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
+          label, order, create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
           priority, event, names: typeof name === "string" ? [name, label, packageName] : [label, packageName],
           templates, published: false,
         });
@@ -304,6 +356,8 @@ export class LegacyPlugins {
 
   #refreshApps(): void {
     this.#apps = [...this.#initializers].sort((left, right) => left.priority - right.priority);
+    this.#ordered = [...this.#apps, ...this.#nativeApps]
+      .sort((left, right) => left.priority - right.priority || left.order - right.order);
   }
 
   #retire(apps: readonly App[]): void {
@@ -337,7 +391,7 @@ export class LegacyPlugins {
   }
 
   stopContexts(): void {
-    for (const app of this.#apps) app.contexts.close();
+    for (const app of this.#ordered) app.contexts.close();
   }
 
   #message(incoming: MessageEvent): MessageEvent {
@@ -350,9 +404,16 @@ export class LegacyPlugins {
   }
 
   async dispatchContext(incoming: MessageEvent, allowed?: (names: readonly string[]) => boolean): Promise<boolean> {
-    const event = this.#message(incoming);
-    for (const app of this.#apps) {
-      if (!app.published || !app.contexts.active || !matches(app.event, event) || (allowed && !allowed(app.names))) continue;
+    const native = this.#nativeApps.size ? nativeMessage(incoming) : incoming;
+    let compatible: MessageEvent | undefined;
+    for (const app of this.#ordered) {
+      if (!app.published || !app.contexts.active || !matches(app.event, incoming) || (allowed && !allowed(app.names))) continue;
+      if ("native" in app) {
+        const resume = app.native.continue;
+        if (resume && await app.scope.invoke(() => resume(native, app.contexts))) return true;
+        continue;
+      }
+      const event = compatible ??= this.#message(incoming);
       if (app.contexts.resolve(event)) return true;
       const contexts = { ...app.contexts.get(event, false), ...app.contexts.get(event, true) };
       if (!Object.keys(contexts).length) continue;
@@ -387,9 +448,17 @@ export class LegacyPlugins {
       this.httpRoutes.discard(app.scope);
       this.exitHooks.discard(app.scope);
     }
+    const native = [...this.#nativeApps];
+    for (const app of native) {
+      app.published = false;
+      app.contexts.close();
+      app.scope.dispose();
+    }
+    this.#nativeApps.clear();
     this.#initializers = [];
-    this.#apps = [];
+    this.#refreshApps();
     return this.#disposal = (async () => {
+      await Promise.all(native.map(app => app.scope.drain()));
       await this.stopTasks();
       this.#retire(apps);
       await Promise.all(this.#retiring);
@@ -408,19 +477,42 @@ export class LegacyPlugins {
   }
 
   async #dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
-    const event = incoming.post_type === "message" ? this.#message(incoming) : incoming;
-    const matching = this.#apps.filter((app) => matches(app.event, event) && (!allowed || allowed(app.names)));
+    const matching = this.#ordered.filter((app) => matches(app.event, incoming) && (!allowed || allowed(app.names)));
+    const native = incoming.post_type === "message" && matching.some(app => "native" in app) ? nativeMessage(incoming) : incoming;
+    let legacy: PluginEvent | undefined;
+    const compatible = () => legacy ??= incoming.post_type === "message" ? this.#message(incoming) : incoming;
     for (const app of matching) {
-      if (!app.published || typeof app.initializer.accept !== "function") continue;
-      const result = await app.scope.invoke(() => {
-        const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
-        return typeof instance.accept === "function" ? instance.accept(event) : undefined;
-      });
+      if (!app.published) continue;
+      let result: unknown;
+      if ("native" in app) {
+        const observe = app.native.observe;
+        if (observe) result = await app.scope.invoke(() => observe(native));
+      } else if (typeof app.initializer.accept === "function") {
+        result = await app.scope.invoke(() => {
+          const event = compatible();
+          const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
+          return typeof instance.accept === "function" ? instance.accept(event) : undefined;
+        });
+      }
       if (result === "return") return true;
       if (result) break;
     }
 
     for (const app of matching) {
+      if ("native" in app) {
+        const rule = app.native.rule;
+        if (!app.published || !rule || native.post_type !== "message") continue;
+        rule.pattern.lastIndex = 0;
+        if (!rule.pattern.test(native.msg)) continue;
+        if (!canRun(rule.permission, native)) {
+          if (native.isDelegated) onDenied?.();
+          else native.reply("暂无权限执行此指令。");
+          return true;
+        }
+        if (await app.scope.invoke(() => rule.run(native, app.contexts)) !== false) return true;
+        continue;
+      }
+      const event = compatible();
       for (const rule of app.rules) {
         if (!app.published) break;
         if (rule.event && !matches(rule.event, event)) continue;
@@ -431,7 +523,6 @@ export class LegacyPlugins {
           else event.reply("暂无权限执行此指令。");
           return true;
         }
-
         const result = await app.scope.invoke(() => {
           const instance = Object.assign(new app.create(event), { e: event, [PluginContext]: app.contexts });
           const handle = instance[rule.fnc];

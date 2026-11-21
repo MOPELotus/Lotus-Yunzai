@@ -32,6 +32,7 @@ import type { MessageReply } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { legacyScriptHash, readFlatScript, watchLegacyFiles } from "./file-watch.ts";
+import type { NativePluginEvent } from "./native-events.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
@@ -471,7 +472,7 @@ export async function loadPlugins(
           ...(mediaRuntime && { mediaRuntime }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
-        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule, handlePoke } = record(module);
+        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule, handlePoke, nativeEvents } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -527,6 +528,15 @@ export async function loadPlugins(
           const disposeFactory = cleanup;
           cleanup = async () => {
             await stopSchedule();
+            await disposeFactory?.();
+          };
+        }
+        if (builtIn && (moduleName === "@lotus-yunzai/group" || moduleName === "@lotus-yunzai/atlas") && nativeEvents !== undefined) {
+          if (!Array.isArray(nativeEvents)) throw new Error("原生事件须以列表提供。");
+          const remove = legacy.registerNative(nativeEvents as NativePluginEvent[], label, packageName ?? moduleName);
+          const disposeFactory = cleanup;
+          cleanup = async () => {
+            await remove();
             await disposeFactory?.();
           };
         }

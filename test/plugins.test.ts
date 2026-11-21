@@ -718,6 +718,30 @@ failsMsg: 协议拒绝
     client.send(JSON.stringify({ echo: repeated.echo, status: "ok", retcode: 0, data: { message_id: 603 } }));
     expect((await repeatDeletions).map((frame) => frame.params)).toEqual([{ message_id: 603 }, { message_id: 602 }]);
 
+    const automatic = nextFrame();
+    client.send(JSON.stringify({ ...event, user_id: 42, message: "OneBot 自动复读", message_id: 604 }));
+    client.send(JSON.stringify({ ...event, user_id: 51, message: "OneBot 自动复读", message_id: 605 }));
+    const autoRepeat = await automatic;
+    expect(autoRepeat).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
+      { type: "text", data: { text: "OneBot 自动复读" } },
+    ] } });
+    client.send(JSON.stringify({ echo: autoRepeat.echo, status: "ok", retcode: 0, data: { message_id: 606 } }));
+
+    expect(await send("#改群名片拒绝")).toMatchObject({ group_id: 77, message: "❎ 该命令仅限主人可用" });
+    const cardRole = nextFrame();
+    client.send(JSON.stringify({ ...event, user_id: 51, message: "#改群名片新名片", message_id: 607 }));
+    const lookupCardRole = await cardRole;
+    expect(lookupCardRole).toMatchObject({ action: "get_group_member_info", params: { group_id: 77, user_id: 99 } });
+    const card = nextFrame();
+    client.send(JSON.stringify({ echo: lookupCardRole.echo, status: "ok", retcode: 0, data: {
+      group_id: 77, user_id: 99, role: "admin",
+    } }));
+    const settingCard = await card;
+    expect(settingCard).toMatchObject({ action: "set_group_card", params: { group_id: 77, user_id: 99, card: "新名片" } });
+    const savedCard = nextFrame();
+    client.send(JSON.stringify({ echo: settingCard.echo, status: "ok", retcode: 0 }));
+    expect(await savedCard).toMatchObject({ action: "send_msg", params: { group_id: 77, message: "✅ 群名片修改成功" } });
+
     const friendRequest = nextFrame();
     client.send(JSON.stringify({ ...event, message: "赞我" }));
     const friends = await friendRequest;

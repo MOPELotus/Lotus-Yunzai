@@ -209,3 +209,44 @@ test("新替换或移除撤销同一入口正在准备的候选并清理迟到�
     await legacy.dispose();
   }
 });
+
+test("内置原生事件与外部 V3 沿用相同优先级与规则权限", async () => {
+  const legacy = new LegacyPlugins();
+  const trace: string[] = [];
+  const identity = Symbol("原生能力");
+  const event = Object.defineProperty(message("#群内测试"), identity, { value: "保留" });
+  const first = class extends Plugin {
+    constructor() { super({ name: "前置旧插件", priority: 5000 }); }
+    accept(event: MessageEvent) {
+      if (Reflect.get(event, "runtime")) trace.push("前置 V3");
+    }
+  };
+  const last = class extends Plugin {
+    constructor() { super({ name: "后置旧插件", priority: 5000 }); }
+    accept() { trace.push("后置 V3"); }
+  };
+  try {
+    await legacy.register({ first }, "first");
+    const remove = legacy.registerNative([{
+      name: "原生群入口", event: "message", priority: 5000,
+      observe(native) {
+        expect(Reflect.get(native, "runtime")).toBeUndefined();
+        expect(Reflect.get(native, identity)).toBe("保留");
+        trace.push("原生");
+      },
+      rule: {
+        pattern: /^#群内测试$/u, permission: "master",
+        run() { trace.push("原生规则"); },
+      },
+    }], "group", "@lotus-yunzai/group");
+    await legacy.register({ last }, "last");
+    expect(await legacy.dispatch(event)).toBe(true);
+    expect(trace).toEqual(["前置 V3", "原生", "后置 V3", "原生规则"]);
+    trace.length = 0;
+    expect(await legacy.dispatch(message("#群内测试"), names => !names.includes("原生群入口"))).toBe(false);
+    expect(trace).toEqual(["前置 V3", "后置 V3"]);
+    await remove();
+  } finally {
+    await legacy.dispose();
+  }
+});
