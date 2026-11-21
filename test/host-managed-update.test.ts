@@ -615,17 +615,20 @@ async function exercisePublicListenerUpdate(fault?: "http" | "onebot" | "port") 
     if (fault) {
       const app = join(writer, "app.ts");
       const source = await readFile(app, "utf8");
-      const site = "const { hostname, oneBot, https, panelToken } = network;";
       const originalHttp = "const http = network.http ??";
-      expect(source).toContain(site);
-      expect(source).toContain(originalHttp);
       let changed = source;
       if (fault === "http") {
+        expect(source.includes(originalHttp)).toBe(true);
         changed = source.replace(originalHttp, "const http = !handoff.accepting ? undefined : network.http ??");
       } else {
-        const oneBot = fault === "onebot" ? "undefined" : "{ ...network.oneBot, port: 0 }";
-        changed = source.replace(site, `const { hostname, https, panelToken } = network;
-          const oneBot = handoff.accepting || !network.oneBot ? network.oneBot : ${oneBot};`);
+        const listenerSettings = /const \{ ([^{}\r\n]*\boneBot\b[^{}\r\n]*) \} = network;/u;
+        expect(listenerSettings.test(source)).toBe(true);
+        const broken = fault === "onebot" ? "undefined" : "{ ...network.oneBot, port: 0 }";
+        changed = source.replace(listenerSettings, (_line, fields: string) => {
+          const otherFields = fields.split(", ").filter(field => field !== "oneBot").join(", ");
+          return `const { ${otherFields} } = network;
+            const oneBot = handoff.accepting || !network.oneBot ? network.oneBot : ${broken};`;
+        });
       }
       await writeFile(app, changed);
       git(writer, "add", "app.ts");
