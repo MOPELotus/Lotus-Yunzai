@@ -21,7 +21,7 @@ export type CommandContext = Readonly<Pick<
   calculationSignal?: AbortSignal;
 }>;
 
-export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply">> & {
+export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply" | "forward">> & {
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly configureNoticeSettings?: NoticeSettingsContext["configureNoticeSettings"];
@@ -282,7 +282,7 @@ export class CommandRegistry {
       if (!features && !allowed(names)) continue;
       const context = {
         ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
-        reply: event.reply, isBotMaster, normalizedMessage, ...capabilities,
+        reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
       };
       if (features && !allowed([...names, ...features(context)])) continue;
       const reply = await handler(event.msg, context);
