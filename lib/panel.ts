@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import type { PluginLoadRecord } from "./plugins/loader.ts";
 import { runtimeStatus, type StatusVersion } from "./server.ts";
 
-type Endpoint = (request: Request) => Response | Promise<Response>;
+type Endpoint = (request: Request, stillAuthorized: () => boolean) => Response | Promise<Response>;
 
 export function panelApi(
   token: string | undefined,
@@ -28,13 +28,13 @@ export function panelApi(
     const custom = route?.(path);
     if (!custom && path !== "/panel/api/status" && path !== "/panel/api/plugins") return;
     const authorization = request.headers.get("Authorization");
-    const authorized = authorization === null ? ownerSession?.authorize(request) :
-      required && timingSafeEqual(required, hash(authorization));
-    if (!authorized) {
+    const authorized = authorization === null ? () => ownerSession?.authorize(request) === true :
+      () => required !== undefined && timingSafeEqual(required, hash(authorization));
+    if (!authorized()) {
       return new Response(null, { status: 401, headers: required ? { ...headers, "WWW-Authenticate": "Bearer" } : headers });
     }
     if (custom) {
-      const response = await custom(request);
+      const response = await custom(request, authorized);
       response.headers.set("Cache-Control", "no-store");
       return response;
     }

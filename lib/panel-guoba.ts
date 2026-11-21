@@ -2,11 +2,13 @@ import { createHmac, randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { guobaActions, resolveGuobaArguments } from "./panel-guoba-actions.ts";
 
 const components = [
   "Divider", "Input", "InputPassword", "InputTextArea", "InputNumber", "Switch", "Select", "EasyCron", "GSubForm",
+  "CheckboxGroup",
 ] as const;
-type Component = typeof components[number];
+type Component = typeof components[number] | "GButtons";
 type Scalar = string | number | boolean | null;
 export type GuobaInput = Scalar | Scalar[];
 
@@ -26,6 +28,15 @@ export interface GuobaSubformEdit {
 }
 
 export type GuobaEdit = GuobaInput | GuobaSubformEdit;
+
+export interface GuobaButton {
+  readonly id: string;
+  readonly label: string;
+  readonly fields: readonly string[];
+  readonly confirm?: string;
+  readonly disabled?: true;
+  readonly type?: "primary" | "danger";
+}
 
 export interface GuobaField {
   readonly component: Component;
@@ -48,6 +59,7 @@ export interface GuobaField {
     multiple?: boolean;
     lengthMin?: number;
     lengthMax?: number;
+    buttons?: readonly GuobaButton[];
   }>;
 }
 
@@ -55,9 +67,10 @@ interface GuobaValues {
   values: Record<string, GuobaInput>;
   configuredPasswords: string[];
   subforms?: Record<string, GuobaSubformSnapshot>;
+  actionRevision?: string;
 }
 
-interface GuobaSaveResult {
+interface GuobaResult {
   ok: boolean;
   status: number;
   message: string;
@@ -67,7 +80,8 @@ export interface GuobaForm {
   readonly schemas: readonly GuobaField[];
   readonly writable: boolean;
   read(): Promise<GuobaValues>;
-  save(data: unknown): Promise<GuobaSaveResult>;
+  save(data: unknown): Promise<GuobaResult>;
+  action(data: unknown, verify: () => boolean, registered: () => boolean, signal: AbortSignal): Promise<GuobaResult>;
 }
 
 type ValueField = GuobaField & { readonly field: string };
@@ -77,7 +91,8 @@ interface PathNode {
 }
 
 const deniedKeys = new Set(["__proto__", "constructor", "prototype"]);
-const saveQueues = new Map<string, Promise<GuobaSaveResult>>();
+const writeQueues = new Map<string, Promise<GuobaResult>>();
+const providerVersions = new Map<string, string>();
 const subformSecret = randomBytes(32);
 
 class SubformConflict extends Error {}
@@ -119,6 +134,7 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
   const group = schema.component === "SOFT_GROUP_BEGIN";
   const component = group ? "Divider" : components.find((name) => name === schema.component);
   if (!component) return undefined;
+  if (component === "CheckboxGroup" && child) return undefined;
   const { field, label, bottomHelpMessage } = schema;
   if (group && (label === undefined || label === null || label === "")) return undefined;
   if (typeof label !== "string") throw new Error();
@@ -151,12 +167,15 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
     if (typeof max === "number" && Number.isFinite(max)) props.max = max;
     if (typeof step === "number" && Number.isFinite(step) && step > 0) props.step = step;
     if (mode === "multiple" || mode === "tags") props.mode = mode;
+    if (component === "CheckboxGroup") props.mode = "multiple";
     if (child && typeof addonAfter === "string") props.addonAfter = addonAfter;
     if (child && (scalar(defaultValue) || (Array.isArray(defaultValue) && defaultValue.every(scalar)))) {
       props.defaultValue = defaultValue;
     }
     if (Array.isArray(options)) {
       props.options = options.flatMap((option: unknown) => {
+        if (component === "CheckboxGroup" && (typeof option === "string" ||
+            (typeof option === "number" && Number.isFinite(option)))) return [{ label: String(option), value: option }];
         if (!record(option) || !scalar(option.value) || (!child && typeof option.label !== "string")) return [];
         const { label: optionLabel, value, disabled } = option;
         return [{ label: typeof optionLabel === "string" ? optionLabel : String(value), value,
@@ -217,7 +236,8 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
       throw new Error();
     }
   }
-  if (schema.component === "Select" && props?.mode !== "tags") {
+  if (schema.component === "CheckboxGroup" && !Array.isArray(value)) throw new Error();
+  if ((schema.component === "Select" || schema.component === "CheckboxGroup") && props?.mode !== "tags") {
     const options = props?.options;
     const entries = Array.isArray(value) ? value : [value];
     if ((Array.isArray(value) && props?.mode !== "multiple") ||
@@ -374,10 +394,27 @@ async function supportFile(pluginDirectory: string): Promise<string | undefined>
   return file;
 }
 
+async function providerVersion(file: string) {
+  const { dev, ino, size, mtimeNs, ctimeNs } = await stat(file, { bigint: true });
+  return [dev, ino, size, mtimeNs, ctimeNs].join(":");
+}
+
+async function queueWrite(file: string, run: () => Promise<GuobaResult>) {
+  const writing = Promise.resolve(writeQueues.get(file)).then(run);
+  writeQueues.set(file, writing);
+  try {
+    return await writing;
+  } finally {
+    if (writeQueues.get(file) === writing) writeQueues.delete(file);
+  }
+}
+
 export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm | undefined> {
   try {
     const file = await supportFile(pluginDirectory);
     if (file === undefined) return;
+    const version = await providerVersion(file);
+    if (!providerVersions.has(file)) providerVersions.set(file, version);
     const { supportGuoba } = await import(pathToFileURL(file).href);
     if (typeof supportGuoba !== "function") throw new Error();
     const support: unknown = await supportGuoba();
@@ -387,9 +424,18 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
     if (!record(configInfo)) throw new Error();
     const { schemas: raw, getConfigData, setConfigData } = configInfo;
     if (!Array.isArray(raw) || typeof getConfigData !== "function") throw new Error();
-    const schemas = raw.map(item => normaliseField(item)).filter((field) => field !== undefined);
-    const compiled = compile(schemas);
-    if (!compiled.fields.size) return;
+    const configSchemas = raw.map(item => normaliseField(item));
+    const compiled = compile(configSchemas.filter(item => item !== undefined));
+    const allowed = guobaActions(raw, providerVersions.get(file) === version ? configInfo.actions : undefined, field => {
+      const schema = compiled.fields.get(field)?.schema;
+      return schema !== undefined && schema.component !== "InputPassword" && schema.component !== "GSubForm";
+    });
+    const schemas = configSchemas.map((schema, index) => schema ?? allowed.groups.get(index))
+      .filter(item => item !== undefined);
+    if (!compiled.fields.size && !allowed.actions.size) return;
+    const writable = compiled.fields.size > 0 && typeof setConfigData === "function";
+    const actionInputs = [...allowed.fields].map(field => compiled.fields.get(field)!);
+    const actionContract = JSON.stringify(actionInputs.map(({ schema }) => schema));
 
     const readData = async (): Promise<Record<string, unknown>> => {
       const data: unknown = await getConfigData.call(configInfo);
@@ -397,9 +443,20 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
       return data;
     };
 
+    function actionSnapshot(data: Record<string, unknown>) {
+      const values: Record<string, GuobaInput> = Object.create(null);
+      for (const { schema, parts } of actionInputs) {
+        const value = getValue(data, schema.field, parts);
+        if (value !== undefined) values[schema.field] = inputValue(schema, value);
+      }
+      const revision = createHmac("sha256", subformSecret)
+        .update(JSON.stringify([file, version, allowed.definition, actionContract, values])).digest("hex");
+      return { values, revision };
+    }
+
     return {
       schemas,
-      writable: typeof setConfigData === "function",
+      writable,
       async read() {
         try {
           const data = await readData();
@@ -416,13 +473,14 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
               values[field] = inputValue(schema, value);
             }
           }
-          return { values, configuredPasswords, ...(Object.keys(subforms).length ? { subforms } : {}) };
+          return { values, configuredPasswords, ...(Object.keys(subforms).length ? { subforms } : {}),
+            ...(allowed.actions.size ? { actionRevision: actionSnapshot(data).revision } : {}) };
         } catch {
           throw new Error("无法读取插件配置。");
         }
       },
       async save(data) {
-        if (typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
+        if (!writable || typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
         let values: Record<string, unknown>;
         try {
           values = submitted(data, compiled);
@@ -431,8 +489,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
         }
         const changedFields = Object.freeze(Object.keys(values));
 
-        const before = saveQueues.get(file);
-        const saving: Promise<GuobaSaveResult> = Promise.resolve(before).then(async () => {
+        return queueWrite(file, async () => {
           try {
             let current: Record<string, unknown> | undefined;
             for (const [field, { schema, parts }] of compiled.fields) {
@@ -466,12 +523,52 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
             return { ok: false, status: 500, message: "无法保存插件配置。" };
           }
         });
-        saveQueues.set(file, saving);
-        try {
-          return await saving;
-        } finally {
-          if (saveQueues.get(file) === saving) saveQueues.delete(file);
+      },
+      async action(data, verify, registered, signal) {
+        if (!record(data) || !Object.keys(data).every(key => ["button", "revision", "fields"].includes(key)) ||
+            typeof data.button !== "string" || typeof data.revision !== "string" || !/^[a-f0-9]{64}$/u.test(data.revision)) {
+          return { ok: false, status: 400, message: "插件操作请求无效。" };
         }
+        const selected = allowed.actions.get(data.button);
+        if (!selected || selected.button.disabled) return { ok: false, status: 404, message: "插件操作不可用。" };
+        let edits: Record<string, GuobaInput>;
+        try {
+          const input = submitted(data.fields === undefined ? {} : data.fields, compiled);
+          if (!Object.keys(input).every(key => selected.button.fields.includes(key))) throw new Error();
+          edits = input as Record<string, GuobaInput>;
+        } catch {
+          return { ok: false, status: 400, message: "插件操作包含未知字段或无效值。" };
+        }
+        return queueWrite(file, async () => {
+          try {
+            if (signal.aborted || !verify()) return { ok: false, status: 401, message: "面板登录已失效。" };
+            if (!registered()) return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+            const current = actionSnapshot(await readData());
+            if (current.revision !== data.revision || !registered() || await supportFile(pluginDirectory) !== file ||
+                await providerVersion(file).catch(() => undefined) !== version) {
+              return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+            }
+            for (const [field, value] of Object.entries(edits)) {
+              const options = compiled.fields.get(field)?.schema.componentProps?.options;
+              if (options?.some(({ disabled, value: option }) =>
+                disabled && [value].flat().includes(option) !== [current.values[field]].flat().includes(option))) {
+                return { ok: false, status: 400, message: "插件操作包含当前不可选的值。" };
+              }
+            }
+            const args = resolveGuobaArguments(selected.args, { ...current.values, ...edits });
+            if (JSON.stringify(args).length > 16_384) return { ok: false, status: 400, message: "插件操作参数过长。" };
+            if (!registered()) return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+            if (signal.aborted || !verify()) return { ok: false, status: 401, message: "面板登录已失效。" };
+            const handler = selected.handler;
+            const result = await handler(args, { Result });
+            if (result instanceof Result && result.isOk) {
+              return { ok: true, status: 200, message: "插件操作已完成。" };
+            }
+            return { ok: false, status: 422, message: "插件未确认操作完成，请检查当前状态。" };
+          } catch {
+            return { ok: false, status: 500, message: "无法确认插件操作结果，请检查当前状态。" };
+          }
+        });
       },
     };
   } catch {

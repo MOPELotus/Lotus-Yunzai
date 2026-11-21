@@ -2,7 +2,7 @@
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import GuobaSubform from "./GuobaSubform.vue";
-import type { GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
+import type { GuobaButton, GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 const props = defineProps<{ auth: PanelAuth }>();
@@ -17,6 +17,7 @@ interface Snapshot {
   configuredPasswords: string[];
   subforms?: Record<string, GuobaSubformSnapshot>;
   writable?: boolean;
+  actionRevision?: string;
 }
 type Operation = { kind: "list" } | { kind: "read"; plugin: string } | { kind: "save" };
 type Scalar = Exclude<GuobaInput, unknown[]>;
@@ -33,10 +34,13 @@ const error = ref("");
 const notice = ref("");
 const pending = shallowRef<Exclude<Operation, { kind: "save" }>>();
 const clearPending = ref<string>();
-const busy = ref<Operation["kind"]>();
+const pendingAction = shallowRef<GuobaButton>();
+const busy = ref<Operation["kind"] | "action">();
 let active: AbortController | undefined;
 
 const dirty = computed(() => edits.size > 0);
+const actionFields = computed(() => new Set(snapshot.value?.schemas.flatMap(schema =>
+  schema.componentProps?.buttons?.flatMap(button => button.disabled ? [] : [...button.fields]) ?? [])));
 const rows = computed(() => {
   const needle = query.value.trim().toLowerCase();
   const allRows = (snapshot.value?.schemas ?? []).map((schema, index) => ({
@@ -57,7 +61,8 @@ const rows = computed(() => {
       groupMatches = matches(schema.label);
       continue;
     }
-    if (!groupMatches && ![schema.label, field, schema.bottomHelpMessage].some(matches)) continue;
+    if (!groupMatches && ![schema.label, field, schema.bottomHelpMessage,
+      ...(schema.componentProps?.buttons ?? []).map(button => button.label)].some(matches)) continue;
     if (heading) {
       visible.push(heading);
       heading = undefined;
@@ -86,16 +91,23 @@ function strArray(value: unknown): value is string[] {
 }
 
 function isSchema(value: unknown): value is GuobaField {
-  return isRecord(value) && typeof value.component === "string" && typeof value.label === "string" &&
-    (value.component === "Divider" || typeof value.field === "string") &&
-    (value.bottomHelpMessage === undefined || typeof value.bottomHelpMessage === "string");
+  if (!isRecord(value) || typeof value.component !== "string" || typeof value.label !== "string" ||
+      (value.bottomHelpMessage !== undefined && typeof value.bottomHelpMessage !== "string")) return false;
+  if (value.component !== "GButtons") return value.component === "Divider" || typeof value.field === "string";
+  return isRecord(value.componentProps) && Array.isArray(value.componentProps.buttons) &&
+    value.componentProps.buttons.every(button => isRecord(button) && typeof button.id === "string" &&
+      typeof button.label === "string" && strArray(button.fields) &&
+      (button.confirm === undefined || typeof button.confirm === "string") &&
+      (button.disabled === undefined || button.disabled === true) &&
+      (button.type === undefined || button.type === "primary" || button.type === "danger"));
 }
 
-async function request(path: string, signal: AbortSignal, body?: Record<string, GuobaEdit>): Promise<unknown> {
+async function request(path: string, signal: AbortSignal, body?: Record<string, unknown>,
+  method = body ? "PUT" : "GET"): Promise<unknown> {
   const headers = new Headers();
   if (body) headers.set("Content-Type", "application/json");
   const response = await panelFetch(path, props.auth, {
-    method: body ? "PUT" : "GET", headers, signal, body: body && JSON.stringify(body),
+    method, headers, signal, body: body && JSON.stringify(body),
   });
   if (!response.ok) {
     const messages: Record<number, string> = {
@@ -122,6 +134,8 @@ async function read(plugin: string, signal: AbortSignal): Promise<Snapshot> {
     configuredPasswords: data.configuredPasswords,
     subforms: isRecord(data.subforms) ? data.subforms as Snapshot["subforms"] : undefined,
     writable: typeof data.writable === "boolean" ? data.writable : undefined,
+    actionRevision: typeof data.actionRevision === "string" && /^[a-f0-9]{64}$/u.test(data.actionRevision)
+      ? data.actionRevision : undefined,
   };
 }
 
@@ -134,6 +148,7 @@ async function operate(operation: Operation) {
   busy.value = operation.kind;
   pending.value = undefined;
   clearPending.value = undefined;
+  pendingAction.value = undefined;
   error.value = "";
   notice.value = "";
   let saved = false;
@@ -190,6 +205,52 @@ async function operate(operation: Operation) {
     } else {
       error.value = failure instanceof RequestError ? failure.message : "暂时无法连接宿主，请重试。";
     }
+  } finally {
+    clearTimeout(timeout);
+    if (active === controller) {
+      active = undefined;
+      busy.value = undefined;
+    }
+  }
+}
+
+function chooseAction(button: GuobaButton) {
+  if (active || pending.value || button.disabled || !snapshot.value?.actionRevision) return;
+  if (button.confirm) pendingAction.value = button;
+  else void runAction(button);
+}
+
+async function runAction(button: GuobaButton) {
+  const plugin = selected.value;
+  const revision = snapshot.value?.actionRevision;
+  if (active || !plugin || !revision || button.disabled) return;
+  const fields = Object.fromEntries(button.fields.filter(field => edits.has(field)).map(field => [field, edits.get(field)]));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  active = controller;
+  busy.value = "action";
+  pendingAction.value = undefined;
+  error.value = "";
+  notice.value = "";
+  let completed = false;
+  try {
+    const result = await request(`${endpoint}/${encodeURIComponent(plugin)}/action`, controller.signal,
+      { button: button.id, revision, fields }, "POST");
+    if (active !== controller) return;
+    if (!isRecord(result) || result.ok !== true) throw new RequestError(500, "无法确认插件操作结果，请检查当前状态。");
+    completed = true;
+    notice.value = "插件操作已完成。";
+    const latest = await read(plugin, controller.signal);
+    if (active !== controller) return;
+    snapshot.value = latest;
+    readOnly.value = latest.writable === false;
+  } catch (failure) {
+    if (active !== controller) return;
+    if (failure instanceof RequestError && failure.status === 401) return emit("unauthorized");
+    error.value = completed ? "暂时无法读取最新配置，请重新载入。" :
+      failure instanceof RequestError && failure.status === 409 ? "插件表单已变更，请重新载入后再操作。" :
+      failure instanceof RequestError && [400, 404, 422].includes(failure.status) ? "插件未确认操作完成，请检查当前状态。" :
+      "无法确认插件操作结果，请先检查当前状态。";
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -268,6 +329,13 @@ function selectOptions(field: string, schema: GuobaField, event: Event) {
   update(field, control.multiple ? values : values[0] ?? null);
 }
 
+function toggleOption(field: string, option: Scalar, event: Event) {
+  const current = fieldValue(field);
+  const values = Array.isArray(current) ? current.filter(value => value !== option) : [];
+  if ((event.target as HTMLInputElement).checked) values.push(option);
+  update(field, values);
+}
+
 function updateTags(field: string, schema: GuobaField, value: string) {
   tagDrafts.set(field, value);
   const before = savedValue(field);
@@ -290,6 +358,7 @@ watch(() => props.auth, () => {
   tagDrafts.clear();
   query.value = "";
   readOnly.value = false;
+  pendingAction.value = undefined;
   error.value = "";
   notice.value = "";
   void operate({ kind: "list" });
@@ -307,14 +376,14 @@ onBeforeUnmount(() => {
   <section class="plugin-settings" aria-labelledby="plugin-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
       <h1 id="plugin-settings-title" tabindex="-1">插件配置</h1>
-      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy) || Boolean(pending)"
+      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy || pending || pendingAction)"
         @click="requestNavigation({ kind: 'list' })">重新载入</ElButton>
     </div>
 
     <div v-if="plugins.length" class="filters">
       <div>
         <label for="plugin-module">插件</label>
-        <select id="plugin-module" :value="selected" :disabled="Boolean(busy) || Boolean(pending)" @change="changePlugin">
+        <select id="plugin-module" :value="selected" :disabled="Boolean(busy || pending || pendingAction)" @change="changePlugin">
           <option disabled value="">请选择插件</option>
           <option v-for="plugin in plugins" :key="plugin" :value="plugin">{{ plugin }}</option>
         </select>
@@ -322,6 +391,13 @@ onBeforeUnmount(() => {
       <div v-if="snapshot">
         <label for="plugin-field-search">查找配置项</label>
         <ElInput id="plugin-field-search" v-model="query" placeholder="分组、标签、字段名或说明" />
+      </div>
+    </div>
+    <div v-if="pendingAction" class="plugin-feedback" role="alert">
+      <p>{{ pendingAction.confirm }}</p>
+      <div class="plugin-actions">
+        <ElButton @click="pendingAction = undefined">取消</ElButton>
+        <ElButton :type="pendingAction.type ?? 'primary'" @click="runAction(pendingAction)">确认{{ pendingAction.label }}</ElButton>
       </div>
     </div>
     <div v-if="pending" class="plugin-feedback" role="alert">
@@ -332,20 +408,33 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
+    <p v-if="busy === 'action'" class="plugin-note" role="status">正在执行插件操作…</p>
     <p v-if="readOnly && snapshot" class="plugin-note" role="status">此配置表单只读。</p>
     <p v-if="!snapshot && busy" class="plugin-note" role="status">正在读取配置…</p>
     <p v-else-if="!plugins.length && !error" class="plugin-note" role="status">当前没有提供配置表单的插件。</p>
     <p v-if="!snapshot && notice" class="plugin-note" role="status">{{ notice }}</p>
 
     <form v-if="snapshot" @submit.prevent="operate({ kind: 'save' })">
-      <fieldset :disabled="Boolean(busy) || readOnly" class="schema-grid" aria-label="插件配置项">
+      <fieldset :disabled="Boolean(busy || pendingAction)" class="schema-grid" aria-label="插件配置项">
         <template v-for="{ schema, field, id } in rows" :key="id">
           <h2 v-if="schema.component === 'Divider'" class="schema-divider">{{ schema.label }}</h2>
-          <GuobaSubform v-else-if="schema.component === 'GSubForm' && field && snapshot.subforms?.[field]"
-            :id="id" :schema="schema" :saved="snapshot.subforms[field]" :edited="edits.get(field) as GuobaSubformEdit | undefined"
-            @update="value => value ? edits.set(field, value) : edits.delete(field)" />
-          <div v-else-if="field" class="plugin-field">
-            <label :for="id">{{ schema.label }}</label>
+          <fieldset v-else-if="schema.component === 'GSubForm' && field && snapshot.subforms?.[field]"
+            class="subform-field" :disabled="readOnly">
+            <GuobaSubform
+              :id="id" :schema="schema" :saved="snapshot.subforms[field]" :edited="edits.get(field) as GuobaSubformEdit | undefined"
+              @update="value => value ? edits.set(field, value) : edits.delete(field)" />
+          </fieldset>
+          <div v-else-if="schema.component === 'GButtons'" class="plugin-field" role="group" :aria-labelledby="id">
+            <span :id="id" class="plugin-field-label">{{ schema.label }}</span>
+            <div class="plugin-actions">
+              <ElButton v-for="button in schema.componentProps?.buttons" :key="button.id" :type="button.type"
+                :disabled="button.disabled || !snapshot.actionRevision || Boolean(pending)"
+                @click="chooseAction(button)">{{ button.label }}</ElButton>
+            </div>
+          </div>
+          <fieldset v-else-if="field" class="plugin-field" :disabled="readOnly && !actionFields.has(field)">
+            <span v-if="schema.component === 'CheckboxGroup'" :id="id" class="plugin-field-label">{{ schema.label }}</span>
+            <label v-else :for="id">{{ schema.label }}</label>
             <template v-if="schema.component === 'InputPassword'">
               <ElInput
                 :id="id" type="password" autocomplete="new-password"
@@ -384,11 +473,19 @@ onBeforeUnmount(() => {
               :max="schema.componentProps?.max" :step="schema.componentProps?.step ?? 'any'"
               @input="updateNumber(field, $event)"
             />
+            <div v-else-if="schema.component === 'CheckboxGroup'"
+              class="plugin-actions checkbox-group" role="group" :aria-labelledby="id">
+              <label v-for="(option, index) in schema.componentProps?.options" :key="index">
+                <input type="checkbox" :checked="selectedOption(fieldValue(field), option.value)" :disabled="option.disabled"
+                  @change="toggleOption(field, option.value, $event)" />
+                {{ option.label }}
+              </label>
+            </div>
             <template v-else-if="schema.component === 'Select'">
               <template v-if="schema.componentProps?.mode === 'tags'">
                 <ElInput
                   :id="id" type="textarea" :rows="3" :model-value="tagDrafts.get(field) ?? displayText(fieldValue(field))"
-                  :disabled="Boolean(busy) || readOnly" placeholder="每行一个标签"
+                  :disabled="Boolean(busy) || (readOnly && !actionFields.has(field))" placeholder="每行一个标签"
                   @update:model-value="updateTags(field, schema, $event)"
                 />
               </template>
@@ -415,7 +512,7 @@ onBeforeUnmount(() => {
               v-else-if="schema.component === 'InputTextArea'"
               :id="id" type="textarea" :rows="schema.componentProps?.rows ?? 3"
               :model-value="displayText(fieldValue(field))" :placeholder="schema.componentProps?.placeholder"
-              :disabled="Boolean(busy) || readOnly"
+              :disabled="Boolean(busy) || (readOnly && !actionFields.has(field))"
               @update:model-value="update(field, $event)"
             />
             <template v-else>
@@ -424,15 +521,16 @@ onBeforeUnmount(() => {
               <p v-if="schema.component === 'EasyCron'" class="plugin-help">填写插件接受的 Cron 表达式。</p>
             </template>
             <p v-if="schema.bottomHelpMessage" class="plugin-help">{{ schema.bottomHelpMessage }}</p>
-          </div>
+          </fieldset>
         </template>
         <p v-if="!rows.length" class="plugin-help">没有符合条件的配置项。</p>
       </fieldset>
 
       <div class="plugin-feedback save-group">
-        <p v-if="notice || dirty" role="status">{{ dirty ? "有未保存的改动" : notice }}</p>
+        <p v-if="notice" role="status">{{ notice }}</p>
+        <p v-if="dirty" role="status">{{ readOnly ? "当前输入仅供插件操作" : "有未保存的改动" }}</p>
         <ElButton v-if="!readOnly" type="primary" native-type="submit"
-          :loading="busy === 'save'" :disabled="!dirty || Boolean(busy) || Boolean(pending)">
+          :loading="busy === 'save'" :disabled="!dirty || Boolean(busy || pending || pendingAction)">
           保存配置
         </ElButton>
       </div>
@@ -471,8 +569,11 @@ onBeforeUnmount(() => {
 
 .schema-divider { grid-column: 1 / -1; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .schema-divider:first-child { padding-top: 0; }
-.plugin-field { min-width: 0; display: grid; gap: 6px; align-content: start; }
-.plugin-field label, .filters label { font-size: 14px; font-weight: 600; }
+.plugin-field, .subform-field { min-width: 0; margin: 0; padding: 0; border: 0; }
+.plugin-field { display: grid; gap: 6px; align-content: start; }
+.subform-field { grid-column: 1 / -1; }
+.plugin-field label, .plugin-field-label, .filters label { font-size: 14px; font-weight: 600; }
+.checkbox-group label { display: inline-flex; align-items: center; gap: 5px; font-weight: 400; }
 
 .plugin-field :is(input:not([type="checkbox"]), select) {
   min-height: 38px;

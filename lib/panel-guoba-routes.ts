@@ -38,16 +38,38 @@ export function panelGuobaRoutes(directories: PluginLoadReport["directories"]) {
     }
   }
 
+  async function action(request: Request, directory: string, verify: () => boolean, registered: () => boolean) {
+    if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    try {
+      const support = await loadGuobaForm(directory);
+      if (!support) return new Response(null, { status: 404 });
+      let data: unknown;
+      try {
+        data = await readPanelJson(request);
+      } catch {
+        return new Response(null, { status: 400 });
+      }
+      const { ok, status, message } = await support.action(data, verify, registered, request.signal);
+      return Response.json({ ok, message }, { status });
+    } catch {
+      return new Response(null, { status: 500 });
+    }
+  }
+
   return (path: string) => {
     if (path === "/panel/api/guoba") return list;
-    const name = /^\/panel\/api\/guoba\/([^/]+)$/u.exec(path)?.[1];
-    if (!name) return;
-    let directory: string | undefined;
+    const match = /^\/panel\/api\/guoba\/([^/]+)(\/action)?$/u.exec(path);
+    if (!match) return;
+    let name: string;
     try {
-      directory = directories.get(decodeURIComponent(name))?.path;
+      name = decodeURIComponent(match[1]!);
     } catch {
       return;
     }
-    return directory ? (request: Request) => form(request, directory) : undefined;
+    const plugin = directories.get(name);
+    if (!plugin) return;
+    if (!match[2]) return (request: Request) => form(request, plugin.path);
+    return (request: Request, verify: () => boolean) =>
+      action(request, plugin.path, verify, () => directories.get(name) === plugin);
   };
 }
