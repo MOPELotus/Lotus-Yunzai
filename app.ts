@@ -1985,7 +1985,10 @@ if (import.meta.main) {
     if (!allowNew) return;
     if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg, alias)) return;
 
-    const command = normalizeGameCommand(event);
+    const normalized = normalizeGameCommand(event);
+    const sendMedia = normalized.isDelegated ? undefined : normalized[sendSessionMedia];
+    const deliverMedia = sendMedia && ((file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia));
+    const command = deliverMedia ? { ...normalized, deliverMedia } : normalized;
     if (isUpdateLogCommand(command.msg)) {
       if (allowed(updateFeatureNames)) await updateLogCommand(command);
       return;
@@ -2053,10 +2056,6 @@ if (import.meta.main) {
       await sendCommandReply(event, redeemReply);
       return;
     }
-    const sendMedia = command[sendSessionMedia];
-    if (sendMedia) Object.defineProperty(command, "deliverMedia", {
-      value: (file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia),
-    });
     if (/^#绝区零[^\p{Cc}\p{Cf}]{1,80}影画$/u.test(command.msg)) {
       // The V3 Atlas shortcut also matches this suffix. The explicit 图鉴 suffix still goes to Atlas.
       const cinema = await commands.dispatchFallback(event,
@@ -2166,7 +2165,8 @@ if (import.meta.main) {
     const fallbackEvent = bareStatus && runtimeStatusScope ? {
       ...event, runtimeStatusScope, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" as const : undefined,
     } : teamDamageSession ? { ...event, calculationSignal: nativeOperationSignal(teamDamageSession) } : event;
-    const fallback = await commands.dispatchFallback(fallbackEvent,
+    const deliveryEvent = deliverMedia ? { ...fallbackEvent, deliverMedia } : fallbackEvent;
+    const fallback = await commands.dispatchFallback(deliveryEvent,
       (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
