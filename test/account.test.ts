@@ -175,6 +175,9 @@ device:
       device: { id: "fixture-device-two", fp: "fixture-fp-two", androidVersion: "15" },
     });
     expect((await profiles.requestContext(qq, 2, "gs", "800004")).role.uid).toBe("800004");
+    expect(await profiles.requestSelectedContext(qq, 1, "gs")).toEqual(main);
+    await expect(profiles.requestSelectedContext(qq, 2, "gs")).rejects.toMatchObject({ code: "role-missing" });
+    await expect(profiles.requestSelectedContext(qq, 7, "sr")).rejects.toMatchObject({ code: "login-required" });
     const allAlternate = await profiles.requestContexts(qq, 2, ["sr", "gs", "gs"]);
     expect(allAlternate.map(({ game, role }) => [game, role.uid])).toEqual([["gs", "800004"], ["gs", "800003"]]);
     expect(allAlternate.every(({ qq: owner, profileId, revision, account, device }) => owner === qq && profileId === 2 &&

@@ -523,6 +523,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     return { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
   }
 
+  async function readRoleContext(qq: string, id: number, game: Game, uid: string | undefined, requireSelected: boolean) {
+    if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+    const profile = await readLoggedIn(qq, id);
+    const roles = normalizeGameRoles(profile.roles[game]);
+    const selection = profile.selected[game];
+    const activeUid = uid === undefined ? accountId(selection) : uid;
+    const hasSelection = selection !== undefined && selection !== null && selection !== "";
+    const allowFallback = uid === undefined && !(requireSelected && hasSelection);
+    const role = roles.find((item) => item.uid === activeUid) ??
+      (allowFallback ? roles.find((item) => item.chosen) ?? roles[0] : undefined);
+    if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
+    return requestFor(profile, qq, id, game, role);
+  }
+
   function requestsFor(profile: Awaited<ReturnType<typeof read>>, qq: string, id: number, games: readonly Game[]) {
     return [...new Set(games)].flatMap((game) =>
       normalizeGameRoles(profile.roles[game]).map((role) => requestFor(profile, qq, id, game, role)));
@@ -1016,16 +1030,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         stoken_cookie: "", updated_at: "", roles_updated_at: "", role_sync_error: "",
       }));
     },
-    async requestContext(qq: string, id: number, game: Game, uid?: string) {
-      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
-      const profile = await readLoggedIn(qq, id);
-      const roles = normalizeGameRoles(profile.roles[game]);
-      const role = uid !== undefined ? roles.find((item) => item.uid === uid)
-        : roles.find((item) => item.uid === accountId(profile.selected[game]))
-          ?? roles.find((item) => item.chosen) ?? roles[0];
-      if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
-
-      return requestFor(profile, qq, id, game, role);
+    requestContext(qq: string, id: number, game: Game, uid?: string) {
+      return readRoleContext(qq, id, game, uid, false);
+    },
+    requestSelectedContext(qq: string, id: number, game: Game) {
+      return readRoleContext(qq, id, game, undefined, true);
     },
     async requestContexts(qq: string, id: number, games: readonly Game[] = profileGames) {
       if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
