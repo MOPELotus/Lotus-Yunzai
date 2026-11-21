@@ -343,12 +343,23 @@ schedule: { mode: fixed }
     const profiles = createProfileStore(root);
     const context = await profiles.accountContext("42");
     const seen: Array<string | null> = [];
+    const firstRead = Promise.withResolvers<void>();
+    const secondRead = Promise.withResolvers<void>();
     const late = Promise.withResolvers<void>();
     let exchanges = 0;
     const client = createHoyoClient(async (_url, init) => {
       const cookie = new Headers(init.headers).get("Cookie");
       seen.push(cookie);
-      if (cookie === "expired" && seen.length === 2) await late.promise;
+      if (cookie === "expired") {
+        // Wait for both requests to reach the transport before allowing either to refresh.
+        if (seen.length === 1) {
+          firstRead.resolve();
+          await secondRead.promise;
+        } else if (seen.length === 2) {
+          secondRead.resolve();
+          await late.promise;
+        }
+      }
       return cookie === "renewed"
         ? Response.json({ retcode: 0, data: { list: [] } })
         : Response.json({ retcode: -100 });
@@ -362,9 +373,13 @@ schedule: { mode: fixed }
       },
     });
     const first = client.listRoles(context, "gs");
+    await Promise.race([firstRead.promise, first]);
     const second = client.listRoles(context, "gs");
-    expect(await first).toEqual([]);
-    late.resolve();
+    try {
+      expect(await first).toEqual([]);
+    } finally {
+      late.resolve();
+    }
     expect(await second).toEqual([]);
     expect(exchanges).toBe(1);
     expect(seen).toEqual(["expired", "expired", "renewed", "renewed"]);
