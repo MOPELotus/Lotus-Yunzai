@@ -32,6 +32,9 @@ function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
 
 function mockGateway() {
   const calls: Call[] = [];
+  const roles = new Map<number, string>();
+  const quotes = new Map<number, Record<string, unknown>>();
+  let afterRole: Promise<void> | undefined;
   let available = Promise.withResolvers<void>();
   let consumed = 0;
   function success(data: object = {}) {
@@ -49,6 +52,17 @@ function mockGateway() {
       available.resolve();
       switch (action) {
         case "get_login_info": return success({ uin: botId, nickname: "撤回夹具" });
+        case "get_message":
+          return success({ message: {
+            message_scene: body.message_scene, peer_id: body.peer_id, message_seq: body.message_seq,
+            sender_id: body.message_scene === "friend" ? botId : 43,
+            segments: [{ type: "text", data: { text: "引用内容" } }], ...quotes.get(Number(body.message_seq)),
+          } });
+        case "get_group_member_info": {
+          await afterRole;
+          const user_id = Number(body.user_id);
+          return success({ member: { group_id: body.group_id, user_id, role: roles.get(user_id) ?? "member" } });
+        }
         case "send_group_message":
         case "send_private_message": return success({ message_seq: 1_000 + calls.length, time });
         case "recall_group_message":
@@ -70,10 +84,23 @@ function mockGateway() {
     return call.body;
   }
   return {
-    server, next,
-    async reply(target: Target, text: string | ReturnType<typeof expect.stringMatching>) {
+    server, next, roles, quotes,
+    holdRole(until: Promise<void>) { afterRole = until; },
+    async quote(target: Target, sequence: number) {
+      expect(await next("get_message")).toEqual({
+        message_scene: "group_id" in target ? "group" : "friend",
+        peer_id: "group_id" in target ? target.group_id : target.user_id, message_seq: sequence,
+      });
+    },
+    async role(user_id: number) {
+      expect(await next("get_group_member_info")).toEqual({ group_id: groupId, user_id, no_cache: true });
+    },
+    async reply(target: Target, text: string | ReturnType<typeof expect.stringMatching>, quoted?: number) {
       const body = await next("group_id" in target ? "send_group_message" : "send_private_message");
-      expect(body).toEqual({ ...target, message: [{ type: "text", data: { text } }] });
+      expect(body).toEqual({ ...target, message: [
+        ...(quoted === undefined ? [] : [{ type: "reply", data: { message_seq: quoted } }]),
+        { type: "text", data: { text } },
+      ] });
     },
     async recall(target: Target, ...sequences: number[]) {
       const action = "group_id" in target ? "recall_group_message" : "recall_private_message";
@@ -141,7 +168,7 @@ function message(text: string, message_seq: number, sender_id: number, group?: n
   };
 }
 
-test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与回执语义", async () => {
+test("实际 Milky 引用撤回按同会话和实时群权限，保留 V3 优先与回执语义", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-milky-recall-"));
   const mock = mockGateway();
   try {
@@ -192,7 +219,10 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       const foreign = message("#撤回", 100, owner, groupId, 101);
       expect((await webhook(endpoint, "message_receive", foreign, botId + 1)).status).toBe(403);
       await send(message("#撤回", 102, outsider, groupId, 103));
-      await send(message("#撤回", 104, otherOwner, groupId, 105));
+      await mock.quote(groupTarget, 103);
+      await mock.role(outsider);
+      await mock.reply(groupTarget, "该命令仅限群管理员可用。", 102);
+      await send(message("#撤回", 104, otherOwner, groupId));
       await send(message("#撤回", 106, outsider));
       await mock.reply({ user_id: outsider }, "私聊限制夹具");
       await send(message("#撤回 多余参数", 107, owner));
@@ -214,7 +244,8 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
       await barrier();
 
       await send(message("撤回", 320, owner, undefined, 321));
-      await mock.recall(privateTarget, 320, 321);
+      await mock.quote(privateTarget, 321);
+      await mock.recall(privateTarget, 321);
       await barrier();
       await afterDuplicateWindow();
       await send(message("#撤回", 330, owner, groupId, 330));
@@ -223,14 +254,46 @@ test("Milky 主人撤回按原会话处理命令和引用，保留 V3 优先与�
 
       await afterDuplicateWindow();
       await send(message("#撤回", 401, owner, groupId, rejectedSequence));
-      await mock.recall(groupTarget, 401, rejectedSequence);
-      await mock.reply(groupTarget, "已撤回 1 条，其余消息未能撤回。");
+      await mock.quote(groupTarget, rejectedSequence);
+      await mock.recall(groupTarget, rejectedSequence);
+      await mock.reply(groupTarget, "已撤回 0 条，其余消息未能撤回。");
       const uncertain = message("撤回", 501, owner, undefined, unknownSequence);
       await send(uncertain);
-      await mock.recall(privateTarget, 501, unknownSequence);
-      await mock.reply(privateTarget, "已撤回 1 条，其余撤回结果未确认。");
+      await mock.quote(privateTarget, unknownSequence);
+      await mock.recall(privateTarget, unknownSequence);
+      await mock.reply(privateTarget, "已撤回 0 条，其余撤回结果未确认。");
       await afterDuplicateWindow();
       await send(uncertain);
+      await barrier();
+
+      mock.quotes.set(611, { sender_id: botId });
+      await send(message("#撤回", 610, outsider, groupId, 611));
+      await mock.quote(groupTarget, 611);
+      await mock.role(outsider);
+      await mock.recall(groupTarget, 611);
+      await mock.recall(groupTarget, 610);
+      await barrier();
+
+      mock.quotes.set(613, { sender_id: botId, peer_id: groupId + 1 });
+      await send(message("#撤回", 612, outsider, groupId, 613));
+      await mock.quote(groupTarget, 613);
+      await mock.reply(groupTarget, "无法核实当前会话的引用消息。", 612);
+      await barrier();
+
+      mock.quotes.set(615, { sender_id: owner });
+      await send(message("#撤回", 614, owner, undefined, 615));
+      await mock.quote(privateTarget, 615);
+      await barrier();
+
+      mock.roles.set(outsider, "admin");
+      const releaseRole = Promise.withResolvers<void>();
+      mock.holdRole(releaseRole.promise);
+      await send(message("#撤回", 616, outsider, groupId, 617));
+      await mock.quote(groupTarget, 617);
+      await mock.role(outsider);
+      await writeFile(join(root, "config", "groupAdmin.yaml"), "recallMsgPer:\n  member: owner\n");
+      releaseRole.resolve();
+      await mock.reply(groupTarget, "该命令仅限群主可用。", 616);
       await barrier();
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();

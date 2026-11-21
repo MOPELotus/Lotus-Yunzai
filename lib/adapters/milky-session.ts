@@ -30,6 +30,7 @@ import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
+import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
 import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
@@ -66,6 +67,8 @@ export interface MilkySession {
   send(target: { group_id: number } | { user_id: number }, reply: MessageReply): Promise<boolean>;
   receive(value: unknown): "accepted" | "invalid" | "foreign" | "offline";
 }
+
+const recallQuotedReply = createQuotedRecall();
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113,6 +116,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const recalls = new Set<ReturnType<typeof setTimeout>>();
   const reviewedFriendRequests = new Set<string>();
   async function dispatchEvent(event: BotEvent) {
+    const quotedRecall = event.post_type === "message" ? quotedRecallSessions.get(event) : undefined;
     if (event.post_type === "message" && event.message_type === "group" && event.group_id !== undefined) {
       const botMute = await groupMute.forMessage(event.group_id);
       if (botMute) event = { ...event, botMute };
@@ -120,6 +124,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted) return;
     if (event.post_type === "message") {
       event = { ...event, canManageProcess: positiveId(event.user_id) && isMaster(event.user_id) };
+      if (quotedRecall) quotedRecallSessions.set(event, quotedRecall);
       const { group_id, user_id, message_id } = event;
       if (event.message_type === "group" && positiveId(group_id) && positiveId(user_id) && !event.attachmentOnly) {
         const checkRole = (active: AbortSignal, subject?: number, permitAdmin?: boolean) =>
@@ -1131,6 +1136,19 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         ? (flag: string, kind: "add" | "invite", accept: boolean, reason?: string) => submitGroupRequest(flag, kind, accept, reason,
           AbortSignal.any([signal, privateGroupSignal]), () => isMaster(cardOwner)) : undefined,
     };
+    if (message && scopedMessage && lookupReply && !message.attachmentOnly && positiveId(cardOwner) &&
+        hasMessageSequence(message.message_id) && hasMessageSequence(quoted) && quoted !== message.message_id) {
+      quotedRecallSessions.set(scopedMessage, recallQuotedReply({
+        account, actor: cardOwner, peer: groupId ?? cardOwner, group: groupId !== undefined, command: message.message_id,
+        quoted, signal, readQuote: lookupReply,
+        readRole: () => groupId === undefined ? Promise.resolve(undefined) : memberRole(groupId, cardOwner),
+        async recall(message_seq) {
+          return groupId === undefined
+            ? (await call.confirmed("recall_private_message", { user_id: cardOwner, message_seq }, signal)).status
+            : (await call.confirmed("recall_group_message", { group_id: groupId, message_seq }, signal)).status;
+        },
+      }));
+    }
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
       const status = await leaveGroup(group_id);
       if (status === "unknown") throw new Error("Milky 退群回执未确认。");

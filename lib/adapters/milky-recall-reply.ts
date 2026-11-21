@@ -43,7 +43,7 @@ export function createMilkyRecallReply(signal: AbortSignal, confirm: Confirm, is
     if (!target) return;
     const action = scene === "group" ? "recall_group_message" : "recall_private_message";
     const quoted = replySequence(event.reply_id);
-    const sequences = quoted === undefined || quoted === command ? [command] : [command, quoted];
+    if (event.reply_id !== undefined && quoted !== command) return;
     const key = `${scene}:${target.group_id ?? target.user_id}:${command}`;
 
     return async () => {
@@ -51,7 +51,7 @@ export function createMilkyRecallReply(signal: AbortSignal, confirm: Confirm, is
       if (sending.size + completed.size >= commandLimit) completed.delete(completed.values().next().value!);
       sending.add(key);
       try {
-        const results = await Promise.all(sequences.map((message_seq) => recall(action, { ...target, message_seq })));
+        const results = [await recall(action, { ...target, message_seq: command })];
         if (!signal.aborted && isMaster(user)) return results;
       } finally {
         sending.delete(key);

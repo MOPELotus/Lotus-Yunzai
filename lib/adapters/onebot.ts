@@ -3,6 +3,7 @@ import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { ownerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession } from "../manual-group-leave.ts";
+import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
@@ -21,6 +22,8 @@ import { OneBotMutes } from "./onebot-mutes.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
 import type { createRequestClaim } from "../request-claim.ts";
+
+const bindQuotedRecall = createQuotedRecall();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,17 +44,30 @@ function oneBotMessageId(value: unknown): number | undefined {
 
 async function readOneBotQuote(
   calls: OneBotCalls, send: Send, id: number, selfId: number, target: { group_id: number } | { user_id: number },
+  scopedRecall?: AbortSignal,
 ): Promise<QuotedMessage | undefined> {
-  const quote = await calls.getMessage(send, id);
+  const quote = await calls.getMessage(send, id, scopedRecall);
   if (!quote || oneBotMessageId(quote.message_id) !== id || ("self_id" in quote && quote.self_id !== selfId)) return;
   const sender = isRecord(quote.sender) ? quote.sender.user_id : undefined;
-  if (!isId(sender)) return;
+  if (!isId(sender) || (scopedRecall && "user_id" in quote && quote.user_id !== sender)) return;
   if ("group_id" in target) {
     if (quote.message_type !== "group" || quote.group_id !== target.group_id) return;
   } else {
-    if (quote.message_type !== "private" || isId(quote.group_id) || ("sub_type" in quote && quote.sub_type !== "friend")) return;
-    if (("target_id" in quote && quote.target_id !== (sender === selfId ? target.user_id : selfId)) ||
-        (sender !== target.user_id && (sender !== selfId || quote.target_id !== target.user_id))) return;
+    const paired = sender === selfId ? target.user_id : selfId;
+    function matchingPrivateScope(value: Record<string, unknown>) {
+      return value.message_type === "private" && !isId(value.group_id) &&
+        (!("sub_type" in value) || value.sub_type === "friend") &&
+        (!("target_id" in value) || value.target_id === paired);
+    }
+    if (!matchingPrivateScope(quote) || (sender !== target.user_id && sender !== selfId)) return;
+    if (sender === selfId && !("target_id" in quote)) {
+      // NapCat's get_msg omits the peer of outbound friend messages.
+      // Its scoped friend history must independently return the same message from this bot.
+      if (!scopedRecall) return;
+      const history = await calls.readPrivateHistoryMessage(send, target.user_id, id, scopedRecall);
+      if (!history || !matchingPrivateScope(history) || ("self_id" in history && history.self_id !== selfId) ||
+          ("user_id" in history && history.user_id !== selfId) || !isRecord(history.sender) || history.sender.user_id !== selfId) return;
+    }
   }
   const message = decodeOneBotMessage(quote.message, selfId)?.message;
   if (message) return { user_id: sender, message };
@@ -852,10 +868,10 @@ async function dispatchMessage(
           },
         });
       } : undefined,
-    recallReply: owner && selfId === connectedBotId ? () => {
-      const ids = new Set([oneBotMessageId(messageId), quotedId].filter((id) => id !== undefined));
-      return Promise.all([...ids].map((id) => calls.recallMessage(send, id)));
-    } : undefined,
+    recallReply: owner && selfId === connectedBotId && temporaryMessageId !== undefined &&
+        (incoming.reply_id === undefined || quotedId === temporaryMessageId)
+      ? async () => isMaster(selfId, userId) ? [await calls.recallMessage(send, temporaryMessageId, attachmentSession?.signal)] : undefined
+      : undefined,
     lookupReply,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
@@ -877,6 +893,19 @@ async function dispatchMessage(
       return send({ action: "send_msg", params });
     },
   };
+  if (lookupReply && attachmentSession && boundAccount && selfId !== undefined && temporaryMessageId !== undefined &&
+      quotedId !== undefined && quotedId !== temporaryMessageId && event.sub_type !== "anonymous" &&
+      (!sender || sender.user_id === undefined || sender.user_id === userId) &&
+      (("group_id" in target && likeSession) || (event.sub_type === "friend" && !isId(event.group_id)))) {
+    quotedRecallSessions.set(inbound, bindQuotedRecall({
+      account: selfId, actor: userId, peer: "group_id" in target ? target.group_id : userId, group: "group_id" in target,
+      command: temporaryMessageId, quoted: quotedId, signal: attachmentSession.signal,
+      readQuote: () => readOneBotQuote(calls, send, quotedId, selfId, target, attachmentSession.signal),
+      readRole: () => "group_id" in target
+        ? calls.getGroupRole(send, target.group_id, userId, true, attachmentSession.signal) : Promise.resolve(undefined),
+      recall: id => calls.recallMessage(send, id, attachmentSession.signal),
+    }));
+  }
   if (likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous") {
     const checkRole = (active: AbortSignal, subject?: number, permitAdmin?: boolean) =>
       canModerateGroupSubject(id => calls.getGroupRole(send, target.group_id, id, true, active), selfId, subject, permitAdmin);

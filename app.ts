@@ -57,6 +57,7 @@ import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-globa
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster, readLegacyDispatchPause } from "./lib/dispatch-power.ts";
+import { groupRecallPermission, quotedRecallSessions, readGroupRecallPermissions } from "./lib/quoted-recall.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, createImageToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
@@ -201,8 +202,8 @@ const installFeatureNames = ["安装插件", "system", systemModuleName];
 const recallFeatureNames = ["回复撤回", "system", systemModuleName];
 const atlasMaintenanceCommand = /^#?(?:更新图鉴|图鉴更新|检查图鉴更新|图鉴检查更新|重置图鉴|图鉴重置|清空图鉴|全量更新图鉴|图鉴全量更新)$/u;
 
-function isRecallCommand(event: MessageEvent): event is MessageEvent & Required<Pick<MessageEvent, "recallReply">> {
-  return isProcessMaster(event) && event.recallReply !== undefined && /^#?撤回$/u.test(event.msg);
+function isRecallCommand(event: MessageEvent): boolean {
+  return /^#?撤回$/u.test(event.msg);
 }
 
 if (import.meta.main) {
@@ -1947,9 +1948,29 @@ if (import.meta.main) {
       return;
     }
 
-    if (isRecallCommand(command) && allowed(recallFeatureNames)) {
-      const results = await command.recallReply();
+    if (isRecallCommand(command) && !command.isDelegated && allowed(recallFeatureNames)) {
+      const quotedRecall = quotedRecallSessions.get(incoming);
+      const recallSignal = nativeOperationSignal();
+      const route = quotedRecall && { self_id: quotedRecall.account, user_id: quotedRecall.actor, group_id: quotedRecall.group };
+      const active = () => !recallSignal.aborted && !stopping && handoff.accepting && !dispatchPower.paused &&
+        (!route || groupDispatch.allowsInbound(route) && groupDispatch.allows(route, recallFeatureNames));
+      const results = quotedRecall ? await quotedRecall.run({
+        active,
+        async authorize(botMessage, readRole) {
+          if (quotedRecall.group === undefined) return true;
+          const isMaster = () => masterPermissions.isMaster(quotedRecall.account, quotedRecall.actor);
+          const wasMaster = isMaster();
+          const role = wasMaster ? undefined : await readRole();
+          const settings = await readGroupRecallPermissions(root);
+          if (!settings) return "群聊撤回权限配置无效。";
+          return groupRecallPermission(settings[botMessage ? "bot" : "member"], isMaster(), role);
+        },
+      }) : isProcessMaster(command) && active() ? await command.recallReply?.() : undefined;
       if (results === undefined) return;
+      if (typeof results === "string") {
+        await command.reply(results, true);
+        return;
+      }
       const confirmed = results.filter((result) => result === "confirmed").length;
       if (!results.length) await command.reply("没有可撤回的消息。");
       else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);

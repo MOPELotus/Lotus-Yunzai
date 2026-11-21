@@ -47,7 +47,7 @@ async function connect(endpoint: string, botId?: number) {
   }
 
   async function take(action: string, params: object = {}) {
-    if (!frames.length) await deadline(available.promise, `未收到 ${action}。`);
+    if (!frames.length) await deadline(available.promise, `未收到 ${action} ${JSON.stringify(params)}。`);
     const frame = frames.shift()!;
     if (!frames.length) available = Promise.withResolvers<void>();
     expect(frame).toMatchObject({ action, params });
@@ -71,8 +71,20 @@ async function connect(endpoint: string, botId?: number) {
       expect(typeof frame.echo).toBe("string");
       return frame;
     },
-    receipt(frame: Frame, status = "ok", retcode = 0) {
-      send({ echo: frame.echo, status, retcode });
+    async quote(message_id: number, user_id: number, scope: object = { message_type: "group", group_id: 77 }) {
+      const frame = await take("get_msg", { message_id });
+      this.receipt(frame, "ok", 0, { message_id, self_id: botId, sender: { user_id }, message: "引用正文", ...scope });
+    },
+    async role(user_id: number, role: string) {
+      const frame = await take("get_group_member_info", { group_id: 77, user_id, no_cache: true });
+      this.receipt(frame, "ok", 0, { group_id: 77, user_id, role });
+    },
+    async history(user_id: number, message_seq: number, messages: readonly object[]) {
+      const frame = await take("get_friend_msg_history", { user_id, message_seq, count: 10, disable_get_url: true, parse_mult_msg: false });
+      this.receipt(frame, "ok", 0, { messages });
+    },
+    receipt(frame: Frame, status = "ok", retcode = 0, data?: object) {
+      send({ echo: frame.echo, status, retcode, data });
     },
     async status() {
       send({ post_type: "message", message_type: "private", sub_type: "friend", user_id: 42, message: "#状态" });
@@ -102,7 +114,7 @@ async function endpointOf(host: Bun.Subprocess<"ignore", "pipe", "pipe">) {
   }
 }
 
-async function withHost(run: (open: (botId?: number) => Promise<Gateway>) => Promise<void>) {
+async function withHost(run: (open: (botId?: number) => Promise<Gateway>, root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-recall-reply-"));
   const gateways: Gateway[] = [];
   try {
@@ -127,7 +139,7 @@ async function withHost(run: (open: (botId?: number) => Promise<Gateway>) => Pro
         const gateway = await connect(endpoint, botId);
         gateways.push(gateway);
         return gateway;
-      });
+      }, root);
       host.kill();
       await deadline(host.exited, "测试宿主退出超时。");
       for (const gateway of gateways) {
@@ -149,13 +161,16 @@ function quoted(command: string, id: string | number): Incoming {
   return [{ type: "reply", data: { id } }, { type: "text", data: { text: command } }];
 }
 
-test("只有当前已绑定机器人的主人可撤回命令和引用，成功不发聊天回复", () => withHost(async (open) => {
+test("实际 OneBot 群权限取已验证的引用和成员，私聊仅撤本机器人消息", () => withHost(async (open, root) => {
   const gateway = await open(99);
   const otherBot = await open(100);
   const unbound = await open();
 
   gateway.message(quoted("#撤回", -703), -702, { user_id: 42, isMaster: true, sender: { role: "owner" } });
-  otherBot.message(quoted("#撤回", -703), -702);
+  await gateway.quote(-703, 41);
+  await gateway.role(42, "member");
+  await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([{ type: "text", data: { text: expect.stringContaining("仅限群管理员") } }]) });
+  otherBot.message(quoted("#撤回", -703), -702, { sender: { user_id: 51, role: "owner" }, sub_type: "anonymous" });
   otherBot.message(quoted("#撤回", -703), -702, { self_id: 99 });
   unbound.message(quoted("#撤回", -703), -702);
   await gateway.status();
@@ -167,18 +182,64 @@ test("只有当前已绑定机器人的主人可撤回命令和引用，成功�
   await gateway.status();
 
   gateway.message(quoted("#撤回", "-705"), -704);
-  const command = await gateway.deletion(-704);
+  await gateway.quote(-705, 41);
   const target = await gateway.deletion(-705);
-  expect(command.echo).not.toBe(target.echo);
   gateway.receipt(target);
+  const command = await gateway.deletion(-704);
+  expect(command.echo).not.toBe(target.echo);
   gateway.receipt(command);
   await gateway.status();
 
-  gateway.message("[CQ:reply,id=-707] 撤回", 706, { message_type: "private", sub_type: "friend" });
-  const privateCommand = await gateway.deletion(706);
+  gateway.message("[CQ:reply,id=-707] 撤回", 706, { message_type: "private", sub_type: "friend", group_id: undefined, user_id: 42 });
+  await gateway.quote(-707, 99, { message_type: "private", sub_type: "friend" });
+  await gateway.history(42, -707, [{ message_type: "private", sub_type: "friend", message_id: -707, self_id: 99, user_id: 99,
+    sender: { user_id: 99 } }]);
   const privateTarget = await gateway.deletion(-707);
-  gateway.receipt(privateCommand);
   gateway.receipt(privateTarget);
+  await gateway.status();
+
+  gateway.message(quoted("撤回", 721), 720, { message_type: "private", sub_type: "friend", group_id: undefined });
+  await gateway.quote(721, 51, { message_type: "private", sub_type: "friend", target_id: 99 });
+  await gateway.status();
+  gateway.message(quoted("#撤回", 723), 722, { message_type: "private", sub_type: "friend", group_id: undefined });
+  await gateway.quote(723, 99, { message_type: "private", sub_type: "friend", target_id: 52 });
+  await gateway.take("send_msg", { user_id: 51, message: expect.arrayContaining([{ type: "text", data: { text: expect.stringContaining("无法核实当前会话") } }]) });
+
+  gateway.message(quoted("撤回", 725), 724, { user_id: 42 });
+  await gateway.quote(725, 99);
+  await gateway.role(42, "member");
+  gateway.receipt(await gateway.deletion(725));
+  gateway.receipt(await gateway.deletion(724));
+  await gateway.status();
+
+  const legacy = join(root, "plugins", "yenai-plugin", "config", "config");
+  await mkdir(legacy, { recursive: true });
+  await writeFile(join(legacy, "groupAdmin.yaml"), "recallMsgPer:\n  bot: master\n  member: owner\n");
+  await writeFile(join(root, "config", "groupAdmin.yaml"), "recallMsgPer:\n  member: admin\n");
+  gateway.message(quoted("#撤回", 731), 730, { user_id: 42, sender: { user_id: 42, role: "owner" } });
+  await gateway.quote(731, 99);
+  await gateway.role(42, "owner");
+  await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([{ type: "text", data: { text: expect.stringContaining("仅限主人") } }]) });
+
+  gateway.message(quoted("#撤回", 733), 732, { user_id: 42 });
+  await gateway.quote(733, 43);
+  await gateway.role(42, "admin");
+  gateway.receipt(await gateway.deletion(733));
+  gateway.receipt(await gateway.deletion(732));
+  await gateway.status();
+
+  gateway.message(quoted("#撤回", 735), 734, { user_id: 42, sender: { user_id: 42, role: "admin" } });
+  await gateway.quote(735, 43);
+  await gateway.role(42, "member");
+  await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([{ type: "text", data: { text: expect.stringContaining("仅限群管理员") } }]) });
+  await gateway.status();
+
+  gateway.message(quoted("#撤回", 737), 736);
+  await gateway.quote(737, 41, { message_type: "group", group_id: 77,
+    message: [{ type: "file", data: { file: "fixture.txt", file_id: "opaque-id" } }] });
+  await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([
+    { type: "text", data: { text: expect.stringContaining("暂不支持删除群文件") } },
+  ]) });
   await gateway.status();
 
   gateway.message("#撤回", 708);
@@ -190,27 +251,48 @@ test("只有当前已绑定机器人的主人可撤回命令和引用，成功�
   await otherBot.status();
 }), 9_000);
 
-test("撤回动作各自等待关联回执，明确失败不阻止另一条，未知结果有提示", () => withHost(async (open) => {
+test("引用撤回明确拒绝或回执未知时保留命令，重复事件无写入", () => withHost(async (open) => {
   const gateway = await open(99);
   gateway.message(quoted("#撤回", -802), -801);
-  const rejected = await gateway.deletion(-801);
-  const confirmed = await gateway.deletion(-802);
+  await gateway.quote(-802, 41);
+  const rejected = await gateway.deletion(-802);
   gateway.receipt(rejected, "failed", 1403);
-  gateway.send({ echo: "unrelated-echo", status: "ok", retcode: 0 });
-  await gateway.status();
-  gateway.receipt(confirmed);
   const failure = await gateway.take("send_msg", { message_type: "group", group_id: 77 });
   expect(failure.params.message).toContain("未能撤回");
   expect(failure.params.message).not.toContain("结果未确认");
 
   gateway.message("[CQ:reply,id=-804] 撤回", -803);
-  const completed = await gateway.deletion(-803);
+  await gateway.quote(-804, 41);
   const unknown = await gateway.deletion(-804);
   gateway.receipt(unknown, "async", 1);
-  await gateway.status();
-  gateway.receipt(completed);
   await gateway.take("send_msg", {
     message_type: "group", group_id: 77, message: expect.stringContaining("结果未确认"),
   });
+  await gateway.status();
+  await Bun.sleep(1_050);
+  gateway.message("[CQ:reply,id=-804] 撤回", -803);
+  await gateway.status();
+  gateway.close();
+  await gateway.closed;
+  const reconnected = await open(99);
+  reconnected.message("[CQ:reply,id=-804] 撤回", -803);
+  await reconnected.status();
+}), 9_000);
+
+test("同时引用另一条正在处置的撤回命令时，同一消息只提交一次", () => withHost(async (open) => {
+  const gateway = await open(99);
+  gateway.message(quoted("#撤回", 902), 901);
+  await gateway.quote(902, 41);
+  const target = await gateway.deletion(902);
+
+  // One incoming command references the held command. Another uses its pending target as its own ID.
+  const overlap = quoted("撤回", 901);
+  gateway.message(overlap, 903);
+  gateway.message(quoted("#撤回", 904), 902);
+  await gateway.status();
+
+  gateway.receipt(target);
+  gateway.receipt(await gateway.deletion(901));
+  gateway.message(overlap, 903);
   await gateway.status();
 }), 9_000);

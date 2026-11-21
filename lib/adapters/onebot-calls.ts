@@ -100,9 +100,9 @@ export class OneBotCalls {
     return friends.some(friend => Number(friend.user_id) === userId);
   }
 
-  async getMessage(send: Send, messageId: number) {
+  async getMessage(send: Send, messageId: number, signal?: AbortSignal) {
     try {
-      const result = await this.#request(send, "get_msg", { message_id: messageId });
+      const result = await this.#request(send, "get_msg", { message_id: messageId }, signal);
       if (!this.#closed && isRecord(result)) return result;
     } catch {
       return undefined;
