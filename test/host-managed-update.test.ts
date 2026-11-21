@@ -663,6 +663,41 @@ test.skipIf(!Bun.which("git"))("托管更新在候选丢失公共 HTTP 时回退
 test.skipIf(!Bun.which("git"))("托管更新在候选丢失 OneBot 监听时回退", () => exercisePublicListenerUpdate("onebot"), 35_000);
 test.skipIf(!Bun.which("git"))("托管更新在候选改用其他 OneBot 端口时回退", () => exercisePublicListenerUpdate("port"), 35_000);
 
+test.skipIf(!Bun.which("git"))("托管更新在候选未确认激活时恢复原宿主", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-activation-ack-"));
+  try {
+    const { active, old, writer } = await fixtureRepository(temporary, false);
+    const marker = join(temporary, "activation-received");
+    const module = join(writer, "lib", "managed-handoff.ts");
+    const source = await readFile(module, "utf8");
+    const site = "activation.resolve(true);";
+    expect(source).toContain(site);
+    await writeFile(module, source.replace(site, `{ void Bun.write(${JSON.stringify(marker)}, "received"); }`));
+    git(writer, "add", "lib/managed-handoff.ts");
+    git(writer, "commit", "--quiet", "-m", "Fixture receives activation but stays held");
+    git(writer, "push", "--quiet", "origin", "main");
+
+    const supervisor = bootSupervisor(active);
+    try {
+      const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "原宿主未启动。"), 99);
+      await expectVersion(first, old);
+      first.command("#静更新", 51);
+      await deadline(first.closed, "原宿主未开始交接。");
+      const until = Date.now() + 8_000;
+      while (!await Bun.file(marker).exists() && Date.now() < until) await Bun.sleep(25);
+      expect(await Bun.file(marker).text()).toBe("received");
+      const restored = await supervisor.open(await deadline(supervisor.nextEndpoint(), "候选未确认激活，旧宿主也未恢复。", 9_000), 99);
+      expectText(await restored.next(), { user_id: 51 }, /已恢复旧版本/u);
+      await expectVersion(restored, old);
+      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 25_000);
+
 async function exerciseTlsUpdate(fault?: "bind" | "wss" | "port") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));
   try {

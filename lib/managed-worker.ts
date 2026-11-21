@@ -21,6 +21,7 @@ interface ManagedWorkerOptions {
 
 const gracefulStopTimeout = 10_000;
 const startupStopTimeout = 1_000;
+const activationTimeout = 5_000;
 
 export class ManagedEndpointUnavailableError extends Error {}
 
@@ -46,6 +47,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     ...(options.env ?? process.env), LOTUS_MANAGED_TOKEN: token, LOTUS_MANAGED_HELD: held ? "1" : "0",
     LOTUS_MANAGED_ADAPTER_RECEIPTS: "1",
     LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "1",
+    LOTUS_MANAGED_ACTIVATION_ACK: "1",
   };
   let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
   let endpoints: ManagedEndpoints = {};
@@ -56,6 +58,9 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   let ready = false;
   let nextPluginIndex = 1;
   let active = !held;
+  let activationAck = false;
+  let confirmActivation: ((confirmed: boolean) => void) | undefined;
+  let activating: Promise<void> | undefined;
   let stopping = false;
   let restartRequested = false;
   let pendingUpdate: string | undefined;
@@ -138,10 +143,14 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             void stop();
             return;
           }
+          activationAck = held === true && "activationAck" in message && message.activationAck === true;
           ready = true;
           clearTimeout(startupTimer);
           readiness.resolve();
         }
+      } else if (message.type === "lotus-activated" && confirmActivation) {
+        active = true;
+        confirmActivation(true);
       } else if (message.type === "lotus-restart" && ready && active && !restartRequested && onRestart) {
         const pausedAt = "pausedAt" in message ? message.pausedAt : undefined;
         if (pausedAt !== undefined && !validPause(pausedAt)) return;
@@ -249,11 +258,34 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     exited,
     get pausedAt() { return pausedAt; },
     get endpoints() { return endpoints; },
+    get serving() { return active && ready && !stopping && child.exitCode === null && child.signalCode === null; },
     activate() {
       if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");
       if (active) return;
-      child.send({ type: "lotus-activate", token });
-      active = true;
+      if (activating) return activating;
+      const message = { type: "lotus-activate", token };
+      if (!activationAck) {
+        child.send(message);
+        active = true;
+        return;
+      }
+      const confirmation = Promise.withResolvers<boolean>();
+      confirmActivation = confirmation.resolve;
+      const timeout = setTimeout(() => confirmation.resolve(false), activationTimeout);
+      void disconnected.promise.then(() => confirmation.resolve(false));
+      activating = confirmation.promise.then((confirmed) => {
+        if (!confirmed) throw new ManagedEndpointUnavailableError("候选宿主未确认激活。");
+      }).finally(() => {
+        clearTimeout(timeout);
+        confirmActivation = undefined;
+        activating = undefined;
+      });
+      try {
+        child.send(message);
+      } catch {
+        confirmation.resolve(false);
+      }
+      return activating;
     },
     stop,
   };

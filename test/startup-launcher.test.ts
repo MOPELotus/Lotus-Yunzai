@@ -11,8 +11,8 @@ const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: 
   version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
 } } } } } } });
 
-test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的活跃实例，并忽略孤立状态文件", async () => {
-  const { cwd, start } = await fixture();
+test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的活跃实例，并等待登记的工作进程恢复就绪", async () => {
+  const { cwd, launch, start } = await fixture();
   const parent = dirname(cwd);
   const bin = join(parent, "bin");
   const legacy = join(cwd, "data", ".pm2");
@@ -25,7 +25,13 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   await writeFile(join(bin, "pm2"), `#!${process.execPath}
     const action = Bun.argv[2];
     const home = process.env.PM2_HOME;
-    if (action === "jlist") console.log(await Bun.file(home + "/apps.json").text());
+    if (action === "jlist") {
+      console.log(await Bun.file(home + "/apps.json").text());
+      if (process.env.FIXTURE_OBSERVE_READY && !await Bun.file(home + "/host-ready").exists()) {
+        const calls = Bun.file(home + "/ready-queries");
+        await Bun.write(calls.name, String(Number(await calls.text().catch(() => "0")) + 1));
+      }
+    }
     else if (action === "start") {
       const configured = process.env.FIXTURE_START_RESULT;
       if (!configured) process.exit(9);
@@ -46,8 +52,9 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   const listeners = [current, legacy].map((path) => Bun.listen({
     unix: join(path, "rpc.sock"), socket: { data() {} },
   }));
-  const setApp = (path: string, pid: number, status: string) => writeFile(join(path, "apps.json"),
-    JSON.stringify([{ name: "lotus-yunzai", pid, pm2_env: { status } }]));
+  const setApp = (path: string, pid: number, status: string, token?: string) => writeFile(join(path, "apps.json"),
+    JSON.stringify([{ name: "lotus-yunzai", pm_id: 0, pid, pm2_env: { status,
+      env: token && { LOTUS_PM2_START_TOKEN: token, LOTUS_PM2_WORKER_READINESS: "1" } } }]));
   try {
     await writeFile(join(current, "apps.json"), "[]");
     await setApp(legacy, 101, "online");
@@ -71,6 +78,39 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     const [currentStart, currentOutput] = await start(["start:bg"], env);
     expect(currentStart).toBe(0);
     expect(currentOutput).toContain("后台宿主已运行");
+
+    await rm(join(current, "host-ready"));
+    for (const outcome of ["same", "replaced", "interrupted"]) {
+      await setApp(current, 202, "online", "original");
+      const queries = join(current, "ready-queries");
+      await writeFile(queries, "0");
+      const observer = launch(["start:bg"], { ...env, FIXTURE_OBSERVE_READY: "1" });
+      const output = Promise.all([observer.exited, new Response(observer.stdout).text(), new Response(observer.stderr).text()]);
+      try {
+        // The second query happens after the observer releases the startup lock.
+        for (let count = 0; count < 100 && Number(await readFile(queries, "utf8")) < 2; count++) await Bun.sleep(20);
+        expect(Number(await readFile(queries, "utf8"))).toBeGreaterThanOrEqual(2);
+        expect(observer.exitCode).toBeNull();
+        expect((await start(["stop"], env))[0]).toBe(0);
+        expect(observer.exitCode).toBeNull();
+        if (outcome === "interrupted") {
+          observer.kill("SIGTERM");
+        } else {
+          if (outcome === "replaced") await setApp(current, 203, "online", "replacement");
+          await writeFile(join(current, "host-ready"), outcome === "same" ? "202" : "203");
+        }
+        const [code, stdout, stderr] = await output;
+        expect(code).toBe(outcome === "same" ? 0 : 1);
+        if (outcome === "same") expect(stdout).toContain("后台宿主已运行");
+        else expect(stdout).not.toContain("后台宿主已运行");
+        if (outcome === "replaced") expect(stderr).toContain("等待期间后台宿主已停止或被替换");
+        if (outcome === "interrupted") expect(stderr).toContain("启动操作已中止");
+      } finally {
+        if (observer.exitCode === null) observer.kill("SIGTERM");
+        await output;
+        await rm(join(current, "host-ready"), { force: true });
+      }
+    }
 
     await setApp(current, 0, "waiting restart");
     expect((await start(["start:bg"], env))[0]).toBe(1);
@@ -160,7 +200,9 @@ test.skipIf(process.platform === "win32")("取消后台启动只停止本次注�
       expect(await Bun.file(join(home, "host-start-attempt")).exists()).toBe(false);
       expect(await Bun.file(join(home, "apps.json")).json()).toEqual([old, {
         name: "lotus-yunzai", pm_id: 8, pid: 0,
-        pm2_env: { status: "stopped", env: { LOTUS_PM2_START_TOKEN: expect.any(String) } },
+        pm2_env: { status: "stopped", env: {
+          LOTUS_PM2_START_TOKEN: expect.any(String), LOTUS_PM2_WORKER_READINESS: "1",
+        } },
       }]);
     } finally {
       if (child.exitCode === null) child.kill("SIGKILL");

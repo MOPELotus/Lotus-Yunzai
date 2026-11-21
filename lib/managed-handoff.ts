@@ -28,7 +28,8 @@ interface ManagedHandoff {
 }
 
 type Notice =
-  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[] } & ManagedEndpoints)
+  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[]; activationAck?: true } & ManagedEndpoints)
+  | { type: "lotus-activated" }
   | { type: "lotus-restart"; pausedAt?: number }
   | { type: "lotus-power"; pausedAt?: number }
   | { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
@@ -46,11 +47,13 @@ export function createManagedHandoff(): ManagedHandoff {
   const paused = process.env.LOTUS_MANAGED_PAUSED_AT;
   const adapterReceipts = process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS === "1";
   const scheduledAdapterReceipts = adapterReceipts && process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS === "1";
+  const activationAck = held && process.env.LOTUS_MANAGED_ACTIVATION_ACK === "1";
   delete process.env.LOTUS_MANAGED_TOKEN;
   delete process.env.LOTUS_MANAGED_HELD;
   delete process.env.LOTUS_MANAGED_PAUSED_AT;
   delete process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS;
   delete process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS;
+  delete process.env.LOTUS_MANAGED_ACTIVATION_ACK;
 
   if (!token || !uuid.test(token) || typeof process.send !== "function" || process.connected !== true) {
     return {
@@ -111,7 +114,8 @@ export function createManagedHandoff(): ManagedHandoff {
 
     const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
     const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }),
-      ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}), ...endpoints } as const;
+      ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}),
+      ...(activationAck ? { activationAck: true as const } : {}), ...endpoints } as const;
     if (!held) {
       if (!notify(message)) throw failed();
       activated = true;
@@ -130,6 +134,7 @@ export function createManagedHandoff(): ManagedHandoff {
     process.channel?.ref();
     try {
       if (!notify(message) || !await activation.promise || signal.aborted || !connected()) throw failed();
+      if (activationAck && !notify({ type: "lotus-activated" })) throw failed();
       accepting = true;
       activated = true;
     } finally {

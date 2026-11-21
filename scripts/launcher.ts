@@ -8,6 +8,8 @@ import { prepareStartup } from "./startup.ts";
 
 const name = "lotus-yunzai";
 const startToken = "LOTUS_PM2_START_TOKEN";
+const workerReadiness = "LOTUS_PM2_WORKER_READINESS";
+const listenTimeoutMs = 120_000;
 const registrationGraceMs = 5_000;
 const cancelledRegistrationGraceMs = 750;
 
@@ -76,7 +78,7 @@ async function preparePm2Entry(home: string) {
 }
 
 async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status",
-  options: readonly string[] = [], signal?: AbortSignal,
+  options: readonly string[] = [], signal?: AbortSignal, releaseStartup?: () => void,
 ) {
   const parent = dirname(root);
   const home = join(parent, `.${basename(root)}.lotus-pm2`);
@@ -109,9 +111,11 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
     const pid: unknown = process.pid;
     const id: unknown = process.pm_id;
+    const token: unknown = process.pm2_env?.env?.[startToken];
     return { path, status, active: status !== "stopped" && status !== "errored",
       pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined,
-      id: typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? String(id) : undefined };
+      id: typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? String(id) : undefined,
+      workerToken: process.pm2_env?.env?.[workerReadiness] === "1" && typeof token === "string" ? token : undefined };
   }
 
   const current = await application(home);
@@ -135,10 +139,28 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     });
   }
   if (active) {
-    if (active.status !== "online" || !active.pid || active.pid !== await readyPid(active.path)) {
-      throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
+    let ready = active.status === "online" && !!active.pid && active.pid === await readyPid(active.path);
+    if (!ready && active.workerToken && active.id && active.pid) {
+      // Observing a registered supervisor does not need the lock held for creating or stopping one.
+      releaseStartup?.();
+      const until = performance.now() + listenTimeoutMs;
+      while (!ready && performance.now() < until) {
+        signal?.throwIfAborted();
+        await Bun.sleep(100);
+        const observed = await application(active.path, active.workerToken);
+        signal?.throwIfAborted();
+        if (!observed?.active || observed.id !== active.id || observed.pid !== active.pid) {
+          throw new Error("等待期间后台宿主已停止或被替换。请运行 bun run status 查看状态。");
+        }
+        ready = observed.status === "online" && observed.pid === await readyPid(active.path);
+      }
+      signal?.throwIfAborted();
+      if (!ready) throw new Error("后台工作进程尚未就绪。请运行 bun run logs --nostream 查看日志。");
     }
     signal?.throwIfAborted();
+    if (!ready) {
+      throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
+    }
     console.log("当前目录的后台宿主已运行。");
     return 0;
   }
@@ -154,9 +176,9 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   await writeFile(attemptFile, attempt, { mode: 0o600 });
   await writeFile(config, JSON.stringify({ apps: [{
     name, cwd: parent, script: process.execPath, args: ["--no-env-file", entry, root, readyFile, attempt],
-    env: { [startToken]: attempt }, interpreter: "none", autorestart: true,
+    env: { [startToken]: attempt, [workerReadiness]: "1" }, interpreter: "none", autorestart: true,
     stop_exit_codes: [backgroundCleanStop, backgroundStartupFailure],
-    min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: 120_000,
+    min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: listenTimeoutMs,
     kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
   }] }), { mode: 0o600 });
   signal?.throwIfAborted();
@@ -234,6 +256,12 @@ async function run() {
   // Managed replacement can rename the checkout while this lock is held.
   const lock = await lockFile(join(dirname(directory), `.${basename(directory)}.lotus-startup.sqlite`),
     "启动操作", 2_000, "当前目录正在执行启动操作，请稍后重试。");
+  let lockHeld = true;
+  function releaseStartup() {
+    if (!lockHeld) return;
+    lock.close();
+    lockHeld = false;
+  }
   const controller = new AbortController();
   const interrupt = () => controller.abort(new Error("启动操作已中止。"));
   process.on("SIGINT", interrupt);
@@ -246,11 +274,11 @@ async function run() {
       console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
       return 0;
     }
-    if (background) return await pm2(background, directory, "start:bg", [], controller.signal);
+    if (background) return await pm2(background, directory, "start:bg", [], controller.signal, releaseStartup);
   } finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
-    lock.close();
+    releaseStartup();
   }
   const { runManaged } = await import("./run-managed.ts");
   return runManaged(directory);

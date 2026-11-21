@@ -41,7 +41,9 @@ async function retainedLegacyScripts(root: string, scripts: readonly string[]) {
   return retained.filter(script => script !== undefined);
 }
 
-export function createManagedSupervisor(directory: string, options: { env?: NodeJS.ProcessEnv } = {}) {
+export function createManagedSupervisor(directory: string, options: {
+  env?: NodeJS.ProcessEnv; onWorkerReady?: (ready: boolean) => void;
+} = {}) {
   const root = resolve(directory);
   const rootUrl = pathToFileURL(root + sep);
   const receipts = createProcessReceipts(rootUrl);
@@ -49,11 +51,22 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   const workers = new Set<Worker>();
   const restarts = new WeakMap<Worker, number | undefined>();
   let current: Worker | undefined;
+  let workerReady = false;
   let started = false;
   let stopped: StopSignal | undefined;
   let initial: Promise<void> | undefined;
   let transition: Promise<SwitchResult> | undefined;
   let update: { controller: AbortController; done: Promise<void> } | undefined;
+
+  function reportWorkerReady(ready: boolean) {
+    if (workerReady === ready) return;
+    workerReady = ready;
+    try {
+      options.onWorkerReady?.(ready);
+    } catch {
+      console.warn("[托管] 无法记录工作进程的就绪状态。");
+    }
+  }
 
   function launch(path = root, startup: {
     expectedRevision?: string; pausedAt?: number; expectedPlugins?: readonly string[];
@@ -62,7 +75,10 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     const worker: Worker = spawnManagedWorker(path, {
       ...startup, env: options.env, held: startup.expectedRevision !== undefined,
       onRestart(restartPausedAt) {
-        if (current === worker && !stopped) restarts.set(worker, restartPausedAt);
+        if (current === worker && !stopped) {
+          restarts.set(worker, restartPausedAt);
+          reportWorkerReady(false);
+        }
       },
       onUpdate(request, report) {
         if (stopped || current !== worker || update || transition) {
@@ -80,6 +96,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       workers.delete(worker);
       if (current !== worker || stopped) return;
       current = undefined;
+      reportWorkerReady(false);
       update?.controller.abort();
       if (code === 0 && restarts.has(worker)) {
         void startWorker(restarts.get(worker)).catch(() => completion.resolve(1));
@@ -201,6 +218,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     const worker = launch(root, { pausedAt });
     current = worker;
     await worker.ready;
+    if (current === worker && !stopped && worker.serving) reportWorkerReady(true);
   }
 
   async function restartPrevious(notify?: NotifyResult, pausedAt?: number) {
@@ -222,6 +240,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     const previousWorker = current;
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
     current = undefined;
+    reportWorkerReady(false);
     const oldExit = await previousWorker.stop();
     const pausedAt = previousWorker.pausedAt;
     if (stopped) return "stopped" as const;
@@ -265,8 +284,14 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         await candidate.stop(stopped);
         return "stopped" as const;
       }
-      candidate.activate();
+      await candidate.activate();
+      if (stopped) {
+        await candidate.stop(stopped);
+        return "stopped" as const;
+      }
+      if (!candidate.serving) throw new ManagedEndpointUnavailableError("候选宿主在确认激活后已停止。");
       current = candidate;
+      reportWorkerReady(true);
       return "updated" as const;
     } catch (error) {
       if (!stopped) {
@@ -311,6 +336,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
     async stop(signal: StopSignal = "SIGTERM") {
       if (!stopped) {
         stopped = signal;
+        reportWorkerReady(false);
         update?.controller.abort();
         await Promise.allSettled([
           ...[...workers].map((worker) => worker.stop(signal)), initial, transition, update?.done,
