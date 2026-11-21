@@ -85,6 +85,7 @@ import { createMessageStatistics } from "./lib/message-statistics.ts";
 import { pokeDeliverySession, setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest,
   type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
+import { resolvePrivateFriendRoute } from "./lib/private-friend-route.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -2953,6 +2954,12 @@ if (import.meta.main) {
             }
           }
         },
+      },
+      zzzReminderRuntime: probingUpdate ? undefined : {
+        disconnect: handoffSession.signal,
+        registerTask: run => registerModuleTask("[zzz] 式舆和危局战绩提醒", "0 * * * * *", run, true),
+        route: (userId, botId, signal) => resolvePrivateFriendRoute(subscriptionTransport, userId, botId,
+          () => !signal.aborted && !lifecycle.signal.aborted && handoff.accepting && !stopping, () => masterPermissions.botIds()),
       },
       profileLikeImages: probingUpdate ? undefined : {
         directory: likeAssets,

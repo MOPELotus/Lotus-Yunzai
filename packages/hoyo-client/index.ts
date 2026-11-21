@@ -534,7 +534,9 @@ export function createHoyoClient(
     fetchZzzDeadly(source: ProfileRequestContext, options: Parameters<typeof readZzzDeadly>[2]) {
       return readForProfile(source, options, readZzzDeadly, isGameRecordCookieExpired);
     },
-    async fetchZzzChallengeStatus(source: ProfileRequestContext, { signal }: { readonly signal?: AbortSignal } = {}) {
+    async fetchZzzChallengeStatus(source: ProfileRequestContext, { signal, skipShiyu, skipDeadly }: {
+      readonly signal?: AbortSignal; readonly skipShiyu?: boolean; readonly skipDeadly?: boolean;
+    } = {}) {
       let current: ProfileAccountContext = source;
       let refreshAttempted = false;
       const options = { scheduleType: 1 as const, signal };
@@ -555,8 +557,8 @@ export function createHoyoClient(
           return { status: "rejected", reason };
         }
       }
-      const shiyu = await read(readZzzShiyu);
-      const deadly = await read(readZzzDeadly);
+      const shiyu = skipShiyu ? { status: "skipped" as const } : await read(readZzzShiyu);
+      const deadly = skipDeadly ? { status: "skipped" as const } : await read(readZzzDeadly);
       await ensureCurrentProfile(current);
       return { shiyu, deadly, revision: current.revision };
     },

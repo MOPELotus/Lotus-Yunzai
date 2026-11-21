@@ -85,6 +85,17 @@ export class OneBotCalls {
     return (await this.listFriendProfiles(send, signal)).some(friend => String(friend.user_id) === String(userId));
   }
 
+  async friendship(send: Send, userId: number) {
+    const friends = await this.#request(send, "get_friend_list", {});
+    if (!Array.isArray(friends) || friends.some(friend => {
+      if (!isRecord(friend)) return true;
+      const id = friend.user_id;
+      return (typeof id !== "number" && typeof id !== "string") ||
+        !/^[1-9]\d*$/u.test(String(id)) || !Number.isSafeInteger(Number(id));
+    })) return;
+    return friends.some(friend => Number(friend.user_id) === userId);
+  }
+
   async getMessage(send: Send, messageId: number) {
     try {
       const result = await this.#request(send, "get_msg", { message_id: messageId });

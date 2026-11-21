@@ -349,6 +349,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   const checkinNotify: CheckinNotifyTransport = {
+    async friendship(userId) {
+      const friends = await listCurrentFriends(signal);
+      if (!signal.aborted) return friends?.has(userId);
+    },
     async isFriend(user_id) {
       if (signal.aborted || !positiveId(user_id)) return false;
       const result = await call.confirmed("get_friend_info", { user_id, no_cache: true });

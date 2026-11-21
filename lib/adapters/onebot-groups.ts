@@ -133,6 +133,11 @@ export class OneBotGroups implements GroupTransport {
       return [{
         botId,
         isFriend: async (userId: number) => active() && await calls.isFriend(send, userId) && active(),
+        async friendship(userId: number) {
+          if (!active()) return;
+          const result = await calls.friendship(send, userId).catch(() => undefined);
+          if (active()) return result;
+        },
         isGroupMember: async (groupId: number, userId: number) =>
           active() && await calls.getGroupRole(send, groupId, userId, true) !== undefined && active(),
         sendPrivate: (userId: number, reply: MessageReply) => deliver({ user_id: userId }, reply),

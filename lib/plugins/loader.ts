@@ -274,6 +274,7 @@ export async function loadPlugins(
       registerTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
       notifyMasters(reply: MessageReply, signal?: AbortSignal): Promise<void>;
     };
+    readonly zzzReminderRuntime?: import("../../plugins/zzz/challenge-reminder-runtime.ts").ZzzReminderRuntime;
     readonly profileLikeImages?: {
       readonly directory: string;
       register(renderer: ProfileLikeImage): () => void;
@@ -459,7 +460,8 @@ export async function loadPlugins(
         const memeRuntime = builtIn && moduleName === "@lotus-yunzai/meme" ? options.memeRuntime : undefined;
         const mediaRuntime = builtIn && moduleName === "@lotus-yunzai/media" ? options.mediaRuntime : undefined;
         const notice = builtIn && moduleName === "@lotus-yunzai/notice" ? options.noticeServices : undefined;
-        const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect;
+        const zzzReminderRuntime = builtIn && moduleName === "@lotus-yunzai/zzz" ? options.zzzReminderRuntime : undefined;
+        const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect ?? zzzReminderRuntime?.disconnect;
         const module = create ? await create(Object.freeze({ ...services, ...group,
           signal: disconnect ? AbortSignal.any([signal, disconnect]) : signal,
           ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
@@ -467,6 +469,7 @@ export async function loadPlugins(
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
           ...(mediaRuntime && { mediaRuntime }),
+          ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule, handlePoke } = record(module);
         if (dispose !== undefined) {

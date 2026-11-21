@@ -11,6 +11,7 @@ export type CheckinNotifyDelivery = "confirmed" | "rejected" | "unknown";
 /** Both membership checks and sends use the same authenticated online session. */
 export interface CheckinNotifyTransport {
   readonly isFriend: (userId: number) => Promise<boolean>;
+  readonly friendship?: (userId: number) => Promise<boolean | undefined>;
   readonly isGroupMember: (groupId: number, userId: number) => Promise<boolean>;
   readonly sendPrivate: (userId: number, reply: MessageReply) => Promise<CheckinNotifyDelivery>;
   readonly sendGroup: (groupId: number, reply: MessageReply) => Promise<CheckinNotifyDelivery>;
