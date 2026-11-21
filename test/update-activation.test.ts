@@ -13,6 +13,7 @@ const runtime = {
   "config/settings.txt": "active configuration",
   "data/store.txt": "active data",
   "logs/runtime.log": "active logs",
+  "backup/plugins/merged/private.yaml": "previous local configuration",
   ".env": "FIXTURE_ENV=active-env\n",
   ".env.production": "FIXTURE_PROFILE=active-profile\n",
   ".env.staging": "FIXTURE_PROFILE=custom-stage-profile\n",
@@ -78,7 +79,7 @@ async function checkStartup(directory: string, revision: string) {
 }
 
 async function stateIdentities(root: string) {
-  return Promise.all(["config", "data", "logs", ".env", ".env.production", ".env.staging", pluginState].map(async (name) => {
+  return Promise.all(["config", "data", "logs", "backup", ".env", ".env.production", ".env.staging", pluginState].map(async (name) => {
     const info = await stat(join(root, name));
     return [info.dev, info.ino];
   }));

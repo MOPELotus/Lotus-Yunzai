@@ -1,13 +1,15 @@
+import { createHash } from "node:crypto";
 import { constants, type Dirent } from "node:fs";
-import { lstat, open, readdir } from "node:fs/promises";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { builtInDirectories } from "../builtin-modules.ts";
+import { createLocalGit } from "../local-git.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
 export type LegacyPluginPlanEntry =
-  | { readonly path: string; readonly status: "archive"; readonly kind: "directory" | "script"; readonly reason: string;
+  | { readonly path: string; readonly status: "archive"; readonly kind: "directory" | "script"; readonly reason: string; readonly identity: string;
       readonly replacementModule?: string }
   | { readonly path: string; readonly status: "retain" | "built-in" }
   | { readonly path: string; readonly status: "review" | "scan-error"; readonly reason: string }
@@ -123,7 +125,8 @@ async function readScript(directory: string, entry: string) {
 function scriptPlan(path: string, bytes: Uint8Array): LegacyPluginPlanEntry {
   const retired = retiredPluginScript(bytes);
   return retired
-    ? { path, status: "archive", kind: "script", reason: retired.reason, replacementModule: retired.module }
+    ? { path, status: "archive", kind: "script", reason: retired.reason, replacementModule: retired.module,
+        identity: createHash("sha256").update(bytes).digest("hex") }
     : { path, status: "retain" };
 }
 
@@ -163,7 +166,8 @@ export async function planLegacyPlugins(
       const repositories = await gitRepositories(source, expectedNativeName, declaration.declaredName);
       const metadata = repositories.length ? inspectPluginMetadata(entry.name, contents, repositories) : declaration;
       if (metadata.rejectionKind === "policy" && metadata.rejection) {
-        plan.push({ path, status: "archive", kind: "directory", reason: metadata.rejection });
+        const identity = createHash("sha256").update(JSON.stringify([contents, metadata.identities, metadata.repositoryKeys])).digest("hex");
+        plan.push({ path, status: "archive", kind: "directory", reason: metadata.rejection, identity });
         continue;
       }
       if (occupiesTarget) {
@@ -201,3 +205,37 @@ export async function planLegacyPlugins(
   }
   return plan;
 }
+
+export function withinInstallation(base: string, path: string) {
+  const local = relative(base, path);
+  return !isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`);
+}
+
+export async function planMigration(sourcePath: string, targetPath: string) {
+  const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
+  const [sourceInfo, targetInfo] = await Promise.all([lstat(source), lstat(target)]);
+  if (!sourceInfo.isDirectory() || !targetInfo.isDirectory()) throw new Error("旧安装副本与目标安装须为实体目录。");
+  if (withinInstallation(source, target) || withinInstallation(target, source) ||
+      (sourceInfo.dev === targetInfo.dev && sourceInfo.ino === targetInfo.ino)) {
+    throw new Error("旧安装副本与目标安装须为独立目录，不能相同或互相包含。");
+  }
+  if (!(await lstat(join(source, "plugins"))).isDirectory()) {
+    throw new Error("旧安装副本的 plugins 须为实体目录。");
+  }
+  const git = createLocalGit();
+  if (!git) throw new Error("迁移预检需要 Git，以核对目标的内置插件。");
+  const topLevel = (await git(target, ["rev-parse", "--show-toplevel"]))?.trimEnd();
+  if (!topLevel || await realpath(topLevel) !== target) throw new Error("无法确认目标安装的 Git 工作区。");
+  const tree = await git(target, ["ls-tree", "-z", "HEAD:plugins"]);
+  if (tree === undefined) throw new Error("无法核对目标安装跟踪的插件目录。");
+  const nativeDirectories = new Set(builtInDirectories.values());
+  const protectedPaths = new Set<string>();
+  for (const entry of tree.split("\0")) {
+    const name = /^(?:040000|160000) [^ ]+ [^\t]+\t(.+)$/u.exec(entry)?.[1];
+    if (name && nativeDirectories.has(name)) protectedPaths.add(`plugins/${name}`);
+  }
+  const plugins = await planLegacyPlugins(source, protectedPaths);
+  return { version: 1, mode: "dry-run", scope: "legacy-plugins", source, target, plugins } as const;
+}
+
+export type LegacyMigrationPlan = Awaited<ReturnType<typeof planMigration>>;

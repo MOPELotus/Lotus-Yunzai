@@ -2,8 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { planLegacyPlugins } from "../lib/plugins/migration-plan.ts";
-import { planMigration } from "../scripts/migrate-plan.ts";
+import { planLegacyPlugins, planMigration } from "../lib/plugins/migration-plan.ts";
 
 let fixture: string | undefined;
 afterEach(async () => {
@@ -53,16 +52,16 @@ test("classifies policy denials, known protocol candidates, duplicates and targe
     { path: "plugins/bad", status: "scan-error", reason: expect.any(String) },
     { path: "plugins/custom-A", status: "retain" },
     { path: "plugins/custom-B", status: "review", reason: expect.stringContaining("plugins/custom-A") },
-    { path: "plugins/genshin", status: "archive", kind: "directory", reason: expect.stringContaining("genshin 和 starrail") },
+    { path: "plugins/genshin", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin 和 starrail") },
     { path: "plugins/group", status: "review", reason: expect.stringContaining("占用目标内置目录") },
     { path: "plugins/kit-copy", status: "review", reason: expect.stringContaining("plugins/system") },
     { path: "plugins/media", status: "scan-error", reason: expect.any(String) },
-    { path: "plugins/Miao-Fork", status: "archive", kind: "directory", reason: expect.stringContaining("genshin 和 starrail") },
+    { path: "plugins/Miao-Fork", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin 和 starrail") },
     { path: "plugins/QQBot-Alias", status: "protocol-candidate", protocol: "qqbot" },
     { path: "plugins/SnowLuma", status: "retain" },
     { path: "plugins/system", status: "built-in" },
-    { path: "plugins/Waves-Fork", status: "archive", kind: "directory", reason: expect.stringContaining("鸣潮") },
-    { path: "plugins/xhh-tl", status: "archive", kind: "directory", reason: expect.stringContaining("旧插件功能已归并") },
+    { path: "plugins/Waves-Fork", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("鸣潮") },
+    { path: "plugins/xhh-tl", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("旧插件功能已归并") },
     { path: "plugins/zzz", status: "review", reason: expect.stringContaining("占用目标内置目录") },
   ]);
   expect(await planLegacyPlugins(root, protectedPaths)).toEqual(plan);
@@ -76,7 +75,7 @@ test.skipIf(!Bun.which("git"))("uses local Git remotes for forks and leaves exte
   await put(root, "plugins/linked-git/.git", "gitdir: ../../outside");
   const plan = await planLegacyPlugins(root, new Set());
   expect(plan).toEqual([
-    { path: "plugins/cloned", status: "archive", kind: "directory", reason: expect.stringContaining("genshin") },
+    { path: "plugins/cloned", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin") },
     { path: "plugins/linked-git", status: "scan-error", reason: expect.any(String) },
   ]);
 });

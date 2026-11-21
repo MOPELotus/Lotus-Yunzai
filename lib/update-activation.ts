@@ -14,7 +14,7 @@ export interface ActivatedUpdate {
   readonly state: readonly string[];
 }
 
-export const persistentDirectories = ["config", "data", "logs", "internal"] as const;
+export const persistentDirectories = ["config", "data", "logs", "internal", "backup"] as const;
 const dotenvPaths = [".env", ".env.local", ".env.production", ".env.development", ".env.test"];
 
 export function isUpdateDotenvPath(name: string): boolean {
