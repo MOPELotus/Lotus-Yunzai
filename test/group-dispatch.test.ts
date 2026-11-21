@@ -66,6 +66,28 @@ test.each(["# 旧空配置\n", "{}\n"])("裁剪为空的旧群配置仍启用默
   expect(policy.admit(message({ group_id: 21 }))).toBe(true);
 });
 
+test("旧群配置的部分 default 整段覆盖内置默认值", async () => {
+  const policy = await fixture({ "config/group.yaml": `
+default: {onlyReplyAt: 1}
+21: {botAlias: 荷花}
+` });
+  const first = message({ msg: "云崽#状态", raw_message: "云崽#状态" });
+  expect(policy.admit(first)).toBe(true);
+  expect(policy.prepare(first)).toMatchObject({ allowNew: true, event: { msg: "云崽#状态" } });
+  expect(policy.admit(message({ user_id: 31 }))).toBe(true);
+  expect(policy.prepare(message({ group_id: 21 })).allowNew).toBe(false);
+  expect(policy.prepare(message({ group_id: 21, msg: "荷花#状态" }))).toMatchObject({
+    allowNew: true, event: { msg: "#状态" },
+  });
+  expect(policy.keywordSettings(first)).toEqual({ addLimit: 0, addPrivate: false, addReply: false, addAt: false, addRecall: 0 });
+});
+
+test("旧群配置仅设称呼时仍按旧版要求称呼或 @", async () => {
+  const policy = await fixture({ "config/group.yaml": "default: {botAlias: 荷花}\n" });
+  expect(policy.prepare(message()).allowNew).toBe(false);
+  expect(policy.prepare(message({ atBot: true })).allowNew).toBe(true);
+});
+
 test("全局名单兼容字符串和数字，黑名单优先且主人也受限，终端独立", async () => {
   const policy = await fixture({
     "config/other.yaml": 'whiteUser: ["30", 31]\nblackUser: ["31"]\nwhiteGroup: ["20", 21]\nblackGroup: [21]\n',

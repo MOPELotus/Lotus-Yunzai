@@ -5,7 +5,10 @@ import { isGroupJoinReviewInput } from "./group-join-review.ts";
 import { groupModerationSession } from "./adapters/group-moderation.ts";
 import type { BotEvent, MessageEvent } from "./messages.ts";
 
-const defaults = { groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"] };
+const defaults = {
+  groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"],
+  addPrivate: 1, addReply: 1, addRecall: 60,
+};
 
 const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Device", ["@lotus-yunzai/device"]],
@@ -76,7 +79,7 @@ function cooldown(value: unknown): number {
   return typeof time === "number" && Number.isInteger(time) && time > 0 && time <= 2_147_483_647 ? time : 0;
 }
 
-async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | undefined> {
+async function readRoutingConfig(root: URL) {
   const legacyPath = "config/config/group.yaml";
   for (const path of ["config/group.yaml", legacyPath]) {
     const file = Bun.file(new URL(path, root));
@@ -86,11 +89,12 @@ async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | u
       if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
       const config = record(value);
       const keys = Object.keys(config);
+      const legacy = path === legacyPath;
       // An empty TRSS runtime overlay still inherited its bundled group defaults.
-      if (path === legacyPath && keys.length === 0) return config;
+      if (legacy && keys.length === 0) return { config, legacy };
       // Lotus likes settings also use config/group.yaml, with flat keys.
       if (keys.some((key) => /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u.test(key))) {
-        return config;
+        return { config, legacy };
       }
     } catch {
       throw new Error(`无法读取 ${path}。`);
@@ -193,14 +197,16 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
 
   function groupConfig(event: { self_id?: number; group_id?: number }, groupId?: number): Record<string, unknown> {
     if (!groups) return {};
+    const { config, legacy } = groups;
     const bot = id(event.self_id);
     const group = id(groupId ?? event.group_id);
     return {
-      ...defaults,
-      ...record(groups.default),
-      ...(bot ? record(groups[`${bot}:default`]) : {}),
-      ...(group ? record(groups[group]) : {}),
-      ...(bot && group ? record(groups[`${bot}:${group}`]) : {}),
+      // TRSS replaced the entire bundled default section when the runtime YAML provided one.
+      ...(legacy && Object.hasOwn(config, "default") ? {} : defaults),
+      ...record(config.default),
+      ...(bot ? record(config[`${bot}:default`]) : {}),
+      ...(group ? record(config[group]) : {}),
+      ...(bot && group ? record(config[`${bot}:${group}`]) : {}),
     };
   }
 
@@ -279,7 +285,9 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     const alias = !event.atBot && strings(config.botAlias).find((text) => msg.startsWith(text));
     const mode = config.onlyReplyAt;
     const owner = event.isMaster || isMilkyOwnerSession(event);
-    const needsAddress = !!config.botAlias && (mode === 1 || mode === "1" || ((mode === 2 || mode === "2") && !owner));
+    const ownerExempt = (mode === 2 || mode === "2") && owner;
+    const needsAddress = !!config.botAlias && !ownerExempt &&
+      (groups.legacy ? mode !== 0 && mode !== "0" : mode === 1 || mode === "1" || mode === 2 || mode === "2");
     const allowNew = !needsAddress || !!event.atBot || !!alias;
 
     const group = id(event.group_id);
@@ -322,12 +330,13 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
   function keywordSettings(event: MessageEvent, groupId?: number) {
     const { addLimit, addPrivate, addReply, addAt, addRecall } = groupConfig(event, groupId);
     const limit = Number(addLimit);
+    const legacy = groups?.legacy === true;
     return {
       addLimit: limit === 1 ? 1 as const : limit === 2 ? 2 as const : 0 as const,
-      addPrivate: addPrivate === undefined || addPrivate === true || addPrivate === 1 || addPrivate === "1",
-      addReply: addReply === undefined || addReply === true || addReply === 1 || addReply === "1",
+      addPrivate: (addPrivate === undefined && !legacy) || addPrivate === true || addPrivate === 1 || addPrivate === "1",
+      addReply: (addReply === undefined && !legacy) || addReply === true || addReply === 1 || addReply === "1",
       addAt: addAt === true || addAt === 1 || addAt === "1",
-      addRecall: Math.min(cooldown(addRecall ?? 60), 120),
+      addRecall: Math.min(cooldown(legacy ? addRecall : addRecall ?? 60), 120),
     };
   }
 
