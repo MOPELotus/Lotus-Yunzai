@@ -11,7 +11,7 @@ const stages = {
   schedule: ["自动签到已处理。", "自动签到执行失败。"],
 } as const;
 
-const sources = ["manual", "scheduled", "scheduled_community_retry"] as const;
+const sources = ["manual", "scheduled", "scheduled_community_retry", "scheduled_retry"] as const;
 const statuses = {
   signed: "签到成功", already: "已签到", "first-bind": "首次绑定",
   unconfirmed: "未确认", failed: "失败", skipped: "跳过",

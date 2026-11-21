@@ -305,7 +305,7 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
       result: undefined,
     }));
     runtime.start();
-    const final = Object.entries(scheduledJobs).find(([name]) => !known.has(name) && name.includes("社区补跑"))?.[1]!;
+    const final = Object.entries(scheduledJobs).find(([name]) => !known.has(name) && name.includes("签到补跑"))?.[1]!;
     expect(["23:50", "23:59"]).toContain(checkinScheduleClock(new Date(String(final.nextInvocation()))).time);
     final.invoke();
     expect(await completed.promise).toBe("10001");

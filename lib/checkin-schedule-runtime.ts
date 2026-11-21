@@ -175,7 +175,7 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       started = true;
       const due = schedule(config.run_due_cron, dueCron, "到期任务", trigger);
       const fallback = schedule(config.catch_up_cron, "0 */10 * * * *", "计划补偿", catchUp);
-      const finalRetry = schedule(undefined, "0 50,59 23 * * *", "社区补跑", () =>
+      const finalRetry = schedule(undefined, "0 50,59 23 * * *", "签到补跑", () =>
         operation ? operation.then(() => trigger(true)) : trigger(true));
       if (due.job) jobs.push(due.job);
       if (fallback.job) jobs.push(fallback.job);

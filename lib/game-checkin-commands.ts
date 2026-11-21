@@ -8,13 +8,14 @@ import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
-import { CheckinCommunityWriteError, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
+import type { CheckinScheduleGame } from "./checkin-schedule-plan.ts";
+import { CheckinCommunityWriteError, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
 import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
 const targets = {
   genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx", honkai3rd: "bh3", honkai2: "bh2",
-} as const satisfies Readonly<Record<string, CnGameCheckinSource["game"]>>;
+} as const satisfies Readonly<Record<CheckinScheduleGame, CnGameCheckinSource["game"]>>;
 const labels = [
   ["原神", "genshin", "2"], ["崩坏2", "honkai2", "3"], ["崩坏3", "honkai3rd", "1"],
   ["未定事件簿", "tears_of_themis", "4"], ["大别野", "", "5"], ["星铁", "honkai_sr", "6"],
@@ -28,7 +29,7 @@ type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" 
 type CheckinRun = { readonly status: "busy"; readonly reply?: MessageReply } |
   { readonly status: "complete"; readonly stage: CheckinAuditEntry["stage"]; readonly ok: boolean;
     readonly reply?: MessageReply; readonly revision?: string;
-    readonly retryCommunity?: { readonly forums: readonly string[]; readonly otherFailure: boolean; readonly accountKey: string } };
+    readonly retryCommunity?: CheckinRetryTargets & { readonly otherFailure: boolean; readonly accountKey: string } };
 
 function completedRun(stage: CheckinAuditEntry["stage"], ok: boolean, reply?: MessageReply, revision?: string,
   retryCommunity?: Extract<CheckinRun, { status: "complete" }>["retryCommunity"]): CheckinRun {
@@ -53,6 +54,11 @@ function bbsReadMayRetry(error: unknown) {
   if (error instanceof BbsCheckinRequestError) return error.reason === "rate-limited";
   return error instanceof HoyoRequestError && (error.code === "transport" ||
     (error.code === "http" && (error.status === 403 || (error.status !== undefined && error.status >= 500))));
+}
+
+function checkinRoleReadMayRetry(error: unknown): error is HoyoRequestError {
+  return error instanceof HoyoRequestError && (error.code === "transport" || (error.code === "http" &&
+    (error.status === 410 || error.status === 429 || error.status === 403 || (error.status !== undefined && error.status >= 500))));
 }
 
 function bbsPoints(state: BbsMissionState, receivedBefore?: number) {
@@ -87,12 +93,14 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
 }
 
 export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
-  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit }: {
+  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit,
+    waitForReadRetry = (milliseconds, signal) => setTimeout(milliseconds, undefined, { signal }) }: {
     readonly makeClient?: typeof createProfileHoyoClient;
     readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
     readonly renderReceipt?: typeof renderCheckinReceiptCard;
     readonly manualRelay?: () => ManualRelay | undefined;
     readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
+    readonly waitForReadRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   } = {}) {
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles, transport);
@@ -100,6 +108,20 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const activeOverseas = new Set<string>();
   const overseasDeviceId = crypto.randomUUID();
   const cloudDeviceId = crypto.randomUUID();
+
+  async function retryRead<Value>(read: () => Promise<Value>, signal: AbortSignal, mayRetry: (error: unknown) => boolean) {
+    const delays = [5_000, 15_000];
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      try {
+        return await read();
+      } catch (error) {
+        const delay = delays[attempt];
+        if (delay === undefined || !mayRetry(error) || (error instanceof HoyoRequestError && error.status === 429)) throw error;
+        await waitForReadRetry(delay, signal);
+      }
+    }
+  }
 
   async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"],
     notes: readonly string[], { points, cloud, textOnly }: { readonly points?: string; readonly cloud?: string;
@@ -159,6 +181,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly verifyDay?: () => void;
     readonly communityWrites?: CheckinScheduledRunContext["communityWrites"];
     readonly communityRetryForums?: readonly string[];
+    readonly gameRetryKeys?: readonly CheckinScheduleGame[];
     readonly communityAccountKey?: string;
   }): Promise<CheckinRun> {
     const { signal } = input;
@@ -216,26 +239,38 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const rows = rowsFor(settings);
       const notes: string[] = [];
       const scoped = input.communityRetryForums;
-      const communityAccountKey = createHash("sha256").update(JSON.stringify([
-        qq, profileId, account.account.stuid || account.account.ltuid, account.account.mid,
-      ])).digest("hex");
-      if (input.communityAccountKey && input.communityAccountKey !== communityAccountKey) {
+      const gameScope = input.gameRetryKeys;
+      const retrying = scoped !== undefined || gameScope !== undefined;
+      const shortReadRetry = input.source === "scheduled" || !!gameScope?.length;
+      // A refreshed device or login ticket does not change the account that owns the retry.
+      // Keep accepting the original MID-based key for an existing community write journal.
+      const accountIdentity = [qq, profileId, account.account.stuid || account.account.ltuid] as const;
+      const legacyAccountKey = createHash("sha256").update(JSON.stringify([...accountIdentity, account.account.mid])).digest("hex");
+      const accountKey = accountIdentity[2] ? createHash("sha256").update(JSON.stringify(accountIdentity)).digest("hex") : legacyAccountKey;
+      if (input.communityAccountKey && input.communityAccountKey !== accountKey && input.communityAccountKey !== legacyAccountKey) {
         await verifyCurrent();
         await auditResult("precheck", false);
         await verifyCurrent();
         return completedRun("precheck", false, "待恢复的签到对应原账号，当前档案已换绑。", revision);
       }
-      const gameRows = scoped ? [] : rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled);
+      const communityAccountKey = input.communityAccountKey ?? accountKey;
+      const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled &&
+        (!retrying || gameScope?.includes(row.key as CheckinScheduleGame)));
       const retryForums: string[] = [];
+      const retryGames: CheckinScheduleGame[] = [];
       const hna = rows.find(row => row.key === "hna");
-      if (!scoped && hna?.game === "未执行") {
+      if (!retrying && hna?.game === "未执行") {
         hna.game = "跳过";
         count("skipped");
       }
-      if (scoped) {
+      if (retrying) {
         for (const row of rows) {
-          if (row.game === "未执行") row.game = "首轮已处理";
-          if (!scoped.includes(row.forum) && row.community === "未执行") row.community = "不在本轮";
+          if (row.game === "未执行" && !gameRows.includes(row)) row.game = "首轮已处理";
+          if (row.community === "未执行" && !scoped?.includes(row.forum)) row.community = "不在本轮";
+        }
+        if (gameScope && gameRows.length !== gameScope.length) {
+          notes.push("当前档案已关闭部分或全部待补跑游戏。");
+          count("failed");
         }
       }
       async function runCommunity() {
@@ -254,6 +289,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
         let state: BbsMissionState | undefined;
         let accepted = false;
+        let recoverCommunityCookie = gameRows.length === 0;
         for (const row of selected) {
           await verifyCurrent();
           const previous = journal?.previous[row.forum];
@@ -277,13 +313,20 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           }
           if (!state) {
             try {
-              state = await client.fetchBbsMissionState(account, {
-                signal, recoverCookie: gameRows.length === 0,
-                onCredentialRefresh(current) {
-                  account = current;
-                  revision = current.revision;
-                },
-              });
+              const readState = async () => {
+                await verifyCurrent();
+                return client.fetchBbsMissionState(account, {
+                  signal, recoverCookie: recoverCommunityCookie,
+                  onCredentialRefresh(current) {
+                    recoverCommunityCookie = false;
+                    account = current;
+                    revision = current.revision;
+                  },
+                });
+              };
+              state = shortReadRetry && account.device.id && account.device.fp
+                ? await retryRead(readState, signal, error => !(error instanceof BbsCheckinRequestError) && bbsReadMayRetry(error))
+                : await readState();
               await verifyCurrent();
             } catch (error) {
               await verifyCurrent();
@@ -357,45 +400,60 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           await verifyCurrent();
           return completedRun("refresh", false, reply, revision);
         }
-        try {
-          const roles = await client.fetchRoleCatalog(account, signal);
-          await verifyCurrent();
-          for (const row of gameRows) {
-            const game = targets[row.key as keyof typeof targets];
-            const blacklist = new Set(settings.games[row.key]?.blacklist);
-            const eligible = roles[game].filter(role => !blacklist.has(role.uid));
-            if (!eligible.length) {
-              row.game = "跳过";
-              count("skipped");
-              continue;
+        const scheduled = input.source !== "manual";
+        const catalog = scheduled ? undefined : client.fetchRoleCatalog(account, signal);
+        for (const row of gameRows) {
+          const key = row.key as CheckinScheduleGame;
+          const game = targets[key];
+          let roles: Awaited<ReturnType<typeof client.fetchCheckinRoles>>;
+          try {
+            if (catalog) roles = (await catalog)[game];
+            else {
+              roles = await retryRead(async () => {
+                await verifyCurrent();
+                return client.fetchCheckinRoles(account, game, signal);
+              }, signal, checkinRoleReadMayRetry);
             }
-            const results: GameCheckinResult[] = [];
-            for (const role of eligible) {
-              const source = { ...account, game, role };
-              const result = await runGameCheckinSequence({
-                signal, verifyCurrent,
-                readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
-                submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
-              });
-              results.push(result);
-              count(result.status);
+          } catch (error) {
+            if (error instanceof ProfileError ||
+                (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
+            await verifyCurrent();
+            if (scheduled && accountIdentity[2] && checkinRoleReadMayRetry(error)) {
+              row.game = "暂缓";
+              retryGames.push(key);
+              notes.push(`${row.label}：角色查询暂未完成，等待当天签到补跑。`);
+            } else {
+              row.game = "失败";
+              count("failed");
+              notes.push(`${row.label}：米游社角色查询未完成。`);
             }
-            const finished = outcome(results);
-            row.game = finished.label;
-            if (finished.reason) notes.push(`${row.label}：${finished.reason}`);
+            continue;
           }
-        } catch (error) {
-          if (error instanceof ProfileError ||
-            (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
           await verifyCurrent();
-          for (const row of gameRows.filter(row => row.game === "未执行")) {
-            row.game = "失败";
-            count("failed");
+          const blacklist = new Set(settings.games[row.key]?.blacklist);
+          const eligible = roles.filter(role => !blacklist.has(role.uid));
+          if (!eligible.length) {
+            row.game = "跳过";
+            count("skipped");
+            continue;
           }
-          notes.push("米游社角色查询未完成。");
+          const results: GameCheckinResult[] = [];
+          for (const role of eligible) {
+            const source = { ...account, game, role };
+            const result = await runGameCheckinSequence({
+              signal, verifyCurrent,
+              readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
+              submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
+            });
+            results.push(result);
+            count(result.status);
+          }
+          const finished = outcome(results);
+          row.game = finished.label;
+          if (finished.reason) notes.push(`${row.label}：${finished.reason}`);
         }
       }
-      if (!scoped) {
+      if (!retrying) {
         const roleCheckins = {
           honkai_sr: client.openHoYoLabStarRailCheckin,
           zzz: client.openHoYoLabZzzCheckin,
@@ -466,7 +524,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       const points = await runCommunity();
       let cloud: string | undefined;
-      if (!scoped) {
+      if (!retrying) {
         const { wallets, revision: walletRevision } = await profiles.cloudCheckin(qq, profileId);
         await verifyCurrent();
         if (walletRevision !== revision) throw new ProfileError("changed", changed);
@@ -500,7 +558,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       await verifyCurrent();
       const otherFailure = Boolean(counts.failed || counts["first-bind"] || counts.unconfirmed);
-      const retry = retryForums.length ? { forums: retryForums, otherFailure, accountKey: communityAccountKey } : undefined;
+      const retry = retryForums.length || retryGames.length ? {
+        forums: retryForums, ...(retryGames.length && { games: retryGames }), otherFailure, accountKey: communityAccountKey,
+      } : undefined;
       const ok = !otherFailure && !retry;
       await auditResult("checkin", ok);
       await verifyCurrent();
@@ -556,8 +616,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const signal = AbortSignal.any([lifecycleSignal, context.signal]);
       return runProfile(qq, profileId, {
         signal, verifyDay: context.verifyDay,
-        source: context.communityRetryForums ? "scheduled_community_retry" : "scheduled",
-        communityWrites: context.communityWrites, communityRetryForums: context.communityRetryForums,
+        source: context.gameRetryKeys?.length ? "scheduled_retry" : context.communityRetryForums ? "scheduled_community_retry" : "scheduled",
+        communityWrites: context.communityWrites, communityRetryForums: context.communityRetryForums, gameRetryKeys: context.gameRetryKeys,
         communityAccountKey: context.communityAccountKey,
       });
     },

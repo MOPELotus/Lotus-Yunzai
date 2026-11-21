@@ -31,8 +31,12 @@ export interface CheckinScheduleProfile {
   };
 }
 
+const checkinScheduleGames = ["genshin", "honkai_sr", "zzz", "tears_of_themis", "honkai3rd", "honkai2"] as const;
+export type CheckinScheduleGame = typeof checkinScheduleGames[number];
+
 export interface CheckinScheduleCommunityRetry {
   readonly forums: readonly string[];
+  readonly games?: readonly CheckinScheduleGame[];
   readonly attempts: number;
   readonly nextAt: string;
   readonly verifiedUnsent?: true;
@@ -344,16 +348,19 @@ function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | un
   if (value === undefined) return;
   const retry = record(value);
   if (!retry) invalid();
-  const { forums, attempts, nextAt, otherFailure, initialMessage, verifiedUnsent, accountKey } = retry;
+  const { forums, games, attempts, nextAt, otherFailure, initialMessage, verifiedUnsent, accountKey } = retry;
+  if (games !== undefined && (!Array.isArray(games) || new Set(games).size !== games.length ||
+      !games.every(key => checkinScheduleGames.some(game => game === key)))) invalid();
   if (!Array.isArray(forums) || !forums.every((id): id is string => typeof id === "string" && /^[1-9]\d*$/u.test(id)) ||
       typeof attempts !== "number" || !Number.isSafeInteger(attempts) || attempts < 0 ||
       !isTimestamp(nextAt) || (verifiedUnsent !== undefined && verifiedUnsent !== true) ||
-      (verifiedUnsent && (!forums.length || forums.length > 9 || new Set(forums).size !== forums.length ||
+      (verifiedUnsent && ((!forums.length && !games?.length) || forums.length > 9 || new Set(forums).size !== forums.length ||
         !forums.every(id => communityWriteForums.has(id)) || typeof accountKey !== "string" || !communityAccountPattern.test(accountKey))) ||
       (!verifiedUnsent && accountKey !== undefined) ||
       (otherFailure !== undefined && typeof otherFailure !== "boolean") ||
       (initialMessage !== undefined && typeof initialMessage !== "string")) invalid();
-  return { forums, attempts, nextAt, ...(verifiedUnsent && { verifiedUnsent, accountKey: accountKey as string }), ...(otherFailure !== undefined && { otherFailure }),
+  return { forums, ...(games?.length && { games: games as CheckinScheduleGame[] }), attempts, nextAt,
+    ...(verifiedUnsent && { verifiedUnsent, accountKey: accountKey as string }), ...(otherFailure !== undefined && { otherFailure }),
     ...(initialMessage !== undefined && { initialMessage }) };
 }
 

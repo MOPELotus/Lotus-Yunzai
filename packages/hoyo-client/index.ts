@@ -89,6 +89,8 @@ const gameBiz: Record<Game, string> = {
   zzz: "nap_cn",
 };
 
+const checkinGameBiz = { ...gameBiz, nxx: "nxx_cn", bh3: "bh3_cn", bh2: "bh2_cn" } as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -168,8 +170,8 @@ export function createHoyoClient(
     return operation;
   }
 
-  async function list(context: ProfileAccountContext, game?: Game, signal?: AbortSignal): Promise<unknown[]> {
-    if (game !== undefined && !Object.hasOwn(gameBiz, game)) {
+  async function list(context: ProfileAccountContext, game?: keyof typeof checkinGameBiz, signal?: AbortSignal): Promise<unknown[]> {
+    if (game !== undefined && !Object.hasOwn(checkinGameBiz, game)) {
       throw new HoyoRequestError("invalid-input", "游戏类型无效。");
     }
     const cookie = context.account.cookie;
@@ -178,7 +180,7 @@ export function createHoyoClient(
     }
 
     const endpoint = new URL("https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie");
-    if (game !== undefined) endpoint.searchParams.set("game_biz", gameBiz[game]);
+    if (game !== undefined) endpoint.searchParams.set("game_biz", checkinGameBiz[game]);
     const deadline = AbortSignal.timeout(15_000);
 
     let response: Response;
@@ -310,6 +312,15 @@ export function createHoyoClient(
     return [...roles.values()];
   }
 
+  function checkinRoleCatalog(data: readonly unknown[]) {
+    return {
+      ...roleCatalog(data),
+      nxx: extraCheckinRoles(data, checkinGameBiz.nxx, region => region === "cn_prod_gf01"),
+      bh3: extraCheckinRoles(data, checkinGameBiz.bh3, isBh3CnCheckinRegion),
+      bh2: extraCheckinRoles(data, checkinGameBiz.bh2, region => region === "gf01"),
+    };
+  }
+
   async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
     if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
     const roles = roleCatalog(data);
@@ -371,13 +382,10 @@ export function createHoyoClient(
       return { context: result.context, roles: rolesFor(result.data, game) };
     },
     async fetchRoleCatalog(context: ProfileAccountContext, signal?: AbortSignal) {
-      const data = await list(context, undefined, signal);
-      return {
-        ...roleCatalog(data),
-        nxx: extraCheckinRoles(data, "nxx_cn", region => region === "cn_prod_gf01"),
-        bh3: extraCheckinRoles(data, "bh3_cn", isBh3CnCheckinRegion),
-        bh2: extraCheckinRoles(data, "bh2_cn", region => region === "gf01"),
-      };
+      return checkinRoleCatalog(await list(context, undefined, signal));
+    },
+    async fetchCheckinRoles(context: ProfileAccountContext, game: CnGameCheckinSource["game"], signal?: AbortSignal) {
+      return checkinRoleCatalog(await list(context, game, signal))[game];
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
       readonly verifyReadOnly?: () => Promise<void>;

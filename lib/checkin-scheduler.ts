@@ -1,11 +1,16 @@
 import {
   checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, legacyUnconfirmedStage, reconcileCheckinSchedulePlan,
-  type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleProfile,
+  type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinScheduleProfile,
 } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
 import type { MessageReply } from "./messages.ts";
 
 const stages = ["precheck", "refresh", "runner", "checkin", "schedule"] as const;
+
+export interface CheckinRetryTargets {
+  readonly forums: readonly string[];
+  readonly games?: readonly CheckinScheduleGame[];
+}
 
 interface CheckinScheduledCompletion {
   readonly status: "complete";
@@ -13,7 +18,7 @@ interface CheckinScheduledCompletion {
   readonly stage: typeof stages[number];
   readonly reply?: MessageReply;
   readonly revision?: string;
-  readonly retryCommunity?: { readonly forums: readonly string[]; readonly otherFailure: boolean; readonly accountKey: string };
+  readonly retryCommunity?: CheckinRetryTargets & { readonly otherFailure: boolean; readonly accountKey: string };
 }
 
 export type CheckinScheduledOutcome = { readonly status: "busy" } | CheckinScheduledCompletion;
@@ -25,6 +30,7 @@ export interface CheckinScheduledRunContext {
   readonly signal: AbortSignal;
   readonly verifyDay: () => void;
   readonly communityRetryForums?: readonly string[];
+  readonly gameRetryKeys?: readonly CheckinScheduleGame[];
   readonly communityAccountKey?: string;
   readonly communityWrites?: {
     readonly previous: NonNullable<CheckinScheduleEntry["communityWrites"]>;
@@ -33,8 +39,7 @@ export interface CheckinScheduledRunContext {
   };
 }
 
-interface CheckinCommunityRetryAttempt {
-  readonly forums: readonly string[];
+interface CheckinRetryAttempt extends CheckinRetryTargets {
   readonly number: number;
 }
 
@@ -45,7 +50,7 @@ interface SchedulerOptions {
   // Recheck the live registration and revision before side effects. If stale, return busy.
   readonly runProfile: (entry: CheckinScheduleEntry, context: CheckinScheduledRunContext) => Promise<CheckinScheduledOutcome>;
   readonly onComplete?: (entry: CheckinScheduleEntry, result: CheckinScheduledCompletion,
-    retry?: CheckinCommunityRetryAttempt) => void | Promise<void>;
+    retry?: CheckinRetryAttempt) => void | Promise<void>;
   readonly now?: () => Date | number;
   readonly random?: () => number;
 }
@@ -72,7 +77,7 @@ function due(entry: CheckinScheduleEntry, date: string, at: number) {
   return checkinScheduleMinute(entry.time) <= checkinScheduleClock(at).minute;
 }
 
-function nextCommunityAttempt(date: string, started: number, settled: number, isRetry: boolean, attempts: number) {
+function nextAttempt(date: string, started: number, settled: number, isRetry: boolean, attempts: number) {
   const cutoff = Date.parse(`${date}T23:50:00+08:00`);
   if (isRetry && started >= cutoff) return;
   const delays = [10, 60, 180];
@@ -171,6 +176,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
             outcome = await runProfile(claim, {
               ...context,
               communityRetryForums: claim.communityRetry?.forums,
+              gameRetryKeys: claim.communityRetry?.games,
               communityAccountKey: claim.communityRetry?.accountKey ?? claim.communityWriteAccount,
               communityWrites: {
                 previous: claim.communityWrites ?? {},
@@ -199,15 +205,17 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
             const at = Number(now());
             const attempts = previous ? previous.attempts + 1 : 0;
             const requested = outcome.retryCommunity;
-            const nextAt = requested?.forums.length ? nextCommunityAttempt(date, Date.parse(claim.runningAt!), at, !!previous, attempts) : undefined;
+            const nextAt = requested && (requested.forums.length || requested.games?.length)
+              ? nextAttempt(date, Date.parse(claim.runningAt!), at, !!previous, attempts) : undefined;
             const ok = outcome.ok && !previous?.otherFailure && !nextAt;
             const next: CheckinScheduleEntry = {
               ...settledEntry, done: !nextAt, stage: outcome.stage, ok,
               ...(nextAt && requested ? { communityRetry: {
-                forums: requested.forums, attempts, nextAt, verifiedUnsent: true, accountKey: requested.accountKey,
+                forums: requested.forums, ...(requested.games?.length && { games: requested.games }),
+                attempts, nextAt, verifiedUnsent: true, accountKey: requested.accountKey,
                 otherFailure: Boolean(previous?.otherFailure || requested.otherFailure),
               } } : { doneAt: checkinScheduleClock(at).iso }),
-              message: nextAt ? "社区签到已安排补跑。" : ok ? "自动签到已完成。" : "自动签到有未完成的项目。",
+              message: nextAt ? requested?.games?.length ? "签到已安排补跑。" : "社区签到已安排补跑。" : ok ? "自动签到已完成。" : "自动签到有未完成的项目。",
             };
             return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: next };
           });
@@ -220,7 +228,9 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
           verifyDay();
           try {
             const retry = claim.communityRetry;
-            await onComplete?.(settled, outcome, retry && { forums: retry.forums, number: retry.attempts + 1 });
+            await onComplete?.(settled, outcome, retry && {
+              forums: retry.forums, ...(retry.games?.length && { games: retry.games }), number: retry.attempts + 1,
+            });
           } catch {
             // Delivery failure cannot reopen a saved check-in.
           }

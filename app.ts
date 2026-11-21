@@ -2315,13 +2315,20 @@ if (import.meta.main) {
             if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
             const forumNames = (ids: readonly string[]) => ids.map(id => Object.hasOwn(bbsCheckinForums, id)
               ? bbsCheckinForums[id as BbsCheckinForum] : `分区 ${id}`).join("、");
+            const gameNames = {
+              genshin: "原神", honkai_sr: "星铁", zzz: "绝区零", honkai2: "崩坏2", honkai3rd: "崩坏3", tears_of_themis: "未定事件簿",
+            } as const;
+            const retryNames = (targets: Pick<NonNullable<typeof entry.communityRetry>, "forums" | "games">) => [
+              targets.games?.length && `游戏 ${targets.games.map(game => gameNames[game]).join("、")}`,
+              targets.forums.length && `社区 ${forumNames(targets.forums)}`,
+            ].filter(Boolean).join("，");
             const lines: string[] = [];
-            if (attempt) lines.push(`社区签到补跑第 ${attempt.number} 次（Profile ${entry.profileId}）`,
-              `本轮分区：${forumNames(attempt.forums)}。游戏签到以首轮为准。`);
+            if (attempt) lines.push(`${attempt.games?.length ? "签到" : "社区签到"}补跑第 ${attempt.number} 次（Profile ${entry.profileId}）`,
+              `本轮补跑：${retryNames(attempt)}。`);
             if (entry.communityRetry?.verifiedUnsent) {
               const time = checkinScheduleClock(Date.parse(entry.communityRetry.nextAt)).iso.slice(11, 16);
-              lines.push(`预计 ${time} 补跑社区：${forumNames(entry.communityRetry.forums)}。`);
-            } else if (attempt && !entry.ok) lines.push("今日社区补跑已结束，请核对签到结果。");
+              lines.push(`预计 ${time} 补跑：${retryNames(entry.communityRetry)}。`);
+            } else if (attempt && !entry.ok) lines.push("今日补跑已结束，请核对签到结果。");
             const reply: MessageReply = lines.length
               ? [`${lines.join("\n")}\n`, ...(Array.isArray(result.reply) ? result.reply : [result.reply])] : result.reply;
             await deliverCheckin(entry.qq, entry.profileId, reply, result.revision);
