@@ -157,3 +157,88 @@ test("经过面板鉴权的扩展重扫原子切换目录与 API，在途调用�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("实际面板入口隔离重扫超时，健康扩展并行准备并一次切换票据", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-guoba-deadline-"));
+  const key = `panel-deadline-${crypto.randomUUID()}`;
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const blocked = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const late = Promise.withResolvers<boolean>();
+  const healthy = Promise.withResolvers<void>();
+  const state = { block: false, blocked, released, late, healthy };
+  globals[key] = state;
+  const directories = new Map(["slow", "healthy"].map((name) => [name, { path: join(root, name), packageName: name }]));
+  let server: Bun.Server<undefined> | undefined;
+  try {
+    for (const [name, { path }] of directories) {
+      const descriptor = name === "slow" ? `
+        export async function init(ctx) {
+          ctx.registerPage({ id: "slow", title: "外部扩展", html: "slow" });
+          if (!state.block) return;
+          state.blocked.resolve();
+          await state.released.promise;
+          ctx.registerPages(null);
+          ctx.registerApi("INVALID", "//invalid");
+          state.late.resolve(ctx.signal.aborted);
+        }
+      ` : `
+        export function init(ctx) {
+          ctx.registerPage({ id: "healthy", title: "健康扩展", html: "healthy" });
+          ctx.registerApi("get", "/read", (_req, res) => res.json({ healthy: true }));
+          if (state.block) state.healthy.resolve();
+        }
+      `;
+      await mkdir(join(path, "guoba"), { recursive: true });
+      await writeFile(join(path, "guoba/index.js"), `const state = globalThis[${JSON.stringify(key)}];\n${descriptor}`);
+    }
+    const routes = panelExtensionRoutes(directories, undefined, { loadTimeout: 500 });
+    const panel = panelApi("panel-fixture", [], routes.api);
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+      return await panel(request) ?? await routes.assets(request) ?? new Response(null, { status: 404 });
+    } });
+    const origin = server.url;
+    const admin = (path = "", method = "GET") => fetch(new URL(`/panel/api/extensions${path}`, origin), {
+      method, headers: { Authorization: "Bearer panel-fixture" }, signal: AbortSignal.timeout(3_000),
+    });
+    const open = async () => new URL((await (await admin("/healthy/open", "POST")).json()).url, origin);
+    const read = (entry: URL) => fetch(new URL("/panel/extensions-api/healthy/read", origin), {
+      headers: { Origin: "null", "guoba-access-token": entry.searchParams.get("token")! },
+    });
+
+    expect(await (await admin()).json()).toMatchObject({ pages: [{ id: "slow" }, { id: "healthy" }], issues: [] });
+    const old = await open();
+    state.block = true;
+    const rescanning = admin("/reload", "POST");
+    await Promise.race([Promise.all([blocked.promise, healthy.promise]), rescanning.then(() => {
+      throw new Error("健康扩展未在慢扩展超时前开始初始化。");
+    })]);
+    const oldRead = await read(old);
+    expect(oldRead.status).toBe(200);
+    expect(await oldRead.json()).toEqual({ healthy: true });
+    expect(await (await admin()).json()).toMatchObject({ pages: [{ id: "slow" }, { id: "healthy" }], issues: [] });
+
+    const rescanned = await (await rescanning).json();
+    expect(rescanned).toMatchObject({ pages: [{ id: "healthy" }], issues: [{ plugin: "slow", kind: "invalid" }] });
+    expect((await fetch(old)).status).toBe(404);
+    expect((await read(old)).status).toBe(401);
+    const fresh = await open();
+    expect((await fetch(fresh)).status).toBe(200);
+    expect(await (await read(fresh)).json()).toEqual({ healthy: true });
+
+    state.block = false;
+    expect(await (await admin("/reload", "POST")).json()).toMatchObject({
+      pages: [{ id: "slow" }, { id: "healthy" }], issues: [],
+    });
+    const recovered = await open();
+    released.resolve();
+    expect(await late.promise).toBe(true);
+    expect(await (await read(recovered)).json()).toEqual({ healthy: true });
+    expect((await admin("/slow/open", "POST")).status).toBe(200);
+  } finally {
+    released.resolve();
+    await server?.stop(true);
+    delete globals[key];
+    await rm(root, { recursive: true, force: true });
+  }
+});

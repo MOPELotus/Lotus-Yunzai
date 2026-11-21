@@ -250,3 +250,52 @@ test("锅巴 Next init 失败或登记无效条目会撤销同插件的页面与
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("锅巴描述符导入超时后跳过迟到的 init，不阻塞健康扩展", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-guoba-import-deadline-"));
+  const key = `guoba-import-deadline-${crypto.randomUUID()}`;
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const started = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const imported = Promise.withResolvers<void>();
+  const healthyStarted = Promise.withResolvers<void>();
+  const fixture = { started, released, imported, healthyStarted, lateCalls: 0 };
+  globals[key] = fixture;
+  try {
+    const slow = await directory(root, "slow");
+    await writeFile(join(slow, "index.js"), `
+      const fixture = globalThis[${JSON.stringify(key)}];
+      fixture.started.resolve();
+      await fixture.released.promise;
+      fixture.imported.resolve();
+      export function init(ctx) {
+        fixture.lateCalls++;
+        ctx.registerPage({ id: "late", title: "迟到扩展", html: "ignored" });
+      }
+    `);
+    const healthy = await directory(root, "healthy");
+    await writeFile(join(healthy, "index.js"), `
+      export function init(ctx) {
+        globalThis[${JSON.stringify(key)}].healthyStarted.resolve();
+        ctx.registerPage({ id: "healthy", title: "健康扩展", html: "ready" });
+      }
+    `);
+    const loading = loadGuobaPages(new Map([["slow", join(slow, "..")], ["healthy", join(healthy, "..")]]),
+      false, undefined, { loadTimeout: 500 });
+    await Promise.race([Promise.all([started.promise, healthyStarted.promise]), loading.then(() => {
+      throw new Error("慢导入阻止了另一个扩展在期限内开始初始化。");
+    })]);
+    const result = await loading;
+    expect(result.pages.map(({ id }) => id)).toEqual(["healthy"]);
+    expect(result.issues).toEqual([{ plugin: "slow", descriptor: "index.js", kind: "invalid" }]);
+    released.resolve();
+    await imported.promise;
+    await Bun.sleep(0);
+    expect(fixture.lateCalls).toBe(0);
+    expect(result.pages.map(({ id }) => id)).toEqual(["healthy"]);
+  } finally {
+    released.resolve();
+    delete globals[key];
+    await rm(root, { recursive: true, force: true });
+  }
+});

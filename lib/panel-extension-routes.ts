@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { attachExtensionBridge, extensionBridge, extensionTicketLifetimeMs, extensionTokenHeader } from "./panel-extension-bridge.ts";
 import { dispatchGuobaApi } from "./panel-guoba-http.ts";
-import { loadGuobaPages, type ExternalGuobaPage, type GuobaPage, type GuobaPages } from "./panel-guoba-pages.ts";
+import { loadGuobaPages, type ExternalGuobaPage, type GuobaPage, type GuobaPages, type GuobaPageScanOptions } from "./panel-guoba-pages.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
 // Allow submit handlers to run inside the frame. CSP still blocks native form requests.
@@ -32,11 +32,13 @@ function escapedPath(name: string): string {
   return name.split("/").map((part) => encodeURIComponent(part)).join("/");
 }
 
-export function panelExtensionRoutes(directories: PluginLoadReport["directories"], external?: ExternalGuobaPage) {
+export function panelExtensionRoutes(
+  directories: PluginLoadReport["directories"], external?: ExternalGuobaPage, scanOptions?: GuobaPageScanOptions,
+) {
   const secret = randomBytes(32);
   const sources = new Map([...directories].map(([name, { path }]) => [name, path]));
   function snapshot(reload = false) {
-    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload, external) };
+    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload, external, scanOptions) };
   }
   let current = snapshot();
   let scanning: Promise<GuobaPages> | undefined;

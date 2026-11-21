@@ -1,8 +1,10 @@
+import { addAbortListener } from "node:events";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validGuobaApiRoute, type GuobaApiDefinition, type GuobaApiHandler } from "./panel-guoba-http.ts";
+import { defaultPluginLoadMs } from "./plugin-load-progress.ts";
 
 const pageDirectories = ["guoba", "webadapter"] as const;
 const descriptorFiles = ["index.js", "pages.js", "pages.json", "page.js", "page.json"] as const;
@@ -52,6 +54,19 @@ export interface ExternalGuobaPage {
   readonly definition: Omit<GuobaPage, "plugin" | "usePluginIcon">;
   readonly apis: readonly GuobaApiDefinition[];
   readonly servicePreview?: boolean;
+}
+
+export interface GuobaPageScanOptions {
+  readonly loadTimeout?: number;
+  readonly signal?: AbortSignal;
+}
+
+interface ScannedPlugin {
+  readonly directory?: string;
+  readonly descriptor?: typeof descriptorFiles[number];
+  readonly pages?: readonly GuobaPage[];
+  readonly apis?: readonly GuobaApiDefinition[];
+  readonly issues?: readonly GuobaPageIssue[];
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -169,16 +184,18 @@ function extensionLogger(plugin: string) {
   });
 }
 
-async function loadDescriptor(plugin: string, directory: string, descriptor: string, reload: boolean) {
+async function loadDescriptor(plugin: string, directory: string, descriptor: string, reload: boolean, signal: AbortSignal) {
   const file = await containedFile(directory, descriptor);
+  signal.throwIfAborted();
   if (!descriptor.endsWith(".js")) {
-    const input = await readFile(file, "utf8");
+    const input = await readFile(file, { encoding: "utf8", signal });
     return { definitions: manifestPages(JSON.parse(input.replace(/^\uFEFF/u, ""))) };
   }
 
   // Bun resolves query strings on file imports to the same module cache key.
   if (reload) delete moduleCache[file];
   const { default: pages, pages: named, init } = await import(pathToFileURL(file).href);
+  signal.throwIfAborted();
   if (typeof init !== "function") {
     const exported: unknown = pages ?? named;
     return { definitions: exported === undefined || exported === null ? [] : manifestPages(exported) };
@@ -188,7 +205,7 @@ async function loadDescriptor(plugin: string, directory: string, descriptor: str
   const registeredApis = new Map<string, GuobaApiDefinition>();
   let accepting = true;
   function registerPage(definition: unknown) {
-    if (accepting) definitions.push(record(definition) ? { ...definition } : definition);
+    if (accepting && !signal.aborted) definitions.push(record(definition) ? { ...definition } : definition);
   }
   try {
     await init(Object.freeze({
@@ -197,12 +214,13 @@ async function loadDescriptor(plugin: string, directory: string, descriptor: str
       basePath: "/guoba",
       apiBase: `/guoba/api/custom/${encodeURIComponent(plugin)}`,
       logger: extensionLogger(plugin),
+      signal,
       registerPage,
       registerPages(value: unknown) {
-        if (accepting) for (const definition of manifestPages(value)) registerPage(definition);
+        if (accepting && !signal.aborted) for (const definition of manifestPages(value)) registerPage(definition);
       },
       registerApi(method: unknown, route: unknown, ...handlers: unknown[]) {
-        if (!accepting) return;
+        if (!accepting || signal.aborted) return;
         const api = normaliseApi(method, route, handlers);
         const key = `${api.method} ${api.route}`;
         if (!registeredApis.has(key)) registeredApis.set(key, api);
@@ -214,40 +232,72 @@ async function loadDescriptor(plugin: string, directory: string, descriptor: str
   return { definitions, registeredApis: [...registeredApis.values()] };
 }
 
+async function scanPlugin(
+  plugin: string, pluginDirectory: string, reload: boolean, external: ExternalGuobaPage | undefined,
+  { loadTimeout = defaultPluginLoadMs, signal: shutdown }: GuobaPageScanOptions,
+): Promise<ScannedPlugin> {
+  const deadline = new AbortController();
+  const signal = shutdown ? AbortSignal.any([shutdown, deadline.signal]) : deadline.signal;
+  const timer = setTimeout(() => deadline.abort(), loadTimeout);
+  timer.unref();
+  const interrupted = Promise.withResolvers<never>();
+  const cancellation = addAbortListener(signal, () => interrupted.reject(signal.reason));
+  let descriptor: typeof descriptorFiles[number] | undefined;
+  const loading = (async (): Promise<ScannedPlugin> => {
+    signal.throwIfAborted();
+    const directory = await findPageDirectory(pluginDirectory);
+    signal.throwIfAborted();
+    if (directory === undefined) return {};
+    descriptor = external ? undefined : await findDescriptor(directory);
+    signal.throwIfAborted();
+    if (!external && !descriptor) return {};
+
+    const { definitions, registeredApis } = external ? { definitions: [external.definition], registeredApis: external.apis }
+      : await loadDescriptor(plugin, directory, descriptor!, reload, signal);
+    const pages: GuobaPage[] = [];
+    const issues: GuobaPageIssue[] = [];
+    for (const definition of definitions) {
+      signal.throwIfAborted();
+      try {
+        pages.push(await normalisePage(plugin, directory, definition));
+      } catch (error) {
+        if (registeredApis !== undefined) throw error;
+        issues.push({ plugin, descriptor, kind: "invalid" });
+      }
+    }
+    return { directory, descriptor, pages, apis: registeredApis, issues };
+  })();
+  try {
+    return await Promise.race([loading, interrupted.promise]);
+  } catch {
+    return { issues: [{ plugin, descriptor, kind: "invalid" }] };
+  } finally {
+    clearTimeout(timer);
+    cancellation[Symbol.dispose]();
+  }
+}
+
 export async function loadGuobaPages(
   pluginDirectories: ReadonlyMap<string, string>, reload = false, external?: ExternalGuobaPage,
+  options: GuobaPageScanOptions = {},
 ): Promise<GuobaPages> {
   const registry = new Map<string, { page: GuobaPage; directory: string }>();
   const apis = new Map<string, readonly GuobaApiDefinition[]>();
   const issues: GuobaPageIssue[] = [];
   const sources = external ? new Map(pluginDirectories).set(external.plugin, external.directory) : pluginDirectories;
-  for (const [plugin, pluginDirectory] of sources) {
-    let descriptor: typeof descriptorFiles[number] | undefined;
-    try {
-      const directory = await findPageDirectory(pluginDirectory);
-      if (directory === undefined) continue;
-      const selected = external?.plugin === plugin ? external : undefined;
-      descriptor = selected ? undefined : await findDescriptor(directory);
-      if (!selected && !descriptor) continue;
-      const { definitions, registeredApis } = selected ? { definitions: [selected.definition], registeredApis: selected.apis }
-        : await loadDescriptor(plugin, directory, descriptor!, reload);
-      const staged: GuobaPage[] = [];
-      for (const definition of definitions) {
-        try {
-          staged.push(await normalisePage(plugin, directory, definition));
-        } catch {
-          if (registeredApis !== undefined) throw new Error();
-          issues.push({ plugin, descriptor, kind: "invalid" });
-        }
-      }
-      for (const page of staged) {
-        if (registry.has(page.id)) issues.push({ plugin, descriptor, id: page.id, kind: "duplicate-id" });
-        else registry.set(page.id, { page, directory });
-      }
-      if (registeredApis?.length) apis.set(plugin, Object.freeze(registeredApis));
-    } catch {
-      issues.push({ plugin, descriptor, kind: "invalid" });
+  const scanned = await Promise.all([...sources].map(async ([plugin, path]) => ({
+    plugin,
+    ...await scanPlugin(plugin, path, reload, external?.plugin === plugin ? external : undefined, options),
+  })));
+  // Merge completed scans in source order, preserving the original duplicate ID winner.
+  for (const { plugin, directory, descriptor, pages, apis: routes, issues: pluginIssues } of scanned) {
+    if (pluginIssues) issues.push(...pluginIssues);
+    if (!directory) continue;
+    for (const page of pages ?? []) {
+      if (registry.has(page.id)) issues.push({ plugin, descriptor, id: page.id, kind: "duplicate-id" });
+      else registry.set(page.id, { page, directory });
     }
+    if (routes?.length) apis.set(plugin, Object.freeze(routes));
   }
 
   return {

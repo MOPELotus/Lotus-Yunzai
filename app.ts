@@ -2840,7 +2840,7 @@ if (import.meta.main) {
       ]);
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories,
-        network.webMount && webMountPage(network.webMount, lifecycle.signal));
+        network.webMount && webMountPage(network.webMount, lifecycle.signal), { loadTimeout, signal: lifecycle.signal });
       const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
         (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
