@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { lockFile } from "../../lib/file-lock.ts";
 import type { DeviceBinding } from "./device-binding.ts";
 import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
@@ -360,20 +361,28 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
   try {
     const staged = join(temporary, "profile.yaml");
     await writeFile(staged, yaml, { mode: 0o600 });
-    await verify?.();
-    if (expected === null) {
+    signal?.throwIfAborted();
+    // Multiple hosts can share a profile directory. Revision check and publication must share the same OS lock.
+    const lock = await lockFile(join(dirname(path), `.${basename(path)}.lotus-profile.sqlite`), "档案");
+    try {
       signal?.throwIfAborted();
-      await link(staged, path).catch((error: unknown) => {
-        if (record(error).code === "EEXIST") throw changedProfile();
-        throw error;
-      });
-    } else {
-      const current = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
-      if (revisionOf(current) !== expected) throw changedProfile();
-      signal?.throwIfAborted();
-      await rename(staged, path);
+      await verify?.();
+      if (expected === null) {
+        signal?.throwIfAborted();
+        await link(staged, path).catch((error: unknown) => {
+          if (record(error).code === "EEXIST") throw changedProfile();
+          throw error;
+        });
+      } else {
+        const current = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
+        if (revisionOf(current) !== expected) throw changedProfile();
+        signal?.throwIfAborted();
+        await rename(staged, path);
+      }
+      return revisionOf(Buffer.from(yaml));
+    } finally {
+      lock.close();
     }
-    return revisionOf(Buffer.from(yaml));
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

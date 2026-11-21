@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +8,81 @@ import { CommandRegistry } from "../lib/commands.ts";
 import { readAccountRefreshPermission } from "../lib/permissions.ts";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
 import { createCredentialExchange, createHoyoClient, createProfileHoyoClient } from "../packages/hoyo-client/index.ts";
+
+test("档案续期和设置跨进程写入只接受一个版本，重试保留两项结果", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "lotus-profile-cross-process-")));
+  const alias = join(root, "profile-alias");
+  const profile = join(root, "42.yaml");
+  const blocked = join(root, "before-rename");
+  const release = join(root, "release-rename");
+  const editing = join(root, "editing-preference");
+  const children: Bun.Subprocess[] = [];
+  try {
+    await writeFile(profile, 'enabled: false\naccount: { ltuid: "4001", cookie: old-cookie, stoken: old-stoken }\n');
+    await symlink(root, alias, "dir");
+    const profiles = createProfileStore(root);
+    const { revision } = await profiles.checkinSettings("42", 1);
+    const module = new URL("../packages/account/index.ts", import.meta.url).href;
+    function run(refresh: boolean) {
+      const code = `
+        import { mock } from "bun:test";
+        import * as files from "node:fs/promises";
+        const rename = files.rename;
+        if (${refresh}) mock.module("node:fs/promises", () => ({ ...files, async rename(from, to) {
+          if (to === ${JSON.stringify(profile)}) {
+            await files.writeFile(${JSON.stringify(blocked)}, "");
+            while (!await Bun.file(${JSON.stringify(release)}).exists()) await Bun.sleep(10);
+          }
+          return rename(from, to);
+        } }));
+        const { createProfileStore } = await import(${JSON.stringify(module)});
+        const profiles = createProfileStore(${JSON.stringify(refresh ? root : alias)});
+        try {
+          if (${refresh}) {
+            await profiles.saveRefreshedCredentials("42", 1, ${JSON.stringify(revision)},
+              { cookie: "new-cookie", ltoken: "new-ltoken", stokenCookie: "stoken=old-stoken" });
+          } else {
+            await files.writeFile(${JSON.stringify(editing)}, "");
+            await profiles.setCheckinEnabled("42", 1, ${JSON.stringify(revision)}, true);
+          }
+          console.log("saved");
+        } catch (error) {
+          if (error?.code !== "changed") throw error;
+          console.log("changed");
+        }
+      `;
+      const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], {
+        stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 8_000,
+      });
+      children.push(child);
+      return Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    }
+    async function wait(path: string) {
+      for (let attempt = 0; attempt < 200 && !await Bun.file(path).exists(); attempt++) await Bun.sleep(10);
+      expect(await Bun.file(path).exists()).toBe(true);
+    }
+    const saving = run(true);
+    await wait(blocked);
+    const setting = run(false);
+    await wait(editing);
+    await Promise.race([setting, Bun.sleep(350)]);
+    await writeFile(release, "");
+    expect(await saving).toEqual([0, "saved\n", ""]);
+    expect(await setting).toEqual([0, "changed\n", ""]);
+    const current = await profiles.checkinSettings("42", 1);
+    expect(current.enabled).toBe(false);
+    await expect(profiles.setCheckinEnabled("42", 1, current.revision, true)).resolves.toMatchObject({ enabled: true });
+    const final = await profiles.accountContext("42");
+    expect(final.account.cookie).toBe("new-cookie");
+    expect(final.account.ltoken).toBe("new-ltoken");
+  } finally {
+    for (const child of children) {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await child.exited;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);
 
 test("扩展签到目录保留同 UID 的不同官服，忽略渠道和测试服", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-checkin-role-catalog-"));
