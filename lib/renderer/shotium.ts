@@ -3,13 +3,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Runtime, type PageGotoParams, type ScreenshotOptions } from "@pixel.js/shotium";
-import { renderChromiumStatic } from "./chromium-static.ts";
 
 const template = require("art-template") as {
   compile(source: string, options: { filename: string }): (data: object) => string;
 };
 const runtime = new Runtime();
-let chromiumDescription: string | undefined;
 
 interface LegacyPageGotoParams {
   readonly waitUntil?: string | readonly string[];
@@ -58,11 +56,9 @@ export function stopStaticRenderer(): Promise<void> {
   return runtime.running ? runtime.stop() : Promise.resolve();
 }
 
-export async function renderTemplate(data: TemplateData, hardware = false): Promise<Buffer[] | false> {
+export async function renderTemplate(data: TemplateData): Promise<Buffer[] | false> {
   if (!data.tplFile) return false;
 
-  const chromium = hardware && !data.multiPage && !data.omitBackground
-    ? Bun.env.LOTUS_CHROMIUM_EXECUTABLE?.trim() : undefined;
   const file = resolve(data.tplFile);
   const temporary = await mkdtemp(join(tmpdir(), "lotus-shotium-"));
   try {
@@ -72,14 +68,6 @@ export async function renderTemplate(data: TemplateData, hardware = false): Prom
     });
     const expanded = join(temporary, "index.html");
     await writeFile(expanded, baseFor(html, dirname(file)), { mode: 0o600 });
-    if (chromium) {
-      const rendered = await renderChromiumStatic(chromium, expanded, temporary, data);
-      if (chromiumDescription !== rendered.renderer) {
-        chromiumDescription = rendered.renderer;
-        console.log(`[渲染] Chromium 静态模板 ${rendered.renderer}`);
-      }
-      return [rendered.image];
-    }
     if (!runtime.running) {
       runtime.start({ cacheDir: null });
       console.log("[渲染] Shotium 静态 HTML CPU 后端已启动。");
@@ -114,9 +102,8 @@ export async function renderTemplate(data: TemplateData, hardware = false): Prom
       }
     }
     return false;
-  } catch (error) {
-    if (chromium) console.warn("[渲染] Chromium 模板截图失败。", error);
-    else console.warn("[渲染] Shotium 模板截图失败。");
+  } catch {
+    console.warn("[渲染] Shotium 模板截图失败。");
     return false;
   } finally {
     await rm(temporary, { recursive: true, force: true });
