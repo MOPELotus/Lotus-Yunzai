@@ -4,7 +4,7 @@ import { mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
-import { createProfileStore } from "@lotus-yunzai/account";
+import { createProfileStore, profileCookieAccountId } from "@lotus-yunzai/account";
 import { MiyousheExchangeError, type MiyousheShopExchangeResult, type ShopManualVerification } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { lockFile } from "./file-lock.ts";
@@ -32,6 +32,7 @@ const statusMessage = {
 };
 const details = {
   changed: "档案绑定的米游社账号或设备已变化，请重新预约。",
+  resolveAccount: "请在当前档案登录原米游社账号，再核对这笔兑换记录。",
   legacy: "旧版预约缺少账号绑定核验，请重新确认商品后预约。",
   updated: "官方调整了开放时间，预约已同步。",
   conditions: "商品、余额或兑换目标已变化，请重新预约。",
@@ -1052,6 +1053,12 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         await verifyLogin?.();
         const plan = owned(data, target, id);
         if (plan.status !== "unknown") conflict("只有结果待确认的计划可以人工确认。");
+        const current = await profiles.accountContext(target.qq, target.profileId).catch(() => undefined);
+        if (!current || (current.account.stuid || current.account.ltuid) !== plan.accountId ||
+            profileCookieAccountId(current.account) !== plan.accountId) conflict(details.resolveAccount);
+        await verifyLogin?.();
+        const latest = await profiles.accountContext(target.qq, target.profileId).catch(() => undefined);
+        if (latest?.revision !== current.revision) conflict(details.resolveAccount);
         finish(plan, redeemed ? "succeeded" : "failed", redeemed ? details.redeemed : details.unredeemed);
         return publicPlan(plan);
       });

@@ -239,6 +239,79 @@ test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档�
   }
 });
 
+test("商城待确认结果仅允许当前登录的原米游社账号核对，包括无设备确认印的历史记录", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-shop-resolve-account-"));
+  const file = join(root, "plans.json");
+  const profile = (id: string, cookieId = id, fingerprint = "initial-device") => writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({
+    user: { qq: "42" }, profile: { id: 2 }, account: {
+      stuid: id, ltuid: id, cookie: `account_id=${cookieId};cookie_token=fixture`, stoken: "fixture",
+    }, device: { id: "fixture-id", fp: fingerprint },
+  }));
+  const target = { qq: "42", profileId: 2 };
+  const oldId = "abcdef000001", modernId = "abcdef000002";
+  const now = Date.now();
+  const legacy = { ...target, id: oldId, accountId: "27", botId: "", goodsId: "44", goodsName: "合成商品",
+    gameBiz: "hk4e_cn", type: 2, price: 20, role: null, addressId: "", addressLabel: "", immediate: true,
+    createdAt: now, opensAt: now, attempts: 1, status: "unknown", message: "测试旧回执" };
+  const profiles = createProfileStore(root);
+  let outward = 0;
+  const plans = createMiyousheShopPlans({ file, profileDirectory: root,
+    async inspect() { outward++; throw new Error("人工确认不请求商城"); },
+    async submit() { outward++; throw new Error("人工确认不提交购物"); },
+  });
+  const controller = new AbortController();
+  const web = createMiyousheWeb({
+    publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: controller.signal,
+    loginIdentity: profiles.loginIdentity, plans, async overview() { throw new Error("测试不读取概况"); },
+  });
+  async function login() {
+    const reply = await web.commands.fallback!(command, message());
+    const ticket = /#ticket=([\w-]{43})/u.exec(String(reply))?.[1];
+    expect(ticket).toBeString();
+    const response = await web.handle(claim(ticket!));
+    expect(response?.status).toBe(204);
+    return response!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+  }
+  const resolve = (cookie: string, id: string, redeemed: boolean) =>
+    web.handle(request(`api/plans/${id}/resolve`, { method: "POST",
+      headers: { Origin: origin.origin, Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify({ redeemed }) }));
+  try {
+    await profile("27");
+    const original = JSON.stringify({ version: 2, plans: [legacy, { ...legacy, id: modernId, bindingStamp: "a".repeat(64) }], trackers: [] });
+    await writeFile(file, original);
+    const oldSession = await login();
+    await profile("88");
+    expect((await resolve(oldSession, oldId, false))?.status).toBe(401);
+    const switched = await login();
+    const rejection = await resolve(switched, oldId, false);
+    expect(rejection?.status).toBe(409);
+    expect(await rejection?.json()).toMatchObject({ message: expect.stringContaining("原米游社账号") });
+    await expect(plans.resolve(target, modernId, true)).rejects.toMatchObject({ status: 409 });
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    await profile("27", "88");
+    expect((await resolve(await login(), oldId, false))?.status).toBe(409);
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    await profile("27");
+    let verifications = 0;
+    await expect(plans.resolve(target, modernId, true, async () => {
+      if (++verifications === 2) await profile("88");
+    })).rejects.toMatchObject({ status: 409 });
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    await profile("27", "27", "new-device");
+    const restored = await login();
+    expect(await (await resolve(restored, oldId, false))?.json()).toMatchObject({ id: oldId, status: "failed" });
+    expect(await (await resolve(restored, modernId, true))?.json()).toMatchObject({ id: modernId, status: "succeeded" });
+    expect(outward).toBe(0);
+  } finally {
+    controller.abort();
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("本人社区总览只读现行任务，隐藏官方已下线的任务并保留余额", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-missions-"));
   const profiles = createProfileStore(root);
