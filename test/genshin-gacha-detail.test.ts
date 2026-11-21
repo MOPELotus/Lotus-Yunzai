@@ -141,7 +141,10 @@ test("keeps source order for same-second legacy pulls and descending IDs after a
 
   const written = mergeGenshinGachaHistory({ 301: legacy }, {
     uid, region: "cn_gf01", pools: [
-      { type: 301, records: [] }, { type: 302, records: [] }, { type: 200, records: [] }, { type: 500, records: [] },
+      { type: 301, name: "角色活动祈愿", records: [] },
+      { type: 302, name: "武器活动祈愿", records: [] },
+      { type: 200, name: "常驻祈愿", records: [] },
+      { type: 500, name: "集录祈愿", records: [] },
     ],
   }).records[301];
   expect(written.slice(0, 3).map(({ id }) => id)).toEqual([first!.id, five!.id, four!.id]);
