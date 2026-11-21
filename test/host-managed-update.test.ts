@@ -77,7 +77,7 @@ type Gateway = ReturnType<typeof gateway>;
 
 function bootSupervisor(active: string, env: NodeJS.ProcessEnv = {}) {
   const clients: Gateway[] = [];
-  const supervisor = Bun.spawn([process.execPath, "scripts/run-managed.ts", active], {
+  const supervisor = Bun.spawn([process.execPath, "--no-env-file", "scripts/run-managed.ts", active], {
     cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, FIXTURE_MANAGED_FAILURE: "1", ...env },
   });
@@ -850,28 +850,44 @@ test.skipIf(!canTestTlsUpdate)("托管 #更新 在候选接回 TLS 监听时继�
 
 const valkeyServer = Bun.which("valkey-server");
 
-async function exerciseValkeyUpdate(lostStorage: boolean) {
+async function exerciseValkeyUpdate(
+  scenario: "same-old" | "same-default" | "drop" | "edited" | "edited-dotenv" | "late-edit",
+) {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-storage-ready-"));
   const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   const { port } = reservation;
   reservation.stop(true);
+  const password = "isolated-valkey-credential";
   const valkey = Bun.spawn([
     valkeyServer!, "--bind", "127.0.0.1", "--port", String(port), "--save", "", "--appendonly", "no", "--dir", temporary,
+    "--requirepass", password,
   ], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
   try {
     const { active, old, candidate, writer } = await fixtureRepository(temporary, false);
-    if (lostStorage) {
+    const file = join(active, scenario === "same-default" ? "config/redis.yaml" : "config/config/redis.yaml");
+    const newConfig = Bun.YAML.stringify({ host: "127.0.0.1", port, db: 4, password });
+    const url = (db: number) => `LOTUS_VALKEY_URL=redis://:${password}@127.0.0.1:${port}/${db}\n`;
+    const changedBefore = scenario === "edited" || scenario === "edited-dotenv";
+    const expectRollback = scenario === "drop" || scenario === "late-edit";
+    if (expectRollback) {
       const app = join(writer, "app.ts");
       const source = await readFile(app, "utf8");
       const readSettings = "probingUpdate ? undefined : await readStorageConnection(";
       expect(source).toContain(readSettings);
-      await writeFile(app, source.replace(readSettings,
-        "probingUpdate || !handoff.accepting ? undefined : await readStorageConnection("));
+      await writeFile(app, scenario === "drop" ? source.replace(readSettings,
+        "probingUpdate || !handoff.accepting ? undefined : await readStorageConnection(")
+        : source.replace("    const restoredStorage = await handoff.restoreStorage(lifecycle.signal);",
+          `    if (!probingUpdate && !handoff.accepting) await Bun.write(new URL("config/config/redis.yaml", root), ${JSON.stringify(newConfig)});
+    const restoredStorage = await handoff.restoreStorage(lifecycle.signal);`));
       git(writer, "add", "app.ts");
-      git(writer, "commit", "--quiet", "-m", "Fixture missing storage during handoff");
+      git(writer, "commit", "--quiet", "-m", "Fixture Valkey failure during handoff");
       git(writer, "push", "--quiet", "origin", "main");
     }
-    await writeFile(join(active, "config/config/redis.yaml"), Bun.YAML.stringify({ host: "127.0.0.1", port, db: 3 }));
+    await writeFile(file, Bun.YAML.stringify({ host: "127.0.0.1", port, password, ...(scenario !== "same-default" && { db: 3 }) }));
+    if (scenario === "edited-dotenv") {
+      await appendFile(join(active, ".git/info/exclude"), "\n.env\n");
+      await writeFile(join(active, ".env"), url(3));
+    }
     await appendFile(join(active, "config/config/bot.yaml"), "online_msg_exp: 0\n");
     await writeFile(join(active, "plugins/storage-fixture.js"), `
       export default class extends plugin {
@@ -879,24 +895,59 @@ async function exerciseValkeyUpdate(lostStorage: boolean) {
           { reg: "^#写存储样本$", fnc: "save" }, { reg: "^#读存储样本$", fnc: "read" },
         ] }); }
         async save(event) { await redis.set("storage-fixture:key", "原存储样本"); return this.read(event); }
-        async read(event) { return event.reply(await redis?.get("storage-fixture:key") ?? "缺少存储"); }
+        async read(event) {
+          return event.reply((await redis?.get("storage-fixture:key") ?? "缺少存储") + " / " + process.pid);
+        }
       }
     `);
 
     const supervisor = bootSupervisor(active);
+    let changed = false;
     try {
       const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储测试宿主未启动。"), 99);
       first.command("#写存储样本", 51);
-      expectText(await first.next(), { user_id: 51 }, /^原存储样本$/u);
+      const initial = await first.next();
+      expectText(initial, { user_id: 51 }, /^原存储样本 \/ \d+$/u);
+      if (changedBefore) {
+        if (scenario === "edited-dotenv") await writeFile(join(active, ".env"), url(4));
+        else await writeFile(file, newConfig);
+      }
       first.command("#更新", 51);
       expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
-      const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储更新后未启动宿主。", 16_000), 99);
-      expectText(await replacement.next(), { user_id: 51 }, lostStorage ? /已恢复旧版本/u : /^更新成功/u);
-      expect(git(active, "rev-parse", "HEAD")).toBe(lostStorage ? old : candidate);
-      replacement.command("#读存储样本", 51);
-      expectText(await replacement.next(), { user_id: 51 }, /^原存储样本$/u);
+      if (changedBefore) {
+        expectText(await first.next(), { user_id: 51 }, /Valkey 配置已变更.*当前宿主继续运行/u);
+        expect(git(active, "rev-parse", "HEAD")).toBe(old);
+        first.command("#读存储样本", 51);
+        const stayed = await first.next();
+        expectText(stayed, { user_id: 51 }, /^原存储样本 \/ \d+$/u);
+        expect(stayed.params.message).toBe(initial.params.message);
+        changed = true;
+      } else {
+        const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储更新后未启动宿主。", 16_000), 99);
+        expectText(await replacement.next(), { user_id: 51 }, expectRollback ? /已恢复旧版本/u : /^更新成功/u);
+        expect(git(active, "rev-parse", "HEAD")).toBe(expectRollback ? old : candidate);
+        replacement.command("#读存储样本", 51);
+        const reply = await replacement.next();
+        expectText(reply, { user_id: 51 }, /^原存储样本 \/ \d+$/u);
+        expect(reply.params.message).not.toBe(initial.params.message);
+        changed = scenario === "late-edit";
+      }
     } finally {
       await supervisor.close();
+    }
+    if (changed) {
+      const config = scenario === "edited-dotenv" ? join(active, ".env") : file;
+      expect(await readFile(config, "utf8")).toBe(scenario === "edited-dotenv" ? url(4) : newConfig);
+      const cold = bootSupervisor(active);
+      try {
+        const restarted = await cold.open(await deadline(cold.nextEndpoint(), "Valkey 更改后冷启动失败。"), 99);
+        restarted.command("#读存储样本", 51);
+        expectText(await restarted.next(), { user_id: 51 }, /^缺少存储 \/ \d+$/u);
+        const original = Bun.spawnSync([Bun.which("valkey-cli")!, "-h", "127.0.0.1", "-p", String(port), "-n", "3", "--raw",
+          "GET", "storage-fixture:key"], { env: { ...process.env, REDISCLI_AUTH: password } });
+        expect(original.exitCode).toBe(0);
+        expect(original.stdout.toString().trim()).toBe("原存储样本");
+      } finally { await cold.close(); }
     }
   } finally {
     valkey.kill("SIGKILL");
@@ -905,9 +956,14 @@ async function exerciseValkeyUpdate(lostStorage: boolean) {
   }
 }
 
-const canTestValkeyUpdate = Boolean(valkeyServer && Bun.which("git"));
-test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选漏接已有 Valkey 时恢复原版本和原数据", () => exerciseValkeyUpdate(true), 35_000);
-test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选接回 Valkey 后继续读取同库数据", () => exerciseValkeyUpdate(false), 35_000);
+const canTestValkeyUpdate = Boolean(valkeyServer && Bun.which("valkey-cli") && Bun.which("git"));
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选漏接已有 Valkey 时恢复原版本和原数据", () => exerciseValkeyUpdate("drop"), 35_000);
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 在候选接回 Valkey 后继续读取同库数据", () => exerciseValkeyUpdate("same-old"), 35_000);
+
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 保留当前主 YAML 缺省的 Valkey DB", () => exerciseValkeyUpdate("same-default"), 35_000);
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 拒绝在线改动旧 Valkey DB 且原会话继续运行", () => exerciseValkeyUpdate("edited"), 35_000);
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 拒绝在线改动 dotenv Valkey 且原会话继续运行", () => exerciseValkeyUpdate("edited-dotenv"), 35_000);
+test.skipIf(!canTestValkeyUpdate)("托管 #更新 末刻变更 Valkey 时拒绝接管并用运行时原设置恢复", () => exerciseValkeyUpdate("late-edit"), 35_000);
 
 test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定义目录中的原图", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-public-images-"));

@@ -16,6 +16,7 @@ import { stageUpdate } from "./update-staging.ts";
 import { readManagedHttpsPaths } from "./update-https-paths.ts";
 import { readUpdateRuntimePaths } from "./update-runtime-paths.ts";
 import { readWebMountUpdatePaths, WebMountUpdateError } from "./update-web-mount.ts";
+import { readStorageRevision, storageRevision, type StorageSnapshot } from "./valkey-config.ts";
 
 type Worker = ReturnType<typeof spawnManagedWorker>;
 type StopSignal = "SIGINT" | "SIGTERM";
@@ -72,6 +73,7 @@ export function createManagedSupervisor(directory: string, options: {
   function launch(path = root, startup: {
     expectedRevision?: string; pausedAt?: number; expectedPlugins?: readonly string[];
     expectedScripts?: readonly string[]; expectedEndpoints?: ManagedEndpoints;
+    expectedStorage?: StorageSnapshot; restoreStorage?: StorageSnapshot;
   } = {}) {
     const worker: Worker = spawnManagedWorker(path, {
       ...startup, env: options.env, powerState: options.powerState, held: startup.expectedRevision !== undefined,
@@ -100,7 +102,7 @@ export function createManagedSupervisor(directory: string, options: {
       reportWorkerReady(false);
       update?.controller.abort();
       if (code === 0 && restarts.has(worker)) {
-        void startWorker(restarts.get(worker)).catch(() => completion.resolve(1));
+        void startWorker(restarts.get(worker), worker.storage).catch(() => completion.resolve(1));
       } else {
         completion.resolve(code);
       }
@@ -114,8 +116,19 @@ export function createManagedSupervisor(directory: string, options: {
     let ready: ReadyUpdate | ReadyBatchUpdate | ReadyInstall | undefined;
     let stage: Awaited<ReturnType<typeof stageUpdate>> | undefined;
     const log = request.install ? "[插件安装]" : "[更新]";
+    const active = () => !stopped && !signal.aborted && current === worker;
+    const storageMatches = async () => {
+      if (worker.storage === undefined) return active();
+      const diskRevision = await readStorageRevision(root, options.env ?? process.env, signal);
+      if (!active()) return false;
+      if (diskRevision === storageRevision(worker.storage)) return true;
+      console.warn(`${log} 当前磁盘上的 Valkey 配置与运行进程不同，原工作进程保持不变。`);
+      report("storage-changed");
+      return false;
+    };
     try {
       report("checking");
+      if (!await storageMatches()) return;
       const directories = new Map(request.directories.map(({ name, path, packageName }) => [name, { path, packageName }]));
       const approved = request.install ? (await readInstallCatalog(rootUrl)).resolve(request.install) : undefined;
       if (request.install && !approved) {
@@ -155,7 +168,7 @@ export function createManagedSupervisor(directory: string, options: {
           throw new Error(`V3 脚本 ${JSON.stringify(script)} 与当前生效版本不同。请恢复磁盘文件，或确认修复后已热重载，再重试。`);
         }
       }
-      if (stopped || signal.aborted || current !== worker) return;
+      if (!active() || !await storageMatches()) return;
       report("switching");
       const target = request.target;
       const targets: readonly ProcessReceipt["target"][] = target.type === "scheduled"
@@ -214,19 +227,19 @@ export function createManagedSupervisor(directory: string, options: {
     }
   }
 
-  async function startWorker(pausedAt?: number) {
+  async function startWorker(pausedAt?: number, restoreStorage?: StorageSnapshot) {
     if (stopped) return;
-    const worker = launch(root, { pausedAt });
+    const worker = launch(root, { pausedAt, restoreStorage });
     current = worker;
     await worker.ready;
     if (current === worker && !stopped && worker.serving) reportWorkerReady(true);
   }
 
-  async function restartPrevious(notify?: NotifyResult, pausedAt?: number) {
+  async function restartPrevious(notify?: NotifyResult, pausedAt?: number, storage?: StorageSnapshot) {
     if (stopped) return "stopped" as const;
     try {
       await notify?.("rolled-back");
-      await startWorker(pausedAt);
+      await startWorker(pausedAt, storage);
     } catch {
       completion.resolve(1);
       throw new Error("旧宿主未能重新启动。");
@@ -247,7 +260,7 @@ export function createManagedSupervisor(directory: string, options: {
     if (stopped) return "stopped" as const;
     if (oldExit !== 143 && oldExit !== 0) {
       console.warn(`[更新] 原宿主以 ${oldExit} 退出，正在重新启动原版本。`);
-      return restartPrevious(notify, pausedAt);
+      return restartPrevious(notify, pausedAt, previousWorker.storage);
     }
 
     const git = createLocalGit();
@@ -265,6 +278,7 @@ export function createManagedSupervisor(directory: string, options: {
         if (stopped) throw new Error("更新交接已停止。");
         const worker = launch(active, {
           expectedRevision: stage.revision, pausedAt, expectedPlugins, expectedScripts, expectedEndpoints: previousWorker.endpoints,
+          expectedStorage: previousWorker.storage,
         });
         candidate = worker;
         try {
@@ -311,7 +325,7 @@ export function createManagedSupervisor(directory: string, options: {
         completion.resolve(1);
         throw new Error("宿主版本恢复失败。");
       }
-      return restartPrevious(notify, pausedAt);
+      return restartPrevious(notify, pausedAt, previousWorker.storage);
     }
   }
 

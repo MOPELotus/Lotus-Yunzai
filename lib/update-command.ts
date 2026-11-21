@@ -19,6 +19,7 @@ const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   diverged: "当前提交与上游已分叉，更新未执行。",
   rejected: "更新候选未通过检查，更新未执行。",
   unavailable: "无法取得更新候选，请检查更新目标和上游配置。",
+  "storage-changed": "Valkey 配置已变更或无法读取，当前宿主继续运行。要启用新配置，请先正常停机再启动。",
   failed: "更新失败，请检查宿主日志。",
 };
 

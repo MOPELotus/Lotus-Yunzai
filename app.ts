@@ -2286,7 +2286,10 @@ if (import.meta.main) {
       isMaster: permissions.isMaster, masterIds: permissions.masterIds,
       isTerminalMaster: () => permissions.terminal, grant: permissions.grant,
     });
-    const valkey = probingUpdate ? undefined : await readStorageConnection(root, Bun.env.LOTUS_VALKEY_URL);
+    const restoredStorage = await handoff.restoreStorage(lifecycle.signal);
+    const valkey = restoredStorage !== undefined ? restoredStorage ?? undefined
+      : probingUpdate ? undefined : await readStorageConnection(root, Bun.env.LOTUS_VALKEY_URL);
+    handoff.verifyStorage(valkey ?? null);
     const segmentCounts = botConfig.msg_type_count === true || botConfig.msg_type_count === 1 || botConfig.msg_type_count === "1";
     onlineCooldown = onlineNoticeSeconds(botConfig.online_msg_exp);
     onlineVersion = runtimeVersion.version;
@@ -3299,7 +3302,7 @@ if (import.meta.main) {
         // Port 0 is an ephemeral binding and may get a different allocated port on each process.
         httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
         milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
-      }, plugins.readyScripts);
+      }, plugins.readyScripts, valkey ?? null);
       legacyProcessReady = handoff.accepting && !lifecycle.signal.aborted;
       if (recordedPause !== undefined) handoff.reportPower(dispatchPower.pausedAt);
       if (legacyPause && !lifecycle.signal.aborted && handoff.accepting) {

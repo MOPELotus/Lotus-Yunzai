@@ -1,6 +1,7 @@
 import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
 import type { ManagedEndpoints } from "./managed-handoff.ts";
+import { parseStorageSnapshot, storageRevision, type StorageSnapshot } from "./valkey-config.ts";
 import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedLegacyScripts, parseManagedUpdateRequest,
   type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
@@ -13,6 +14,8 @@ interface ManagedWorkerOptions {
   readonly expectedPlugins?: readonly string[];
   readonly expectedScripts?: readonly string[];
   readonly expectedEndpoints?: ManagedEndpoints;
+  readonly expectedStorage?: StorageSnapshot;
+  readonly restoreStorage?: StorageSnapshot;
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
   readonly powerState?: { path: string; attempt: string };
@@ -50,9 +53,15 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     LOTUS_MANAGED_ADAPTER_RECEIPTS: "1",
     LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS: "1",
     LOTUS_MANAGED_ACTIVATION_ACK: "1",
+    LOTUS_MANAGED_STORAGE_HANDOFF: "1",
+    LOTUS_MANAGED_RESTORE_STORAGE: options.restoreStorage === undefined ? "0" : "1",
   };
   let pausedAt = validPause(options.pausedAt) ? options.pausedAt : undefined;
   let endpoints: ManagedEndpoints = {};
+  let storage: StorageSnapshot | undefined;
+  const expectedStorageRevision = options.expectedStorage === undefined ? undefined : storageRevision(options.expectedStorage);
+  if (expectedStorageRevision === undefined) delete env.LOTUS_MANAGED_EXPECT_STORAGE;
+  else env.LOTUS_MANAGED_EXPECT_STORAGE = expectedStorageRevision;
   if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
   else delete env.LOTUS_MANAGED_PAUSED_AT;
   env.LOTUS_MANAGED_POWER_PATH = options.powerState?.path ?? "";
@@ -90,6 +99,11 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
         return;
       }
       if (stopping) return;
+      if (!ready && message.type === "lotus-request-storage" && options.restoreStorage !== undefined) {
+        try { child.send({ type: "lotus-storage", token, storage: options.restoreStorage }); }
+        catch { void stop(); }
+        return;
+      }
       const wait = ready ? undefined : readPluginLoading(message, token, nextPluginIndex);
       if (wait !== undefined) {
         nextPluginIndex++;
@@ -145,6 +159,13 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
           }
           if (expectedEndpoints.valkey && !endpoints.valkey) {
             startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Valkey 存储。");
+            void stop();
+            return;
+          }
+          storage = "storage" in message ? parseStorageSnapshot(message.storage) : undefined;
+          if (expectedStorageRevision !== undefined &&
+              (storage === undefined || storageRevision(storage) !== expectedStorageRevision)) {
+            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Valkey 配置。");
             void stop();
             return;
           }
@@ -273,6 +294,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     exited,
     get pausedAt() { return pausedAt; },
     get endpoints() { return endpoints; },
+    get storage() { return storage; },
     get serving() { return active && ready && !stopping && child.exitCode === null && child.signalCode === null; },
     activate() {
       if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");

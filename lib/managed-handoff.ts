@@ -1,5 +1,6 @@
 import { isGitRevision } from "./local-git.ts";
 import { managedDispatchPause } from "./managed-dispatch-pause.ts";
+import { parseStorageSnapshot, storageRevision, type StorageSnapshot } from "./valkey-config.ts";
 import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdateProgress, isTerminalManagedUpdateProgress,
   managedUpdateDirectoryLimit, parseManagedUpdateRequest, type ManagedUpdateProgress, type ManagedUpdateRequest,
   type ManagedUpdateWireRequest } from "./managed-update-protocol.ts";
@@ -20,7 +21,9 @@ interface ManagedHandoff {
   readonly supportsAdapterReceipts: boolean;
   readonly pausedAt?: number;
   ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
-    scripts?: readonly string[]): Promise<void>;
+    scripts?: readonly string[], storage?: StorageSnapshot): Promise<void>;
+  restoreStorage(signal: AbortSignal): Promise<StorageSnapshot | undefined>;
+  verifyStorage(storage: StorageSnapshot): void;
   restart(pausedAt?: number, sent?: (error?: Error) => void): boolean;
   reportPower(pausedAt?: number): boolean;
   readonly powerState?: ReturnType<typeof managedDispatchPause>;
@@ -31,8 +34,9 @@ interface ManagedHandoff {
 }
 
 type Notice =
-  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[]; activationAck?: true; replacementNotice?: true } & ManagedEndpoints)
+  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[]; activationAck?: true; replacementNotice?: true; storage?: StorageSnapshot } & ManagedEndpoints)
   | { type: "lotus-activated" }
+  | { type: "lotus-request-storage" }
   | { type: "lotus-restart"; pausedAt?: number }
   | { type: "lotus-power"; pausedAt?: number }
   | { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
@@ -53,6 +57,9 @@ export function createManagedHandoff(): ManagedHandoff {
   const adapterReceipts = process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS === "1";
   const scheduledAdapterReceipts = adapterReceipts && process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS === "1";
   const activationAck = held && process.env.LOTUS_MANAGED_ACTIVATION_ACK === "1";
+  const storageHandoff = process.env.LOTUS_MANAGED_STORAGE_HANDOFF === "1";
+  const restore = process.env.LOTUS_MANAGED_RESTORE_STORAGE === "1";
+  const expectedStorage = held ? process.env.LOTUS_MANAGED_EXPECT_STORAGE : undefined;
   delete process.env.LOTUS_MANAGED_TOKEN;
   delete process.env.LOTUS_MANAGED_HELD;
   delete process.env.LOTUS_MANAGED_PAUSED_AT;
@@ -61,6 +68,9 @@ export function createManagedHandoff(): ManagedHandoff {
   delete process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS;
   delete process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS;
   delete process.env.LOTUS_MANAGED_ACTIVATION_ACK;
+  delete process.env.LOTUS_MANAGED_STORAGE_HANDOFF;
+  delete process.env.LOTUS_MANAGED_RESTORE_STORAGE;
+  delete process.env.LOTUS_MANAGED_EXPECT_STORAGE;
 
   if (!token || !uuid.test(token) || typeof process.send !== "function" || process.connected !== true) {
     return {
@@ -68,6 +78,8 @@ export function createManagedHandoff(): ManagedHandoff {
       accepting: true,
       supportsAdapterReceipts: false,
       async ready() {},
+      async restoreStorage() { return undefined; },
+      verifyStorage() {},
       restart: () => false,
       reportPower: () => false,
       update: () => false,
@@ -135,7 +147,7 @@ export function createManagedHandoff(): ManagedHandoff {
   }
 
   async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
-    scripts?: readonly string[]) {
+    scripts?: readonly string[], storage?: StorageSnapshot) {
     if (signal.aborted || !connected() || (held && revision === undefined) ||
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
@@ -143,7 +155,8 @@ export function createManagedHandoff(): ManagedHandoff {
     const message = { type: "lotus-ready", ...(replacementHandlers.size ? { replacementNotice: true as const } : {}),
       ...(revision === undefined ? {} : { revision }),
       ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}),
-      ...(activationAck ? { activationAck: true as const } : {}), ...endpoints } as const;
+      ...(activationAck ? { activationAck: true as const } : {}),
+      ...(storageHandoff && storage !== undefined ? { storage } : {}), ...endpoints } as const;
     if (!held) {
       if (!notify(message)) throw failed();
       activated = true;
@@ -218,8 +231,40 @@ export function createManagedHandoff(): ManagedHandoff {
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     powerState: powerPath && powerAttempt ? managedDispatchPause(powerPath, powerAttempt) : undefined,
     get accepting() { return accepting && connected(); },
-    ready(revision, signal, loadedPlugins, endpoints, scripts) {
-      return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts);
+    ready(revision, signal, loadedPlugins, endpoints, scripts, storage) {
+      return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts, storage);
+    },
+    async restoreStorage(signal) {
+      if (!restore) return;
+      const result = Promise.withResolvers<StorageSnapshot | undefined>();
+      const abort = () => result.resolve(undefined);
+      const removeDisconnect = onDisconnect(abort);
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(3_000)]);
+      deadline.addEventListener("abort", abort, { once: true });
+      const receive = (message: unknown) => {
+        if (typeof message === "object" && message !== null && "type" in message && message.type === "lotus-storage" &&
+            "token" in message && message.token === token && "storage" in message) {
+          result.resolve(parseStorageSnapshot(message.storage));
+        }
+      };
+      process.on("message", receive);
+      process.channel?.ref();
+      try {
+        if (deadline.aborted || !notify({ type: "lotus-request-storage" }, abort)) throw failed();
+        const storage = await result.promise;
+        if (storage === undefined || deadline.aborted) throw failed();
+        return storage;
+      } finally {
+        removeDisconnect();
+        deadline.removeEventListener("abort", abort);
+        process.off("message", receive);
+        process.channel?.unref();
+      }
+    },
+    verifyStorage(storage) {
+      if (expectedStorage !== undefined && expectedStorage !== storageRevision(storage)) {
+        throw new Error("候选宿主的 Valkey 配置与原工作进程不一致。");
+      }
     },
     restart(pausedAt, sent) {
       if (!accepting || restarting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;

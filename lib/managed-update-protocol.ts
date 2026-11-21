@@ -41,7 +41,7 @@ export function encodeManagedUpdateRequest(request: ManagedUpdateRequest, schedu
 }
 
 const progress = ["checking", "building", "switching", "busy", "current", "dirty", "ahead", "diverged",
-  "rejected", "unavailable", "failed"] as const;
+  "rejected", "unavailable", "storage-changed", "failed"] as const;
 export type ManagedUpdateProgress = typeof progress[number];
 
 const knownProgress: ReadonlySet<string> = new Set(progress);

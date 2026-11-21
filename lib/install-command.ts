@@ -1,7 +1,7 @@
 import type { MessageEvent } from "./messages.ts";
 import { canManagePackages } from "./command-permissions.ts";
 
-export type InstallProgress = "checking" | "building" | "switching" | "busy" | "exists" | "unavailable" | "rejected" | "failed";
+export type InstallProgress = "checking" | "building" | "switching" | "busy" | "exists" | "unavailable" | "rejected" | "storage-changed" | "failed";
 
 interface InstallCallbacks {
   list(event: MessageEvent): readonly string[] | Promise<readonly string[]>;
@@ -20,6 +20,7 @@ const replies: Readonly<Record<InstallProgress, string>> = {
   exists: "该插件已安装。",
   unavailable: "暂无可用的安装目标，请用 #安装插件 查看列表。",
   rejected: "插件候选未通过检查，安装未执行。",
+  "storage-changed": "Valkey 配置已变更或无法读取，当前宿主继续运行。要启用新配置，请先正常停机再启动。",
   failed: "插件安装失败，请检查宿主日志。",
 };
 
