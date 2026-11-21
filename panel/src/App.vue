@@ -12,6 +12,7 @@ import GroupNoticeSettings from "./GroupNoticeSettings.vue";
 import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 import WebLoginSettings from "./WebLoginSettings.vue";
 import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
+import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -23,7 +24,7 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "extensions";
 const view = ref<PanelView>("overview");
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
@@ -56,6 +57,7 @@ function setView(next: PanelView, discard = false) {
     atlas: "atlas-channel-title",
     "web-login": "web-login-title",
     "checkin-schedule": "checkin-schedule-title",
+    "account-permissions": "account-permissions-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -254,6 +256,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'web-login' ? 'page' : undefined" @click="setView('web-login')">网页登录</ElButton>
       <ElButton :type="view === 'checkin-schedule' ? 'primary' : 'default'"
         :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
+      <ElButton :type="view === 'account-permissions' ? 'primary' : 'default'"
+        :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">签到权限</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
         :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
     </nav>
@@ -273,6 +277,8 @@ onBeforeUnmount(() => {
     <WebLoginSettings v-else-if="view === 'web-login'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <CheckinScheduleSettings v-else-if="view === 'checkin-schedule'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <AccountPermissionsSettings v-else-if="view === 'account-permissions'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />

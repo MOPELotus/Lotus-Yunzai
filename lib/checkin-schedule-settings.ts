@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, stringify, type Node, type YAMLMap } from "yaml";
+import { isAlias, isMap, isNode, isScalar, parseDocument, Scalar, type Node } from "yaml";
 import { checkinScheduleMinute, type CheckinScheduleConfig } from "./checkin-schedule-plan.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
+import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMappingPair, type SourceEdit, type Pair } from "./yaml-source-edits.ts";
 import { defaultCheckinCrons, validCheckinCron } from "./checkin-schedule-runtime.ts";
 import { scheduleCronFields, scheduleWindowFields, type CheckinSchedulePanelSettings, type CheckinSchedulePanelSnapshot,
   type LateScheduleSettings, type RandomScheduleSettings } from "./panel-checkin-schedule-schema.ts";
@@ -103,12 +104,6 @@ function readDocument(text: string) {
   };
 }
 
-interface SourceEdit {
-  readonly start: number;
-  readonly end: number;
-  readonly value: string;
-}
-
 function scalarText(key: string, value: string | boolean, node?: Node) {
   if (typeof value === "boolean") return String(value);
   if (isScalar(node) && node.type === Scalar.QUOTE_SINGLE) return `'${value}'`;
@@ -117,37 +112,7 @@ function scalarText(key: string, value: string | boolean, node?: Node) {
 }
 
 function replaceScalar(text: string, key: string, value: string | boolean, node: Node): SourceEdit {
-  if (!node.range || (!isScalar(node) && !isAlias(node))) error("config");
-  const [start, end] = node.range;
-  const token = node.srcToken;
-  let replacement = scalarText(key, value, node);
-  if (token?.type === "block-scalar") {
-    const header = token.props[0];
-    if (header?.type !== "block-scalar-header") error("config");
-    // Keep the block indicator's inline comment and line ending when replacing its body.
-    replacement += text.slice(header.offset + header.source.length, end - token.source.length);
-  }
-  return { start, end, value: replacement };
-}
-
-function insertPairs(text: string, map: YAMLMap | undefined,
-  pairs: readonly { readonly key: string; readonly flow: string; readonly block: readonly string[] }[]): SourceEdit {
-  const token = map?.srcToken;
-  if (map && token?.type === "flow-collection") {
-    const start = token.start.offset + token.start.source.length;
-    const value = pairs.map(pair => `${pair.key}: ${pair.flow}`).join(", ");
-    return { start, end: start, value: map.items.length ? `${value}, ` : value };
-  }
-
-  if (map && (token?.type !== "block-map" || !map.range)) error("config");
-  const indent = " ".repeat(token?.type === "block-map" ? token.indent : 0);
-  const eol = /\r?\n/u.exec(text)?.[0] ?? "\n";
-  const start = map?.range?.[1] ?? [...new Parser().parse(text)].find(item => item.type === "doc-end")?.offset ?? text.length;
-  const before = text.slice(0, start);
-  const prefix = !before || before === "\uFEFF" || before.endsWith("\n") ? "" : eol;
-  const suffix = start === text.length && prefix ? "" : eol;
-  const body = pairs.flatMap(pair => pair.block).map(line => indent + line).join(eol);
-  return { start, end: start, value: prefix + body + suffix };
+  return replaceSourceScalar(text, node, scalarText(key, value, node));
 }
 
 function applyPatch(current: ReturnType<typeof readDocument>, patch: ScalarPatch) {
@@ -172,12 +137,12 @@ function applyPatch(current: ReturnType<typeof readDocument>, patch: ScalarPatch
     }
   }
   if (additions.length) {
-    if (isMap(node)) edits.push(insertPairs(text, node, additions));
+    if (isMap(node)) edits.push(insertSourcePairs(text, node, additions));
     // Inherit the shared mapping and override only the selected scheduler settings.
-    else if (isAlias(node)) edits.push(aliasOverrides(text, node, additions));
+    else if (isAlias(node)) edits.push(sourceAliasOverrides(text, node, additions));
     else {
       const flow = additions.flatMap(pair => pair.block).join(", ");
-      edits.push(insertPairs(text, root, [{
+      edits.push(insertSourcePairs(text, root, [{
         key: "scheduler", flow: `{${flow}}`, block: ["scheduler:", ...additions.flatMap(pair => pair.block.map(line => `  ${line}`))],
       }]));
     }
@@ -225,21 +190,6 @@ function visibleWindows({ random, late_registration: late }: CheckinScheduleConf
   };
 }
 
-type Pair = { key: string; flow: string; block: string[] };
-
-function windowPair(key: string, values: Map<unknown, unknown>): Pair {
-  const flow = stringify(values, { collectionStyle: "flow", lineWidth: 0 }).trimEnd();
-  const block = stringify(values, { lineWidth: 0 }).trimEnd().split("\n").map(line => `  ${line}`);
-  return { key, flow, block: [`${key}:`, ...block] };
-}
-
-function aliasOverrides(text: string, node: Node, pairs: readonly Pair[]): SourceEdit {
-  if (!isAlias(node) || !node.range) error("config");
-  const [start, end] = node.range;
-  const fields = pairs.map(({ key, flow }) => `${key}: ${flow}`).join(", ");
-  return { start, end, value: `{<<: ${text.slice(start, end)}, ${fields}}` };
-}
-
 function applyWindowPatch(current: ReturnType<typeof readDocument>, section: ScheduleWindowSection,
   patch: Readonly<Record<string, string | boolean>>, inherited: Readonly<Record<string, unknown>>,
 ) {
@@ -269,13 +219,13 @@ function applyWindowPatch(current: ReturnType<typeof readDocument>, section: Sch
   }
 
   if (additions.length) {
-    if (isMap(node)) edits.push(insertPairs(text, node, additions));
-    else if (isAlias(node)) edits.push(aliasOverrides(text, node, additions));
+    if (isMap(node)) edits.push(insertSourcePairs(text, node, additions));
+    else if (isAlias(node)) edits.push(sourceAliasOverrides(text, node, additions));
     else {
-      const pair = windowPair(section, expectedWindow);
-      if (isMap(parent)) edits.push(insertPairs(text, parent, [pair]));
-      else if (isAlias(parent)) edits.push(aliasOverrides(text, parent, [pair]));
-      else edits.push(insertPairs(text, root, [windowPair("scheduler", new Map([[section, expectedWindow]]))]));
+      const pair = sourceMappingPair(section, expectedWindow);
+      if (isMap(parent)) edits.push(insertSourcePairs(text, parent, [pair]));
+      else if (isAlias(parent)) edits.push(sourceAliasOverrides(text, parent, [pair]));
+      else edits.push(insertSourcePairs(text, root, [sourceMappingPair("scheduler", new Map([[section, expectedWindow]]))]));
     }
   }
   const yaml = edits.sort((a, b) => b.start - a.start || b.end - a.end)

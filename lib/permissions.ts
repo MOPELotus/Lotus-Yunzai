@@ -1,3 +1,4 @@
+import { accountScopePolicy, type AccountScope } from "./account-scope-policy.ts";
 import { readLocalConfig } from "./config.ts";
 import { watchConfigFiles } from "./config-watch.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
@@ -84,9 +85,6 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-type AccountScope = "checkin.refresh" | "checkin.register" | "checkin.group_register" |
-  "scheduler.generate" | "scheduler.run_due" | "scheduler.manage";
-
 export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope) {
   const permissions = configRecord(document.permissions);
   const users = configRecord(permissions.users);
@@ -95,8 +93,7 @@ export function accountScopePermission(document: Readonly<Record<string, unknown
   const userDeny = configuredIds(users.deny);
   const groupAllow = configuredIds(groups.allow);
   const groupDeny = configuredIds(groups.deny);
-  const scope = configRecord(configRecord(permissions.scopes)[permission]).policy ??
-    (permission.startsWith("scheduler.") || permission === "checkin.group_register" ? "master_only" : undefined);
+  const scope = accountScopePolicy(permission, configRecord(configRecord(permissions.scopes)[permission]).policy);
   return (context: { user_id?: number; group_id?: number; isMaster: boolean }) => {
     const user = String(context.user_id ?? "");
     const group = String(context.group_id ?? "");
