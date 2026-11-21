@@ -1,3 +1,4 @@
+import { LegacyExitHooks } from "./exit-hooks.ts";
 import { addAbortListener } from "node:events";
 import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
@@ -142,6 +143,7 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
 
 export class LegacyPlugins {
   readonly httpRoutes = new LegacyHttpRoutes();
+  readonly exitHooks = new LegacyExitHooks();
   #apps: App[] = [];
   #initializers: App[] = [];
   readonly #messages = new WeakMap<MessageEvent, MessageEvent>();
@@ -191,12 +193,16 @@ export class LegacyPlugins {
 
     const rollback = async () => {
       jobs?.cancel();
-      for (const scope of scopes) this.httpRoutes.discard(scope);
+      for (const scope of scopes) {
+        this.httpRoutes.discard(scope);
+        this.exitHooks.discard(scope);
+      }
       for (const { initializer, scope } of [...initializers].reverse()) await dispose(initializer, scope);
     };
     const abort = () => {
       for (const scope of scopes) {
         this.httpRoutes.discard(scope);
+        this.exitHooks.discard(scope);
         scope.dispose();
       }
       abortCleanup = Promise.resolve().then(rollback).catch((error: unknown) => {
@@ -216,6 +222,7 @@ export class LegacyPlugins {
         const create = value as PluginClass;
         const scope = new HandlerScope(replace);
         scopes.add(scope);
+        this.exitHooks.track(scope);
         let initializer: PluginInstance;
         try {
           initializer = scope.run(() => new create());
@@ -252,6 +259,7 @@ export class LegacyPlugins {
         signal.throwIfAborted();
         if (result === "return") {
           this.httpRoutes.discard(scope);
+          this.exitHooks.discard(scope);
           await dispose(initializer, scope);
         } else {
           registerHandlers(app, label);
@@ -273,7 +281,10 @@ export class LegacyPlugins {
       jobs.publish();
       if (replace) active.forEach((app, index) => app.scope.publish(previous[index]?.scope));
       routes.publish();
-      for (const app of active) app.published = true;
+      for (const app of active) {
+        app.published = true;
+        this.exitHooks.publish(app.scope);
+      }
       const index = previous.length ? this.#initializers.indexOf(previous[0]!) : this.#initializers.length;
       if (previous.length) this.#initializers = this.#initializers.filter((app) => app.label !== label);
       this.#initializers.splice(index, 0, ...active);
@@ -301,6 +312,7 @@ export class LegacyPlugins {
       app.published = false;
       app.contexts.close();
       this.httpRoutes.discard(app.scope);
+      this.exitHooks.discard(app.scope);
       app.scope.dispose();
     }
     const tasks = this.#tasks.cancel(new Set(apps.map(({ scope }) => scope)));
@@ -373,6 +385,7 @@ export class LegacyPlugins {
       app.published = false;
       app.contexts.close();
       this.httpRoutes.discard(app.scope);
+      this.exitHooks.discard(app.scope);
     }
     this.#initializers = [];
     this.#apps = [];

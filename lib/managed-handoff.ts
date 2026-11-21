@@ -21,16 +21,17 @@ interface ManagedHandoff {
   readonly pausedAt?: number;
   ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
     scripts?: readonly string[]): Promise<void>;
-  restart(pausedAt?: number): boolean;
+  restart(pausedAt?: number, sent?: (error?: Error) => void): boolean;
   reportPower(pausedAt?: number): boolean;
   readonly powerState?: ReturnType<typeof managedDispatchPause>;
   update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
   cancelUpdate(): void;
   onDisconnect(handler: () => void): () => void;
+  onReplacement(handler: () => void): () => void;
 }
 
 type Notice =
-  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[]; activationAck?: true } & ManagedEndpoints)
+  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[]; activationAck?: true; replacementNotice?: true } & ManagedEndpoints)
   | { type: "lotus-activated" }
   | { type: "lotus-restart"; pausedAt?: number }
   | { type: "lotus-power"; pausedAt?: number }
@@ -72,6 +73,7 @@ export function createManagedHandoff(): ManagedHandoff {
       update: () => false,
       cancelUpdate() {},
       onDisconnect: () => () => {},
+      onReplacement: () => () => {},
     };
   }
 
@@ -104,10 +106,23 @@ export function createManagedHandoff(): ManagedHandoff {
     return () => { handlers.delete(handler); };
   }
 
-  function notify(message: Notice, onFailure?: () => void): boolean {
+  function onReplacement(handler: () => void) {
+    function receive(message: unknown) {
+      if (activated && accepting && connected() && typeof message === "object" && message !== null &&
+          "type" in message && message.type === "lotus-stop-for-replacement" &&
+          "token" in message && message.token === token) handler();
+    }
+    process.on("message", receive);
+    return () => { process.off("message", receive); };
+  }
+
+  function notify(message: Notice, onFailure?: () => void, sent?: (error?: Error) => void): boolean {
     if (!connected()) return false;
     try {
-      return send({ ...message, token }, (error) => { if (error) onFailure?.(); }) === true;
+      return send({ ...message, token }, (error) => {
+        if (error) onFailure?.();
+        sent?.(error ?? undefined);
+      }) === true;
     } catch {
       return false;
     }
@@ -119,7 +134,7 @@ export function createManagedHandoff(): ManagedHandoff {
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
     const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
-    const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }),
+    const message = { type: "lotus-ready", replacementNotice: true, ...(revision === undefined ? {} : { revision }),
       ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}),
       ...(activationAck ? { activationAck: true as const } : {}), ...endpoints } as const;
     if (!held) {
@@ -199,9 +214,9 @@ export function createManagedHandoff(): ManagedHandoff {
     ready(revision, signal, loadedPlugins, endpoints, scripts) {
       return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts);
     },
-    restart(pausedAt) {
+    restart(pausedAt, sent) {
       if (!accepting || restarting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;
-      if (!notify({ type: "lotus-restart", ...(pausedAt === undefined ? {} : { pausedAt }) })) return false;
+      if (!notify({ type: "lotus-restart", ...(pausedAt === undefined ? {} : { pausedAt }) }, undefined, sent)) return false;
       restarting = true;
       return true;
     },
@@ -212,5 +227,6 @@ export function createManagedHandoff(): ManagedHandoff {
     update,
     cancelUpdate() { cancelUpdate?.(); },
     onDisconnect,
+    onReplacement,
   };
 }

@@ -93,6 +93,7 @@ import { webMountPage } from "./lib/panel-web-mount.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
+import type { LegacyExitReason } from "./lib/plugins/exit-hooks.ts";
 import { HandlerScope } from "./lib/plugins/handler.ts";
 import { LegacyTasks } from "./lib/plugins/tasks.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
@@ -298,6 +299,10 @@ if (import.meta.main) {
     checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
     timedWholeMute: MilkySession["timedWholeMute"]; noticeAccount: NoticeGroupAccount } | undefined;
   let stopping = false;
+  let legacyBot: object | undefined;
+  let legacyProcessReady = false;
+  let legacyExitHooksRan = false;
+  let exitReason: LegacyExitReason = "exit";
   let consoleInput: ReturnType<typeof createInterface> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
@@ -533,9 +538,10 @@ if (import.meta.main) {
     }
   }
 
-  function stop(code: number) {
+  function stop(code: number, reason: LegacyExitReason = "exit") {
     if (stopping) return;
     stopping = true;
+    exitReason = reason;
     process.exitCode = code;
     handoff.reportPower(dispatchPower.pausedAt);
     lifecycle.abort();
@@ -550,6 +556,7 @@ if (import.meta.main) {
     shutdown.resolve();
   }
   const stopOnDisconnect = handoff.onDisconnect(() => stop(143));
+  const stopForReplacement = handoff.onReplacement(() => stop(143, "restart"));
 
   async function sendProcessMessage(target: ProcessReceipt["target"], message: string, signal?: AbortSignal): Promise<boolean> {
     try {
@@ -812,7 +819,7 @@ if (import.meta.main) {
     if (kind === "restart" && currentPause !== pausedAt) {
       processAction = { ...processAction, targets: currentPause === undefined ? targets : [], pausedAt: currentPause };
     }
-    stop(0);
+    stop(0, kind === "restart" ? "restart" : "exit");
   }
 
   async function dispatch(event: BotEvent) {
@@ -2530,8 +2537,20 @@ if (import.meta.main) {
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
     const imageToUrl = createImageToUrl(fileToUrl, Bun.env.LOTUS_PUBLIC_IMAGE_DIR?.trim());
     const makeLog = createPluginLog(botConfig, runtimeLog?.writePluginLog);
-    Object.assign(globalThis, { Bot: Object.freeze({
+    legacyBot = Object.freeze({
       fileToUrl, imageToUrl, makeLog, express: legacy.httpRoutes.express,
+      on(event: unknown, listener: unknown) {
+        legacy.exitHooks.add(event, listener);
+        return this;
+      },
+      once(event: unknown, listener: unknown) {
+        legacy.exitHooks.add(event, listener);
+        return this;
+      },
+      off(event: unknown, listener: unknown) {
+        legacy.exitHooks.remove(event, listener);
+        return this;
+      },
       get uin() {
         const sessions = groups.onlineBindings();
         const milky = milkyOnline;
@@ -2551,7 +2570,8 @@ if (import.meta.main) {
         }
         return Object.freeze(profiles);
       },
-    }) });
+    });
+    Object.assign(globalThis, { Bot: legacyBot });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
     if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
     const storedLikeAssets = new URL("data/group/like-assets/", root);
@@ -2968,6 +2988,7 @@ if (import.meta.main) {
         httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
         milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
       }, plugins.readyScripts);
+      legacyProcessReady = handoff.accepting && !lifecycle.signal.aborted;
       if (recordedPause !== undefined) handoff.reportPower(dispatchPower.pausedAt);
       if (legacyPause && !lifecycle.signal.aborted && handoff.accepting) {
         try {
@@ -3052,6 +3073,9 @@ if (import.meta.main) {
     try {
       consoleInput?.close();
       legacy.stopContexts();
+      if (legacyProcessReady && legacyBot) {
+        legacyExitHooksRan = await legacy.exitHooks.run(legacyBot, exitReason);
+      }
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
         moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
       miyousheWeb?.close();
@@ -3077,6 +3101,7 @@ if (import.meta.main) {
             process.off("SIGTERM", terminate);
             handoff.reportPower(dispatchPower.pausedAt);
             stopOnDisconnect();
+            stopForReplacement();
           }
         }
       }
@@ -3091,7 +3116,18 @@ if (import.meta.main) {
     if (kind === "restart") {
       try {
         if (handoff.managed) {
-          if (!handoff.restart(pausedAt)) throw new Error("托管宿主未接受重启。");
+          const sent = legacyExitHooksRan ? Promise.withResolvers<boolean>() : undefined;
+          if (!handoff.restart(pausedAt, sent && (error => sent.resolve(!error)))) {
+            throw new Error("托管宿主未接受重启。");
+          }
+          if (sent) {
+            const timer = setTimeout(() => sent.resolve(false), 1_000);
+            try {
+              if (!await sent.promise) throw new Error("未能发送托管重启请求。");
+            } finally {
+              clearTimeout(timer);
+            }
+          }
         } else {
           restartHost(pausedAt);
         }
@@ -3106,4 +3142,6 @@ if (import.meta.main) {
       }
     }
   }
+  // 旧退出回调可能留下活动句柄，收尾和重启请求送达后结束进程。
+  if (legacyExitHooksRan) process.exit(process.exitCode ?? 0);
 }

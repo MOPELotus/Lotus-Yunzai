@@ -292,6 +292,14 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
   try {
     const audit = updateTarget === "all" ? join(temporary, "fixture-workers.txt") : undefined;
     const { active, old, candidate, localPlugin, pluginRemote } = await fixtureRepository(temporary, fail && updateTarget === "host", audit);
+    const exitState = join(active, "data/fixture-v3-exit.txt");
+    await mkdir(join(active, "data"), { recursive: true });
+    await writeFile(join(active, "plugins/fixture-v3-exit.js"), `
+      import { appendFile } from "node:fs/promises";
+      export default class extends plugin {
+        init() { Bot.once("exit", reason => appendFile("data/fixture-v3-exit.txt", reason + "\\n")); }
+      }
+    `);
     let candidatePlugin: string | undefined;
     if (updateTarget !== "host") {
       const writer = join(temporary, "plugin-writer");
@@ -354,6 +362,7 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
         deadline(nextEndpoint(), "更新后的托管宿主启动超时。", 16_000),
         deadline(initial.closed, "更新时旧连接没有关闭。", 16_000),
       ]);
+      expect(await readFile(exitState, "utf8")).toBe("restart\n");
       const expected = fail || updateTarget === "plugin" ? initialHead : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
       expect(git(localPlugin, "rev-parse", "HEAD")).toBe(fail ? previousPlugin : candidatePlugin ?? previousPlugin);
@@ -406,6 +415,7 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       }
 
       await supervisor.stop();
+      expect(await readFile(exitState, "utf8")).toBe("restart\nexit\n");
       const stderr = await supervisor.stderr;
       if (fail) {
         expect(stderr).toContain(liveFailure);

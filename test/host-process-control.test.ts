@@ -135,6 +135,11 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
     throw error;
   });
 
+  const exitHooks = () => readFile(join(root, "fixture-v3-exit"), "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  });
+
   try {
     await copyHost(root);
     const plugin = join(root, "plugins/process-fixture");
@@ -144,6 +149,30 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
       writeFile(join(plugin, "package.json"), JSON.stringify({
         name: "process-fixture", type: "module", lotusYunzai: { entry: "./index.ts" },
       })),
+      writeFile(join(root, "plugins/v3-exit.js"), `
+        import { appendFile } from "node:fs/promises";
+        export default class extends plugin {
+          init() {
+            const save = async reason => {
+              await Bun.sleep(40);
+              await appendFile("fixture-v3-exit", reason + "\\n");
+            };
+            const removed = () => appendFile("fixture-v3-exit", "removed\\n");
+            Bot.on("exit", save).once("exit", save).on("exit", removed).off("exit", removed);
+            Bot.on("online", removed);
+            Bot.on("exit", () => { throw new Error("fixture listener failure"); });
+          }
+        }
+      `),
+      writeFile(join(root, "plugins/v3-exit-failed-init.js"), `
+        import { appendFile } from "node:fs/promises";
+        export default class extends plugin {
+          init() {
+            Bot.once("exit", () => appendFile("fixture-v3-exit", "failed-init\\n"));
+            throw new Error("fixture init failure");
+          }
+        }
+      `),
       writeFile(join(plugin, "index.ts"), `
         import { appendFile } from "node:fs/promises";
         export default {
@@ -173,15 +202,18 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
     unbound.command("#重启", 51);
     expect(await processId(unbound)).toBe(pid);
     expect(await readDisposals()).toBe("");
+    expect(await exitHooks()).toBe("");
 
     original.command("#重启", 51, 77);
     const restart = await expectedReply(original, { group_id: 77 }, /^开始重启/u);
     expect(await readDisposals()).toBe("");
+    expect(await exitHooks()).toBe("");
     original.confirm(restart);
     const [restartedEndpoint] = await Promise.all([
       host.endpoint(), deadline(original.closed, "重启时原 OneBot 连接没有关闭。"),
     ]);
     expect(await readDisposals()).toBe(`${pid}\n`);
+    expect(await exitHooks()).toBe("restart\nrestart\n");
 
     const other = await open(restartedEndpoint, 100);
     expect(await processId(other)).toBe(pid);
@@ -192,6 +224,7 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
     resumed.confirm(await expectedReply(resumed, { user_id: 51 }, /^开始停止/u));
     expect(await deadline(host.child.exited, "停机后宿主没有退出。")).toBe(0);
     expect(await readDisposals()).toBe(`${pid}\n${pid}\n`);
+    expect(await exitHooks()).toBe("restart\nrestart\nexit\nexit\n");
     expect(other.frames).toEqual([]);
 
     const manual = boot(root);
@@ -205,6 +238,7 @@ test.skipIf(process.platform !== "linux")("进程管理在同一 PID 重启并�
     afterStop.confirm(await expectedReply(afterStop, { user_id: 51 }, /^开始停止/u));
     expect(await deadline(manual.child.exited, "停止后宿主没有退出。")).toBe(0);
     expect(await readDisposals()).toBe(`${pid}\n${pid}\n${manual.child.pid}\n`);
+    expect(await exitHooks()).toBe("restart\nrestart\nexit\nexit\nexit\nexit\n");
     expect(otherAfterStop.frames).toEqual([]);
     for (const run of hosts) expect(await run.stderr).not.toContain("处理 OneBot 事件失败");
   } finally {
@@ -249,3 +283,39 @@ test.skipIf(process.platform !== "linux")("授权 stdin 重启保留 PID 和终�
     await rm(root, { recursive: true, force: true });
   }
 }, 16_000);
+
+test.each([true, false])("V3 退出回调持有活动句柄时仍完成清理和停机（超时：%s）", async (hangs) => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-trss-hung-exit-"));
+  let host: ReturnType<typeof boot> | undefined;
+  let client: Gateway | undefined;
+  try {
+    await copyHost(root);
+    disableMemberPrewarm(root);
+    await Promise.all([
+      writeFile(join(root, "config/config/other.yaml"), 'master: ["99:51"]\n'),
+      writeFile(join(root, "plugins/hung-exit.js"), `
+        export default class extends plugin {
+          init() {
+            Bot.once("exit", () => {
+              setInterval(() => {}, 1000);
+              ${hangs ? "return new Promise(() => {});" : ""}
+            });
+            this.addCleanup(() => Bun.write("fixture-cleanup", "done"));
+          }
+        }
+      `),
+    ]);
+    host = boot(root);
+    client = gateway(await host.endpoint(), 99);
+    await deadline(client.opened, "退出回调测试网关连接超时。");
+    client.command("#停机", 51);
+    client.confirm(await expectedReply(client, { user_id: 51 }, /^开始停止/u));
+    expect(await host.child.exited).toBe(0);
+    expect((await host.stderr).includes("等待 V3 退出回调超时")).toBe(hangs);
+    expect(await Bun.file(join(root, "fixture-cleanup")).text()).toBe("done");
+  } finally {
+    client?.socket.close();
+    await host?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);

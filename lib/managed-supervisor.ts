@@ -242,7 +242,7 @@ export function createManagedSupervisor(directory: string, options: {
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
     current = undefined;
     reportWorkerReady(false);
-    const oldExit = await previousWorker.stop();
+    const oldExit = await previousWorker.stop("SIGTERM", true);
     const pausedAt = previousWorker.pausedAt;
     if (stopped) return "stopped" as const;
     if (oldExit !== 143 && oldExit !== 0) {

@@ -21,6 +21,7 @@ interface ManagedWorkerOptions {
 }
 
 const gracefulStopTimeout = 10_000;
+const legacyCleanupStopTimeout = 15_000;
 const startupStopTimeout = 1_000;
 const activationTimeout = 5_000;
 
@@ -62,6 +63,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   let nextPluginIndex = 1;
   let active = !held;
   let activationAck = false;
+  let replacementNotice = false;
   let confirmActivation: ((confirmed: boolean) => void) | undefined;
   let activating: Promise<void> | undefined;
   let stopping = false;
@@ -146,6 +148,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             void stop();
             return;
           }
+          replacementNotice = "replacementNotice" in message && message.replacementNotice === true;
           activationAck = held === true && "activationAck" in message && message.activationAck === true;
           ready = true;
           clearTimeout(startupTimer);
@@ -245,12 +248,21 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   // A caller may wait for exit without waiting for startup.
   void readiness.promise.catch(() => {});
 
-  function stop(signal: StopSignal = "SIGTERM"): Promise<number> {
+  function stop(signal: StopSignal = "SIGTERM", replacing = false): Promise<number> {
     if (!stopping && child.exitCode === null && child.signalCode === null) {
       stopping = true;
       clearTimeout(startupTimer);
       startupError ??= new Error("宿主在就绪前被停止。");
-      stopTimer = setTimeout(() => signalGroup("SIGKILL"), ready ? gracefulStopTimeout : startupStopTimeout);
+      const timeout = !ready ? startupStopTimeout : replacementNotice ? legacyCleanupStopTimeout : gracefulStopTimeout;
+      stopTimer = setTimeout(() => signalGroup("SIGKILL"), timeout);
+      if (replacing && replacementNotice && active && ready) {
+        try {
+          child.send({ type: "lotus-stop-for-replacement", token });
+          return exited;
+        } catch {
+          // Fall back to a signal if the worker has already disconnected.
+        }
+      }
       signalGroup(signal);
     }
     return exited;
