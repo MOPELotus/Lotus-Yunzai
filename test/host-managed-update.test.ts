@@ -663,6 +663,57 @@ test.skipIf(!Bun.which("git"))("托管更新在候选丢失公共 HTTP 时回退
 test.skipIf(!Bun.which("git"))("托管更新在候选丢失 OneBot 监听时回退", () => exercisePublicListenerUpdate("onebot"), 35_000);
 test.skipIf(!Bun.which("git"))("托管更新在候选改用其他 OneBot 端口时回退", () => exercisePublicListenerUpdate("port"), 35_000);
 
+test.skipIf(!Bun.which("git"))("托管更新保留旧主人配置和 dotenv 链接指向的本机文件", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-linked-config-"));
+  try {
+    const { active, old, candidate } = await fixtureRepository(temporary, false);
+    const local = join(active, "local-settings");
+    const config = join(active, "config/config/other.yaml");
+    const dotenv = join(active, ".env");
+    const httpToken = "managed-linked-dotenv-fixture";
+    await mkdir(local);
+    await rename(config, join(local, "owner.yaml"));
+    await writeFile(join(local, "worker.env"), `LOTUS_HTTP_TOKEN=${httpToken}\n`);
+    await symlink("../../local-settings/owner.yaml", config);
+    await symlink("local-settings/worker.env", dotenv);
+    const supervisor = bootSupervisor(active);
+    async function checkStatus(endpoint: string, revision: string) {
+      const status = endpoint.replace(/^ws:/u, "http:").replace(/OneBotv11$/u, "status");
+      const response = await fetch(status, { headers: { Authorization: `Bearer ${httpToken}` } });
+      expect(response.status).toBe(200);
+      expect((await response.json()).revision).toBe(revision);
+      expect((await fetch(status)).status).toBe(401);
+    }
+    try {
+      const original = await deadline(supervisor.nextEndpoint(), "原宿主未启动。");
+      await checkStatus(original, old);
+      const first = await supervisor.open(original, 99);
+      first.command("#静更新", 51);
+      const replacement = await deadline(supervisor.nextEndpoint(), "候选未启动。", 15_000);
+      await checkStatus(replacement, candidate);
+      const updated = await supervisor.open(replacement, 99);
+      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      updated.command("#更新", 51);
+      expectText(await updated.next(), { user_id: 51 }, /^开始更新/u);
+      expectText(await updated.next(), { user_id: 51 }, /^当前已是最新版本/u);
+      expect(await readlink(config)).toBe("../../local-settings/owner.yaml");
+      expect(await readlink(dotenv)).toBe("local-settings/worker.env");
+      expect(await readFile(dotenv, "utf8")).toBe(`LOTUS_HTTP_TOKEN=${httpToken}\n`);
+    } finally {
+      await supervisor.close();
+    }
+    const restarted = bootSupervisor(active);
+    try {
+      const endpoint = await deadline(restarted.nextEndpoint(), "冷启动未恢复。");
+      await checkStatus(endpoint, candidate);
+    } finally {
+      await restarted.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 30_000);
+
 test.skipIf(!Bun.which("git"))("托管更新在候选未确认激活时恢复原宿主", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-activation-ack-"));
   try {

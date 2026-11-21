@@ -14,8 +14,12 @@ export interface ActivatedUpdate {
   readonly state: readonly string[];
 }
 
-const persistentDirectories = ["config", "data", "logs", "internal"];
+export const persistentDirectories = ["config", "data", "logs", "internal"] as const;
 const dotenvPaths = [".env", ".env.local", ".env.production", ".env.development", ".env.test"];
+
+export function isUpdateDotenvPath(name: string): boolean {
+  return name === ".env" || name.startsWith(".env.");
+}
 const idPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 
 function filesystemCode(error: unknown): string | undefined {
@@ -168,7 +172,7 @@ async function switchVersion(
       within(root, next) || within(next, root)) throw new Error("候选和活动宿主须为同文件系统的独立目录。");
 
   const protectedPaths = statePaths([...persistentDirectories, ...dotenvPaths, ...additionalStatePaths,
-    ...(await readdir(root)).filter((name) => name === ".env" || name.startsWith(".env."))]);
+    ...(await readdir(root)).filter(isUpdateDotenvPath)]);
   const state: string[] = [];
   for (const name of protectedPaths) {
     await checkedParents(root, name, false);

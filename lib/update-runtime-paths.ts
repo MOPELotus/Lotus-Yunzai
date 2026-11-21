@@ -1,6 +1,7 @@
-import { lstat, readlink, realpath } from "node:fs/promises";
+import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isUpdateDotenvPath, persistentDirectories } from "./update-activation.ts";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
 import { readPathLink, resolveLinkedPath } from "./update-linked-path.ts";
 
@@ -15,7 +16,7 @@ const trimmedPathKeys = [
 const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
   "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR", "LOTUS_DEVICE_INFO_APK"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
-const alreadyPersistent = new Set(["config", "data", "logs", "internal"]);
+const alreadyPersistent = new Set<string>(persistentDirectories);
 const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
   .map(element => `bg/bg-${element}.webp`);
 const atlasSourceAssets = [
@@ -64,8 +65,8 @@ function within(root: string, path: string): boolean {
 }
 
 function persistentPath(path: string): boolean {
-  const [first] = path.split(sep);
-  return alreadyPersistent.has(first!) || first === ".env" || first?.startsWith(".env.") === true;
+  const first = path.split(sep)[0]!;
+  return alreadyPersistent.has(first) || isUpdateDotenvPath(first);
 }
 
 async function installedLocation(root: string, value: string): Promise<string | undefined> {
@@ -90,25 +91,43 @@ async function configuredRuntimePaths(root: string, source: string, env: Runtime
     if (!path) throw new Error("运行数据配置使用宿主根目录，无法安全切换版本。");
     if (!persistentPath(path)) paths.push(path.split(sep).join("/"));
   };
+  async function readSnapshot<T>(path: string, read: (location: string) => Promise<T>): Promise<T> {
+    if (source !== root && within(root, path)) {
+      // Persistent ancestors may have moved to the new tree while a custom target stayed in the archive.
+      try {
+        return await read(join(source, relative(root, path)));
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      }
+    }
+    return read(path);
+  }
   const resolveState = async (absolute: string) => {
     const physical = await resolveLinkedPath(absolute, {
       onLink: add,
-      async readLink(path) {
-        if (source !== root && within(root, path)) {
-          // Persistent ancestors may have moved to the new tree while a custom target stayed in the archive.
-          try {
-            return await readPathLink(join(source, relative(root, path)));
-          } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-          }
-        }
-        return readPathLink(path);
-      },
+      readLink: path => readSnapshot(path, readPathLink),
     });
     if (physical) add(physical);
     return physical;
   };
+  // The default state paths are moved by name. Follow their links to keep any local targets too.
+  const dotenv = (await Promise.all((source === root ? [root] : [source, root]).map(path => readdir(path))))
+    .flat().filter(isUpdateDotenvPath);
+  for (const path of new Set([...persistentDirectories, ...dotenv])) await resolveState(join(root, path));
+  // Runtime YAML can also be linked out of either of the two supported configuration directories.
+  for (const path of ["config", "config/config"]) {
+    const directory = await resolveState(join(root, path));
+    if (!directory) continue;
+    const files = await readSnapshot(directory, path => readdir(path, { withFileTypes: true })).catch((error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      return [];
+    });
+    for (const file of files) {
+      if (file.isSymbolicLink() && /\.ya?ml$/u.test(file.name)) await resolveState(join(directory, file.name));
+    }
+  }
   for (const value of new Set(configured)) {
     if (!value) continue;
     const absolute = resolve(root, value);

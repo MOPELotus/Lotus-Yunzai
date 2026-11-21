@@ -61,6 +61,49 @@ test("受管切换按 Bun 的显式路径移动独立图鉴和档案，失败后
   }
 });
 
+test("按实际链接移交默认目录、旧 YAML 和 dotenv，旧主管遗漏时回退", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-default-links-"));
+  const active = join(dir, "active");
+  const candidate = join(dir, "candidate");
+  const outbound = join(dir, "external.yaml");
+  const expected = ["local/env.production", "local/legacy", "local/owner.yml", "local/state"];
+  try {
+    for (const path of [candidate, join(active, "config"), join(active, "local/legacy"), join(active, "local/state")]) {
+      await mkdir(path, { recursive: true });
+    }
+    await Promise.all([
+      writeFile(outbound, "external: true\n"),
+      writeFile(join(active, "local/owner.yml"), 'master: ["99:51"]\n'),
+      writeFile(join(active, "local/state/marker"), "data bytes"),
+      writeFile(join(active, "local/env.production"), "NODE_OPTIONS=\n"),
+      symlink("../local/legacy", join(active, "config/config"), "dir"),
+      symlink("../owner.yml", join(active, "local/legacy/other.yaml")),
+      symlink("local/state", join(active, "data"), "dir"),
+      symlink("local/env.production", join(active, ".env.production")),
+      symlink(outbound, join(active, "config/global.yaml")),
+    ]);
+    const paths = await readUpdateRuntimePaths(active, AbortSignal.timeout(2_000), { PATH: process.env.PATH });
+    expect(paths).toEqual(expected);
+    async function verify(root: string) {
+      const previous = await previousUpdateDirectory(root);
+      expect(previous).toBeDefined();
+      await verifyMovedRuntimePaths(root, previous!, {});
+    }
+    await expect(activateUpdate(active, candidate, verify)).rejects.toThrow("仍留在旧版本");
+    expect(await readFile(join(active, "config/config/other.yaml"), "utf8")).toContain("99:51");
+
+    const result = await activateUpdate(active, candidate, verify, paths);
+    expect(result.state).toContain("local/state");
+    expect(await readFile(join(active, "config/config/other.yaml"), "utf8")).toContain("99:51");
+    expect(await readFile(join(active, "config/global.yaml"), "utf8")).toBe("external: true\n");
+    expect(await readFile(join(active, "data/marker"), "utf8")).toBe("data bytes");
+    expect(await readFile(join(active, ".env.production"), "utf8")).toBe("NODE_OPTIONS=\n");
+    expect(await readFile(outbound, "utf8")).toBe("external: true\n");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，保留原路径空白和有效 SQLite WAL", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-update-writable-"));
   const active = join(dir, "active");
