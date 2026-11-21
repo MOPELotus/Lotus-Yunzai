@@ -1,6 +1,5 @@
 import { createProfileStore, type Game, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, createProfileHoyoClient, HoyoRequestError, type BbsMissionState } from "@lotus-yunzai/hoyo-client";
-import { bbsInteractionProgress, type BbsInteractionProgress } from "./bbs-interaction-progress.ts";
 import { checkinScheduleClock, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
 
 export interface MiyousheOverviewTarget {
@@ -51,20 +50,23 @@ interface MiyousheOverviewOptions {
 
 const changed = () => new HoyoRequestError("profile-changed", "档案已变更，请刷新后重试。");
 
-function missionLabel(missionId: number, interaction: BbsInteractionProgress | undefined) {
-  return interaction?.label ?? (missionId === 58 ? "社区连续签到" : `社区任务 ${missionId}`);
+function missionLabel(missionId: number, missionKey: string) {
+  // 米游社自 4 月 28 日起撤下三项日常互动任务（公告 74971515）。
+  if ([59, 60, 61].includes(missionId) || ["read_post", "like_post", "share_post"].includes(missionKey)) return;
+  if (missionId === 58 || missionKey === "continuous_sign") return "社区连续签到";
+  if (missionKey.startsWith("bind_game_role")) return "绑定游戏角色";
+  if (missionKey.startsWith("modify_signature")) return "完善个人签名";
+  return `社区任务 ${missionId}`;
 }
 
 function projectMissions(state: BbsMissionState): NonNullable<MiyousheOverview["missions"]> {
-  const interactions = new Map<number, BbsInteractionProgress>(bbsInteractionProgress(state).map(row => [row.missionId, row]));
   return {
     balance: state.totalPoints,
     received: state.receivedPoints,
     todayTotal: state.todayTotalPoints,
-    items: state.states.map(row => {
-      const interaction = interactions.get(row.missionId);
-      const { missionId, happenedTimes, threshold, isGetAward } = interaction ?? row;
-      return { missionId, label: missionLabel(missionId, interaction), happenedTimes, threshold, isGetAward };
+    items: state.states.flatMap(({ missionId, missionKey, happenedTimes, threshold, isGetAward }) => {
+      const label = missionLabel(missionId, missionKey ?? "");
+      return label ? [{ missionId, label, happenedTimes, threshold, isGetAward }] : [];
     }),
   };
 }

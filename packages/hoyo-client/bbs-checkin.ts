@@ -13,6 +13,7 @@ export type BbsCheckinForum = keyof typeof bbsCheckinForums;
 
 export interface BbsMissionProgress {
   readonly missionId: number;
+  readonly missionKey?: string;
   readonly happenedTimes?: number;
   readonly threshold?: number;
   readonly continuousCycleTimes?: number;
@@ -187,13 +188,16 @@ function missionState(data: Json): BbsMissionState {
     const missionId = count(row.mission_id);
     if (!missionId || ids.has(missionId)) invalidResponse(false);
     ids.add(missionId);
+    const missionKey = typeof row.mission_key === "string" && /^[a-z0-9_]{1,64}$/u.test(row.mission_key)
+      ? row.mission_key : undefined;
     const happenedTimes = count(row.happened_times);
     const threshold = count(row.threshold ?? object(row.mission)?.threshold);
     const continuousCycleTimes = count(row.continuous_cycle_times);
     const award = row.is_get_award;
     if (award != null && award !== 0 && award !== 1 && typeof award !== "boolean") invalidResponse(false);
     states.push({
-      missionId, ...(happenedTimes !== undefined && { happenedTimes }), ...(threshold !== undefined && { threshold }),
+      missionId, ...(missionKey !== undefined && { missionKey }),
+      ...(happenedTimes !== undefined && { happenedTimes }), ...(threshold !== undefined && { threshold }),
       ...(continuousCycleTimes !== undefined && { continuousCycleTimes }),
       ...(award != null && { isGetAward: award === true || award === 1 }),
     });

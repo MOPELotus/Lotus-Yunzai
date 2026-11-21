@@ -6,7 +6,7 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { submitMiyousheShopExchange } from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
-import type { MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
+import { createMiyousheOverview, type MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
 import { createMiyousheShopCatalog } from "../lib/miyoushe-shop-catalog.ts";
 import { createMiyousheShopPlans } from "../lib/miyoushe-shop-plans.ts";
 import { createMiyousheWeb, miyousheWebSettings } from "../lib/miyoushe-web.ts";
@@ -233,6 +233,61 @@ test("米游社浏览器票只从绑定好友获取，一次兑换并绑定档�
     const next = /#ticket=([\w-]{43})/u.exec(String(await run(message())))?.[1];
     now += 600_000;
     expect((await web.handle(claim(next!)))?.status).toBe(401);
+  } finally {
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("本人社区总览只读现行任务，隐藏官方已下线的任务并保留余额", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-missions-"));
+  const profiles = createProfileStore(root);
+  const reads: URL[] = [];
+  const web = createMiyousheWeb({
+    publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: session.signal,
+    loginIdentity: profiles.loginIdentity,
+    overview: createMiyousheOverview({ profileDirectory: root, async transport(url, options) {
+      expect(options?.method).toBe("GET");
+      expect(options?.body).toBeUndefined();
+      expect(new Headers(options?.headers).get("Cookie")).toContain("account_id=42");
+      reads.push(new URL(url));
+      return Response.json({ retcode: 0, data: { total_points: 712, already_received_points: 26, today_total_points: 42, states: [
+        { mission_id: 58, happened_times: 1, is_get_award: 1 },
+        { mission_id: 59, mission_key: "read_post", happened_times: 0 },
+        { mission_id: 60, happened_times: 3 },
+        { mission_id: 61, is_get_award: true },
+        { mission_id: 410, mission_key: "share_post" },
+        { mission_id: 72, mission_key: "bind_game_role_1", happened_times: 0, threshold: 1, is_get_award: 0 },
+        { mission_id: 73, mission_key: "modify_signature_2", is_get_award: true },
+        { mission_id: 74, mission_key: "<not-an-official-key>" },
+      ] } });
+    } }),
+  });
+  try {
+    await writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({
+      user: { qq: "42" }, profile: { id: 2 },
+      account: { cookie: "account_id=42;cookie_token=fixture", stuid: "42", ltuid: "42", stoken: "fixture-stoken" },
+      mihoyobbs: { enable: true, tasks: { checkin: true, read: true, like: true, cancel_like: true, share: true }, checkin_list: [2] },
+    }));
+    expect((await web.handle(read("")))?.status).toBe(401);
+    expect(reads).toHaveLength(0);
+    const reply = await web.commands.fallback!(command, message());
+    const token = /#ticket=([\w-]{43})/u.exec(String(reply))?.[1];
+    expect(token).toBeString();
+    const authorization = await web.handle(claim(token!));
+    const cookie = authorization!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+    const response = await web.handle(read(cookie));
+    expect(response?.status).toBe(200);
+    expect((await response!.json()).missions).toEqual({
+      balance: 712, received: 26, todayTotal: 42,
+      items: [
+        { missionId: 58, label: "社区连续签到", happenedTimes: 1, isGetAward: true },
+        { missionId: 72, label: "绑定游戏角色", happenedTimes: 0, threshold: 1, isGetAward: false },
+        { missionId: 73, label: "完善个人签名", isGetAward: true },
+        { missionId: 74, label: "社区任务 74" },
+      ],
+    });
+    expect(reads.map(url => url.href)).toEqual(["https://bbs-api.miyoushe.com/apihub/wapi/getUserMissionsState?point_sn=myb"]);
   } finally {
     web.close();
     await rm(root, { recursive: true, force: true });
