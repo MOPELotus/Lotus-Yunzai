@@ -572,6 +572,23 @@ test("first start retries incomplete preparation, preserves config, and reuses p
   expect(await readFile(attempts, "utf8")).toBe("live\nlive\n");
 });
 
+test("first initialization can fetch the original Star Rail theme while a prepared start only reuses local assets", async () => {
+  const { cwd, start } = await fixture();
+  const directory = join(cwd, "plugins/starrail");
+  const attempts = join(cwd, "starrail-theme-attempts");
+  await mkdir(directory);
+  await writeFile(join(directory, "challenge-theme.ts"), `
+    import { appendFile } from "node:fs/promises";
+    export async function prepareStarRailChallengeTheme(root, { download }) {
+      await appendFile(new URL("starrail-theme-attempts", root), download ? "download\\n" : "local\\n");
+      return { templates: 0, portraits: 0, missing: [] };
+    }
+  `);
+  expect((await start(["init", "live"]))[0]).toBe(0);
+  expect((await start(["start"]))[0]).toBe(0);
+  expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
+});
+
 test("simultaneous startup and initialization publish only once", async () => {
   const { cwd, attempts, start } = await fixture();
   const initialize = start(["init", "live"], { WAIT_FIXTURE: "1" });

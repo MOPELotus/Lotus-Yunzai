@@ -18,6 +18,7 @@ import { stageLegacyState } from "../lib/migration-state.ts";
 import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
 import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
 import { planMigration } from "../lib/plugins/migration-plan.ts";
+import { prepareStarRailChallengeTheme } from "../plugins/starrail/challenge-theme.ts";
 
 export async function stageMigration(source: string, target: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
@@ -46,11 +47,14 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       tuneweaveUrl: typeof apiUrl === "string" ? apiUrl : undefined, signal,
     });
     const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal);
+    const starRailTheme = await prepareStarRailChallengeTheme(Bun.pathToFileURL(`${state.directory}/`), {
+      source: Bun.pathToFileURL(`${plan.source}/`), signal,
+    });
     signal?.throwIfAborted();
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, mediaState, atlas,
+      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
       shopAudit, redeem, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });

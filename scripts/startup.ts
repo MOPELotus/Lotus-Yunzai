@@ -64,7 +64,7 @@ async function loadStartupConfig(root: URL) {
   }
 }
 
-async function prepareTheme(root: URL, signal: AbortSignal) {
+async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean) {
   const { prepareAtlasTheme } = await import("../plugins/atlas/prepare-theme.ts");
   const { copied, missing } = await prepareAtlasTheme(root, {
     override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal,
@@ -72,6 +72,17 @@ async function prepareTheme(root: URL, signal: AbortSignal) {
   if (copied.length) console.log(`[图鉴] 已从本地恢复 ${copied.length} 个原主题文件。`);
   if (missing.length) {
     console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
+  }
+
+  if (await Bun.file(new URL("plugins/starrail/challenge-theme.ts", root)).exists()) {
+    const { prepareStarRailChallengeTheme } = await import("../plugins/starrail/challenge-theme.ts");
+    const starrail = await prepareStarRailChallengeTheme(root, {
+      override: Bun.env.LOTUS_STAR_RAIL_CHALLENGE_THEME_DIR, signal, download: firstSetup,
+    });
+    if (starrail.templates || starrail.portraits) {
+      console.log(`[星铁] 已恢复 ${starrail.templates} 个原挑战模板文件和 ${starrail.portraits} 张本地原头像。`);
+    }
+    if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可运行 bun run init 补齐。`);
   }
 }
 
@@ -89,7 +100,7 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
     signal.throwIfAborted();
     if (!ready) await initializePublicAtlas(root, directory, channel, signal);
   }
-  await prepareTheme(root, signal);
+  await prepareThemes(root, signal, !ready || requested !== undefined);
 }
 
 if (import.meta.main) {
