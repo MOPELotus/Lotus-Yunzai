@@ -54,7 +54,7 @@ async function prepare(source: string, target: string, directory: string, signal
     const payload = join(staged.directory, "payload");
     await rename(staged.state.directory, payload);
     const backup = join(payload, "backup");
-    if (staged.backup.status !== "empty" || staged.retained.heldDirectory) {
+    if (staged.backup.status !== "empty" || staged.retained.heldDirectory || staged.retained.status === "published") {
       await mkdir(backup, { mode: 0o700, recursive: true });
     }
     if (staged.backup.status !== "empty") await move(staged.backup.directory, join(backup, "plugins"));

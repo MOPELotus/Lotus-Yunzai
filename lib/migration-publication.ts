@@ -187,6 +187,27 @@ async function verifyCommittedDirectories(root: string, entry: PublicationEntry)
   }
 }
 
+async function verifyAppliedPublication(root: string, current: PhysicalDirectory, entry: PublicationEntry) {
+  if (current.ino === entry.target.ino) return verifyCommittedDirectories(root, entry);
+
+  // A managed update replaces the checkout and copies local plugins, then moves the persistent roots intact.
+  const persistent = entry.state.filter(item => isScope(item.path));
+  if (!persistent.length) throw new Error("已迁移的目标已更换，缺少可核对的持久目录。");
+  for (const item of persistent) {
+    if (!matches(await lstat(join(root, item.path)), item)) throw new Error("已迁移的持久目录已变更，不能继续核对。");
+  }
+  const plugins = entry.state.filter(item => isPluginPath(item.path));
+  if (plugins.length && !(await lstat(join(root, "plugins"))).isDirectory()) {
+    throw new Error("已迁移的插件根目录已变更，不能继续核对。");
+  }
+  for (const item of plugins) {
+    const present = await lstat(join(root, item.path));
+    if (!(item.kind === "file" ? present.isFile() : present.isDirectory())) {
+      throw new Error("已迁移的插件路径已变更，不能继续核对。");
+    }
+  }
+}
+
 async function finishCommitted(root: string, entry: PublicationEntry) {
   await verifyCommittedDirectories(root, entry);
   await move(pathFor(root, "pending"), pathFor(root, "applied"));
@@ -281,14 +302,14 @@ export async function publishMigrationPayload(
       const receipt = await readEntry(pathFor(root, "applied"), root);
       if (receipt) {
         if (receipt.committed && receipt.stage.path === stage && receipt.stage.dev === staged.dev && receipt.stage.ino === staged.ino &&
-            receipt.target.dev === target.dev && receipt.target.ino === target.ino) {
+            receipt.target.dev === target.dev) {
           const paths = receipt.state.map(item => item.path);
           const approved = new Set(approvedPlugins);
           const pluginPaths = paths.filter(isPluginPath);
           if (pluginPaths.length !== approvedPlugins.length || pluginPaths.some(path => !approved.has(path))) {
             throw new Error("兼容插件核准清单与迁移结果不一致。");
           }
-          await verifyCommittedDirectories(root, receipt);
+          await verifyAppliedPublication(root, target, receipt);
           return { status: "already-published", paths } as const;
         }
         throw new Error("该目标已有另一份迁移结果，不能直接覆盖。");

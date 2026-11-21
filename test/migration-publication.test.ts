@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { lockFile, managedHostLockPath, managedStartupLockPath } from "../lib/file-lock.ts";
 import { move, writeJournal } from "../lib/filesystem-transaction.ts";
 import { publishMigrationPayload, recoverMigrationPublicationForStartup } from "../lib/migration-publication.ts";
+import { activateUpdate } from "../lib/update-activation.ts";
 
 let fixture: string | undefined;
 afterEach(async () => {
@@ -84,6 +85,27 @@ test.skipIf(!Bun.which("git"))("publishes one staged batch and reuses the same c
   expect((await lstat(join(root, "data"))).ino).toBe(before.ino);
   expect(await readFile(join(root, "plugins/genshin/module.ts"), "utf8")).toBe("native Lotus code");
   expect(await publishMigrationPayload(root, stage)).toEqual({ status: "already-published", paths });
+});
+
+test.skipIf(!Bun.which("git"))("rechecks a migration after a managed update using its preserved state directories", async () => {
+  const { parent, root, stage } = await setup();
+  await stagedPlugins(stage);
+  const published = await publishMigrationPayload(root, stage, undefined, plugins);
+  const original = await lstat(root);
+  const candidate = join(parent, "candidate");
+  const cloned = Bun.spawnSync(["git", "clone", "--no-local", "-q", root, candidate], { stdout: "ignore", stderr: "ignore" });
+  expect(cloned.exitCode).toBe(0);
+  await stagedPlugins(candidate);
+  const before = await lstat(join(root, "plugins/extra-script.js"));
+  await activateUpdate(root, candidate, assertState);
+  expect((await lstat(root)).ino).not.toBe(original.ino);
+  expect((await lstat(join(root, "plugins/extra-script.js"))).ino).not.toBe(before.ino);
+  expect(await publishMigrationPayload(root, stage, undefined, plugins)).toEqual({ status: "already-published", paths: published.paths });
+
+  await rename(join(root, "data"), join(root, "preserved-data"));
+  await put(root, "data/srJson/11/22/1.json", "[]");
+  await expect(publishMigrationPayload(root, stage, undefined, plugins)).rejects.toThrow("持久目录已变更");
+  expect(await readFile(join(root, "data/srJson/11/22/1.json"), "utf8")).toBe("[]");
 });
 
 test.skipIf(!Bun.which("git"))("refuses a running host, an existing startup and a target file collision", async () => {
