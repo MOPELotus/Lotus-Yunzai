@@ -301,6 +301,7 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       expect(await mock.next("get_message")).toEqual({ message_scene: "friend", peer_id: owner, message_seq: quotedInvite.receipt });
       mock.wrongAuthors.delete(quotedInvite.receipt!);
       mock.changedNotices.add(quotedInvite.receipt!);
+      await Bun.sleep(1_020);
       await reviewQuote("#同意", quotedInvite.receipt!);
       expect(await mock.next("get_message")).toMatchObject({ peer_id: owner, message_seq: quotedInvite.receipt });
       mock.changedNotices.delete(quotedInvite.receipt!);

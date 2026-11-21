@@ -231,6 +231,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       expect(await gateway.reply(applicant)).toBe(restricted);
       await milky.command("#设置主人", applicant);
       const milkyRequest = application(await gateway.reply(applicant));
+      await Bun.sleep(1_020);
       oneBot.command("#设置主人", applicant);
       const oneBotRequest = application(await oneBot.reply(applicant));
       expect(milkyRequest).not.toBe(oneBotRequest);
@@ -242,6 +243,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       await milky.command(`#设置主人验证码 ${milkyRequest}`, applicant);
       expect(await gateway.reply(applicant)).toBe("仅当前机器人的主人可签发验证码。");
 
+      await Bun.sleep(1_020);
       await milky.command(`#设置主人验证码 ${milkyRequest}`, owner);
       const milkyCode = verification(await gateway.reply(owner));
       oneBot.command(`#设置主人验证码 ${oneBotRequest}`, owner);
@@ -258,6 +260,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       oneBot.command(`#设置主人验证码 ${second}`, owner);
       const secondCode = verification(await oneBot.reply(owner));
       codes.push(secondCode);
+      await Bun.sleep(1_020);
       const lock = await lockFile(lockFilePath, "测试主人配置");
       try {
         oneBot.command(`#设置主人 ${secondCode}`, secondApplicant);
@@ -289,6 +292,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       await milky.command(`#设置主人验证码 ${pending}`, owner);
       const staleCode = verification(await gateway.reply(owner));
       codes.push(staleCode);
+      await Bun.sleep(1_020);
       const reconnectLock = await lockFile(lockFilePath, "测试下线时主人配置");
       try {
         await milky.command(`#设置主人 ${staleCode}`, reconnectingApplicant);
@@ -303,6 +307,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
       }
       gateway.releaseRelogin.resolve();
       await milky.bind();
+      await Bun.sleep(1_020);
       const stopAt = performance.now() + 2_000;
       for (;;) {
         await milky.command(`#设置主人 ${staleCode}`, reconnectingApplicant);
@@ -311,7 +316,7 @@ test("Milky 与 OneBot 主人授权各自签发和兑换，同一份配置安全
           expect(reply).toBe(invalid);
           break;
         }
-        await Bun.sleep(25);
+        await Bun.sleep(1_020);
       }
       await milky.command("#诊断", reconnectingApplicant);
       expect(await gateway.reply(reconnectingApplicant)).toBe(restricted);

@@ -193,11 +193,26 @@ export async function readGroupDispatch(root: URL) {
     return !(user && blackUser.has(user)) && allowsGroupModeration(event);
   }
 
+  function admitUnique(key: string, now: number): boolean {
+    if (duplicates.active(key, now)) return false;
+    duplicates.set(key, now, 1_000);
+    return true;
+  }
+
   function admit(event: BotEvent): boolean {
     if (!allowsInbound(event)) return false;
+    if (event.post_type !== "message" || event.isDelegated) return true;
+
     const user = id(event.user_id);
-    const group = "group_id" in event ? id(event.group_id) : undefined;
-    if (!groups || event.post_type !== "message" || event.message_type !== "group" || !group || event.isDelegated) return true;
+    if (event.message_type === "private") {
+      const bot = id(event.self_id);
+      // File notices and attachment delivery have their own message and file identity checks.
+      return (event.adapter !== "milky" && event.boundAccount !== true) ||
+        event.message_id === undefined || !bot || !user || !event.raw_message || !event.msg || !!event.file ||
+        admitUnique(`${bot}:${user}:${event.raw_message}`, performance.now());
+    }
+    const group = id(event.group_id);
+    if (!groups || event.message_type !== "group" || !group) return true;
 
     const config = groupConfig(event);
     const now = performance.now();
@@ -222,9 +237,7 @@ export async function readGroupDispatch(root: URL) {
         duplicate = `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       }
     }
-    if (duplicates.active(duplicate, now)) return false;
-    duplicates.set(duplicate, now, 1_000);
-    return true;
+    return admitUnique(duplicate, now);
   }
 
   function prepare(event: MessageEvent): { event: MessageEvent; allowNew: boolean; alias?: string } {

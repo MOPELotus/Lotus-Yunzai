@@ -102,6 +102,7 @@ test("旧词条多版本、私聊编辑权限和列表合并转发经过 OneBot 
       command("#添加新词", privateChat);
       await checkRole(78, "owner");
       expect(JSON.stringify(await take())).toContain("权限");
+      await Bun.sleep(1_020);
       command("#添加新词", privateChat);
       await checkRole(77, "admin");
       expect(JSON.stringify(await take())).toContain("结束添加");

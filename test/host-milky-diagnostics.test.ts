@@ -199,12 +199,15 @@ test("Milky 和 OneBot 主人的私聊诊断按协议隔离，终端可查看全
       const milkyRow = expect.stringMatching(new RegExp(`^${milkyId}　Milky　\\d+ 秒$`, "u"));
       expect(online).toHaveLength(2);
       expect(online).toEqual(expect.arrayContaining([oneBotRow, milkyRow]));
+      await Bun.sleep(1_020);
       for (const query of ["#诊断", "#状态"]) {
         expect(accountRows(await mock.command(ws, query))).toEqual([milkyRow]);
+        await Bun.sleep(1_020);
         expect(accountRows(await oneBot.command(query))).toEqual([oneBotRow]);
       }
       expect(await mock.command(ws, "#诊断", 42)).toBe(blockedTip);
       expect(await mock.command(ws, "#状态", 52)).toBe(blockedTip);
+      await Bun.sleep(1_020);
       for (const [query, heading] of [["#诊断", "运行诊断"], ["#状态", "正在运行"]] as const) {
         const report = await mock.command(ws, query, owner, 77);
         expect(report).toContain(`Lotus-Yunzai ${heading}`);

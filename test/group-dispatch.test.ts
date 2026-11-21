@@ -76,7 +76,9 @@ test("全局名单兼容字符串和数字，黑名单优先且主人也受限�
   expect(policy.admit(message({ user_id: 32 }))).toBe(false);
   expect(policy.admit(message({ group_id: 21 }))).toBe(false);
   expect(policy.admit(message({ group_id: 22 }))).toBe(false);
-  expect(policy.admit(message({ message_type: "private", isPrivate: true, isGroup: false, group_id: undefined }))).toBe(true);
+  expect(policy.admit(message({
+    message_type: "private", isPrivate: true, isGroup: false, group_id: undefined, raw_message: "私聊状态",
+  }))).toBe(true);
   const terminal = message({ message_type: "terminal", user_id: undefined, group_id: undefined });
   expect(policy.admit(terminal)).toBe(true);
   expect(policy.allows(terminal, ["状态"])).toBe(true);
@@ -162,6 +164,46 @@ test("旧群配置继承默认冷却，群和个人冷却跨 Bot 共享，重复
   expect(policy.admit(message({ group_id: 22, self_id: 11, user_id: 32 }))).toBe(false);
   await Bun.sleep(1_020);
   expect(policy.admit(message({ group_id: 21 }))).toBe(true);
+});
+
+test("普通私聊沿用旧的一秒同文去重，按机器人和用户跨协议及群聊共享", async () => {
+  const policy = await fixture({ "config/group.yaml": "default: {groupCD: 0, singleCD: 0}" });
+  const privateMessage = message({
+    message_type: "private", isPrivate: true, isGroup: false, group_id: undefined, message_id: 11, boundAccount: true,
+  });
+  expect(policy.admit(privateMessage)).toBe(true);
+  expect(policy.admit(privateMessage)).toBe(false);
+  expect(policy.admit({ ...privateMessage, adapter: "milky", message_id: 12 })).toBe(false);
+  expect(policy.admit(message())).toBe(false);
+  expect(policy.admit({ ...privateMessage, self_id: 11 })).toBe(true);
+  expect(policy.admit({ ...privateMessage, user_id: 31 })).toBe(true);
+  expect(policy.admit(message({ raw_message: "群先到" }))).toBe(true);
+  expect(policy.admit({ ...privateMessage, raw_message: "群先到" })).toBe(false);
+  await Bun.sleep(1_020);
+  expect(policy.admit({ ...privateMessage, adapter: "milky" })).toBe(true);
+});
+
+test("私聊去重不抢占附件、代操作、终端或无账号事件", async () => {
+  const policy = await fixture();
+  const privateMessage = message({
+    message_type: "private", isPrivate: true, isGroup: false, group_id: undefined, message_id: 11, boundAccount: true,
+  });
+  const file = { type: "file", name: "原始记录.json" };
+  const excluded = [
+    { ...privateMessage, isDelegated: true },
+    { ...privateMessage, file, message: [{ type: "text", text: "#状态" }, file] },
+    { ...privateMessage, file, message: [file], msg: "", message_id: undefined },
+    { ...privateMessage, message_id: undefined },
+    { ...privateMessage, boundAccount: false },
+    { ...privateMessage, self_id: undefined },
+    { ...privateMessage, message_type: "terminal" as const },
+  ];
+  for (const event of excluded) {
+    expect(policy.admit(event)).toBe(true);
+    expect(policy.admit(event)).toBe(true);
+  }
+  expect(policy.admit(privateMessage)).toBe(true);
+  expect(policy.admit(privateMessage)).toBe(false);
 });
 
 test("群禁言只服从宿主提供的 Bot 状态，不使用发言人角色或原始群数据", async () => {

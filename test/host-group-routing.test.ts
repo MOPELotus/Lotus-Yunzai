@@ -385,6 +385,7 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   const friendQuote = { self_id: 99, message_id: -101, message: quoted.message,
     message_type: "private", sub_type: "friend", sender: { user_id: 42 } };
   for (const response of [friendQuote, { ...friendQuote, sender: { user_id: 52 } }]) {
+    if (response !== friendQuote) await Bun.sleep(1_020);
     first.sendFrame({ post_type: "message", message_type: "private", sub_type: "friend",
       user_id: 42, message_id: 800, message: query });
     const action = await first.action();

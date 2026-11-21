@@ -1300,6 +1300,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(invitationCalls()).toBe(beforeInvitations + 1);
 
     exposeGroupInvitation = false;
+    await Bun.sleep(1_020);
     client.send(JSON.stringify(oneBotPrivate("#查看群邀请")));
     await ownerReplyWith("本次查询范围内未发现待处理的群邀请，未能核验完整列表");
     expect(invitationCalls()).toBe(beforeInvitations + 2);
@@ -1924,7 +1925,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", quoteInvitation());
     await waitUntil(() => milkyCalls.find(({ action, params }) => action === "get_message" && params.message_seq === invitationReceipt),
       "Milky 未回读当前主人收到的原邀请。");
-    await Bun.sleep(100);
+    await Bun.sleep(1_020);
     expect(invitationWrites()).toHaveLength(0);
     milkyPrivateHistory.set(invitationReceipt, sentInvitation);
     await webhook("message_receive", quoteInvitation());

@@ -207,9 +207,11 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
       await command(localDiagnostic, owner, group);
       await command(localDiagnostic, outsider, unrestrictedGroup);
       await command(localDiagnostic, otherOwner);
+      await Bun.sleep(1_020);
       await command(localDiagnostic);
       await mock.reply({ user_id: owner }, "本机诊断夹具");
 
+      await Bun.sleep(1_020);
       await command(legacyCommand, owner, group);
       await mock.reply({ group_id: group }, legacyResult);
       await command(legacyCommand, outsider, group);
@@ -220,6 +222,7 @@ test("Milky 当前账号主人可使用 V3 权限，原生命令和统计保留�
 
       await command(modernCommand);
       await mock.reply({ user_id: owner }, "原生命令主人 false");
+      await Bun.sleep(1_020);
       await command(modernCommand, owner, group);
       await mock.reply({ group_id: group }, "原生命令主人 false");
       await command("#统计 机器人 99");

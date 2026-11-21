@@ -235,6 +235,7 @@ test("真实宿主仅让主人手动更新当前协议的机器人，严格核�
       .toEqual([78, 79, 80, 81].map((group_id) => ({ group_id, user_id: botId, no_cache: true })));
     expect(onebot.frames).toEqual([]);
 
+    await Bun.sleep(1_020);
     one.command(owner + 1);
     expect((await privateReply(onebot.frames, 0, owner + 1)).params.message).toBe("❎ 该命令仅限主人可用");
     expect(onebot.frames.every(({ action }) => action === "send_msg")).toBe(true);
@@ -248,6 +249,7 @@ test("真实宿主仅让主人手动更新当前协议的机器人，严格核�
     expect(onebot.writes()).toEqual([{ group_id: 85, user_id: botId, card: onebot.desired }]);
 
     await writeFile(config, "enable: false\n");
+    await Bun.sleep(1_020);
     const disabled = onebot.frames.length;
     one.command();
     expect((await privateReply(onebot.frames, disabled)).params.message).toBe("自动群名片功能未启用。");

@@ -175,6 +175,7 @@ test("宿主仅从已认证 OneBot 原始附件读取文件，延迟下载绑定
     await old.expectFrame("send_msg", { user_id: 42, message: `${name}:3:读取失败` });
     old.message([text, file()]);
     await old.expectFrame("send_msg", { user_id: 42, message: "无可信附件" });
+    await Bun.sleep(1_020);
     latest.message("#附件同步");
     await latest.expectFrame("send_msg", { user_id: 42, message: "同步" });
     expect(old.frames).toEqual([]);

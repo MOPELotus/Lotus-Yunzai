@@ -212,6 +212,7 @@ test.each([
     gateway.receipt(action);
     await takeConfirmation(gateway, 70003, owner, invitation.flag);
     gateway.send(invitation);
+    await Bun.sleep(1_020);
     const pending = privateText(await gateway.command("#入群申请"));
     expect(pending).toContain(inviteId);
     expect(pending).toContain(addId);
@@ -274,6 +275,7 @@ test("autoGroup 开启后按回执确认、转手审或提示风险，重复邀�
     expect(warning).not.toContain("#同意入群");
     if (alert.echo !== undefined) gateway.receipt(alert);
     gateway.send(asyncInvite);
+    await Bun.sleep(1_020);
     const pending = privateText(await gateway.command("#入群申请"));
     expect(pending).toContain(failedId);
     expect(pending).toContain(addId);
@@ -287,6 +289,7 @@ test("autoGroup 开启后按回执确认、转手审或提示风险，重复邀�
 
     const reconnected = await connectGateway();
     reconnected.send(disconnected);
+    await Bun.sleep(1_020);
     const afterReconnect = privateText(await reconnected.command("#入群申请"));
     expect(afterReconnect).toContain(failedId);
     expect(afterReconnect).not.toMatch(/70101|70103|70104/u);

@@ -597,6 +597,7 @@ failsMsg: 协议拒绝
       message_type: "private", user_id: 51, message: "已同意群请求。",
     } });
     client.send(JSON.stringify(groupRequest));
+    await Bun.sleep(1_020);
     expect(await send("#入群申请", privateOwner)).toMatchObject({ message: "当前没有待审核的群请求。" });
 
     const joinEvent = {
@@ -760,6 +761,7 @@ failsMsg: 协议拒绝
     expect(changed.status).toBe(200);
     expect(await changed.json()).toMatchObject({ settings: { count: 4, successMsg: "确认 {{thumbUpNum}}" } });
     expect((await saveSettings(original.revision, { count: 5 })).status).toBe(409);
+    await Bun.sleep(1_020);
     const nextLike = nextFrame();
     client.send(JSON.stringify({ ...event, message_type: "private", sub_type: "friend", message: "#赞我" }));
     const updatedLike = await nextLike;

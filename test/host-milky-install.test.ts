@@ -234,6 +234,7 @@ async function exerciseMilkyInstall(fail: boolean) {
         expect(git(installed, "config", "branch.main.merge")).toBe("refs/heads/main");
       }
       expect(git(active, "rev-parse", "HEAD")).toBe(head);
+      await Bun.sleep(1_020);
       command(resumed, commandProbe, owner, 4);
       await mock.expectReply({ user_id: owner }, expectedProbe);
       expect(mock.sends).toEqual([]);
