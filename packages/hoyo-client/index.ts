@@ -36,6 +36,7 @@ import { readZzzPanel, type ZzzPanelOptions } from "./zzz-panel.ts";
 import { readZzzShiyu } from "./zzz-shiyu.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
+export { readGenshinTeamDamage, type TeamDamagePayload, type TeamDamageRole, type TeamDamageArtifact } from "./genshin-team-damage.ts";
 export { createCredentialExchange };
 export { CloudGenshinWalletError, normalizeCloudGenshinComboToken, readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 export { CloudZzzWalletError, normalizeCloudZzzComboToken, readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
