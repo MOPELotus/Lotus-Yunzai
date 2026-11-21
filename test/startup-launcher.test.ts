@@ -11,6 +11,42 @@ const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: 
   version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
 } } } } } } });
 
+test.skipIf(process.platform === "win32")("后台启动准备按 dotenv 读图鉴，PM2 只收到命令的显式环境", async () => {
+  const { cwd } = await fixture();
+  const parent = dirname(cwd);
+  const bin = join(parent, "bin");
+  const atlas = join(cwd, "fixture-atlas");
+  const home = join(parent, ".checkout.lotus-pm2");
+  await Promise.all([mkdir(bin), mkdir(atlas), mkdir(home, { mode: 0o700 })]);
+  await writeFile(join(atlas, "map.json"), index);
+  await writeFile(join(cwd, ".env"), "LOTUS_ATLAS_DATA_DIR=fixture-atlas\nFIXTURE_VALUE=file\nFIXTURE_AUXILIARY=file\n");
+  await writeFile(join(bin, "pm2"), `#!${process.execPath}
+    const action = Bun.argv[2];
+    const home = process.env.PM2_HOME;
+    if (action === "jlist") console.log(await Bun.file(home + "/apps.json").text().catch(() => "[]"));
+    else if (action === "start") {
+      const { apps: [app] } = await Bun.file(Bun.argv[3]).json();
+      await Bun.write(home + "/env.json", JSON.stringify([Bun.env.FIXTURE_VALUE, Bun.env.FIXTURE_AUXILIARY]));
+      await Bun.write(home + "/apps.json", JSON.stringify([{ name: app.name, pid: 42, pm_id: 0,
+        pm2_env: { status: "online", env: app.env } }]));
+      await Bun.write(home + "/host-ready", "42");
+    }
+  `, { mode: 0o700 });
+  const listener = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+  try {
+    const child = Bun.spawn([process.execPath, "run", "start:bg"], {
+      cwd, env: { PATH: bin + ":" + process.env.PATH, FIXTURE_VALUE: "explicit" },
+      stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 4_000,
+    });
+    const [code, warning] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect(code).toBe(0);
+    expect(warning).not.toContain("还未选择图鉴版本来源");
+    expect(await Bun.file(join(home, "env.json")).json()).toEqual(["explicit", null]);
+  } finally {
+    listener.stop(true);
+  }
+});
+
 test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的活跃实例，并等待登记的工作进程恢复就绪", async () => {
   const { cwd, launch, start } = await fixture();
   const parent = dirname(cwd);
@@ -40,6 +76,13 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
       await Bun.write(home + "/apps.json", JSON.stringify([{ name: "lotus-yunzai", pid, pm_id: 0,
         pm2_env: { status, env: app.env } }]));
       if (ready) await Bun.write(home + "/host-ready", ready);
+    }
+    else if (action === "delete") {
+      await Bun.write(home + "/delete-attempt", Bun.argv[3]);
+      const records = await Bun.file(home + "/apps.json").json();
+      const previous = records.find(item => String(item.pm_id) === Bun.argv[3]);
+      if (previous?.pm2_env.status !== "stopped" || previous.pid !== 0) process.exit(8);
+      await Bun.write(home + "/apps.json", "[]");
     }
     else console.log(home);
   `, { mode: 0o700 });
@@ -119,6 +162,12 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     expect((await start(["start:bg"], env))[0]).toBe(1);
 
     await setApp(legacy, 0, "stopped");
+    await setApp(current, 303, "stopped");
+    const [stillHasPid, , stillHasPidError] = await start(["start:bg"], env);
+    expect(stillHasPid).toBe(1);
+    expect(stillHasPidError).toContain("无法替换已停止的 PM2 登记");
+    expect(await Bun.file(join(current, "delete-attempt")).exists()).toBe(false);
+
     async function attempt(status: string, pid: number, ready: string) {
       await setApp(current, 0, "stopped");
       return start(["start:bg"], { ...env, FIXTURE_START_RESULT: JSON.stringify([status, pid, ready]) });
@@ -151,13 +200,20 @@ test.skipIf(process.platform === "win32")("取消后台启动只停止本次注�
     const register = join(home, "allow-registration");
     await Promise.all([mkdir(bin), mkdir(home, { mode: 0o700 }), mkdir(atlas, { recursive: true })]);
     await writeFile(join(atlas, "map.json"), index);
-    const old = { name: "lotus-yunzai", pm_id: 7, pid: 0, pm2_env: { status: "stopped", env: {} } };
-    await Bun.write(join(home, "apps.json"), JSON.stringify([old]));
+    const other = { name: "unrelated", pm_id: 7, pid: 0, pm2_env: { status: "stopped", env: {} } };
+    const old = { ...other, name: "lotus-yunzai", pm_id: 6 };
+    await Bun.write(join(home, "apps.json"), JSON.stringify([other, old]));
     await writeFile(join(bin, "pm2"), `#!${process.execPath}
       const [action, operand] = Bun.argv.slice(2);
       const home = process.env.PM2_HOME;
       const apps = home + "/apps.json";
       if (action === "jlist") console.log(await Bun.file(apps).text());
+      else if (action === "delete") {
+        const records = await Bun.file(apps).json();
+        const old = records.find(item => String(item.pm_id) === operand);
+        if (old?.name !== "lotus-yunzai" || old.pm2_env.status !== "stopped") process.exit(8);
+        await Bun.write(apps, JSON.stringify(records.filter(item => item !== old)));
+      }
       else if (action === "start") {
         const { apps: [app] } = await Bun.file(operand).json();
         await Bun.write(home + "/called", "");
@@ -201,7 +257,7 @@ test.skipIf(process.platform === "win32")("取消后台启动只停止本次注�
       expect(error).toContain("启动操作已中止");
       expect(await Bun.file(join(home, "stopped")).text()).toBe("8");
       expect(await Bun.file(join(home, "host-start-attempt")).exists()).toBe(false);
-      expect(await Bun.file(join(home, "apps.json")).json()).toEqual([old, {
+      expect(await Bun.file(join(home, "apps.json")).json()).toEqual([other, {
         name: "lotus-yunzai", pm_id: 8, pid: 0,
         pm2_env: { status: "stopped", env: {
           LOTUS_PM2_START_TOKEN: expect.any(String), LOTUS_PM2_WORKER_READINESS: "1",
@@ -256,7 +312,7 @@ async function fixture() {
   const config = join(cwd, "config/global.yaml");
   const attempts = join(cwd, "data/atlas-download/attempts");
   const launch = (args: string[], env: Record<string, string> = {}) =>
-    Bun.spawn([process.execPath, "scripts/launcher.ts", ...args], {
+    Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", ...args], {
       cwd, env: { PATH: process.env.PATH, ...env }, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 4_000,
     });
   const start = (args: string[], env: Record<string, string> = {}) => {

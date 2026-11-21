@@ -20,12 +20,12 @@
   ],
   "scripts": {
     "bootstrap": "bun scripts/bootstrap.ts",
-    "init": "bun scripts/launcher.ts init",
-    "start": "bun scripts/launcher.ts start",
-    "start:bg": "bun scripts/launcher.ts start:bg",
-    "stop": "bun scripts/launcher.ts stop",
-    "logs": "bun scripts/launcher.ts logs",
-    "status": "bun scripts/launcher.ts status",
+    "init": "bun --no-env-file scripts/launcher.ts init",
+    "start": "bun --no-env-file scripts/launcher.ts start",
+    "start:bg": "bun --no-env-file scripts/launcher.ts start:bg",
+    "stop": "bun --no-env-file scripts/launcher.ts stop",
+    "logs": "bun --no-env-file scripts/launcher.ts logs",
+    "status": "bun --no-env-file scripts/launcher.ts status",
     "build:panel": "bun run --filter @lotus-yunzai/panel build",
     "typecheck": "tsc --noEmit && bun run --filter @lotus-yunzai/panel typecheck"
   },

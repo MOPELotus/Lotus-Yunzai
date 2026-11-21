@@ -1,10 +1,9 @@
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { basename, dirname, join, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
-import { prepareStartup } from "./startup.ts";
 
 const name = "lotus-yunzai";
 const startToken = "LOTUS_PM2_START_TOKEN";
@@ -12,6 +11,24 @@ const workerReadiness = "LOTUS_PM2_WORKER_READINESS";
 const listenTimeoutMs = 120_000;
 const registrationGraceMs = 5_000;
 const cancelledRegistrationGraceMs = 750;
+
+async function prepareStartup(directory: string, channel: "live" | "latest" | undefined, signal: AbortSignal) {
+  signal.throwIfAborted();
+  // Bun reads dotenv in the initialization and worker processes, not in their long-lived parent.
+  const setup = Bun.spawn([process.execPath, "scripts/startup.ts", ...(channel ? [channel] : [])], {
+    cwd: directory, stdin: "inherit", stdout: "inherit", stderr: "inherit",
+  });
+  const stop = () => setup.kill("SIGTERM");
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  try {
+    const exit = await setup.exited;
+    signal.throwIfAborted();
+    return exit === 0;
+  } finally {
+    signal.removeEventListener("abort", stop);
+  }
+}
 
 function readCommand(args: string[]) {
   const [action, option, ...remaining] = args;
@@ -80,7 +97,7 @@ async function preparePm2Entry(home: string) {
 async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status",
   options: readonly string[] = [], startup?: {
     readonly signal: AbortSignal;
-    prepare(): Promise<void>;
+    prepare(): Promise<boolean>;
     release(): void;
   },
 ) {
@@ -169,7 +186,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     console.log("当前目录的后台宿主已运行。");
     return 0;
   }
-  await startup?.prepare();
+  if (startup && !await startup.prepare()) return 1;
   signal?.throwIfAborted();
   await mkdir(home, { mode: 0o700, recursive: true });
   await privateHome(home);
@@ -189,6 +206,19 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
   }] }), { mode: 0o600 });
   signal?.throwIfAborted();
+
+  // PM2 updates a registered application's environment by merging it into the old one.
+  // Start with a fresh registration while retaining the daemon and its log files.
+  if (current) {
+    const retained = await application(home);
+    signal?.throwIfAborted();
+    if (retained && (retained.active || retained.pid !== undefined || retained.id === undefined ||
+        retained.id !== current.id ||
+        await Bun.spawn([binary, "delete", retained.id], { ...spawn, stdout: "ignore", timeout: 2_500 }).exited !== 0)) {
+      throw new Error("无法替换已停止的 PM2 登记，请运行 bun run status 查看状态。");
+    }
+    signal?.throwIfAborted();
+  }
 
   const start = Bun.spawn([binary, "start", config, "--only", name], spawn);
   const cancelled = Promise.withResolvers<void>();
@@ -255,7 +285,6 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
 async function run() {
   const command = readCommand(Bun.argv.slice(2));
   const directory = await realpath(fileURLToPath(new URL("../", import.meta.url)));
-  const root = pathToFileURL(directory + sep);
   if (command.action === "status" || command.action === "logs") {
     return pm2(pm2Executable(), directory, command.action, command.action === "logs" ? command.options : []);
   }
@@ -278,11 +307,11 @@ async function run() {
     if (command.action === "start:bg") {
       return await pm2(pm2Executable(), directory, "start:bg", [], {
         signal: controller.signal,
-        prepare: () => prepareStartup(root, undefined, controller.signal),
+        prepare: () => prepareStartup(directory, undefined, controller.signal),
         release: releaseStartup,
       });
     }
-    await prepareStartup(root, command.action === "init" ? command.channel : undefined, controller.signal);
+    if (!await prepareStartup(directory, command.action === "init" ? command.channel : undefined, controller.signal)) return 1;
     if (command.action === "init") {
       console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
       return 0;

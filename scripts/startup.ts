@@ -92,6 +92,26 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   await prepareTheme(root, signal);
 }
 
+if (import.meta.main) {
+  const [channel, ...remaining] = Bun.argv.slice(2);
+  const controller = new AbortController();
+  const interrupt = () => controller.abort(new Error("启动操作已中止。"));
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
+  try {
+    if (remaining.length || (channel !== undefined && channel !== "live" && channel !== "latest")) {
+      throw new Error("图鉴版本来源须为正式版 live 或最新版 latest。");
+    }
+    await prepareStartup(new URL("../", import.meta.url), channel, controller.signal);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "初始化失败。");
+    process.exitCode = 1;
+  } finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", interrupt);
+  }
+}
+
 async function initializePublicAtlas(root: URL, directory: string, channel: AtlasChannel, signal: AbortSignal) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
