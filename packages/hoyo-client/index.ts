@@ -1,3 +1,4 @@
+import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";
 import { hasConflictingProfileCookieIdentity, normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";
 import { readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
@@ -49,6 +50,7 @@ export { HoyoRequestError };
 export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { readBbsForumPosts, type BbsForumPost } from "./bbs-forum-posts.ts";
+export type { GenshinMonthlySnapshot } from "./genshin-monthly.ts";
 export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
@@ -496,6 +498,9 @@ export function createHoyoClient(
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
       return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
+    },
+    fetchGenshinMonthly(source: ProfileRequestContext, options: GenshinMonthlyOptions) {
+      return readForProfile(source, options, readGenshinMonthly, isGameRecordCookieExpired);
     },
     fetchGenshinPanel(source: ProfileRequestContext, options: GenshinPanelOptions = {}) {
       return readForProfile(source, options, readGenshinPanel, isGameRecordCookieExpired);

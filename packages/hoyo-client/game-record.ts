@@ -55,6 +55,7 @@ type RecordOptions = { readonly signal?: AbortSignal } & (
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-abyss"; readonly scheduleType: 1 | 2 } |
   { readonly kind: "genshin-theater" } |
+  { readonly kind: "genshin-monthly"; readonly month: number } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
   { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
@@ -157,6 +158,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const starRailRoster = kind === "starrail-index" || kind === "starrail-avatar-basic";
   const starRailGridFight = kind === "starrail-grid-fight";
   const forStarRail = starRailPanel || starRailMonthly || starRailRoster || starRailGridFight;
+  const genshinMonthly = kind === "genshin-monthly";
   const forDeck = kind === "genshin-gcg-deck";
   const forGcgCards = kind === "genshin-gcg-cards" || kind === "genshin-gcg-collection-summary";
   const forGenshinChallenge = kind === "genshin-abyss" || kind === "genshin-theater";
@@ -169,9 +171,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const zenkov = kind === "zzz-zenkov" || kind === "zzz-zenkov-detail";
   const exploration = kind === "zzz-exploration";
   const zzzMonthly = kind === "zzz-monthly";
-  const monthly = zzzMonthly || starRailMonthly;
+  const monthly = zzzMonthly || starRailMonthly || genshinMonthly;
   const forZzz = zzzMonthly || Object.hasOwn(zzzCardPaths, kind);
-  const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
+  const label = forNote ? "体力" : genshinMonthly ? "原石札记" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
     hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
     starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
@@ -196,6 +198,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (zzzPanelDetail && (!Number.isSafeInteger(options.characterId) || options.characterId < 1)) {
     throw new HoyoRequestError("invalid-input", "绝区零面板代理人编号无效。");
   }
+  if (genshinMonthly && (!Number.isInteger(options.month) || options.month < 1 || options.month > 12)) {
+    throw new HoyoRequestError("invalid-input", "原石札记月份无效。");
+  }
   const regionalPeriod = options.kind === "zzz-deadly" || options.kind === "zzz-holo-boss" || options.kind === "zzz-void-front";
   const zzzPeriod = options.kind === "zzz-hadal" || regionalPeriod;
   const usesRegion = regionalPeriod || climbingTower || hollowLost || zenkov || exploration || monthly;
@@ -209,17 +214,21 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     : starRailGridFight ? "/game_record/app/hkrpg/api/grid_fight"
     : starRailRoster ? `/game_record/app/hkrpg/api/${kind === "starrail-index" ? "index" : "avatar/basic"}`
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
-    : starRailMonthly ? "/event/srledger/month_info" : zzzMonthly ? "/event/nap_ledger/month_info"
+    : genshinMonthly ? "/event/ys_ledger/monthInfo" : starRailMonthly ? "/event/srledger/month_info" : zzzMonthly ? "/event/nap_ledger/month_info"
     : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}`
     : forDeck ? "/game_record/app/genshin/api/gcg/deckList"
     : forGcgCards ? `/game_record/app/genshin/api/gcg/${kind === "genshin-gcg-cards" ? "cardList" : "basicInfo"}`
     : forGenshinChallenge ? `/game_record/app/genshin/api/${kind === "genshin-abyss" ? "spiralAbyss" : "role_combat"}`
     : "/game_record/app/genshin/api/index";
-  const endpoint = new URL(path, monthly ? "https://api-takumi.mihoyo.com" : origin);
+  const endpoint = new URL(path, genshinMonthly ? "https://hk4e-api.mihoyo.com" : monthly ? "https://api-takumi.mihoyo.com" : origin);
   let body: string | undefined;
   if (forGenshinPanel) {
     body = JSON.stringify({ role_id: uid, server: region,
       ...(options.kind === "genshin-panel-detail" && { character_ids: options.characterIds }) });
+  } else if (genshinMonthly) {
+    endpoint.searchParams.set("month", String(options.month));
+    endpoint.searchParams.set("bind_uid", uid);
+    endpoint.searchParams.set("bind_region", region);
   } else {
     if ((forZzz && !exploration && !zzzMonthly) || starRailMonthly) endpoint.searchParams.set("lang", "zh-cn");
     if (starRailPanel) endpoint.searchParams.set("need_wiki", "true");
