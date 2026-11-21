@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -412,7 +413,7 @@ schedule: { mode: fixed }
   }
 });
 
-test("使用旧 v1/v2 令牌交换路径，校验账号后重试并保留混合令牌格式", async () => {
+test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业务", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-exchange-"));
   try {
     const primary = "profile: { id: 1 }\naccount: { stuid: '71', stoken: v2_login, mid: login-mid, cookie: expired }\ndevice: { id: device-one, fp: fp-one }\n";
@@ -420,30 +421,59 @@ test("使用旧 v1/v2 令牌交换路径，校验账号后重试并保留混合�
     await writeFile(join(root, "42-2.yaml"), "profile: { id: 2 }\naccount: { cookie: old, stoken_cookie: 'stuid=72;stoken=legacy-login' }\n");
     const profiles = createProfileStore(root);
     const requests: string[] = [];
+    const targets: number[] = [];
+    const lifecycleIds = new Set<string>();
     const client = createProfileHoyoClient(profiles, async (url, init) => {
       expect(init.redirect).toBe("error");
       requests.push(url.pathname);
       const headers = new Headers(init.headers);
       if (url.pathname.endsWith("getUserGameRolesByCookie")) {
         if (headers.get("cookie") === "expired") return Response.json({ retcode: -100 });
-        expect(headers.get("cookie")).toBe("ltoken_v2=v2_new;ltuid_v2=71;ltmid_v2=login-mid;cookie_token=legacy-new;account_id=71;");
+        expect(headers.get("cookie")).toBe("ltoken_v2=v2_new;ltuid_v2=71;ltmid_v2=login-mid;cookie_token_v2=v2_cookie;account_id_v2=71;account_mid_v2=login-mid;");
         return Response.json({ retcode: 0, data: { list: [{ game_biz: "hk4e_cn", game_uid: "81" }] } });
       }
       expect(url.origin).toBe("https://passport-api.mihoyo.com");
-      expect(url.searchParams.get("stoken")).toBe("v2_login");
-      expect(url.searchParams.has("stuid")).toBe(false);
+      expect(url.pathname).toBe("/account/ma-cn-session/app/exchange");
+      expect(url.search).toBe("");
+      expect(init.method).toBe("POST");
+      expect(init.credentials).toBe("omit");
+      expect(headers.get("cookie")).toBeNull();
+      const body = String(init.body);
+      const input = JSON.parse(body);
+      expect(input.src_token).toEqual({ token: "v2_login", token_type: 1 });
+      expect(input.mid).toBe("login-mid");
+      targets.push(input.dst_token_type);
       expect(headers.get("x-rpc-device_id")).toBe("device-one");
       expect(headers.get("x-rpc-device_fp")).toBe("fp-one");
-      expect(headers.get("ds")).toMatch(/^\d+,\d+,[a-f\d]{32}$/u);
-      return url.pathname.endsWith("getLTokenBySToken")
-        ? Response.json({ retcode: 0, data: { token: { token: "v2_new" }, user_info: { uid: "71" } } })
-        : Response.json({ retcode: 0, data: { cookie_token: "legacy-new", account_id: "71", mid: "login-mid" } });
+      expect(headers.get("x-rpc-sdk_version")).toBe("2.44.0");
+      expect(headers.get("x-rpc-app_version")).toBe("2.119.0");
+      lifecycleIds.add(headers.get("x-rpc-lifecycle_id")!);
+      const [time, nonce, signature] = headers.get("ds")!.split(",");
+      expect(signature).toBe(createHash("md5").update(`salt=JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS&t=${time}&r=${nonce}&b=${body}&q=`).digest("hex"));
+      return input.dst_token_type === 2
+        ? Response.json({ retcode: 0, data: { token: { token: "v2_new" }, user_info: { aid: "71" } } })
+        : Response.json({ retcode: 0, data: { token: { token: "v2_cookie" } } });
     });
     expect(await client.listRoles(await profiles.accountContext("42"), "gs")).toMatchObject([{ uid: "81" }]);
     expect(requests).toEqual([
-      "/binding/api/getUserGameRolesByCookie", "/account/auth/api/getLTokenBySToken",
-      "/account/auth/api/getCookieAccountInfoBySToken", "/binding/api/getUserGameRolesByCookie",
+      "/binding/api/getUserGameRolesByCookie", "/account/ma-cn-session/app/exchange",
+      "/account/ma-cn-session/app/exchange", "/binding/api/getUserGameRolesByCookie",
     ]);
+    expect(targets).toEqual([2, 4]);
+    expect(lifecycleIds.size).toBe(1);
+    expect([...lifecycleIds][0]).toMatch(/^[\da-f-]{36}$/u);
+
+    const refreshed = await profiles.accountContext("42");
+    let denied = 0;
+    const rejected = createCredentialExchange(async () => {
+      denied++;
+      return Response.json({ retcode: -464, message: "不应回显原文" });
+    });
+    await expect(rejected(refreshed)).rejects.toMatchObject({ code: "api", retcode: -464, message: "LToken 换票未成功。" });
+    expect(denied).toBe(1);
+    const wrongOwner = createCredentialExchange(async () =>
+      Response.json({ retcode: 0, data: { token: { token: "v2_wrong" }, user_info: { aid: "99" } } }));
+    await expect(wrongOwner(refreshed)).rejects.toThrow("账号身份与档案不一致");
 
     const second = await profiles.accountContext("42", 2);
     const paths: string[] = [];

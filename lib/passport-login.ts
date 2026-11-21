@@ -1,6 +1,6 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { createCredentialExchange, createHoyoClient, createPassportQr, PassportQrError } from "@lotus-yunzai/hoyo-client";
+import { createCredentialExchange, createHoyoClient, createPassportQr, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import type { CommandModule } from "./commands.ts";
 
@@ -117,7 +117,12 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
         return "登录二维码已过期，请重新发送扫码指令。";
       } catch (error) {
         if (deadlineSignal.aborted) return [];
-        if (error instanceof PassportQrError || error instanceof ProfileError) return error.message;
+        if (error instanceof HoyoRequestError) {
+          const code = error.retcode === undefined ? error.status && error.status >= 400 ? `HTTP ${error.status}` : undefined
+            : `错误码 ${error.retcode}`;
+          return code ? `${error.message}（${code}）` : error.message;
+        }
+        if (error instanceof ProfileError) return error.message;
         return "扫码登录未完成，请稍后重试。";
       } finally {
         if (active.get(key) === session) active.delete(key);

@@ -1,5 +1,7 @@
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import type { ProfileAccountContext, RefreshedCredentials } from "@lotus-yunzai/account";
+import { HoyoRequestError } from "./errors.ts";
+import { readGameRecordPayload } from "./game-record.ts";
 
 export type HoyoTransport = (endpoint: URL, init: RequestInit) => Promise<Response>;
 
@@ -7,6 +9,14 @@ const passportOrigin = "https://passport-api.mihoyo.com";
 const webOrigin = "https://api-takumi.mihoyo.com";
 const appVersion = "2.118.1";
 const signingSalt = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs";
+// Passport App exchange protocol as exercised by TeyvatGuide b11217b.
+const passportApp = {
+  version: "2.119.0",
+  sdk: "2.44.0",
+  appId: "bll8iq97cem8",
+  salt: "JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS",
+  lifecycleId: randomUUID(),
+};
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -43,7 +53,7 @@ function readLogin(account: ProfileAccountContext["account"]) {
   return { uid, stoken, mid };
 }
 
-function requestHeaders(profile: ProfileAccountContext, login: ReturnType<typeof readLogin>, query: string, type: string) {
+function legacyHeaders(profile: ProfileAccountContext, login: ReturnType<typeof readLogin>, query: string) {
   const { device } = profile;
   const time = Math.floor(Date.now() / 1000);
   const nonce = randomInt(100001, 200000);
@@ -53,7 +63,7 @@ function requestHeaders(profile: ProfileAccountContext, login: ReturnType<typeof
     Cookie: `stuid=${login.uid};stoken=${login.stoken}${login.mid ? `;mid=${login.mid}` : ""}`,
     "User-Agent": `Mozilla/5.0 (Linux; Android ${device.androidVersion || "12"}; ${device.model || "Lotus"}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
     "x-rpc-app_version": appVersion,
-    "x-rpc-client_type": type,
+    "x-rpc-client_type": "5",
     "x-requested-with": "com.mihoyo.hyperion",
     Referer: "https://webstatic.mihoyo.com/",
     DS: `${time},${nonce},${hash}`,
@@ -67,15 +77,36 @@ function requestHeaders(profile: ProfileAccountContext, login: ReturnType<typeof
   return headers;
 }
 
+function passportAppHeaders(device: ProfileAccountContext["device"], body: string) {
+  const time = Math.floor(Date.now() / 1000);
+  const nonce = randomInt(36 ** 6).toString(36).padStart(6, "0");
+  const hash = createHash("md5").update(`salt=${passportApp.salt}&t=${time}&r=${nonce}&b=${body}&q=`).digest("hex");
+  const headers = new Headers({
+    Accept: "application/json", "Content-Type": "application/json",
+    "User-Agent": `Mozilla/5.0 (Linux; Android 12) Mobile miHoYoBBS/${passportApp.version}`,
+    "x-rpc-app_version": passportApp.version, "x-rpc-client_type": "2", "x-rpc-app_id": passportApp.appId,
+    "x-rpc-game_biz": "bbs_cn", "x-rpc-sys_version": device.androidVersion || "12",
+    "x-rpc-sdk_version": passportApp.sdk, "x-rpc-account_version": passportApp.sdk,
+    "x-rpc-lifecycle_id": passportApp.lifecycleId, DS: `${time},${nonce},${hash}`,
+  });
+  if (device.id) headers.set("x-rpc-device_id", device.id);
+  if (device.fp) headers.set("x-rpc-device_fp", encodeURIComponent(device.fp));
+  if (device.name) headers.set("x-rpc-device_name", encodeURIComponent(device.name));
+  if (device.model) headers.set("x-rpc-device_model", encodeURIComponent(device.model));
+  return headers;
+}
+
 function checkIdentity(data: Record<string, unknown>, login: ReturnType<typeof readLogin>, requireUid: boolean) {
   const user = record(data.user_info);
   const ids = [data.uid, data.aid, data.account_id, user.aid, user.uid]
     .filter((value) => value !== undefined && value !== null && value !== "");
   const mids = [data.mid, user.mid, data.account_mid_v2].filter(Boolean);
-  if ((requireUid && !ids.length) || ids.some((value) => String(value) !== login.uid) ||
+  if ((requireUid && !ids.length) || ids.some((value) =>
+      (typeof value !== "string" && !(typeof value === "number" && Number.isSafeInteger(value))) || String(value) !== login.uid) ||
       mids.some((value) => !login.mid || String(value) !== login.mid)) {
-    throw new Error("令牌交换返回的账号身份与档案不一致。");
+    throw new HoyoRequestError("profile-changed", "令牌交换返回的账号身份与档案不一致。");
   }
+  return ids.length > 0;
 }
 
 function tokenFields(token: string, key: "ltoken" | "cookie_token", login: ReturnType<typeof readLogin>) {
@@ -94,60 +125,78 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
     const login = readLogin(profile.account);
     const v2 = login.stoken.startsWith("v2_");
 
-    async function request(endpoint: URL, params: URLSearchParams, type: string) {
-      endpoint.search = params.toString();
+    async function request(endpoint: URL, target: "LToken" | "CookieToken", init: RequestInit) {
       signal?.throwIfAborted();
       await verifyProfile?.();
       signal?.throwIfAborted();
       const timeout = AbortSignal.timeout(15_000);
+      const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
       let response: Response;
       try {
-        response = await transport(endpoint, {
-          headers: requestHeaders(profile, login, params.toString(), type),
-          method: "GET", redirect: "error", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        });
+        response = await transport(endpoint, { ...init, redirect: "error", credentials: "omit", signal: deadline });
       } catch {
-        throw new Error("令牌交换请求未完成。");
+        signal?.throwIfAborted();
+        throw new HoyoRequestError("transport", `${target} 换票请求未完成。`);
       }
-      if (!response.ok) {
+      if (!response.ok || response.redirected || (response.url && response.url !== endpoint.href)) {
         await response.body?.cancel().catch(() => undefined);
-        throw new Error(`令牌交换 HTTP 请求失败（${response.status}）。`);
+        throw new HoyoRequestError("http", `${target} 换票 HTTP 请求失败。`, response.status);
       }
-      let payload: Record<string, unknown>;
-      try {
-        payload = record(await response.json());
-      } catch {
-        throw new Error("令牌交换响应无法读取。");
+      const verification = response.headers.get("x-rpc-aigis")?.trim();
+      if (verification && verification !== "{}") {
+        await response.body?.cancel().catch(() => undefined);
+        throw new HoyoRequestError("api", `${target} 换票需要在官方客户端完成验证。`, response.status);
       }
+      const payload = await readGameRecordPayload(response, 32 * 1024, deadline);
       signal?.throwIfAborted();
       await verifyProfile?.();
       signal?.throwIfAborted();
-      if (payload.retcode !== 0) throw new Error("令牌交换未成功。");
+      if (timeout.aborted) throw new HoyoRequestError("transport", `${target} 换票超时。`);
+      if (!payload) throw new HoyoRequestError("response", `${target} 换票响应无法读取。`, response.status);
+      const rawCode = payload.retcode;
+      const retcode = typeof rawCode === "string" && /^-?\d{1,10}$/u.test(rawCode) ? Number(rawCode) : rawCode;
+      if (retcode !== 0) {
+        throw new HoyoRequestError("api", `${target} 换票未成功。`, response.status,
+          typeof retcode === "number" && Number.isSafeInteger(retcode) ? retcode : undefined);
+      }
       return record(payload.data);
     }
 
-    const ltParams = new URLSearchParams();
-    if (!v2) ltParams.set("stuid", login.uid);
-    ltParams.set("stoken", login.stoken);
-    if (!v2 && login.mid) ltParams.set("mid", login.mid);
-    const lt = await request(new URL("/account/auth/api/getLTokenBySToken", passportOrigin), ltParams, "5");
-    const ltoken = lt.ltoken || record(lt.token).token;
-    if (!validField(ltoken)) throw new Error("令牌交换未返回有效的 ltoken。");
-    checkIdentity(lt, login, false);
-
-    const ckParams = new URLSearchParams();
-    if (!v2) {
-      ckParams.set("game_biz", "hk4e_cn");
-      ckParams.set("uid", login.uid);
+    function requestLegacy(endpoint: URL, target: "LToken" | "CookieToken", params: URLSearchParams) {
+      endpoint.search = params.toString();
+      return request(endpoint, target, { headers: legacyHeaders(profile, login, params.toString()), method: "GET" });
     }
-    ckParams.set("stoken", login.stoken);
-    if (!v2 && login.mid) ckParams.set("mid", login.mid);
-    const endpoint = v2 ? new URL("/account/auth/api/getCookieAccountInfoBySToken", passportOrigin)
-      : new URL("/auth/api/getCookieAccountInfoBySToken", webOrigin);
-    const ck = await request(endpoint, ckParams, v2 ? "2" : "5");
-    const cookieToken = ck.cookie_token;
-    if (!validField(cookieToken)) throw new Error("令牌交换未返回有效的 cookie_token。");
-    checkIdentity(ck, login, true);
+
+    function requestApp(type: 2 | 4) {
+      const body = JSON.stringify({
+        dst_token_type: type,
+        src_token: { token: login.stoken, token_type: 1 },
+        mid: login.mid,
+      }).replace(/[<>&='\u2028\u2029]/gu, character => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"));
+      return request(new URL("/account/ma-cn-session/app/exchange", passportOrigin),
+        type === 2 ? "LToken" : "CookieToken", { headers: passportAppHeaders(profile.device, body), method: "POST", body });
+    }
+
+    const mid: Record<string, string> = login.mid ? { mid: login.mid } : {};
+    const lt = v2 ? await requestApp(2) : await requestLegacy(
+      new URL("/account/auth/api/getLTokenBySToken", passportOrigin),
+      "LToken", new URLSearchParams({ stuid: login.uid, stoken: login.stoken, ...mid }),
+    );
+    const ltoken = v2 ? record(lt.token).token : lt.ltoken || record(lt.token).token;
+    if (!validField(ltoken) || (v2 && !ltoken.startsWith("v2_"))) {
+      throw new HoyoRequestError("response", "换票没有返回有效的 LToken。");
+    }
+    const ltokenIdentified = checkIdentity(lt, login, false);
+
+    const ck = v2 ? await requestApp(4) : await requestLegacy(
+      new URL("/auth/api/getCookieAccountInfoBySToken", webOrigin),
+      "CookieToken", new URLSearchParams({ game_biz: "hk4e_cn", uid: login.uid, stoken: login.stoken, ...mid }),
+    );
+    const cookieToken = v2 ? record(ck.token).token : ck.cookie_token;
+    if (!validField(cookieToken) || (v2 && !cookieToken.startsWith("v2_"))) {
+      throw new HoyoRequestError("response", "换票没有返回有效的 CookieToken。");
+    }
+    checkIdentity(ck, login, !v2 || !ltokenIdentified);
 
     const ltFields = tokenFields(ltoken, "ltoken", login);
     const ckFields = tokenFields(cookieToken, "cookie_token", login);

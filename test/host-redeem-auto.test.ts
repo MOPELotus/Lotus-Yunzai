@@ -45,6 +45,15 @@ test.each([
         const chosen = url.searchParams;
         const cookie = new Headers(init.headers).get("cookie");
         assert.equal(init.redirect, "error");
+        if (url.pathname === "/account/ma-cn-session/app/exchange") {
+          assert.equal(url.origin, "https://passport-api.mihoyo.com");
+          assert.equal(init.method, "POST");
+          const {dst_token_type} = JSON.parse(init.body);
+          assert.ok(dst_token_type === 2 || dst_token_type === 4);
+          const ltoken = dst_token_type === 2;
+          appendFileSync("fixture-calls", ltoken ? "ltoken\\n" : "cookie\\n");
+          return reply({token:{token:ltoken ? "v2_fresh" : "v2_fresh_cookie"},user_info:{aid:"71"}});
+        }
         assert.equal(init.method ?? "GET", "GET");
         switch (url.pathname) {
           case "/apihub/api/home/new":
@@ -60,19 +69,13 @@ test.each([
             appendFileSync("fixture-calls", "roles\\n");
             assert.equal(chosen.get("game_biz"), "hk4e_cn");
             if (cookie === "account_id=71;cookie_token=expired;") return Response.json({retcode:-100});
-            assert.match(cookie, /cookie_token=fresh/);
+            assert.match(cookie, /cookie_token_v2=v2_fresh_cookie/);
             return reply({list:[{game_biz:"hk4e_cn",game_uid:"81",region:"cn_gf01"},{game_biz:"hk4e_cn",game_uid:"82",region:"cn_qd01"}]});
-          case "/account/auth/api/getLTokenBySToken":
-            appendFileSync("fixture-calls", "ltoken\\n");
-            return reply({token:{token:"v2_fresh"},user_info:{uid:"71"}});
-          case "/account/auth/api/getCookieAccountInfoBySToken":
-            appendFileSync("fixture-calls", "cookie\\n");
-            return reply({cookie_token:"fresh",account_id:"71",mid:"mid"});
           case "/common/apicdkey/api/webExchangeCdkey":
             assert.equal(url.host, "hk4e-api.mihoyo.com");
             assert.equal(chosen.get("uid"), "81");
             assert.equal(chosen.get("region"), "cn_gf01");
-            assert.match(cookie, /cookie_token=fresh/);
+            assert.match(cookie, /cookie_token_v2=v2_fresh_cookie/);
             const batch = JSON.parse(readFileSync(${JSON.stringify(journal)}, "utf8"));
             assert.equal(batch[${JSON.stringify(id)}].status, "started");
             const code = chosen.get("cdkey");

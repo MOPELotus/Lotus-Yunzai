@@ -276,7 +276,8 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
   const other = join(root, "42.yaml");
   const uid = "1000042";
   const expired = "old-session";
-  const refreshed = "ltoken_v2=v2_fresh;ltuid_v2=71;ltmid_v2=login-mid;cookie_token=fresh;account_id=71;";
+  const refreshed = "ltoken_v2=v2_fresh;ltuid_v2=71;ltmid_v2=login-mid;" +
+    "cookie_token_v2=v2_fresh_cookie;account_id_v2=71;account_mid_v2=login-mid;";
   function profile(id: number, aid: string, cookie: string) {
     return Bun.YAML.stringify({ profile: { id }, account: { stuid: aid, stoken: "v2_login", mid: "login-mid",
       updated_at: "2026-11-01", cookie, current_uid: { gs: uid } } });
@@ -284,8 +285,19 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
   const paths: string[] = [];
   let rebind = false;
   const catalog = createMiyousheShopCatalog({ profileDirectory: root, async transport(url, init) {
-    expect(init.method ?? "GET").toBe("GET");
     const supplied = new Headers(init.headers).get("Cookie");
+    if (url.pathname === "/account/ma-cn-session/app/exchange") {
+      expect(url.origin).toBe("https://passport-api.mihoyo.com");
+      expect(init.method).toBe("POST");
+      expect(typeof init.body).toBe("string");
+      const { dst_token_type } = JSON.parse(String(init.body));
+      expect([2, 4]).toContain(dst_token_type);
+      const ltoken = dst_token_type === 2;
+      paths.push(ltoken ? "登录令牌" : "会话凭据");
+      return Response.json({ retcode: 0, data: { token: { token: ltoken ? "v2_fresh" : "v2_fresh_cookie" },
+        user_info: { aid: "71" } } });
+    }
+    expect(init.method ?? "GET").toBe("GET");
     if (url.pathname.endsWith("/goods/detail")) {
       paths.push("商品");
       expect(supplied).toBeNull();
@@ -303,12 +315,7 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
         { game_biz: "hk4e_cn", game_uid: "1000043", region: "cn_qd01" },
       ] } });
     }
-    expect(url.origin).toBe("https://passport-api.mihoyo.com");
-    expect(url.searchParams.get("stoken")).toBe("v2_login");
-    const ltoken = url.pathname.endsWith("/getLTokenBySToken");
-    paths.push(ltoken ? "登录令牌" : "会话凭据");
-    return Response.json({ retcode: 0, data: ltoken ? { token: { token: "v2_fresh" }, user_info: { uid: "71" } }
-      : { cookie_token: "fresh", account_id: "71", mid: "login-mid" } });
+    throw new Error("unexpected fixture request " + url.pathname);
   } });
   const plans = createMiyousheShopPlans({ file: join(root, "plans.json"), profileDirectory: root,
     async inspect() { throw new Error("读取目标时不检查订单"); },
