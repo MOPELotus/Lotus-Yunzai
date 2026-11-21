@@ -1855,6 +1855,15 @@ if (import.meta.main) {
     if (sendMedia) Object.defineProperty(command, "deliverMedia", {
       value: (file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia),
     });
+    if (/^#绝区零[^\p{Cc}\p{Cf}]{1,80}影画$/u.test(command.msg)) {
+      // The V3 Atlas shortcut also matches this suffix. The explicit 图鉴 suffix still goes to Atlas.
+      const cinema = await commands.dispatchFallback(event,
+        (names) => names[0] === "@lotus-yunzai/zzz" && allowed(names), isBotMaster, command.msg);
+      if (cinema !== undefined) {
+        await sendCommandReply(event, cinema);
+        return;
+      }
+    }
     let denied = false;
     if (await legacy.dispatch(command, allowed, () => { denied = true; })) {
       if (!denied) handled?.();
