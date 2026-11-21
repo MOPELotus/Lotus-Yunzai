@@ -80,7 +80,7 @@ function map(value: unknown): ZzzExplorationMap {
     }) };
 }
 
-export function normalizeZzzExploration(input: unknown, identity: Identity, page = 1): ZzzExplorationSnapshot {
+export function normalizeZzzExploration(input: unknown, identity: Identity, page = 1, whole = false): ZzzExplorationSnapshot {
   if (!Number.isSafeInteger(page) || page < 1 || page > 999_999) {
     throw new HoyoRequestError("invalid-input", "区域收集页码无效。");
   }
@@ -96,8 +96,8 @@ export function normalizeZzzExploration(input: unknown, identity: Identity, page
   }
   if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("游戏标识");
   const raw = list(data.area_collections, "区域");
-  const first = (page - 1) * rowsPerPage;
-  const end = first + rowsPerPage;
+  const first = whole ? 0 : (page - 1) * rowsPerPage;
+  const end = whole ? Infinity : first + rowsPerPage;
   const areas: ZzzExplorationArea[] = [];
   let rows = 0;
   for (const entry of raw) {
@@ -111,11 +111,30 @@ export function normalizeZzzExploration(input: unknown, identity: Identity, page
     areas.push({ name: text(area.name, 144), progress: progress(area.collection_progress), continued: startIndex > 0,
       maps: maps.slice(startIndex, endIndex).map(map) });
   }
-  return { ...identity, page, status: raw.length ? "available" : "empty", areas, pageCount: Math.max(1, Math.ceil(rows / rowsPerPage)) };
+  return { ...identity, page, status: raw.length ? "available" : "empty", areas, pageCount: whole ? 1 : Math.max(1, Math.ceil(rows / rowsPerPage)) };
+}
+
+/** Create delivery pages from the already verified complete response without a new account request. */
+export function splitZzzExploration(snapshot: ZzzExplorationSnapshot, rowsPerPart = rowsPerPage): ZzzExplorationSnapshot[] {
+  const rowLimit = Math.max(1, Math.min(rowsPerPage, Math.floor(rowsPerPart) || 1));
+  const windows: ZzzExplorationArea[][] = [[]];
+  let rows = 0;
+  for (const area of snapshot.areas) {
+    const totalRows = Math.max(1, Math.ceil(area.maps.length / zzzExplorationColumns));
+    for (let placed = 0; placed < totalRows;) {
+      if (rows === rowLimit) { windows.push([]); rows = 0; }
+      const next = Math.min(totalRows - placed, rowLimit - rows);
+      windows.at(-1)!.push({ ...area, continued: area.continued || placed > 0,
+        maps: area.maps.slice(placed * zzzExplorationColumns, (placed + next) * zzzExplorationColumns) });
+      rows += next;
+      placed += next;
+    }
+  }
+  return windows.map((areas, index) => ({ ...snapshot, areas, page: index + 1, pageCount: windows.length }));
 }
 
 export async function readZzzExploration(source: ProfileRequestContext, transport: HoyoTransport,
-  { page, signal }: { readonly page?: number; readonly signal?: AbortSignal }, verifyProfile?: () => Promise<void>) {
+  { page, signal, whole }: { readonly page?: number; readonly signal?: AbortSignal; readonly whole?: boolean }, verifyProfile?: () => Promise<void>) {
   const { data, region } = await readCnGameRecord(source, transport, { kind: "zzz-exploration", signal }, verifyProfile);
-  return normalizeZzzExploration(data, { uid: source.role.uid, region }, page);
+  return normalizeZzzExploration(data, { uid: source.role.uid, region }, page, whole === true && page === undefined);
 }

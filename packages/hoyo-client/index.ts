@@ -59,7 +59,7 @@ export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "
 export { normalizeZzzHoloBoss } from "./zzz-holo-boss.ts";
 export type { ZzzHoloBossRoom, ZzzHoloBossSnapshot } from "./zzz-holo-boss.ts";
 export { normalizeZzzMonthly, zzzMonthlyKey, type ZzzMonthlyRecord } from "./zzz-monthly.ts";
-export { zzzExplorationColumns } from "./zzz-exploration.ts";
+export { zzzExplorationColumns, splitZzzExploration } from "./zzz-exploration.ts";
 export type { ZzzExplorationSnapshot, ZzzExplorationArea, ZzzExplorationMap } from "./zzz-exploration.ts";
 export { zzzZenkovPageSize } from "./zzz-zenkov.ts";
 export type { ZzzZenkovItem, ZzzZenkovMap, ZzzZenkovMode, ZzzZenkovRank, ZzzZenkovRun, ZzzZenkovSnapshot } from "./zzz-zenkov.ts";
