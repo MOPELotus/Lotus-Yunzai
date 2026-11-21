@@ -2,7 +2,7 @@ import type { MessageEvent } from "./messages.ts";
 
 const pause = "#关机";
 const resume = "#开机";
-const legacyRestartKey = "Yz:restart";
+export const legacyRestartKey = "Yz:restart";
 
 export async function readLegacyDispatchPause(redis: {
   get(key: string): Promise<string | null>;

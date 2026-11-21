@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
+import { takeLegacyProcessReceipt } from "../lib/legacy-process-receipts.ts";
 
 const valkeyServer = Bun.which("valkey-server");
 
@@ -178,6 +179,38 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
     }
 
     const legacy = await connectStorage(url);
+    const at = Date.now();
+    const active = new AbortController().signal;
+    const configured = { bots: [99, 100], terminal: false };
+    const oldReceipt = JSON.stringify({ time: at, isExit: true, bot_id: "99", group_id: "77", user_id: 51 });
+    await legacy.set("Yz:restart", oldReceipt);
+    expect(await takeLegacyProcessReceipt(legacy, { botId: 100, signal: active }, configured)).toBeUndefined();
+    expect(await legacy.get("Yz:restart")).toBe(oldReceipt);
+    const entries = await Promise.all([
+      takeLegacyProcessReceipt(legacy, { botId: 99, signal: active }, configured),
+      takeLegacyProcessReceipt(legacy, { botId: 99, adapter: "milky", signal: active }, configured),
+    ]);
+    expect(entries.flatMap(entry => entry ? [entry.receipt] : [])).toEqual([expect.objectContaining({ at, kind: "stop",
+      target: expect.objectContaining({ type: "group", botId: 99, id: 77 }) })]);
+    expect(await legacy.get("Yz:restart")).toBeNull();
+
+    await legacy.set("Yz:restart", JSON.stringify({ time: at }));
+    expect((await takeLegacyProcessReceipt(legacy, { botId: 100, signal: active }, configured))?.receipt).toEqual({
+      kind: "restart", at, target: { type: "masters", botId: 100 },
+    });
+    const closing = new AbortController();
+    expect(await takeLegacyProcessReceipt({
+      get: legacy.get.bind(legacy),
+      async eval(script, options) {
+        const result = await legacy.eval(script, options);
+        if (typeof result === "string") closing.abort();
+        return result;
+      },
+    }, { botId: 99, signal: closing.signal }, configured)).toBeUndefined();
+    expect((await takeLegacyProcessReceipt(legacy, { botId: 99, adapter: "milky", signal: active }, configured))?.receipt).toEqual({
+      kind: "restart", at, target: { type: "masters", botId: 99, adapter: "milky" },
+    });
+    expect(await takeLegacyProcessReceipt(legacy, { botId: 100, signal: active }, configured)).toBeUndefined();
     const atlas = storage("atlas");
     const genshin = storage("genshin");
     await legacy.set("shared", "旧版");

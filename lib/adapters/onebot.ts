@@ -841,7 +841,7 @@ export function startOneBot(
     groups: OneBotGroups;
     prewarmGroupMembers?: boolean;
     accepting?: () => boolean;
-    onBind?: (botId: number) => void;
+    onBind?: (botId: number, signal?: AbortSignal) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
   },
@@ -881,7 +881,7 @@ export function startOneBot(
         socket.data.attachmentSession?.abort();
       },
     });
-    options.onBind?.(botId);
+    options.onBind?.(botId, signal);
     if (options.prewarmGroupMembers) {
       socket.data.joinRoster = new Map();
       const skipped = new Set<number>();

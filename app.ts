@@ -98,6 +98,7 @@ import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
 import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
+import { takeLegacyProcessReceipt } from "./lib/legacy-process-receipts.ts";
 import { createPublicFiles } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
@@ -588,11 +589,36 @@ if (import.meta.main) {
         reply = receipt.result === "rolled-back" ? `安装 ${receipt.name} 失败，已恢复旧版本。` :
           `安装 ${receipt.name} 成功，提交 ${receipt.revision.slice(0, 12)}。`;
       } else {
-        reply = receipt.kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+        reply = processReceiptText(receipt.kind, elapsed);
       }
       if (!await sendProcessMessage(receipt.target, reply, signal)) console.warn("[进程管理] 未确认进程操作回执。");
     } catch {
       console.warn("[进程管理] 无法读取进程操作回执。");
+    }
+  }
+
+  function processReceiptText(kind: "restart" | "stop", elapsed: string) {
+    return kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+  }
+
+  async function deliverLegacyProcessReceipt(botId?: number, adapter?: "milky", signal?: AbortSignal) {
+    const redis = globalThis.redis;
+    const active = botId === undefined ? lifecycle.signal : signal;
+    if (!redis?.isReady || !active || active.aborted || !handoff.accepting) return;
+    try {
+      const claim = await takeLegacyProcessReceipt(redis, { botId, adapter, signal: active }, {
+        bots: masterPermissions.botIds(), terminal: masterPermissions.terminal,
+      });
+      if (!claim) return;
+      if (active.aborted || !handoff.accepting) {
+        await claim.restore();
+        return;
+      }
+      const { receipt } = claim;
+      const reply = processReceiptText(receipt.kind, formatElapsed(Date.now() - receipt.at));
+      if (!await sendProcessMessage(receipt.target, reply, signal)) console.warn("[进程管理] 未确认旧版操作回执。");
+    } catch {
+      console.warn("[进程管理] 无法领取旧版操作回执。");
     }
   }
 
@@ -607,6 +633,7 @@ if (import.meta.main) {
         deliverProcessReceipt(botId, true, adapter, signal),
         deliverProcessReceipt(botId, "install", adapter, signal),
       ]);
+      await deliverLegacyProcessReceipt(botId, adapter, signal);
       if (botId === undefined) return;
       await notifyOnlineMasters(botId, onlineCooldown, {
         signal: signal ?? lifecycle.signal,
@@ -2376,7 +2403,7 @@ if (import.meta.main) {
         },
         prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
         accepting: acceptingPublic,
-        onBind: queueStartupMessages,
+        onBind: (botId, signal) => queueStartupMessages(botId, undefined, signal),
         onSent: valkey === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
         http: fetch,
         tls,
