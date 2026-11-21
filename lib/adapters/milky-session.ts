@@ -33,6 +33,7 @@ import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, getM
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
+import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
 import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
@@ -1178,6 +1179,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           return groupId === undefined
             ? (await call.confirmed("recall_private_message", { user_id: cardOwner, message_seq }, signal)).status
             : (await call.confirmed("recall_group_message", { group_id: groupId, message_seq }, signal)).status;
+        },
+        groupFile(source) {
+          if (groupId === undefined) return;
+          const file = quotedGroupFile(source, "milky");
+          if (!file) return;
+          return { id: file.id, async locate(active) {
+            const found = await findQuotedGroupFile(groupId, file, "milky", signal, active, async (parent_folder_id, scope) => {
+              const result = await call.confirmed("get_group_files", { group_id: groupId, parent_folder_id }, scope);
+              if (result.status === "confirmed") return result.data;
+            });
+            if (found) return async () => (await call.confirmed("delete_group_file", { group_id: groupId, file_id: file.id }, signal)).status;
+          } };
         },
       }));
     }

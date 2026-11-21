@@ -604,6 +604,31 @@ export class OneBotCalls {
     }
   }
 
+  readGroupFiles(send: Send, group_id: number, folder_id: string, signal: AbortSignal) {
+    return folder_id === "/"
+      ? this.#request(send, "get_group_root_files", { group_id, file_count: 10_000 }, signal)
+      : this.#request(send, "get_group_files_by_folder", { group_id, folder_id, file_count: 10_000 }, signal);
+  }
+
+  async deleteGroupFile(send: Send, group_id: number, file_id: string, busid: number, signal: AbortSignal): Promise<RecallResult> {
+    try {
+      const response = await this.#request(send, "delete_group_file", { group_id, file_id, busid }, signal);
+      // Some gateways expose only the action receipt. NapCat also returns the individual native result.
+      if (response == null || (isRecord(response) && !Object.keys(response).length)) return "confirmed";
+      if (!isRecord(response)) return "unknown";
+      if (typeof response.result === "number" && response.result !== 0) return "rejected";
+      const detail = response.transGroupFileResult;
+      if (!isRecord(detail) || !isRecord(detail.result)) return "unknown";
+      if (typeof detail.result.retCode === "number" && detail.result.retCode !== 0) return "rejected";
+      if (Array.isArray(detail.failFileIdList) && detail.failFileIdList.length) return "rejected";
+      return response.result === 0 && detail.result.retCode === 0 && Array.isArray(detail.failFileIdList) &&
+        Array.isArray(detail.successFileIdList) && detail.successFileIdList.length === 1 &&
+        detail.successFileIdList[0] === file_id ? "confirmed" : "unknown";
+    } catch (error) {
+      return error instanceof OneBotRejectedError || error instanceof OneBotNotSentError ? "rejected" : "unknown";
+    }
+  }
+
   async setGroupCard(send: Send, group_id: number, user_id: number, card: string, signal?: AbortSignal): Promise<RecallResult> {
     try {
       await this.#request(send, "set_group_card", { group_id, user_id, card }, signal);

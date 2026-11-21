@@ -1,4 +1,5 @@
 import type { MessageEvent, QuotedMessage, RecallResult } from "./messages.ts";
+import type { QuotedGroupFileRemoval } from "./adapters/quoted-group-file.ts";
 
 export type GroupRecallRole = "member" | "admin" | "owner";
 type Permission = "all" | "admin" | "owner" | "master";
@@ -57,6 +58,7 @@ export function createQuotedRecall() {
   const completed = new Set<string>();
   const targets = new Set<string>();
   const activeCommands = new Set<string>();
+  const groupFiles = new Set<string>();
 
   return (scope: {
     readonly account: number;
@@ -69,6 +71,7 @@ export function createQuotedRecall() {
     readQuote(): Promise<QuotedMessage | undefined>;
     readRole(): Promise<GroupRecallRole | undefined>;
     recall(id: number): Promise<RecallResult>;
+    groupFile?(source: QuotedMessage): QuotedGroupFileRemoval | undefined;
   }): QuotedRecall => ({ account: scope.account, actor: scope.actor, group: scope.group ? scope.peer : undefined,
     async run({ active, authorize }) {
       const { account, peer, group, command, quoted, signal } = scope;
@@ -93,7 +96,30 @@ export function createQuotedRecall() {
         const authorized = await authorize(bot, scope.readRole);
         if (authorized !== true) return permitted() ? authorized : undefined;
         if (!permitted()) return;
-        if (group && source.message[0]?.type === "file") return "该命令暂不支持删除群文件。";
+        if (group && source.message[0]?.type === "file") {
+          const file = scope.groupFile?.(source);
+          if (!file) return "无法核实引用的群文件。";
+          const fileKey = `${chat}:${file.id}`;
+          if (groupFiles.has(fileKey)) return;
+          groupFiles.add(fileKey);
+          try {
+            const remove = await file.locate(permitted);
+            if (!permitted()) return;
+            if (!remove) return "当前群文件目录没有可核实的对应文件。";
+            const currentAuthority = await authorize(bot, scope.readRole);
+            if (!permitted()) return;
+            if (currentAuthority !== true) return currentAuthority;
+            const deleted = await remove();
+            if (!permitted()) return;
+            if (deleted === "unknown") return "群文件删除结果未确认。";
+            if (deleted === "rejected") return "未能删除群文件。";
+            const cleanup = await scope.recall(command);
+            if (permitted() && cleanup !== "confirmed") return "群文件已删除，撤回命令未获确认。";
+            return;
+          } finally {
+            groupFiles.delete(fileKey);
+          }
+        }
         const target = await scope.recall(quoted);
         if (!permitted()) return;
         if (target !== "confirmed" || !group) return [target];

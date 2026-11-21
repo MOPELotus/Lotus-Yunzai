@@ -6,6 +6,7 @@ import { imageOcrSession } from "../image-ocr.ts";
 import { ownerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
+import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
@@ -924,6 +925,19 @@ async function dispatchMessage(
       readRole: () => "group_id" in target
         ? calls.getGroupRole(send, target.group_id, userId, true, attachmentSession.signal) : Promise.resolve(undefined),
       recall: id => calls.recallMessage(send, id, attachmentSession.signal),
+      groupFile(source) {
+        if (!("group_id" in target)) return;
+        const file = quotedGroupFile(source, "onebot");
+        if (!file) return;
+        const group = target.group_id;
+        const transport = attachmentSession.signal;
+        return { id: file.id, async locate(active) {
+          const found = await findQuotedGroupFile(group, file, "onebot", transport, active,
+            (folder, signal) => calls.readGroupFiles(send, group, folder, signal));
+          const busId = found?.busId;
+          if (busId !== undefined) return () => calls.deleteGroupFile(send, group, file.id, busId, transport);
+        } };
+      },
     }));
   }
   if (likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous") {

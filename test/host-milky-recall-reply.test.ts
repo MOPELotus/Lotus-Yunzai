@@ -34,6 +34,8 @@ function mockGateway() {
   const calls: Call[] = [];
   const roles = new Map<number, string>();
   const quotes = new Map<number, Record<string, unknown>>();
+  const directories = new Map<string, object>();
+  const deleteOutcomes = new Map<string, "rejected" | "unknown">();
   let afterRole: Promise<void> | undefined;
   let available = Promise.withResolvers<void>();
   let consumed = 0;
@@ -63,6 +65,14 @@ function mockGateway() {
           const user_id = Number(body.user_id);
           return success({ member: { group_id: body.group_id, user_id, role: roles.get(user_id) ?? "member" } });
         }
+        case "get_group_files":
+          return success(directories.get(String(body.parent_folder_id)) ?? { folders: [], files: [] });
+        case "delete_group_file": {
+          const outcome = deleteOutcomes.get(String(body.file_id));
+          if (outcome === "unknown") return new Response(null, { status: 503 });
+          if (outcome === "rejected") return Response.json({ status: "failed", retcode: -404, message: "无法删除文件" });
+          return success();
+        }
         case "send_group_message":
         case "send_private_message": return success({ message_seq: 1_000 + calls.length, time });
         case "recall_group_message":
@@ -84,7 +94,7 @@ function mockGateway() {
     return call.body;
   }
   return {
-    server, next, roles, quotes,
+    server, next, roles, quotes, directories, deleteOutcomes,
     holdRole(until: Promise<void>) { afterRole = until; },
     async quote(target: Target, sequence: number) {
       expect(await next("get_message")).toEqual({
@@ -294,6 +304,48 @@ test("实际 Milky 引用撤回按同会话和实时群权限，保留 V3 优先
       await writeFile(join(root, "config", "groupAdmin.yaml"), "recallMsgPer:\n  member: owner\n");
       releaseRole.resolve();
       await mock.reply(groupTarget, "该命令仅限群主可用。", 616);
+      await barrier();
+
+      await writeFile(join(root, "config", "groupAdmin.yaml"), "recallMsgPer:\n  member: admin\n");
+      const fileId = "/milky-file-ref";
+      const folderId = "/child-folder";
+      const entry = { group_id: groupId, parent_folder_id: folderId, file_id: fileId, file_size: 38, uploader_id: 43 };
+      const file = { sender_id: 43, segments: [{ type: "file", data: { file_id: fileId, file_size: 38, file_name: "夹具.txt" } }] };
+      mock.quotes.set(621, file);
+      mock.directories.set("/", { files: [], folders: [{ group_id: groupId, folder_id: folderId, parent_folder_id: "/" }] });
+      mock.directories.set(folderId, { files: [entry], folders: [] });
+      async function locateFile() {
+        expect(await mock.next("get_group_files")).toEqual({ group_id: groupId, parent_folder_id: "/" });
+        expect(await mock.next("get_group_files")).toEqual({ group_id: groupId, parent_folder_id: folderId });
+      }
+      await send(message("#撤回", 620, outsider, groupId, 621));
+      await mock.quote(groupTarget, 621);
+      await mock.role(outsider);
+      await locateFile();
+      await mock.role(outsider);
+      expect(await mock.next("delete_group_file")).toEqual({ group_id: groupId, file_id: fileId });
+      await mock.recall(groupTarget, 620);
+      await barrier();
+
+      mock.quotes.set(623, file);
+      mock.directories.set(folderId, { files: [{ ...entry, parent_folder_id: "/" }], folders: [] });
+      await send(message("#撤回", 622, owner, groupId, 623));
+      await mock.quote(groupTarget, 623);
+      await locateFile();
+      await mock.reply(groupTarget, "当前群文件目录没有可核实的对应文件。", 622);
+      await barrier();
+
+      mock.quotes.set(625, file);
+      mock.directories.set(folderId, { files: [entry], folders: [] });
+      mock.deleteOutcomes.set(fileId, "unknown");
+      const fileUncertain = message("#撤回", 624, owner, groupId, 625);
+      await send(fileUncertain);
+      await mock.quote(groupTarget, 625);
+      await locateFile();
+      expect(await mock.next("delete_group_file")).toEqual({ group_id: groupId, file_id: fileId });
+      await mock.reply(groupTarget, "群文件删除结果未确认。", 624);
+      await afterDuplicateWindow();
+      await send(fileUncertain);
       await barrier();
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();

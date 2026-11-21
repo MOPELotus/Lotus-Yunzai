@@ -238,7 +238,7 @@ test("实际 OneBot 群权限取已验证的引用和成员，私聊仅撤本机
   await gateway.quote(737, 41, { message_type: "group", group_id: 77,
     message: [{ type: "file", data: { file: "fixture.txt", file_id: "opaque-id" } }] });
   await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([
-    { type: "text", data: { text: expect.stringContaining("暂不支持删除群文件") } },
+    { type: "text", data: { text: expect.stringContaining("无法核实引用的群文件") } },
   ]) });
   await gateway.status();
 
@@ -294,5 +294,78 @@ test("同时引用另一条正在处置的撤回命令时，同一消息只提�
   gateway.receipt(target);
   gateway.receipt(await gateway.deletion(901));
   gateway.message(overlap, 903);
+  await gateway.status();
+}), 9_000);
+
+test("实际 OneBot 群文件删除核对目录 ID、上传人、业务号和回执", () => withHost(async open => {
+  const gateway = await open(99);
+  const fileId = "/opaque-group-file";
+  const directory = "folder-nested";
+  function fileQuote(message_id: number, group_id = 77) {
+    return gateway.quote(message_id, 43, { message_type: "group", group_id,
+      message: [{ type: "file", data: { file: "原文件.txt", file_id: fileId, file_size: "15" } }] });
+  }
+  const entry = { group_id: 77, file_id: fileId, file_name: "改名后.txt", size: 15, uploader: 43, busid: 104 };
+  async function rootFiles(data: object) {
+    gateway.receipt(await gateway.take("get_group_root_files", { group_id: 77, file_count: 10_000 }), "ok", 0, data);
+  }
+  async function expectReply(text: string) {
+    await gateway.take("send_msg", { group_id: 77, message: expect.arrayContaining([{ type: "text", data: { text } }]) });
+  }
+
+  gateway.message(quoted("#撤回", 1_002), 1_001, { user_id: 42 });
+  await fileQuote(1_002);
+  await gateway.role(42, "admin");
+  await rootFiles({ files: [], folders: [{ group_id: 77, folder_id: directory }] });
+  const listed = await gateway.take("get_group_files_by_folder", { group_id: 77, folder_id: directory, file_count: 10_000 });
+  gateway.receipt(listed, "ok", 0, { files: [entry], folders: [] });
+  await gateway.role(42, "admin");
+  const deleting = await gateway.take("delete_group_file", { group_id: 77, file_id: fileId, busid: 104 });
+  gateway.message(quoted("撤回", 1_020), 1_019);
+  await fileQuote(1_020);
+  await gateway.status();
+  gateway.receipt(deleting, "ok", 0, {
+    result: 0, transGroupFileResult: { result: { retCode: 0 }, successFileIdList: [fileId], failFileIdList: [] },
+  });
+  gateway.receipt(await gateway.deletion(1_001));
+  await gateway.status();
+
+  gateway.message(quoted("#撤回", 1_004), 1_003);
+  await fileQuote(1_004);
+  // NapCat returns an unrelated opaque directory handle, even with the same file metadata.
+  await rootFiles({ files: [{ ...entry, file_id: "unrelated-handle", file_name: "原文件.txt" }], folders: [] });
+  await expectReply("当前群文件目录没有可核实的对应文件。");
+
+  gateway.message(quoted("#撤回", 1_006), 1_005);
+  await fileQuote(1_006);
+  await rootFiles({ files: [{ ...entry, uploader: 44 }], folders: [] });
+  await expectReply("当前群文件目录没有可核实的对应文件。");
+
+  gateway.message(quoted("#撤回", 1_008), 1_007);
+  await fileQuote(1_008, 78);
+  await expectReply("无法核实当前会话的引用消息。");
+
+  gateway.message(quoted("#撤回", 1_010), 1_009, { user_id: 42, sender: { user_id: 42, role: "admin" } });
+  await fileQuote(1_010);
+  await gateway.role(42, "admin");
+  await rootFiles({ files: [entry], folders: [] });
+  await gateway.role(42, "member");
+  await expectReply("该命令仅限群管理员可用。");
+
+  const uncertain = quoted("#撤回", 1_012);
+  gateway.message(uncertain, 1_011);
+  await fileQuote(1_012);
+  await rootFiles({ files: [entry], folders: [] });
+  gateway.receipt(await gateway.take("delete_group_file", { group_id: 77, file_id: fileId, busid: 104 }), "async", 1);
+  await expectReply("群文件删除结果未确认。");
+  gateway.message(uncertain, 1_011);
+  await gateway.status();
+
+  gateway.message(quoted("#撤回", 1_014), 1_013);
+  await fileQuote(1_014);
+  await rootFiles({ files: [entry], folders: [] });
+  gateway.receipt(await gateway.take("delete_group_file", { group_id: 77, file_id: fileId, busid: 104 }), "ok", 0,
+    { result: 0, transGroupFileResult: { result: { retCode: 0 }, successFileIdList: [], failFileIdList: [fileId] } });
+  await expectReply("未能删除群文件。");
   await gateway.status();
 }), 9_000);
