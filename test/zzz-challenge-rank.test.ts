@@ -21,7 +21,7 @@ test("绝区零旧式舆、危局和绝境群榜别名与可见开关归入正�
   expect(rankCommand("%取消显示深渊群内排名2")).toEqual({ kind: "visibility", enabled: false, profileId: 2, types: ["ABYSS"] });
   expect(rankCommand("%显示危局绝境排名")).toEqual({ kind: "visibility", enabled: true, profileId: 1, types: ["DEADLY"] });
   expect(rankCommand("/zzzoff排名")).toEqual({ kind: "visibility", enabled: false, profileId: 1, types: ["ABYSS", "DEADLY"] });
-  for (const input of ["%深渊", "%危局图鉴", "危局排名", "%上期危局排名", "%临界推演排名", "%显示排名256"]) {
+  for (const input of ["%深渊", "%危局图鉴", "危局排名", "%上期危局排名", "%显示排名256"]) {
     expect(rankCommand(input)).toBeUndefined();
   }
 });

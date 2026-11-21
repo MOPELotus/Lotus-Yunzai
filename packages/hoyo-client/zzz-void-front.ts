@@ -29,6 +29,8 @@ export interface ZzzVoidFrontSnapshot extends Identity {
   readonly status: "available" | "empty";
   readonly start?: string;
   readonly end?: string;
+  readonly rankEndsAt?: number;
+  readonly endingUnlocked?: boolean;
   readonly totalScore?: number;
   readonly maxScore?: number;
   readonly rank?: number;
@@ -53,6 +55,13 @@ function count(value: unknown, maximum: number, field: string) {
   const number = typeof value === "string" && /^\d{1,10}$/u.test(value) ? Number(value) : value;
   if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 0 || number > maximum) invalid(field);
   return number;
+}
+
+function rankingDeadline(value: unknown) {
+  const seconds = typeof value === "string" && /^\d{1,10}$/u.test(value) ? Number(value) : value;
+  if (typeof seconds === "number" && Number.isSafeInteger(seconds) && seconds > 0 && seconds <= 4_102_444_800) {
+    return seconds * 1000;
+  }
 }
 
 function text(value: unknown, max = 1024) {
@@ -96,7 +105,7 @@ function portrait(value: unknown, buddy: boolean): ZzzShiyuPortrait | undefined 
 }
 
 function round(input: Json): ZzzVoidFrontRound {
-  const rating = typeof input.star === "string" ? input.star.toUpperCase() : undefined;
+  const rating = typeof input.star === "string" ? input.star.toUpperCase().replace("+", "P") : undefined;
   const buff = object(input.buffer, "增益");
   return {
     name: text(input.name, 192), buffName: text(buff?.name, 128), buffIcon: text(buff?.icon),
@@ -148,8 +157,10 @@ export function normalizeZzzVoidFront(input: unknown, identity: Identity): ZzzVo
   const start = date(summary?.start_time);
   const end = date(summary?.end_time);
   if (start && end && start >= end) invalid("统计周期");
+  const rankEndsAt = rankingDeadline(summary?.end_ts);
+  const endingUnlocked = typeof summary?.has_ending_record === "boolean" ? summary.has_ending_record : undefined;
   return {
-    ...identity, status: "available", start, end, finalStage, stages,
+    ...identity, status: "available", start, end, finalStage, stages, rankEndsAt, endingUnlocked,
     totalScore: count(summary?.total_score, 999_999_999, "总得分"),
     maxScore: count(summary?.max_score, 999_999_999, "总满分"),
     rank: count(summary?.rank_percent, 10_000, "排名"),
