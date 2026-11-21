@@ -6,6 +6,7 @@ export type OwnerFriendReplyBody = string | readonly (string | { readonly source
 export type OwnerFriendReplyOutcome = "confirmed" | "rejected" | "unknown" | "not-friend" | "unavailable" | "unsupported";
 type FriendReplyPart = string | { readonly type: "image"; readonly file: Uint8Array } |
   { readonly type: "face"; readonly data: { readonly id: string | number; readonly is_large?: boolean } };
+type GroupReplyPart = FriendReplyPart | { readonly type: "at"; readonly qq: string };
 
 interface OwnerFriendReplySession {
   readonly account: number;
@@ -17,9 +18,14 @@ interface OwnerFriendReplySession {
   send(userId: number, message: MessageReply, signal: AbortSignal): Promise<"confirmed" | "rejected" | "unknown">;
 }
 
-export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"], signal: AbortSignal) {
+export function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
+  signal: AbortSignal): Promise<FriendReplyPart[] | undefined>;
+export function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
+  signal: AbortSignal, group: boolean): Promise<GroupReplyPart[] | undefined>;
+export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, string>, source: MessageEvent["message"],
+  signal: AbortSignal, group = false): Promise<GroupReplyPart[] | undefined> {
   if (typeof source === "string" || !Array.isArray(body) || !body.length || body.length > 128) return;
-  const parts: FriendReplyPart[] = [];
+  const parts: GroupReplyPart[] = [];
   let imageBytes = 0;
   for (const value of body) {
     if (signal.aborted) return;
@@ -36,6 +42,10 @@ export async function readFriendReplyParts(body: Exclude<OwnerFriendReplyBody, s
       imageBytes += bytes.byteLength;
       if (imageBytes > maxChatFileBytes) return;
       parts.push({ type: "image", file: bytes });
+    } else if (group && part?.type === "at") {
+      const target = typeof part.qq === "string" || typeof part.qq === "number" ? String(part.qq) : "";
+      if (target !== "all" && (!/^[1-9]\d*$/u.test(target) || !Number.isSafeInteger(Number(target)))) return;
+      parts.push({ type: "at", qq: target });
     } else return;
   }
   return parts;

@@ -53,7 +53,10 @@ function parseFriendList(items: readonly unknown[] | undefined): readonly Contac
 }
 
 export async function replyOwnerContactList(
-  event: MessageEvent, { kind, argument }: ContactListCommand,
+  event: MessageEvent, { kind, argument }: ContactListCommand, snapshots?: {
+    displayedGroups(event: MessageEvent): readonly Contact[] | undefined;
+    rememberGroups(event: MessageEvent, groups: readonly Contact[]): void;
+  },
 ) {
   const session = event[ownerContactListSession];
   if (event.isDelegated || event.message_type !== "private" || event.sub_type !== "friend" ||
@@ -71,7 +74,8 @@ export async function replyOwnerContactList(
     await reply(`用法 #${title} [页码]`);
     return;
   }
-  const loaded = kind === "群" ? await session.groups(signal).catch(() => undefined)
+  const shown = kind === "群" && page > 1 ? snapshots?.displayedGroups(event) : undefined;
+  const loaded = kind === "群" ? shown ?? await session.groups(signal).catch(() => undefined)
     : parseFriendList(await session.friends(signal).catch(() => undefined));
   if (!authorized()) return;
   if (!loaded) {
@@ -99,6 +103,7 @@ export async function replyOwnerContactList(
   }
   if (!authorized()) return;
   const result = await session.forward(nodes, signal).catch(() => "unknown");
+  if (result === "confirmed" && kind === "群" && !shown && authorized()) snapshots?.rememberGroups(event, loaded);
   if (result === "rejected") await reply(`${title}未能发送，请稍后再试。`);
   if (result === "unknown") await reply(`${title}发送结果未确认，请先检查私聊。`);
 }

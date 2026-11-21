@@ -14,6 +14,7 @@ import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.
 import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
+import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
@@ -384,7 +385,8 @@ if (import.meta.main) {
   const pendingPrivateNotices = new Set<string>();
   const friendNoticeHints = new Map<string, number>();
   let groupVerification: { policy: GroupVerification; signal: AbortSignal } | undefined;
-  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice" | "owner-friend-reply") {
+  function requestStorage(feature: "group-join-review" | "friend-review" | "group-invitation-review" | "friend-message-notice" |
+    "owner-friend-reply" | "owner-message-relay") {
     const redis = globalThis.redis;
     if (!redis) return;
     const namespace = (key: string) => `lotus-yunzai:${feature}:${key}`;
@@ -404,6 +406,26 @@ if (import.meta.main) {
   const invitationReceipts = createMilkyInvitationReceipts(() => requestStorage("group-invitation-review"));
   const friendNoticeReceipts = createFriendMessageReceipts(() => requestStorage("friend-message-notice"));
   const ownerFriendReplyClaim = createRequestClaim(() => requestStorage("owner-friend-reply"));
+  const ownerMessageRelay = createOwnerMessageRelay({
+    claim: createRequestClaim(() => requestStorage("owner-message-relay")),
+    isMaster: (botId, userId) => masterPermissions.isMaster(botId, userId),
+    privateCredential: isPrivateCredentialMessage,
+    resolveAccount(botId, adapter) {
+      const candidates: OwnerRelayAccount[] = [];
+      function add(adapterName: OwnerRelayAccount["adapter"], gateway: CheckinNotifyTransport | undefined, notice: NoticeGroupAccount | undefined) {
+        if (!gateway?.friendship || !notice) return;
+        candidates.push({
+          botId, adapter: adapterName, friendship: gateway.friendship, groups: notice.listGroups,
+          send: (kind, target, reply) => kind === "friend" ? gateway.sendPrivate(target, reply) : gateway.sendGroup(target, reply),
+        });
+      }
+      if (adapter !== "milky") add("onebot", groups.checkinNotifications().find(account => account.botId === botId),
+        groups.noticeAccounts().find(account => account.botId === botId));
+      const milky = milkyOnline;
+      if (adapter !== "onebot" && milky?.id === botId && !milky.signal.aborted) add("milky", milky.checkinNotify, milky.noticeAccount);
+      return candidates.length === 1 ? candidates[0] : undefined;
+    },
+  });
   function recallCache(feature: "friend" | "group") {
     return createMessageRecallCache(() => {
       const redis = globalThis.redis;
@@ -1816,6 +1838,10 @@ if (import.meta.main) {
       }
     }
     if (await privateAccess.blocked(event)) return;
+    if (await ownerMessageRelay.handle(event, {
+      allowNew, signal: nativeOperationSignal(),
+      allowed: () => !stopping && handoff.accepting && groupDispatch.allowsInbound(event) && allowed(ownerRelayFeatureNames),
+    })) return;
     if (isLogLevelCommand(event.msg)) {
       if (allowNew && allowed(["日志等级", "system", systemModuleName])) await setRuntimeLogLevel(event);
       return;
@@ -1856,7 +1882,7 @@ if (import.meta.main) {
     const contactList = ownerContactListCommand(event.msg);
     if (contactList) {
       if (allowNew && allowed([`${contactList.kind}列表`, "group", "@lotus-yunzai/group"])) {
-        await replyOwnerContactList(event, contactList);
+        await replyOwnerContactList(event, contactList, ownerMessageRelay);
       }
       return;
     }
