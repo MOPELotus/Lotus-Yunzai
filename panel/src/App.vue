@@ -15,6 +15,7 @@ import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
 import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 import MusicSettings from "./MusicSettings.vue";
 import BilibiliSettings from "./BilibiliSettings.vue";
+import DouyinSettings from "./DouyinSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -26,10 +27,11 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | "music" | "bilibili" | "extensions";
+type MediaView = "music" | "bilibili" | "douyin";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | MediaView | "extensions";
 const view = ref<PanelView>("overview");
-const mediaSection = ref<"music" | "bilibili">("bilibili");
-const viewingMedia = computed(() => view.value === "music" || view.value === "bilibili");
+const mediaSection = ref<MediaView>("bilibili");
+const viewingMedia = computed(() => isMediaView(view.value));
 const settingsDirty = ref(false);
 const discardTo = ref<PanelView>();
 const clock = new Intl.DateTimeFormat("zh-CN", {
@@ -47,6 +49,10 @@ const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
 const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "media" && plugin.status === "loaded") ?? false);
 
+function isMediaView(target: PanelView): target is MediaView {
+  return target === "music" || target === "bilibili" || target === "douyin";
+}
+
 function setView(next: PanelView, discard = false) {
   if (view.value === next) return;
   if (settingsDirty.value && !discard) {
@@ -59,7 +65,7 @@ function setView(next: PanelView, discard = false) {
   settingsDirty.value = false;
   discardTo.value = undefined;
   view.value = next;
-  if (next === "music" || next === "bilibili") mediaSection.value = next;
+  if (isMediaView(next)) mediaSection.value = next;
   focusView(next);
 }
 
@@ -80,6 +86,7 @@ function focusView(next: PanelView) {
     "account-permissions": "account-permissions-title",
     music: "music-settings-title",
     bilibili: "bilibili-settings-title",
+    douyin: "douyin-settings-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -288,6 +295,8 @@ onBeforeUnmount(() => {
     <nav v-if="hasMedia && viewingMedia" class="panel-nav media-nav" aria-label="媒体设置">
       <ElButton :type="view === 'bilibili' ? 'primary' : 'default'"
         :aria-current="view === 'bilibili' ? 'page' : undefined" @click="setView('bilibili')">B 站视频</ElButton>
+      <ElButton :type="view === 'douyin' ? 'primary' : 'default'"
+        :aria-current="view === 'douyin' ? 'page' : undefined" @click="setView('douyin')">抖音</ElButton>
       <ElButton :type="view === 'music' ? 'primary' : 'default'"
         :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌</ElButton>
     </nav>
@@ -313,6 +322,8 @@ onBeforeUnmount(() => {
     <MusicSettings v-else-if="view === 'music'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <BilibiliSettings v-else-if="view === 'bilibili'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <DouyinSettings v-else-if="view === 'douyin'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />

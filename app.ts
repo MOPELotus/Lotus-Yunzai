@@ -106,6 +106,7 @@ import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelAtlasUpdate } from "./lib/panel-atlas-update.ts";
 import { panelMusic } from "./lib/panel-music.ts";
 import { panelBilibili } from "./lib/panel-bilibili.ts";
+import { panelDouyin } from "./lib/panel-douyin.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions } from "./lib/panel-account-permissions.ts";
@@ -3325,6 +3326,7 @@ if (import.meta.main) {
       if (plugins.records.some(plugin => plugin.name === "media" && plugin.status === "loaded")) {
         settingsRoutes.set("/panel/api/settings/media/music", panelMusic(root));
         settingsRoutes.set("/panel/api/settings/media/bilibili", panelBilibili(root));
+        settingsRoutes.set("/panel/api/settings/media/douyin", panelDouyin(root));
       }
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = !panelEnabled ? undefined : panelExtensionRoutes(plugins.directories,

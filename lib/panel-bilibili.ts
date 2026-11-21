@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
 import { biliDownloadNumbers, biliPagePolicies, type BilibiliPanelSettings, type BilibiliPanelSnapshot } from "./panel-bilibili-schema.ts";
-import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMappingPair, type Pair, type SourceEdit } from "./yaml-source-edits.ts";
+import { editMediaDownloadSettings, mediaDownloadSource } from "./panel-media-download-edit.ts";
 
 type Config = Readonly<Record<string, unknown>>;
 type Patch = Partial<BilibiliPanelSettings>;
@@ -21,14 +19,9 @@ function int(value: unknown, min = 1, max = Number.MAX_SAFE_INTEGER): number | u
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max) return value;
 }
 
-function downloadSource(bilibili: Config): Config {
-  // Video commands still accept the older flat download fields when no nested download config is set.
-  return bilibili.download ? record(bilibili.download) ?? {} : bilibili;
-}
-
 function snapshot(document: Config): BilibiliPanelSnapshot {
   const bilibili = record(document.bilibili) ?? {};
-  const download = downloadSource(bilibili);
+  const download = mediaDownloadSource(bilibili);
   const settings: BilibiliPanelSettings = {
     search_limit: int(Number(bilibili.search_limit)) ?? defaults.search_limit,
     enable: download.enable !== false,
@@ -65,57 +58,6 @@ function readChanges(value: unknown): Patch {
   return changes;
 }
 
-function writeBilibili(text: string, local: Config, effective: Config, changes: Patch) {
-  const yaml = parseDocument(text, { strict: true, merge: true, uniqueKeys: true, keepSourceTokens: true });
-  if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents))) throw new GlobalConfigWriteError("config");
-  const prior = record(effective.bilibili) ?? {};
-  if (effective.bilibili !== undefined && !record(effective.bilibili)) throw new GlobalConfigWriteError("config");
-  const { search_limit, ...downloadChanges } = changes;
-  const hasDownloadChanges = Object.keys(downloadChanges).length > 0;
-  const download = record(prior.download) ?? Object.fromEntries(downloadKeys.filter(key => Object.hasOwn(downloadSource(prior), key))
-    .map(key => [key, downloadSource(prior)[key]]));
-  const bilibili = { ...prior, ...(search_limit === undefined ? {} : { search_limit }),
-    ...(hasDownloadChanges ? { download: { ...download, ...downloadChanges } } : {}) };
-  const edits: SourceEdit[] = [];
-  function insert(node: Node | undefined, additions: Pair[]) {
-    if (!additions.length) return;
-    if (isAlias(node)) edits.push(sourceAliasOverrides(text, node, additions));
-    else if (node === undefined || isMap(node)) edits.push(insertSourcePairs(text, node, additions));
-    else throw new GlobalConfigWriteError("config");
-  }
-  function writeScalars(node: Node, values: Config, additions: Pair[]) {
-    for (const [key, value] of Object.entries(values)) {
-      const source = isMap(node) ? node.get(key, true) : undefined;
-      const flow = JSON.stringify(value);
-      if (isNode(source)) edits.push(replaceSourceScalar(text, source, flow));
-      else additions.push({ key, flow, block: [`${key}: ${flow}`] });
-    }
-  }
-  const source = isMap(yaml.contents) ? yaml.contents.get("bilibili", true) : undefined;
-  if (!isNode(source)) {
-    insert(yaml.contents ?? undefined, [sourceMappingPair("bilibili", bilibili)]);
-  } else {
-    const additions: Pair[] = [];
-    if (search_limit !== undefined) writeScalars(source, { search_limit }, additions);
-    if (hasDownloadChanges) {
-      const nested = isMap(source) ? source.get("download", true) : undefined;
-      if (isMap(nested) || isAlias(nested)) {
-        const nestedAdditions: Pair[] = [];
-        writeScalars(nested, downloadChanges, nestedAdditions);
-        insert(nested, nestedAdditions);
-      } else if (isNode(nested)) {
-        if (prior.download) throw new GlobalConfigWriteError("config");
-        edits.push(replaceSourceScalar(text, nested, JSON.stringify(bilibili.download)));
-      } else additions.push(sourceMappingPair("download", bilibili.download!));
-    }
-    insert(source, additions);
-  }
-  const result = edits.sort((a, b) => b.start - a.start || b.end - a.end)
-    .reduce((content, edit) => content.slice(0, edit.start) + edit.value + content.slice(edit.end), text);
-  if (!isDeepStrictEqual(Bun.YAML.parse(result), { ...local, bilibili })) throw new GlobalConfigWriteError("config");
-  return { yaml: result, value: snapshot({ bilibili }) };
-}
-
 export function panelBilibili(root: URL) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
@@ -141,7 +83,10 @@ export function panelBilibili(root: URL) {
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           const changes = Object.fromEntries(Object.entries(patch).filter(([key, value]) => before.settings[key as keyof Patch] !== value));
           if (!Object.keys(changes).length) return { value: before };
-          return writeBilibili(text, local, effective, changes);
+          const { search_limit, ...download } = changes;
+          const { yaml, document } = editMediaDownloadSettings(text, local, effective, "bilibili", downloadKeys,
+            search_limit === undefined ? {} : { search_limit }, Object.keys(download).length ? download : undefined);
+          return { yaml, value: snapshot(document) };
         },
       }));
     } catch (error) {
