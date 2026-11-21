@@ -199,6 +199,7 @@ export async function dispatchGuobaApi(
   request: Request,
   pathname: string,
   routes: readonly GuobaApiDefinition[],
+  accepting?: () => boolean,
 ): Promise<Response> {
   const method = request.method;
   let requested: string[];
@@ -243,6 +244,7 @@ export async function dispatchGuobaApi(
     const query = queryParams(new URL(request.url).searchParams);
     const headers = extensionRequestHeaders(request);
     for (const { definition, params } of matches) {
+      if (accepting?.() === false) return apiError(404, "扩展接口不存在。", method);
       const response = await runHandlers({
         method, path: pathname, query, params, body, headers,
         get: name => typeof name === "string" ? headers[name.toLowerCase()] : undefined,

@@ -242,3 +242,61 @@ test("实际面板入口隔离重扫超时，健康扩展并行准备并一次�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("扩展与已加载插件同步，卸载收回旧页权限，重扫发现新提供器", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-extension-loaded-"));
+  try {
+    for (const name of ["first", "second"]) {
+      const directory = join(root, name, "guoba");
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "index.js"), `
+        export function init(ctx) {
+          ctx.registerPage({ id: "${name}", title: "${name}", html: "<h1>${name}</h1>" });
+          ctx.registerApi("get", "/data", (_req, res) => res.json({ source: "${name}" }));
+        }
+      `);
+    }
+    const directories = new Map([["first", { path: join(root, "first"), packageName: "first" }]]);
+    const routes = panelExtensionRoutes(directories);
+    const admin = panelApi("panel-fixture", [], routes.api);
+    const origin = "http://127.0.0.1:9876";
+    const request = (suffix: string, method = "GET", extra?: HeadersInit) => {
+      const headers = new Headers(extra);
+      headers.set("Authorization", "Bearer panel-fixture");
+      return admin(new Request(`${origin}/panel/api/extensions${suffix}`, { method, headers }));
+    };
+    const load = async (suffix: string, method?: string) => {
+      const response = await request(suffix, method);
+      return (await response?.json() as { pages: { id: string }[] }).pages.map(({ id }) => id);
+    };
+    const open = async (id: string) => {
+      const response = await request(`/${id}/open`, "POST");
+      expect(response?.status).toBe(200);
+      return new URL((await response?.json() as { url: string }).url, origin);
+    };
+    const invoke = (id: string, ticket: string) => routes.assets(new Request(`${origin}/panel/extensions-api/${id}/data`, {
+      headers: { Origin: "null", "guoba-access-token": ticket },
+    }));
+
+    expect(await load("")).toEqual(["first"]);
+    expect((await request("/second/open", "POST"))?.status).toBe(404);
+    const old = await open("first");
+    const ticket = old.searchParams.get("token")!;
+    expect(await (await invoke("first", ticket))?.json()).toEqual({ source: "first" });
+
+    directories.delete("first");
+    directories.set("second", { path: join(root, "second"), packageName: "second" });
+    expect(await load("")).toEqual([]);
+    expect((await request("/first/open", "POST"))?.status).toBe(404);
+    expect((await request("/first/renew", "POST", { "guoba-access-token": ticket }))?.status).toBe(404);
+    expect((await routes.assets(new Request(old)))?.status).toBe(404);
+    expect((await invoke("first", ticket))?.status).toBe(404);
+
+    expect(await load("/reload", "POST")).toEqual(["second"]);
+    expect((await invoke("first", ticket))?.status).toBe(401);
+    const fresh = await open("second");
+    expect(await (await invoke("second", fresh.searchParams.get("token")!))?.json()).toEqual({ source: "second" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

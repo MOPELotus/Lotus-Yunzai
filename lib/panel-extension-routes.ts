@@ -37,9 +37,10 @@ export function panelExtensionRoutes(
   directories: PluginLoadReport["directories"], external?: ExternalGuobaPage, scanOptions?: GuobaPageScanOptions,
 ) {
   const secret = randomBytes(32);
-  const sources = new Map([...directories].map(([name, { path }]) => [name, path]));
   function snapshot(reload = false) {
-    return { generation: randomUUID(), registry: loadGuobaPages(sources, reload, external, scanOptions) };
+    const providers = new Map(directories);
+    const sources = new Map([...providers].map(([name, { path }]) => [name, path]));
+    return { generation: randomUUID(), providers, registry: loadGuobaPages(sources, reload, external, scanOptions) };
   }
   let current = snapshot();
   let scanning: Promise<GuobaPages> | undefined;
@@ -59,19 +60,25 @@ export function panelExtensionRoutes(
   const servicePreview = ({ id, plugin }: GuobaPage) => external?.servicePreview === true &&
     id === external.definition.id && plugin === external.plugin;
 
-  function catalog({ pages, issues }: GuobaPages): Response {
+  function registered({ providers }: ReturnType<typeof snapshot>, plugin: string) {
+    const source = providers.get(plugin);
+    return external?.plugin === plugin || (source !== undefined && source === directories.get(plugin));
+  }
+
+  function catalog(source: ReturnType<typeof snapshot>, { pages, issues }: GuobaPages): Response {
     return Response.json({
-      pages: pages.map((page) => ({
+      pages: pages.filter(page => registered(source, page.plugin)).map((page) => ({
         id: page.id, plugin: page.plugin, title: page.title, icon: page.icon, priority: page.priority,
         ...(servicePreview(page) && { servicePreview: true }),
       })),
-      issues,
+      issues: issues.filter(issue => registered(source, issue.plugin)),
     });
   }
 
   async function list(request: Request): Promise<Response> {
     if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
-    return catalog(await current.registry);
+    const source = current;
+    return catalog(source, await source.registry);
   }
 
   async function reload(request: Request): Promise<Response> {
@@ -82,16 +89,21 @@ export function panelExtensionRoutes(
       current = next;
       return initialized;
     }).finally(() => { scanning = undefined; });
-    return catalog(await scanning);
+    await scanning;
+    const source = current;
+    return catalog(source, await source.registry);
   }
 
   async function open(request: Request, id: string): Promise<Response> {
     if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
-    const { registry, generation } = current;
+    const source = current;
+    const { registry, generation } = source;
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
     const plugin = new URL(request.url).searchParams.get("plugin");
-    if (!page || (plugin !== null && plugin !== page.plugin)) return new Response(null, { status: 404 });
+    if (!page || source !== current || !registered(source, page.plugin) || (plugin !== null && plugin !== page.plugin)) {
+      return new Response(null, { status: 404 });
+    }
     const expires = nextExpiry();
     const ticket = mint(generation, "asset", id, expires);
     const url = `${assetRoot}/${id}/${ticket}/${page.src ? escapedPath(page.src) : ""}`;
@@ -108,13 +120,14 @@ export function panelExtensionRoutes(
   // request to the original page and registry, even if the frame was dormant.
   async function renew(request: Request, id: string): Promise<Response> {
     if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
-    const { registry, generation } = current;
+    const source = current;
+    const { registry, generation } = source;
     if (!ticketExpiry(generation, "api", id, request.headers.get(extensionTokenHeader) ?? "")) {
       return new Response(null, { status: 404 });
     }
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
-    if (generation !== current.generation || !page || !apis.get(page.plugin)?.length) {
+    if (source !== current || !page || !registered(source, page.plugin) || !apis.get(page.plugin)?.length) {
       return new Response(null, { status: 404 });
     }
     return Response.json({ token: mint(generation, "api", id, nextExpiry()) });
@@ -124,7 +137,8 @@ export function panelExtensionRoutes(
     const path = new URL(request.url).pathname;
     if (!path.startsWith("/panel/extensions/")) return;
     const [, id, ticket, encoded] = /^\/panel\/extensions\/([A-Za-z0-9_-]+)\/([^/]+)\/(.*)$/u.exec(path) ?? [];
-    const { registry, generation } = current;
+    const source = current;
+    const { registry, generation } = source;
     if (!id || !ticket || !validTicket(generation, "asset", id, ticket)) {
       return new Response(null, { status: 404, headers: frameHeaders });
     }
@@ -133,7 +147,9 @@ export function panelExtensionRoutes(
     }
     const { pages, resolveAsset, apis } = await registry;
     const page = pages.find((item) => item.id === id);
-    if (!page) return new Response(null, { status: 404, headers: frameHeaders });
+    if (!page || source !== current || !registered(source, page.plugin)) {
+      return new Response(null, { status: 404, headers: frameHeaders });
+    }
     let resource: string;
     try {
       resource = decodeURIComponent(encoded ?? "");
@@ -169,16 +185,16 @@ export function panelExtensionRoutes(
         body = attachExtensionBridge(typeof body === "string" ? body : await body.text(), src);
       }
     }
-    return new Response(request.method === "HEAD" ? null : body, {
-      headers,
-    });
+    if (source !== current || !registered(source, page.plugin)) return new Response(null, { status: 404, headers: frameHeaders });
+    return new Response(request.method === "HEAD" ? null : body, { headers });
   }
 
   async function bridge(request: Request): Promise<Response | undefined> {
     const path = new URL(request.url).pathname;
     if (!path.startsWith(`${bridgeRoot}/`)) return;
     const [, id, ticket] = /^\/panel\/extensions-bridge\/([A-Za-z0-9_-]+)\/([^/]+)$/u.exec(path) ?? [];
-    const { registry, generation } = current;
+    const source = current;
+    const { registry, generation } = source;
     if (!id || !ticket || !validTicket(generation, "asset", id, ticket)) {
       return new Response(null, { status: 404, headers: frameHeaders });
     }
@@ -187,13 +203,15 @@ export function panelExtensionRoutes(
     }
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
-    if (!page) return new Response(null, { status: 404, headers: frameHeaders });
-    const source = extensionBridge(apis.get(page.plugin)?.length ? {
+    if (!page || source !== current || !registered(source, page.plugin)) {
+      return new Response(null, { status: 404, headers: frameHeaders });
+    }
+    const script = extensionBridge(apis.get(page.plugin)?.length ? {
       apiBase: `${apiRoot}/${id}`,
       relativeApi: `extensions-api/${id}`,
       legacyApiBase: `/guoba/api/custom/${encodeURIComponent(page.plugin)}`,
     } : undefined);
-    return new Response(request.method === "HEAD" ? null : source, {
+    return new Response(request.method === "HEAD" ? null : script, {
       headers: { ...frameHeaders, "Content-Type": "text/javascript; charset=utf-8" },
     });
   }
@@ -215,15 +233,17 @@ export function panelExtensionRoutes(
         "Access-Control-Allow-Headers": `content-type, ${extensionTokenHeader}`,
       } });
     }
-    const { registry, generation } = current;
+    const source = current;
+    const { registry, generation } = source;
     if (!validTicket(generation, "api", id, request.headers.get(extensionTokenHeader) ?? "")) {
       return new Response(null, { status: 401, headers: apiHeaders });
     }
     const { pages, apis } = await registry;
     const page = pages.find((item) => item.id === id);
     const routes = page && apis.get(page.plugin);
-    if (!routes?.length) return new Response(null, { status: 404, headers: apiHeaders });
-    const response = await dispatchGuobaApi(request, suffix ?? "/", routes);
+    const accepting = () => page !== undefined && source === current && registered(source, page.plugin);
+    if (!routes?.length || !accepting()) return new Response(null, { status: 404, headers: apiHeaders });
+    const response = await dispatchGuobaApi(request, suffix ?? "/", routes, accepting);
     const headers = new Headers(response.headers);
     for (const [name, value] of Object.entries(apiHeaders)) headers.set(name, value);
     return new Response(response.body, { status: response.status, headers });
