@@ -45,11 +45,14 @@ test("classifies policy denials, known protocol candidates, duplicates and targe
   await put(root, "plugins/system/.git", "gitdir: ../ignored-metadata");
   await put(root, "plugins/zzz/index.js", oldEntry);
   await put(root, "plugins/bad/package.json", "{invalid");
+  await put(root, "plugins/calendar-plugin/package.json", '{"name":"calendar-plugin"}');
+  await put(root, "plugins/calendar-plugin/index.js", oldEntry);
   const protectedPaths = new Set(["plugins/genshin", "plugins/group", "plugins/media", "plugins/system", "plugins/zzz"]);
   const plan = await planLegacyPlugins(root, protectedPaths);
 
   expect(plan).toEqual([
     { path: "plugins/bad", status: "scan-error", reason: expect.any(String) },
+    { path: "plugins/calendar-plugin", status: "retain" },
     { path: "plugins/custom-A", status: "retain" },
     { path: "plugins/custom-B", status: "review", reason: expect.stringContaining("plugins/custom-A") },
     { path: "plugins/genshin", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin 和 starrail") },

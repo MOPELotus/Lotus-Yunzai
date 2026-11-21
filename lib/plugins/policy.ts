@@ -12,7 +12,6 @@ const merged: readonly Rule[] = [
   { names: ["fansky_qs", "tianru-plugin", "nwflower/atlas", "atlas-plugin", "achievements-plugin"],
     replacement: "atlas" },
   { names: ["mora-plugin"], replacement: "guides 和游戏模块" },
-  { names: ["calendar-plugin"], replacement: "游戏模块" },
   { names: ["xiaoyao-cvs-plugin", "device-plugin", "lovemys", "axiu-plugin", "bujidao",
     "bujidaorun", "trss-plugin", "xhh-tl"], replacement: "公共账号服务和游戏模块" },
   { names: ["guoba-plugin"], replacement: "panel" },

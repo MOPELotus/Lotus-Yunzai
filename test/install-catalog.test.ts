@@ -42,6 +42,7 @@ test("审核要求合法仓库 HTTPS 地址、短分支、独立目录及完整 
   expect(normalizeApprovedInstall({ ...entry, url: "https://git.trss.me/Yunzai-Telegram-Plugin" })?.url)
     .toBe("https://git.trss.me/Yunzai-Telegram-Plugin");
   expect(installRejection("https://git.trss.me/TRSS-Plugin", "sample")).toContain("公共账号服务和游戏模块");
+  expect(installRejection("https://example.invalid/provider/calendar-plugin", "calendar-plugin")).toBeUndefined();
   const invalidUrls = [
     "http://example.invalid/Owner/Sample", "ssh://example.invalid/Owner/Sample", "https:example.invalid/Owner/Sample",
     "https:///example.invalid/Owner/Sample", "https://name:password@example.invalid/Owner/Sample",
