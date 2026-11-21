@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -485,6 +485,79 @@ async function exerciseRetainedPluginFailure(kind: "directory" | "standalone" | 
 test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载失败会回退", () => exerciseRetainedPluginFailure("directory"), 35_000);
 test.skipIf(!Bun.which("git"))("只更新宿主时已保留的独立 V3 脚本加载失败会回退", () => exerciseRetainedPluginFailure("standalone"), 35_000);
 test.skipIf(!Bun.which("git"))("只更新宿主时同目录的 V3 兄弟入口不能掩盖失败", () => exerciseRetainedPluginFailure("sibling"), 35_000);
+
+test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘修复后才重新切换", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-hot-plugin-"));
+  try {
+    const { active, old, candidate, localPlugin } = await fixtureRepository(temporary, false);
+    await rename(join(localPlugin, ".git"), join(temporary, "fixture-plugin-git"));
+    const entry = join(localPlugin, "entry.js");
+    const legacyScript = (command: string, reply: string) => `
+      export default class extends plugin {
+        constructor() { super({ event: "message.private", rule: [{ reg: "^${command}$", fnc: "run" }] }); }
+        async run(event) { return event.reply(${JSON.stringify(reply)}); }
+      }
+    `;
+    const initial = legacyScript("#待热重载样本", "旧脚本可用");
+    const reloaded = legacyScript("#待热重载样本", "新版脚本可用");
+    const broken = 'throw new Error("fixture hot reload failure");\n' + reloaded;
+    await Promise.all([
+      appendFile(join(active, "config/config/bot.yaml"), "file_watch: true\n"),
+      writeFile(join(localPlugin, "package.json"), '{"name":"local-fixture","type":"module"}'),
+      writeFile(join(localPlugin, "healthy.js"), legacyScript("#同目录样本", "同目录入口可用")),
+      writeFile(entry, initial),
+    ]);
+    const supervisor = bootSupervisor(active);
+    try {
+      const running = await supervisor.open(await deadline(supervisor.nextEndpoint(), "脚本测试宿主未启动。"), 99);
+      async function probe(client: Gateway) {
+        client.command("#待热重载样本", 51);
+        const frame = await client.next();
+        expect(frame.params.user_id).toBe(51);
+        return frame.params.message;
+      }
+      expect(await probe(running)).toBe("旧脚本可用");
+      await writeFile(entry, reloaded);
+      const until = Date.now() + 10_000;
+      let reply: string;
+      do {
+        await Bun.sleep(300);
+        reply = await probe(running);
+      } while (reply === "旧脚本可用" && Date.now() < until);
+      expect(reply).toBe("新版脚本可用");
+
+      running.command("#更新", 51);
+      expectText(await running.next(), { user_id: 51 }, /^开始更新/u);
+      expectText(await running.next(), { user_id: 51 }, /^正在准备候选版本/u);
+      await writeFile(entry, broken);
+      expectText(await running.next(15_000), { user_id: 51 }, /^更新失败，请检查宿主日志。$/u);
+      expect(await probe(running)).toBe("新版脚本可用");
+      expect(git(active, "rev-parse", "HEAD")).toBe(old);
+      expect(await readFile(entry, "utf8")).toBe(broken);
+
+      await writeFile(entry, reloaded);
+      const retryUntil = Date.now() + 5_000;
+      let status: Frame;
+      do {
+        await Bun.sleep(100);
+        running.command("#更新", 51);
+        status = await running.next();
+      } while (status.params.message.startsWith("已有更新") && Date.now() < retryUntil);
+      expectText(status, { user_id: 51 }, /^开始更新/u);
+      expectText(await running.next(), { user_id: 51 }, /^正在准备候选版本/u);
+      expectText(await running.next(), { user_id: 51 }, /^正在切换到候选版本/u);
+      const updated = await supervisor.open(await deadline(supervisor.nextEndpoint(), "修复脚本后的候选未启动。", 15_000), 99);
+      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      expect(await probe(updated)).toBe("新版脚本可用");
+      expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
+    } finally {
+      await supervisor.close();
+    }
+    expect(await supervisor.stderr).toContain('V3 脚本 "local-fixture/entry.js" 与当前生效版本不同');
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 35_000);
 
 async function exerciseTlsUpdate(fault?: "bind" | "wss") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));

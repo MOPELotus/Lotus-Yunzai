@@ -1,5 +1,25 @@
-import { lstatSync, watch, type FSWatcher } from "node:fs";
+import { createHash } from "node:crypto";
+import { constants, lstatSync, watch, type FSWatcher } from "node:fs";
+import { open } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+
+export function legacyScriptHash(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+export async function readFlatScript(path: string): Promise<Buffer | undefined> {
+  try {
+    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+    try {
+      if ((await file.stat()).isFile()) return await file.readFile();
+    } finally {
+      await file.close();
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ELOOP") throw error;
+  }
+}
 
 interface WatchOptions {
   readonly signal?: AbortSignal;

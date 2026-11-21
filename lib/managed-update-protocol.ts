@@ -12,6 +12,7 @@ export interface ManagedUpdateRequest {
     { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean; readonly milkyBotIds?: readonly number[] };
   readonly directories: readonly { readonly name: string; readonly path: string; readonly packageName: string }[];
   readonly scripts?: readonly string[];
+  readonly watchedScriptHashes?: readonly (readonly [script: string, hash: string])[];
 }
 
 export type ManagedUpdateWireRequest = Omit<ManagedUpdateRequest, "target"> & {
@@ -87,6 +88,20 @@ export function parseManagedLegacyScripts(value: unknown): readonly string[] | u
   return [...scripts];
 }
 
+function parseWatchedScriptHashes(value: unknown, scripts: readonly string[] = []) {
+  if (!Array.isArray(value) || value.length > scripts.length) return;
+  const loaded = new Set(scripts);
+  const hashes = new Map<string, string>();
+  for (const item of value) {
+    if (!Array.isArray(item) || item.length !== 2) return;
+    const [script, hash] = item;
+    if (typeof script !== "string" || !loaded.has(script) || script.split("/").length !== 2 ||
+        typeof hash !== "string" || hash.length !== 64 || !/^[a-f0-9]+$/u.test(hash) || hashes.has(script)) return;
+    hashes.set(script, hash);
+  }
+  return [...hashes];
+}
+
 function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined {
   if (!record(value)) return;
   const { type, botId, id, adapter } = value;
@@ -119,10 +134,13 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
   if (!record(value)) return;
   const { requested, install, all, force, quiet, target, directories } = value;
   const scripts = value.scripts === undefined ? undefined : parseManagedLegacyScripts(value.scripts);
+  const watchedScriptHashes = value.watchedScriptHashes === undefined
+    ? undefined : parseWatchedScriptHashes(value.watchedScriptHashes, scripts);
   if ((all !== undefined && typeof all !== "boolean") || (force !== undefined && typeof force !== "boolean") ||
       (requested !== undefined && (all === true || !isManagedUpdateName(requested))) || typeof quiet !== "boolean" ||
       !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit ||
-      (value.scripts !== undefined && scripts === undefined)) return;
+      (value.scripts !== undefined && scripts === undefined) ||
+      (value.watchedScriptHashes !== undefined && watchedScriptHashes === undefined)) return;
   const recipient = parseTarget(target);
   if (!recipient) return;
   if (recipient.type === "scheduled" && (all !== true || quiet !== true || force === true)) return;
@@ -147,6 +165,7 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
     ...(all === undefined ? {} : { all }),
     ...(force === undefined ? {} : { force }),
     quiet, target: recipient, directories: plugins, ...(scripts === undefined ? {} : { scripts }),
+    ...(watchedScriptHashes === undefined ? {} : { watchedScriptHashes }),
   };
 }
 

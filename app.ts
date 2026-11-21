@@ -485,6 +485,7 @@ if (import.meta.main) {
     return {
       directories: [...plugins?.directories ?? []].map(([name, metadata]) => ({ name, ...metadata })),
       scripts: plugins?.loadedScripts(),
+      watchedScriptHashes: plugins?.watchedScriptHashes(),
     };
   }
 

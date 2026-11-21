@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { addAbortListener } from "node:events";
-import { constants } from "node:fs";
-import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
@@ -33,7 +31,7 @@ import { isManagedLegacyScript, isManagedPluginDirectory, managedUpdateDirectory
 import type { MessageReply } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
-import { watchLegacyFiles } from "./file-watch.ts";
+import { legacyScriptHash, readFlatScript, watchLegacyFiles } from "./file-watch.ts";
 import type { LegacyPlugins } from "./legacy.ts";
 import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
@@ -113,23 +111,6 @@ async function legacyEntries(directory: string) {
   return { scripts: scripts.sort(), flat };
 }
 
-function scriptHash(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-async function readFlatScript(path: string): Promise<Buffer | undefined> {
-  try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
-    try {
-      if ((await file.stat()).isFile()) return await file.readFile();
-    } finally {
-      await file.close();
-    }
-  } catch (error) {
-    if (!isMissing(error) && record(error).code !== "ELOOP") throw error;
-  }
-}
-
 async function gitRepositories(directory: string): Promise<string[]> {
   try {
     await stat(join(directory, ".git"));
@@ -206,6 +187,7 @@ export interface PluginLoadReport {
   readonly readyScripts: readonly string[];
   readonly timings: readonly PluginLoadTiming[];
   loadedScripts(): readonly string[];
+  watchedScriptHashes(): readonly (readonly [script: string, hash: string])[];
   startWatching(): void;
   dispose(): Promise<void>;
 }
@@ -385,7 +367,7 @@ export async function loadPlugins(
         for (const file of scripts) {
           const entry = await findEntry(candidate.path, file);
           const bytes = await readFile(entry);
-          if (options.fileWatch && flat.has(file)) attempted.set(file, scriptHash(bytes));
+          if (options.fileWatch && flat.has(file)) attempted.set(file, legacyScriptHash(bytes));
           const nameInRoot = relative(root, join(candidate.path, file));
           const retired = rejectRetiredScript(nameInRoot, bytes);
           if (retired) retiredModules.add(retired.module);
@@ -619,7 +601,7 @@ export async function loadPlugins(
       const entry = join(directory, file);
       const bytes = await readFlatScript(entry);
       if (!bytes) continue;
-      const hash = scriptHash(bytes);
+      const hash = legacyScriptHash(bytes);
       if (watch.attempted.get(file) === hash) continue;
       watch.attempted.set(file, hash);
       if (watch.active.get(file) === hash) continue;
@@ -642,7 +624,7 @@ export async function loadPlugins(
       const unchanged = async () => {
         if (!await stillApproved()) return false;
         const latest = await readFlatScript(entry);
-        return latest !== undefined && scriptHash(latest) === hash;
+        return latest !== undefined && legacyScriptHash(latest) === hash;
       };
       const replacement = (async () => {
         if (!await unchanged() || loading.aborted) return;
@@ -694,6 +676,16 @@ export async function loadPlugins(
   return {
     records, directories, timings, readyDirectories: [...readyDirectories], readyScripts: [...readyScripts],
     loadedScripts: () => [...loadedScripts],
+    watchedScriptHashes() {
+      const hashes = new Map<string, string>();
+      for (const [directory, watch] of watched) {
+        for (const [file, hash] of watch.active) {
+          const script = `${basename(directory)}/${file}`;
+          if (loadedScripts.has(script)) hashes.set(script, hash);
+        }
+      }
+      return [...hashes];
+    },
     startWatching() {
       if (!watcher && watched.size && !services.signal.aborted && !disposal) {
         watcher = watchLegacyFiles(root, [...watched.keys()], reconcile, {

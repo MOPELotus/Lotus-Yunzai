@@ -50,6 +50,20 @@ test("托管更新按插件根目录记录保留的 V3 脚本入口", () => {
   }
 });
 
+test("托管更新只接收已加载的目录直属 V3 脚本的生效摘要", () => {
+  const scripts = ["sample.js", "group/entry.js", "group/apps/nested.js"];
+  const pair = ["group/entry.js", "a".repeat(64)] as const;
+  const current = { ...request, scripts, watchedScriptHashes: [pair] };
+  expect(parseManagedUpdateRequest(encodeManagedUpdateRequest(current))).toEqual(current);
+  expect(parseManagedUpdateRequest({ ...request, watchedScriptHashes: [pair] })).toBeUndefined();
+  for (const watchedScriptHashes of [
+    [pair, pair], Array(1), [[pair[0], "x".repeat(64)]], [[pair[0], "a".repeat(63) + "\n"]],
+    [["sample.js", pair[1]]], [["group/apps/nested.js", pair[1]]], [["group/new.js", pair[1]]],
+  ]) {
+    expect(parseManagedUpdateRequest({ ...current, watchedScriptHashes })).toBeUndefined();
+  }
+});
+
 test("全量托管更新要求布尔标记且不能同时指定单项", () => {
   const batch = { quiet: true, all: true, target: { type: "terminal" as const }, directories: [directory] };
   expect(parseManagedUpdateRequest(batch)).toEqual(batch);

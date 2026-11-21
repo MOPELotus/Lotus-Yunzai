@@ -7,6 +7,7 @@ import { createLocalGit, gitHead } from "./local-git.ts";
 import type { ManagedUpdateProgress, ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import type { ManagedEndpoints } from "./managed-handoff.ts";
 import { ManagedEndpointUnavailableError, spawnManagedWorker } from "./managed-worker.ts";
+import { legacyScriptHash, readFlatScript } from "./plugins/file-watch.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./process-receipts.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { activateUpdate, recoverUpdateActivation, type ActivatedUpdate } from "./update-activation.ts";
@@ -128,6 +129,14 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       const expectedPlugins = new Set([...directories.keys()].filter(name => !stagedPlugins || stagedPlugins.has(name)));
       if (ready.scope === "plugin") expectedPlugins.add(ready.name);
       if (ready.scope === "install") expectedPlugins.add(ready.plugin.name);
+      for (const [script, hash] of request.watchedScriptHashes ?? []) {
+        signal.throwIfAborted();
+        const path = join(root, "plugins", script);
+        const bytes = (await lstat(dirname(path))).isDirectory() ? await readFlatScript(path) : undefined;
+        if (!bytes || legacyScriptHash(bytes) !== hash) {
+          throw new Error(`V3 脚本 ${JSON.stringify(script)} 与当前生效版本不同。请恢复磁盘文件，或确认修复后已热重载，再重试。`);
+        }
+      }
       if (stopped || signal.aborted || current !== worker) return;
       report("switching");
       const target = request.target;
