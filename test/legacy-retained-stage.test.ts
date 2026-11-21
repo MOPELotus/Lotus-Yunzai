@@ -10,6 +10,7 @@ async function put(root: string, path: string, bytes: string, mode?: number) {
   const file = join(root, path);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, bytes, { mode });
+  if (mode !== undefined) await chmod(file, mode);
 }
 
 async function fixture(run: (source: string, target: string, staging: string) => Promise<void>) {
