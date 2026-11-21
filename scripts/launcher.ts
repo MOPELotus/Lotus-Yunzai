@@ -216,20 +216,20 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     }
     return Bun.spawn([binary, "stop", active.id], spawnOptions(active.path)).exited;
   }
+  const selected = active ?? current ?? legacy;
+  if (action === "logs" && !selected) {
+    // A failed replacement may remove the stopped registration while leaving all of its logs.
+    for (const path of [home, legacyHome]) {
+      if (!await privateHome(path)) continue;
+      const status = await readBackgroundLogFiles(path, options);
+      if (status !== undefined) return status;
+    }
+    throw new Error("当前目录暂无后台启动日志。");
+  }
   if (!binary) throw new Error("后台托管需要 PATH 中的 PM2。");
   const executable = binary;
   if (action !== "start:bg" && action !== "restart") {
-    const selected = active ?? current ?? legacy;
     if (!selected) {
-      if (action === "logs") {
-        // A failed replacement may remove the stopped registration while leaving all of its logs.
-        for (const path of [home, legacyHome]) {
-          if (!await privateHome(path)) continue;
-          const status = await readBackgroundLogFiles(path, options);
-          if (status !== undefined) return status;
-        }
-        throw new Error("当前目录暂无后台启动日志。");
-      }
       console.log("当前目录未启动后台托管。");
       return 0;
     }
@@ -423,8 +423,10 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
 async function run() {
   const command = readCommand(Bun.argv.slice(2));
   const directory = await realpath(fileURLToPath(new URL("../", import.meta.url)));
-  if (command.action === "status" || command.action === "logs") {
-    return pm2(pm2Executable(), directory, command.action, command.action === "logs" ? command.options : []);
+  if (command.action === "status") return pm2(pm2Executable(), directory, "status");
+  if (command.action === "logs") {
+    const binary = process.platform === "win32" ? pm2Executable() : Bun.which("pm2") ?? undefined;
+    return pm2(binary, directory, "logs", command.options);
   }
 
   // Managed replacement can rename the checkout while this lock is held.

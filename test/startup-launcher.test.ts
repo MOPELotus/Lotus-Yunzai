@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +91,26 @@ test.skipIf(process.platform === "win32")("PM2 登记丢失后仍可读后台历
     expect(code).toBe(0);
     expect(stdout).toBe(expected);
     expect(stderr).toBe("");
+  }
+
+  await rm(join(bin, "pm2"));
+  const tail = Bun.which("tail");
+  expect(tail).toBeString();
+  await symlink(tail!, join(bin, "tail"));
+  async function readWithoutPm2() {
+    const child = launch(["logs", "--nostream", "--out", "--lines=1"], { PATH: bin });
+    return Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  }
+
+  expect(await readWithoutPm2()).toEqual([0, "previous startup\n", ""]);
+  const daemon = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+  try {
+    const [code, stdout, stderr] = await readWithoutPm2();
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("无法核实后台登记");
+  } finally {
+    daemon.stop(true);
   }
 });
 
