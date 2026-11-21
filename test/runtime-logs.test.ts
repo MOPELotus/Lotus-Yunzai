@@ -8,7 +8,7 @@ import { archiveRuntimeLogs } from "../lib/runtime-log-archive.ts";
 import { attachRuntimeLog } from "../lib/runtime-log-writer.ts";
 import { readRuntimeLogs, runtimeLogFilename, sanitizeRuntimeLog } from "../lib/runtime-logs.ts";
 
-const time = new Date(2026, 0, 3, 0, 7);
+const time = new Date("2026-01-02T16:00:00.000Z");
 
 async function fixture(run: (root: URL, directory: string, logs: string) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), "lotus-runtime-log-"));
@@ -21,13 +21,16 @@ async function fixture(run: (root: URL, directory: string, logs: string) => Prom
   }
 }
 
-test("只读取服务端本地日期的运行日志和固定错误日志，稳定末行可无换行", () => fixture(async (root, _directory, logs) => {
+test("运行日志按北京时间午夜分日，错误日志使用固定文件，稳定末行可无换行", () => fixture(async (root, _directory, logs) => {
+  const previous = new Date(time.getTime() - 1);
+  expect(runtimeLogFilename("runtime", previous)).toBe("command.2026-01-02.log");
   expect(runtimeLogFilename("runtime", time)).toBe("command.2026-01-03.log");
   expect(runtimeLogFilename("error", time)).toBe("error.log");
   expect(await readRuntimeLogs(root, "runtime", { limit: 10 }, time)).toEqual([]);
   await writeFile(join(logs, "command.2026-01-02.log"), "前一天\n");
   await writeFile(join(logs, "command.2026-01-03.log"), "旧\r\n\n新版\n最后一条");
   await writeFile(join(logs, "error.log"), "错误旧\n错误新\n");
+  expect(await readRuntimeLogs(root, "runtime", { limit: 10 }, previous)).toEqual(["前一天"]);
   expect(await readRuntimeLogs(root, "runtime", { limit: 2 }, time)).toEqual(["最后一条", "新版"]);
   expect(await readRuntimeLogs(root, "error", { limit: 10 }, time)).toEqual(["错误新", "错误旧"]);
   expect(await readRuntimeLogs(root, "error", { limit: 0 }, time)).toEqual([]);

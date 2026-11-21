@@ -9,6 +9,9 @@ type Query = { readonly limit: number; readonly search?: string };
 
 const maxTailBytes = 4 * 1024 * 1024;
 const maxLineLength = 2_000;
+const runtimeLogDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+});
 const hidden = "[已隐藏]";
 const headers = "(?:cookie|set[-_]?cookie|(?:proxy[-_]?)?authorization)";
 const secrets = "(?:access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|csrf[-_]?token|cookie[-_]?token|" +
@@ -26,10 +29,7 @@ const secretArgument = new RegExp(`${boundary}(--${secrets}\\s+)(?:${hiddenValue
 export function runtimeLogFilename(kind: LogKind, now: Date): string {
   if (kind === "error") return "error.log";
   if (!Number.isFinite(now.getTime())) throw new Error("运行日志日期无效。");
-  const year = String(now.getFullYear()).padStart(4, "0");
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `command.${year}-${month}-${day}.log`;
+  return `command.${runtimeLogDate.format(now)}.log`;
 }
 
 export function sanitizeRuntimeLog(line: string, maxLength = maxLineLength): string {
