@@ -35,6 +35,9 @@ test.skipIf(!Bun.which("git"))("暂存兼容外装和散装脚本，保留包内
   const config = "plugins/local/config/settings.yaml";
   const configBytes = "mode: existing\r\n";
   const entry = 'import puppeteer from "../../lib/puppeteer/puppeteer.js";\nconst level = <number>1;\nthrow new Error("must not execute");\n';
+  await put(target, "lib/puppeteer/puppeteer.js", "export default undefined;");
+  await put(target, "node_modules/yaml/package.json", '{"name":"yaml","version":"2.9.1","main":"index.js"}');
+  await put(target, "node_modules/yaml/index.js", 'throw new Error("must not execute");');
   await put(source, "plugins/local/package.json", JSON.stringify({
     name: "@fixture/local", lotusYunzai: { entry: "./index.ts" }, dependencies: { yaml: "^2" },
   }));
@@ -71,6 +74,10 @@ test.skipIf(!Bun.which("git"))("暂存兼容外装和散装脚本，保留包内
     ],
   });
   expect((await readdir(join(staging, "plugins"))).sort()).toEqual(["example.js", "local"]);
+  expect(batch.heldDirectory).toBe(join(staging, "held-plugins"));
+  expect((await lstat(batch.heldDirectory!)).mode & 0o777).toBe(0o700);
+  expect((await readdir(batch.heldDirectory!)).sort()).toEqual(["import-browser", "manifest-browser", "require-browser.js"]);
+  expect(await readFile(join(batch.heldDirectory!, "require-browser.js"), "utf8")).toBe('require("puppeteer-core/lib");');
   expect(await readFile(join(staging, "plugins/local/index.ts"), "utf8")).toBe(entry);
   expect(await readFile(join(staging, config), "utf8")).toBe(configBytes);
   expect((await lstat(join(staging, config))).mode & 0o777).toBe(0o640);
@@ -82,6 +89,66 @@ test.skipIf(!Bun.which("git"))("暂存兼容外装和散装脚本，保留包内
   }
   expect(await readFile(join(source, config), "utf8")).toBe(configBytes);
   expect(await readdir(join(target, "plugins"))).toEqual(["genshin"]);
+}));
+
+test.skipIf(!Bun.which("git"))("检查精确导入、相对路径和版本，依赖不全的原文件移入私有树", () => fixture(async (source, target, staging) => {
+  await put(target, "node_modules/ready-dependency/package.json", JSON.stringify({
+    name: "ready-dependency", version: "2.0.0", exports: { "./node": { import: "./esm.js" } },
+  }));
+  await put(target, "node_modules/ready-dependency/esm.js", "throw new Error('must not execute');");
+  await put(target, "lib/plugins/plugin.js", "export default class Plugin {};");
+  await put(source, "plugins/readiness-good/package.json", JSON.stringify({
+    name: "readiness-good", dependencies: { "ready-dependency": "^2.0.0" },
+    optionalDependencies: { "platform-only": "1.0.0" },
+  }));
+  await put(source, "plugins/readiness-good/index.js",
+    'import "ready-dependency/node"; import "./data/helper.js"; import "../../lib/plugins/plugin.js";');
+  await put(source, "plugins/readiness-good/data/helper.js", "export {};");
+  const blocked = 'require("ready-dependency/node"); import "not-installed"; import "./missing.js"; import "../../../outside.js";';
+  await put(source, "plugins/readiness-held/index.js", blocked);
+  await put(source, "plugins/readiness-held/data/settings.json", '{"fixture":true}');
+  await put(source, "plugins/readiness-held/node_modules/not-installed/index.js", "export {};");
+  await put(source, "plugins/version-incompatible/package.json", JSON.stringify({
+    name: "version-incompatible", dependencies: { "ready-dependency": "^1.0.0" },
+  }));
+  await put(source, "plugins/version-incompatible/index.js", 'import "ready-dependency/node";');
+  await put(source, "plugins/manifest-only/package.json", JSON.stringify({
+    name: "manifest-only", dependencies: { "undeclared-dynamic-use": "^1.0.0" },
+  }));
+  await put(source, "plugins/manifest-only/index.js", "export {};");
+  const batch = await stageRetainedLegacyPlugins(await planMigration(source, target), staging);
+  expect(batch.retained).toEqual([{ path: "plugins/readiness-good", dependencies: ["platform-only", "ready-dependency"] }]);
+  expect(batch.held).toEqual([
+    { path: "plugins/manifest-only", reason: "unresolved-dependency", issues: [
+      { source: "package.json", specifier: "undeclared-dynamic-use", mode: "manifest", reason: "missing" },
+    ] },
+    { path: "plugins/readiness-held", reason: "unresolved-dependency", issues: [
+      { source: "index.js", specifier: "ready-dependency/node", mode: "require", reason: "missing" },
+      { source: "index.js", specifier: "not-installed", mode: "import", reason: "missing" },
+      { source: "index.js", specifier: "./missing.js", mode: "import", reason: "missing-relative-module" },
+      { source: "index.js", specifier: "../../../outside.js", mode: "import", reason: "outside-installation" },
+    ] },
+    { path: "plugins/version-incompatible", reason: "unresolved-dependency", issues: [
+      { source: "index.js", specifier: "ready-dependency/node", mode: "import", reason: "version" },
+    ] },
+  ]);
+  expect(await readdir(join(staging, "plugins"))).toEqual(["readiness-good"]);
+  expect(await readFile(join(batch.heldDirectory!, "readiness-held/index.js"), "utf8")).toBe(blocked);
+  expect(await readFile(join(batch.heldDirectory!, "readiness-held/data/settings.json"), "utf8")).toBe('{"fixture":true}');
+  await expect(lstat(join(batch.heldDirectory!, "readiness-held/node_modules"))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readdir(join(target, "plugins"))).toEqual(["genshin"]);
+}));
+
+test.skipIf(!Bun.which("git"))("没有可活动的包也保留单文件待核插件", () => fixture(async (source, target, staging) => {
+  await put(source, "plugins/missing.js", 'import "./another-plugin.js";');
+  const batch = await stageRetainedLegacyPlugins(await planMigration(source, target), staging);
+  expect(batch).toMatchObject({ status: "empty", retained: [], heldDirectory: join(staging, "held-plugins"), held: [
+    { path: "plugins/missing.js", reason: "unresolved-dependency", issues: [
+      { source: "missing.js", specifier: "./another-plugin.js", mode: "import", reason: "missing-relative-module" },
+    ] },
+  ] });
+  expect(await readdir(staging)).toEqual(["held-plugins"]);
+  expect(await readFile(join(batch.heldDirectory!, "missing.js"), "utf8")).toBe('import "./another-plugin.js";');
 }));
 
 test.skipIf(!Bun.which("git"))("越界链接或目标冲突不发布兼容暂存，并允许修正后重跑", () => fixture(async (source, target, staging) => {
