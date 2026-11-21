@@ -45,14 +45,15 @@ export function formatElapsed(milliseconds: number): string {
   return parts.map(([amount, unit]) => amount ? `${amount}${unit}` : "").join("") || "0秒";
 }
 
-export function createDispatchPower(now = Date.now, pausedAt?: number) {
+export function createDispatchPower(now = Date.now, pausedAt?: number, persist?: (pausedAt?: number) => void) {
   let paused = pausedAt !== undefined;
   let since = pausedAt ?? now();
   let active = new AbortController();
   if (paused) active.abort();
 
-  function setPaused(value: boolean, timestamp = now()): string | undefined {
+  function changePaused(value: boolean, timestamp: number, save?: (pausedAt?: number) => void): string | undefined {
     if (paused === value) return;
+    save?.(value ? timestamp : undefined);
     const elapsed = formatElapsed(timestamp - since);
     since = timestamp;
     paused = value;
@@ -61,17 +62,27 @@ export function createDispatchPower(now = Date.now, pausedAt?: number) {
     return paused ? `关机成功，本次运行时长${elapsed}` : `开机成功，距离上次关机${elapsed}`;
   }
 
+  function setPaused(value: boolean): string | undefined {
+    return changePaused(value, now(), persist);
+  }
+
   return {
     get paused() { return paused; },
     get pausedAt() { return paused ? since : undefined; },
     get activeSignal() { return active.signal; },
     setPaused,
+    restorePaused(timestamp: number) { changePaused(true, timestamp); },
     async handle(event: MessageEvent): Promise<void> {
       if (!isProcessMaster(event) ||
           (event.adapter !== "milky" && event.message_type !== "terminal" && event.boundAccount !== true)) return;
       if (event.msg !== (paused ? resume : pause)) return;
 
-      const message = setPaused(!paused);
+      let message: string | undefined;
+      try {
+        message = setPaused(!paused);
+      } catch {
+        message = "无法保存软关机状态，当前状态保持原样。";
+      }
       if (message !== undefined) await event.reply(message);
     },
   };

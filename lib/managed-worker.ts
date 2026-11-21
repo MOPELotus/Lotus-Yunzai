@@ -15,6 +15,7 @@ interface ManagedWorkerOptions {
   readonly expectedEndpoints?: ManagedEndpoints;
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
+  readonly powerState?: { path: string; attempt: string };
   readonly onRestart?: (pausedAt?: number) => void;
   readonly onUpdate?: (request: ManagedUpdateRequest, report: (status: ManagedUpdateProgress) => void) => void | Promise<void>;
 }
@@ -53,6 +54,8 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   let endpoints: ManagedEndpoints = {};
   if (pausedAt !== undefined) env.LOTUS_MANAGED_PAUSED_AT = String(pausedAt);
   else delete env.LOTUS_MANAGED_PAUSED_AT;
+  env.LOTUS_MANAGED_POWER_PATH = options.powerState?.path ?? "";
+  env.LOTUS_MANAGED_POWER_ATTEMPT = options.powerState?.attempt ?? "";
   const readiness = Promise.withResolvers<void>();
   const disconnected = Promise.withResolvers<void>();
   let ready = false;

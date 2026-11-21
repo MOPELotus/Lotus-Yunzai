@@ -2,6 +2,7 @@ import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs
 import { createConnection } from "node:net";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
 import { lockFile } from "../lib/file-lock.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 
@@ -247,6 +248,8 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   const attemptFile = join(home, "host-start-attempt");
   const entry = await preparePm2Entry(home);
   await rm(readyFile, { force: true });
+  // A deliberate new registration starts a new session. PM2 recovery reuses the existing attempt.
+  await rm(join(home, managedDispatchPauseFile), { force: true });
   const config = join(home, "host-process.json");
   const attempt = crypto.randomUUID();
   await writeFile(attemptFile, attempt, { mode: 0o600 });

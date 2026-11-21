@@ -5,13 +5,14 @@ import { managedProcess } from "../lib/managed-exit.ts";
 
 export async function runManaged(directory: string, ready?: () => Promise<void>,
   onWorkerReady?: (ready: boolean) => void,
+  powerState?: { path: string; attempt: string },
 ): Promise<number> {
   const { createManagedSupervisor } = await import("../lib/managed-supervisor.ts");
   const root = await realpath(directory);
   // Keep the same lock across a supervised checkout replacement.
   const lock = await lockFile(join(dirname(root), `.${basename(root)}.lotus-host.sqlite`),
     "托管宿主", 0, "当前目录已有托管宿主运行。");
-  const supervisor = createManagedSupervisor(root, { onWorkerReady });
+  const supervisor = createManagedSupervisor(root, { onWorkerReady, powerState });
   let stopping = false;
   const stop = (signal: "SIGINT" | "SIGTERM") => {
     stopping = true;

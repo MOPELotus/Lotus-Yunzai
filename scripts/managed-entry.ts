@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { managedDispatchPauseFile } from "../lib/managed-dispatch-pause.ts";
 import { lockFile } from "../lib/file-lock.ts";
 import { backgroundCleanStop, managedProcess, setManagedWorkerReady } from "../lib/managed-exit.ts";
 import { recoverUpdateActivation } from "../lib/update-activation.ts";
@@ -38,7 +39,7 @@ await managedProcess(async ready => {
   }), (workerReady) => {
     available = workerReady;
     if (announced) setManagedWorkerReady(readyFile, workerReady);
-  });
+  }, attempt === undefined ? undefined : { path: join(dirname(readyFile), managedDispatchPauseFile), attempt });
   // PM2 reports signal exits as zero. Give an orderly stop its own exit code.
   return status === 0 ? backgroundCleanStop : status;
 }, readyFile);

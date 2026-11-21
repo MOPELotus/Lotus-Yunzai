@@ -1,4 +1,5 @@
 import { isGitRevision } from "./local-git.ts";
+import { managedDispatchPause } from "./managed-dispatch-pause.ts";
 import { encodeManagedUpdateRequest, isManagedPluginDirectory, isManagedUpdateProgress, isTerminalManagedUpdateProgress,
   managedUpdateDirectoryLimit, parseManagedUpdateRequest, type ManagedUpdateProgress, type ManagedUpdateRequest,
   type ManagedUpdateWireRequest } from "./managed-update-protocol.ts";
@@ -22,6 +23,7 @@ interface ManagedHandoff {
     scripts?: readonly string[]): Promise<void>;
   restart(pausedAt?: number): boolean;
   reportPower(pausedAt?: number): boolean;
+  readonly powerState?: ReturnType<typeof managedDispatchPause>;
   update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
   cancelUpdate(): void;
   onDisconnect(handler: () => void): () => void;
@@ -45,12 +47,16 @@ export function createManagedHandoff(): ManagedHandoff {
   const token = process.env.LOTUS_MANAGED_TOKEN;
   const held = process.env.LOTUS_MANAGED_HELD === "1";
   const paused = process.env.LOTUS_MANAGED_PAUSED_AT;
+  const powerPath = process.env.LOTUS_MANAGED_POWER_PATH;
+  const powerAttempt = process.env.LOTUS_MANAGED_POWER_ATTEMPT;
   const adapterReceipts = process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS === "1";
   const scheduledAdapterReceipts = adapterReceipts && process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS === "1";
   const activationAck = held && process.env.LOTUS_MANAGED_ACTIVATION_ACK === "1";
   delete process.env.LOTUS_MANAGED_TOKEN;
   delete process.env.LOTUS_MANAGED_HELD;
   delete process.env.LOTUS_MANAGED_PAUSED_AT;
+  delete process.env.LOTUS_MANAGED_POWER_PATH;
+  delete process.env.LOTUS_MANAGED_POWER_ATTEMPT;
   delete process.env.LOTUS_MANAGED_ADAPTER_RECEIPTS;
   delete process.env.LOTUS_MANAGED_SCHEDULED_ADAPTER_RECEIPTS;
   delete process.env.LOTUS_MANAGED_ACTIVATION_ACK;
@@ -188,6 +194,7 @@ export function createManagedHandoff(): ManagedHandoff {
     managed: true,
     supportsAdapterReceipts: adapterReceipts,
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
+    powerState: powerPath && powerAttempt ? managedDispatchPause(powerPath, powerAttempt) : undefined,
     get accepting() { return accepting && connected(); },
     ready(revision, signal, loadedPlugins, endpoints, scripts) {
       return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts);

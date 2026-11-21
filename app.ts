@@ -275,7 +275,15 @@ if (import.meta.main) {
     signal: lifecycle.signal,
   });
   const restartPausedAt = readRestartPausedAt();
-  const dispatchPower = createDispatchPower(Date.now, handoff.pausedAt ?? restartPausedAt);
+  const durablePause = handoff.powerState;
+  const recordedPause = durablePause?.load();
+  const initialPause = recordedPause === undefined ? handoff.pausedAt ?? restartPausedAt : recordedPause ?? undefined;
+  const dispatchPower = createDispatchPower(Date.now, initialPause,
+    durablePause ? (value) => {
+      if (!handoff.accepting) throw new Error("托管宿主连接已断开。");
+      durablePause.save(value);
+      handoff.reportPower(value);
+    } : undefined);
   let plugins: PluginLoadReport | undefined;
   let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopRestartSchedule: (() => Promise<void>) | undefined;
@@ -1984,12 +1992,12 @@ if (import.meta.main) {
       globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
     }
-    const legacyPause = globalThis.redis && !dispatchPower.paused
+    const legacyPause = globalThis.redis && recordedPause === undefined && !dispatchPower.paused
       ? await readLegacyDispatchPause(globalThis.redis).catch(() => {
         console.warn("[进程管理] 无法读取旧版关机状态。");
       })
       : undefined;
-    if (legacyPause) dispatchPower.setPaused(true, legacyPause.pausedAt);
+    if (legacyPause) dispatchPower.restorePaused(legacyPause.pausedAt);
     const accounts = accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       if (args[0] === "登录列表") {
@@ -2933,11 +2941,15 @@ if (import.meta.main) {
         httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
         milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
       }, plugins.readyScripts);
+      if (recordedPause !== undefined) handoff.reportPower(dispatchPower.pausedAt);
       if (legacyPause && !lifecycle.signal.aborted && handoff.accepting) {
-        const taken = await legacyPause.take().catch(() => {
+        try {
+          durablePause?.save(legacyPause.pausedAt);
+          const taken = await legacyPause.take();
+          if (taken === false && dispatchPower.pausedAt === legacyPause.pausedAt) dispatchPower.setPaused(false);
+        } catch {
           console.warn("[进程管理] 未能确认旧版关机状态已接管。");
-        });
-        if (taken === false && dispatchPower.pausedAt === legacyPause.pausedAt) dispatchPower.setPaused(false);
+        }
         handoff.reportPower(dispatchPower.pausedAt);
       }
       moduleTasksActive = true;
@@ -2949,7 +2961,13 @@ if (import.meta.main) {
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
-        const reply = dispatchPower.setPaused(paused);
+        let reply: string | undefined;
+        try {
+          reply = dispatchPower.setPaused(paused);
+        } catch {
+          console.warn("[进程管理] 无法保存定时开关机状态，当前状态保持原样。");
+          return;
+        }
         if (reply === undefined) return;
         console.log(`[进程管理] ${reply}`);
         const notifications = await Promise.all(processOwnerTargets().map((target) => sendProcessMessage(target, reply)));

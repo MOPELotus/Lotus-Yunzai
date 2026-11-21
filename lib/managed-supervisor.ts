@@ -43,6 +43,7 @@ async function retainedLegacyScripts(root: string, scripts: readonly string[]) {
 
 export function createManagedSupervisor(directory: string, options: {
   env?: NodeJS.ProcessEnv; onWorkerReady?: (ready: boolean) => void;
+  powerState?: { path: string; attempt: string };
 } = {}) {
   const root = resolve(directory);
   const rootUrl = pathToFileURL(root + sep);
@@ -73,7 +74,7 @@ export function createManagedSupervisor(directory: string, options: {
     expectedScripts?: readonly string[]; expectedEndpoints?: ManagedEndpoints;
   } = {}) {
     const worker: Worker = spawnManagedWorker(path, {
-      ...startup, env: options.env, held: startup.expectedRevision !== undefined,
+      ...startup, env: options.env, powerState: options.powerState, held: startup.expectedRevision !== undefined,
       onRestart(restartPausedAt) {
         if (current === worker && !stopped) {
           restarts.set(worker, restartPausedAt);
