@@ -2,7 +2,8 @@ import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
-import { segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke, type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
+import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
+  type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
@@ -406,6 +407,18 @@ async function dispatchGroupNotice(
   }
 }
 
+function confirmedPokeDelivery(calls: OneBotCalls, send: Send, target: { user_id: number } | { group_id: number },
+  signal: AbortSignal): PokeDeliverySession {
+  return {
+    signal,
+    async send(reply, active) {
+      const message = encodeOneBotReply(reply);
+      return message !== undefined &&
+        await calls.sendConfirmed(send, target, message, AbortSignal.any([signal, active])) === "confirmed";
+    },
+  };
+}
+
 async function dispatchFriendPoke(
   dispatch: (event: FriendPoke) => Promise<void>,
   send: Send,
@@ -421,6 +434,7 @@ async function dispatchFriendPoke(
     post_type: "notice", notice_type: "friend", sub_type: "poke",
     self_id, user_id, operator_id: user_id, target_id,
     time: isId(time) ? time : undefined,
+    [pokeDeliverySession]: signal && confirmedPokeDelivery(connection.calls, send, { user_id }, signal),
     [friendMessageNoticeSession]: signal ? {
       signal,
       notifyOwners: (reply, workflow) => notifyVerifiedFriendOwners(connection.calls, send, self_id,
@@ -450,6 +464,7 @@ async function dispatchGroupPoke(
     post_type: "notice", notice_type: "group", sub_type: "poke",
     self_id, group_id, user_id, operator_id: user_id, target_id,
     time: isId(time) ? time : undefined,
+    [pokeDeliverySession]: confirmedPokeDelivery(connection.calls, send, { group_id }, signal),
     isGroup: true, isPrivate: false, isMaster: isMaster(self_id, user_id),
     reply(reply) {
       if (signal.aborted) return false;

@@ -81,7 +81,8 @@ import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-en
 import { appendBlackUser } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import { setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest, type MessageEvent, type MessageReply } from "./lib/messages.ts";
+import { pokeDeliverySession, setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest,
+  type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
@@ -339,6 +340,10 @@ if (import.meta.main) {
   let temporaryMessageNotice: { policy: TemporaryMessageNotice; signal: AbortSignal } | undefined;
   let friendRelationshipNotice: { policy: FriendRelationshipNotice; signal: AbortSignal } | undefined;
   let friendPokeNotice: { policy: FriendPokeNotice; signal: AbortSignal } | undefined;
+  let memePoke: {
+    run: (input: import("./plugins/meme/lotus.ts").MemePokeContext) => Promise<void>;
+    signal: AbortSignal;
+  } | undefined;
   let friendRecallNotice: { policy: FriendRecallNotice; signal: AbortSignal } | undefined;
   let groupRecallNotice: { policy: GroupRecallNotice; signal: AbortSignal } | undefined;
   let groupMessageNotice: { policy: GroupMessageNotice; signal: AbortSignal } | undefined;
@@ -1162,6 +1167,22 @@ if (import.meta.main) {
     const dispatchedEvent = event.post_type === "request" && event.request_type === "group" && event.sub_type === "add"
       ? withGroupOwnerJoinNotice(event) : event;
     const consumed = await legacy.dispatch(dispatchedEvent, allowed);
+    if (!consumed && event.post_type === "notice" && event.sub_type === "poke" && memePoke &&
+        event.target_id === event.self_id && event.user_id !== event.self_id) {
+      const delivery = event[pokeDeliverySession];
+      if (delivery) {
+        const { run, signal: moduleSignal } = memePoke;
+        const signal = nativeOperationSignal(moduleSignal, delivery.signal);
+        const active = () => !signal.aborted && !stopping && handoff.accepting &&
+          groupDispatch.allowsInbound(event) && groupDispatch.allows(event, ["[meme] 表情合成"]);
+        await run({
+          backend: event.adapter ?? "onebot", botId: event.self_id, groupId: event.isGroup ? event.group_id : undefined,
+          actorId: event.user_id, targetId: event.target_id, signal, allowed: active,
+          isBotMaster: id => masterPermissions.isMaster(event.self_id, id),
+          async reply(reply) { return active() && await delivery.send(reply, signal); },
+        });
+      }
+    }
     if (!consumed && event.post_type === "notice" && event.notice_type === "group" &&
         event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"])) {
       const session = groupModerationSession(event)?.signal;
@@ -2852,6 +2873,11 @@ if (import.meta.main) {
       memeRuntime: probingUpdate ? undefined : {
         whenReady: whenModuleTasksActive,
         registerTask: (cron, run) => registerModuleTask("[meme] 自动更新表情包数据", cron, run),
+      },
+      registerMemePoke(run, signal) {
+        const registration = { run, signal };
+        memePoke = registration;
+        return () => { if (memePoke === registration) memePoke = undefined; };
       },
       mediaRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,

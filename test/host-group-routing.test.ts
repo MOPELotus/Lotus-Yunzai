@@ -84,6 +84,7 @@ type Gateway = ReturnType<typeof gateway>;
 async function withHost(
   prepare: (root: string) => Promise<void>,
   run: (connect: (botId: number) => Promise<Gateway>, root: string) => Promise<void>,
+  preloads: readonly string[] = [],
 ) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-group-routing-"));
   const clients: Gateway[] = [];
@@ -92,7 +93,7 @@ async function withHost(
     await copyHost(root);
     await prepare(root);
     disableMemberPrewarm(root);
-    host = Bun.spawn([process.execPath, "app.ts"], {
+    host = Bun.spawn([process.execPath, ...preloads.flatMap(path => ["--preload", path]), "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "group-routing-fixture" },
     });
@@ -451,7 +452,7 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
   const requests: FormData[] = [];
   const service = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/memes/sample/") {
+    if (request.method !== "POST" || !["/memes/sample/", "/memes/poke/"].includes(new URL(request.url).pathname)) {
       return new Response(null, { status: 404 });
     }
     requests.push(await request.formData());
@@ -471,12 +472,24 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
       await mkdir(memeConfig, { recursive: true });
       await writeFile(join(config, "group.yaml"), 'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"81": { disable: ["清语表情:表情包生成"] }\n');
       await writeFile(join(memeConfig, "server.yaml"), `url: "${service.url.href}"\n`);
-      await writeFile(join(memeConfig, "meme.yaml"), "reply: true\n");
+      await writeFile(join(memeConfig, "meme.yaml"), "reply: true\npokeEnable: true\npokeProbability: 100\npokeLimit: 20\n");
+      await writeFile(join(root, "avatar-fixture.ts"), `
+        const original = fetch;
+        globalThis.fetch = Object.assign((input, init) => {
+          const url = new URL(input instanceof Request ? input.url : String(input));
+          if (url.hostname === "q1.qlogo.cn" && url.searchParams.get("nk") === "42") {
+            return Promise.resolve(new Response(Uint8Array.fromBase64(${JSON.stringify(png)}), { headers: { "content-type": "image/png" } }));
+          }
+          return original(input, init);
+        }, { preconnect: original.preconnect });
+      `);
       const db = new Database(join(memeConfig, "../data.db"));
       try {
         db.run("CREATE TABLE meme (key TEXT PRIMARY KEY, keyWords TEXT, min_images INTEGER, max_images INTEGER, min_texts INTEGER, max_texts INTEGER, params TEXT)");
         db.run("INSERT INTO meme VALUES ('sample', ?, 1, 1, 1, 1, ?)", [JSON.stringify(["表情夹具"]),
           JSON.stringify({ min_images: 1, max_images: 1, min_texts: 1, max_texts: 1 })]);
+        db.run("INSERT INTO meme VALUES ('poke', ?, 1, 1, 0, 0, ?)", [JSON.stringify(["戳戳夹具"]),
+          JSON.stringify({ min_images: 1, max_images: 1, min_texts: 0, max_texts: 0 })]);
       } finally {
         db.close();
       }
@@ -513,7 +526,25 @@ test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引�
       bot.send("#状态", 81);
       await bot.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
       expect(requests).toHaveLength(2);
-    });
+      const poke = { post_type: "notice", notice_type: "notify", sub_type: "poke", user_id: 42, target_id: 99, group_id: 77 };
+      bot.sendFrame(poke);
+      const notice = await bot.action();
+      expect(notice).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
+        { type: "text", data: { text: expect.stringContaining("戳戳夹具") } },
+        { type: "image", data: { file: `base64://${png}` } },
+      ] } });
+      expect(notice.echo).toBeDefined();
+      bot.sendFrame({ echo: notice.echo, status: "ok", retcode: 0, data: { message_id: 101 } });
+      expect(requests).toHaveLength(3);
+      expect(requests[2]?.getAll("texts")).toEqual([]);
+      expect(await (requests[2]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+      bot.sendFrame({ ...poke, group_id: 81 });
+      bot.sendFrame({ ...poke, target_id: 51 });
+      bot.sendFrame(poke);
+      await Bun.sleep(100);
+      bot.assertNoPendingFrames();
+      expect(requests).toHaveLength(3);
+    }, ["./avatar-fixture.ts"]);
   } finally {
     await service.stop(true);
   }

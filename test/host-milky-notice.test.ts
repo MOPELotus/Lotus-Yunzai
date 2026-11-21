@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
@@ -135,6 +135,21 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
     await cp(new URL("../plugins/group", import.meta.url), join(root, "plugins", "group"), {
       recursive: true, filter: (path) => !path.endsWith("/.git"),
     });
+    const meme = join(root, "plugins", "meme");
+    await mkdir(meme);
+    await writeFile(join(meme, "package.json"), JSON.stringify({
+      name: "@lotus-yunzai/meme", lotusYunzai: { entry: "./lotus.js" },
+    }));
+    await writeFile(join(meme, "lotus.js"), `
+      export function createModule() {
+        return { commands: {}, async handlePoke(event) {
+          if (event.backend !== "milky" || !event.allowed() || event.signal.aborted) return;
+          if (await event.reply("原生群戳 " + event.actorId + " " + event.targetId)) {
+            await Bun.write(new URL("./confirmed.txt", import.meta.url), "已确认");
+          }
+        } };
+      }
+    `);
     await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`,
@@ -152,6 +167,7 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
         groupPoke: class extends plugin {
           constructor() { super({ event: "notice.group.poke" }); }
           async accept(e) {
+            if (e.user_id !== ${memberId}) return false;
             await e.reply("群戳一戳 " + e.user_id + " " + e.operator_id + " " + e.target_id);
             return "return";
           }
@@ -210,10 +226,15 @@ test("Milky Webhook 分发真实群进退与好友戳一戳通知", async () => 
       expect(await mock.next("send_group_message")).toEqual({
         group_id: groupId, message: [text(`群戳一戳 ${memberId} ${memberId} ${botId}`)],
       });
+      expect((await webhook(endpoint, "group_nudge", { ...groupPoke, sender_id: otherMember })).status).toBe(200);
+      expect(await mock.next("send_group_message")).toEqual({
+        group_id: groupId, message: [text(`原生群戳 ${otherMember} ${botId}`)],
+      });
       await Bun.sleep(80);
+      expect(await readFile(join(meme, "confirmed.txt"), "utf8")).toBe("已确认");
       expect(mock.calls.map(({ action }) => action)).toEqual([
         "get_login_info", "get_group_info", "send_group_message", "send_group_message", "send_group_message",
-        "send_group_message", "send_private_message", "send_group_message",
+        "send_group_message", "send_private_message", "send_group_message", "send_group_message",
       ]);
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();

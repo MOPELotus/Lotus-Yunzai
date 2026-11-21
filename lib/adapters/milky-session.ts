@@ -2,7 +2,8 @@ import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-n
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
   type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
-import { notifyReplyDelivery, type BotEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
+import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageReply, type PokeDeliverySession,
+  type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
 import type { PendingGroupInvitationDecision, QuotedGroupInvitationDecision } from "../group-invitations.ts";
@@ -142,18 +143,26 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           },
         });
       }
-    } else if (event.post_type === "notice" && event.sub_type === "poke" && event.notice_type === "group") {
-      event = { ...event, adapter: "milky", isMaster: isMaster(event.user_id) };
-    } else if (event.post_type === "notice" && event.notice_type === "friend") {
+    } else if (event.post_type === "notice" && event.sub_type === "poke") {
       const userId = event.user_id;
-      event = { ...event, adapter: "milky", isMaster: isMaster(userId), [friendMessageNoticeSession]: {
+      const target = event.notice_type === "group" ? { group_id: event.group_id } : { user_id: userId };
+      const delivery: PokeDeliverySession = {
         signal,
-        async notifyOwners(reply, workflow) {
-          const active = AbortSignal.any([signal, workflow]);
-          const friends = await listCurrentFriends(active);
-          return friends?.has(userId) ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+        async send(reply, active) {
+          return await sendConfirmed(target, reply, undefined, AbortSignal.any([signal, active])) === "confirmed";
         },
-      } };
+      };
+      const identity = { adapter: "milky" as const, isMaster: isMaster(userId), [pokeDeliverySession]: delivery };
+      event = event.notice_type === "group" ? { ...event, ...identity } : {
+        ...event, ...identity, [friendMessageNoticeSession]: {
+          signal,
+          async notifyOwners(reply, workflow) {
+            const active = AbortSignal.any([signal, workflow]);
+            const friends = await listCurrentFriends(active);
+            return friends?.has(userId) ? notifyOwnerReplies(reply, active, undefined, friends) : 0;
+          },
+        },
+      };
     }
     await dispatch(event);
   }
