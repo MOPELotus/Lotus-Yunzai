@@ -91,6 +91,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
+import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
@@ -2156,6 +2157,7 @@ if (import.meta.main) {
     }
     const milkyWebhookPath = milky?.connection === "webhook" ? milky.webhookPath : undefined;
     const shopSettings = miyousheWebSettings(globalConfig.coin_shop, milkyWebhookPath);
+    const readWebLoginConfig = async () => (await readLotusGlobalConfig(root)).coin_shop;
     if (!probingUpdate && shopSettings.enabled) {
       if (shopSettings.mountConflict) console.warn(`[米游社网页] 原挂载路径与 Milky Webhook 冲突，已使用 ${shopSettings.path}。`);
       const plans = checkinScheduleStore;
@@ -2204,7 +2206,7 @@ if (import.meta.main) {
         },
       });
       miyousheWeb = createMiyousheWeb({
-        ...shopSettings, publicBase: () => shopSettings.origin ?? fileBase,
+        ...shopSettings, publicBase: () => shopSettings.origin ?? fileBase, readLoginConfig: readWebLoginConfig,
         signal: lifecycle.signal, loginIdentity: checkinProfiles.loginIdentity,
         databasePath: fileURLToPath(new URL("data/miyoushe/sessions.sqlite", root)),
         assetDirectory: fileURLToPath(new URL("web/miyoushe/", root)),
@@ -2388,6 +2390,7 @@ if (import.meta.main) {
         isOwner: (bot, user) => masterPermissions.isMaster(bot, user),
         signal: lifecycle.signal,
         config: globalConfig.coin_shop,
+        readLoginConfig: readWebLoginConfig,
       });
       commands.registerModule(panelOwnerSession.commands);
     }
@@ -3014,8 +3017,9 @@ if (import.meta.main) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
       const fallback = createServerRedirect(network.redirect);
-      const settingsRoutes = new Map([
+      const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
+        ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
       ]);

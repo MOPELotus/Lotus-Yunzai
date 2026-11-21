@@ -22,12 +22,20 @@ interface Options {
   readonly isOwner: (bot: number, user: number) => boolean;
   readonly signal: AbortSignal;
   readonly config: unknown;
+  readonly readLoginConfig?: () => Promise<unknown>;
   readonly now?: () => number;
 }
 
 function duration(config: unknown, key: string, unit: number, fallback: number) {
   const value = config && typeof config === "object" && key in config ? (config as Record<string, unknown>)[key] : undefined;
   return typeof value === "number" && Number.isSafeInteger(value * unit) && value * unit >= 1000 ? value : fallback;
+}
+
+export function panelOwnerLifetimes(config: unknown) {
+  return {
+    ticketMinutes: duration(config, "panel_ticket_minutes", 60_000, 10),
+    sessionHours: duration(config, "panel_session_hours", 3_600_000, 24),
+  };
 }
 
 function browserToken(request: Request) {
@@ -37,11 +45,9 @@ function browserToken(request: Request) {
   return value && credential.test(value) ? value : undefined;
 }
 
-export function createPanelOwnerSession({ databasePath, publicBase, isOwner, signal, config, now = Date.now }: Options) {
-  const ticketMinutes = duration(config, "panel_ticket_minutes", 60_000, 10);
-  const sessionHours = duration(config, "panel_session_hours", 3_600_000, 24);
-  const ticketMs = ticketMinutes * 60_000;
-  const sessionMs = sessionHours * 3_600_000;
+export function createPanelOwnerSession({ databasePath, publicBase, isOwner, signal, config, readLoginConfig, now = Date.now }: Options) {
+  const initialLifetimes = panelOwnerLifetimes(config);
+  const lifetimes = async () => readLoginConfig ? panelOwnerLifetimes(await readLoginConfig()) : initialLifetimes;
   let db: Database | undefined;
 
   const page = () => panelPublicPage(publicBase());
@@ -91,7 +97,7 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
   const commands: CommandModule = {
     name: "@lotus-yunzai/panel-owner-session",
     commands: {},
-    fallback(message, context) {
+    async fallback(message, context) {
       if (signal.aborted || !loginCommand.test(message) || context.isDelegated) return;
       const bot = context.self_id;
       const user = context.user_id;
@@ -102,11 +108,14 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
       const destination = page();
       if (!destination) return "管理面板尚未配置可用于登录的访问地址。";
       try {
+        const { ticketMinutes, sessionHours } = await lifetimes();
+        if (signal.aborted || context.privateCredentialSignal?.aborted !== false) return;
+        if (!isOwner(bot, user)) return "只有当前机器人主人可以登录管理面板。";
         database().run("DELETE FROM credentials WHERE expiresAt <= ?", [now()]);
         const ticket = token();
-        insert(ticket, "ticket", { bot, user }, ticketMs);
+        insert(ticket, "ticket", { bot, user }, ticketMinutes * 60_000);
         destination.hash = `ticket=${ticket}`;
-        return `管理面板\n${destination.href}\n链接 ${ticketMinutes} 分钟内有效且只能使用一次。请勿转发。`;
+        return `管理面板\n${destination.href}\n链接 ${ticketMinutes} 分钟内有效且只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch {
         return "暂时无法创建管理面板登录链接。";
       }
@@ -130,6 +139,9 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
         const body = await readPanelJson(request, 256).catch(() => undefined);
         const key = body && typeof body === "object" && "ticket" in body ? body.ticket : undefined;
         if (typeof key !== "string" || !credential.test(key)) return response(400);
+        if (!lookup(key, "ticket")) return response(401);
+        const { sessionHours } = await lifetimes();
+        const sessionMs = sessionHours * 3_600_000;
         if (request.signal.aborted || signal.aborted) return response(503);
         const fresh = token();
         const claimed = database().transaction(() => {

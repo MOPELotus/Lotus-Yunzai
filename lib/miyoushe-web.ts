@@ -144,6 +144,7 @@ interface Options {
   readonly path?: string;
   readonly ticketMinutes?: number;
   readonly sessionHours?: number;
+  readonly readLoginConfig?: () => Promise<unknown>;
   readonly now?: () => number;
 }
 
@@ -151,21 +152,21 @@ function digest(value: string) { return createHash("sha256").update(value).diges
 function generateToken() { return randomBytes(32).toString("base64url"); }
 function error(status: number) { return new Response(null, { status, headers }); }
 
-function validPublicUrl(base: URL | null | undefined) {
+export function miyousheWebPublicUrl(base: URL | null | undefined) {
   if (!base || base.username || base.password || base.search || base.hash) return;
   if (base.protocol === "https:" || (base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname))) return base;
 }
 
-function normalizedPath(value: unknown) {
+export function miyousheWebMountPath(value: unknown) {
   return typeof value === "string" && /^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/?$/u.test(value) &&
     !/^\/captcha(?:\/|$)/iu.test(value) && !isReservedServerPath(value) ? value.replace(/\/$/u, "") : undefined;
 }
 
 export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   const config = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-  const url = validPublicUrl(typeof config.public_url === "string" ? URL.parse(config.public_url.trim()) : undefined);
+  const url = miyousheWebPublicUrl(typeof config.public_url === "string" ? URL.parse(config.public_url.trim()) : undefined);
   const origin = url && new URL(url.origin);
-  const configuredPath = normalizedPath(config.path) ?? normalizedPath(url?.pathname);
+  const configuredPath = miyousheWebMountPath(config.path) ?? miyousheWebMountPath(url?.pathname);
   const coversWebhook = (path: string) => {
     const key = path.toLowerCase();
     return webhookPath === key || webhookPath?.startsWith(`${key}/`) === true;
@@ -180,24 +181,32 @@ export function miyousheWebSettings(raw: unknown, webhookPath?: string) {
   };
 }
 
+export function miyousheWebLifetimes(ticket: unknown, session: unknown, now = Date.now()) {
+  const ticketMinutes = typeof ticket === "number" && Number.isSafeInteger(ticket) &&
+    ticket >= 1 && Number.isSafeInteger(now + ticket * 60_000) ? ticket : 10;
+  const sessionHours = typeof session === "number" && session * 3600 >= 1 &&
+    Number.isSafeInteger(now + session * 3_600_000) ? session : 8;
+  return { ticketMinutes, sessionHours };
+}
+
 export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, signal, loginIdentity, overview, catalog, plans, shopAddresses, shopVerificationSignal,
   previewSettings, checkinSettings, manualCheckin, path, ticketMinutes: configuredTicketMinutes, sessionHours: configuredSessionHours,
-  now = Date.now }: Options) {
-  const mount = normalizedPath(path) ?? defaultMount;
+  readLoginConfig, now = Date.now }: Options) {
+  const mount = miyousheWebMountPath(path) ?? defaultMount;
   const prefix = `${mount}/`;
-  const ticketMinutes = typeof configuredTicketMinutes === "number" && Number.isSafeInteger(configuredTicketMinutes) &&
-    configuredTicketMinutes >= 1 && Number.isSafeInteger(now() + configuredTicketMinutes * 60_000) ? configuredTicketMinutes : 10;
-  const sessionHours = typeof configuredSessionHours === "number" && configuredSessionHours * 3600 >= 1 &&
-    Number.isSafeInteger(now() + configuredSessionHours * 3_600_000) ? configuredSessionHours : 8;
-  const ticketMs = ticketMinutes * 60_000;
-  const sessionMs = sessionHours * 3_600_000;
+  const initialLifetimes = miyousheWebLifetimes(configuredTicketMinutes, configuredSessionHours, now());
+  async function lifetimes() {
+    if (!readLoginConfig) return initialLifetimes;
+    const { ticketMinutes, sessionHours } = miyousheWebSettings(await readLoginConfig());
+    return miyousheWebLifetimes(ticketMinutes, sessionHours, now());
+  }
   const jobs = new Map<string, ManualCheckinJob>();
   const stopJobs = new AbortController();
   const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
   const shopSignal = shopVerificationSignal ? AbortSignal.any([jobsSignal, shopVerificationSignal]) : jobsSignal;
 
   function publicPage() {
-    const base = validPublicUrl(publicBase());
+    const base = miyousheWebPublicUrl(publicBase());
     if (!base) return;
     const path = base.pathname;
     if (!path.endsWith("/") || path.startsWith("//") || path.includes(";")) return;
@@ -269,12 +278,13 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       if (!link) return "米游社功能页尚未配置可用的访问地址。";
       const qq = String(context.user_id);
       try {
+        const { ticketMinutes, sessionHours } = await lifetimes();
         const account = await loginIdentity(qq, profileId);
         if (signal.aborted || connection.aborted) return;
         const time = now();
         database().run("DELETE FROM sessions WHERE expiresAt <= ?", [time]);
         const token = generateToken();
-        insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMs });
+        insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMinutes * 60_000 });
         link.hash = `ticket=${token}${catalog && match[1] !== "米游社功能" ? "&tab=shop" : ""}`;
         return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 ${ticketMinutes} 分钟内有效，只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch (failure) {
@@ -333,10 +343,13 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         if (typeof token !== "string" || !tokenPattern.test(token)) return error(400);
         const ticket = lookup(token, "ticket");
         if (!ticket || deadline.aborted) return error(401);
+        const { sessionHours } = await lifetimes();
+        const sessionMs = sessionHours * 3_600_000;
         if (await loginIdentity(ticket.qq, ticket.profileId).catch(() => undefined) !== ticket.account) {
           remove(token, "ticket");
           return error(401);
         }
+        if (deadline.aborted) return error(401);
         const fresh = generateToken();
         const swapped = database().transaction(() => {
           if (!lookup(token, "ticket")) return false;
