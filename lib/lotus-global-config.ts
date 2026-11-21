@@ -1,7 +1,7 @@
 import { readOptionalLocalConfig } from "./config.ts";
 
 export const legacyLotusDirectories = ["Lotus-Plugin", "Lotus-ReFactor"] as const;
-const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "music", "bilibili", "douyin"] as const;
+const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "music", "bilibili", "douyin", "netease_partner"] as const;
 
 type Config = Record<string, unknown>;
 

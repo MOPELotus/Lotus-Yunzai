@@ -16,6 +16,7 @@ import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 import MusicSettings from "./MusicSettings.vue";
 import BilibiliSettings from "./BilibiliSettings.vue";
 import DouyinSettings from "./DouyinSettings.vue";
+import PartnerSettings from "./PartnerSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -27,7 +28,7 @@ const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
-type MediaView = "music" | "bilibili" | "douyin";
+type MediaView = "music" | "bilibili" | "douyin" | "partner";
 type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | MediaView | "extensions";
 const view = ref<PanelView>("overview");
 const mediaSection = ref<MediaView>("bilibili");
@@ -50,7 +51,7 @@ const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "media" && plugin.status === "loaded") ?? false);
 
 function isMediaView(target: PanelView): target is MediaView {
-  return target === "music" || target === "bilibili" || target === "douyin";
+  return target === "music" || target === "bilibili" || target === "douyin" || target === "partner";
 }
 
 function setView(next: PanelView, discard = false) {
@@ -87,6 +88,7 @@ function focusView(next: PanelView) {
     music: "music-settings-title",
     bilibili: "bilibili-settings-title",
     douyin: "douyin-settings-title",
+    partner: "partner-settings-title",
     extensions: "extensions-title",
   }[next];
   void nextTick(() => document.getElementById(heading)?.focus());
@@ -299,6 +301,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'douyin' ? 'page' : undefined" @click="setView('douyin')">抖音</ElButton>
       <ElButton :type="view === 'music' ? 'primary' : 'default'"
         :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌</ElButton>
+      <ElButton :type="view === 'partner' ? 'primary' : 'default'"
+        :aria-current="view === 'partner' ? 'page' : undefined" @click="setView('partner')">网易云合伙人</ElButton>
     </nav>
     <div v-if="discardTo" class="panel-discard" role="alert">
       <span>当前配置还有未保存的改动。</span>
@@ -324,6 +328,8 @@ onBeforeUnmount(() => {
     <BilibiliSettings v-else-if="view === 'bilibili'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <DouyinSettings v-else-if="view === 'douyin'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <PartnerSettings v-else-if="view === 'partner'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />
