@@ -16,6 +16,7 @@ import { GameRecordRequestError, isGameRecordCookieExpired } from "./game-record
 import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
+import { createGenshinBlueprintReader, type GenshinBlueprintOptions } from "./genshin-blueprint.ts";
 import { GenshinAuthKeyRequestError, readGenshinGacha, type GenshinGachaOptions } from "./genshin-gacha.ts";
 import { readGenshinDecks, readGenshinGcgCollection, type GenshinGcgCollectionScope } from "./genshin-gcg.ts";
 import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
@@ -72,6 +73,7 @@ export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinP
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot, GenshinGrowthItem, GenshinGrowthOptions, GenshinGrowthSnapshot } from "./genshin-backpack.ts";
+export type { GenshinBlueprint, GenshinBlueprintItem, GenshinBlueprintOptions } from "./genshin-blueprint.ts";
 export type { GenshinDeck, GenshinDeckCard, GenshinDeckList, GenshinGcgCollection, GenshinGcgCollectionCard, GenshinGcgCollectionScope, GenshinGcgSummary } from "./genshin-gcg.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
@@ -449,6 +451,9 @@ export function createHoyoClient(
     },
     fetchGenshinGrowth(source: ProfileRequestContext, options: GenshinGrowthOptions) {
       return readForProfile(source, options, readGenshinGrowth, isGameRecordCookieExpired);
+    },
+    fetchGenshinBlueprint(source: ProfileRequestContext, options: GenshinBlueprintOptions) {
+      return readForProfile(source, options, createGenshinBlueprintReader(), isGameRecordCookieExpired);
     },
     fetchCnGameCheckinInfo(source: CnGameCheckinSource,
       options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean } = {}) {

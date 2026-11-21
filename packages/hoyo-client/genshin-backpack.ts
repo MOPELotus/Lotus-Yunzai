@@ -61,9 +61,10 @@ export interface GenshinGrowthSnapshot {
 }
 
 type Json = Record<string, unknown>;
-type Calculation = "原神背包" | "原神养成计算";
+type Calculation = "原神背包" | "原神养成计算" | "尘歌壶模数";
 type Material = GenshinGrowthSnapshot["items"][number];
-const endpoint = "https://api-takumi.mihoyo.com/event/e20200928calculate/v3/batch_compute";
+const calculator = "https://api-takumi.mihoyo.com/event/e20200928calculate/";
+type CalculatorPath = "v3/batch_compute" | "v1/furniture/blueprint" | "v1/furniture/compute";
 const maxProbeItems = 128;
 const maxResponseItems = 1024;
 // The calculator includes per-character upgrade plans alongside the small inventory list.
@@ -146,7 +147,7 @@ function normalizeGrowthItem(value: GenshinGrowthItem): GenshinGrowthItem {
   };
 }
 
-function requestHeaders(source: ProfileRequestContext, body: string, kind: Calculation): Headers {
+function requestHeaders(source: ProfileRequestContext, query: string, body: string | undefined, kind: Calculation): Headers {
   const { account, device } = source;
   const cookie = account.cookie.trim();
   const validDeviceField = (value: string | undefined): value is string =>
@@ -157,7 +158,7 @@ function requestHeaders(source: ProfileRequestContext, body: string, kind: Calcu
   }
   const time = Math.round(Date.now() / 1000);
   const nonce = randomInt(100000, 1000000);
-  const digest = createHash("md5").update(`salt=${signingSalt}&t=${time}&r=${nonce}&b=${body}&q=`).digest("hex");
+  const digest = createHash("md5").update(`salt=${signingSalt}&t=${time}&r=${nonce}&b=${body ?? ""}&q=${query}`).digest("hex");
   const model = device.model && /^[\x20-\x7E]{1,128}$/u.test(device.model) ? device.model : "Android";
   const android = device.androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(device.androidVersion) ? device.androidVersion : "12";
   return new Headers({
@@ -245,16 +246,17 @@ function normalize(data: Json, uid: string, region: GenshinBackpackSnapshot["reg
   return { uid, region, items };
 }
 
-async function calculate(source: ProfileRequestContext, transport: HoyoTransport, items: () => readonly GenshinGrowthItem[],
-  kind: Calculation, signal?: AbortSignal, verifyProfile?: () => Promise<void>): Promise<GenshinGrowthSnapshot> {
-  const uid = source.role.uid;
-  const region = genshinCnRecordRegion(source.role);
-  if (source.game !== "gs" || !region) {
-    throw new HoyoRequestError("invalid-input", `${kind}仅支持当前档案中已确认的国服原神角色。`);
-  }
+export async function requestGenshinCalculator(source: ProfileRequestContext, transport: HoyoTransport,
+  kind: Calculation, path: CalculatorPath, { query, body, signal, verifyProfile }: {
+    readonly query?: URLSearchParams;
+    readonly body?: string;
+    readonly signal?: AbortSignal;
+    readonly verifyProfile?: () => Promise<void>;
+  }): Promise<Json> {
   const subject = kind === "原神背包" ? "原神背包查询" : kind;
-  const body = JSON.stringify({ items: items(), uid, region });
-  const headers = requestHeaders(source, body, kind);
+  const endpoint = new URL(path, calculator);
+  if (query) endpoint.search = query.toString();
+  const headers = requestHeaders(source, endpoint.search.slice(1), body, kind);
   const guard = async () => {
     if (signal?.aborted) transportError(kind);
     await verifyProfile?.();
@@ -265,7 +267,7 @@ async function calculate(source: ProfileRequestContext, transport: HoyoTransport
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let response: Response;
   try {
-    response = await transport(new URL(endpoint), { method: "POST", body, headers, credentials: "omit",
+    response = await transport(endpoint, { method: body === undefined ? "GET" : "POST", body, headers, credentials: "omit",
       redirect: "error", referrerPolicy: "no-referrer", signal: deadline });
   } catch {
     transportError(kind);
@@ -302,6 +304,18 @@ async function calculate(source: ProfileRequestContext, transport: HoyoTransport
   }
   const data = object(payload?.data);
   if (retcode !== 0 || !data) responseError(kind);
+  return data;
+}
+
+async function calculate(source: ProfileRequestContext, transport: HoyoTransport, items: () => readonly GenshinGrowthItem[],
+  kind: Calculation, signal?: AbortSignal, verifyProfile?: () => Promise<void>): Promise<GenshinGrowthSnapshot> {
+  const uid = source.role.uid;
+  const region = genshinCnRecordRegion(source.role);
+  if (source.game !== "gs" || !region) {
+    throw new HoyoRequestError("invalid-input", `${kind}仅支持当前档案中已确认的国服原神角色。`);
+  }
+  const body = JSON.stringify({ items: items(), uid, region });
+  const data = await requestGenshinCalculator(source, transport, kind, "v3/batch_compute", { body, signal, verifyProfile });
   if (data.has_user_info !== true) {
     throw new HoyoRequestError("response", "官方养成计算器未返回账号背包，请在米游社核对当前角色绑定后重试。");
   }
