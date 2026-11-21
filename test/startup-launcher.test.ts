@@ -75,9 +75,11 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     await setApp(current, 202, "online");
     await writeFile(join(current, "host-ready"), "202");
     expect((await start(["status"], env))[1].trim()).toBe(current);
+    await writeFile(join(atlas, "map.json"), "fixture index temporarily unavailable\n");
     const [currentStart, currentOutput] = await start(["start:bg"], env);
     expect(currentStart).toBe(0);
     expect(currentOutput).toContain("后台宿主已运行");
+    expect(await readFile(join(atlas, "map.json"), "utf8")).toBe("fixture index temporarily unavailable\n");
 
     await rm(join(current, "host-ready"));
     for (const outcome of ["same", "replaced", "interrupted"]) {
@@ -111,6 +113,7 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
         await rm(join(current, "host-ready"), { force: true });
       }
     }
+    await writeFile(join(atlas, "map.json"), index);
 
     await setApp(current, 0, "waiting restart");
     expect((await start(["start:bg"], env))[0]).toBe(1);

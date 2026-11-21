@@ -78,8 +78,13 @@ async function preparePm2Entry(home: string) {
 }
 
 async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status",
-  options: readonly string[] = [], signal?: AbortSignal, releaseStartup?: () => void,
+  options: readonly string[] = [], startup?: {
+    readonly signal: AbortSignal;
+    prepare(): Promise<void>;
+    release(): void;
+  },
 ) {
+  const signal = startup?.signal;
   const parent = dirname(root);
   const home = join(parent, `.${basename(root)}.lotus-pm2`);
   const legacyHome = join(root, "data", ".pm2");
@@ -142,7 +147,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     let ready = active.status === "online" && !!active.pid && active.pid === await readyPid(active.path);
     if (!ready && active.workerToken && active.id && active.pid) {
       // Observing a registered supervisor does not need the lock held for creating or stopping one.
-      releaseStartup?.();
+      startup?.release();
       const until = performance.now() + listenTimeoutMs;
       while (!ready && performance.now() < until) {
         signal?.throwIfAborted();
@@ -164,6 +169,8 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     console.log("当前目录的后台宿主已运行。");
     return 0;
   }
+  await startup?.prepare();
+  signal?.throwIfAborted();
   await mkdir(home, { mode: 0o700, recursive: true });
   await privateHome(home);
   const spawn = spawnOptions(home);
@@ -268,13 +275,18 @@ async function run() {
   process.on("SIGTERM", interrupt);
   try {
     if (command.action === "stop") return await pm2(pm2Executable(), directory, "stop");
-    const background = command.action === "start:bg" ? pm2Executable() : undefined;
+    if (command.action === "start:bg") {
+      return await pm2(pm2Executable(), directory, "start:bg", [], {
+        signal: controller.signal,
+        prepare: () => prepareStartup(root, undefined, controller.signal),
+        release: releaseStartup,
+      });
+    }
     await prepareStartup(root, command.action === "init" ? command.channel : undefined, controller.signal);
     if (command.action === "init") {
       console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
       return 0;
     }
-    if (background) return await pm2(background, directory, "start:bg", [], controller.signal, releaseStartup);
   } finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
