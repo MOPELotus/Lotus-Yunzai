@@ -204,6 +204,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
   const stopJobs = new AbortController();
   const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
   const shopSignal = shopVerificationSignal ? AbortSignal.any([jobsSignal, shopVerificationSignal]) : jobsSignal;
+  let browserScript: Promise<string> | undefined;
 
   function publicPage() {
     const base = miyousheWebPublicUrl(publicBase());
@@ -315,10 +316,24 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       ((part === "api/plans" || part === "api/trackers") && method !== "GET"));
     if (part === "" || part === "style.css" || part === "app.js") {
       if (!isRead) return error(405);
-      const asset = Bun.file(join(assetDirectory, part || "index.html"));
       const contentType = part === "" ? "text/html" : part === "style.css" ? "text/css" : "text/javascript";
+      const assetHeaders = { ...headers, "Content-Type": `${contentType}; charset=utf-8` };
+      if (part === "app.js") {
+        const source = Bun.file(join(assetDirectory, "app.ts"));
+        if (await source.exists()) {
+          if (method === "HEAD") return new Response(null, { headers: assetHeaders });
+          const compiled = browserScript ??= source.text().then(text => new Bun.Transpiler({ loader: "ts", target: "browser" }).transform(text));
+          try {
+            return new Response(await compiled, { headers: assetHeaders });
+          } catch {
+            if (browserScript === compiled) browserScript = undefined;
+            return error(500);
+          }
+        }
+      }
+      const asset = Bun.file(join(assetDirectory, part || "index.html"));
       return await asset.exists()
-        ? new Response(method === "HEAD" ? null : asset, { headers: { ...headers, "Content-Type": `${contentType}; charset=utf-8` } })
+        ? new Response(method === "HEAD" ? null : asset, { headers: assetHeaders })
         : error(404);
     }
     if (part === "api/claim" || part === "api/logout" || editingPlans || ((settingsRoute || manualCheckinRoute) && method !== "GET")) {

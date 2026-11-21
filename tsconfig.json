@@ -11,5 +11,5 @@
     "types": ["bun"],
     "skipLibCheck": true
   },
-  "include": ["app.ts", "lib/**/*.ts", "scripts/**/*.ts", "packages/**/*.ts", "plugins/**/*.ts", "test/**/*.ts"]
+  "include": ["app.ts", "lib/**/*.ts", "scripts/**/*.ts", "packages/**/*.ts", "plugins/**/*.ts", "test/**/*.ts", "web/miyoushe/**/*.ts"]
 }

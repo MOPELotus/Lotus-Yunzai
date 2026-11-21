@@ -32,6 +32,31 @@ function read(cookie: string, site = "same-origin") {
   return request("api/overview", { headers: { Cookie: cookie, "Sec-Fetch-Site": site } });
 }
 
+test("米游社网页按原脚本地址提供 Bun 转译后的浏览器资源，不公开 TypeScript 源文件", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-browser-script-"));
+  const account = createProfileStore(root);
+  const site = createMiyousheWeb({ publicBase: () => origin, databasePath: join(root, "auth.sqlite"),
+    assetDirectory: root, signal: new AbortController().signal, loginIdentity: account.loginIdentity,
+    async overview() { throw new Error("脚本请求不读取账号。"); },
+  });
+  try {
+    await writeFile(join(root, "app.ts"), 'const version: number = 42; document.body.dataset.version = String(version);');
+    const response = await site.handle(request("app.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    const text = await response?.text();
+    expect(text).toContain("document.body.dataset.version");
+    expect(text).not.toContain(": number");
+    const head = await site.handle(request("app.js", { method: "HEAD" }));
+    expect(head?.status).toBe(200);
+    expect(await head?.text()).toBe("");
+    expect((await site.handle(request("app.ts")))?.status).toBe(404);
+  } finally {
+    site.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("已登录浏览器即时兑换只能在同一会话查看和续交人工验证码", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-shop-manual-"));
   const controller = new AbortController();

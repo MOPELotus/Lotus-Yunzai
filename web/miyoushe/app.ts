@@ -1,4 +1,94 @@
-const get = id => document.getElementById(id);
+import type { MiyousheOverview } from "../../lib/miyoushe-overview.ts";
+import type { createMiyousheShopCatalog } from "../../lib/miyoushe-shop-catalog.ts";
+import type { createMiyousheShopPlans } from "../../lib/miyoushe-shop-plans.ts";
+import type {
+  MiyousheCheckinSettings,
+  MiyousheCheckinSettingsPatch,
+  MiyousheManualCheckinResult,
+  MiyoushePreviewSettings,
+  MiyoushePreviewSettingsPatch,
+} from "../../lib/miyoushe-web.ts";
+
+type Timer = ReturnType<typeof setTimeout>;
+type Tab = "overview" | "shop" | "trackers" | "plans";
+type Overview = MiyousheOverview & {
+  readonly expiresAt: number;
+  readonly previewSettingsAvailable: boolean;
+  readonly checkinSettingsAvailable: boolean;
+  readonly manualCheckinAvailable: boolean;
+};
+type Mission = NonNullable<MiyousheOverview["missions"]>["items"][number];
+type Catalog = ReturnType<typeof createMiyousheShopCatalog>;
+type CatalogData = Awaited<ReturnType<Catalog["list"]>>;
+type CatalogDetail = Awaited<ReturnType<Catalog["detail"]>>;
+type Good = CatalogData["goods"][number];
+type Role = CatalogDetail["roles"][number];
+type Address = { readonly id: string; readonly label: string };
+type Detail = CatalogDetail & { readonly addresses?: readonly Address[] };
+type ShopPlans = ReturnType<typeof createMiyousheShopPlans>;
+type PlanData = Awaited<ReturnType<ShopPlans["list"]>>;
+type Plan = PlanData["plans"][number];
+type TrackerTargets = Awaited<ReturnType<ShopPlans["trackerTargets"]>>;
+type TrackerRole = Extract<TrackerTargets, { type: "role" }>["items"][number];
+type TrackerAddress = Extract<TrackerTargets, { type: "address" }>["items"][number];
+type TrackerList = Awaited<ReturnType<ShopPlans["listTrackers"]>>;
+type TrackerRow = TrackerList["trackers"][number];
+type ActiveTracker = Extract<TrackerRow, { mode: unknown }> & { readonly migrationBlocked: false };
+type BlockedTracker = Exclude<TrackerRow, { mode: unknown }> & { readonly migrationBlocked: true };
+type TrackerData = Omit<TrackerList, "trackers"> & { readonly trackers: readonly (ActiveTracker | BlockedTracker)[] };
+type ManualStatus = MiyousheManualCheckinResult["status"] | "loading" | "running" | "idle" | "unknown";
+
+type CheckinSettings = MiyousheCheckinSettings & { readonly cloudBound: NonNullable<MiyousheCheckinSettings["cloudBound"]> };
+type SettingsByKey = { preview: MiyoushePreviewSettings; checkin: CheckinSettings };
+type SettingsKey = keyof SettingsByKey;
+type Flags = Readonly<Record<string, boolean>>;
+type SettingsPatch = {
+  preview: Omit<MiyoushePreviewSettingsPatch, "revision" | "games"> & { readonly revision?: string; readonly games: readonly string[] };
+  checkin: Omit<MiyousheCheckinSettingsPatch, "revision" | "games" | "cloud" | "os"> &
+    { readonly revision?: string; readonly games: Flags; readonly cloud: Flags; readonly os: Flags };
+};
+interface ProfileEditor<Key extends SettingsKey> {
+  readonly key: Key;
+  data: SettingsByKey[Key] | null;
+  active: AbortController | null;
+  patch(): SettingsPatch[Key];
+  buttons(): void;
+  render(data: SettingsByKey[Key]): string;
+}
+
+interface ReservationIntent {
+  readonly body: {
+    readonly goodsId: string;
+    readonly expectedPrice: number;
+    readonly immediate: boolean;
+    readonly confirmed: true;
+    readonly intentId: string;
+    readonly uid?: string;
+    readonly region?: string;
+    readonly addressId?: string;
+  };
+  submitting?: boolean;
+  uncertain?: boolean;
+  note?: string;
+}
+interface TrackerForm extends HTMLFormElement {
+  readonly elements: HTMLFormControlsCollection &
+    Record<"mode" | "game" | "itemType" | "destination", HTMLSelectElement> &
+    Record<"keywords" | "goodsIds" | "followSameName" | "maxPrice" | "spendLimit" |
+      "pollMinutes" | "leadSeconds" | "intervalMs" | "confirmed", HTMLInputElement>;
+}
+type ElementsById = Record<"manual-checkin-start" | "preview-settings-save" | "checkin-settings-save" |
+  "refresh" | "logout" | "login-retry" | "shop-previous" | "shop-next" | "tracker-open" | "tracker-submit", HTMLButtonElement> &
+  Record<"preview-enabled" | "checkin-enabled" | "checkin-notify" | "checkin-community" |
+    "checkin-os-enabled" | "checkin-cloud-genshin" | "checkin-cloud-zzz" | "shop-search", HTMLInputElement> &
+  Record<"preview-games" | "checkin-games" | "checkin-switches" | "checkin-forums" | "checkin-cloud" | "checkin-os", HTMLFieldSetElement> &
+  Record<"preview-settings-form" | "checkin-settings-form", HTMLFormElement> &
+  Record<"shop-game" | "shop-status", HTMLSelectElement> &
+  Record<"shop-detail" | "tracker-dialog", HTMLDialogElement> &
+  { "tracker-form": TrackerForm };
+
+const get = <Id extends string>(id: Id) =>
+  document.getElementById(id) as Id extends keyof ElementsById ? ElementsById[Id] : HTMLElement;
 const clock = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
 });
@@ -15,34 +105,41 @@ const games = { gs: "原神", sr: "崩坏：星穹铁道", zzz: "绝区零" };
 const loginHelp = "请私聊机器人发送下方指令，获取当前档案的专属登录链接。";
 let busy = false;
 let pendingTicket = false;
-let expiryTimer;
-let tab = "overview";
+let expiryTimer: Timer | undefined;
+let tab: Tab = "overview";
 const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
-const shop = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
-const plans = { data: null, loading: null, timer: undefined, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
-const preview = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
-const checkin = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
+const shop: {
+  data: CatalogData | null; game: string; page: number; nowOffset: number;
+  catalogRequest: AbortController | null; detailRequest: AbortController | null;
+} = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
+const plans: {
+  data: PlanData | null; loading: Promise<void> | null; timer: Timer | undefined; scope: number; revision: number;
+  activeForm: { readonly id: string; update(): void; reject(problem: string): void } | null;
+  actions: Set<string>; intents: Map<string, ReservationIntent>;
+} = { data: null, loading: null, timer: undefined, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+const preview: ProfileEditor<"preview"> = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
+const checkin: ProfileEditor<"checkin"> = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
 const profileEditors = [checkin, preview];
-const manualCheckin = { active: null, timer: undefined, status: "loading" };
-const trackers = { generation: 0, targets: null, loading: false };
+const manualCheckin: { active: AbortController | null; timer: Timer | undefined; status: ManualStatus } = { active: null, timer: undefined, status: "loading" };
+const trackers: { generation: number; targets: AbortController | null; loading: boolean } = { generation: 0, targets: null, loading: false };
 const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
   scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
   failed: "未成功", cancelled: "已取消", missed: "已错过", unknown: "结果待确认",
 };
 
-function add(tag, className, value) {
+function add<Tag extends keyof HTMLElementTagNameMap>(tag: Tag, className: string, value: string) {
   const element = document.createElement(tag);
   if (className) element.className = className;
   element.textContent = value;
   return element;
 }
 
-function point(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? number.format(value) : "—";
+function point(value: number | null | undefined) {
+  return Number.isSafeInteger(value) && value! >= 0 ? number.format(value!) : "—";
 }
 
-function showLogin(message, help = false, retry = false) {
+function showLogin(message: string, help = false, retry = false) {
   clearTimeout(expiryTimer);
   get("dashboard").hidden = true;
   get("login").hidden = false;
@@ -62,7 +159,7 @@ function showLogin(message, help = false, retry = false) {
     editor.active = null;
     editor.data = null;
     get(editor.key + "-settings").hidden = true;
-    get(editor.key + "-settings-form").reset();
+    get((editor.key + "-settings-form") as `${SettingsKey}-settings-form`).reset();
     editor.buttons();
   }
   clearTimeout(manualCheckin.timer);
@@ -78,13 +175,13 @@ function showLogin(message, help = false, retry = false) {
   switchTab("overview");
 }
 
-function showManualCheckin(status, message = "") {
-  const statusText = {
+function showManualCheckin(status: string, message = "") {
+  const statusText: Record<ManualStatus, string> = {
     loading: "正在读取执行状态…", running: "正在执行签到。如需人工验证，请留意机器人私聊。",
     completed: "本次签到已完成。", failed: "本次签到未完成。", busy: "该账号已有签到在执行，请稍后再试。",
     idle: "", unknown: "暂时无法确认执行状态，请刷新后重试。",
   };
-  manualCheckin.status = Object.hasOwn(statusText, status) ? status : "unknown";
+  manualCheckin.status = Object.hasOwn(statusText, status) ? status as ManualStatus : "unknown";
   get("manual-checkin-status").textContent = statusText[manualCheckin.status];
   get("manual-checkin-start").disabled = !["idle", "completed", "failed", "busy"].includes(manualCheckin.status);
   const result = get("manual-checkin-result");
@@ -116,7 +213,7 @@ async function updateManualCheckin(start = false) {
       showManualCheckin("unknown", start ? await planFailure(response) : "");
       return;
     }
-    const { status, message } = await response.json();
+    const { status, message } = await response.json() as { status: string; message?: unknown };
     if (active.signal.aborted) return;
     showManualCheckin(status, typeof message === "string" ? message : "");
     if (status === "running" && tab === "overview") manualCheckin.timer = setTimeout(() => void updateManualCheckin(), 2000);
@@ -130,7 +227,7 @@ async function updateManualCheckin(start = false) {
 function previewPatch() {
   return {
     enabled: get("preview-enabled").checked,
-    games: Array.from(get("preview-games").querySelectorAll("input:checked"), input => input.value),
+    games: Array.from(get("preview-games").querySelectorAll<HTMLInputElement>("input:checked"), input => input.value),
     revision: preview.data?.revision,
   };
 }
@@ -141,27 +238,27 @@ function previewSettingsButtons() {
   get("preview-enabled").disabled = !loaded || Boolean(preview.active) || (loaded.canEnable === false && !loaded.enabled);
   const patch = previewPatch();
   get("preview-settings-save").disabled = !loaded || Boolean(preview.active) || (patch.enabled && !patch.games.length) ||
-    (patch.enabled === loaded.enabled && patch.games.length === loaded.games.length && patch.games.every(game => loaded.games.includes(game)));
+    (patch.enabled === loaded.enabled && patch.games.length === loaded.games.length && patch.games.every(game => loaded.games.includes(game as MiyoushePreviewSettings["games"][number])));
   get("preview-settings-form").setAttribute("aria-busy", String(Boolean(preview.active)));
 }
 
-function renderPreviewSettings(data) {
+function renderPreviewSettings(data: MiyoushePreviewSettings) {
   get("preview-enabled").checked = data.enabled;
-  for (const input of get("preview-games").querySelectorAll("input")) input.checked = data.games.includes(input.value);
+  for (const input of get("preview-games").querySelectorAll("input")) input.checked = data.games.includes(input.value as MiyoushePreviewSettings["games"][number]);
   const messages = [];
   if (data.waitingForHistory) messages.push("旧档案需要补齐兑换记录后才会自动兑换。");
   if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动兑换的权限。");
   return messages.join(" ");
 }
 
-const checkinSwitches = ["enabled", "notify", "community"];
+const checkinSwitches = ["enabled", "notify", "community"] as const;
 const checkinCloudGames = { genshin: "云原神", zzz: "云绝区零" };
 
-function checkedFlags(fieldset, selector = "input") {
-  return Object.fromEntries(Array.from(get(fieldset).querySelectorAll(selector), input => [input.value, input.checked]));
+function checkedFlags(fieldset: string, selector = "input") {
+  return Object.fromEntries(Array.from(get(fieldset).querySelectorAll<HTMLInputElement>(selector), input => [input.value, input.checked]));
 }
 
-function sameFlags(patch, saved) {
+function sameFlags(patch: Flags, saved: Flags) {
   return Object.entries(patch).every(([key, value]) => saved[key] === value);
 }
 
@@ -172,7 +269,7 @@ function checkinPatch() {
     notify: get("checkin-notify").checked,
     community: get("checkin-community").checked,
     games: checkedFlags("checkin-games"),
-    forums: Array.from(get("checkin-forums").querySelectorAll("input:checked"), input => Number(input.value)),
+    forums: Array.from(get("checkin-forums").querySelectorAll<HTMLInputElement>("input:checked"), input => Number(input.value)),
     cloud: checkedFlags("checkin-cloud"),
     osEnabled: get("checkin-os-enabled").checked,
     os: checkedFlags("checkin-os", 'input[name="os"]'),
@@ -182,12 +279,12 @@ function checkinPatch() {
 function checkinSettingsButtons() {
   const loaded = checkin.data;
   const pending = Boolean(checkin.active);
-  for (const field of ["checkin-games", "checkin-switches", "checkin-forums", "checkin-cloud", "checkin-os"]) {
+  for (const field of ["checkin-games", "checkin-switches", "checkin-forums", "checkin-cloud", "checkin-os"] as const) {
     get(field).disabled = !loaded || pending;
   }
   get("checkin-enabled").disabled = !loaded || (loaded.canEnable === false && !loaded.enabled);
-  for (const game of Object.keys(checkinCloudGames)) {
-    get("checkin-cloud-" + game).disabled = !loaded || (!loaded.cloudBound[game] && !loaded.cloud[game]);
+  for (const game of (Object.keys(checkinCloudGames) as (keyof typeof checkinCloudGames)[])) {
+    get(("checkin-cloud-" + game) as `checkin-cloud-${keyof typeof checkinCloudGames}`).disabled = !loaded || (!loaded.cloudBound[game] && !loaded.cloud[game]);
   }
   const patch = checkinPatch();
   get("checkin-settings-save").disabled = !loaded || pending ||
@@ -197,23 +294,23 @@ function checkinSettingsButtons() {
   get("checkin-settings-form").setAttribute("aria-busy", String(pending));
 }
 
-function renderCheckinSettings(data) {
-  for (const key of checkinSwitches) get("checkin-" + key).checked = data[key];
-  for (const input of get("checkin-games").querySelectorAll("input")) input.checked = data.games[input.value] === true;
+function renderCheckinSettings(data: CheckinSettings) {
+  for (const key of checkinSwitches) get(("checkin-" + key) as `checkin-${typeof checkinSwitches[number]}`).checked = data[key];
+  for (const input of get("checkin-games").querySelectorAll("input")) input.checked = data.games[input.value as keyof typeof data.games] === true;
   for (const input of get("checkin-forums").querySelectorAll("input")) input.checked = data.forums.includes(Number(input.value));
-  for (const game of Object.keys(checkinCloudGames)) get("checkin-cloud-" + game).checked = data.cloud[game];
+  for (const game of (Object.keys(checkinCloudGames) as (keyof typeof checkinCloudGames)[])) get(("checkin-cloud-" + game) as `checkin-cloud-${keyof typeof checkinCloudGames}`).checked = data.cloud[game];
   get("checkin-os-enabled").checked = data.osEnabled;
-  for (const input of get("checkin-os").querySelectorAll('input[name="os"]')) input.checked = data.os[input.value];
+  for (const input of get("checkin-os").querySelectorAll<HTMLInputElement>('input[name="os"]')) input.checked = data.os[input.value as keyof typeof data.os];
   const messages = [];
   if (data.cnEnabled === false) messages.push("当前档案的国服签到总开关已关闭，各游戏的选择仍会保留。");
   if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动签到的权限。");
-  const unbound = Object.entries(checkinCloudGames).filter(([game]) => !data.cloudBound[game]).map(([, label]) => label);
+  const unbound = Object.entries(checkinCloudGames).filter(([game]) => !data.cloudBound[game as keyof typeof data.cloudBound]).map(([, label]) => label);
   if (unbound.length) messages.push(`${unbound.join("、")}需先在聊天中绑定账户，才能执行钱包签到。`);
   if (!data.osBound) messages.push("国际服签到需先在聊天中绑定 HoYoLAB 账号。");
   return messages.join(" ");
 }
 
-async function updateProfileSettings(editor, patch) {
+async function updateProfileSettings<Key extends SettingsKey>(editor: ProfileEditor<Key>, patch?: SettingsPatch[Key]) {
   if (editor.active || get(editor.key + "-settings").hidden) return;
   const active = editor.active = new AbortController();
   const deadline = AbortSignal.any([active.signal, AbortSignal.timeout(20_000)]);
@@ -231,7 +328,7 @@ async function updateProfileSettings(editor, patch) {
       return;
     }
     if (!response.ok) throw new Error(await planFailure(response));
-    const data = await response.json();
+    const data = await response.json() as SettingsByKey[Key];
     if (active.signal.aborted) return;
     const previous = editor.data;
     editor.data = data;
@@ -240,7 +337,7 @@ async function updateProfileSettings(editor, patch) {
       // Both sections use the same profile revision. Keep the other section's
       // unchanged settings and any unsaved edits after our own successful write.
       for (const other of profileEditors) if (other !== editor && other.data?.revision === patch.revision) {
-        other.data = { ...other.data, revision: data.revision };
+        other.data = { ...other.data!, revision: data.revision };
       }
       if (editor === checkin && previous?.enabled !== data.enabled) {
         const schedule = get("today-schedule");
@@ -254,7 +351,7 @@ async function updateProfileSettings(editor, patch) {
     notice.classList.add("error");
     notice.textContent = error instanceof TypeError || deadline.aborted
       ? (patch ? "保存结果尚未确认，请刷新设置。" : "设置读取失败，请刷新后重试。")
-      : error.message;
+      : (error as Error).message;
   } finally {
     if (editor.active === active) {
       editor.active = null;
@@ -263,14 +360,14 @@ async function updateProfileSettings(editor, patch) {
   }
 }
 
-function showNotice(message, error = false) {
+function showNotice(message: string, error = false) {
   const notice = get("notice");
   notice.textContent = message;
   notice.hidden = !message;
   notice.classList.toggle("error", error);
 }
 
-function scheduleText(schedule) {
+function scheduleText(schedule: MiyousheOverview["todaySchedule"]) {
   if (!schedule) return "";
   if (!schedule.enabled) return "自动签到已关闭。";
   if (!schedule.time) return "今日签到时间尚未安排。";
@@ -279,12 +376,12 @@ function scheduleText(schedule) {
   return `今日签到安排为 ${schedule.time} · ${status}`;
 }
 
-function missionRow(item) {
+function missionRow(item: Mission) {
   const row = add("li", "mission-row", "");
   const status = item.isGetAward === true ? "已领奖" :
     item.isGetAward === false ? (
       Number.isSafeInteger(item.happenedTimes) && Number.isSafeInteger(item.threshold) &&
-        item.happenedTimes < item.threshold ? "待完成" : "未领奖"
+        item.happenedTimes! < item.threshold! ? "待完成" : "未领奖"
     ) : "状态未知";
   const progress = Number.isSafeInteger(item.happenedTimes) ?
     (Number.isSafeInteger(item.threshold) ? `${item.happenedTimes} / ${item.threshold}` : `已完成 ${item.happenedTimes} 次`) : "";
@@ -293,7 +390,7 @@ function missionRow(item) {
   return row;
 }
 
-function showOverview(data) {
+function showOverview(data: Overview) {
   const { account, displayName, missions, missionError, todaySchedule, profileId, expiresAt } = data;
   const profile = `档案 ${profileId}`;
   get("profile").textContent = profile;
@@ -332,7 +429,7 @@ function showOverview(data) {
   get("clock").textContent = clock.format();
 }
 
-function switchTab(next) {
+function switchTab(next: Tab) {
   tab = next;
   if (tab !== "overview") clearTimeout(manualCheckin.timer);
   if (tab !== "plans") clearTimeout(plans.timer);
@@ -373,13 +470,13 @@ function resetShop() {
   get("shop-trackers").replaceChildren();
 }
 
-function shopTime(milliseconds) {
-  return Number.isSafeInteger(milliseconds) ? shopClock.format(milliseconds) + "（北京时间）" : "未知";
+function shopTime(milliseconds: number | null | undefined) {
+  return Number.isSafeInteger(milliseconds) ? shopClock.format(milliseconds!) + "（北京时间）" : "未知";
 }
 
 function tickShop() {
   const now = Date.now() + shop.nowOffset;
-  for (const line of document.querySelectorAll("[data-shop-deadline]")) {
+  for (const line of document.querySelectorAll<HTMLElement>("[data-shop-deadline]")) {
     const seconds = Math.ceil((Number(line.dataset.shopDeadline) - now) / 1000);
     if (seconds <= 0) {
       line.textContent = "已到开放时间，请刷新官方库存";
@@ -392,7 +489,7 @@ function tickShop() {
   }
 }
 
-function shopIcon(good) {
+function shopIcon(good: Good) {
   const source = good.icon;
   if (typeof source !== "string" ||
       !/^https:\/\/bbs-static\.miyoushe\.com\/static\/[\w/-]+\.(?:png|jpe?g|webp)$/iu.test(source)) return null;
@@ -405,22 +502,22 @@ function shopIcon(good) {
   return img;
 }
 
-function shopFacts(good, detail = false) {
+function shopFacts(good: Good, detail = false) {
   const facts = add("dl", "shop-facts", "");
-  function item(label, value) { facts.append(add("dt", "", label), add("dd", "", value)); }
+  function item(label: string, value: string) { facts.append(add("dt", "", label), add("dd", "", value)); }
   item("当前库存", good.unlimited ? "不限量" : good.stock == null ? "未知" : point(good.stock));
   if (good.opensAt) {
     item("开放时间", shopTime(good.opensAt));
     item("下一批数量", good.nextStock == null ? "未知" : point(good.nextStock));
   }
   if (detail && good.endsAt) item("结束时间", shopTime(good.endsAt));
-  if (good.accountLimit > 0) item("账号限购", point(good.accountLimit));
-  if (detail && good.roleLimit > 0) item("角色限购", point(good.roleLimit));
+  if (good.accountLimit! > 0) item("账号限购", point(good.accountLimit));
+  if (detail && good.roleLimit! > 0) item("角色限购", point(good.roleLimit));
   return facts;
 }
 
-function statusBadge(status) {
-  const known = Object.hasOwn(shopStatuses, status) ? status : "unknown";
+function statusBadge(status: string) {
+  const known = Object.hasOwn(shopStatuses, status) ? status as keyof typeof shopStatuses : "unknown";
   return add("span", "shop-badge " + known, shopStatuses[known]);
 }
 
@@ -454,7 +551,7 @@ function renderGoods() {
   tickShop();
 }
 
-function catalogControls(data) {
+function catalogControls(data: CatalogData) {
   const game = get("shop-game");
   game.replaceChildren(new Option("全部商品", ""), ...data.games.map(item => new Option(item.name, item.key)));
   if (![...game.options].some(option => option.value === shop.game)) game.append(new Option(shop.game, shop.game));
@@ -465,13 +562,13 @@ function catalogControls(data) {
   get("shop-pagination").hidden = false;
 }
 
-function shopProblem(response, detail = false) {
+function shopProblem(response: Response, detail = false) {
   if (response.status === 429) return "商城请求频繁，请稍后再试。";
   if (detail && response.status === 404) return "商品不存在或已下架。";
   return detail ? "暂时无法读取商品详情。" : "暂时无法读取商城商品。";
 }
 
-async function shopRequest(path, controller) {
+async function shopRequest(path: string, controller: AbortController) {
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
   return request(path, { signal });
 }
@@ -490,7 +587,7 @@ async function loadCatalog(page = shop.page, game = shop.game) {
       return;
     }
     if (!response.ok) throw new Error(shopProblem(response));
-    const data = await response.json();
+    const data = await response.json() as CatalogData;
     if (controller.signal.aborted) return;
     shop.data = data;
     shop.page = data.page;
@@ -509,8 +606,8 @@ async function loadCatalog(page = shop.page, game = shop.game) {
   }
 }
 
-function detailContent({ good, roles, roleError, addresses }) {
-  const blocks = [add("h3", "", good.name), statusBadge(good.status),
+function detailContent({ good, roles, roleError, addresses }: Detail) {
+  const blocks: HTMLElement[] = [add("h3", "", good.name), statusBadge(good.status),
     add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true),
     add("h4", "", "兑换条件"), add("p", "detail-copy", good.requirements || "官方暂未提供额外兑换说明。")];
   if (good.type === 1) blocks.push(add("p", "muted", "实物商品需要米游社收货地址。"));
@@ -532,7 +629,7 @@ function detailContent({ good, roles, roleError, addresses }) {
   return blocks;
 }
 
-async function openDetail(id) {
+async function openDetail(id: string) {
   shop.detailRequest?.abort();
   const controller = new AbortController();
   shop.detailRequest = controller;
@@ -551,7 +648,7 @@ async function openDetail(id) {
       content.replaceChildren(add("p", "error", shopProblem(response, true)));
       return;
     }
-    const data = await response.json();
+    const data = await response.json() as Detail;
     if (!controller.signal.aborted) content.replaceChildren(...detailContent(data));
   } catch {
     if (!controller.signal.aborted) content.replaceChildren(add("p", "error", "暂时无法读取商品详情。"));
@@ -560,23 +657,23 @@ async function openDetail(id) {
   }
 }
 
-function roleLabel(role) {
+function roleLabel(role: Role) {
   return [role.nickname || "角色", role.regionName || role.region, role.level ? "Lv." + role.level : ""]
     .filter(Boolean).join(" · ");
 }
 
-function planNote(message, error = false) {
+function planNote(message: string, error = false) {
   const notice = get("plans-note");
   notice.textContent = message;
   notice.classList.toggle("error", error);
 }
 
-function planRow(plan) {
+function planRow(plan: Plan) {
   const row = add("article", "plan-row", "");
   const copy = add("div", "plan-copy", "");
   const status = Object.hasOwn(planStatus, plan.status) ? plan.status : "unknown";
   const verification = plan.verification;
-  const destination = verification?.expiresAt > Date.now() && typeof verification.link === "string" ? URL.parse(verification.link) : null;
+  const destination = verification?.expiresAt! > Date.now() && typeof verification!.link === "string" ? URL.parse(verification!.link) : null;
   const canOpenVerification = destination && (destination.protocol === "https:" ||
     (destination.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(destination.hostname)));
   copy.append(add("span", "shop-badge " + status, canOpenVerification ? "等待人工验证" : planStatus[status]), add("h3", "", plan.goodsName),
@@ -589,13 +686,13 @@ function planRow(plan) {
     link.href = destination.href;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    prompt.append(link, add("p", "muted", "仅续交本次兑换，验证有效至 " + shopTime(verification.expiresAt)));
+    prompt.append(link, add("p", "muted", "仅续交本次兑换，验证有效至 " + shopTime(verification!.expiresAt)));
     copy.append(prompt);
   } else if (plan.message) copy.append(add("p", "", plan.message));
   row.append(copy);
   if (!/^[a-f0-9]{12}$/u.test(plan.id)) return row;
   const actions = add("div", "plan-actions", "");
-  function action(label, operation, body, prompt) {
+  function action(label: string, operation: "cancel" | "resolve", body: object, prompt: string) {
     const button = add("button", "secondary", label);
     button.type = "button";
     button.disabled = plans.actions.has(plan.id);
@@ -607,7 +704,7 @@ function planRow(plan) {
   if (plan.status === "scheduled" || plan.status === "preparing") {
     action("取消预约", "cancel", {}, "取消「" + plan.goodsName + "」的预约？");
   } else if (plan.status === "unknown") {
-    for (const [label, redeemed] of [["已在官方记录确认成功", true], ["已确认未兑换", false]]) {
+    for (const [label, redeemed] of [["已在官方记录确认成功", true], ["已确认未兑换", false]] as const) {
       action(label, "resolve", { redeemed }, "请先在米游社核对「" + plan.goodsName + "」的兑换记录。" +
         (redeemed ? "确定标记为已兑换？" : "确定标记为未兑换？"));
     }
@@ -637,7 +734,7 @@ function loadPlans() {
         return;
       }
       if (!response.ok) throw new Error("读取失败");
-      const data = await response.json();
+      const data = await response.json() as PlanData;
       if (scope !== plans.scope || revision !== plans.revision) return;
       const rowsChanged = !plans.data || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
       plans.data = data;
@@ -658,27 +755,27 @@ function loadPlans() {
   return plans.loading;
 }
 
-async function postPlan(path, body) {
+async function postPlan(path: string, body: object) {
   return request(path, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
 
-async function planFailure(response) {
-  const data = await response.json().catch(() => null);
+async function planFailure(response: Response) {
+  const data = await response.json().catch(() => null) as { message?: unknown } | null;
   if (typeof data?.message === "string" && data.message.length <= 200) return data.message;
   if (response.status === 409) return "当前兑换状态已变化，请刷新记录。";
   if (response.status === 404) return "兑换记录不存在，请刷新记录。";
   return "暂时无法完成操作，请稍后重试。";
 }
 
-async function trackingResponse(response) {
+async function trackingResponse<Data>(response: Response): Promise<Data> {
   if (response.status === 401) {
     showLogin(`登录已失效。${loginHelp}`, true);
     throw new Error("登录已失效。");
   }
   if (!response.ok) throw new Error(await planFailure(response));
-  return response.json();
+  return response.json() as Promise<Data>;
 }
 
 async function loadTrackers() {
@@ -687,7 +784,7 @@ async function loadTrackers() {
   const note = get("trackers-note");
   trackers.loading = true;
   try {
-    const data = await trackingResponse(await request("api/trackers"));
+    const data = await trackingResponse<TrackerData>(await request("api/trackers"));
     if (trackers.generation !== generation) return;
     get("tracker-open").disabled = !data.canTrack;
     note.textContent = data.canTrack ? "" : "暂时无法启动追踪规则。";
@@ -695,7 +792,7 @@ async function loadTrackers() {
       const row = add("article", "plan-row", "");
       const copy = add("div", "plan-copy", "");
       const actions = add("div", "plan-actions", "");
-      const group = (Object.hasOwn(trackGames, rule.game) && trackGames[rule.game]) || rule.game || "未知分区";
+      const group = (Object.hasOwn(trackGames, rule.game) && trackGames[rule.game as keyof typeof trackGames]) || rule.game || "未知分区";
       const item = rule.itemType === 1 ? "实物周边" : rule.itemType === 2 ? "游戏道具" : "类型待核对";
       if (rule.migrationBlocked) {
         copy.append(add("h3", "", `${group} · ${item}`), add("p", "muted", rule.message),
@@ -722,7 +819,7 @@ async function loadTrackers() {
             await trackingResponse(await postPlan(`api/trackers/${rule.id}/${action}`, { confirmed: !rule.enabled }));
             if (trackers.generation === generation) await loadTrackers();
           } catch (error) {
-            if (trackers.generation === generation) note.textContent = error.message;
+            if (trackers.generation === generation) note.textContent = (error as Error).message;
           } finally { toggle.disabled = false; }
         });
         actions.append(toggle);
@@ -732,7 +829,7 @@ async function loadTrackers() {
     });
     get("shop-trackers").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无追踪规则。")]));
   } catch (error) {
-    if (trackers.generation === generation) note.textContent = error.message;
+    if (trackers.generation === generation) note.textContent = (error as Error).message;
   } finally {
     if (trackers.generation === generation) trackers.loading = false;
   }
@@ -759,15 +856,16 @@ async function loadTrackerTargets() {
   form.destination.replaceChildren();
   note.textContent = "正在核验当前档案的兑换目标…";
   try {
-    const data = await trackingResponse(await request("api/tracking-targets?" + query, { signal: controller.signal }));
+    const data = await trackingResponse<TrackerTargets>(await request("api/tracking-targets?" + query, { signal: controller.signal }));
     if (controller.signal.aborted) return;
-    const options = data.items.map(item => data.type === "role" ? new Option(`UID ${item.uid} · ${item.region}`, item.uid)
-      : new Option(item.label || "已脱敏地址", item.id));
+    const options = data.items.map(item => data.type === "role"
+      ? new Option(`UID ${(item as TrackerRole).uid} · ${(item as TrackerRole).region}`, (item as TrackerRole).uid)
+      : new Option((item as TrackerAddress).label || "已脱敏地址", (item as TrackerAddress).id));
     form.destination.replaceChildren(...options);
     submit.disabled = !options.length;
     note.textContent = options.length ? "" : "当前档案没有可用的兑换目标。";
   } catch (error) {
-    if (!controller.signal.aborted) note.textContent = error.message;
+    if (!controller.signal.aborted) note.textContent = (error as Error).message;
   }
 }
 
@@ -780,7 +878,7 @@ function openTracker() {
   void loadTrackerTargets();
 }
 
-function trackerGameOptions(preferred) {
+function trackerGameOptions(preferred: string) {
   const form = get("tracker-form").elements;
   const physical = form.itemType.value === "1";
   const entries = Object.entries(trackGames).filter(([key]) => physical || key !== "bbs");
@@ -795,14 +893,14 @@ function trackerGameOptions(preferred) {
   if (entries.some(([key]) => key === preferred)) form.game.value = preferred;
 }
 
-async function saveTracker(event) {
+async function saveTracker(event: SubmitEvent) {
   event.preventDefault();
   const submit = get("tracker-submit");
   if (submit.disabled) return;
-  const form = event.target.elements;
+  const form = (event.target as TrackerForm).elements;
   const generation = trackers.generation;
-  const split = field => field.value.split(/[,，]/u).map(item => item.trim()).filter(Boolean);
-  const amount = field => field.value === "" ? null : Number(field.value);
+  const split = (field: HTMLInputElement) => field.value.split(/[,，]/u).map(item => item.trim()).filter(Boolean);
+  const amount = (field: HTMLInputElement) => field.value === "" ? null : Number(field.value);
   submit.disabled = true;
   try {
     await trackingResponse(await postPlan("api/trackers", {
@@ -817,13 +915,13 @@ async function saveTracker(event) {
     get("tracker-dialog").close();
     await loadTrackers();
   } catch (error) {
-    if (generation === trackers.generation) get("tracker-form-note").textContent = error.message;
+    if (generation === trackers.generation) get("tracker-form-note").textContent = (error as Error).message;
   } finally {
     if (generation === trackers.generation && get("tracker-dialog").open) submit.disabled = false;
   }
 }
 
-async function changePlan(id, action, body) {
+async function changePlan(id: string, action: "cancel" | "resolve", body: object) {
   const scope = plans.scope;
   plans.actions.add(id);
   renderPlans();
@@ -839,7 +937,7 @@ async function changePlan(id, action, body) {
       if (scope === plans.scope) planNote(problem, true);
       return;
     }
-    const plan = await response.json();
+    const plan = await response.json() as Plan;
     if (scope !== plans.scope) return;
     plans.revision++;
     if (plans.data) {
@@ -857,7 +955,7 @@ async function changePlan(id, action, body) {
   }
 }
 
-function reservationForm(good, roles, addresses) {
+function reservationForm(good: Good, roles: readonly Role[], addresses: readonly Address[] | undefined) {
   const panel = add("form", "reservation-form", "");
   if (!plans.data?.canSubmit) {
     panel.append(add("p", "muted", plans.data ? "预约兑换服务暂未启用。" : "暂时无法确认预约服务状态。"));
@@ -877,7 +975,7 @@ function reservationForm(good, roles, addresses) {
   selector.required = true;
   const targetField = add("label", "reservation-target", good.type === 2 ? "接收奖励的游戏角色" : "收货地址");
   selector.append(new Option("请选择兑换目标", ""), ...targets.map((target, index) =>
-    new Option(good.type === 2 ? "UID " + target.uid + " · " + roleLabel(target) : target.label, String(index))));
+    new Option(good.type === 2 ? "UID " + (target as Role).uid + " · " + roleLabel(target as Role) : (target as Address).label, String(index))));
   if (targets.length === 1) selector.value = "0";
   targetField.htmlFor = selector.id;
   targetField.append(selector);
@@ -913,7 +1011,7 @@ function reservationForm(good, roles, addresses) {
   } };
   if (saved) {
     const match = targets.findIndex(target => good.type === 2
-      ? target.uid === saved.body.uid && target.region === saved.body.region : target.id === saved.body.addressId);
+      ? (target as Role).uid === saved.body.uid && (target as Role).region === saved.body.region : (target as Address).id === saved.body.addressId);
     selector.value = match < 0 ? "" : String(match);
     confirm.checked = true;
   }
@@ -927,7 +1025,7 @@ function reservationForm(good, roles, addresses) {
     if (!draft) {
       const target = targets[Number(selector.value)];
       if (!confirm.checked || !selector.value || !target) return;
-      if (!immediate && good.opensAt <= Date.now() + shop.nowOffset) {
+      if (!immediate && good.opensAt! <= Date.now() + shop.nowOffset) {
         message.textContent = "商品开放时间已到，请刷新商城后重新确认。";
         return;
       }
@@ -935,7 +1033,7 @@ function reservationForm(good, roles, addresses) {
         message.textContent = "当前浏览器无法生成兑换确认，请通过 HTTPS 页面重试。";
         return;
       }
-      const destination = good.type === 2 ? { uid: target.uid, region: target.region } : { addressId: target.id };
+      const destination = good.type === 2 ? { uid: (target as Role).uid, region: (target as Role).region } : { addressId: (target as Address).id };
       draft = { body: { goodsId: good.id, expectedPrice: good.price, immediate, confirmed: true,
         ...destination, intentId: crypto.randomUUID() } };
       plans.intents.set(good.id, draft);
@@ -963,7 +1061,7 @@ function reservationForm(good, roles, addresses) {
         draft.note = problem + "若需重试，请重试原请求。";
         return;
       }
-      const plan = await response.json();
+      const plan = await response.json() as Plan;
       if (scope !== plans.scope) return;
       plans.intents.delete(good.id);
       plans.revision++;
@@ -988,13 +1086,13 @@ function reservationForm(good, roles, addresses) {
   return panel;
 }
 
-async function request(path, options) {
+async function request(path: string, options?: RequestInit) {
   return fetch(path, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(20_000), ...options });
 }
 
-function updateBusy(value) {
+function updateBusy(value: boolean) {
   busy = value;
-  for (const id of ["refresh", "logout", "login-retry"]) get(id).disabled = value;
+  for (const id of ["refresh", "logout", "login-retry"] as const) get(id).disabled = value;
   get("overview-view").setAttribute("aria-busy", String(value));
   if (!value && pendingTicket) {
     pendingTicket = false;
@@ -1017,14 +1115,14 @@ async function refresh() {
       return;
     }
     if (!response.ok) throw new Error("无法读取档案和任务。");
-    const data = await response.json();
+    const data = await response.json() as Overview;
     showOverview(data);
     showNotice("");
     if (!get("dashboard").hidden) {
       get("manual-checkin").hidden = data.manualCheckinAvailable !== true;
       if (tab === "overview") void updateManualCheckin();
       for (const editor of profileEditors) {
-        get(editor.key + "-settings").hidden = data[editor.key + "SettingsAvailable"] !== true;
+        get(editor.key + "-settings").hidden = data[(editor.key + "SettingsAvailable") as `${SettingsKey}SettingsAvailable`] !== true;
         if (tab === "overview") void updateProfileSettings(editor);
       }
     }
@@ -1068,11 +1166,11 @@ get("manual-checkin-start").addEventListener("click", () => {
   if (!get("manual-checkin-start").disabled) void updateManualCheckin(true);
 });
 for (const editor of profileEditors) {
-  const form = get(editor.key + "-settings-form");
+  const form = get((editor.key + "-settings-form") as `${SettingsKey}-settings-form`);
   form.addEventListener("change", editor.buttons);
   form.addEventListener("submit", event => {
     event.preventDefault();
-    if (!get(editor.key + "-settings-save").disabled) void updateProfileSettings(editor, editor.patch());
+    if (!get((editor.key + "-settings-save") as `${SettingsKey}-settings-save`).disabled) void updateProfileSettings(editor, editor.patch());
   });
 }
 get("tab-shop").addEventListener("click", () => {
@@ -1097,11 +1195,11 @@ get("tab-plans").addEventListener("click", () => {
   switchTab("plans");
   void loadPlans();
 });
-get("shop-game").addEventListener("change", event => void loadCatalog(1, event.target.value));
+get("shop-game").addEventListener("change", event => void loadCatalog(1, (event.target as HTMLSelectElement).value));
 get("shop-status").addEventListener("change", renderGoods);
 get("shop-search").addEventListener("input", renderGoods);
 get("shop-previous").addEventListener("click", () => { if (shop.page > 1) void loadCatalog(shop.page - 1); });
-get("shop-next").addEventListener("click", () => { if (shop.page < shop.data?.totalPages) void loadCatalog(shop.page + 1); });
+get("shop-next").addEventListener("click", () => { if (shop.page < shop.data?.totalPages!) void loadCatalog(shop.page + 1); });
 get("shop-close").addEventListener("click", () => get("shop-detail").close());
 get("shop-detail").addEventListener("close", () => {
   if (get("shop-detail").open) return;
@@ -1116,7 +1214,7 @@ setInterval(() => {
   if (tab === "trackers" && !document.hidden && !get("tracker-dialog").open) void loadTrackers();
 }, 15_000);
 addEventListener("pageshow", event => {
-  if (event.persisted) {
+  if ((event as PageTransitionEvent).persisted) {
     showLogin("正在读取当前档案…");
     void refresh();
   }
