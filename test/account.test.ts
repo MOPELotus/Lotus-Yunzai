@@ -510,6 +510,42 @@ test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业�
   }
 });
 
+test("角色同步挡住串档 Cookie，显式续期仍能用该档原 STOKEN 修复", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-cookie-owner-"));
+  const path = join(root, "42-2.yaml");
+  try {
+    const profile = Bun.YAML.stringify({
+      user: { qq: "42" }, profile: { id: 2 },
+      account: { stuid: "71", ltuid: "71", mid: "fixture-mid", stoken: "v2_original",
+        cookie: "ltuid_v2=72;ltmid_v2=fixture-mid;ltoken_v2=v2_old;cookie_token_v2=v2_old" },
+    });
+    await writeFile(path, profile);
+    const requests: string[] = [];
+    const registry = new CommandRegistry();
+    registry.registerModule(accountCommands(root, () => true, profiles => createProfileHoyoClient(profiles, async (url, init) => {
+      requests.push(url.pathname);
+      if (url.pathname.endsWith("/getUserGameRolesByCookie")) {
+        expect(new Headers(init.headers).get("cookie")).toContain("ltuid_v2=71");
+        return Response.json({ retcode: 0, data: { list: [{ game_biz: "hk4e_cn", game_uid: "100000031", region: "cn_gf01" }] } });
+      }
+      const { src_token, dst_token_type } = JSON.parse(String(init.body));
+      expect(src_token.token).toBe("v2_original");
+      return Response.json({ retcode: 0, data: { user_info: { aid: "71" },
+        token: { token: dst_token_type === 2 ? "v2_fresh-ltoken" : "v2_fresh-cookie" } } });
+    })));
+    const context = { user_id: 42, message_type: "private", isMaster: false } as const;
+    expect(await registry.dispatch("#同步角色2", context)).toContain("无法同步");
+    expect(requests).toEqual([]);
+    expect(await readFile(path, "utf8")).toBe(profile);
+    expect(await registry.dispatch("#刷新cookie2", context)).toContain("刷新成功");
+    expect(requests).toEqual(["/account/ma-cn-session/app/exchange", "/account/ma-cn-session/app/exchange",
+      "/binding/api/getUserGameRolesByCookie"]);
+    expect((await createProfileStore(root).requestContext("42", 2, "gs")).role.uid).toBe("100000031");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("旧刷新指令支持单档案后缀和批量刷新，沿用旧权限配置", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-refresh-command-"));
   try {

@@ -420,6 +420,14 @@ function cookieFields(value: string) {
 const cookieIdFields = new Set(["stuid", "uid", "ltuid", "ltuid_v2", "account_id", "account_id_v2"]);
 const cookieMidFields = new Set(["mid", "stmid_v2", "ltmid_v2", "account_mid_v2"]);
 
+export function hasConflictingProfileCookieIdentity(account: ProfileAccountContext["account"]): boolean {
+  const fields = [...cookieFields(account.cookie ?? ""), ...cookieFields(account.stokenCookie ?? "")];
+  const ids = [account.stuid, account.ltuid,
+    ...fields.filter(([key]) => cookieIdFields.has(key) || key === "login_uid").map(([, value]) => value)];
+  const mids = [account.mid, ...fields.filter(([key]) => cookieMidFields.has(key)).map(([, value]) => value)];
+  return new Set(ids.filter(Boolean)).size > 1 || new Set(mids.filter(Boolean)).size > 1;
+}
+
 function loginFields(result: ProfileLoginResult) {
   const { stuid, stoken, mid = "", credentials: { cookie, ltoken, stokenCookie } } = result;
   const safeField = (value: string) => /^[!#-:<-~]+$/u.test(value);
@@ -1021,6 +1029,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 
       return updateAccount(qq, id, name, (account, current) => {
         if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (hasConflictingProfileCookieIdentity({
+          ...current.account, cookie: credentials.cookie,
+          stokenCookie: credentials.stokenCookie ?? current.account.stokenCookie,
+        })) throw new ProfileError("invalid", "刷新返回的 Cookie 与档案账号不一致。");
         return {
           ...account, cookie: credentials.cookie, ltoken: credentials.ltoken,
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),

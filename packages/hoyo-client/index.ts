@@ -1,4 +1,4 @@
-import { normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { hasConflictingProfileCookieIdentity, normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";
 import { readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 import { readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
@@ -174,6 +174,7 @@ export function createHoyoClient(
     if (game !== undefined && !Object.hasOwn(checkinGameBiz, game)) {
       throw new HoyoRequestError("invalid-input", "游戏类型无效。");
     }
+    verifyCookieIdentity(context);
     const cookie = context.account.cookie;
     if (!cookie.trim() || /[\r\n\0]/u.test(cookie)) {
       throw new HoyoRequestError("invalid-input", "档案 Cookie 无效。");
@@ -186,15 +187,17 @@ export function createHoyoClient(
     let response: Response;
     try {
       signal?.throwIfAborted();
+      await ensureCurrentProfile(context);
+      signal?.throwIfAborted();
       response = await transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
         redirect: "error",
         signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
       throw new HoyoRequestError("transport", "米游社角色请求未完成。");
     }
-
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
@@ -216,6 +219,7 @@ export function createHoyoClient(
       throw new HoyoRequestError("response", "米游社角色列表格式有误。");
     }
 
+    await ensureCurrentProfile(context);
     return payload.data.list;
   }
 
@@ -229,6 +233,7 @@ export function createHoyoClient(
     signal?: AbortSignal,
     isExpired = isCookieExpired,
   ) {
+    verifyCookieIdentity(context);
     if (!recovery) return { context, data: await attempt(context) };
     const key = keyFor(context);
     const entry = track(key);
@@ -260,6 +265,12 @@ export function createHoyoClient(
     const changed = new HoyoRequestError("profile-changed", "游戏档案已变更，请重新发起请求。");
     const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
     if (latest.revision !== profile.revision) throw changed;
+  }
+
+  function verifyCookieIdentity(profile: ProfileAccountContext) {
+    if (hasConflictingProfileCookieIdentity(profile.account)) {
+      throw new HoyoRequestError("invalid-input", "档案 Cookie 与当前登录账号不一致，请刷新或重新扫码登录。");
+    }
   }
 
   async function readForProfile<Source extends ProfileAccountContext, Options extends { readonly signal?: AbortSignal }, Data extends object>(
@@ -408,6 +419,7 @@ export function createHoyoClient(
         const { game, role } = source;
         options.signal?.throwIfAborted();
         try {
+          verifyCookieIdentity(source);
           const value = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
             : await readForProfile({ ...current, game, role }, options, readDailyNote,
             canRefresh, (attempt) => { current = attempt; });
@@ -439,7 +451,8 @@ export function createHoyoClient(
       return readForProfile(source, options, readCnGameCheckinInfo,
         options.recoverCookie === false ? () => false : isGameRecordCookieExpired);
     },
-    submitCnGameCheckin(source: CnGameCheckinSource, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
+    async submitCnGameCheckin(source: CnGameCheckinSource, options: Parameters<typeof submitCnGameCheckin>[2] = {}) {
+      verifyCookieIdentity(source);
       return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
     },
     async fetchBbsMissionState(source: ProfileAccountContext,
