@@ -15,6 +15,7 @@ import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
+import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
@@ -1821,6 +1822,14 @@ if (import.meta.main) {
         const reply = await commands.dispatchFallback(event, allowed, (userId) =>
           self_id !== undefined && masterPermissions.isMaster(self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
+    const avatar = qqAvatarCommand(event.msg);
+    if (avatar) {
+      if (allowNew && allowed([avatar.group ? "群头像" : "头像", "group", "@lotus-yunzai/group"])) {
+        const reply = qqAvatarReply(event, avatar);
+        if (reply !== undefined) await event.reply(reply, true);
       }
       return;
     }
