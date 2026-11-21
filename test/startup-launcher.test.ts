@@ -460,7 +460,7 @@ async function fixture() {
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migration-publication", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
