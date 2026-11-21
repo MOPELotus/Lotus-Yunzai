@@ -51,7 +51,7 @@ const genshinPanelPaths = {
 } as const;
 type ZzzPeriodRecord = "zzz-hadal" | "zzz-deadly" | "zzz-holo-boss" | "zzz-void-front";
 type RecordOptions = { readonly signal?: AbortSignal } & (
-  { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "genshin-panel-list" |
+  { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "starrail-monthly" | "genshin-panel-list" |
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
@@ -150,7 +150,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const { kind, signal } = options;
   const { game, role: { uid, gameBiz } } = source;
   const forNote = kind === "daily-note";
-  const forStarRail = kind === "starrail-avatar-info";
+  const starRailPanel = kind === "starrail-avatar-info";
+  const starRailMonthly = kind === "starrail-monthly";
+  const forStarRail = starRailPanel || starRailMonthly;
   const forDeck = kind === "genshin-gcg-deck";
   const forGcgCards = kind === "genshin-gcg-cards" || kind === "genshin-gcg-collection-summary";
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
@@ -161,12 +163,13 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const hollow = hollowLost || hollowDetail || kind === "zzz-hollow-abstract";
   const zenkov = kind === "zzz-zenkov" || kind === "zzz-zenkov-detail";
   const exploration = kind === "zzz-exploration";
-  const monthly = kind === "zzz-monthly";
-  const forZzz = monthly || Object.hasOwn(zzzCardPaths, kind);
+  const zzzMonthly = kind === "zzz-monthly";
+  const monthly = zzzMonthly || starRailMonthly;
+  const forZzz = zzzMonthly || Object.hasOwn(zzzCardPaths, kind);
   const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
-    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : monthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
-    forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
+    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
+    starRailMonthly ? "星铁月收入" : starRailPanel ? "星铁面板" : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -174,6 +177,12 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if ((!forNote && game !== (forZzz ? "zzz" : forStarRail ? "sr" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
+  }
+  if (starRailMonthly && (!source.role.region.trim() || !gameBiz.trim())) {
+    throw new HoyoRequestError("invalid-input", "星铁月收入需使用档案中已同步的国服角色。");
+  }
+  if (starRailMonthly && (!source.device.id?.trim() || !source.device.fp?.trim())) {
+    throw new HoyoRequestError("invalid-input", "请先在此档案绑定同一设备的 device_id 和 device_fp，再查询星铁月收入。");
   }
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
       options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
@@ -188,9 +197,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
     throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
   }
-  const path = forNote ? route.path : forStarRail ? "/game_record/app/hkrpg/api/avatar/info"
+  const path = forNote ? route.path : starRailPanel ? "/game_record/app/hkrpg/api/avatar/info"
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
-    : monthly ? "/event/nap_ledger/month_info"
+    : starRailMonthly ? "/event/srledger/month_info" : zzzMonthly ? "/event/nap_ledger/month_info"
     : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}`
     : forDeck ? "/game_record/app/genshin/api/gcg/deckList"
     : forGcgCards ? `/game_record/app/genshin/api/gcg/${kind === "genshin-gcg-cards" ? "cardList" : "basicInfo"}`
@@ -201,8 +210,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     body = JSON.stringify({ role_id: uid, server: region,
       ...(options.kind === "genshin-panel-detail" && { character_ids: options.characterIds }) });
   } else {
-    if (forZzz && !exploration && !monthly) endpoint.searchParams.set("lang", "zh-cn");
-    if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
+    if ((forZzz && !exploration && !zzzMonthly) || starRailMonthly) endpoint.searchParams.set("lang", "zh-cn");
+    if (starRailPanel) endpoint.searchParams.set("need_wiki", "true");
     if (options.kind === "genshin-gcg-cards") {
       endpoint.searchParams.set("limit", "999");
       endpoint.searchParams.set("need_action", String(options.collection === "action"));
@@ -215,12 +224,14 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
     if (hollowDetail) endpoint.searchParams.set("type", "3");
+    if (starRailMonthly) endpoint.searchParams.set("month", "");
   }
   const headers = requestHeaders(source, endpoint.search.slice(1), body);
   // The signed query for this route ends at need_wiki. The selected ID is appended afterward.
   if (zzzPanelDetail) endpoint.searchParams.set("id_list[]", String(options.characterId));
-  // The ledger signs the role query before adding the selected month, including the empty default.
-  if (monthly) {
+  if (starRailMonthly) headers.set("Origin", "https://webstatic.mihoyo.com");
+  // The ZZZ ledger signs the role query before adding the selected month.
+  if (zzzMonthly) {
     endpoint.searchParams.set("month", options.month);
     headers.set("Origin", "https://act.mihoyo.com");
     headers.set("Referer", "https://act.mihoyo.com/");
@@ -263,13 +274,13 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     }
   }
   const payload = await readGameRecordPayload(response,
-    forNote ? 64 * 1024 : forStarRail || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
+    forNote ? 64 * 1024 : starRailPanel || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   const retcode = whole(payload?.retcode);
   if (response.status === 401) throw apiError(payload, response.status, retcode, label);
   if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
-  if (forStarRail && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
+  if (starRailPanel && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
   const data = (climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
   if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);

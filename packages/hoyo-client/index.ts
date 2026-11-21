@@ -22,6 +22,7 @@ import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniap
 import { createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
+import { readStarRailMonthly, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
@@ -72,6 +73,7 @@ export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
 export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
+export type { StarRailMonthlySnapshot, StarRailMonthlyOptions } from "./starrail-monthly.ts";
 export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
@@ -493,6 +495,9 @@ export function createHoyoClient(
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
+    },
+    fetchStarRailMonthly(source: ProfileRequestContext, options: StarRailMonthlyOptions = {}) {
+      return readForProfile(source, options, readStarRailMonthly, isGameRecordCookieExpired);
     },
     fetchStarRailPanel(source: ProfileRequestContext, options: StarRailPanelOptions = {}) {
       return readForProfile(source, options, readStarRailPanel, isGameRecordCookieExpired);
