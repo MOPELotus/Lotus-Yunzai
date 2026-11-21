@@ -4,6 +4,7 @@ import type { CommandModule, MessageFallbackContext, CommandReply } from "./comm
 
 const bind = /^(?:#(?:原神|星铁|绝区零)?|[#/]?zzz|#?[%％](?:绝区零|zzz)?|绝区零)绑定设备(?:信息)?([1-9]\d{0,2})?(?:\s+([\s\S]*))?$/iu;
 const cancel = /^#取消绑定设备(?:信息)?([1-9]\d{0,2})?$/u;
+const zzzHelp = /^(?:[#/]?(?:zzz|绝区零)(?:zzz|绝区零)?|#?[%％](?:zzz|绝区零)?)绑定设备帮助([1-9]\d{0,2})?$/iu;
 const timeout = 120_000;
 const apkName = "copy_device_info_1.2.apk";
 const oldApk = new URL(`../data/passport/resources/apk/${apkName}`, import.meta.url);
@@ -15,7 +16,7 @@ function containsDeviceInput(message: string) {
 }
 
 export function isDeviceBindingInput(message: string) {
-  return bind.test(message) || cancel.test(message) || containsDeviceInput(message);
+  return bind.test(message) || cancel.test(message) || zzzHelp.test(message) || containsDeviceInput(message);
 }
 
 interface BindingRequest {
@@ -41,11 +42,22 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const text = context.normalizedMessage.trim();
       const opened = bind.exec(text);
       const cancelled = cancel.exec(text);
+      const help = zzzHelp.exec(text);
       const payload = containsDeviceInput(text);
-      if (!opened && !cancelled && !payload && text !== "取消") return;
+      if (!opened && !cancelled && !help && !payload && text !== "取消") return;
       const { user_id, message_type, self_id, adapter } = context;
-      const id = Number((opened ?? cancelled)?.[1] ?? 1);
+      const id = Number((opened ?? cancelled ?? help)?.[1] ?? 1);
       if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (help) {
+        if (context.isDelegated || (message_type !== "private" && message_type !== "group")) return;
+        const suffix = id === 1 ? "" : id;
+        return [
+          `登录该档案后，私聊发送 #绑定设备${suffix}。`,
+          "按提示在同一条私聊消息中发送该设备的 JSON，或配对的 device_id 和 device_fp。",
+          "如收到附带的安卓设备信息工具，也可用它复制数据。等待有效期为两分钟，发送「取消」退出。",
+          `绑定后可用 #设备信息${suffix} 查看。`,
+        ].join("\n");
+      }
       if (message_type !== "private" || !user_id || !Number.isSafeInteger(user_id) || user_id < 1 ||
           !self_id || !Number.isSafeInteger(self_id) || self_id < 1) {
         if (opened || cancelled) return `请私聊发送 #绑定设备${id === 1 ? "" : id}。`;

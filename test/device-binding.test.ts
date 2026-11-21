@@ -1,10 +1,41 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { accountCommands } from "../lib/account-commands.ts";
+import { deviceCommands, isDeviceBindingInput } from "../lib/device-commands.ts";
 import { parseDeviceBinding } from "../packages/account/device-binding.ts";
 
 const id = "01234567-0123-4567-89ab-0123456789ab";
 const otherId = "12345678-0123-4567-89ab-0123456789ab";
 const fp = "A1B2C3D4E5F67";
 const otherFp = "0123456789abc";
+
+test("绝区零设备帮助保留档号，不打开设备绑定窗口", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-zzz-device-help-"));
+  try {
+    const module = deviceCommands(root, new AbortController().signal, () => "测试失败");
+    const context = {
+      message_type: "private" as const, self_id: 99, user_id: 42, isMaster: false, isBotMaster: () => false,
+      reply: () => { throw new Error("帮助不应请求设备信息或发送文件"); },
+    };
+    for (const command of ["%绑定设备帮助2", "#绝区零绑定设备帮助2", "％绑定设备帮助2", "/ZZZ绑定设备帮助2"]) {
+      expect(isDeviceBindingInput(command)).toBe(true);
+      const reply = await module.fallback!(command, { ...context, normalizedMessage: command });
+      expect(reply).toContain("#绑定设备2");
+      expect(reply).toContain("等待有效期为两分钟");
+      expect(reply).toContain("#设备信息2");
+    }
+    const { commands, aliases } = accountCommands(root, () => false);
+    expect(aliases?.["#设备信息2"]).toBeDefined();
+    expect(commands[aliases!["#设备信息2"]!]).toBeFunction();
+    const payload = JSON.stringify({ device_id: id, device_fp: fp });
+    expect(await module.fallback!(payload, { ...context, normalizedMessage: payload })).toBe("请先私聊发送 #绑定设备。");
+    expect(isDeviceBindingInput("%解绑设备")).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("手工绑定解析独立 JSON、旧 data 包装、带标签的文本和 HTTP 头字段", () => {
   expect(parseDeviceBinding(JSON.stringify({
