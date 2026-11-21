@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createDispatchPower } from "../lib/dispatch-power.ts";
+import { createDispatchPower, readLegacyDispatchPause } from "../lib/dispatch-power.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 
 function fixture() {
@@ -19,6 +19,46 @@ function fixture() {
     },
   };
 }
+
+test("只读取旧软关机时间，在实际接管时才移除未变化的旧记录", async () => {
+  const pausedAt = 1_795_230_000_000;
+  const snapshot = JSON.stringify({ isStop: true, time: pausedAt });
+  let stored: string | null = snapshot;
+  let writes = 0;
+  const redis = {
+    async get(key: string) {
+      expect(key).toBe("Yz:restart");
+      return stored;
+    },
+    async eval(_script: string, { keys, arguments: [snapshot] }: { keys: string[]; arguments: string[] }) {
+      expect(keys).toEqual(["Yz:restart"]);
+      writes++;
+      if (stored !== snapshot) return 0;
+      stored = null;
+      return 1;
+    },
+  };
+  const legacy = await readLegacyDispatchPause(redis);
+  expect(legacy?.pausedAt).toBe(pausedAt);
+  expect(stored).toBe(snapshot);
+  expect(writes).toBe(0);
+
+  const replacement = JSON.stringify({ isStop: true, time: pausedAt + 1 });
+  stored = replacement;
+  expect(await legacy?.take()).toBe(false);
+  expect(stored).toBe(replacement);
+  const current = await readLegacyDispatchPause(redis);
+  expect(await current?.take()).toBe(true);
+  expect(stored).toBeNull();
+  expect(await current?.take()).toBe(false);
+
+  for (const invalid of [null, "{broken", '{"isExit":true,"time":10}', '{"isStop":true,"time":"10"}']) {
+    stored = invalid;
+    expect(await readLegacyDispatchPause(redis)).toBeUndefined();
+    expect(stored).toBe(invalid);
+  }
+  expect(writes).toBe(3);
+});
 
 test("开关机只识别完整命令，并要求可信主人和已绑定账号或授权终端", async () => {
   const { power, send, replies } = fixture();

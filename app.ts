@@ -52,7 +52,7 @@ import { readLocalConfig } from "./lib/config.ts";
 import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
-import { createDispatchPower, formatElapsed, isProcessMaster } from "./lib/dispatch-power.ts";
+import { createDispatchPower, formatElapsed, isProcessMaster, readLegacyDispatchPause } from "./lib/dispatch-power.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
 import { createFileToUrl, createImageToUrl, listenerFileBase } from "./lib/file-to-url.ts";
 import { lockFile } from "./lib/file-lock.ts";
@@ -1911,6 +1911,12 @@ if (import.meta.main) {
       globalThis.redis = await connectStorage(valkey);
       console.log("[存储] Valkey 已连接。");
     }
+    const legacyPause = globalThis.redis && !dispatchPower.paused
+      ? await readLegacyDispatchPause(globalThis.redis).catch(() => {
+        console.warn("[进程管理] 无法读取旧版关机状态。");
+      })
+      : undefined;
+    if (legacyPause) dispatchPower.setPaused(true, legacyPause.pausedAt);
     const accounts = accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       if (args[0] === "登录列表") {
@@ -2854,6 +2860,13 @@ if (import.meta.main) {
         httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
         milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
       }, plugins.readyScripts);
+      if (legacyPause && !lifecycle.signal.aborted && handoff.accepting) {
+        const taken = await legacyPause.take().catch(() => {
+          console.warn("[进程管理] 未能确认旧版关机状态已接管。");
+        });
+        if (taken === false && dispatchPower.pausedAt === legacyPause.pausedAt) dispatchPower.setPaused(false);
+        handoff.reportPower(dispatchPower.pausedAt);
+      }
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();
       pendingModuleTasks.clear();

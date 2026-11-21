@@ -2,6 +2,32 @@ import type { MessageEvent } from "./messages.ts";
 
 const pause = "#关机";
 const resume = "#开机";
+const legacyRestartKey = "Yz:restart";
+
+export async function readLegacyDispatchPause(redis: {
+  get(key: string): Promise<string | null>;
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+}) {
+  const snapshot = await redis.get(legacyRestartKey);
+  if (!snapshot) return;
+  let state: { isStop?: unknown; time?: unknown } | null;
+  try { state = JSON.parse(snapshot); }
+  catch { return; }
+  if (!state || state.isStop !== true || typeof state.time !== "number" ||
+      !Number.isSafeInteger(state.time) || state.time <= 0) return;
+
+  return {
+    pausedAt: state.time,
+    async take() {
+      return await redis.eval(`
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          return redis.call('DEL', KEYS[1])
+        end
+        return 0
+      `, { keys: [legacyRestartKey], arguments: [snapshot] }) === 1;
+    },
+  };
+}
 
 export function isProcessMaster(event: MessageEvent): boolean {
   return event.adapter === "milky" ? event.canManageProcess === true : event.isMaster === true;
@@ -25,9 +51,8 @@ export function createDispatchPower(now = Date.now, pausedAt?: number) {
   let active = new AbortController();
   if (paused) active.abort();
 
-  function setPaused(value: boolean): string | undefined {
+  function setPaused(value: boolean, timestamp = now()): string | undefined {
     if (paused === value) return;
-    const timestamp = now();
     const elapsed = formatElapsed(timestamp - since);
     since = timestamp;
     paused = value;
