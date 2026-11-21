@@ -283,6 +283,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         const journal = input.communityWrites;
         function deferRemaining() {
           for (const waiting of selected.filter(item => item.community === "未执行")) {
+            const previous = journal?.previous[waiting.forum];
+            if (previous && previous !== "retryable") continue;
             waiting.community = "暂缓";
             retryForums.push(waiting.forum);
           }
@@ -308,6 +310,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             row.community = rejected ? "失败" : "未确认";
             count(rejected ? "failed" : "unconfirmed");
             notes.push(`${row.label}社区：${rejected ? "上次提交已失败。" : "上次提交结果未确认，请在官方客户端核对。"}`);
+            if (previous === "pending" || previous === "unconfirmed") deferRemaining();
             if (previous !== "rejected") break;
             continue;
           }
@@ -362,7 +365,10 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             row.community = explicit ? "失败" : "未确认";
             count(explicit ? "failed" : "unconfirmed");
             notes.push(`${row.label}社区：${bbsIssue(error)}`);
-            if (blocked) break;
+            if (blocked) {
+              if (journal && !explicit) deferRemaining();
+              break;
+            }
             continue;
           }
           await verifyCurrent();

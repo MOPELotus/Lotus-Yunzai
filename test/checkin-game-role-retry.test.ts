@@ -190,3 +190,47 @@ test("签到提交状态未知不会入队，日末补跑拒绝换绑后的档�
     expect(final?.communityRetry).toBeUndefined();
     expect(traces).toEqual([]);
   }));
+
+test("社区提交未知时，仅同档未提交的其他分区进入当天补跑", () =>
+  fixture(async (root, path) => {
+    const document = Bun.YAML.parse(profile()) as Record<string, unknown>;
+    document.games = { cn: { enable: false } };
+    document.mihoyobbs = { enable: true, tasks: { checkin: true }, checkin_list: [6, 8] };
+    await writeFile(path, Bun.YAML.stringify(document));
+    let at = scheduled;
+    const writes: string[] = [];
+    const store = createCheckinScheduleStore(join(root, "plans"));
+    const profiles = createProfileStore(root);
+    const signal = new AbortController();
+    const module = gameCheckinCommands(root, signal.signal, {
+      async renderReceipt() { throw new Error("测试使用文字回执"); },
+      async transport(url, init) {
+        if (url.pathname.endsWith("/getUserMissionsState")) return ok({ states: [] });
+        if (url.pathname.endsWith("/signIn")) {
+          const { gids } = JSON.parse(String(init.body));
+          writes.push(gids);
+          return gids === "6" ? new Response(null, { status: 503 }) : ok({ gids: 8 });
+        }
+        throw new Error("Unexpected fixture operation");
+      },
+    });
+    const runtime = createCheckinScheduleRuntime({
+      store, signal: signal.signal, config: { fixed_time: "18:00" }, now: () => at,
+      listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
+    });
+    try {
+      expect(await runtime.runDue()).toMatchObject({ deferred: 1 });
+      const entry = (await store.read(date))!.entries[0]!;
+      expect(entry).toMatchObject({ done: false, communityWrites: { "6": "unconfirmed" },
+        communityRetry: { forums: ["8"], verifiedUnsent: true, otherFailure: true } });
+      expect(writes).toEqual(["6"]);
+      at = Date.parse(entry.communityRetry!.nextAt);
+      expect(await runtime.runDue(true)).toMatchObject({ completed: 1 });
+      expect((await store.read(date))?.entries[0]).toMatchObject({ done: true, ok: false,
+        communityWrites: { "6": "unconfirmed", "8": "accepted" } });
+      expect(writes).toEqual(["6", "8"]);
+    } finally {
+      signal.abort();
+      await runtime.stop();
+    }
+  }));
