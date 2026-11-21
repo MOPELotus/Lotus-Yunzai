@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { link, mkdir, open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInstallName } from "./install-command.ts";
@@ -9,7 +9,7 @@ type ReceiptAdapter = "milky";
 type ReceiptAccount = { readonly botId: number; readonly adapter?: ReceiptAdapter };
 type ReceiptTarget =
   | { readonly type: "terminal" }
-  | (ReceiptAccount & { readonly type: "masters" })
+  | (ReceiptAccount & { readonly type: "masters"; readonly pendingUsers?: readonly number[] })
   | (ReceiptAccount & { readonly type: "group" | "private"; readonly id: number });
 
 type ProcessOrUpdate = { readonly target: ReceiptTarget } & (
@@ -46,6 +46,10 @@ function positiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+export function processReceiptUsers(value: unknown): number[] | undefined {
+  if (Array.isArray(value) && value.length > 0 && value.every(positiveInteger)) return [...new Set(value)];
+}
+
 function receiptFrom(value: unknown): ProcessReceipt | undefined {
   if (!isRecord(value)) return;
   const { kind, at, target } = value;
@@ -75,11 +79,15 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
 }
 
 function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"] | undefined {
-  const { type, botId, id, adapter } = target;
+  const { type, botId, id, adapter, pendingUsers } = target;
   if (type === "terminal") return adapter === undefined ? { type } : undefined;
   if (!positiveInteger(botId) || (adapter !== undefined && adapter !== "milky")) return;
   const account: ReceiptAccount = adapter === undefined ? { botId } : { botId, adapter };
-  if (type === "masters") return { type, ...account };
+  if (type === "masters") {
+    if (pendingUsers === undefined) return { type, ...account };
+    const users = processReceiptUsers(pendingUsers);
+    return users && { type, ...account, pendingUsers: users };
+  }
   if ((type === "group" || type === "private") && positiveInteger(id)) {
     return { type, ...account, id };
   }
@@ -87,6 +95,11 @@ function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"
 
 function receiptSlot(kind: ProcessReceipt["kind"]): ReceiptSlot {
   return kind === "install" ? kind : kind === "update";
+}
+
+function isFresh(receipt: ProcessReceipt) {
+  const age = Date.now() - receipt.at;
+  return age >= -maxClockSkew && age <= maxAge;
 }
 
 async function readReceipt(file: string): Promise<ProcessReceipt | undefined> {
@@ -146,8 +159,7 @@ export function createProcessReceipts(root: URL) {
       if (!receipt || receiptSlot(receipt.kind) !== slot) return;
       const { target } = receipt;
       if (target.type === "terminal" ? botId !== undefined : target.botId !== botId || target.adapter !== adapter) return;
-      const age = Date.now() - receipt.at;
-      if (age >= -maxClockSkew && age <= maxAge) return receipt;
+      if (isFresh(receipt)) return receipt;
     } finally {
       await rm(claimed, { force: true });
     }
@@ -160,30 +172,40 @@ export function createProcessReceipts(root: URL) {
     return claim(botId, adapter, false);
   }
 
-  return {
-    async save(receipt: ProcessReceipt): Promise<void> {
-      const value = receiptFrom(receipt);
-      if (!value) throw new Error("进程回执无效。");
-      const { target } = value;
-      const slot = receiptSlot(value.kind);
-      const file = target.type === "terminal" ? receiptPath(undefined, undefined, slot) : receiptPath(target.botId, target.adapter, slot);
-      await mkdir(directory, { recursive: true, mode: 0o700 });
-      const staged = join(directory, `.write-${crypto.randomUUID()}`);
+  async function write(receipt: ProcessReceipt, retry: boolean): Promise<void> {
+    const value = receiptFrom(receipt);
+    if (!value) throw new Error("进程回执无效。");
+    if (retry && !isFresh(value)) return;
+    const content = JSON.stringify(value);
+    if (Buffer.byteLength(content) > maxFileBytes) throw new Error("进程回执超出可保存大小。");
+    const { target } = value;
+    const slot = receiptSlot(value.kind);
+    const file = target.type === "terminal" ? receiptPath(undefined, undefined, slot) : receiptPath(target.botId, target.adapter, slot);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const staged = join(directory, `.write-${crypto.randomUUID()}`);
+    try {
+      const handle = await open(staged, "wx", 0o600);
       try {
-        const handle = await open(staged, "wx", 0o600);
-        try {
-          await handle.writeFile(JSON.stringify(value), "utf8");
-          await handle.sync();
-        } finally {
-          await handle.close();
-        }
-        await rename(staged, file);
-      } catch (error) {
-        await rm(staged, { force: true }).catch(() => undefined);
-        throw error;
+        await handle.writeFile(content, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
       }
-    },
+      if (retry) {
+        await link(staged, file).catch(error => {
+          if (errorCode(error) !== "EEXIST") throw error;
+        });
+      } else {
+        await rename(staged, file);
+      }
+    } finally {
+      await rm(staged, { force: true }).catch(() => undefined);
+    }
+  }
 
+  return {
+    save: (receipt: ProcessReceipt) => write(receipt, false),
+    restore: (receipt: ProcessReceipt) => write(receipt, true),
     take,
     takeUpdate: (botId?: number, adapter?: ReceiptAdapter) => claim(botId, adapter, true),
     takeInstall: (botId?: number, adapter?: ReceiptAdapter) => claim(botId, adapter, "install"),

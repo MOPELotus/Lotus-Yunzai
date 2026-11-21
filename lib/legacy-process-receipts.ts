@@ -1,5 +1,5 @@
 import { legacyRestartKey } from "./dispatch-power.ts";
-import type { ProcessReceipt } from "./process-receipts.ts";
+import { processReceiptUsers, type ProcessReceipt } from "./process-receipts.ts";
 
 const pendingKey = "lotus-yunzai:process:legacy-restart-targets";
 const pendingSeconds = 30 * 24 * 60 * 60;
@@ -14,7 +14,7 @@ type Route = { readonly type: "broadcast" } | Exclude<Target, { type: "masters" 
 type LegacyReceipt = Extract<ProcessReceipt, { kind: "stop" | "restart" }>;
 interface Claim {
   readonly receipt: LegacyReceipt;
-  restore(): Promise<void>;
+  restore(retry?: { readonly pendingUsers?: readonly number[] }): Promise<void>;
 }
 
 function id(value: unknown): number | undefined {
@@ -22,7 +22,7 @@ function id(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
-function decode(raw: string): { at: number; kind: "stop" | "restart"; route: Route } | undefined {
+function decode(raw: string): { at: number; kind: "stop" | "restart"; route: Route; pendingUsers?: readonly number[] } | undefined {
   let data: Record<string, unknown>;
   try { data = JSON.parse(raw); }
   catch { return; }
@@ -46,7 +46,14 @@ function decode(raw: string): { at: number; kind: "stop" | "restart"; route: Rou
     if (bot !== undefined) return;
     route = { type: "broadcast" };
   }
-  return { at: data.time, kind: data.isExit ? "stop" : "restart", route };
+  let pendingUsers: readonly number[] | undefined;
+  const retry = data.lotusReceiptRetry;
+  if (retry && typeof retry === "object" && "pendingUsers" in retry) {
+    pendingUsers = processReceiptUsers(retry.pendingUsers);
+    if (route.type !== "broadcast" || !pendingUsers) return;
+  }
+  return { at: data.time, kind: data.isExit ? "stop" : "restart", route,
+    ...(pendingUsers && { pendingUsers }) };
 }
 
 function routeSlot(target: Target): string {
@@ -80,17 +87,41 @@ export async function takeLegacyProcessReceipt(redis: Storage, session: {
   if (signal.aborted) return;
   const entry = await redis.eval(`
     local entry = redis.call('HGET', KEYS[1], ARGV[1])
-    if entry then redis.call('HDEL', KEYS[1], ARGV[1]) end
-    return entry
-  `, { keys: [pendingKey], arguments: [slot] });
-  if (typeof entry !== "string") return;
-  const raw = entry;
-  async function restore() {
-    await redis.eval(`
-      if redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2]) == 1 and redis.call('TTL', KEYS[1]) == -1 then
-        redis.call('EXPIRE', KEYS[1], ARGV[3])
+    if not entry then return false end
+    local expiry = redis.call('PEXPIRETIME', KEYS[1])
+    local ok, parsed = pcall(cjson.decode, entry)
+    if ok and type(parsed) == 'table' and type(parsed.lotusReceiptRetry) == 'table' then
+      local retry = parsed.lotusReceiptRetry
+      if type(retry.expiresAt) == 'number' and retry.expiresAt > 0 then
+        local now = redis.call('TIME')
+        if retry.expiresAt <= tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) then
+          redis.call('HDEL', KEYS[1], ARGV[1])
+          return false
+        end
+        if expiry < 0 or retry.expiresAt < expiry then expiry = retry.expiresAt end
       end
-    `, { keys: [pendingKey], arguments: [slot, raw, String(pendingSeconds)] });
+      if retry.adapter ~= ARGV[2] then return false end
+    end
+    redis.call('HDEL', KEYS[1], ARGV[1])
+    return { entry, expiry }
+  `, { keys: [pendingKey], arguments: [slot, adapter ?? "onebot"] });
+  if (!Array.isArray(entry) || typeof entry[0] !== "string" || typeof entry[1] !== "number") return;
+  const [raw, expiresAt] = entry as [string, number];
+  async function restore(retry?: { readonly pendingUsers?: readonly number[] }) {
+    const content = retry
+      ? JSON.stringify({ ...JSON.parse(raw), lotusReceiptRetry: { adapter: adapter ?? "onebot", expiresAt, ...retry } })
+      : raw;
+    await redis.eval(`
+      local expiry = tonumber(ARGV[3])
+      if expiry > 0 then
+        local now = redis.call('TIME')
+        if expiry <= tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) then return end
+      end
+      local existed = redis.call('EXISTS', KEYS[1])
+      if redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2]) == 1 and existed == 0 and expiry > 0 then
+        redis.call('PEXPIREAT', KEYS[1], ARGV[3])
+      end
+    `, { keys: [pendingKey], arguments: [slot, content, String(expiresAt)] });
   }
   if (signal.aborted) {
     await restore();
@@ -98,10 +129,11 @@ export async function takeLegacyProcessReceipt(redis: Storage, session: {
   }
   const receipt = decode(raw);
   if (!receipt) return;
-  const { at, kind, route } = receipt;
+  const { at, kind, route, pendingUsers } = receipt;
   if (route.type !== "broadcast" && routeSlot(route) !== slot) return;
   if (botId === undefined) return { receipt: { at, kind, target: { type: "terminal" } }, restore };
   if (route.type === "terminal") return;
-  const target: Target = route.type === "broadcast" ? { type: "masters", botId } : route;
+  const target: Target = route.type === "broadcast"
+    ? { type: "masters", botId, ...(pendingUsers && { pendingUsers }) } : route;
   return { receipt: { at, kind, target: { ...target, ...(adapter && { adapter }) } }, restore };
 }

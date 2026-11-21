@@ -15,7 +15,7 @@ import { readQqMessageMedia } from "./lib/chat-files.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
-import { notifyCheckin, type BotNotifications, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
+import { notifyCheckin, type BotNotifications, type CheckinNotifyDelivery, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
 import { checkinPlanCommands, checkinPlanNotice, checkinScheduleSettingCommands } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
@@ -569,6 +569,38 @@ if (import.meta.main) {
     }
   }
 
+  async function sendReceipt(target: ProcessReceipt["target"], message: string, signal?: AbortSignal): Promise<{
+    confirmed: boolean;
+    retry?: { pendingUsers?: readonly number[] };
+  }> {
+    async function delivery(send: (() => Promise<CheckinNotifyDelivery> | CheckinNotifyDelivery) | undefined) {
+      if (signal?.aborted || !send) return "rejected" as const;
+      try { return await send(); }
+      catch { return "unknown" as const; }
+    }
+    if (target.type === "terminal") {
+      const status = await delivery(() => { terminalOutput(message); return "confirmed"; });
+      return { confirmed: status === "confirmed", ...(status === "rejected" && { retry: {} }) };
+    }
+    const online = milkyOnline;
+    const transport = target.adapter === "milky"
+      ? online?.id === target.botId && !online.signal.aborted && (!signal || signal === online.signal)
+        ? online.checkinNotify : undefined
+      : groups.checkinNotifications().find(binding => binding.botId === target.botId);
+    if (target.type === "masters") {
+      const allowed = new Set(masterPermissions.masterIds(target.botId));
+      allowed.delete(target.botId);
+      const users = target.pendingUsers ? target.pendingUsers.filter(id => allowed.has(id)) : [...allowed];
+      const outcomes = await Promise.all(users.map(id => delivery(transport && (() => transport.sendPrivate(id, message)))));
+      const pendingUsers = users.filter((_, index) => outcomes[index] === "rejected");
+      return { confirmed: outcomes.every(status => status === "confirmed"),
+        ...(pendingUsers.length > 0 && { retry: { pendingUsers } }) };
+    }
+    const status = await delivery(transport && (() => target.type === "group"
+      ? transport.sendGroup(target.id, message) : transport.sendPrivate(target.id, message)));
+    return { confirmed: status === "confirmed", ...(status === "rejected" && { retry: {} }) };
+  }
+
   async function deliverProcessReceipt(botId?: number, update: boolean | "install" = false, adapter?: "milky", signal?: AbortSignal) {
     try {
       if (signal?.aborted) return;
@@ -591,7 +623,13 @@ if (import.meta.main) {
       } else {
         reply = processReceiptText(receipt.kind, elapsed);
       }
-      if (!await sendProcessMessage(receipt.target, reply, signal)) console.warn("[进程管理] 未确认进程操作回执。");
+      const result = await sendReceipt(receipt.target, reply, signal);
+      if (result.retry) {
+        const remaining = receipt.kind !== "install" && receipt.target.type === "masters"
+          ? { ...receipt, target: { ...receipt.target, pendingUsers: result.retry.pendingUsers } } : receipt;
+        await processReceipts.restore(remaining);
+      }
+      if (!result.confirmed) console.warn("[进程管理] 未确认进程操作回执。");
     } catch {
       console.warn("[进程管理] 无法读取进程操作回执。");
     }
@@ -616,7 +654,9 @@ if (import.meta.main) {
       }
       const { receipt } = claim;
       const reply = processReceiptText(receipt.kind, formatElapsed(Date.now() - receipt.at));
-      if (!await sendProcessMessage(receipt.target, reply, signal)) console.warn("[进程管理] 未确认旧版操作回执。");
+      const result = await sendReceipt(receipt.target, reply, signal);
+      if (result.retry) await claim.restore(result.retry);
+      if (!result.confirmed) console.warn("[进程管理] 未确认旧版操作回执。");
     } catch {
       console.warn("[进程管理] 无法领取旧版操作回执。");
     }

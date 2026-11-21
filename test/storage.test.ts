@@ -203,7 +203,7 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
       get: legacy.get.bind(legacy),
       async eval(script, options) {
         const result = await legacy.eval(script, options);
-        if (typeof result === "string") closing.abort();
+        if (Array.isArray(result) && typeof result[0] === "string") closing.abort();
         return result;
       },
     }, { botId: 99, signal: closing.signal }, configured)).toBeUndefined();
@@ -211,6 +211,26 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
       kind: "restart", at, target: { type: "masters", botId: 99, adapter: "milky" },
     });
     expect(await takeLegacyProcessReceipt(legacy, { botId: 100, signal: active }, configured)).toBeUndefined();
+
+    await legacy.set("Yz:restart", JSON.stringify({ time: at }));
+    const retry = await takeLegacyProcessReceipt(legacy, { botId: 99, adapter: "milky", signal: active },
+      { ...configured, bots: [99] });
+    expect(retry).toBeDefined();
+    await retry!.restore({ pendingUsers: [53] });
+    const pending = "lotus-yunzai:process:legacy-restart-targets";
+    const expiresAt = () => legacy.eval("return redis.call('PEXPIRETIME', KEYS[1])", { keys: [pending], arguments: [] });
+    const expiration = await expiresAt();
+    expect(expiration).toBeGreaterThan(Date.now());
+    expect(await takeLegacyProcessReceipt(legacy, { botId: 99, signal: active }, configured)).toBeUndefined();
+    const repeated = await takeLegacyProcessReceipt(legacy, { botId: 99, adapter: "milky", signal: active }, configured);
+    expect(repeated?.receipt).toEqual({ kind: "restart", at,
+      target: { type: "masters", botId: 99, adapter: "milky", pendingUsers: [53] } });
+    await repeated!.restore({ pendingUsers: [53] });
+    expect(await expiresAt()).toBe(expiration);
+    const concurrent = await Promise.all(Array.from({ length: 4 }, () =>
+      takeLegacyProcessReceipt(legacy, { botId: 99, adapter: "milky", signal: active }, configured)));
+    expect(concurrent.filter(Boolean)).toHaveLength(1);
+
     const atlas = storage("atlas");
     const genshin = storage("genshin");
     await legacy.set("shared", "旧版");

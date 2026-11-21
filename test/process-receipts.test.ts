@@ -32,6 +32,26 @@ test("更新结果可单独领取，同一机器人原有重启回执得以保�
   expect(await receipts.take(99)).toEqual(restart);
 });
 
+test("明确未投递的通知保留原时间和待发送账号，新回执优先且重试仍只领取一次", async () => {
+  const { receipts, root } = await fixture();
+  const at = Date.now() - 60_000;
+  const original = { kind: "restart", at, target: { type: "masters", botId: 99, adapter: "milky" } } as const;
+  await receipts.save(original);
+  expect(await receipts.take(99, "milky")).toEqual(original);
+  const retry = { ...original, target: { ...original.target, pendingUsers: [52] } };
+  await Promise.all([receipts.restore(retry), createProcessReceipts(root).restore(retry)]);
+  expect(await receipts.take(99)).toBeUndefined();
+  const claims = await Promise.all([receipts.take(99, "milky"), createProcessReceipts(root).take(99, "milky")]);
+  expect(claims.filter(Boolean)).toEqual([retry]);
+
+  const newResult = { ...original, kind: "stop", at: Date.now() } as const;
+  await receipts.save(newResult);
+  await receipts.restore(retry);
+  expect(await receipts.take(99, "milky")).toEqual(newResult);
+  await receipts.restore({ ...retry, at: Date.now() - 31 * 24 * 60 * 60 * 1_000 });
+  expect(await receipts.take(99, "milky")).toBeUndefined();
+});
+
 test("安装、更新与进程回执分槽存放，安装回执只由原账号或终端领取一次", async () => {
   const { directory, receipts, root } = await fixture();
   const at = Date.now();
