@@ -9,7 +9,7 @@ const owner: CommandContext = {
   message_type: "group", self_id: 99, user_id: 42, group_id: 77, isMaster: true,
 };
 const member: CommandContext = { ...owner, isMaster: false };
-const newYear = () => new Date(2026, 0, 1, 0, 30);
+const newYear = () => new Date("2025-12-31T16:00:00.000Z");
 
 function fixture(overrides: Partial<Counts> = {}) {
   const queries: Query[] = [];

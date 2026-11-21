@@ -1,4 +1,5 @@
 import type { connectStorage } from "@lotus-yunzai/storage";
+import { formatShanghaiDate } from "./shanghai-date.ts";
 
 type RedisClient = Awaited<ReturnType<typeof connectStorage>>;
 type Direction = "receive" | "send";
@@ -16,10 +17,8 @@ function countKey(direction: Direction, kind: string, scope: string, bucket: str
 
 function dateBuckets(date: Date): string[] {
   if (!Number.isFinite(date.getTime())) throw new Error("消息统计日期无效。");
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = `${year}:${String(date.getMonth() + 1).padStart(2, "0")}`;
-  const day = `${month}:${String(date.getDate()).padStart(2, "0")}`;
-  return [day, month, year, "total"];
+  const day = formatShanghaiDate(date).replaceAll("-", ":");
+  return [day, day.slice(0, 7), day.slice(0, 4), "total"];
 }
 
 function identityScopes({ self_id, user_id, group_id }: Identity): string[] {

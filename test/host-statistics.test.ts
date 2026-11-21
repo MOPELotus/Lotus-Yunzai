@@ -108,7 +108,7 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: {
-        PATH: process.env.PATH, TZ: "Asia/Shanghai", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: auth,
+        PATH: process.env.PATH, TZ: "UTC", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: auth,
         LOTUS_VALKEY_URL: `redis://:${password}@127.0.0.1:${port}`,
       },
     });

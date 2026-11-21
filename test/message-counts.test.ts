@@ -35,9 +35,9 @@ function valkey() {
   return { mock, client: () => mock as unknown as Redis, store, writes, reads, scans, pages };
 }
 
-const date = () => new Date(2026, 0, 3, 0, 1);
+const date = () => new Date("2026-01-02T16:00:00.000Z");
 
-test("按本地年月日和身份用一个事务写入 TRSS 旧键，缺失身份只略过相应维度", async () => {
+test("按北京时间年月日和身份用一个事务写入 TRSS 旧键，缺失身份只略过相应维度", async () => {
   const { client, writes, reads, store } = valkey();
   const counts = createMessageCounts(client, false, date);
   expect(counts.available()).toBe(true);
@@ -58,6 +58,9 @@ test("按本地年月日和身份用一个事务写入 TRSS 旧键，缺失身�
   ]]);
   expect(await counts.read("msg", "group:77", "total")).toEqual({ receive: "1", send: "0" });
   expect(store.has("Yz:count:receive:text:total:total")).toBe(false);
+  await createMessageCounts(client, false, () => new Date(date().getTime() - 1)).record("receive", {}, "前一天");
+  expect(store.get("Yz:count:receive:msg:total:2026:01:02")).toBe("1");
+  expect(store.get("Yz:count:receive:msg:total:2026:01:03")).toBe("1");
 });
 
 test("允许统计扁平段、OneBot 数组、纯文本和合并转发 node，msg 始终只加一次", async () => {

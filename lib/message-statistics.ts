@@ -1,4 +1,5 @@
 import type { CommandContext } from "./commands.ts";
+import { formatShanghaiDate } from "./shanghai-date.ts";
 
 type Scope = "total" | "user:*" | "group:*" | `bot:${number}` | `user:${number}` | `group:${number}`;
 
@@ -53,16 +54,16 @@ function currentTargets(context: CommandContext, master: boolean): Target[] {
 }
 
 function yearMonth(date: Date): [string, string] {
-  return [String(date.getFullYear()).padStart(4, "0"), String(date.getMonth() + 1).padStart(2, "0")];
+  return [String(date.getUTCFullYear()).padStart(4, "0"), String(date.getUTCMonth() + 1).padStart(2, "0")];
 }
 
 function dateBucket(date: Date): string {
-  return [...yearMonth(date), String(date.getDate()).padStart(2, "0")].join(":");
+  return [...yearMonth(date), String(date.getUTCDate()).padStart(2, "0")].join(":");
 }
 
 function requestedDay(value: string, anchor: Date): string | undefined {
-  let year = anchor.getFullYear();
-  let month = anchor.getMonth() + 1;
+  let year = anchor.getUTCFullYear();
+  let month = anchor.getUTCMonth() + 1;
   let day: number;
   if (/^\d{8}$/u.test(value)) {
     year = Number(value.slice(0, 4));
@@ -84,17 +85,15 @@ function requestedDay(value: string, anchor: Date): string | undefined {
   if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return;
 
   const date = new Date(anchor);
-  date.setHours(12, 0, 0, 0);
-  date.setFullYear(year, month - 1, day);
-  if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) return dateBucket(date);
+  date.setUTCFullYear(year, month - 1, day);
+  if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) return dateBucket(date);
 }
 
 function defaultBuckets(anchor: Date): readonly string[] {
   const date = new Date(anchor);
-  date.setHours(12, 0, 0, 0);
   const buckets = [dateBucket(date)];
   for (let offset = 1; offset < 3; offset++) {
-    date.setDate(date.getDate() - 1);
+    date.setUTCDate(date.getUTCDate() - 1);
     buckets.push(dateBucket(date));
   }
   const [year, month] = yearMonth(anchor);
@@ -134,8 +133,10 @@ export function createMessageStatistics(counts: Counts, now: () => Date = () => 
     if (!targets.length) return "当前会话没有可查询的用户或群。";
 
     try {
-      const anchor = now();
-      if (!Number.isFinite(anchor.getTime())) return unavailable;
+      const instant = now();
+      if (!Number.isFinite(instant.getTime())) return unavailable;
+      // Use UTC for calendar arithmetic after resolving the original host's current day.
+      const anchor = new Date(`${formatShanghaiDate(instant)}T00:00:00Z`);
       const day = input.get("日期");
       const selectedDay = day === undefined ? undefined : requestedDay(day, anchor);
       if (day !== undefined && selectedDay === undefined) return "日期无效，请使用 YYYY-MM-DD、MMDD 或 DD。";
