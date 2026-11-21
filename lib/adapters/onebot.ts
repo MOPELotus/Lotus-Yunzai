@@ -1,4 +1,5 @@
-import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
+import { createHash } from "node:crypto";
+import { chatFileRelaySource, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { imageOcrSession } from "../image-ocr.ts";
@@ -90,6 +91,7 @@ interface ConnectionData {
 }
 
 interface OwnerNoticeOptions {
+  readonly reserveFileNotice?: (event: MessageEvent) => symbol | undefined;
   readonly masterIds?: (bot: number) => readonly number[];
   readonly friendNoticeReceipts?: FriendMessageReceipts;
   readonly ownerFriendReplyClaim?: ReturnType<typeof createRequestClaim>;
@@ -507,6 +509,7 @@ async function dispatchMessage(
   connection?: ConnectionData,
   noticeAttachment?: IncomingChatFile,
   groupActions?: GroupActionPolicy & OwnerNoticeOptions,
+  fileNotice?: { readonly source: ChatFileRelaySource; readonly reserve?: OwnerNoticeOptions["reserveFileNotice"] },
 ): Promise<void> {
   const { mutes, botId: connectedBotId, display, attachmentSession } = connection ?? {};
   const userId = event.user_id;
@@ -607,6 +610,7 @@ async function dispatchMessage(
     },
   }) : undefined;
   const friendNoticeReceipts = groupActions?.friendNoticeReceipts;
+  const reference = rawFile && attachment && typeof rawFile.file === "string" ? attachmentId(rawFile.file_id, rawFile.file) : undefined;
   const inbound: MessageEvent = {
     msg: text.trim(),
     raw_message: typeof event.raw_message === "string" ? event.raw_message : stringField(event.message) ?? text,
@@ -614,6 +618,7 @@ async function dispatchMessage(
     file: incoming.message.find(({ type }) => type === "file"),
     attachment,
     canReadAttachments: boundAccount && !!attachmentSession && !attachmentSession.signal.aborted,
+    [chatFileRelaySource]: fileNotice?.source ?? (reference && attachmentSession ? { reference, signal: attachmentSession.signal } : undefined),
     attachmentOnly: noticeAttachment !== undefined && messageType === "group" ? true : undefined,
     post_type: "message",
     message_type: messageType,
@@ -943,7 +948,10 @@ async function dispatchMessage(
       },
     });
   }
-  await dispatch(inbound);
+  const reservation = fileNotice?.reserve?.(inbound);
+  await dispatch(reservation && fileNotice ? {
+    ...inbound, [chatFileRelaySource]: { ...fileNotice.source, reservation },
+  } : inbound);
 }
 
 export function startOneBot(
@@ -1192,19 +1200,27 @@ export function startOneBot(
               const attachment = incomingAttachment(attachmentSession.signal, calls, send, { group_id: message.group_id }, message.file,
                 "group_upload");
               if (!attachment) return;
+              const reference = attachmentId(message.file.id, attachment.name);
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "group", sub_type: "normal", message_id: undefined, raw_message: undefined,
                 message: [{ type: "file", data: message.file }],
-              }, calls, options.isMaster, socket.data, attachment);
+              }, calls, options.isMaster, socket.data, attachment, undefined, reference ? {
+                source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
+              } : undefined);
             } else if (message.notice_type === "offline_file" && isId(message.self_id) &&
                 !message.group_id && isRecord(message.file)) {
               const attachment = isId(message.user_id) && message.self_id === botId && attachmentSession
                 ? incomingAttachment(attachmentSession.signal, calls, send, { user_id: message.user_id }, message.file, "offline_file")
                 : undefined;
+              const reference = attachment && (attachmentId(message.file.file_id, attachment.name) ??
+                (typeof message.file.url === "string" && message.file.url.length <= 8192
+                  ? `url:${createHash("sha256").update(message.file.url).digest("hex")}` : undefined));
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
                 message: [{ type: "file", data: message.file }],
-              }, calls, options.isMaster, undefined, attachment);
+              }, calls, options.isMaster, undefined, attachment, undefined, reference && attachmentSession ? {
+                source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
+              } : undefined);
             } else if (message.notice_type === "notify" && message.sub_type === "poke") {
               if (isId(message.group_id)) await dispatchGroupPoke(dispatch, send, message, socket.data, options.isMaster);
               else if (!message.group_id) await dispatchFriendPoke(dispatch, send, message, socket.data, options);

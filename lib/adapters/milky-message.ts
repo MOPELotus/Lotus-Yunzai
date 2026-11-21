@@ -457,16 +457,30 @@ export function milkyFriendFileUpload(
       !isRecord(value.data)) return;
   const { user_id: userId, is_self: ownUpload } = value.data;
   if (!isId(userId) || userId === selfId || ownUpload !== false) return;
-  const target = { user_id: userId };
-  const file = decodeFile(value.data, target, call);
+  return milkyUploadedFile(selfId, userId, { user_id: userId }, value.data, call, uploadCall);
+}
+
+export function milkyGroupFileUpload(value: unknown, selfId: number, call: MilkyCall): MessageEvent | undefined {
+  if (!isId(selfId) || !isRecord(value) || value.event_type !== "group_file_upload" || value.self_id !== selfId ||
+      !isRecord(value.data)) return;
+  const { user_id: userId, group_id: groupId } = value.data;
+  if (!isId(userId) || userId === selfId || !isId(groupId)) return;
+  return milkyUploadedFile(selfId, userId, { group_id: groupId }, value.data, call);
+}
+
+function milkyUploadedFile(selfId: number, userId: number, target: Target, data: Record<string, unknown>,
+  call: MilkyCall, uploadCall?: MilkyConfirmedCall): MessageEvent | undefined {
+  const file = decodeFile(data, target, call);
   if (!file) return;
+  const isGroup = "group_id" in target;
   return {
-    post_type: "message", message_type: "private", sub_type: "friend",
+    post_type: "message", message_type: isGroup ? "group" : "private", sub_type: isGroup ? "normal" : "friend",
     self_id: selfId, user_id: userId, sender: { user_id: userId },
+    ...(isGroup && { group_id: target.group_id }),
     msg: "", raw_message: "[file]", message: [file], file,
     attachment: milkyAttachment(file),
-    isGroup: false, isPrivate: true, isMaster: false, boundAccount: false,
-    async isFriend() { return true; },
+    isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,
+    isFriend: isGroup ? undefined : async () => true,
     uploadFile: uploadCall && uploadToMilky(target, uploadCall),
     canReadAttachments: true,
     reply: replyToMilky(target, call),

@@ -1,11 +1,11 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
-import type { ChatFile, ChatFileResult } from "../chat-files.ts";
+import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "../manual-group-leave.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
   type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
-import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageReply, type PokeDeliverySession,
+import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageEvent, type MessageReply, type PokeDeliverySession,
   type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
@@ -28,7 +28,7 @@ import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import type { createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
 import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
-import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, milkyFriendFileUpload, milkyMessage,
+import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, getMilkyFileCorrelation, milkyFriendFileUpload, milkyGroupFileUpload, milkyMessage,
   uploadMilkyChatFile } from "./milky-message.ts";
 import { milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
@@ -43,6 +43,7 @@ type MilkyJoinOrigin = Extract<JoinRequestOrigin, { adapter: "milky" }>;
 type MilkyPendingJoin = PendingGroupJoinEntry & { readonly origin: MilkyJoinOrigin };
 
 export interface MilkyTransportOptions extends GroupActionPolicy {
+  readonly reserveFileNotice?: (event: MessageEvent) => symbol | undefined;
   readonly signal: AbortSignal;
   readonly dispatch: (event: BotEvent) => Promise<void>;
   readonly accepting?: () => boolean;
@@ -180,6 +181,20 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
 
   function deliver(event: BotEvent) {
     void dispatchEvent(event).catch(() => console.warn("[Milky] 处理事件失败。"));
+  }
+  function fileOrigin(event: MessageEvent): ChatFileRelaySource | undefined {
+    if (event.file && typeof event.file.file === "string" && event.attachment) {
+      return { signal, reference: JSON.stringify([event.file.file, event.isGroup ? undefined : getMilkyFileCorrelation(event.file)]) };
+    }
+  }
+
+  function bindFileNotice(event: MessageEvent): MessageEvent {
+    const source = fileOrigin(event);
+    if (!source) return event;
+    const file = { ...source, notice: true as const, ...(event.isGroup && { relayOnly: true as const }) };
+    const notice = { ...event, adapter: "milky" as const, [chatFileRelaySource]: file };
+    const reservation = options.reserveFileNotice?.(notice);
+    return reservation ? { ...notice, [chatFileRelaySource]: { ...file, reservation } } : notice;
   }
   const files = createMilkyFileDelivery(signal, (event) => deliver({ ...event, adapter: "milky" }));
   signal.addEventListener("abort", () => {
@@ -739,7 +754,15 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const upload = milkyFriendFileUpload(body, account, async (action, params) => {
         return confirmSent(upload, await call(action, params), params.message);
       }, call.confirmed);
-      if (upload) files.upload(upload);
+      if (upload) files.upload(bindFileNotice(upload));
+      return "accepted";
+    }
+    if (body.event_type === "group_file_upload") {
+      const origin = milkyGroupFileUpload(body, account, (action, params) => call(action, params));
+      if (origin) {
+        const upload = bindFileNotice(origin);
+        if (upload[chatFileRelaySource]?.reservation) deliver(upload);
+      }
       return "accepted";
     }
 
@@ -940,6 +963,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }) : undefined;
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
+      [chatFileRelaySource]: fileOrigin(message),
       [delegationSession]: delegation,
       [manualGroupLeaveSession]: !message.attachmentOnly && (message.isGroup || message.sub_type === "friend") && positiveId(cardOwner) ? {
         botId: account, userId: cardOwner, groupId, signal,

@@ -11,7 +11,7 @@ import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
-import { readQqMessageMedia } from "./lib/chat-files.ts";
+import { chatFileRelaySource, readQqMessageMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
@@ -918,6 +918,11 @@ if (import.meta.main) {
     return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, ...scopes]);
   }
 
+  function allowsOwnerRelay(event: MessageEvent) {
+    return !stopping && handoff.accepting && !dispatchPower.paused &&
+      groupDispatch.allowsInbound(event) && groupDispatch.allows(event, ownerRelayFeatureNames);
+  }
+
   async function routeEvent(event: BotEvent) {
     if (event.post_type !== "message") {
       if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "decrease") {
@@ -929,6 +934,10 @@ if (import.meta.main) {
     if (await handleManagedBlacklist(event)) return;
     if (event.post_type === "message" && event.message_type === "group" && groupDispatch.allowsInbound(event) &&
         await handleGroupVerificationAnswer(event)) return;
+    if (event.post_type === "message") {
+      if (ownerMessageRelay.acceptsFileFollowup(event) && allowsOwnerRelay(event)) return dispatchMessage(event);
+      if (event[chatFileRelaySource]?.relayOnly) return;
+    }
     if (groupDispatch.admit(event)) {
       await handleEvent(event);
     } else if (event.post_type === "message" && event.message_type === "private" && !groupDispatch.allowsInbound(event)) {
@@ -1844,8 +1853,9 @@ if (import.meta.main) {
     if (await privateAccess.blocked(event)) return;
     if (await ownerMessageRelay.handle(event, {
       allowNew, signal: nativeOperationSignal(),
-      allowed: () => !stopping && handoff.accepting && groupDispatch.allowsInbound(event) && allowed(ownerRelayFeatureNames),
+      allowed: () => allowsOwnerRelay(event),
     })) return;
+    if (event[chatFileRelaySource]?.relayOnly) return;
     if (isLogLevelCommand(event.msg)) {
       if (allowNew && allowed(["日志等级", "system", systemModuleName])) await setRuntimeLogLevel(event);
       return;
@@ -2612,6 +2622,7 @@ if (import.meta.main) {
       },
       friendNoticeReceipts: probingUpdate ? undefined : friendNoticeReceipts,
       ownerFriendReplyClaim: probingUpdate ? undefined : ownerFriendReplyClaim,
+      reserveFileNotice: (event: MessageEvent) => ownerMessageRelay.reserveFileNotice(event, allowsOwnerRelay(event)),
       canModerateGroups: () => !stopping && handoff.accepting && !dispatchPower.paused,
       canModeratePrivateGroup: (bot: number, group: number) => !stopping && handoff.accepting && !dispatchPower.paused &&
         groupDispatch.allowsScheduledGroup(bot, group, privateGroupNames),

@@ -11,6 +11,15 @@ export interface IncomingChatFile {
   read(signal?: AbortSignal): Promise<Uint8Array | undefined>;
 }
 
+export const chatFileRelaySource = Symbol("chatFileRelaySource");
+export interface ChatFileRelaySource {
+  readonly signal: AbortSignal;
+  readonly reference: string;
+  readonly notice?: true;
+  readonly relayOnly?: true;
+  readonly reservation?: symbol;
+}
+
 export const maxChatFileBytes = 16 * 1024 * 1024;
 
 export function isChatFileName(name: unknown): name is string {

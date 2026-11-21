@@ -1,5 +1,5 @@
 import { isGeneratedImage } from "@lotus-yunzai/skia/generated-image";
-import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
+import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult, type IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "./owner-contact-list.ts";
@@ -116,6 +116,7 @@ export interface MessageEvent {
   readonly [sendSessionMedia]?: SendSessionMedia;
   readonly attachment?: IncomingChatFile;
   readonly canReadAttachments?: boolean;
+  readonly [chatFileRelaySource]?: ChatFileRelaySource;
   readonly attachmentOnly?: boolean;
   readonly reviewGroupRequest?: (flag: string, type: GroupRequestType, approve: boolean, reason?: string) => Promise<boolean>;
   readonly groupRequestScope?: "milky";

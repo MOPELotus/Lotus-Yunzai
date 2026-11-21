@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { delegationSession } from "./command-delegation.ts";
 import { readFriendReplyParts, type OwnerFriendReplyBody } from "./adapters/owner-friend-reply.ts";
-import { isChatFileName, maxChatFileBytes, type ChatFile } from "./chat-files.ts";
+import { chatFileRelaySource, isChatFileName, maxChatFileBytes, type ChatFile } from "./chat-files.ts";
 import type { CheckinNotifyDelivery } from "./checkin-notify.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 import type { createRequestClaim } from "./request-claim.ts";
@@ -33,6 +33,7 @@ interface Draft {
   readonly id: number;
   readonly source: AbortSignal;
   readonly timer: ReturnType<typeof setTimeout>;
+  readonly reservation: symbol;
 }
 
 const direct = /^#(\d*)\s?(发好友|发群聊)\s?(\d+)\s?([\s\S]*)$/u;
@@ -41,6 +42,8 @@ const prefix = /^#(?:\d*\s?(?:发好友|发群聊)|发群列表)/u;
 const lifetime = 120_000;
 const snapshotLifetime = 300_000;
 const maximumSnapshots = 128;
+const fileWindowMs = 15_000;
+const maximumFiles = 4096;
 export const ownerRelayFeatureNames = ["[group] 消息代发", "group", "@lotus-yunzai/group"] as const;
 
 function positive(value: unknown): value is number {
@@ -60,15 +63,17 @@ export function ownerRelayCommand(message: string): Command | undefined {
 }
 
 function idOf(event: MessageEvent) {
-  const source = event[delegationSession]?.signal;
+  const fileOrigin = event[chatFileRelaySource];
+  const source = event[delegationSession]?.signal ?? fileOrigin?.signal;
   const { self_id: botId, user_id: actorId, message_id: messageId, group_id: groupId, sender } = event;
   const adapter: Adapter = event.adapter ?? "onebot";
   const group = event.message_type === "group" && positive(groupId) && event.sub_type !== "anonymous";
   const friend = event.message_type === "private" && event.sub_type === "friend" && groupId === undefined;
-  if (!source || source.aborted || event.isDelegated || event.attachmentOnly ||
-      (!group && !friend) || !positive(botId) || !positive(actorId) || !Number.isSafeInteger(messageId) ||
+  const receipt = Number.isSafeInteger(messageId) ? messageId : fileOrigin?.notice ? fileOrigin.reference : undefined;
+  if (!source || source.aborted || event.isDelegated || (event.attachmentOnly && !fileOrigin?.notice) ||
+      (!group && !friend) || !positive(botId) || !positive(actorId) || receipt === undefined ||
       (sender?.user_id !== undefined && sender.user_id !== actorId && sender.user_id !== String(actorId))) return;
-  return { botId, actorId, adapter, source, messageId, groupId };
+  return { botId, actorId, adapter, source, receipt, groupId, fileOrigin };
 }
 
 function messageParts(event: MessageEvent, text: string | undefined): OwnerFriendReplyBody | undefined {
@@ -102,8 +107,26 @@ export function createOwnerMessageRelay({
 }) {
   const drafts = new Map<string, Draft>();
   const snapshots = new Map<string, { groups: readonly Group[]; expires: number; source: AbortSignal }>();
+  const recentFiles = new Map<string, { expires: number; notice?: true; reservation?: symbol; consumed?: true }>();
   const contactKey = (origin: NonNullable<ReturnType<typeof idOf>>) => `${origin.adapter}:${origin.botId}:${origin.actorId}`;
   const draftKey = (origin: NonNullable<ReturnType<typeof idOf>>) => `${contactKey(origin)}:${origin.groupId ?? "friend"}`;
+  const fileKeyFor = (origin: NonNullable<ReturnType<typeof idOf>>) => `${draftKey(origin)}:${origin.fileOrigin?.reference}`;
+
+  function recentFile(key: string) {
+    const found = recentFiles.get(key);
+    if (found && found.expires > Date.now()) return found;
+  }
+
+  function rememberFile(key: string, state: Omit<NonNullable<ReturnType<typeof recentFile>>, "expires">) {
+    const now = Date.now();
+    for (const [oldKey, record] of recentFiles) {
+      if (record.expires > now) break;
+      recentFiles.delete(oldKey);
+    }
+    recentFiles.delete(key);
+    if (recentFiles.size >= maximumFiles) recentFiles.delete(recentFiles.keys().next().value!);
+    recentFiles.set(key, { ...state, expires: now + fileWindowMs });
+  }
 
   function displayedGroups(event: MessageEvent) {
     const origin = idOf(event);
@@ -127,12 +150,43 @@ export function createOwnerMessageRelay({
     snapshots.set(key, { groups: groups.map(item => ({ ...item })), expires: Date.now() + snapshotLifetime, source: origin.source });
   }
 
+  function reserveFileNotice(event: MessageEvent, allowed: boolean) {
+    const origin = idOf(event);
+    if (!origin?.fileOrigin?.notice || !event.attachment) return;
+    const key = fileKeyFor(origin);
+    const recent = recentFile(key);
+    if (recent) return recent.reservation;
+    const draft = drafts.get(draftKey(origin));
+    const reservation = allowed && draft?.source === origin.source && isMaster(origin.botId, origin.actorId) &&
+      isMaster(draft.account.botId, origin.actorId) ? draft.reservation : undefined;
+    rememberFile(key, { notice: true, reservation });
+    return reservation;
+  }
+
+  function acceptsFileFollowup(event: MessageEvent) {
+    const origin = idOf(event);
+    if (!origin?.fileOrigin || event.msg || !event.attachment || !Array.isArray(event.message) ||
+        event.message.length !== 1 || event.message[0]?.type !== "file") return false;
+    const draft = drafts.get(draftKey(origin));
+    const recent = recentFile(fileKeyFor(origin));
+    return !!draft && draft.source === origin.source && (!origin.fileOrigin.notice || origin.fileOrigin.reservation === draft.reservation) &&
+      (!recent?.notice || recent.reservation === draft.reservation) &&
+      isMaster(origin.botId, origin.actorId) && isMaster(draft.account.botId, origin.actorId);
+  }
+
   async function handle(event: MessageEvent, scope: Scope) {
     const explicit = prefix.test(event.msg);
     const origin = idOf(event);
     if (!origin) return explicit;
     const key = draftKey(origin);
     const draft = drafts.get(key);
+    const onlyFile = !explicit && !event.msg && event.attachment && (event.canReadAttachments || origin.fileOrigin?.notice) &&
+      Array.isArray(event.message) && event.message.length === 1 && event.message[0]?.type === "file";
+    const fileKey = onlyFile && origin.fileOrigin ? fileKeyFor(origin) : undefined;
+    const already = fileKey && recentFile(fileKey);
+    if (already && already.consumed) return true;
+    if (already && already.notice && already.reservation !== draft?.reservation) return false;
+    if (origin.fileOrigin?.notice && (!draft || origin.fileOrigin.reservation !== draft.reservation)) return false;
     if (!explicit && !draft) return false;
     const signal = AbortSignal.any([scope.signal, origin.source]);
     const active = () => !signal.aborted && scope.allowed() && isMaster(origin.botId, origin.actorId);
@@ -225,6 +279,7 @@ export function createOwnerMessageRelay({
       await reply("消息不能为空。");
       return true;
     }
+    if (fileKey) rememberFile(fileKey, { consumed: true });
     if (!empty) clearDraft();
     const verified = await readTargets(ids);
     if (!permitted()) return true;
@@ -244,7 +299,7 @@ export function createOwnerMessageRelay({
         drafts.delete(key);
         void reply("发送消息超时，已取消。").catch(() => {});
       }, lifetime).unref();
-      drafts.set(key, { kind, id: ids[0]!, account, timer, source: origin.source });
+      drafts.set(key, { kind, id: ids[0]!, account, timer, source: origin.source, reservation: Symbol() });
       await reply("请发送需要发送的消息，或发送 #取消。");
       return true;
     }
@@ -253,7 +308,7 @@ export function createOwnerMessageRelay({
     let body: MessageReply | undefined;
     let file: ChatFile | undefined;
     if (includesFile) {
-      const attachment = event.canReadAttachments && event.attachment;
+      const attachment = (event.canReadAttachments || origin.fileOrigin?.notice) && event.attachment;
       if (account.uploadFile && attachment && isChatFileName(attachment.name)) {
         const bytes = await attachment.read(signal).catch(() => undefined);
         if (bytes && bytes.byteLength > 0 && bytes.byteLength <= maxChatFileBytes &&
@@ -281,7 +336,7 @@ export function createOwnerMessageRelay({
       if (!permitted()) break;
       const status = await claim({
         adapter: origin.adapter, botId: origin.botId,
-        flag: JSON.stringify([origin.actorId, origin.groupId, origin.messageId, account.adapter, account.botId, kind, id]),
+        flag: JSON.stringify([origin.actorId, origin.groupId, origin.receipt, account.adapter, account.botId, kind, id]),
       }, () => {
         if (!permitted()) return Promise.resolve("unavailable");
         if (file && account.uploadFile) {
@@ -296,5 +351,5 @@ export function createOwnerMessageRelay({
     return true;
   }
 
-  return { handle, displayedGroups, rememberGroups };
+  return { handle, displayedGroups, rememberGroups, reserveFileNotice, acceptsFileFollowup };
 }
