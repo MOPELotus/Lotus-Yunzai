@@ -1,6 +1,7 @@
 import { isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
+import { ownerContactListSession } from "../owner-contact-list.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
@@ -603,6 +604,18 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: owner,
     boundAccount,
+    [ownerContactListSession]: ownerSignal && selfId !== undefined && temporaryMessageId !== undefined && !isId(event.group_id) &&
+        (!sender || sender.user_id === undefined || sender.user_id === userId) ? {
+      botId: selfId, ownerId: userId, signal: ownerSignal,
+      authorized: () => isMaster(selfId, userId),
+      groups: active => calls.listGroups(send, active),
+      friends: active => calls.readFriendProfiles(send, active),
+      async forward(nodes, active) {
+        const messages = encodeOneBotForward(nodes, selfId);
+        return messages ? calls.sendForwardConfirmed(send, { user_id: userId }, messages, active) : "rejected";
+      },
+      reply: (text, active) => calls.sendConfirmed(send, { user_id: userId }, text, active),
+    } : undefined,
     [friendMessageNoticeSession]: boundAccount && selfId !== undefined && attachmentSession && !noticeAttachment &&
       messageType === "private" && event.sub_type === "friend" ? {
         signal: attachmentSession.signal,

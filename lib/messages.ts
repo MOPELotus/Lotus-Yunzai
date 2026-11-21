@@ -2,6 +2,7 @@ import { isGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
+import { ownerContactListSession, type OwnerContactListSession } from "./owner-contact-list.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
@@ -55,6 +56,7 @@ export interface MessageEvent {
   readonly isOwnerEnrollmentSession?: () => boolean;
   readonly canManageProcess?: boolean;
   readonly [delegationSession]?: DelegationSession;
+  readonly [ownerContactListSession]?: OwnerContactListSession;
   readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly canDelegate?: boolean;
   readonly delegationSignal?: AbortSignal;

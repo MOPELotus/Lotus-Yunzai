@@ -1,5 +1,6 @@
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
+import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
   type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
 import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageReply, type PokeDeliverySession,
@@ -307,11 +308,29 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     return "confirmed";
   }
 
-  async function listCurrentFriends(active: AbortSignal): Promise<ReadonlySet<number> | undefined> {
+  async function readFriendProfiles(active: AbortSignal) {
     const result = await call.confirmed("get_friend_list", { no_cache: true }, active);
     const friends = result.status === "confirmed" ? result.data.friends : undefined;
-    if (!Array.isArray(friends) || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
+    if (Array.isArray(friends)) return friends;
+  }
+
+  async function listCurrentFriends(active: AbortSignal): Promise<ReadonlySet<number> | undefined> {
+    const friends = await readFriendProfiles(active);
+    if (!friends || friends.some(friend => !record(friend) || !positiveId(friend.user_id))) return;
     return new Set(friends.map(friend => friend.user_id as number));
+  }
+
+  async function sendForwardConfirmed(target: { group_id: number } | { user_id: number }, nodes: readonly MessageReply[],
+    active = signal): Promise<CheckinNotifyDelivery> {
+    const messages = encodeMilkyForward(nodes, account);
+    if (signal.aborted || active.aborted || !messages) return "rejected";
+    const message = [{ type: "forward", data: { messages } }];
+    const result = await call.confirmed("group_id" in target ? "send_group_message" : "send_private_message",
+      { ...target, message }, active);
+    if (result.status !== "confirmed") return result.status;
+    if (!hasMessageSequence(result.data.message_seq)) return "unknown";
+    confirmSent(target, result.data, message);
+    return "confirmed";
   }
 
   async function selectNoticeOwners(active: AbortSignal) {
@@ -368,15 +387,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     sendPrivate: (user_id, reply) => sendConfirmed({ user_id }, reply),
     sendGroup: (group_id, reply) => sendConfirmed({ group_id }, reply),
     async sendForward({ groupId, userId }, nodes) {
-      const messages = encodeMilkyForward(nodes, account);
-      if (signal.aborted || !messages || !positiveId(groupId ?? userId)) return "rejected";
-      const params = groupId === undefined ? { user_id: userId } : { group_id: groupId };
-      const message = [{ type: "forward", data: { messages } }];
-      const result = await call.confirmed(groupId === undefined ? "send_private_message" : "send_group_message", { ...params, message });
-      if (result.status !== "confirmed") return result.status;
-      if (!hasMessageSequence(result.data.message_seq)) return "unknown";
-      confirmSent(params, result.data, message);
-      return "confirmed";
+      if (!positiveId(groupId ?? userId)) return "rejected";
+      return sendForwardConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, nodes);
     },
   };
 
@@ -911,6 +923,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     const scopedMessage = message && {
       ...message, adapter: "milky" as const, groupRequestScope: "milky" as const, canReviewGroupRequests: canReview,
       [delegationSession]: delegation,
+      [ownerContactListSession]: ownerSignal && positiveId(cardOwner) ? {
+        botId: account, ownerId: cardOwner, signal: ownerSignal,
+        authorized: () => isMaster(cardOwner),
+        groups: active => noticeAccount.listGroups(active),
+        friends: readFriendProfiles,
+        forward: (nodes, active) => sendForwardConfirmed({ user_id: cardOwner }, nodes, active),
+        reply: (text, active) => sendConfirmed({ user_id: cardOwner }, text, undefined, active),
+      } satisfies OwnerContactListSession : undefined,
       [friendMessageNoticeSession]: message.sub_type === "friend" && !message.attachmentOnly ? {
         signal,
         async notifyOwners(reply, workflow, onDelivered, delivery) {

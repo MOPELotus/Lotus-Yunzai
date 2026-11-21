@@ -12,6 +12,7 @@ import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-cli
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { readQqMessageMedia } from "./lib/chat-files.ts";
+import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
@@ -1725,6 +1726,13 @@ if (import.meta.main) {
         const reply = await commands.dispatchFallback(event, allowed, (userId) =>
           self_id !== undefined && masterPermissions.isMaster(self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
+    const contactList = ownerContactListCommand(event.msg);
+    if (contactList) {
+      if (allowNew && allowed([`${contactList.kind}列表`, "group", "@lotus-yunzai/group"])) {
+        await replyOwnerContactList(event, contactList);
       }
       return;
     }
