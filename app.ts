@@ -115,6 +115,7 @@ import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions } from "./lib/panel-account-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
+import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
@@ -3343,6 +3344,7 @@ if (import.meta.main) {
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
+        ["/panel/api/settings/group/cleanup", panelGroupCleanup(root)],
       ]);
       if (plugins.records.some(plugin => plugin.name === "media" && plugin.status === "loaded")) {
         settingsRoutes.set("/panel/api/settings/media/music", panelMusic(root));

@@ -2,6 +2,7 @@
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import GroupCleanupSettings from "./GroupCleanupSettings.vue";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{
@@ -44,11 +45,12 @@ const patch = computed(() => {
     .map(({ key }) => [key, current[key]]));
 });
 const dirty = computed(() => Object.keys(patch.value).length > 0);
+const cleanupDirty = ref(false);
 const readOnly = computed(() => baseline.value?.writable === false);
 watch(dirty, (value) => {
-  emit("dirty-change", value);
   if (!value) confirmReload.value = false;
 });
+watch(() => dirty.value || cleanupDirty.value, value => emit("dirty-change", value));
 
 function isSnapshot(value: unknown): value is Snapshot {
   if (value === null || typeof value !== "object" || !("revision" in value) ||
@@ -178,6 +180,7 @@ onBeforeUnmount(() => {
           :disabled="!dirty || readOnly || conflict || Boolean(busy) || confirmReload">保存配置</ElButton>
       </div>
     </form>
+    <GroupCleanupSettings :auth="auth" @unauthorized="emit('unauthorized')" @dirty-change="cleanupDirty = $event" />
   </section>
 </template>
 
