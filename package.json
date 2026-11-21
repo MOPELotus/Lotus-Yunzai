@@ -24,6 +24,7 @@
     "start": "bun --no-env-file scripts/launcher.ts start",
     "start:bg": "bun --no-env-file scripts/launcher.ts start:bg",
     "stop": "bun --no-env-file scripts/launcher.ts stop",
+    "restart": "bun --no-env-file scripts/launcher.ts restart",
     "logs": "bun --no-env-file scripts/launcher.ts logs",
     "status": "bun --no-env-file scripts/launcher.ts status",
     "build:panel": "bun run --filter @lotus-yunzai/panel build",

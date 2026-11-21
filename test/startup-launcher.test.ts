@@ -359,6 +359,68 @@ afterEach(async () => {
   roots.clear();
 });
 
+test.skipIf(process.platform === "win32")("后台重启只触及本安装的已就绪 PM2 ID，拒绝同名、无登记和陈旧就绪标记", async () => {
+  const { cwd, start } = await fixture();
+  const parent = dirname(cwd);
+  const home = join(parent, ".checkout.lotus-pm2");
+  const bin = join(parent, "bin");
+  const env = { PATH: bin + ":" + process.env.PATH };
+  await mkdir(home, { mode: 0o700 });
+  await mkdir(bin);
+  const attempt = "27a10774-9dd7-4ad3-8f98-598cb1b09bca";
+  const record = {
+    name: "lotus-yunzai", pm_id: 3, pid: 303, pm2_env: {
+      status: "online", pm_cwd: parent, exec_interpreter: "none",
+      args: ["--no-env-file", join(home, "host-entry.js"), cwd, join(home, "host-ready"), attempt],
+      env: { LOTUS_PM2_START_TOKEN: attempt, LOTUS_PM2_WORKER_READINESS: "1" },
+    },
+  };
+  const writeApps = (items: unknown[]) => writeFile(join(home, "apps.json"), JSON.stringify(items));
+  await writeFile(join(bin, "pm2"), `#!${process.execPath}
+    const [action, id] = Bun.argv.slice(2);
+    const home = Bun.env.PM2_HOME;
+    const path = home + "/apps.json";
+    if (action === "jlist") console.log(await Bun.file(path).text());
+    else if (action === "restart" && id === "3") {
+      await Bun.write(home + "/restarted-id", id);
+      const apps = await Bun.file(path).json();
+      apps[0].pid = 404;
+      await Bun.write(path, JSON.stringify(apps));
+      await Bun.write(home + "/host-ready", "404");
+    } else process.exit(9);
+  `, { mode: 0o700 });
+  const daemon = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+  try {
+    await writeApps([]);
+    const [emptyCode, , emptyError] = await start(["restart"], env);
+    expect(emptyCode).toBe(1);
+    expect(emptyError).toContain("未启动后台托管");
+    await writeApps([{ ...record, pm2_env: { ...record.pm2_env, args: ["/another/service.js"] } }]);
+    const [foreignCode, , foreignError] = await start(["restart"], env);
+    expect(foreignCode).toBe(1);
+    expect(foreignError).toContain("不属于当前安装目录");
+    await writeApps([record]);
+    await writeFile(join(home, "host-ready"), "299");
+    const [staleCode, , staleError] = await start(["restart"], env);
+    expect(staleCode).toBe(1);
+    expect(staleError).toContain("工作进程尚未就绪");
+    expect(await Bun.file(join(home, "restarted-id")).exists()).toBe(false);
+    await writeFile(join(home, "host-ready"), "303");
+    const [revokedCode, , revokedError] = await start(["restart"], env);
+    expect(revokedCode).toBe(1);
+    expect(revokedError).toContain("后台启动登记已失效");
+    expect(await Bun.file(join(home, "restarted-id")).exists()).toBe(false);
+    await writeFile(join(home, "host-start-attempt"), attempt);
+    const [code, output, error] = await start(["restart"], env);
+    expect({ code, error }).toEqual({ code: 0, error: "" });
+    expect(output).toContain("后台宿主已重启");
+    expect(await readFile(join(home, "restarted-id"), "utf8")).toBe("3");
+    expect(await readFile(join(home, "host-ready"), "utf8")).toBe("404");
+  } finally {
+    daemon.stop(true);
+  }
+});
+
 async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "lotus-startup-launcher-")));
   roots.add(root);

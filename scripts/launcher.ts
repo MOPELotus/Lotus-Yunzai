@@ -38,11 +38,11 @@ function readCommand(args: string[]) {
     if (action === "init" && (option === undefined || option === "live" || option === "latest")) {
       return { action, channel: option as "live" | "latest" | undefined } as const;
     }
-    if (option === undefined && (action === "start" || action === "start:bg" || action === "stop" || action === "status")) {
+    if (option === undefined && (action === "start" || action === "start:bg" || action === "stop" || action === "restart" || action === "status")) {
       return { action } as const;
     }
   }
-  throw new Error("用法：bun run init [live|latest]、bun run start、bun run start:bg、bun run stop、bun run logs 或 bun run status。");
+  throw new Error("用法：bun run init [live|latest]、bun run start、bun run start:bg、bun run stop、bun run restart、bun run logs 或 bun run status。");
 }
 
 function pm2Executable() {
@@ -138,7 +138,7 @@ async function preparePm2Entry(home: string) {
   return entry;
 }
 
-async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status",
+async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "restart" | "logs" | "status",
   options: readonly string[] = [], startup?: {
     readonly signal: AbortSignal;
     prepare(): Promise<boolean>;
@@ -170,24 +170,36 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     try { processes = JSON.parse(result); }
     catch { throw new Error("无法读取 PM2 应用状态。"); }
     if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
-    const process = processes.find((item) => item?.name === name &&
-      (attempt === undefined || item.pm2_env?.env?.[startToken] === attempt));
+    const named = processes.filter((item) => item?.name === name);
+    if (action === "restart" && named.length > 1) throw new Error("PM2 中存在多个同名登记，无法确认要重启的宿主。");
+    const process = named.find((item) => attempt === undefined || item.pm2_env?.env?.[startToken] === attempt);
     if (!process) return;
     const status: unknown = process.pm2_env?.status;
     if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
     const pid: unknown = process.pid;
     const id: unknown = process.pm_id;
     const token: unknown = process.pm2_env?.env?.[startToken];
+    const args: unknown = process.pm2_env?.args;
+    const cwd: unknown = process.pm2_env?.pm_cwd;
+    const readyFile = join(path, "host-ready");
+    const owned = Array.isArray(args) && process.pm2_env?.exec_interpreter === "none" &&
+      (path === legacyHome
+        ? cwd === root && args.length === 3 && args[0] === join(root, "scripts", "run-managed.ts") &&
+          args[1] === root && args[2] === readyFile
+        : cwd === parent && (args.length === 4 && token === undefined ||
+          args.length === 5 && typeof token === "string" && args[4] === token) &&
+          args[0] === "--no-env-file" && args[1] === join(path, "host-entry.js") && args[2] === root && args[3] === readyFile);
     return { path, status, active: status !== "stopped" && status !== "errored",
       pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined,
       id: typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? String(id) : undefined,
+      owned, token: typeof token === "string" ? token : undefined,
       workerToken: process.pm2_env?.env?.[workerReadiness] === "1" && typeof token === "string" ? token : undefined };
   }
 
-  const current = await application(home);
-  const legacy = current?.active ? undefined : await application(legacyHome);
+  let current = await application(home);
+  const legacy = current?.active && action !== "restart" ? undefined : await application(legacyHome);
   const active = [current, legacy].find((entry) => entry?.active);
-  if (action !== "start:bg") {
+  if (action !== "start:bg" && action !== "restart") {
     const selected = active ?? current ?? legacy;
     if (!selected) {
       if (action === "logs") {
@@ -208,12 +220,13 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   }
 
   signal?.throwIfAborted();
-  function readyPid(path: string) {
-    return readFile(join(path, "host-ready"), "utf8").catch((error: unknown) => {
+  function readMarker(path: string, marker: "host-ready" | "host-start-attempt") {
+    return readFile(join(path, marker), "utf8").catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
     });
   }
-  if (active) {
+  const readyPid = (path: string) => readMarker(path, "host-ready");
+  if (active && action === "start:bg") {
     let ready = active.status === "online" && !!active.pid && active.pid === await readyPid(active.path);
     if (!ready && active.workerToken && active.id && active.pid) {
       // Observing a registered supervisor does not need the lock held for creating or stopping one.
@@ -239,7 +252,55 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     console.log("当前目录的后台宿主已运行。");
     return 0;
   }
-  if (startup && !await startup.prepare()) return 1;
+  if (action === "restart") {
+    if ((current && !current.owned) || (legacy && !legacy.owned)) throw new Error("同名 PM2 登记不属于当前安装目录。");
+    if (current?.active && legacy?.active) throw new Error("新旧 PM2 目录均有活动登记，无法确认要重启的宿主。");
+    if (!active?.id || !active.pid) throw new Error("当前目录未启动后台托管。请运行 bun run start:bg。");
+    if (active.status !== "online" || await readyPid(active.path) !== active.pid) {
+      throw new Error("当前后台工作进程尚未就绪。请运行 bun run status 查看状态。");
+    }
+    if (!active.workerToken && startup && !await startup.prepare()) return 1;
+    signal?.throwIfAborted();
+    if (active.workerToken) {
+      if (await readMarker(active.path, "host-start-attempt") !== active.workerToken) {
+        throw new Error("当前后台启动登记已失效，请运行 bun run status 查看状态。");
+      }
+      // Refresh the bundle without replacing the registration or its pause state.
+      await preparePm2Entry(active.path);
+    }
+    const before = await application(active.path);
+    if (!before?.owned || before.id !== active.id || before.pid !== active.pid || before.token !== active.token ||
+        before.status !== "online" || await readyPid(active.path) !== before.pid) {
+      throw new Error("后台宿主已变更，请重新确认后重试。");
+    }
+    signal?.throwIfAborted();
+    if (active.workerToken) {
+      const until = performance.now() + listenTimeoutMs + 25_000;
+      const code = await Bun.spawn([binary, "restart", active.id], { ...spawnOptions(active.path), timeout: listenTimeoutMs + 25_000 }).exited;
+      if (code !== 0) return code;
+      do {
+        signal?.throwIfAborted();
+        const restarted = await application(active.path, active.workerToken);
+        if (!restarted?.owned || !restarted.active || restarted.id !== active.id) break;
+        if (restarted.status === "online" && restarted.pid && restarted.pid !== active.pid &&
+            restarted.pid === await readyPid(active.path)) {
+          console.log("当前目录的后台宿主已重启。");
+          return 0;
+        }
+        await Bun.sleep(100);
+      } while (performance.now() < until);
+      throw new Error("后台宿主重启后未就绪。请运行 bun run logs --nostream 查看日志。");
+    }
+    const code = await Bun.spawn([binary, "stop", active.id], { ...spawnOptions(active.path), timeout: 25_000 }).exited;
+    if (code !== 0) return code;
+    const stopped = await application(active.path);
+    if (!stopped?.owned || stopped.id !== active.id || stopped.active || stopped.pid !== undefined) {
+      throw new Error("旧后台宿主未确认停止，未启动替换宿主。");
+    }
+    current = await application(home);
+    if (current && (!current.owned || current.active)) throw new Error("后台登记已变更，未启动替换宿主。");
+  }
+  if (action === "start:bg" && startup && !await startup.prepare()) return 1;
   signal?.throwIfAborted();
   await mkdir(home, { mode: 0o700, recursive: true });
   await privateHome(home);
@@ -323,7 +384,10 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     const launched = await application(home, attempt);
     const ready = await readyPid(home);
     signal?.throwIfAborted();
-    if (launched?.status === "online" && launched.pid && launched.pid === ready) return 0;
+    if (launched?.status === "online" && launched.pid && launched.pid === ready) {
+      if (action === "restart") console.log("当前目录的后台宿主已重启。");
+      return 0;
+    }
     if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) await stopOwnedApplication(launched.id);
     throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
   } catch (error) {
@@ -359,8 +423,8 @@ async function run() {
   process.on("SIGTERM", interrupt);
   try {
     if (command.action === "stop") return await pm2(pm2Executable(), directory, "stop");
-    if (command.action === "start:bg") {
-      return await pm2(pm2Executable(), directory, "start:bg", [], {
+    if (command.action === "start:bg" || command.action === "restart") {
+      return await pm2(pm2Executable(), directory, command.action, [], {
         signal: controller.signal,
         prepare: () => prepareStartup(directory, undefined, controller.signal),
         release: releaseStartup,
