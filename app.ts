@@ -1817,7 +1817,7 @@ if (import.meta.main) {
     }
     if (await privateAccess.blocked(event)) return;
     if (isLogLevelCommand(event.msg)) {
-      if (allowNew && allowed(["日志等级", "椰奶助手-其他", "system", systemModuleName])) await setRuntimeLogLevel(event);
+      if (allowNew && allowed(["日志等级", "system", systemModuleName])) await setRuntimeLogLevel(event);
       return;
     }
     if (event.attachmentOnly || (!allowNew && event.attachment && !event.msg)) {

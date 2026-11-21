@@ -144,6 +144,18 @@ test("定时日历的目标遵守全局群名单及同机器人旧功能开关",
   expect(policy.allows(message({ self_id: 9 }), ["普通活动日历"])).toBe(false);
 });
 
+test("旧助手工具配置沿用到已恢复的头像、表情、图片和日志入口", async () => {
+  const policy = await fixture({
+    "config/group.yaml": '20: { disable: [椰奶助手-其他] }\n21: { enable: [椰奶助手-其他] }\n',
+  });
+  for (const name of ["[group] 图片文字识别", "头像", "群头像", "取face", "取直链", "日志等级"]) {
+    expect(policy.allows(message(), [name, "group"])).toBe(false);
+    expect(policy.allows(message({ group_id: 21 }), [name, "group"])).toBe(true);
+  }
+  expect(policy.allows(message(), ["状态", "system"])).toBe(true);
+  expect(policy.allows(message({ group_id: 21 }), ["状态", "system"])).toBe(false);
+});
+
 test("群别名和 @ 允许新命令，活动上下文的无 @ 消息仍能通过 admit", async () => {
   const policy = await fixture({
     "config/group.yaml": `default: {onlyReplyAt: 1, groupCD: 10000, singleCD: 0}
