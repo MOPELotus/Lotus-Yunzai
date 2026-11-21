@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
+import { isAlias, isMap, parseDocument } from "yaml";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 
@@ -29,8 +29,20 @@ function editChannel(text: string, local: GlobalConfig, effective: GlobalConfig,
   const next = { ...atlas, version_channel: channel };
 
   if (Object.hasOwn(local, "atlas")) {
-    if (!isMap(document.get("atlas", true))) throw new GlobalConfigWriteError("config");
-    document.setIn(["atlas", "version_channel"], channel);
+    const node = document.get("atlas", true);
+    if (isAlias(node)) {
+      // Override only the channel so future edits to the shared defaults still reach Atlas.
+      const shared = node.clone();
+      shared.commentBefore = undefined;
+      shared.spaceBefore = undefined;
+      const mapping = document.createNode({ "<<": shared, version_channel: channel });
+      mapping.commentBefore = node.commentBefore;
+      mapping.spaceBefore = node.spaceBefore;
+      document.set("atlas", mapping);
+    } else {
+      if (!isMap(node)) throw new GlobalConfigWriteError("config");
+      document.setIn(["atlas", "version_channel"], channel);
+    }
   } else {
     // Preserve options from the effective old plugin when this first local Atlas section shadows it.
     document.set("atlas", next);

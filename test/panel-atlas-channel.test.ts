@@ -88,3 +88,38 @@ test("遵守全局文件优先顺序，并让签到和图鉴的并发保存保�
   expect(await readFile(primary, "utf8")).toContain("# 主配置注释");
   expect(await readFile(nested, "utf8")).toBe(legacyBytes);
 }));
+
+test("图鉴来源可在引用共享 YAML 配置的旧部署保存", () => fixture(async (root, write) => {
+  const file = await write("config/config/global.yaml", [
+    "# 共用原站设置",
+    "atlas_defaults: &atlas_defaults",
+    "  version_channel: latest",
+    "  auto_update: { enable: false }",
+    "atlas: *atlas_defaults # 图鉴设置",
+    "reference_atlas: *atlas_defaults",
+    "",
+  ].join("\n"));
+  const current = requests(root);
+  expect(await (await current()).json()).toEqual({ channel: "latest" });
+  expect((await current("PUT", { previous: "latest", channel: "live" })).status).toBe(200);
+  expect(await (await current()).json()).toEqual({ channel: "live" });
+  const saved = await readFile(file, "utf8");
+  const defaults = { version_channel: "latest", auto_update: { enable: false } };
+  expect(Bun.YAML.parse(saved)).toEqual({
+    atlas_defaults: defaults,
+    atlas: { ...defaults, version_channel: "live" },
+    reference_atlas: defaults,
+  });
+  expect(saved).toContain("# 共用原站设置");
+  expect(saved).toContain("# 图鉴设置");
+  expect(saved).toContain("<<: *atlas_defaults");
+  expect(saved).toContain("reference_atlas: *atlas_defaults");
+
+  await write("config/config/global.yaml", saved.replace("enable: false", "enable: true"));
+  expect(await readLotusGlobalConfig(root)).toMatchObject({
+    atlas: { version_channel: "live", auto_update: { enable: true } },
+    reference_atlas: { version_channel: "latest", auto_update: { enable: true } },
+  });
+  expect((await current("PUT", { previous: "live", channel: "latest" })).status).toBe(200);
+  expect(await (await current()).json()).toEqual({ channel: "latest" });
+}));
