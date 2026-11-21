@@ -41,10 +41,13 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
       if (!matched) return;
       const profileId = Number(matched[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
-      const { user_id, self_id, adapter } = context;
+      const { user_id, self_id, adapter, privateCredentialSignal: connection } = context;
       const commandForProfile = `#扫码登录${profileId === 1 ? "" : profileId}`;
       if (context.message_type !== "private" || !validId(user_id) || !validId(self_id)) {
         return `请私聊发送 ${commandForProfile}。`;
+      }
+      if (!connection || connection.aborted || context.isDelegated) {
+        return "请从当前连接的机器人好友私聊发起或取消扫码登录。";
       }
       const qq = String(user_id);
       const scope = `${adapter ?? "onebot"}/${self_id}/${qq}`;
@@ -60,7 +63,7 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
 
       const session: LoginSession = { scope, cancel: new AbortController(), saving: false };
       active.set(key, session);
-      const deadlineSignal = AbortSignal.any([signal, session.cancel.signal]);
+      const deadlineSignal = AbortSignal.any([signal, connection, session.cancel.signal]);
       try {
         const slot = await profiles.openLoginSlot(qq, profileId);
         if (await context.reply(`[account] 正在为 profile ${profileId} 创建米游社登录二维码。`) === false) return [];
@@ -110,7 +113,7 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           await verifyProfile();
           session.saving = true;
           const saved = await profiles.saveLogin(slot, { stuid, stoken, mid, credentials, roles: directory }, deadlineSignal);
-          if (signal.aborted) return [];
+          if (deadlineSignal.aborted) return [];
           return saved.rolesSynced ? `[account] profile ${profileId} 扫码登录完成，已保存登录信息。`
             : `[account] profile ${profileId} 登录信息已保存，角色暂未同步，可用 #同步角色${profileId === 1 ? "" : profileId} 重试。`;
         }

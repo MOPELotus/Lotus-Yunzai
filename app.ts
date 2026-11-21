@@ -1822,7 +1822,9 @@ if (import.meta.main) {
       : isDeviceBindingInput(event.msg) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
-        const reply = await commands.dispatchFallback(event, (names) => names[0] === protectedModule && allowed(names),
+        const connection = protectedModule === "@lotus-yunzai/passport-login" ? event.privateCredentialSignal : undefined;
+        const protectedEvent = connection ? { ...event, privateCredentialSignal: nativeOperationSignal(connection) } : event;
+        const reply = await commands.dispatchFallback(protectedEvent, (names) => names[0] === protectedModule && allowed(names),
           (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
