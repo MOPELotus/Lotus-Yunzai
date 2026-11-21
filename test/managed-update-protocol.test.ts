@@ -33,6 +33,23 @@ test("托管更新拒绝混淆名称、非规范路径、重复目录和畸形�
   expect(parseManagedUpdateRequest({ ...request, target: { type: "master" } })).toBeUndefined();
 });
 
+test("托管更新按插件根目录记录保留的 V3 脚本入口", () => {
+  const scripts = ["standalone.js", "群 工具/index.js", "群 工具/消息.js", "群 工具/apps/管理.js"];
+  const current = { ...request, scripts };
+  expect(parseManagedUpdateRequest(encodeManagedUpdateRequest(current))).toEqual(current);
+  expect(encodeManagedUpdateRequest(request)).not.toHaveProperty("scripts");
+
+  for (const invalid of ["../entry.js", "/entry.js", "group//entry.js", "group/other/entry.js",
+    "group\\entry.js", ".group/entry.js", "node_modules/entry.js", "group/apps/nested/entry.js", "index.ts"]) {
+    expect(parseManagedUpdateRequest({ ...request, scripts: [invalid] })).toBeUndefined();
+  }
+  const limit = Array.from({ length: 512 }, (_, index) => `entry-${index}.js`);
+  expect(parseManagedUpdateRequest({ ...request, scripts: limit })?.scripts).toEqual(limit);
+  for (const invalid of [null, {}, [scripts[0], scripts[0]], [...limit, "overflow.js"]]) {
+    expect(parseManagedUpdateRequest({ ...request, scripts: invalid })).toBeUndefined();
+  }
+});
+
 test("全量托管更新要求布尔标记且不能同时指定单项", () => {
   const batch = { quiet: true, all: true, target: { type: "terminal" as const }, directories: [directory] };
   expect(parseManagedUpdateRequest(batch)).toEqual(batch);

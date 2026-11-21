@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readInstallCatalog } from "./install-catalog.ts";
@@ -26,6 +26,20 @@ interface PreparedUpdate {
   activate(verify: (directory: string) => Promise<void>, statePaths?: readonly string[]): Promise<ActivatedUpdate>;
 }
 
+async function retainedLegacyScripts(root: string, scripts: readonly string[]) {
+  const retained = await Promise.all(scripts.map(async script => {
+    try {
+      await lstat(join(root, "plugins", script));
+      return script;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      return undefined;
+    }
+  }));
+  return retained.filter(script => script !== undefined);
+}
+
 export function createManagedSupervisor(directory: string, options: { env?: NodeJS.ProcessEnv } = {}) {
   const root = resolve(directory);
   const rootUrl = pathToFileURL(root + sep);
@@ -40,12 +54,12 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
   let transition: Promise<SwitchResult> | undefined;
   let update: { controller: AbortController; done: Promise<void> } | undefined;
 
-  function launch(
-    path = root, expectedRevision?: string, pausedAt?: number,
-    expectedPlugins?: readonly string[], expectedEndpoints?: ManagedEndpoints,
-  ) {
+  function launch(path = root, startup: {
+    expectedRevision?: string; pausedAt?: number; expectedPlugins?: readonly string[];
+    expectedScripts?: readonly string[]; expectedEndpoints?: ManagedEndpoints;
+  } = {}) {
     const worker: Worker = spawnManagedWorker(path, {
-      env: options.env, expectedRevision, held: expectedRevision !== undefined, pausedAt, expectedPlugins, expectedEndpoints,
+      ...startup, env: options.env, held: startup.expectedRevision !== undefined,
       onRestart(restartPausedAt) {
         if (current === worker && !stopped) restarts.set(worker, restartPausedAt);
       },
@@ -149,7 +163,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
         if (saved.some((item) => item.status === "rejected")) {
           console.warn(`${log} 部分会话的操作回执未能保存。`);
         }
-      }, [...expectedPlugins]).finally(() => { transition = undefined; });
+      }, [...expectedPlugins], request.scripts).finally(() => { transition = undefined; });
       const outcome = await transition;
       if (request.force && outcome === "updated" && archived) {
         console.log(`[更新] 强制更新前的工作区保存在 ${JSON.stringify(archived)}。`);
@@ -175,7 +189,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
 
   async function startWorker(pausedAt?: number) {
     if (stopped) return;
-    const worker = launch(root, undefined, pausedAt);
+    const worker = launch(root, { pausedAt });
     current = worker;
     await worker.ready;
   }
@@ -194,7 +208,7 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
 
   async function switchWorker(
     stage: PreparedUpdate, readStatePaths?: () => readonly string[] | Promise<readonly string[]>,
-    notify?: NotifyResult, expectedPlugins?: readonly string[],
+    notify?: NotifyResult, expectedPlugins?: readonly string[], activeScripts: readonly string[] = [],
   ) {
     const previousWorker = current;
     if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
@@ -217,7 +231,12 @@ export function createManagedSupervisor(directory: string, options: { env?: Node
       if (stopped) return "stopped" as const;
       activated = await stage.activate(async (active) => {
         if (stopped) throw new Error("更新交接已停止。");
-        const worker = launch(active, stage.revision, pausedAt, expectedPlugins, previousWorker.endpoints);
+        // Flat scripts may only be copied into the active checkout during activation.
+        const expectedScripts = await retainedLegacyScripts(active, activeScripts);
+        if (stopped) throw new Error("更新交接已停止。");
+        const worker = launch(active, {
+          expectedRevision: stage.revision, pausedAt, expectedPlugins, expectedScripts, expectedEndpoints: previousWorker.endpoints,
+        });
         candidate = worker;
         try {
           await worker.ready;

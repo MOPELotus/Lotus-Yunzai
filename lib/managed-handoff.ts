@@ -15,7 +15,8 @@ interface ManagedHandoff {
   readonly accepting: boolean;
   readonly supportsAdapterReceipts: boolean;
   readonly pausedAt?: number;
-  ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints): Promise<void>;
+  ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
+    scripts?: readonly string[]): Promise<void>;
   restart(pausedAt?: number): boolean;
   reportPower(pausedAt?: number): boolean;
   update(request: ManagedUpdateRequest, onProgress: (status: ManagedUpdateProgress) => void): boolean;
@@ -24,7 +25,7 @@ interface ManagedHandoff {
 }
 
 type Notice =
-  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[] } & ManagedEndpoints)
+  | ({ type: "lotus-ready"; revision?: string; plugins?: readonly string[]; scripts?: readonly string[] } & ManagedEndpoints)
   | { type: "lotus-restart"; pausedAt?: number }
   | { type: "lotus-power"; pausedAt?: number }
   | { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
@@ -100,13 +101,14 @@ export function createManagedHandoff(): ManagedHandoff {
     }
   }
 
-  async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints) {
+  async function reportReady(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
+    scripts?: readonly string[]) {
     if (signal.aborted || !connected() || (held && revision === undefined) ||
         (revision !== undefined && !isGitRevision(revision))) throw failed();
 
     const plugins = loadedPlugins && [...new Set(loadedPlugins.filter(isManagedPluginDirectory))].slice(0, managedUpdateDirectoryLimit);
     const message = { type: "lotus-ready", ...(revision === undefined ? {} : { revision }),
-      ...(plugins === undefined ? {} : { plugins }), ...endpoints } as const;
+      ...(plugins === undefined ? {} : { plugins }), ...(held && scripts !== undefined ? { scripts } : {}), ...endpoints } as const;
     if (!held) {
       if (!notify(message)) throw failed();
       activated = true;
@@ -179,8 +181,8 @@ export function createManagedHandoff(): ManagedHandoff {
     supportsAdapterReceipts: adapterReceipts,
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     get accepting() { return accepting && connected(); },
-    ready(revision, signal, loadedPlugins, endpoints) {
-      return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints);
+    ready(revision, signal, loadedPlugins, endpoints, scripts) {
+      return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts);
     },
     restart(pausedAt) {
       if (!accepting || restarting || (pausedAt !== undefined && !validPausedAt(pausedAt))) return false;

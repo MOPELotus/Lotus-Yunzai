@@ -421,16 +421,31 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
 
 test.skipIf(!Bun.which("git"))("托管 #更新 应用宿主候选并只向原私聊发送一次成功回执", () => exerciseUpdate(false), 35_000);
 
-test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载失败会回退", async () => {
+async function exerciseRetainedPluginFailure(kind: "directory" | "standalone" | "sibling") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-retained-plugin-"));
   try {
     const { active, old, localPlugin, writer } = await fixtureRepository(temporary, false);
-    await writeFile(join(localPlugin, "index.ts"), `
-      if (Bun.env.FIXTURE_RETAINED_PLUGIN_FAILURE === "1") throw new Error("fixture retained plugin load failure");
-      export default { commands: { "#保留插件样本": () => "原插件可用" } };
-    `);
-    git(localPlugin, "add", "index.ts");
-    git(localPlugin, "commit", "--quiet", "-m", "Fixture retained plugin command");
+    const guarded = 'if (Bun.env.FIXTURE_RETAINED_PLUGIN_FAILURE === "1") throw new Error("fixture retained plugin load failure");';
+    const legacyScript = (command: string, reply: string) => `
+      export default class extends plugin {
+        constructor() { super({ event: "message.private", rule: [{ reg: "^${command}$", fnc: "run" }] }); }
+        async run(event) { return event.reply(${JSON.stringify(reply)}); }
+      }
+    `;
+    if (kind === "standalone") {
+      await writeFile(join(active, "plugins", "retained-fixture.js"), guarded + legacyScript("#保留插件样本", "原插件可用"));
+    } else {
+      if (kind === "sibling") {
+        await writeFile(join(localPlugin, "package.json"), '{"name":"local-fixture","type":"module"}');
+        await writeFile(join(localPlugin, "retained-fixture.js"), guarded + legacyScript("#保留插件样本", "原插件可用"));
+        await writeFile(join(localPlugin, "healthy-sibling.js"), legacyScript("#健康入口样本", "同目录入口可用"));
+        git(localPlugin, "add", "package.json", "retained-fixture.js", "healthy-sibling.js");
+      } else {
+        await writeFile(join(localPlugin, "index.ts"), guarded + '\nexport default { commands: { "#保留插件样本": () => "原插件可用" } };');
+        git(localPlugin, "add", "index.ts");
+      }
+      git(localPlugin, "commit", "--quiet", "-m", "Fixture retained plugin command");
+    }
     const app = join(writer, "app.ts");
     const source = await readFile(app, "utf8");
     await writeFile(app, `
@@ -445,6 +460,10 @@ test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载
     async function checkPlugin(client: Gateway) {
       client.command("#保留插件样本", 51);
       expectText(await client.next(), { user_id: 51 }, /^原插件可用$/u);
+      if (kind === "sibling") {
+        client.command("#健康入口样本", 51);
+        expectText(await client.next(), { user_id: 51 }, /^同目录入口可用$/u);
+      }
     }
     try {
       const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "插件测试宿主未启动。"), 99);
@@ -461,7 +480,11 @@ test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-}, 35_000);
+}
+
+test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载失败会回退", () => exerciseRetainedPluginFailure("directory"), 35_000);
+test.skipIf(!Bun.which("git"))("只更新宿主时已保留的独立 V3 脚本加载失败会回退", () => exerciseRetainedPluginFailure("standalone"), 35_000);
+test.skipIf(!Bun.which("git"))("只更新宿主时同目录的 V3 兄弟入口不能掩盖失败", () => exerciseRetainedPluginFailure("sibling"), 35_000);
 
 async function exerciseTlsUpdate(fault?: "bind" | "wss") {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-tls-ready-"));

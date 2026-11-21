@@ -29,7 +29,7 @@ import type { CommandContext, CommandModule, CommandRegistry } from "../commands
 import type { FileToUrl } from "../file-to-url.ts";
 import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { lockFile } from "../file-lock.ts";
-import { isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
+import { isManagedLegacyScript, isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
 import type { MessageReply } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
@@ -203,7 +203,9 @@ export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
   readonly readyDirectories: readonly string[];
+  readonly readyScripts: readonly string[];
   readonly timings: readonly PluginLoadTiming[];
+  loadedScripts(): readonly string[];
   startWatching(): void;
   dispose(): Promise<void>;
 }
@@ -308,6 +310,9 @@ export async function loadPlugins(
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
   const retiredDirectories = new Map<string, ReadonlySet<string>>();
+  const retiredScripts = new Map<string, string>();
+  const loadedScripts = new Set<string>();
+  const declaredScripts = new Set<string>();
   const hostReplacements = new Set(options.hostReplacementModules?.filter(name => commands.hasModule(name)));
   const loadedEntries = new Map<string, { path: string; packageName: string }>();
   const watched = new Map<string, {
@@ -320,15 +325,16 @@ export async function loadPlugins(
   const cleanups: { name: string; cleanup: () => unknown }[] = [];
   const interruptedCleanups: Promise<void>[] = [];
   const seen = new Map<string, string>();
-  const ready: { label: string; entry: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
+  const ready: { label: string; entry: string; declaredScript?: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
     console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
     records.push({ name, status: "rejected", reason });
   };
-  const rejectRetiredScript = (path: string, bytes: Uint8Array) => {
+  const rejectRetiredScript = (name: string, bytes: Uint8Array) => {
     const retired = retiredPluginScript(bytes);
     if (!retired) return;
-    const name = relative(root, path);
+    const script = name.split(sep).join("/");
+    if (isManagedLegacyScript(script)) retiredScripts.set(script, retired.module);
     reject(name, retired.reason, `${name}（${retired.name}）`);
     return retired;
   };
@@ -337,7 +343,7 @@ export async function loadPlugins(
     const label = relative(root, candidate.path);
     try {
       if (candidate.kind === "script") {
-        if (!rejectRetiredScript(candidate.path, await readFile(candidate.path))) {
+        if (!rejectRetiredScript(label, await readFile(candidate.path))) {
           ready.push({ label, entry: candidate.path });
         }
         continue;
@@ -363,12 +369,14 @@ export async function loadPlugins(
       }
       if (declaredEntry !== undefined) {
         const entry = await findEntry(candidate.path, declaredEntry);
-        const retired = rejectRetiredScript(entry, await readFile(entry));
+        const nameInRoot = relative(root, resolve(candidate.path, declaredEntry));
+        const retired = rejectRetiredScript(nameInRoot, await readFile(entry));
         if (retired) {
           retiredDirectories.set(directory, new Set([retired.module]));
           continue;
         }
-        ready.push({ label, entry, moduleName: name, directory: candidate.path, packageName: name });
+        ready.push({ label, entry, declaredScript: nameInRoot.split(sep).join("/"),
+          moduleName: name, directory: candidate.path, packageName: name });
       } else {
         const entries = [];
         const { scripts, flat } = await legacyEntries(candidate.path);
@@ -378,10 +386,11 @@ export async function loadPlugins(
           const entry = await findEntry(candidate.path, file);
           const bytes = await readFile(entry);
           if (options.fileWatch && flat.has(file)) attempted.set(file, scriptHash(bytes));
-          const retired = rejectRetiredScript(entry, bytes);
+          const nameInRoot = relative(root, join(candidate.path, file));
+          const retired = rejectRetiredScript(nameInRoot, bytes);
           if (retired) retiredModules.add(retired.module);
           else {
-            entries.push({ label: relative(root, join(candidate.path, file)), entry, directory: candidate.path, packageName: name });
+            entries.push({ label: nameInRoot, entry, directory: candidate.path, packageName: name });
           }
         }
         if (!entries.length) {
@@ -401,9 +410,11 @@ export async function loadPlugins(
   }
 
   const loadTimeout = options.loadTimeout ?? defaultPluginLoadMs;
-  function recordLoaded(label: string, started: number, path?: string, packageName?: string) {
+  function recordLoaded(label: string, started: number, path?: string, packageName?: string, legacyScript = false) {
     records.push({ name: label, status: "loaded" });
     timings.push({ name: label, milliseconds: performance.now() - started });
+    const script = label.split(sep).join("/");
+    if (legacyScript && isManagedLegacyScript(script)) loadedScripts.add(script);
     if (path && packageName) {
       const metadata = { path, packageName };
       loadedEntries.set(label, metadata);
@@ -412,6 +423,7 @@ export async function loadPlugins(
   }
 
   function clearEntry(label: string) {
+    loadedScripts.delete(label.split(sep).join("/"));
     const metadata = loadedEntries.get(label);
     loadedEntries.delete(label);
     if (metadata && ![...loadedEntries.values()].some(({ path }) => path === metadata.path)) {
@@ -424,7 +436,7 @@ export async function loadPlugins(
     if (timing !== -1) timings.splice(timing, 1);
   }
 
-  for (const { label, entry, moduleName, directory, packageName } of ready) {
+  for (const { label, entry, declaredScript, moduleName, directory, packageName } of ready) {
     if (services.signal.aborted) break;
     const deadline = new AbortController();
     const signal = AbortSignal.any([services.signal, deadline.signal]);
@@ -546,7 +558,8 @@ export async function loadPlugins(
         continue;
       }
       console.log(`[插件] 已加载 ${label}。`);
-      recordLoaded(label, started, directory, packageName);
+      recordLoaded(label, started, directory, packageName, moduleName === undefined);
+      if (isManagedLegacyScript(declaredScript)) declaredScripts.add(declaredScript);
       const watch = directory && watched.get(directory);
       const fingerprint = watch && watch.attempted.get(basename(entry));
       if (watch && fingerprint && entry === join(watch.physicalPath, basename(entry))) {
@@ -639,7 +652,7 @@ export async function loadPlugins(
         const result = await legacy.replace(published, label, watch.packageName, loading, unchanged, directory);
         if (result === "loaded") {
           clearEntry(label);
-          recordLoaded(label, start, directory, watch.packageName);
+          recordLoaded(label, start, directory, watch.packageName, true);
           watch.active.set(file, hash);
           console.log(`[插件] 已热更新 ${label}。`);
         } else if (!loading.aborted) {
@@ -662,19 +675,25 @@ export async function loadPlugins(
 
   let watcher: ReturnType<typeof watchLegacyFiles> | undefined;
   let disposal: Promise<void> | undefined;
+  const replacementReady = (module: string) => {
+    if (hostReplacements.has(module)) return true;
+    const builtIn = builtInDirectories.get(module);
+    return builtIn !== undefined && directories.get(builtIn)?.packageName === module;
+  };
   const readyDirectories = new Set(directories.keys());
   for (const [directory, replacements] of retiredDirectories) {
     if (readyDirectories.size >= managedUpdateDirectoryLimit) break;
     if (!isManagedPluginDirectory(directory)) continue;
     // Older supervisors still require the original directory name during activation.
-    if ([...replacements].every(module => {
-      if (hostReplacements.has(module)) return true;
-      const builtIn = builtInDirectories.get(module);
-      return builtIn !== undefined && directories.get(builtIn)?.packageName === module;
-    })) readyDirectories.add(directory);
+    if ([...replacements].every(replacementReady)) readyDirectories.add(directory);
+  }
+  const readyScripts = new Set([...loadedScripts, ...declaredScripts]);
+  for (const [script, replacement] of retiredScripts) {
+    if (replacementReady(replacement)) readyScripts.add(script);
   }
   return {
-    records, directories, timings, readyDirectories: [...readyDirectories],
+    records, directories, timings, readyDirectories: [...readyDirectories], readyScripts: [...readyScripts],
+    loadedScripts: () => [...loadedScripts],
     startWatching() {
       if (!watcher && watched.size && !services.signal.aborted && !disposal) {
         watcher = watchLegacyFiles(root, [...watched.keys()], reconcile, {

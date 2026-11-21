@@ -11,6 +11,7 @@ export interface ManagedUpdateRequest {
     { readonly type: "group" | "private"; readonly botId: number; readonly id: number; readonly adapter?: "milky" } |
     { readonly type: "scheduled"; readonly botIds: readonly number[]; readonly terminal: boolean; readonly milkyBotIds?: readonly number[] };
   readonly directories: readonly { readonly name: string; readonly path: string; readonly packageName: string }[];
+  readonly scripts?: readonly string[];
 }
 
 export type ManagedUpdateWireRequest = Omit<ManagedUpdateRequest, "target"> & {
@@ -49,6 +50,7 @@ const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a
 const controls = /[\u0000-\u001f\u007f-\u009f]/u;
 export const managedUpdateDirectoryLimit = 128;
 export const managedUpdateScheduledBotLimit = 128;
+const managedLegacyScriptLimit = 512;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,6 +68,19 @@ export function isManagedUpdateName(value: unknown): value is string {
 export function isManagedPluginDirectory(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 255 && value !== "." && value !== ".." &&
     !/[/\\]/u.test(value) && !controls.test(value);
+}
+
+export function isManagedLegacyScript(value: unknown): value is string {
+  if (typeof value !== "string" || !value.endsWith(".js")) return false;
+  const parts = value.split("/");
+  return parts.length <= 3 && (parts.length !== 3 || parts[1] === "apps") &&
+    parts.every(part => isManagedPluginDirectory(part) && !part.startsWith(".") && part !== "node_modules");
+}
+
+export function parseManagedLegacyScripts(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.length > managedLegacyScriptLimit || !value.every(isManagedLegacyScript)) return;
+  const distinct = new Set(value);
+  return distinct.size === value.length ? [...distinct] : undefined;
 }
 
 function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined {
@@ -99,9 +114,11 @@ function parseTarget(value: unknown): ManagedUpdateRequest["target"] | undefined
 export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest | undefined {
   if (!record(value)) return;
   const { requested, install, all, force, quiet, target, directories } = value;
+  const scripts = value.scripts === undefined ? undefined : parseManagedLegacyScripts(value.scripts);
   if ((all !== undefined && typeof all !== "boolean") || (force !== undefined && typeof force !== "boolean") ||
       (requested !== undefined && (all === true || !isManagedUpdateName(requested))) || typeof quiet !== "boolean" ||
-      !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit) return;
+      !Array.isArray(directories) || directories.length > managedUpdateDirectoryLimit ||
+      (value.scripts !== undefined && scripts === undefined)) return;
   const recipient = parseTarget(target);
   if (!recipient) return;
   if (recipient.type === "scheduled" && (all !== true || quiet !== true || force === true)) return;
@@ -125,7 +142,7 @@ export function parseManagedUpdateRequest(value: unknown): ManagedUpdateRequest 
     ...(requested === undefined ? {} : { requested }), ...(install === undefined ? {} : { install }),
     ...(all === undefined ? {} : { all }),
     ...(force === undefined ? {} : { force }),
-    quiet, target: recipient, directories: plugins,
+    quiet, target: recipient, directories: plugins, ...(scripts === undefined ? {} : { scripts }),
   };
 }
 

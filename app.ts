@@ -438,7 +438,7 @@ if (import.meta.main) {
     if (await reportOldMilkySupervisor(event)) return true;
     return handoff.update({
       requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target,
-      directories: updateDirectories(),
+      ...updatePluginSnapshot(),
     }, report);
   });
   const installCommand = createInstallCommand({
@@ -467,7 +467,7 @@ if (import.meta.main) {
         return true;
       }
       if (await reportOldMilkySupervisor(event)) return true;
-      return handoff.update({ install: name, quiet: false, target, directories: updateDirectories() }, (status) => {
+      return handoff.update({ install: name, quiet: false, target, ...updatePluginSnapshot() }, (status) => {
         if (status === "current") report("exists");
         else if (status !== "dirty" && status !== "ahead" && status !== "diverged") report(status);
         else report("failed");
@@ -481,8 +481,11 @@ if (import.meta.main) {
     return true;
   }
 
-  function updateDirectories() {
-    return [...plugins?.directories ?? []].map(([name, metadata]) => ({ name, ...metadata }));
+  function updatePluginSnapshot() {
+    return {
+      directories: [...plugins?.directories ?? []].map(([name, metadata]) => ({ name, ...metadata })),
+      scripts: plugins?.loadedScripts(),
+    };
   }
 
   async function requestScheduledUpdate() {
@@ -499,7 +502,7 @@ if (import.meta.main) {
       if (!handoff.update({
         all: true, quiet: true,
         target: { type: "scheduled", botIds, terminal, ...(milkyBotIds.length ? { milkyBotIds } : {}) },
-        directories: updateDirectories(),
+        ...updatePluginSnapshot(),
       }, (status) => { if (isTerminalManagedUpdateProgress(status)) progress.resolve(status); })) {
         progress.resolve("unavailable");
       }
@@ -2841,7 +2844,7 @@ if (import.meta.main) {
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
         tls: tlsListener, milky: milkyTransport && milky?.connection, valkey: valkey === undefined ? undefined : true,
-      });
+      }, plugins.readyScripts);
       moduleTasksActive = true;
       for (const start of pendingModuleTasks) start();
       pendingModuleTasks.clear();

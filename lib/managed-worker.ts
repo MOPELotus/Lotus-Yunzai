@@ -1,7 +1,7 @@
 import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
 import type { ManagedEndpoints } from "./managed-handoff.ts";
-import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedUpdateRequest,
+import { isManagedPluginDirectory, isManagedUpdateProgress, isManagedUpdateRequestId, isTerminalManagedUpdateProgress, managedUpdateDirectoryLimit, parseManagedLegacyScripts, parseManagedUpdateRequest,
   type ManagedUpdateProgress, type ManagedUpdateRequest } from "./managed-update-protocol.ts";
 import { pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
 
@@ -11,6 +11,7 @@ interface ManagedWorkerOptions {
   readonly held?: boolean;
   readonly expectedRevision?: string;
   readonly expectedPlugins?: readonly string[];
+  readonly expectedScripts?: readonly string[];
   readonly expectedEndpoints?: ManagedEndpoints;
   readonly env?: NodeJS.ProcessEnv;
   readonly pausedAt?: number;
@@ -28,7 +29,7 @@ function validPause(value: unknown): value is number {
 }
 
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
-  const { expectedRevision, expectedPlugins = [], expectedEndpoints = {}, held, onRestart, onUpdate } = options;
+  const { expectedRevision, expectedPlugins = [], expectedScripts = [], expectedEndpoints = {}, held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
     throw new Error("宿主启动检查需要完整的 Git 提交号。");
   }
@@ -91,6 +92,15 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             startupError = new Error("宿主未加载预期的候选插件。");
             void stop();
             return;
+          }
+          if (expectedScripts.length !== 0) {
+            const scripts = "scripts" in message ? parseManagedLegacyScripts(message.scripts) : undefined;
+            const activeScripts = new Set(scripts);
+            if (expectedScripts.some(script => !activeScripts.has(script))) {
+              startupError = new ManagedEndpointUnavailableError("候选宿主未加载保留的 V3 脚本入口。");
+              void stop();
+              return;
+            }
           }
           const tls = "tls" in message ? message.tls : undefined;
           const milky = "milky" in message ? message.milky : undefined;
