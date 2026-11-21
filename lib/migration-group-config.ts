@@ -1,0 +1,239 @@
+import { constants, type Stats } from "node:fs";
+import { lstat, mkdir, open, realpath, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { parseDocument, stringify } from "yaml";
+import { parseNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { withinInstallation } from "./plugins/migration-plan.ts";
+
+type Mapping = Map<unknown, unknown>;
+const yenai = "plugins/yenai-plugin/config/config/";
+const noticeDirectories = ["plugins/Notice-plugin/config/", "plugins/notice-plugin/config/"] as const;
+const sourcePaths = [
+  "config/auto-group-card.yaml", "config/config/auto-group-card.yaml",
+  "config/group-leave-blacklist.yaml", "config/config/group-leave-blacklist.yaml",
+  "config/group.yaml", `${yenai}thumbUp.yaml`,
+  "config/groupAdmin.yaml", `${yenai}groupAdmin.yaml`,
+  "config/group-notice.yaml", `${yenai}notice.yaml`, "config/notice.yaml",
+  ...noticeDirectories.flatMap(path => [path + "config_default.yaml", path + "config.yaml"]),
+];
+const likeFields = ["enable", "cloneAllThumbUp", "strangeThumbUp", "count", "recall", "closeTips", "successMsg", "failsMsg", "noFriendMsg"];
+const managementFields = ["whiteQQ", "blackQQ", "noBan", "VoteBan", "VoteKick", "outTime", "minNum", "BanTime", "veto", "voteAdmin"];
+const verifyFields = ["openGroup", "mode", "times", "remindAtLastMinute", "time", "DelayTime"];
+const noticeFields = ["privateMessage", "grouptemporaryMessage", "groupRecall", "PrivateRecall", "friendRequest", "friendNumberChange",
+  "groupMemberNumberChange", "groupAdminChange", "botBeenBanned", "groupNumberChange", "addGroupApplication", "groupInviteRequest",
+  "groupMessage", "notificationsAll", "msgSaveDeltime"];
+const routingFields = ["groupCD", "singleCD", "onlyReplyAt", "botAlias", "addPrivate", "addReply", "addRecall", "enable", "disable"];
+
+interface ConfigSnapshot { readonly info: Stats; readonly bytes: Buffer }
+
+async function named(path: string) {
+  try { return await lstat(path); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+}
+
+function unchanged(first: Stats, next: Stats | undefined) {
+  return next && first.dev === next.dev && first.ino === next.ino && first.size === next.size &&
+    first.mtimeMs === next.mtimeMs && first.ctimeMs === next.ctimeMs && first.mode === next.mode && first.nlink === next.nlink;
+}
+
+function invalid(subject: string) { return new Error(`${subject}配置无法安全迁移。`); }
+
+async function readSnapshot(path: string, signal?: AbortSignal): Promise<ConfigSnapshot | undefined> {
+  signal?.throwIfAborted();
+  const info = await named(path);
+  if (!info) return;
+  if (!info.isFile() || info.nlink !== 1 || info.size > 1024 * 1024 || await realpath(path) !== path) {
+    throw new Error("旧群管和通知配置须为快照内的普通文件。");
+  }
+  const changed = () => new Error("旧群管和通知配置在迁移期间发生变化，请重新取得停写后的副本。");
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!unchanged(info, await handle.stat())) throw changed();
+    const bytes = Buffer.alloc(info.size);
+    for (let offset = 0; offset < bytes.length;) {
+      signal?.throwIfAborted();
+      const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (!bytesRead) throw changed();
+      offset += bytesRead;
+    }
+    if (!unchanged(info, await handle.stat()) || !unchanged(info, await named(path)) || await realpath(path) !== path) throw changed();
+    return { info, bytes };
+  } finally { await handle.close(); }
+}
+
+function decode(bytes: Buffer): Mapping {
+  try {
+    const doc = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(bytes), { merge: true, strict: true, uniqueKeys: true });
+    const parsed: unknown = doc.errors.length ? undefined : doc.toJS({ mapAsMap: true, maxAliasCount: 50 });
+    if (parsed === null || parsed instanceof Map) return parsed ?? new Map();
+  } catch {}
+  throw invalid("旧群管和通知 YAML");
+}
+
+function section(value: unknown, name: string) {
+  if (value == null) return new Map();
+  if (!(value instanceof Map)) throw invalid(name);
+  return value;
+}
+
+function fields(input: Mapping, supported: readonly string[]) {
+  return new Map(supported.filter(key => input.has(key)).map(key => [key, input.get(key)]));
+}
+
+function scope(input: unknown, grammar: RegExp) {
+  if (typeof input !== "number" && typeof input !== "string") return false;
+  const value = String(input);
+  return grammar.test(value) && value.split(":").every(part => !/^\d+$/u.test(part) || Number.isSafeInteger(Number(part)));
+}
+
+function scopedSettings(input: Mapping, grammar: RegExp, supported: readonly string[], label: string) {
+  const selected = new Map();
+  const seen = new Set<string>();
+  for (const [key, value] of input) {
+    if (!scope(key, grammar)) continue;
+    if (seen.has(String(key))) throw invalid(label);
+    seen.add(String(key));
+    selected.set(key, value == null ? value : fields(section(value, label), supported));
+  }
+  return selected;
+}
+
+function mergeManagement(current: Mapping, legacy?: Mapping) {
+  const old = legacy ?? new Map();
+  const result: Mapping = fields(new Map([...old, ...current]), managementFields);
+  // The runtime enables the old vote mute default if it finds a legacy document.
+  if (legacy && !result.has("VoteBan")) result.set("VoteBan", true);
+  for (const [name, supported] of [["groupAddNotice", ["openGroup", "msg"]], ["groupVerify", verifyFields],
+    ["recallMsgPer", ["bot", "member"]]] as const) {
+    if (!old.has(name) && !current.has(name)) continue;
+    if (name === "recallMsgPer" && ((old.has(name) && old.get(name) == null) || (current.has(name) && current.get(name) == null))) {
+      throw invalid("引用撤回权限");
+    }
+    const previous = section(old.get(name), name);
+    const modern = section(current.get(name), name);
+    const merged = fields(new Map([...previous, ...modern]), supported);
+    if (name === "recallMsgPer" && [...merged.values()].some(value => typeof value !== "string" || !["all", "admin", "owner", "master"].includes(value))) {
+      throw invalid("引用撤回权限");
+    }
+    if (name === "groupVerify") {
+      const oldRange = section(previous.get("range"), "入群验证运算范围");
+      const range = section(modern.get("range"), "入群验证运算范围");
+      const limits = new Map(["min", "max"].flatMap(field => {
+        const value = range.get(field) ?? oldRange.get(field);
+        return value === undefined ? [] : [[field, value] as const];
+      }));
+      if (limits.size) merged.set("range", limits);
+      const oldMessages = section(previous.get("SuccessMsgs"), "入群验证成功消息");
+      const messages = section(modern.get("SuccessMsgs"), "入群验证成功消息");
+      const ids = new Set([...oldMessages.keys(), ...messages.keys()].filter(key => scope(key, /^(?:0|[1-9]\d*)$/u)).map(String));
+      if (ids.size) merged.set("SuccessMsgs", new Map([...ids].map(key => [key,
+        messages.get(Number(key)) ?? messages.get(key) ?? oldMessages.get(Number(key)) ?? oldMessages.get(key),
+      ])));
+    }
+    result.set(name, merged);
+  }
+  return result;
+}
+
+function scheduleSettings(load: (path: string) => Mapping | undefined) {
+  let selected = load("config/notice.yaml");
+  if (!selected) {
+    let expected: ReturnType<typeof parseNoticeSchedule>;
+    for (const directory of noticeDirectories) {
+      const defaults = load(directory + "config_default.yaml"), custom = load(directory + "config.yaml");
+      if (!defaults && !custom) continue;
+      const candidate = fields(new Map([...defaults ?? [], ...custom ?? []]), ["enableSchedule", "scheduleTime"]);
+      const parsed = parseNoticeSchedule(stringify(candidate));
+      if (selected && (parsed?.start !== expected?.start || parsed?.end !== expected?.end)) {
+        throw new Error("两处旧公告定时窗口不一致，请先核对使用的公告配置。");
+      }
+      selected = candidate;
+      expected = parsed;
+    }
+  }
+  if (!selected) return;
+  const result = fields(selected, ["enableSchedule", "scheduleTime"]);
+  parseNoticeSchedule(stringify(result));
+  return result;
+}
+
+function project(load: (path: string) => Mapping | undefined) {
+  const active = new Map<string, Mapping>();
+  for (const [name, supported] of [
+    ["auto-group-card", ["enable", "cron", "nickname", "notGroup", "suffixes"]],
+    ["group-leave-blacklist", ["enable", "groups"]],
+  ] as const) {
+    const path = `config/${name}.yaml`;
+    const source = load(path) ?? load(`config/config/${name}.yaml`);
+    if (source) active.set(path, fields(source, supported));
+  }
+
+  const modernGroup = load("config/group.yaml");
+  const oldLikes = load(`${yenai}thumbUp.yaml`);
+  if (modernGroup || oldLikes) {
+    const likes = fields(new Map([...oldLikes ?? [], ...modernGroup ?? []]), likeFields);
+    if (oldLikes && !likes.has("recall")) likes.set("recall", 20);
+    const routing = scopedSettings(modernGroup ?? new Map(), /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u, routingFields, "群派发");
+    active.set("config/group.yaml", new Map([...routing, ...likes]));
+  }
+  const oldManagement = load(`${yenai}groupAdmin.yaml`);
+  const modernManagement = load("config/groupAdmin.yaml");
+  if (oldManagement || modernManagement) active.set("config/groupAdmin.yaml", mergeManagement(modernManagement ?? new Map(), oldManagement));
+  const notices = load("config/group-notice.yaml") ?? load(`${yenai}notice.yaml`);
+  if (notices) active.set("config/group-notice.yaml", scopedSettings(notices,
+    /^(?:default|[1-9]\d*|bot:[1-9]\d*(?::[1-9]\d*)?)$/u, noticeFields, "群通知"));
+  const schedule = scheduleSettings(load);
+  if (schedule) active.set("config/notice.yaml", schedule);
+  return active;
+}
+
+/** Stage runtime configurations after rejected legacy plugins leave the plugin tree. Keep source YAML in a private rollback copy. */
+export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
+  const stageInfo = await lstat(stage);
+  if (withinInstallation(source, stage) || withinInstallation(stage, source) || !(await lstat(source)).isDirectory() ||
+      stage !== resolve(stateDirectory) || !stageInfo.isDirectory() || (stageInfo.mode & 0o077)) {
+    throw new Error("群管和通知配置须暂存到独立私有实体目录。");
+  }
+  const inputs = new Map<string, ConfigSnapshot>();
+  for (const path of sourcePaths) {
+    const result = await readSnapshot(join(source, path), signal);
+    if (result) inputs.set(path, result);
+  }
+  const decoded = new Map<string, Mapping>();
+  const load = (path: string) => {
+    const prior = decoded.get(path);
+    if (prior) return prior;
+    const item = inputs.get(path);
+    if (!item) return;
+    const settings = decode(item.bytes);
+    decoded.set(path, settings);
+    return settings;
+  };
+  const active = project(load);
+  const archives = new Map([...inputs].map(([path, config]) => [join("backup", "legacy-group-config", path), config.bytes]));
+  const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...archives];
+  for (const [path, config] of inputs) {
+    const absolute = join(source, path);
+    if (!unchanged(config.info, await named(absolute)) || await realpath(absolute) !== absolute) throw invalid("并发变动的旧群管和通知");
+  }
+  async function ensureDirectory(path: string) {
+    if (path === stage) return;
+    await ensureDirectory(dirname(path));
+    if (!await named(path)) await mkdir(path, { mode: 0o700 });
+    const info = await lstat(path);
+    if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) throw invalid("群管和通知暂存目录");
+  }
+  for (const [path, bytes] of files) {
+    signal?.throwIfAborted();
+    const destination = join(stage, path);
+    await ensureDirectory(dirname(destination));
+    await writeFile(destination, bytes, { mode: 0o600, flag: "wx" });
+  }
+  const scopes = noticeDirectories.flatMap(directory => [directory + "config_default.yaml", directory + "config.yaml"]).flatMap(path => {
+    try { return load(path) ?? []; } catch { return []; }
+  });
+  const deferred = ["logger", "multiAccount", "pushSettings"].filter(key => scopes.some(config => config.has(key))).map(key => `notice.${key}`);
+  return { active: [...active.keys()], archived: [...archives.keys()], deferred };
+}

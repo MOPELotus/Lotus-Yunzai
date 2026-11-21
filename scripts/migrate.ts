@@ -17,7 +17,9 @@ interface PreparedMigration {
     readonly profiles: Staged["profiles"];
     readonly schedules: Staged["schedules"];
     readonly gameData: Staged["gameData"];
+    readonly sharedGameHistory: Staged["sharedGameHistory"];
     readonly coreConfig: Staged["coreConfig"];
+    readonly groupConfig: Staged["groupConfig"];
     readonly globalConfig: Staged["globalConfig"];
     readonly atlas: Staged["atlas"];
     readonly shopAudit: Staged["shopAudit"];
@@ -66,7 +68,9 @@ async function prepare(source: string, target: string, directory: string, signal
         profiles: staged.profiles,
         schedules: staged.schedules,
         gameData: staged.gameData,
+        sharedGameHistory: staged.sharedGameHistory,
         coreConfig: staged.coreConfig,
+        groupConfig: staged.groupConfig,
         globalConfig: staged.globalConfig,
         atlas: staged.atlas,
         shopAudit: staged.shopAudit,
