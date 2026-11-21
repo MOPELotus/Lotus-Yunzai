@@ -73,10 +73,13 @@ test.skipIf(!Bun.which("git"))("uses local Git remotes for forks and leaves exte
   const root = await createFixture();
   await put(root, "plugins/cloned/.git/config", '[remote "origin"]\nurl = git@gitee.com:mirror/miao-plugin.git\n');
   await put(root, "plugins/linked-git/.git", "gitdir: ../../outside");
+  await put(root, "plugins/linked-miao/.git", "gitdir: ../../outside");
+  await put(root, "plugins/linked-miao/package.json", '{"name":"miao-plugin"}');
   const plan = await planLegacyPlugins(root, new Set());
   expect(plan).toEqual([
     { path: "plugins/cloned", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin") },
     { path: "plugins/linked-git", status: "scan-error", reason: expect.any(String) },
+    { path: "plugins/linked-miao", status: "archive", kind: "directory", identity: expect.stringMatching(/^[0-9a-f]{64}$/u), reason: expect.stringContaining("genshin") },
   ]);
 });
 

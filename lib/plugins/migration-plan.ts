@@ -66,12 +66,13 @@ async function readRegularFile(path: string, maximum: number) {
   }
 }
 
-async function gitRepositories(plugin: string, targetBuiltInName: string | undefined, manifestName: string) {
+async function gitRepositories(plugin: string, targetBuiltInName: string | undefined, declaration: ReturnType<typeof inspectPluginMetadata>) {
   const dotGit = join(plugin, ".git");
   const entry = await optionalStat(dotGit);
   if (!entry) return [];
-  // Managed submodule checkouts already declare their module identity in the physical manifest.
-  if (entry.isFile() && targetBuiltInName === manifestName) return [];
+  // A linked checkout can still supply enough local evidence for a built-in or policy decision.
+  if (entry.isFile() && (targetBuiltInName === declaration.declaredName ||
+    (declaration.declaredName && declaration.rejectionKind === "policy"))) return [];
   // A copied linked worktree does not establish ownership of its external Git metadata.
   if (!entry.isDirectory()) throw new Error("插件的 Git 配置须在副本目录内。");
   const config = await readRegularFile(join(dotGit, "config"), maximumMetadataBytes);
@@ -177,7 +178,7 @@ export async function planLegacyPlugins(
       const contents = await optionalStat(manifest) ? (await readRegularFile(manifest, maximumMetadataBytes)).toString("utf8") : undefined;
       const declaration = inspectPluginMetadata(entry.name, contents, []);
       const expectedNativeName = occupiesTarget ? nativeNames.get(entry.name) : undefined;
-      const repositories = await gitRepositories(source, expectedNativeName, declaration.declaredName);
+      const repositories = await gitRepositories(source, expectedNativeName, declaration);
       const metadata = repositories.length ? inspectPluginMetadata(entry.name, contents, repositories) : declaration;
       if (metadata.rejectionKind === "policy" && metadata.rejection) {
         const identity = createHash("sha256").update(JSON.stringify([contents, metadata.identities, metadata.repositoryKeys])).digest("hex");

@@ -41,6 +41,7 @@ async function setup() {
 
 test.skipIf(!Bun.which("git"))("stages policy denials and private data, preserves modes, and repeats without overwriting", async () => {
   const { root, source, target, staging, denied, secrets } = await setup();
+  await put(join(denied, ".git"), "gitdir: ../../outside-worktree\n");
   const plan = await planMigration(source, target);
   const archive = join(staging, "backup/plugins");
   expect(await stageLegacyPluginBackup(plan, staging)).toEqual({ status: "published", archived: 1, directory: archive });
@@ -50,6 +51,7 @@ test.skipIf(!Bun.which("git"))("stages policy denials and private data, preserve
   expect((await stat(copied)).mode & 0o7777).toBe((await stat(secrets)).mode & 0o7777);
   expect((await stat(dirname(copied))).mode & 0o7777).toBe((await stat(dirname(secrets))).mode & 0o7777);
   expect(await readlink(join(archive, "genshin/external.yaml"))).toBe(join(root, "outside.yaml"));
+  expect(await readFile(join(archive, "genshin/.git"), "utf8")).toBe("gitdir: ../../outside-worktree\n");
   expect(await readFile(join(denied, "package.json"), "utf8")).toBe('{"name":"yunzai-genshin"}');
   expect(await readFile(join(source, "plugins/compatible/index.js"), "utf8")).toContain("must not run");
   const inode = (await stat(copied)).ino;
