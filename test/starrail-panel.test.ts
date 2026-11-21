@@ -17,10 +17,11 @@ const source: ProfileRequestContext = {
 test("星铁面板保留更新、列表、详情别名与 profile 后缀", () => {
   expect(parsePanelCommand("*更新面板2")).toEqual({ type: "update", profileId: 2, name: "" });
   expect(parsePanelCommand("#星铁全部面板更新")).toEqual({ type: "update", profileId: 1, name: "" });
+  expect(parsePanelCommand("*备用更新面板")).toEqual({ type: "showcase", profileId: 1, name: "" });
   expect(parsePanelCommand("#星铁角色面板列表 20")).toEqual({ type: "list", profileId: 20, name: "" });
   expect(parsePanelCommand("*托帕&账账面板")).toEqual({ type: "detail", profileId: 1, name: "托帕&账账" });
   expect(parsePanelCommand("*银狼LV.999面版2")).toEqual({ type: "detail", profileId: 2, name: "银狼LV.999" });
-  for (const name of ["*删除面板", "*备用更新面板", "*混沌", "#角色面板", "*更新面板256", "*抽卡记录"]) {
+  for (const name of ["*删除面板", "*混沌", "#角色面板", "*更新面板256", "*抽卡记录"]) {
     expect(parsePanelCommand(name)).toBeUndefined();
   }
 });
