@@ -2,6 +2,7 @@ import { addAbortListener } from "node:events";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { ZzzPanelRankRoleReader } from "../../plugins/zzz/panel-rank-identity.ts";
 import type { GroupTransport } from "../adapters/onebot-groups.ts";
 import type { NoticeGroupTransport } from "../adapters/notice-groups.ts";
 import type { TimedGroupMuteBinding, TimedGroupMuteResult } from "../adapters/group-moderation.ts";
@@ -275,6 +276,7 @@ export async function loadPlugins(
       registerTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
       notifyMasters(reply: MessageReply, signal?: AbortSignal): Promise<void>;
     };
+    readonly zzzPanelRankRoles?: ZzzPanelRankRoleReader;
     readonly zzzReminderRuntime?: import("../../plugins/zzz/challenge-reminder-runtime.ts").ZzzReminderRuntime;
     readonly profileLikeImages?: {
       readonly directory: string;
@@ -461,7 +463,9 @@ export async function loadPlugins(
         const memeRuntime = builtIn && moduleName === "@lotus-yunzai/meme" ? options.memeRuntime : undefined;
         const mediaRuntime = builtIn && moduleName === "@lotus-yunzai/media" ? options.mediaRuntime : undefined;
         const notice = builtIn && moduleName === "@lotus-yunzai/notice" ? options.noticeServices : undefined;
-        const zzzReminderRuntime = builtIn && moduleName === "@lotus-yunzai/zzz" ? options.zzzReminderRuntime : undefined;
+        const zzz = builtIn && moduleName === "@lotus-yunzai/zzz";
+        const zzzPanelRankRoles = zzz ? options.zzzPanelRankRoles : undefined;
+        const zzzReminderRuntime = zzz ? options.zzzReminderRuntime : undefined;
         const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect ?? zzzReminderRuntime?.disconnect;
         const module = create ? await create(Object.freeze({ ...services, ...group,
           signal: disconnect ? AbortSignal.any([signal, disconnect]) : signal,
@@ -470,6 +474,7 @@ export async function loadPlugins(
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
           ...(mediaRuntime && { mediaRuntime }),
+          ...(zzzPanelRankRoles && { zzzPanelRankRoles }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule, handlePoke, nativeEvents } = record(module);

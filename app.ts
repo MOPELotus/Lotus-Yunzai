@@ -2335,6 +2335,7 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    const zzzRankClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore });
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
@@ -3237,6 +3238,10 @@ if (import.meta.main) {
             }
           }
         },
+      },
+      async zzzPanelRankRoles(source, options) {
+        const { roles } = await zzzRankClient.openHoYoLabZzzCheckin(source, options);
+        return { roles };
       },
       zzzReminderRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
