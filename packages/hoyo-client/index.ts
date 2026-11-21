@@ -66,7 +66,7 @@ export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinP
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
 export type { GenshinBackpackItem, GenshinBackpackOptions, GenshinBackpackProbe, GenshinBackpackProbeItem,
   GenshinBackpackSnapshot, GenshinGrowthItem, GenshinGrowthOptions, GenshinGrowthSnapshot } from "./genshin-backpack.ts";
-export type { GenshinDeck, GenshinDeckCard, GenshinDeckList, GenshinGcgCollection, GenshinGcgCollectionCard, GenshinGcgCollectionScope } from "./genshin-gcg.ts";
+export type { GenshinDeck, GenshinDeckCard, GenshinDeckList, GenshinGcgCollection, GenshinGcgCollectionCard, GenshinGcgCollectionScope, GenshinGcgSummary } from "./genshin-gcg.ts";
 export type { GenshinWorldBossSnapshot } from "./genshin-world-boss.ts";
 export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
@@ -485,8 +485,11 @@ export function createHoyoClient(
     }) {
       return readForProfile(source, options, readGenshinGcgCollection, isGenshinPersonalRecordCookieExpired);
     },
-    fetchGenshinPersonalRecord(source: ProfileRequestContext, { includeRoster, ...options }: GenshinPanelOptions & { readonly includeRoster: boolean }) {
-      return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster), isGenshinPersonalRecordCookieExpired);
+    fetchGenshinPersonalRecord(source: ProfileRequestContext, { includeRoster, includeExploration, ...options }: GenshinPanelOptions & {
+      readonly includeRoster: boolean;
+      readonly includeExploration?: boolean;
+    }) {
+      return readForProfile(source, options, createGenshinPersonalRecordReader(includeRoster, includeExploration), isGenshinPersonalRecordCookieExpired);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);

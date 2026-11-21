@@ -1,6 +1,7 @@
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { readGenshinGcgSummary } from "./genshin-gcg.ts";
 import { readCnGameRecord } from "./game-record.ts";
 
 type Json = Record<string, unknown>;
@@ -71,7 +72,7 @@ export async function readGenshinPanel(source: ProfileRequestContext, transport:
   return { avatars: await readCharacterDetails(source, transport, ids, signal, verifyProfile) };
 }
 
-export function createGenshinPersonalRecordReader(includeRoster: boolean) {
+export function createGenshinPersonalRecordReader(includeRoster: boolean, includeExploration = false) {
   // One reader per caller. Already verified stages can be reused when the same
   // profile retries with its refreshed cookie.
   let overview: Json | undefined;
@@ -82,6 +83,13 @@ export function createGenshinPersonalRecordReader(includeRoster: boolean) {
       const index = await readCnGameRecord(source, transport, { kind: "genshin-index", signal }, verifyProfile);
       verifyRole(index.data, source.role.uid, index.region);
       overview = index.data;
+    }
+    if (includeExploration) {
+      const gcg = await readGenshinGcgSummary(source, transport, { signal }, verifyProfile).catch(error => {
+        if (error instanceof HoyoRequestError && error.retcode === 10102) return undefined;
+        throw error;
+      });
+      return { overview, avatars: [] as readonly Json[], gcg };
     }
     if (!includeRoster) return { overview, avatars: [] as readonly Json[] };
     ids ??= await readCharacterIds(source, transport, signal, verifyProfile);

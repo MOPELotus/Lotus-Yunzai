@@ -271,7 +271,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
   if (forStarRail && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
-  const data = (climbingTower || hollow || zenkov || exploration || monthly) && payload?.data === null ? {} : object(payload?.data);
+  const data = (climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
   if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);
   return { data, region };
 }

@@ -95,28 +95,46 @@ export interface GenshinGcgCollectionCard extends GenshinDeckCard {
   readonly wins?: number;
   readonly uses?: number;
 }
-export interface GenshinGcgCollection {
+export interface GenshinGcgSummary {
   readonly uid: string;
   readonly nickname: string;
   readonly level?: number;
   readonly characterCount?: readonly [gained: number, total: number];
   readonly actionCount?: readonly [gained: number, total: number];
+}
+export interface GenshinGcgCollection extends GenshinGcgSummary {
   readonly characters?: readonly GenshinGcgCollectionCard[];
   readonly actions?: readonly GenshinGcgCollectionCard[];
+}
+
+export async function readGenshinGcgSummary(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal }: { readonly signal?: AbortSignal },
+  verifyProfile?: () => Promise<void>,
+): Promise<GenshinGcgSummary> {
+  const { uid } = source.role;
+  const { data, region } = await readCnGameRecord(source, transport,
+    { kind: "genshin-gcg-collection-summary", signal }, verifyProfile);
+  verify(data, uid, region);
+  const count = (prefix: "avatar" | "action") => {
+    const gained = whole(data[`${prefix}_card_num_gained`], 9999);
+    const total = whole(data[`${prefix}_card_num_total`], 9999);
+    return gained !== undefined && total !== undefined && gained <= total ? [gained, total] as const : undefined;
+  };
+  return {
+    uid, nickname: label(data.nickname), level: whole(data.level, 99),
+    characterCount: count("avatar"), actionCount: count("action"),
+  };
 }
 
 export async function readGenshinGcgCollection(source: ProfileRequestContext, transport: HoyoTransport,
   { scope, signal }: { readonly scope: GenshinGcgCollectionScope; readonly signal?: AbortSignal },
   verifyProfile?: () => Promise<void>,
 ): Promise<GenshinGcgCollection> {
-  const { uid } = source.role;
-  const { data, region } = await readCnGameRecord(source, transport,
-    { kind: "genshin-gcg-collection-summary", signal }, verifyProfile);
-  verify(data, uid, region);
+  const summary = await readGenshinGcgSummary(source, transport, { signal }, verifyProfile);
 
   async function collect(collection: "character" | "action"): Promise<readonly GenshinGcgCollectionCard[]> {
-    const { data: result } = await readCnGameRecord(source, transport, { kind: "genshin-gcg-cards", collection, signal }, verifyProfile);
-    verify(result, uid, region);
+    const { data: result, region } = await readCnGameRecord(source, transport, { kind: "genshin-gcg-cards", collection, signal }, verifyProfile);
+    verify(result, summary.uid, region);
     if (!Array.isArray(result.card_list) || result.card_list.length > 999 || result.has_more === true) {
       throw new HoyoRequestError("response", "七圣召唤收藏响应未返回完整卡牌列表。");
     }
@@ -128,14 +146,8 @@ export async function readGenshinGcgCollection(source: ProfileRequestContext, tr
       return copies > 0 ? [{ ...card(row), copies, wins: whole(row.proficiency, 9999), uses: whole(row.use_count, 9999) }] : [];
     });
   }
-  const count = (prefix: "avatar" | "action") => {
-    const gained = whole(data[`${prefix}_card_num_gained`], 9999);
-    const total = whole(data[`${prefix}_card_num_total`], 9999);
-    return gained !== undefined && total !== undefined && gained <= total ? [gained, total] as const : undefined;
-  };
   return {
-    uid, nickname: label(data.nickname), level: whole(data.level, 99),
-    characterCount: count("avatar"), actionCount: count("action"),
+    ...summary,
     characters: scope === "action" ? undefined : await collect("character"),
     actions: scope === "character" ? undefined : await collect("action"),
   };
