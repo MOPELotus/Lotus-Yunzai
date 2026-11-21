@@ -474,6 +474,14 @@ function hasLegacyGameCookie(account: ReturnType<typeof readIdentity>["account"]
     (!!mid && /^[!#-:<-~]+$/u.test(mid)));
 }
 
+function verifiedInternationalAccount(os: Record<string, unknown>, credential: unknown) {
+  const accountId = text(os.verified_account_id);
+  const realm = os.verified_realm;
+  if (!/^[1-9]\d{0,19}$/u.test(accountId) || typeof credential !== "string" || !credential ||
+      (realm !== "SG" && realm !== "US" && realm !== "EU")) return;
+  return { cookie: credential, accountId, realm, language: text(os.lang) || "zh-cn" } as const;
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
@@ -909,19 +917,23 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return updated;
       }, signal, verify);
     },
+    async internationalRoleContext(qq: string, id: number, game: Game) {
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      const { document, state, revision } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      const account = verifiedInternationalAccount(os, os.verified_activity_cookie);
+      if (!state.summary.loggedIn || !account) return;
+      return { ...account, revision, selectedUid: accountId(state.selected[game]) };
+    },
     async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
       const setting = record(os[game]);
       if (os.enable !== true || setting.checkin !== true) return { status: "disabled" as const, revision };
-      const verifiedAccountId = text(os.verified_account_id);
-      const realm = os.verified_realm;
-      const credential = game === "genshin" ? os.cookie : os.verified_activity_cookie;
-      const cookie = typeof credential === "string" ? credential : "";
-      if (!state.summary.loggedIn || !/^[1-9]\d{0,19}$/u.test(verifiedAccountId) || !cookie ||
-          (realm !== "SG" && realm !== "US" && realm !== "EU")) return { status: "unverified" as const, revision };
+      const account = verifiedInternationalAccount(os, game === "genshin" ? os.cookie : os.verified_activity_cookie);
+      if (!state.summary.loggedIn || !account) return { status: "unverified" as const, revision };
       return {
-        status: "verified", revision, cookie, accountId: verifiedAccountId, realm, language: text(os.lang) || "zh-cn",
+        status: "verified", revision, ...account,
         blacklist: Array.isArray(setting.black_list) ? setting.black_list.map(accountId).filter(Boolean) : [],
       } as const;
     },
