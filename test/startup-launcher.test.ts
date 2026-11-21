@@ -11,6 +11,33 @@ const index = JSON.stringify({ games: { gi: { locales: { zh: { pages: { weapon: 
   version: "7.2", recordCount: 1, records: { "1": { id: "1", name: "无锋剑", path: "items/1.json" } },
 } } } } } } });
 
+test.skipIf(process.platform === "win32")("PM2 登记丢失后仍可读后台历史日志", async () => {
+  const { cwd, launch } = await fixture();
+  const parent = dirname(cwd);
+  const bin = join(parent, "log-fixture-bin");
+  const home = join(parent, ".checkout.lotus-pm2");
+  const logs = join(home, "logs");
+  await mkdir(bin);
+  await mkdir(home, { mode: 0o700 });
+  await mkdir(logs);
+  await writeFile(join(logs, "lotus-yunzai-out.log"), "out first\nprevious startup\n");
+  await writeFile(join(logs, "lotus-yunzai-error.log"), "err first\nprevious error\n");
+  await writeFile(join(bin, "pm2"), "#!/bin/sh\nexit 89\n", { mode: 0o700 });
+  const env = { PATH: bin + ":" + process.env.PATH };
+
+  for (const [options, expected] of [
+    [["--out", "--lines=1"], "previous startup\n"],
+    [["--err", "--lines", "1"], "previous error\n"],
+  ] as const) {
+    const child = launch(["logs", "--nostream", ...options], env);
+    const [code, stdout, stderr] = await Promise.all([child.exited,
+      new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(code).toBe(0);
+    expect(stdout).toBe(expected);
+    expect(stderr).toBe("");
+  }
+});
+
 test.skipIf(process.platform === "win32")("后台启动准备按 dotenv 读图鉴，PM2 只收到命令的显式环境", async () => {
   const { cwd } = await fixture();
   const parent = dirname(cwd);

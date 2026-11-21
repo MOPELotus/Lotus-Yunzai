@@ -57,6 +57,45 @@ async function present(path: string) {
   });
 }
 
+async function readBackgroundLogFiles(home: string, options: readonly string[]): Promise<number | undefined> {
+  const directory = join(home, "logs");
+  if (!(await present(directory))?.isDirectory()) return;
+  const out = join(directory, `${name}-out.log`);
+  const error = join(directory, `${name}-error.log`);
+  const files = [];
+  const errorsOnly = options.includes("--err");
+  if (!errorsOnly && (await present(out))?.isFile()) files.push(out);
+  if ((errorsOnly || !options.includes("--out")) && (await present(error))?.isFile()) files.push(error);
+  if (!files.length) return;
+
+  let lines = "15";
+  let follow = true;
+  for (let index = 0; index < options.length; index++) {
+    const option = options[index]!;
+    if (option === "--nostream") follow = false;
+    else if (option === "--lines") lines = options[++index] ?? "";
+    else if (option.startsWith("--lines=")) lines = option.slice("--lines=".length);
+    else if (!["--raw", "--out", "--err"].includes(option)) {
+      throw new Error("当前没有 PM2 登记。历史日志支持 --lines、--nostream、--raw、--out 或 --err。");
+    }
+  }
+  if (!/^\d+$/u.test(lines) || !Number.isSafeInteger(Number(lines))) throw new Error("日志行数须为非负整数。");
+
+  const tail = Bun.which("tail");
+  if (!tail) throw new Error("读取 PM2 历史日志需要 PATH 中的 tail。");
+  const log = Bun.spawn([tail, "-n", lines, ...(follow ? ["-F"] : []), ...files], {
+    stdin: "ignore", stdout: "inherit", stderr: "inherit",
+  });
+  const stop = () => log.kill("SIGTERM");
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  try { return await log.exited; }
+  finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+}
+
 async function daemonListening(path: string): Promise<boolean> {
   if (!(await present(path))?.isSocket()) return false;
   // Invoking PM2 against a missing or stale socket can start a new daemon.
@@ -146,7 +185,15 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   if (action !== "start:bg") {
     const selected = active ?? current ?? legacy;
     if (!selected) {
-      if (action === "logs") throw new Error("当前目录暂无后台启动日志。");
+      if (action === "logs") {
+        // A failed replacement may remove the stopped registration while leaving all of its logs.
+        for (const path of [home, legacyHome]) {
+          if (!await privateHome(path)) continue;
+          const status = await readBackgroundLogFiles(path, options);
+          if (status !== undefined) return status;
+        }
+        throw new Error("当前目录暂无后台启动日志。");
+      }
       console.log("当前目录未启动后台托管。");
       return 0;
     }
