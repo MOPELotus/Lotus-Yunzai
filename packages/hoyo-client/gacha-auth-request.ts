@@ -15,21 +15,36 @@ function parseCookie(cookie: string) {
   });
 }
 
-export function gachaStokenCookie({ account }: ProfileRequestContext, game: "原神" | "绝区零") {
+function verifiedStoken({ account }: ProfileRequestContext, subject: string, allowStored: boolean) {
   const { stoken, stokenCookie, cookie, stuid, ltuid, mid } = account;
   const login = parseCookie(stokenCookie);
   const fields = [...login, ...parseCookie(cookie)];
   const ids = new Set([stuid, ltuid, ...fields.filter(([key]) => uidFields.includes(key)).map(([, value]) => value)].filter(Boolean));
   const mids = new Set([mid, ...fields.filter(([key]) => midFields.includes(key)).map(([, value]) => value)].filter(Boolean));
   const tokens = new Set(login.filter(([key]) => key === "stoken").map(([, value]) => value));
+  if (allowStored && !stokenCookie.trim() && stoken) tokens.add(stoken);
   const [accountId] = ids;
   const [token] = tokens;
-  if (!stokenCookie.trim() || /[\u0000-\u001f\u007f]/u.test(stokenCookie) || ids.size !== 1 ||
+  if ((!allowStored && !stokenCookie.trim()) || /[\u0000-\u001f\u007f]/u.test(stokenCookie) || ids.size !== 1 ||
       !accountId || !/^[1-9]\d*$/u.test(accountId) || mids.size > 1 || tokens.size !== 1 || !token ||
       (stoken && stoken !== token) || (token.startsWith("v2_") && !mids.size)) {
-    throw new HoyoRequestError("invalid-input", `${game}抽卡需要归属一致的档案登录凭据。`);
+    throw new HoyoRequestError("invalid-input", `${subject}需要归属一致的档案登录凭据。`);
   }
-  return stokenCookie;
+  return { accountId, token, mid: [...mids][0] ?? "" };
+}
+
+export function gachaStokenCookie(source: ProfileRequestContext, game: "原神" | "绝区零") {
+  verifiedStoken(source, `${game}抽卡`, false);
+  return source.account.stokenCookie;
+}
+
+export function starRailLedgerStokenCookie(source: ProfileRequestContext) {
+  const { accountId, token, mid } = verifiedStoken(source, "星铁流水", true);
+  const valid = /^[\x21-\x3a\x3c-\x7e]{1,4096}$/u;
+  if (!/^[1-9]\d{0,19}$/u.test(accountId) || !valid.test(token) || (mid && !valid.test(mid))) {
+    throw new HoyoRequestError("invalid-input", "星铁流水需要有效的档案登录凭据。");
+  }
+  return `stuid=${accountId};stoken=${token};mid=${mid};`;
 }
 
 export function gachaAuthHeaders(cookie: string, { device }: ProfileRequestContext) {
