@@ -25,6 +25,7 @@ import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.t
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
+import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
 import { readZzzPanel, type ZzzPanelOptions } from "./zzz-panel.ts";
 import { readZzzShiyu } from "./zzz-shiyu.ts";
 import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
@@ -40,6 +41,7 @@ export { GameRecordRequestError } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
+export type { ZzzHoloBossRoom, ZzzHoloBossSnapshot } from "./zzz-holo-boss.ts";
 export { normalizeZzzShiyu, type ZzzShiyuDate, type ZzzShiyuPortrait, type ZzzShiyuSnapshot, type ZzzShiyuTeam } from "./zzz-shiyu.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
   type CnGameCheckinInfo, type CnGameCheckinSource } from "./game-checkin.ts";
@@ -468,6 +470,9 @@ export function createHoyoClient(
     },
     fetchZzzDeadly(source: ProfileRequestContext, options: Parameters<typeof readZzzDeadly>[2]) {
       return readForProfile(source, options, readZzzDeadly, isGameRecordCookieExpired);
+    },
+    fetchZzzHoloBoss(source: ProfileRequestContext, options: Parameters<typeof readZzzHoloBoss>[2]) {
+      return readForProfile(source, options, readZzzHoloBoss, isGameRecordCookieExpired);
     },
     fetchZzzPanel(source: ProfileRequestContext, options: ZzzPanelOptions = {}) {
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);

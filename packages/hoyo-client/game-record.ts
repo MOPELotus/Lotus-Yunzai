@@ -35,17 +35,19 @@ const zzzCardPaths = {
   "zzz-buddy": "buddy/info",
   "zzz-hadal": "hadal_info_v2",
   "zzz-deadly": "hadal_mem_detail_v2",
+  "zzz-holo-boss": "holo_boss_detail",
 } as const;
 const genshinPanelPaths = {
   "genshin-panel-list": "character/list",
   "genshin-panel-detail": "character/detail",
 } as const;
+type ZzzPeriodRecord = "zzz-hadal" | "zzz-deadly" | "zzz-holo-boss";
 type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "daily-note" | "genshin-index" | "starrail-avatar-info" | "genshin-panel-list" |
-    Exclude<keyof typeof zzzCardPaths, "zzz-hadal" | "zzz-deadly" | "zzz-panel-detail"> } |
+    Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
   { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
-  { readonly kind: "zzz-hadal" | "zzz-deadly"; readonly scheduleType: 1 | 2 }
+  { readonly kind: ZzzPeriodRecord; readonly scheduleType: 1 | 2 }
 );
 type Json = Record<string, unknown>;
 
@@ -142,7 +144,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
   const zzzPanelDetail = kind === "zzz-panel-detail";
   const forZzz = Object.hasOwn(zzzCardPaths, kind);
-  const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : forZzz ? "绝区零战绩" :
+  const label = forNote ? "体力" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" : forZzz ? "绝区零战绩" :
     forStarRail ? "星铁面板" : forGenshinPanel ? "原神面板" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
@@ -159,7 +161,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (zzzPanelDetail && (!Number.isSafeInteger(options.characterId) || options.characterId < 1)) {
     throw new HoyoRequestError("invalid-input", "绝区零面板代理人编号无效。");
   }
-  const zzzPeriod = options.kind === "zzz-hadal" || options.kind === "zzz-deadly";
+  const zzzPeriod = options.kind === "zzz-hadal" || options.kind === "zzz-deadly" || options.kind === "zzz-holo-boss";
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
     throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
   }
@@ -174,8 +176,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   } else {
     if (forZzz) endpoint.searchParams.set("lang", "zh-cn");
     if (forStarRail) endpoint.searchParams.set("need_wiki", "true");
-    endpoint.searchParams.set(kind === "zzz-deadly" ? "uid" : "role_id", uid);
-    endpoint.searchParams.set(kind === "zzz-deadly" ? "region" : "server", region);
+    const usesRegion = kind === "zzz-deadly" || kind === "zzz-holo-boss";
+    endpoint.searchParams.set(usesRegion ? "uid" : "role_id", uid);
+    endpoint.searchParams.set(usesRegion ? "region" : "server", region);
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
   }
