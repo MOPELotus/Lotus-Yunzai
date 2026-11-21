@@ -2,6 +2,8 @@ import { Canvas, type CanvasRenderingContext2D, type EngineDetails } from "skia-
 import { encodeBandedPng, ImageSizeLimitError } from "./banded-png.ts";
 import { markGeneratedImage } from "./generated-image.ts";
 
+export { ImageSizeLimitError };
+
 type RenderMode = "auto" | "gpu" | "cpu";
 type Draw = (context: CanvasRenderingContext2D) => void | Promise<void>;
 const singleSurfaceDimension = 32_768;
