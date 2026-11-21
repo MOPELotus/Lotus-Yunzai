@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { appendFile, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { formatShanghaiDate } from "../lib/shanghai-date.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "log-command-fixture";
@@ -99,7 +100,7 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
 
     try {
       const endpoint = await readUntil(/ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u);
-      const day = new Date().toISOString().slice(0, 10);
+      const day = formatShanghaiDate(new Date());
       const runtime = join(root, "logs", `command.${day}.log`);
       const readyLog = await until(async () => {
         const content = await readFile(runtime, "utf8").catch((error: NodeJS.ErrnoException) => {
@@ -297,7 +298,7 @@ test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文�
         expect(response.status).toBe(account === 99 ? 200 : 403);
       }
       const key = "milky-fixture-query";
-      const day = new Date().toISOString().slice(0, 10);
+      const day = formatShanghaiDate(new Date());
       const runtime = join(root, "logs", `command.${day}.log`);
       await appendFile(runtime, [
         `${key} Cookie: ${unsafeMarkers[0]}`,
@@ -407,7 +408,7 @@ test("宿主兼容插件日志格式、原 ID 对齐和选项，不影响普通�
       });
       const stdout = new Response(host.stdout).text();
       const stderr = new Response(host.stderr).text();
-      const day = new Date().toISOString().slice(0, 10);
+      const day = formatShanghaiDate(new Date());
       const runtime = join(root, "logs", `command.${day}.log`);
       try {
         const log = await until(async () => {
@@ -469,7 +470,7 @@ test("日志等级两协议即时生效，停机后由新进程读回，外改�
         }
       }
     `);
-    const runtime = join(root, "logs", `command.${new Date().toISOString().slice(0, 10)}.log`);
+    const runtime = join(root, "logs", `command.${formatShanghaiDate(new Date())}.log`);
     async function withHost(run: (gateway: ReturnType<typeof connect>, endpoint: URL) => Promise<void>) {
       const child = Bun.spawn([process.execPath, "app.ts"], {
         cwd: root, stdin: "ignore", stdout: "pipe", stderr: "ignore",
