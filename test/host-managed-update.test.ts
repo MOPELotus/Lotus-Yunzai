@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -485,6 +485,42 @@ async function exerciseRetainedPluginFailure(kind: "directory" | "standalone" | 
 test.skipIf(!Bun.which("git"))("只更新宿主时已保留的目录插件加载失败会回退", () => exerciseRetainedPluginFailure("directory"), 35_000);
 test.skipIf(!Bun.which("git"))("只更新宿主时已保留的独立 V3 脚本加载失败会回退", () => exerciseRetainedPluginFailure("standalone"), 35_000);
 test.skipIf(!Bun.which("git"))("只更新宿主时同目录的 V3 兄弟入口不能掩盖失败", () => exerciseRetainedPluginFailure("sibling"), 35_000);
+
+test.skipIf(!Bun.which("git"))("托管更新保留本地 V3 插件的包内相对入口链接", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-plugin-link-"));
+  try {
+    const { active, candidate, localPlugin } = await fixtureRepository(temporary, false);
+    await rename(join(localPlugin, ".git"), join(temporary, "fixture-plugin-git"));
+    await writeFile(join(localPlugin, "package.json"), '{"name":"local-fixture","type":"module"}');
+    await writeFile(join(localPlugin, "linked.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message.private", rule: [{ reg: "^#链接入口样本$", fnc: "run" }] }); }
+        async run(event) { return event.reply("链接入口可用"); }
+      }
+    `);
+    const entry = join(localPlugin, "index.js");
+    await symlink("./linked.js", entry);
+    const supervisor = bootSupervisor(active);
+    async function probe(client: Gateway) {
+      client.command("#链接入口样本", 51);
+      expectText(await client.next(), { user_id: 51 }, /^链接入口可用$/u);
+    }
+    try {
+      const running = await supervisor.open(await deadline(supervisor.nextEndpoint(), "入口链接测试宿主未启动。"), 99);
+      await probe(running);
+      running.command("#静更新", 51);
+      const updated = await supervisor.open(await deadline(supervisor.nextEndpoint(), "候选未接回入口链接。", 15_000), 99);
+      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      await probe(updated);
+      expect(await readlink(entry)).toBe("./linked.js");
+      expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
+    } finally {
+      await supervisor.close();
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}, 35_000);
 
 test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘修复后才重新切换", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-managed-hot-plugin-"));

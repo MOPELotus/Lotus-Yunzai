@@ -348,7 +348,12 @@ test.skipIf(noGit)("暂存外部插件候选时固定宿主和其他已加载插
     ...pluginFiles("@fixture/local", "local plugin"),
     ".env": "LOCAL_FIXTURE=private-local-value\n", ".env.production": "LOCAL_FIXTURE=private-profile-value\n",
     "node_modules/fixture.txt": "active local dependency",
+    "lib/entry.js": "export default { commands: {} };\n",
+    "assets/readme.txt": "local asset directory",
   });
+  await unlink(join(localPath, "index.js"));
+  await symlink("./lib/entry.js", join(localPath, "index.js"));
+  await symlink("../lib/entry.js", join(localPath, "assets/entry.js"));
   const directories = new Map([
     ["target", { path: targetPath, packageName: "@fixture/target" }],
     ["sibling", { path: siblingPath, packageName: "@fixture/sibling" }],
@@ -372,6 +377,9 @@ test.skipIf(noGit)("暂存外部插件候选时固定宿主和其他已加载插
       expect(await readFile(join(stage.directory, "plugins/sibling/revision.txt"), "utf8")).toBe("active sibling");
       const stagedLocal = join(stage.directory, "plugins/local");
       expect(await readFile(join(stagedLocal, "revision.txt"), "utf8")).toBe("local plugin");
+      expect(await readlink(join(stagedLocal, "index.js"))).toBe("./lib/entry.js");
+      expect(await readlink(join(stagedLocal, "assets/entry.js"))).toBe("../lib/entry.js");
+      expect(await realpath(join(stagedLocal, "index.js"))).toBe(join(stagedLocal, "lib/entry.js"));
       for (const file of [".env", ".env.production", "node_modules/fixture.txt"]) {
         expect(await Bun.file(join(stagedLocal, file)).exists()).toBe(false);
       }
@@ -388,6 +396,39 @@ test.skipIf(noGit)("暂存外部插件候选时固定宿主和其他已加载插
   } finally {
     await ready.release();
   }
+}), 20_000);
+
+test.skipIf(noGit)("本地插件暂存拒绝包外、非普通文件和指向未复制路径的链接", () => fixture(async (temporary) => {
+  const { repo, active, baseline, stagingParent, root } = await fixtureHost(temporary);
+  const local = join(active, "plugins/local");
+  const outside = join(temporary, "external-source.js");
+  await writeFiles(local, {
+    ...pluginFiles("@fixture/local", "local plugin"),
+    "lib/target.js": "export {};\n",
+    ".env.production": "LOCAL_FIXTURE=private-profile-value\n",
+    "node_modules/fixture.js": "export {};\n",
+  });
+  await writeFile(outside, "not part of the plugin");
+  await writeFile(join(repo.writer, "app.ts"), 'export const revision = "upstream host";\n');
+  repo.publish("Fixture host update");
+  await symlink("lib/target.js", join(local, "alias.js"));
+  const directories = new Map([["local", { path: local, packageName: "@fixture/local" }]]);
+  for (const target of [outside, relative(local, outside), join(local, "lib/target.js"), "lib", "missing.js",
+    ".env.production", "node_modules/fixture.js", "alias.js", "alias.js/../lib/target.js"]) {
+    const link = join(local, "unsupported.js");
+    await symlink(target, link);
+    const ready = requireReady(await prepareUpdate(root, directories));
+    try {
+      await expect(stageUpdate(root, directories, ready, stagingParent)).rejects.toThrow("准备外部插件");
+      expect(await readdir(stagingParent)).toEqual([]);
+      expect(await readlink(link)).toBe(target);
+    } finally {
+      await ready.release();
+      await unlink(link);
+    }
+  }
+  expect(git(active, "rev-parse", "HEAD")).toBe(baseline);
+  expect(await readFile(outside, "utf8")).toBe("not part of the plugin");
 }), 20_000);
 
 test.skipIf(noGit)("批量候选一次切换宿主和两个外部插件，保留状态、上游并清理全部引用", () => fixture(async (temporary) => {
