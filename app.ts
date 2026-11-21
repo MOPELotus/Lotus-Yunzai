@@ -68,6 +68,7 @@ import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectatio
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { startImagePreviews } from "./lib/image-previews.ts";
+import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
@@ -2684,7 +2685,8 @@ if (import.meta.main) {
         readAutoRepeatImage: readQqMessageMedia,
         async profileLikeImage(userId, outcome, signal) {
           if (signal.aborted || stopping || !handoff.accepting) return;
-          return likeImageRenderer?.(userId, outcome, nativeOperationSignal(signal));
+          const image = await likeImageRenderer?.(userId, outcome, nativeOperationSignal(signal));
+          if (image) return markGeneratedImage(image);
         },
         registerManagedBlacklist(policy) {
           const session = new AbortController();
