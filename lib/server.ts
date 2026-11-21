@@ -23,6 +23,7 @@ export interface ServerSettings {
   readonly https?: HttpsListener;
   readonly httpsError?: boolean;
   readonly panelToken?: string;
+  readonly panelPublicUrl?: URL;
   readonly publicUrl?: URL;
   readonly manualCaptchaUrl?: string;
   readonly redirect?: string;
@@ -57,17 +58,25 @@ function port(value: unknown, source: string): number | undefined {
   return number;
 }
 
-function publicHttpUrl(value: unknown): URL | undefined {
+function publicHttpUrl(value: unknown, sourceName = "config/server.yaml 的 url"): URL | undefined {
   if (value === null || value === undefined) return;
   const source = typeof value === "string" ? value.trim() : "";
   if (typeof value === "string" && !source) return;
   const url = /^https?:\/\/[^/@]+(?:\/.*)?$/iu.test(source) && !/[\s\\?#\0]/u.test(source)
     ? URL.parse(source) : null;
   if (!url || url.username || url.password) {
-    throw new Error("config/server.yaml 的 url 须为不含认证信息、查询参数或片段的 HTTP(S) 绝对地址。");
+    throw new Error(`${sourceName} 须为不含认证信息、查询参数或片段的 HTTP(S) 绝对地址。`);
   }
   url.pathname = `${url.pathname.replace(/\/+$/u, "")}/`;
   return url;
+}
+
+export function panelPublicPage(base: URL | undefined) {
+  if (!base || base.username || base.password || base.search || base.hash ||
+    !base.pathname.endsWith("/") || base.pathname.startsWith("//") || base.pathname.includes(";")) return;
+  if (base.protocol !== "https:" && (base.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]", "localhost"].includes(base.hostname))) return;
+  return new URL("panel/", base);
 }
 
 function authHeaders(value: unknown): Headers {
@@ -144,17 +153,22 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
   const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN, "LOTUS_ONEBOT_TOKEN");
   const panelToken = env.LOTUS_PANEL_TOKEN;
   withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
+  const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL, "LOTUS_PANEL_PUBLIC_URL");
+  if (panelPublicUrl && !panelPublicPage(panelPublicUrl)) {
+    throw new Error("LOTUS_PANEL_PUBLIC_URL 须为 HTTPS 地址，本机测试可用 HTTP 回环地址。");
+  }
   const captcha = config.captcha;
   const manualCaptchaUrl = env.LOTUS_CAPTCHA_PUBLIC_URL ?? (record(captcha) && typeof captcha.url === "string" ? captcha.url : undefined);
   const wsPort = [...wsAuth.keys()].length > 0 ? oneBotOverride ?? configured ?? 25360 : undefined;
   const httpPort = configured ?? wsPort ??
-    (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined ? 2536 : undefined);
+    (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined || panelPublicUrl !== undefined ? 2536 : undefined);
 
   return {
     hostname: env.LOTUS_LISTEN_HOST ?? "127.0.0.1",
     http: httpPort === undefined ? undefined : { port: httpPort, auth: httpAuth },
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
     panelToken,
+    panelPublicUrl,
     publicUrl: publicHttpUrl(config.url),
     manualCaptchaUrl: manualCaptchaUrl?.trim() || undefined,
     redirect: readServerRedirect(config.redirect),

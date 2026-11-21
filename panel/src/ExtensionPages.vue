@@ -2,6 +2,7 @@
 import { mdiLanConnect, mdiPuzzleOutline } from "@mdi/js";
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { panelFetch, type PanelAuth } from "./api.ts";
 interface ExtensionPage {
   id: string;
   plugin: string;
@@ -29,7 +30,7 @@ const issueLabels = {
   "duplicate-id": "页面 ID 重复",
 } as const satisfies Record<Issue["kind"], string>;
 
-const props = defineProps<{ token: string; preferences: Map<string, string> }>();
+const props = defineProps<{ auth: PanelAuth; preferences: Map<string, string> }>();
 const emit = defineEmits<{ unauthorized: [] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/extensions`;
 const panelRoot = "/panel/";
@@ -113,15 +114,12 @@ async function handleFrameMessage(event: MessageEvent<unknown>) {
     if (!port) return;
     let ticket: string | undefined;
     try {
-      if (opened.ticket && props.token) {
+      if (opened.ticket) {
         const path = `${endpoint}/${encodeURIComponent(opened.pageId)}/renew`;
-        const response = await fetch(path, {
+        const response = await panelFetch(path, props.auth, {
           method: "POST",
-          headers: { Authorization: `Bearer ${props.token}`, "guoba-access-token": opened.ticket },
+          headers: { "guoba-access-token": opened.ticket },
           signal: AbortSignal.any([opened.lifetime.signal, AbortSignal.timeout(4_000)]),
-          cache: "no-store",
-          credentials: "omit",
-          redirect: "error",
         });
         if (frameState !== opened) return;
         if (response.status === 401) emit("unauthorized");
@@ -147,7 +145,7 @@ async function handleFrameMessage(event: MessageEvent<unknown>) {
 }
 
 async function load(page?: ExtensionPage, rescan = false) {
-  if (active || !props.token) return;
+  if (active) return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   active = controller;
@@ -162,13 +160,9 @@ async function load(page?: ExtensionPage, rescan = false) {
     const path = page
       ? `${endpoint}/${encodeURIComponent(page.id)}/open?${new URLSearchParams({ plugin: page.plugin })}`
       : rescan ? `${endpoint}/reload` : endpoint;
-    const response = await fetch(path, {
+    const response = await panelFetch(path, props.auth, {
       method: page || rescan ? "POST" : "GET",
-      headers: { Authorization: `Bearer ${props.token}` },
       signal: controller.signal,
-      cache: "no-store",
-      credentials: "omit",
-      redirect: "error",
     });
     if (active !== controller) return;
     if (response.status === 401) {
@@ -216,7 +210,7 @@ async function load(page?: ExtensionPage, rescan = false) {
   if (reopen) await load(reopen);
 }
 
-watch(() => props.token, () => {
+watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
   busy.value = undefined;

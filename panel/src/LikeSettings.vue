@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ token: string }>();
+const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{
   unauthorized: [];
   "dirty-change": [dirty: boolean];
@@ -85,7 +86,7 @@ function setMessageEnabled(key: MessageKey, enabled: boolean) {
 }
 
 async function request(method: "GET" | "PUT") {
-  if (active || !props.token) return;
+  if (active) return;
   const current = baseline.value;
   const edited = draft.value;
   if (method === "PUT" && (!current || !edited || !dirty.value || !validCount.value || !validRecall.value || conflict.value)) return;
@@ -101,10 +102,10 @@ async function request(method: "GET" | "PUT") {
   notice.value = "";
   confirmReload.value = false;
   try {
-    const headers = new Headers({ Authorization: `Bearer ${props.token}` });
+    const headers = new Headers();
     if (body !== undefined) headers.set("Content-Type", "application/json");
-    const response = await fetch(endpoint, {
-      method, headers, body, signal: controller.signal, cache: "no-store", redirect: "error", credentials: "omit",
+    const response = await panelFetch(endpoint, props.auth, {
+      method, headers, body, signal: controller.signal,
     });
     if (active !== controller) return;
     if (response.status === 401) {
@@ -150,7 +151,7 @@ function reload() {
   else void request("GET");
 }
 
-watch(() => props.token, () => {
+watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
   busy.value = undefined;

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ token: string }>();
+const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{
   unauthorized: [];
   "dirty-change": [dirty: boolean];
@@ -59,7 +60,7 @@ function isSnapshot(value: unknown): value is Snapshot {
 }
 
 async function request(method: "GET" | "PUT") {
-  if (active || !props.token) return;
+  if (active) return;
   const current = baseline.value;
   if (method === "PUT" && (!current?.writable || !dirty.value || conflict.value || confirmReload.value)) return;
   const body = method === "PUT" && current ? JSON.stringify({ revision: current.revision, patch: patch.value }) : undefined;
@@ -72,10 +73,10 @@ async function request(method: "GET" | "PUT") {
   notice.value = "";
   confirmReload.value = false;
   try {
-    const headers = new Headers({ Authorization: `Bearer ${props.token}` });
+    const headers = new Headers();
     if (body !== undefined) headers.set("Content-Type", "application/json");
-    const response = await fetch(endpoint, {
-      method, headers, body, signal: controller.signal, cache: "no-store", credentials: "omit", redirect: "error",
+    const response = await panelFetch(endpoint, props.auth, {
+      method, headers, body, signal: controller.signal,
     });
     if (active !== controller) return;
     if (response.status === 401) {
@@ -123,7 +124,7 @@ function reload() {
   else void request("GET");
 }
 
-watch(() => props.token, () => {
+watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
   busy.value = undefined;

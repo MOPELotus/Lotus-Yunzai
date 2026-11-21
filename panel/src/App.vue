@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ElButton, ElInput } from "element-plus";
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
-import { CredentialsError, pluginStatuses, readPanel, type PanelSnapshot, type PluginStatus } from "./api.ts";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import {
+  browserSession, claimPanelSession, CredentialsError, logoutPanelSession, pluginStatuses, readPanel,
+  type PanelAuth, type PanelSnapshot, type PluginStatus,
+} from "./api.ts";
 import ExtensionPages from "./ExtensionPages.vue";
 import PluginSettings from "./PluginSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
@@ -10,8 +13,11 @@ import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
+const restoring = ref(true);
 const busy = ref(false);
+const signingOut = ref(false);
 const error = ref("");
+const logoutError = ref("");
 const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
@@ -23,8 +29,9 @@ const clock = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
 
-let token = "";
+let auth: PanelAuth = browserSession;
 let activeRequest: AbortController | undefined;
+let activeLogout: AbortController | undefined;
 const extensionPreferences = new Map<string, string>();
 
 const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
@@ -52,7 +59,7 @@ function setView(next: PanelView, discard = false) {
 
 function expireSession() {
   reset();
-  error.value = "面板令牌已失效，请重新登录。";
+  error.value = "面板登录已失效，请重新登录。";
 }
 
 function updateDirty(dirty: boolean) {
@@ -80,12 +87,13 @@ function duration(seconds: number): string {
 function reset() {
   activeRequest?.abort();
   activeRequest = undefined;
-  token = "";
+  auth = browserSession;
   extensionPreferences.clear();
   draft.value = "";
   snapshot.value = undefined;
   busy.value = false;
   error.value = "";
+  logoutError.value = "";
   updatedAt.value = "";
   query.value = "";
   selectedStatus.value = "";
@@ -95,8 +103,8 @@ function reset() {
   void nextTick(() => document.getElementById("panel-token")?.focus());
 }
 
-async function synchronize(candidate: string, signingIn: boolean) {
-  if (busy.value || !candidate) return;
+async function synchronize(candidate: PanelAuth, purpose: "restore" | "sign-in" | "refresh", ticket?: string) {
+  if (busy.value || signingOut.value) return;
 
   const request = new AbortController();
   const timeout = setTimeout(() => request.abort(), 10_000);
@@ -104,32 +112,87 @@ async function synchronize(candidate: string, signingIn: boolean) {
   busy.value = true;
   error.value = "";
   try {
+    if (ticket !== undefined) await claimPanelSession(ticket, request.signal);
     const incoming = await readPanel(candidate, request.signal);
     if (activeRequest !== request) return;
 
-    token = candidate;
+    auth = candidate;
     draft.value = "";
     snapshot.value = incoming;
     updatedAt.value = clock.format(new Date());
-    if (signingIn) await nextTick(() => document.getElementById("overview-title")?.focus());
+    if (purpose === "sign-in") {
+      restoring.value = false;
+      await nextTick(() => document.getElementById("overview-title")?.focus());
+    }
   } catch (failure) {
     if (activeRequest !== request) return;
 
-    if (failure instanceof CredentialsError && !signingIn) reset();
+    if (failure instanceof CredentialsError) {
+      if (purpose === "restore") return;
+      if (purpose === "refresh") return expireSession();
+    }
     error.value = failure instanceof Error ? failure.message : "读取面板时发生错误。";
   } finally {
     clearTimeout(timeout);
     if (activeRequest === request) {
       activeRequest = undefined;
       busy.value = false;
+      restoring.value = false;
     }
   }
 }
 
+function signInWithToken() {
+  const token = draft.value.trim();
+  if (token) return synchronize({ kind: "bearer", token }, "sign-in");
+}
+
+async function signOut() {
+  if (signingOut.value) return;
+  if (auth.kind === "bearer") return reset();
+
+  const request = new AbortController();
+  activeLogout = request;
+  signingOut.value = true;
+  logoutError.value = "";
+  try {
+    await logoutPanelSession(AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]));
+    if (activeLogout === request) reset();
+  } catch {
+    if (activeLogout === request) logoutError.value = "未能确认退出登录，请重试。";
+  } finally {
+    if (activeLogout === request) {
+      activeLogout = undefined;
+      signingOut.value = false;
+      openLinkedTicket();
+    }
+  }
+}
+
+function openLinkedTicket() {
+  if (signingOut.value) return false;
+  const url = new URL(window.location.href);
+  const tickets = new URLSearchParams(url.hash.slice(1)).getAll("ticket");
+  if (!tickets.length) return false;
+  window.history.replaceState(window.history.state, "", url.pathname + url.search);
+  reset();
+  restoring.value = true;
+  void synchronize(browserSession, "sign-in", tickets.length === 1 ? tickets[0]! : "");
+  return true;
+}
+
+onMounted(() => {
+  window.addEventListener("hashchange", openLinkedTicket);
+  if (!openLinkedTicket()) void synchronize(browserSession, "restore");
+});
+
 onBeforeUnmount(() => {
+  window.removeEventListener("hashchange", openLinkedTicket);
   activeRequest?.abort();
   activeRequest = undefined;
-  token = "";
+  activeLogout?.abort();
+  activeLogout = undefined;
+  auth = browserSession;
 });
 </script>
 
@@ -140,15 +203,19 @@ onBeforeUnmount(() => {
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>Lotus-Yunzai 管理面板</span>
       </div>
-      <ElButton v-if="snapshot" class="sign-out" @click="reset">退出登录</ElButton>
+      <ElButton v-if="snapshot" class="sign-out" :loading="signingOut" :disabled="busy" @click="signOut">退出登录</ElButton>
     </div>
   </header>
 
-  <main v-if="!snapshot" class="sign-in">
+  <main v-if="restoring" class="sign-in" aria-busy="true">
+    <section class="sign-in-card" role="status">正在检查登录状态…</section>
+  </main>
+
+  <main v-else-if="!snapshot" class="sign-in">
     <section class="sign-in-card" aria-labelledby="signin-title">
       <h1 id="signin-title">登录面板</h1>
-      <p>请输入宿主配置的面板令牌。</p>
-      <form autocomplete="off" @submit.prevent="synchronize(draft.trim(), true)">
+      <p>机器人主人可私聊发送 <code>#管理面板</code> 获取登录链接，也可使用宿主配置的面板令牌。</p>
+      <form autocomplete="off" @submit.prevent="signInWithToken">
         <label for="panel-token">面板令牌</label>
         <ElInput
           id="panel-token"
@@ -166,7 +233,8 @@ onBeforeUnmount(() => {
     </section>
   </main>
 
-  <main v-else class="dashboard">
+  <main v-else class="dashboard" :inert="signingOut">
+    <p v-if="logoutError" class="error refresh-error" role="alert">{{ logoutError }}</p>
     <nav class="panel-nav" aria-label="面板页面">
       <ElButton :type="view === 'overview' ? 'primary' : 'default'"
         :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">运行概览</ElButton>
@@ -186,15 +254,15 @@ onBeforeUnmount(() => {
       <ElButton @click="discardTo = undefined">继续编辑</ElButton>
       <ElButton type="danger" @click="setView(discardTo!, true)">放弃改动</ElButton>
     </div>
-    <LikeSettings v-if="view === 'likes'" :token="token" @unauthorized="expireSession"
+    <LikeSettings v-if="view === 'likes'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
-    <GroupNoticeSettings v-else-if="view === 'notices'" :token="token" @unauthorized="expireSession"
+    <GroupNoticeSettings v-else-if="view === 'notices'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
-    <PluginSettings v-else-if="view === 'plugin-settings'" :token="token" @unauthorized="expireSession"
+    <PluginSettings v-else-if="view === 'plugin-settings'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
-    <AtlasChannelSettings v-else-if="view === 'atlas'" :token="token" @unauthorized="expireSession"
+    <AtlasChannelSettings v-else-if="view === 'atlas'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
-    <ExtensionPages v-else-if="view === 'extensions'" :token="token" :preferences="extensionPreferences"
+    <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />
     <template v-else>
       <section aria-labelledby="overview-title" :aria-busy="busy">
@@ -203,7 +271,7 @@ onBeforeUnmount(() => {
             <h1 id="overview-title" tabindex="-1">运行概览</h1>
             <p class="subtitle">{{ snapshot.runtime.name }}</p>
           </div>
-          <ElButton :loading="busy" @click="synchronize(token, false)">刷新数据</ElButton>
+          <ElButton :loading="busy" :disabled="signingOut" @click="synchronize(auth, 'refresh')">刷新数据</ElButton>
         </div>
 
         <p v-if="error" class="error refresh-error" role="alert">{{ error }} 当前仍显示上次读取的数据。</p>

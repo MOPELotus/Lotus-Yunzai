@@ -86,6 +86,7 @@ import { pokeDeliverySession, setImagePreviews, type BotEvent, type FriendPoke, 
   type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { panelApi, panelAssets } from "./lib/panel.ts";
+import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
@@ -295,6 +296,7 @@ if (import.meta.main) {
   let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
+  let panelOwnerSession: ReturnType<typeof createPanelOwnerSession> | undefined;
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
     checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
@@ -2361,7 +2363,18 @@ if (import.meta.main) {
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[gacha] 抽卡记录");
-    const { hostname, oneBot, https, panelToken } = network;
+    const { hostname, oneBot, https, panelToken, panelPublicUrl } = network;
+    const panelEnabled = panelToken !== undefined || panelPublicUrl !== undefined;
+    if (panelEnabled) {
+      panelOwnerSession = createPanelOwnerSession({
+        databasePath: fileURLToPath(new URL("data/panel/owner-sessions.sqlite", root)),
+        publicBase: () => panelPublicUrl ?? fileBase,
+        isOwner: (bot, user) => masterPermissions.isMaster(bot, user),
+        signal: lifecycle.signal,
+        config: globalConfig.coin_shop,
+      });
+      commands.registerModule(panelOwnerSession.commands);
+    }
     const groupActions = {
       async noticeOwnerIds(botId: number, transport: AbortSignal) {
         const registration = ownerNoticeRecipients;
@@ -2985,10 +2998,10 @@ if (import.meta.main) {
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
       ]);
       const guoba = panelGuobaRoutes(plugins.directories);
-      const extensions = panelToken === undefined ? undefined : panelExtensionRoutes(plugins.directories,
+      const extensions = !panelEnabled ? undefined : panelExtensionRoutes(plugins.directories,
         network.webMount && webMountPage(network.webMount, lifecycle.signal), { loadTimeout, signal: lifecycle.signal });
-      const panel = panelToken === undefined ? undefined : panelApi(panelToken, plugins.records,
-        (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion);
+      const panel = !panelEnabled ? undefined : panelApi(panelToken, plugins.records,
+        (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion, panelOwnerSession);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
       publicRoutes = async (request, auth) =>
         await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ?? await miyousheWeb?.handle(request) ??
@@ -3091,6 +3104,7 @@ if (import.meta.main) {
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
         moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop()]);
       miyousheWeb?.close();
+      panelOwnerSession?.close();
       await mediaDelivery.close();
       await plugins?.dispose();
     } finally {

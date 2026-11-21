@@ -7,21 +7,31 @@ import { runtimeStatus, type StatusVersion } from "./server.ts";
 type Endpoint = (request: Request) => Response | Promise<Response>;
 
 export function panelApi(
-  token: string,
+  token: string | undefined,
   plugins: readonly PluginLoadRecord[],
   route?: (path: string) => Endpoint | undefined,
   version?: StatusVersion,
+  ownerSession?: {
+    handle(request: Request, path: string): Response | Promise<Response | undefined> | undefined;
+    authorize(request: Request): boolean;
+  },
 ) {
   const hash = (value: string) => createHash("sha256").update(value).digest();
-  const required = hash(`Bearer ${token}`);
+  const required = token === undefined ? undefined : hash(`Bearer ${token}`);
   const headers = { "Cache-Control": "no-store" };
 
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
+    if (path.startsWith("/panel/api/session/")) {
+      return await ownerSession?.handle(request, path);
+    }
     const custom = route?.(path);
     if (!custom && path !== "/panel/api/status" && path !== "/panel/api/plugins") return;
-    if (!timingSafeEqual(required, hash(request.headers.get("Authorization") ?? ""))) {
-      return new Response(null, { status: 401, headers: { ...headers, "WWW-Authenticate": "Bearer" } });
+    const authorization = request.headers.get("Authorization");
+    const authorized = authorization === null ? ownerSession?.authorize(request) :
+      required && timingSafeEqual(required, hash(authorization));
+    if (!authorized) {
+      return new Response(null, { status: 401, headers: required ? { ...headers, "WWW-Authenticate": "Bearer" } : headers });
     }
     if (custom) {
       const response = await custom(request);

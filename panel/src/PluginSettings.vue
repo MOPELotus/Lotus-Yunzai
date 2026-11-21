@@ -3,8 +3,9 @@ import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import GuobaSubform from "./GuobaSubform.vue";
 import type { GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
+import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ token: string }>();
+const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{
   unauthorized: [];
   "dirty-change": [dirty: boolean];
@@ -91,11 +92,10 @@ function isSchema(value: unknown): value is GuobaField {
 }
 
 async function request(path: string, signal: AbortSignal, body?: Record<string, GuobaEdit>): Promise<unknown> {
-  const headers = new Headers({ Authorization: `Bearer ${props.token}` });
+  const headers = new Headers();
   if (body) headers.set("Content-Type", "application/json");
-  const response = await fetch(path, {
+  const response = await panelFetch(path, props.auth, {
     method: body ? "PUT" : "GET", headers, signal, body: body && JSON.stringify(body),
-    credentials: "omit", cache: "no-store", redirect: "error",
   });
   if (!response.ok) {
     const messages: Record<number, string> = {
@@ -126,7 +126,7 @@ async function read(plugin: string, signal: AbortSignal): Promise<Snapshot> {
 }
 
 async function operate(operation: Operation) {
-  if (active || !props.token) return;
+  if (active) return;
   if (operation.kind === "save" && (!dirty.value || readOnly.value)) return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 14_000);
@@ -279,7 +279,7 @@ function updateTags(field: string, schema: GuobaField, value: string) {
   }));
 }
 
-watch(() => props.token, () => {
+watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
   busy.value = undefined;

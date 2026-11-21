@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { panelFetch, type PanelAuth } from "./api.ts";
 
 type Channel = "live" | "latest";
 
@@ -9,7 +10,7 @@ const options = [
   { value: "latest", label: "网站最新版", description: "随资料网站当前提供的版本更新。" },
 ] as const satisfies ReadonlyArray<{ value: Channel; label: string; description: string }>;
 
-const props = defineProps<{ token: string }>();
+const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/atlas/channel`;
 const saved = ref<Channel | null>();
@@ -32,14 +33,11 @@ async function synchronize(mode: "load" | "save") {
   error.value = "";
   feedback.value = "";
   try {
-    const response = await fetch(endpoint, {
+    const response = await panelFetch(endpoint, props.auth, {
       method: mode === "save" ? "PUT" : "GET",
-      headers: { Authorization: `Bearer ${props.token}`, ...(mode === "save" && { "Content-Type": "application/json" }) },
+      headers: mode === "save" ? { "Content-Type": "application/json" } : undefined,
       body: mode === "save" ? JSON.stringify({ previous: saved.value, channel: draft.value }) : undefined,
       signal: controller.signal,
-      cache: "no-store",
-      credentials: "omit",
-      redirect: "error",
     });
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
