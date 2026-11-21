@@ -126,8 +126,8 @@ test("月报不会回退到另一已认证角色，也不会以不一致的 Cook
     const options = { collect: false, year: "2024", month: "10" };
     expect(await query(context, 1, options)).toBe("[zzz] profile 1 没有同步绝区零 UID。");
     expect(wire).toEqual([]);
-    expect(await query(context, 2, options)).toBe("获取月报数据失败，请检查日期是否正确");
-    expect(wire).toEqual(["/event/nap_ledger/month_info"]);
+    expect(await query(context, 2, options)).toBe("档案 Cookie 与当前登录账号不一致，请刷新或重新扫码登录。");
+    expect(wire).toEqual([]);
     expect(await readFile(join(old, role.uid + ".json"), "utf8")).toBe(JSON.stringify([body("202410", 23)]));
   } finally {
     await rm(root, { recursive: true, force: true });
