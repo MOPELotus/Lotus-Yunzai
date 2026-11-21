@@ -30,6 +30,40 @@ const retiredScripts = new Map([
     { name: "抽卡期望计算", reason: "抽卡期望和分布已由宿主提供。", module: "@lotus-yunzai/gacha-expectation" }],
 ]);
 
+// Byte identities from the fixed TRSS host. Names alone cannot establish that a directory is the old host.
+const trssHostScripts = new Map([
+  ["other", {
+    reason: "旧宿主的安装、进程管理、日志、更新与版本入口已归并到 Lotus-Yunzai。",
+    scripts: new Map([
+      ["install.js", "0fc91238477da8336038a75c244457845857e6d2a37c27acccc688165c4a28b7"],
+      ["restart.js", "b5ee163ffa77cd019b9da68f7e15b10ec6374e40400cb63c74b841044bcd4c4c"],
+      ["sendLog.js", "7ecd73facdb0b995ac0c942fb68d7950fc42d030db6b036a2a4e348418e5aa75"],
+      ["update.js", "b611904e4028f188c2548425ab1cf1de27894251381f1f7ffc1d12f138e0ce94"],
+      ["version.js", "98600954891a1aa7d03402b6a12188f275e4bd8fb4d0c9ce9c823ae11ec7bf5b"],
+    ]),
+  }],
+  ["system", {
+    reason: "旧宿主的主人、私聊、群与系统入口已归并到 Lotus-Yunzai。",
+    scripts: new Map([
+      ["add.js", "6fff15bd4bc364ca7386b0bf436fdaccc14b48130308965c253388b17f8887b2"],
+      ["botOperate.js", "51c0db7b8c34dcf535ba6d7804b7f221640d9b12fd23d5779533c3a4feeabfb4"],
+      ["disablePrivate.js", "d0e027cc8113a9780722f34fbfa867ecfe06dbcd6b3e496f2c25836d185bc637"],
+      ["friend.js", "4436ca777bc248a03cabc783b7ee828324fea831d7683c7c44bf7a8fc494ca42"],
+      ["invite.js", "2fd84b7c38cbac375882f4a5d7a6b79e3139096cc2cdc3e3aac252e0c11aa7ec"],
+      ["master.js", "8c1a75f11c6667852c63a82882ecfcbca76c2aafbf9eef465b4a9c00538d2392"],
+      ["quit.js", "b864b5b775c2aa3c47cd3fa854d5c6ad83f080931f15518b1c14515b0094233a"],
+      ["recallReply.js", "b743ac353ff2777fdee0dfefd0a0808f5456e53f2dfcdf2816cc95484db480e4"],
+      ["status.js", "d0152bef5d77a9cb33083c08156792b06851cc10722adbfcb149a8a05158f4c3"],
+    ]),
+  }],
+]);
+const retiredHostScripts = new Map([...trssHostScripts.values()].flatMap(({ reason, scripts }) =>
+  [...scripts].map(([name, hash]) => [hash, { name, reason, module: "lotus-yunzai" }] as const)));
+
+export function legacyHostScriptGroup(directory: string) {
+  return trssHostScripts.get(directory);
+}
+
 interface PluginMetadata {
   readonly name: string;
   readonly declaredName: string;
@@ -50,7 +84,7 @@ function record(value: unknown): Record<string, unknown> {
 
 export function retiredPluginScript(source: Uint8Array) {
   const hash = createHash("sha256").update(source).digest("hex");
-  return retiredScripts.get(hash);
+  return retiredScripts.get(hash) ?? retiredHostScripts.get(hash);
 }
 
 export function inspectPluginMetadata(directory: string, source: string | undefined, urls: readonly string[]): PluginMetadata {

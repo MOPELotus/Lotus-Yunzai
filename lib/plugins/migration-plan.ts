@@ -6,7 +6,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { builtInDirectories } from "../builtin-modules.ts";
 import { createLocalGit } from "../local-git.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
-import { inspectPluginMetadata, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
+import { inspectPluginMetadata, legacyHostScriptGroup, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
 export type LegacyPluginPlanEntry =
   | { readonly path: string; readonly status: "archive"; readonly kind: "directory" | "script"; readonly reason: string; readonly identity: string;
@@ -130,6 +130,20 @@ function scriptPlan(path: string, bytes: Uint8Array): LegacyPluginPlanEntry {
     : { path, status: "retain" };
 }
 
+async function legacyHostDirectory(source: string, name: string): Promise<LegacyPluginPlanEntry | undefined> {
+  const group = legacyHostScriptGroup(name);
+  if (!group) return;
+  const entries = (await entriesAt(source)).filter(entry => entry.name !== ".git" && entry.name !== "node_modules");
+  if (entries.length !== group.scripts.size) return;
+  for (const entry of entries) {
+    const hash = group.scripts.get(entry.name);
+    if (!entry.isFile() || !hash || createHash("sha256").update(await readScript(source, entry.name)).digest("hex") !== hash) return;
+  }
+  const identity = createHash("sha256").update(JSON.stringify([...group.scripts])).digest("hex");
+  return { path: `plugins/${name}`, status: "archive", kind: "directory", reason: group.reason,
+    replacementModule: "lotus-yunzai", identity };
+}
+
 /**
  * Paths are relative to the installation. The caller supplies paths owned by
  * the target Lotus-Yunzai checkout; a source checkout can also track legacy plugins.
@@ -169,6 +183,13 @@ export async function planLegacyPlugins(
         const identity = createHash("sha256").update(JSON.stringify([contents, metadata.identities, metadata.repositoryKeys])).digest("hex");
         plan.push({ path, status: "archive", kind: "directory", reason: metadata.rejection, identity });
         continue;
+      }
+      if (contents === undefined && !repositories.length) {
+        const retired = await legacyHostDirectory(source, entry.name);
+        if (retired) {
+          plan.push(retired);
+          continue;
+        }
       }
       if (occupiesTarget) {
         plan.push(expectedNativeName === metadata.declaredName

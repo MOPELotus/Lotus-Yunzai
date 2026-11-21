@@ -102,6 +102,20 @@ test("keeps unknown scripts in mixed directories and never traverses links or es
   expect(await readFile(join(root, "plugins/example/tasks.json"), "utf8")).toBe("[]");
 });
 
+test("does not classify customized same-name host directories as old built-ins", async () => {
+  const root = await createFixture();
+  for (const path of ["install.js", "restart.js", "sendLog.js", "update.js", "version.js"]) {
+    await put(root, `plugins/other/${path}`, "export const localExtension = true;\n");
+  }
+  for (const path of ["add.js", "botOperate.js", "disablePrivate.js", "friend.js", "invite.js", "master.js", "quit.js", "recallReply.js", "status.js"]) {
+    await put(root, `plugins/system/${path}`, "export const localExtension = true;\n");
+  }
+  expect(await planLegacyPlugins(root, new Set(["plugins/system"]))).toEqual([
+    { path: "plugins/other", status: "retain" },
+    { path: "plugins/system", status: "review", reason: expect.stringContaining("占用目标内置目录") },
+  ]);
+});
+
 test("reports oversized metadata and scripts without reading their contents", async () => {
   const root = await createFixture();
   await put(root, "plugins/big-package/package.json", "");
