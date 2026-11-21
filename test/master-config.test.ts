@@ -83,6 +83,29 @@ masterQQ: [987]
   expect(permissions.botIds()).toEqual([12, 98, 99]);
 }));
 
+test("运行配置热改替换主人名单与旧豁免，错误配置和停用监听保留最近有效状态", () => fixture(async (root, directory) => {
+  const file = await setup(directory, 'master: ["10:20"]\nmasterQQ: [19]\n', true);
+  const lifecycle = new AbortController();
+  const permissions = await readMasterPermissions(root, lifecycle.signal);
+  const withoutWatcher = await readMasterPermissions(root);
+  try {
+    await writeFile(file, 'master: ["10:21"]\nmasterQQ: [18]\n');
+    const deadline = performance.now() + 4_000;
+    while (!permissions.isMaster(10, 21) && performance.now() < deadline) await Bun.sleep(25);
+    expect(permissions.masterIds(10)).toEqual([21]);
+    expect(permissions.legacyMasterIds()).toEqual([18]);
+    expect(withoutWatcher.masterIds(10)).toEqual([20]);
+    expect(withoutWatcher.legacyMasterIds()).toEqual([19]);
+
+    await writeFile(file, "master: [");
+    await Bun.sleep(1_100);
+    expect(permissions.masterIds(10)).toEqual([21]);
+    expect(permissions.legacyMasterIds()).toEqual([18]);
+  } finally {
+    lifecycle.abort();
+  }
+}), 7_000);
+
 test("跟随配置符号链接并保留链接本身，多个授权并发时不会丢失", () => fixture(async (root, directory) => {
   const target = join(directory, "managed-other.yaml");
   const symbolic = join(directory, "config/other.yaml");

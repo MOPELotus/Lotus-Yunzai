@@ -1,4 +1,5 @@
 import { readLocalConfig } from "./config.ts";
+import { watchConfigFiles } from "./config-watch.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { persistMaster } from "./master-config.ts";
 
@@ -26,8 +27,21 @@ export function readOwnerSnapshot(config: Readonly<Record<string, unknown>>) {
   return { owners, globalMasters };
 }
 
-export async function readMasterPermissions(root: URL) {
-  let snapshot = readOwnerSnapshot(await readLocalConfig(root, "other"));
+export async function readMasterPermissions(root: URL, signal?: AbortSignal) {
+  const read = async () => readOwnerSnapshot(await readLocalConfig(root, "other"));
+  let snapshot = await read();
+  let revision = 0;
+  if (signal) {
+    watchConfigFiles(root, "other", signal, async () => {
+      while (!signal.aborted) {
+        const before = revision;
+        const updated = await read();
+        if (revision !== before) continue;
+        if (!signal.aborted) snapshot = updated;
+        break;
+      }
+    }, () => console.warn("[主人权限] 配置重载失败，保留上次有效设置。"));
+  }
   return {
     get terminal() {
       return snapshot.owners.get("stdin")?.has("stdin") ?? false;
@@ -48,7 +62,10 @@ export async function readMasterPermissions(root: URL) {
     async grant(bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean): Promise<boolean> {
       try {
         const config = await persistMaster(root, bot, user, approver, isCurrent);
-        snapshot = readOwnerSnapshot(config);
+        const updated = readOwnerSnapshot(config);
+        // A reload that began before this successful write must not restore an older owner list.
+        revision++;
+        snapshot = updated;
         return true;
       } catch {
         return false;

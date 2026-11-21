@@ -1912,7 +1912,7 @@ if (import.meta.main) {
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
     const [network, permissions, globalConfig, access, requestPolicies, routing,
       runtimeVersion, milky] = await Promise.all([
-      readServerSettings(root, Bun.env), readMasterPermissions(root), readLotusGlobalConfig(root),
+      readServerSettings(root, Bun.env), readMasterPermissions(root, watchConfig), readLotusGlobalConfig(root),
       readPrivateAccess(root, async (userId) =>
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK",
       watchConfig !== undefined),
