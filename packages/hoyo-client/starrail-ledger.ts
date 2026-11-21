@@ -1,3 +1,4 @@
+import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -15,6 +16,17 @@ export interface StarRailLedgerOptions {
   readonly page: number;
   readonly signal?: AbortSignal;
 }
+export interface StarRailOnlineOptions {
+  readonly signal?: AbortSignal;
+  readonly maxPages?: number;
+  readonly intervalMs?: number;
+}
+
+export interface StarRailPowerRecovery {
+  readonly time: string;
+  readonly count: number;
+}
+
 export interface StarRailLedgerRow {
   readonly time: string;
   readonly count: number;
@@ -42,15 +54,12 @@ function matchingRole(record: Json, uid: string, region: string) {
     (!Object.hasOwn(record, "game_biz") || record.game_biz === gameBiz);
 }
 
-export async function readStarRailLedger(source: ProfileRequestContext, transport: HoyoTransport,
-  { kind, page, signal }: StarRailLedgerOptions, verifyProfile?: () => Promise<void>) {
+async function openStarRailLedger(source: ProfileRequestContext, transport: HoyoTransport,
+  signal?: AbortSignal, verifyProfile?: () => Promise<void>) {
   const { uid, region } = source.role;
   if (source.game !== "sr" || !/^[1-5]\d{8}$/u.test(uid) || source.role.gameBiz !== gameBiz ||
       region !== (uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn")) {
     throw new HoyoRequestError("invalid-input", "星铁流水仅支持当前档案已同步的国服角色。");
-  }
-  if (!Object.hasOwn(types, kind) || !Number.isSafeInteger(page) || page < 1 || page > 999999) {
-    throw new HoyoRequestError("invalid-input", "星铁流水类型或页码无效。");
   }
   const cookie = starRailLedgerStokenCookie(source);
   let headers: Headers;
@@ -124,27 +133,66 @@ export async function readStarRailLedger(source: ProfileRequestContext, transpor
     throw new HoyoRequestError("response", "星铁流水临时授权无效。");
   }
 
-  const url = new URL(`/common/hkrpg_self_help_inquiry/${types[kind]}/GetList`, origin);
-  url.search = new URLSearchParams({ sign_type: "2", auth_appid: authAppid, authkey_ver: "1", win_direction: "portrait",
-    page_id: "4", bbs_auth_required: "true", bbs_game_role_required: gameBiz, app_client: "bbs", game_biz: gameBiz,
-    lang: "zh-cn", authkey, page: String(page), page_size: String(pageSize) }).toString();
-  const data = await request(url, { method: "GET" }, false);
-  if ((Object.hasOwn(data, "page") && integer(data.page) !== page) ||
-      !Array.isArray(data.list) || data.list.length > pageSize) {
-    throw new HoyoRequestError("response", "官方星铁流水响应的页码或记录无效。");
-  }
-  const rows: StarRailLedgerRow[] = [];
-  for (const entry of data.list) {
-    const row = object(entry);
-    const count = integer(row?.add_num);
-    if (!row || count === undefined || !matchingRole(row, uid, region)) {
-      throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
+  return async function readPage(kind: StarRailLedgerKind, page: number, size: number) {
+    const url = new URL(`/common/hkrpg_self_help_inquiry/${types[kind]}/GetList`, origin);
+    url.search = new URLSearchParams({ sign_type: "2", auth_appid: authAppid, authkey_ver: "1", win_direction: "portrait",
+      page_id: "4", bbs_auth_required: "true", bbs_game_role_required: gameBiz, app_client: "bbs", game_biz: gameBiz,
+      lang: "zh-cn", authkey, page: String(page), page_size: String(size) }).toString();
+    const data = await request(url, { method: "GET" }, false);
+    if ((Object.hasOwn(data, "page") && integer(data.page) !== page) ||
+        !Array.isArray(data.list) || data.list.length > size) {
+      throw new HoyoRequestError("response", "官方星铁流水响应的页码或记录无效。");
     }
-    if (count <= (kind === "power" ? 1 : 0)) continue;
+    return data.list.map(entry => {
+      const row = object(entry);
+      const count = integer(row?.add_num);
+      if (!row || count === undefined || !matchingRole(row, uid, region)) {
+        throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
+      }
+      return { count, time: row.time, action: row.action, id: row.id };
+    });
+  };
+}
+
+export async function readStarRailLedger(source: ProfileRequestContext, transport: HoyoTransport,
+  { kind, page, signal }: StarRailLedgerOptions, verifyProfile?: () => Promise<void>) {
+  if (!Object.hasOwn(types, kind) || !Number.isSafeInteger(page) || page < 1 || page > 999999) {
+    throw new HoyoRequestError("invalid-input", "星铁流水类型或页码无效。");
+  }
+  const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
+  const rows: StarRailLedgerRow[] = [];
+  for (const row of await readPage(kind, page, pageSize)) {
+    if (row.count <= (kind === "power" ? 1 : 0)) continue;
     if (!displayText(row.time, 40) || !displayText(row.action, 120)) {
       throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
     }
-    rows.push({ count, time: row.time, reason: row.action });
+    rows.push({ count: row.count, time: row.time, reason: row.action });
   }
   return { rows };
+}
+
+
+export async function readStarRailOnline(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal, maxPages = 120, intervalMs = 500 }: StarRailOnlineOptions, verifyProfile?: () => Promise<void>) {
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 240 ||
+      !Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > 5_000) {
+    throw new HoyoRequestError("invalid-input", "星铁在线时长的翻页或间隔参数无效。");
+  }
+  const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
+  const recoveries: StarRailPowerRecovery[] = [];
+  const pages = new Set<string>();
+  for (let page = 1; page <= maxPages; page++) {
+    const rows = await readPage("power", page, 50);
+    if (!rows.length) return { recoveries, complete: true };
+    const signature = JSON.stringify(rows.map(({ id, time, action, count }) => [id, time, action, count]));
+    if (pages.has(signature)) throw new HoyoRequestError("response", "官方星铁开拓力流水返回了重复页。");
+    pages.add(signature);
+    for (const row of rows) {
+      if (row.action !== "随时间回复开拓力" || row.count <= 0) continue;
+      if (!displayText(row.time, 40)) throw new HoyoRequestError("response", "官方星铁开拓力流水的恢复时间无效。");
+      recoveries.push({ time: row.time, count: row.count });
+    }
+    if (page < maxPages && intervalMs) await wait(intervalMs, undefined, { signal });
+  }
+  return { recoveries, complete: false };
 }

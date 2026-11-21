@@ -23,7 +23,7 @@ import { createGenshinPersonalRecordReader, readGenshinPanel, readGenshinTalents
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailMonthly, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
-import { readStarRailLedger, type StarRailLedgerOptions } from "./starrail-ledger.ts";
+import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, type StarRailOnlineOptions } from "./starrail-ledger.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
@@ -74,7 +74,7 @@ export { ZzzManualGachaLinkRequired } from "./errors.ts";
 export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } from "./daily-note.ts";
 export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
-export type { StarRailLedgerKind, StarRailLedgerRow, StarRailLedgerOptions } from "./starrail-ledger.ts";
+export type { StarRailLedgerKind, StarRailLedgerRow, StarRailLedgerOptions, StarRailOnlineOptions, StarRailPowerRecovery } from "./starrail-ledger.ts";
 export type { StarRailMonthlySnapshot, StarRailMonthlyOptions } from "./starrail-monthly.ts";
 export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
@@ -509,6 +509,9 @@ export function createHoyoClient(
     fetchStarRailLedger(source: ProfileRequestContext, options: StarRailLedgerOptions) {
       // This service mints a ticket with the SToken. Exchanging a Cookie cannot replace it.
       return readForProfile(source, options, readStarRailLedger, () => false);
+    },
+    fetchStarRailOnline(source: ProfileRequestContext, options: StarRailOnlineOptions = {}) {
+      return readForProfile(source, options, readStarRailOnline, () => false);
     },
     fetchStarRailMonthly(source: ProfileRequestContext, options: StarRailMonthlyOptions = {}) {
       return readForProfile(source, options, readStarRailMonthly, isGameRecordCookieExpired);
