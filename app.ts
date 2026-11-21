@@ -307,6 +307,7 @@ if (import.meta.main) {
       handoff.reportPower(value);
     } : undefined);
   let plugins: PluginLoadReport | undefined;
+  let chatSettings: ReturnType<typeof createChatSettings> | undefined;
   let stopPowerSchedule: (() => Promise<void>) | undefined;
   let stopRestartSchedule: (() => Promise<void>) | undefined;
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
@@ -1870,7 +1871,8 @@ if (import.meta.main) {
         canManagePackages(event) && groupDispatch.allowsInbound(event) && allowed(chatSettingsNames) &&
         (terminal ? masterPermissions.terminal : session?.aborted === false && event.self_id !== undefined &&
           event.user_id !== undefined && masterPermissions.isMaster(event.self_id, event.user_id));
-      const reply = await createChatSettings(root, plugins.directories)(setting, canWrite, signal);
+      chatSettings ??= createChatSettings(root, plugins.directories);
+      const reply = await chatSettings(setting, canWrite, signal, !terminal);
       if (reply !== undefined && !signal.aborted) await event.reply(reply);
       return;
     }
