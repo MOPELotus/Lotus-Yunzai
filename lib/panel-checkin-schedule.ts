@@ -1,4 +1,4 @@
-import { checkinSchedulePanelSnapshot, parseCheckinSchedulePanelPatch, persistCheckinSchedulePanelSettings } from "./checkin-schedule-settings.ts";
+import { CheckinScheduleSettingsError, checkinSchedulePanelSnapshot, parseCheckinSchedulePanelPatch, persistCheckinSchedulePanelSettings } from "./checkin-schedule-settings.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
@@ -29,6 +29,9 @@ export function panelCheckinSchedule(root: URL) {
         canWrite: stillAuthorized, signal: request.signal,
       }));
     } catch (error) {
+      if (error instanceof CheckinScheduleSettingsError && error.reason === "invalid-input") {
+        return Response.json({ message: "窗口结束时间不能早于开始时间。" }, { status: 422 });
+      }
       const reason = error instanceof GlobalConfigWriteError ? error.reason : undefined;
       return new Response(null, { status: reason === "conflict" ? 409 : reason === "permission" || reason === "cancelled" ? 401 : 500 });
     }

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, type Node, type YAMLMap } from "yaml";
+import { isAlias, isMap, isNode, isScalar, parseDocument, Parser, Scalar, stringify, type Node, type YAMLMap } from "yaml";
 import { checkinScheduleMinute, type CheckinScheduleConfig } from "./checkin-schedule-plan.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { defaultCheckinCrons, validCheckinCron } from "./checkin-schedule-runtime.ts";
-import { scheduleCronFields, type CheckinSchedulePanelSettings, type CheckinSchedulePanelSnapshot } from "./panel-checkin-schedule-schema.ts";
+import { scheduleCronFields, scheduleWindowFields, type CheckinSchedulePanelSettings, type CheckinSchedulePanelSnapshot,
+  type LateScheduleSettings, type RandomScheduleSettings } from "./panel-checkin-schedule-schema.ts";
 
 export type CheckinScheduleSettingsChange =
   | { readonly type: "mode"; readonly mode: "random" }
@@ -32,7 +33,11 @@ export class CheckinScheduleSettingsError extends Error {
 }
 
 const scheduleFields = ["mode", "fixed_time", "enable", ...scheduleCronFields] as const;
-type SchedulePatch = Partial<CheckinSchedulePanelSettings>;
+type ScheduleWindowSection = keyof typeof scheduleWindowFields;
+type ScalarPatch = Partial<Omit<CheckinSchedulePanelSettings, ScheduleWindowSection>>;
+type SchedulePatch = ScalarPatch & { random?: Partial<RandomScheduleSettings>; late_registration?: Partial<LateScheduleSettings> };
+
+const scheduleWindows = ["random", "late_registration"] as const;
 
 function error(reason: SettingsErrorReason): never {
   throw new CheckinScheduleSettingsError(reason);
@@ -145,7 +150,7 @@ function insertPairs(text: string, map: YAMLMap | undefined,
   return { start, end: start, value: prefix + body + suffix };
 }
 
-function applyPatch(current: ReturnType<typeof readDocument>, patch: SchedulePatch) {
+function applyPatch(current: ReturnType<typeof readDocument>, patch: ScalarPatch) {
   const { text, root, values, config } = current;
   const original = values.get("scheduler");
   const node = root?.get("scheduler", true);
@@ -168,13 +173,9 @@ function applyPatch(current: ReturnType<typeof readDocument>, patch: SchedulePat
   }
   if (additions.length) {
     if (isMap(node)) edits.push(insertPairs(text, node, additions));
-    else if (isAlias(node)) {
-      if (!node.range) error("config");
-      const [start, end] = node.range;
-      const overrides = additions.map(({ key, flow }) => `${key}: ${flow}`).join(", ");
-      // Inherit the shared mapping and override only the selected scheduler settings.
-      edits.push({ start, end, value: `{<<: ${text.slice(start, end)}, ${overrides}}` });
-    } else {
+    // Inherit the shared mapping and override only the selected scheduler settings.
+    else if (isAlias(node)) edits.push(aliasOverrides(text, node, additions));
+    else {
       const flow = additions.flatMap(pair => pair.block).join(", ");
       edits.push(insertPairs(text, root, [{
         key: "scheduler", flow: `{${flow}}`, block: ["scheduler:", ...additions.flatMap(pair => pair.block.map(line => `  ${line}`))],
@@ -211,14 +212,110 @@ export async function persistCheckinScheduleSettings(root: URL, change: CheckinS
   }
 }
 
-function patchScheduler(content: string, source: unknown, patch: SchedulePatch) {
-  const previous = readDocument(content);
-  const scheduler = validScheduler(source);
-  if (scheduleFields.every(key => patch[key] === undefined || scheduler[key] === patch[key])) {
-    return { settings: scheduler };
+function visibleWindows({ random, late_registration: late }: CheckinScheduleConfig) {
+  return {
+    random: {
+      window_start: random?.window_start ?? "00:00", window_end: random?.window_end ?? "23:30",
+      notify_before: random?.notify_before ?? true,
+    },
+    late_registration: {
+      window_start: late?.window_start ?? "23:30", window_end: late?.window_end ?? "23:59",
+      enable: late?.enable ?? true, notify: late?.notify ?? true,
+    },
+  };
+}
+
+type Pair = { key: string; flow: string; block: string[] };
+
+function windowPair(key: string, values: Map<unknown, unknown>): Pair {
+  const flow = stringify(values, { collectionStyle: "flow", lineWidth: 0 }).trimEnd();
+  const block = stringify(values, { lineWidth: 0 }).trimEnd().split("\n").map(line => `  ${line}`);
+  return { key, flow, block: [`${key}:`, ...block] };
+}
+
+function aliasOverrides(text: string, node: Node, pairs: readonly Pair[]): SourceEdit {
+  if (!isAlias(node) || !node.range) error("config");
+  const [start, end] = node.range;
+  const fields = pairs.map(({ key, flow }) => `${key}: ${flow}`).join(", ");
+  return { start, end, value: `{<<: ${text.slice(start, end)}, ${fields}}` };
+}
+
+function applyWindowPatch(current: ReturnType<typeof readDocument>, section: ScheduleWindowSection,
+  patch: Readonly<Record<string, string | boolean>>, inherited: Readonly<Record<string, unknown>>,
+) {
+  const { text, root, values, config } = current;
+  const original = values.get("scheduler");
+  const parent = root?.get("scheduler", true);
+  if (original !== undefined && (!(original instanceof Map) || (!isMap(parent) && !isAlias(parent)))) error("config");
+  const expectedScheduler = new Map(original as Map<unknown, unknown> | undefined);
+  const originalWindow = expectedScheduler.get(section);
+  const node = isMap(parent) ? parent.get(section, true) : undefined;
+  if (originalWindow !== undefined && !(originalWindow instanceof Map)) error("config");
+  if (node !== undefined && !isMap(node) && !isAlias(node)) error("config");
+
+  // A newly added local window shadows the whole old window. Keep the inherited
+  // values used by the scheduler and leave any unrelated legacy fields in the source file.
+  const expectedWindow = new Map((originalWindow as Map<unknown, unknown> | undefined) ?? Object.entries(inherited));
+  const edits: SourceEdit[] = [];
+  const additions: Pair[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    expectedWindow.set(key, value);
+    const scalar = isMap(node) ? node.get(key, true) : undefined;
+    if (isNode(scalar)) edits.push(replaceScalar(text, key, value, scalar));
+    else {
+      const flow = scalarText(key, value);
+      additions.push({ key, flow, block: [`${key}: ${flow}`] });
+    }
   }
-  const next = applyPatch(previous, patch);
-  return { yaml: next.yaml, settings: validScheduler({ ...scheduler, ...next.scheduler }) };
+
+  if (additions.length) {
+    if (isMap(node)) edits.push(insertPairs(text, node, additions));
+    else if (isAlias(node)) edits.push(aliasOverrides(text, node, additions));
+    else {
+      const pair = windowPair(section, expectedWindow);
+      if (isMap(parent)) edits.push(insertPairs(text, parent, [pair]));
+      else if (isAlias(parent)) edits.push(aliasOverrides(text, parent, [pair]));
+      else edits.push(insertPairs(text, root, [windowPair("scheduler", new Map([[section, expectedWindow]]))]));
+    }
+  }
+  const yaml = edits.sort((a, b) => b.start - a.start || b.end - a.end)
+    .reduce((result, edit) => result.slice(0, edit.start) + edit.value + result.slice(edit.end), text);
+  expectedScheduler.set(section, expectedWindow);
+  const expectedValues = new Map(values).set("scheduler", expectedScheduler);
+  const expectedConfig = { ...config, scheduler: { ...current.scheduler, [section]: Object.fromEntries(expectedWindow) } };
+  const next = readDocument(yaml);
+  if (!isDeepStrictEqual(next.values, expectedValues) || !isDeepStrictEqual(next.config, expectedConfig)) error("config");
+  return next;
+}
+
+function patchScheduler(content: string, source: unknown, patch: SchedulePatch) {
+  let current = readDocument(content);
+  const scheduler = validScheduler(source);
+  const previousWindows = visibleWindows(scheduler);
+  const { random, late_registration, ...scalars } = patch;
+  const windows = { random, late_registration };
+
+  for (const section of scheduleWindows) {
+    if (!windows[section]) continue;
+    const { window_start, window_end } = { ...previousWindows[section], ...windows[section] };
+    if (checkinScheduleMinute(window_start) > checkinScheduleMinute(window_end)) error("invalid-input");
+  }
+
+  if (scheduleFields.some(key => scalars[key] !== undefined && scheduler[key] !== scalars[key])) {
+    current = readDocument(applyPatch(current, scalars).yaml);
+  }
+  for (const section of scheduleWindows) {
+    const changes = windows[section];
+    if (!changes) continue;
+    const visible = previousWindows[section] as Record<string, unknown>;
+    const changed = Object.fromEntries(Object.entries(changes).filter(([key, value]) => visible[key] !== value));
+    if (!Object.keys(changed).length) continue;
+    const inherited = Object.fromEntries(Object.entries(scheduler[section] ?? {})
+      .filter(([key]) => (scheduleWindowFields[section] as readonly string[]).includes(key)));
+    current = applyWindowPatch(current, section, changed, inherited);
+  }
+  const settings = validScheduler({ ...scheduler, ...current.scheduler });
+  return { yaml: current.text === content ? undefined : current.text, settings };
 }
 
 export function checkinSchedulePanelSnapshot(source: unknown): CheckinSchedulePanelSnapshot {
@@ -228,6 +325,7 @@ export function checkinSchedulePanelSnapshot(source: unknown): CheckinSchedulePa
     mode: current.mode ?? "fixed",
     fixed_time: current.fixed_time ?? "04:30",
     ...defaultCheckinCrons,
+    ...visibleWindows(current),
   };
   const invalidCrons: CheckinSchedulePanelSnapshot["invalidCrons"][number][] = [];
   for (const key of scheduleCronFields) {
@@ -242,8 +340,8 @@ export function checkinSchedulePanelSnapshot(source: unknown): CheckinSchedulePa
 
 export function parseCheckinSchedulePanelPatch(input: unknown): SchedulePatch {
   const source = record(input);
-  if (!source || !Object.keys(source).length ||
-      Object.keys(source).some(key => !(scheduleFields as readonly string[]).includes(key))) error("invalid-input");
+  const accepted: readonly string[] = [...scheduleFields, ...scheduleWindows];
+  if (!source || !Object.keys(source).length || Object.keys(source).some(key => !accepted.includes(key))) error("invalid-input");
   const patch: SchedulePatch = {};
   if (Object.hasOwn(source, "enable")) {
     if (typeof source.enable !== "boolean") error("invalid-input");
@@ -262,6 +360,20 @@ export function parseCheckinSchedulePanelPatch(input: unknown): SchedulePatch {
     const value = source[key];
     if (typeof value !== "string" || (value.trim() && !validCheckinCron(value))) error("invalid-input");
     patch[key] = value.trim() || defaultCheckinCrons[key];
+  }
+  for (const section of scheduleWindows) {
+    if (!Object.hasOwn(source, section)) continue;
+    const fields: readonly string[] = scheduleWindowFields[section];
+    const values = record(source[section]);
+    if (!values || !Object.keys(values).length) error("invalid-input");
+    for (const [key, value] of Object.entries(values)) {
+      if (!fields.includes(key)) error("invalid-input");
+      if (key === "window_start" || key === "window_end") {
+        if (typeof value !== "string" || !Number.isInteger(checkinScheduleMinute(value))) error("invalid-input");
+      } else if (typeof value !== "boolean") error("invalid-input");
+    }
+    if (section === "random") patch.random = values as Partial<RandomScheduleSettings>;
+    else patch.late_registration = values as Partial<LateScheduleSettings>;
   }
   return patch;
 }
