@@ -139,3 +139,11 @@ export async function loadOfficialArtwork(urls: readonly (string | undefined)[],
   }));
   return result;
 }
+
+/** Load the current QQ user's public avatar through the same bounded raster decoder. */
+export function loadPublicQqAvatar(qq: string, { signal: cancellation, transport = fetch }: ArtworkOptions = {}) {
+  if (!/^[1-9]\d{0,15}$/u.test(qq)) return Promise.resolve(undefined);
+  const timeout = AbortSignal.timeout(2_000);
+  const signal = cancellation ? AbortSignal.any([cancellation, timeout]) : timeout;
+  return fetchArtwork(`https://q.qlogo.cn/g?b=qq&s=0&nk=${qq}`, signal, transport);
+}
