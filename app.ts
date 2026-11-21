@@ -1985,10 +1985,10 @@ if (import.meta.main) {
     if (!allowNew) return;
     if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg, alias)) return;
 
-    const normalized = normalizeGameCommand(event);
-    const sendMedia = normalized.isDelegated ? undefined : normalized[sendSessionMedia];
+    const command = normalizeGameCommand(event);
+    const sendMedia = command.isDelegated ? undefined : command[sendSessionMedia];
     const deliverMedia = sendMedia && ((file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia));
-    const command = deliverMedia ? { ...normalized, deliverMedia } : normalized;
+    if (deliverMedia) Object.defineProperty(command, "deliverMedia", { value: deliverMedia });
     if (isUpdateLogCommand(command.msg)) {
       if (allowed(updateFeatureNames)) await updateLogCommand(command);
       return;
@@ -2004,7 +2004,7 @@ if (import.meta.main) {
     const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
     const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount || atlasMaintenance ? {
       ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope, ownGroupCardAccount,
-      atlasMaintenance,
+      atlasMaintenance, deliverMedia,
     } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
