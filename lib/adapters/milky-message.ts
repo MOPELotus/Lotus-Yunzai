@@ -522,6 +522,7 @@ export function milkyMessage(
   const action = isGroup ? "send_group_message" : "send_private_message";
   return {
     post_type: "message",
+    inlineImageByteLimit: maxPublicFileBytes,
     message_type: isGroup ? "group" : "private",
     sub_type: isGroup ? "normal" : "friend",
     self_id: selfId, user_id: userId, group_id: isGroup ? peerId : undefined, message_id: messageId,

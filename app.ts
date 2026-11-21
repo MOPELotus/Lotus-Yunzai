@@ -11,7 +11,7 @@ import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
-import { chatFileRelaySource, readQqMessageMedia } from "./lib/chat-files.ts";
+import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
@@ -2121,6 +2121,37 @@ if (import.meta.main) {
             for (const account of groups.onlineAccounts()) accounts.add(account.id);
             if (milkyOnline && !milkyOnline.signal.aborted) accounts.add(milkyOnline.id);
             return accounts.size > 0 && [...accounts].every(account => masterPermissions.isMaster(account, userId));
+          },
+        });
+      if (reply !== undefined) {
+        await sendCommandReply(event, reply);
+        return;
+      }
+    }
+    if (/^(?:[%％]|[#/](?:绝区零|zzz)|绝区零|zzz)(?:绝区零|zzz)?(?:上传|添加|获取|查看|删除)\S{1,80}(?:角色|面板)图(?:[0-9,，、\s]+)?$/iu.test(command.msg)) {
+      const connection = event[delegationSession]?.signal;
+      const active = connection && nativeOperationSignal(connection);
+      const allowedSource = () => active && !active.aborted && !event.isDelegated && !event.attachmentOnly &&
+        event.user_id !== undefined && isBotMaster(event.user_id) &&
+        (event.message_type === "group" && event.sub_type !== "anonymous" || event.message_type === "private" && event.sub_type === "friend");
+      const reply = await commands.dispatchFallback(event, names => names[0] === "@lotus-yunzai/zzz" && allowed(names),
+        isBotMaster, command.msg, {
+          characterGallerySignal: active,
+          async readCharacterGalleryImages() {
+            if (!active || !allowedSource() || typeof event.message === "string") return [];
+            let images = event.message.filter(part => part.type === "image");
+            if (!images.length && event.lookupReply && event.reply_id !== undefined &&
+                event.message.filter(part => part.type === "reply").length === 1) {
+              const quoted = await event.lookupReply().catch(() => undefined);
+              images = quoted?.message.filter(part => part.type === "image") ?? [];
+            }
+            if (images.length > 5) return "too-many";
+            const bytes: (Uint8Array | undefined)[] = [];
+            for (const part of images) {
+              if (!allowedSource()) return [];
+              bytes.push(await readQqMessageSegmentMedia(part, active));
+            }
+            return allowedSource() ? bytes : [];
           },
         });
       if (reply !== undefined) {

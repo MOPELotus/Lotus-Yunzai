@@ -76,7 +76,7 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
       const message = request.segments.filter(segment => segment.type !== "file" && segment.type !== "reply");
       let match = false;
       await run({
-        msg: request.command, raw_message: request.command, message, adapter: origin.adapter,
+        msg: request.command, raw_message: request.command, message, adapter: origin.adapter, inlineImageByteLimit: origin.inlineImageByteLimit,
         self_id: actor.self_id, user_id: userId, group_id: groupId,
         post_type: "message", message_type: isGroup ? "group" : "private", sub_type: isGroup ? "normal" : "friend",
         isGroup, isPrivate: !isGroup, isMaster: isMaster(actor.self_id, userId),

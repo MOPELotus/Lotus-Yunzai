@@ -55,6 +55,7 @@ test("Milky 群消息保留原文、提及和引用，并且不从事件授予�
     text("全部 "),
   ] }), selfId, call);
   expect(event).toMatchObject({
+    inlineImageByteLimit: maxPublicFileBytes,
     post_type: "message", message_type: "group", sub_type: "normal", self_id: selfId, user_id: senderId, group_id: groupId,
     message_id: seq, msg: "#状态 全部", raw_message: "[at]  #状态 [reply][at][at][image]全部 ",
     atBot: true, at: "all", reply_id: "42", isGroup: true, isPrivate: false, isMaster: false, boundAccount: false,

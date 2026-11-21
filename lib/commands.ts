@@ -4,7 +4,7 @@ import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts"
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
-    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" | "isNapCat" |
+    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" | "inlineImageByteLimit" | "isNapCat" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
@@ -26,6 +26,8 @@ export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent
   readonly normalizedMessage: string;
   readonly configureNoticeSettings?: NoticeSettingsContext["configureNoticeSettings"];
   readonly groupOriginalSignal?: AbortSignal;
+  readonly characterGallerySignal?: AbortSignal;
+  readonly readCharacterGalleryImages?: () => Promise<readonly (Uint8Array | undefined)[] | "too-many">;
 };
 
 export interface CommandForward {
@@ -33,6 +35,7 @@ export interface CommandForward {
   readonly nodes: readonly MessageReply[];
   readonly batchSize?: number;
   readonly senderName?: string;
+  readonly onDelivered?: () => void | Promise<void>;
 }
 
 export interface QuotedCommandReply {
@@ -76,6 +79,7 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
   const count = typeof reply.batchSize === "number" && Number.isSafeInteger(reply.batchSize) && reply.batchSize > 0
     ? reply.batchSize
     : reply.nodes.length;
+  let confirmed = true;
   for (let start = 0; start < reply.nodes.length; start += count) {
     const nodes = reply.nodes.slice(start, start + count);
     if (event.forward) {
@@ -86,8 +90,10 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
         return;
       }
     }
+    confirmed = false;
     for (const node of nodes) await event.reply(node);
   }
+  if (confirmed) await reply.onDelivered?.();
 }
 
 export interface CommandModule {
@@ -112,11 +118,11 @@ function commandContext(context: CommandContext): CommandContext {
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
-    attachment, canReadAttachments, adapter, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
+    attachment, canReadAttachments, adapter, inlineImageByteLimit, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
-    reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
+    reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, inlineImageByteLimit, listCheckinGroupMembers,
     ...(!isDelegated && isNapCat ? { isNapCat } : {}),
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     ...(message_type === "group" && !isDelegated && mentionLike ? { mentionLike } : {}),
@@ -277,7 +283,7 @@ export class CommandRegistry {
     allowed: (names: readonly string[]) => boolean,
     isBotMaster: MessageFallbackContext["isBotMaster"],
     normalizedMessage = event.msg,
-    capabilities?: Pick<MessageFallbackContext, "configureNoticeSettings" | "groupOriginalSignal">,
+    capabilities?: Pick<MessageFallbackContext, "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages">,
   ): Promise<CommandReply | undefined> {
     for (const { handler, names, features } of this.#fallbacks.values()) {
       if (!features && !allowed(names)) continue;
