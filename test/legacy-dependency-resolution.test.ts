@@ -60,6 +60,9 @@ test("keeps Node and Bun builtins distinct from runtime compatibility aliases", 
   for (const name of ["node:fs", "fs", "bun", "bun:sqlite"]) {
     expect(await checkRetainedHostDependency(host, importer, name)).toEqual({ status: "runtime" });
   }
+  expect(await checkRetainedHostDependency(host, importer, "node-fetch")).toEqual({ status: "runtime" });
+  expect(await checkRetainedHostDependency(host, importer, "node-fetch", undefined, "require"))
+    .toEqual({ status: "unverified", reason: "runtime-alias" });
   for (const name of ["ws", "node-fetch"]) {
     expect(await checkRetainedHostDependency(host, importer, name, "^3.0.0"))
       .toEqual({ status: "unverified", reason: "runtime-alias" });

@@ -77,7 +77,8 @@ export async function checkRetainedHostDependency(
     return { status: "unverified", reason: "missing" };
   }
   if (!isAbsolute(resolved)) {
-    const runtime = specifier === "bun" || specifier.startsWith("bun:");
+    const runtime = specifier === "bun" || specifier.startsWith("bun:") ||
+      (mode === "import" && specifier === "node-fetch" && resolved === specifier);
     return runtime && declaredRange === undefined ? { status: "runtime" } : { status: "unverified", reason: "runtime-alias" };
   }
   let entry: string;
