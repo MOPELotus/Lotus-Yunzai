@@ -31,6 +31,7 @@ export type ReadCurrentGroupMembers = () => Promise<readonly { id: number; name?
 export interface MessageEvent {
   readonly msg: string;
   readonly adapter?: "milky";
+  readonly isNapCat?: (signal: AbortSignal) => Promise<boolean>;
   readonly post_type: "message";
   readonly message_type: "group" | "private" | "terminal";
   readonly sub_type?: string;

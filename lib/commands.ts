@@ -4,7 +4,7 @@ import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts"
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
-    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" |
+    "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "attachment" | "canReadAttachments" | "adapter" | "isNapCat" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
@@ -112,11 +112,12 @@ function commandContext(context: CommandContext): CommandContext {
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile,
-    attachment, canReadAttachments, adapter, listCurrentGroupMembers, listCheckinGroupMembers,
+    attachment, canReadAttachments, adapter, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, listCheckinGroupMembers,
+    ...(!isDelegated && isNapCat ? { isNapCat } : {}),
     ...(message_type === "group" && !isDelegated && listCurrentGroupMembers ? { listCurrentGroupMembers } : {}),
     ...(message_type === "group" && !isDelegated && mentionLike ? { mentionLike } : {}),
     ...(message_type === "group" && !isDelegated && groupMute ? { groupMute } : {}),

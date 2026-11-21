@@ -634,6 +634,8 @@ async function dispatchMessage(
     isPrivate: messageType === "private",
     isMaster: owner,
     boundAccount,
+    isNapCat: boundAccount && attachmentSession
+      ? signal => calls.isNapCat(send, AbortSignal.any([signal, attachmentSession.signal])) : undefined,
     [manualGroupLeaveSession]: leaveSignal && selfId !== undefined ? {
       botId: selfId, userId, groupId: "group_id" in target ? target.group_id : undefined,
       signal: leaveSignal,
