@@ -1,3 +1,4 @@
+import { watchFile, unwatchFile } from "node:fs";
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { isGroupJoinReviewInput } from "./group-join-review.ts";
@@ -97,7 +98,8 @@ async function readRoutingConfig(root: URL): Promise<Record<string, unknown> | u
   }
 }
 
-async function readSlashAlias(root: URL, active: Record<string, unknown>): Promise<boolean> {
+async function readSlashAlias(root: URL): Promise<boolean> {
+  const active = await readLocalConfig(root, "bot");
   const option = "/→#";
   const enabled = (value: unknown) => value === true || value === 1;
   if (Object.hasOwn(active, option)) return enabled(active[option]);
@@ -144,18 +146,71 @@ class Cooldowns {
   }
 }
 
-export async function readGroupDispatch(root: URL) {
-  const [other, groups, botConfig] = await Promise.all([
-    readLocalConfig(root, "other"), readRoutingConfig(root), readLocalConfig(root, "bot"),
+async function readRoutingLists(root: URL) {
+  const config = await readLocalConfig(root, "other");
+  return {
+    whiteUser: ids(config.whiteUser), blackUser: ids(config.blackUser),
+    whiteGroup: ids(config.whiteGroup), blackGroup: ids(config.blackGroup),
+  };
+}
+
+function watchRoutingFiles(root: URL, name: "bot" | "group" | "other", signal: AbortSignal, reload: () => Promise<void>) {
+  if (signal.aborted) return;
+  const paths = [`config/${name}.yaml`, `config/config/${name}.yaml`].map(path => new URL(path, root));
+  let dirty = false;
+  let running = false;
+  let failed = false;
+  async function changed() {
+    dirty = true;
+    if (running) return;
+    running = true;
+    while (dirty && !signal.aborted) {
+      dirty = false;
+      try {
+        await reload();
+        failed = false;
+      } catch {
+        if (!failed && !signal.aborted) console.warn(`[群派发] ${name}.yaml 重载失败，保留上次有效设置。`);
+        failed = true;
+      }
+    }
+    running = false;
+  }
+  for (const path of paths) watchFile(path, { interval: 1_000, persistent: false }, changed);
+  signal.addEventListener("abort", () => {
+    for (const path of paths) unwatchFile(path, changed);
+  }, { once: true });
+  // Catch edits made between the initial read and watcher registration.
+  void changed();
+}
+
+export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
+  let [lists, groups, slashAlias] = await Promise.all([
+    readRoutingLists(root), readRoutingConfig(root), readSlashAlias(root),
   ]);
-  const whiteUser = ids(other.whiteUser);
-  const blackUser = ids(other.blackUser);
-  const whiteGroup = ids(other.whiteGroup);
-  const blackGroup = ids(other.blackGroup);
   const groupCooldowns = new Cooldowns();
   const memberCooldowns = new Cooldowns();
   const duplicates = new Cooldowns();
-  const slashAlias = await readSlashAlias(root, botConfig);
+  let listRevision = 0;
+  if (watchSignal) {
+    watchRoutingFiles(root, "bot", watchSignal, async () => {
+      const updated = await readSlashAlias(root);
+      if (!watchSignal.aborted) slashAlias = updated;
+    });
+    watchRoutingFiles(root, "group", watchSignal, async () => {
+      const updated = await readRoutingConfig(root);
+      if (!watchSignal.aborted) groups = updated;
+    });
+    watchRoutingFiles(root, "other", watchSignal, async () => {
+      while (!watchSignal.aborted) {
+        const revision = listRevision;
+        const updated = await readRoutingLists(root);
+        if (revision !== listRevision) continue;
+        if (!watchSignal.aborted) lists = updated;
+        break;
+      }
+    });
+  }
 
   function normalizePrefix(text: string): string {
     if (slashAlias) text = text.replace(/^\/\s*/u, "#");
@@ -179,18 +234,18 @@ export async function readGroupDispatch(root: URL) {
   function allowsGroupModeration(event: GroupRoutingScope): boolean {
     const user = id(event.user_id);
     const group = "group_id" in event ? id(event.group_id) : undefined;
-    return !(whiteUser.size && (!user || !whiteUser.has(user))) &&
+    return !(lists.whiteUser.size && (!user || !lists.whiteUser.has(user))) &&
       !(group && (!passesGroupList(group) || isBotMuted(event)));
   }
 
   function passesGroupList(group: string) {
-    return !blackGroup.has(group) && (whiteGroup.size === 0 || whiteGroup.has(group));
+    return !lists.blackGroup.has(group) && (lists.whiteGroup.size === 0 || lists.whiteGroup.has(group));
   }
 
   function allowsInbound(event: GroupRoutingScope): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
     const user = id(event.user_id);
-    return !(user && blackUser.has(user)) && allowsGroupModeration(event);
+    return !(user && lists.blackUser.has(user)) && allowsGroupModeration(event);
   }
 
   function admitUnique(key: string, now: number): boolean {
@@ -304,7 +359,10 @@ export async function readGroupDispatch(root: URL) {
 
   function blockUser(userId: number): void {
     const user = id(userId);
-    if (user) blackUser.add(user);
+    if (user) {
+      lists.blackUser.add(user);
+      listRevision++;
+    }
   }
 
   return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, blockUser, keywordSettings };

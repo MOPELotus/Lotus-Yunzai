@@ -1875,7 +1875,7 @@ if (import.meta.main) {
         !globalThis.redis || await globalThis.redis.set(`Yz:disablePrivate:${userId}`, "1", { EX: 10, NX: true }) === "OK",
       botConfig.file_watch !== false && !probingUpdate),
       readFriendRequests(root),
-      readGroupDispatch(root),
+      readGroupDispatch(root, botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined),
       readGroupInvitations(root),
       readRuntimeVersion(root),
       probingUpdate ? undefined : readMilkySettings(root).catch(() => {

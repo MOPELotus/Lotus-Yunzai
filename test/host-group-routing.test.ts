@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
@@ -83,7 +83,7 @@ type Gateway = ReturnType<typeof gateway>;
 
 async function withHost(
   prepare: (root: string) => Promise<void>,
-  run: (connect: (botId: number) => Promise<Gateway>) => Promise<void>,
+  run: (connect: (botId: number) => Promise<Gateway>, root: string) => Promise<void>,
 ) {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-group-routing-"));
   const clients: Gateway[] = [];
@@ -104,7 +104,7 @@ async function withHost(
         clients.push(client);
         await deadline(client.connected, `无法连接机器人 ${botId} 的模拟网关。`);
         return client;
-      });
+      }, root);
       host.kill();
       await deadline(host.exited, "测试宿主退出超时。");
       for (const client of clients) {
@@ -266,6 +266,56 @@ test("没有 group.yaml 时普通群聊保持现有指令派发", () => withHost
   await a.reply(alive, 77);
   await a.reply(alive, 77);
 }), 7_000);
+
+test.each([["开启", true], ["关闭", false]] as const)("%s file_watch 时实际连接中的旧群路由及全局名单", (_label, fileWatch) => {
+  const open = 'default: {groupCD: 0, singleCD: 0, onlyReplyAt: 0}\n';
+  return withHost(async (root) => {
+    const legacy = join(root, "config/config");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, "bot.yaml"), `file_watch: ${fileWatch}\n"/→#": false\n`);
+    await writeFile(join(legacy, "other.yaml"), "{}\n");
+    await writeFile(join(root, "routing-fixture.yaml"), open);
+    await symlink("../../routing-fixture.yaml", join(legacy, "group.yaml"));
+  }, async (connect, root) => {
+    const client = await connect(99);
+    const alive = expect.stringContaining("Lotus-Yunzai 正在运行");
+    const groupConfig = join(root, "routing-fixture.yaml");
+    const otherConfig = join(root, "config/config/other.yaml");
+    const replace = async (target: string, data: string) => {
+      await writeFile(target + ".next", data);
+      await rename(target + ".next", target);
+    };
+    client.send("#状态", 77);
+    await client.reply(alive, 77);
+
+    await replace(groupConfig, open + '77: {onlyReplyAt: 1, botAlias: 助理}\n');
+    await replace(join(root, "config/config/bot.yaml"), `file_watch: ${fileWatch}\ncache_group_member: false\n"/→#": true\n`);
+    await Bun.sleep(1_200);
+    client.send("#状态", 77);
+    if (!fileWatch) {
+      await client.reply(alive, 77);
+      return;
+    }
+    client.send("助理/状态", 77);
+    await client.reply(alive, 77);
+    client.assertNoPendingFrames();
+
+    await replace(groupConfig, "default: [\n");
+    await replace(otherConfig, "blackUser: [42]\n");
+    await Bun.sleep(1_200);
+    client.send("助理#状态", 77, 42);
+    client.send("#状态", 77, 43);
+    client.send("#状态", 78, 43);
+    await client.reply(alive, 78);
+    client.assertNoPendingFrames();
+
+    await replace(groupConfig, open);
+    await replace(otherConfig, "{}\n");
+    await Bun.sleep(1_200);
+    client.send("#状态", 77, 42);
+    await client.reply(alive, 77);
+  });
+}, 10_000);
 
 test("OneBot 群禁言按机器人生效，全员禁言保留管理员入口", () => withHost(async () => {}, async (connect) => {
   const a = await connect(99);
