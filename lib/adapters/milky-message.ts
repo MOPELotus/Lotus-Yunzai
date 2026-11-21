@@ -487,7 +487,7 @@ export function milkyMessage(
   const files = incoming.message.filter(({ type }) => type === "file");
   const quotedSequence = segmentNumber(incoming.replyId);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
-  async function lookupQuote(sequence: number): Promise<QuotedMessage | undefined> {
+  async function lookupQuote(sequence: number, active?: AbortSignal): Promise<QuotedMessage | undefined> {
     try {
       const result = await call("get_message", { message_scene: scene, peer_id: peerId, message_seq: sequence });
       const message = result?.message;
@@ -495,7 +495,10 @@ export function milkyMessage(
           message.message_seq !== sequence || !isId(message.sender_id)) return;
       if (!isGroup && message.sender_id !== userId && message.sender_id !== selfId) return;
       const decoded = decodeSegments(message.segments, selfId, target, call);
-      if (decoded) return { user_id: message.sender_id, message: decoded.message };
+      if (!decoded || active?.aborted) return;
+      const first = decoded.message[0];
+      const attachment = active && first?.type === "file" ? milkyAttachment(first) : undefined;
+      return { user_id: message.sender_id, message: decoded.message, ...(attachment ? { attachment } : {}) };
     } catch {
       return undefined;
     }
@@ -510,6 +513,7 @@ export function milkyMessage(
     msg: incoming.text.trim(), raw_message: incoming.raw, message: incoming.message,
     atBot: incoming.atBot, at: incoming.at, reply_id: incoming.replyId, img: incoming.img,
     lookupReply: isSequence(quotedSequence) ? () => quoted ??= lookupQuote(quotedSequence) : undefined,
+    lookupMediaReply: isSequence(quotedSequence) ? active => lookupQuote(quotedSequence, active) : undefined,
     file: files[0],
     attachment: files.length === 1 ? milkyAttachment(files[0]) : undefined,
     isGroup, isPrivate: !isGroup, isMaster: false, boundAccount: false,

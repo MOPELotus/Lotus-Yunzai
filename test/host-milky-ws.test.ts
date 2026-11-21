@@ -150,7 +150,7 @@ async function withHost(probe: boolean, run: (mock: ReturnType<typeof gateway>, 
   }
 }
 
-function groupMessage(socket: Bun.ServerWebSocket<number>, selfId: number, sequence: number) {
+function groupMessage(socket: Bun.ServerWebSocket<number>, selfId: number, sequence: number, text = command) {
   socket.send(JSON.stringify({
     time: stamp,
     self_id: selfId,
@@ -161,7 +161,7 @@ function groupMessage(socket: Bun.ServerWebSocket<number>, selfId: number, seque
       sender_id: senderId,
       message_seq: sequence,
       time: stamp,
-      segments: [{ type: "text", data: { text: command } }],
+      segments: [{ type: "text", data: { text } }],
     },
   }));
 }
@@ -205,5 +205,19 @@ test("Milky 更新健康探测只启动临时 HTTP，不连接网关或事件 We
     const activity = await Promise.race([mock.activity.promise.then(() => true), Bun.sleep(200).then(() => false)]);
     expect(activity).toBe(false);
     expect(mock.calls).toEqual([]);
+  });
+}, 8_000);
+
+test("Milky 只有事件 WebSocket 时取直链明确提示 HTTP 缺席", async () => {
+  await withHost(false, async (mock, output) => {
+    expect(output).not.toContain("HTTP 正在监听");
+    const socket = await deadline(mock.sockets[0]!.promise, "Milky 事件 WebSocket 未连接。");
+    groupMessage(socket, 99, 31, "#取直链");
+    const reply = await deadline(mock.replies[0]!.promise, "未收到 HTTP 未启用的反馈。");
+    expect(reply.body).toEqual({ group_id: groupId, message: [
+      { type: "reply", data: { message_seq: 31 } },
+      { type: "text", data: { text: "未启用公共 HTTP 服务，无法生成直链。" } },
+    ] });
+    expect(mock.calls.map(call => call.path)).toEqual([`${prefix}/api/get_login_info`, `${prefix}/event`, `${prefix}/api/send_group_message`]);
   });
 }, 8_000);

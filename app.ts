@@ -16,6 +16,7 @@ import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
+import { createChatMediaLinks } from "./lib/chat-media-links.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
 import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
@@ -217,6 +218,8 @@ if (import.meta.main) {
   const legacy = new LegacyPlugins(() => handoff.accepting);
   const publicFiles = createPublicFiles();
   let fileBase: URL | undefined;
+  const chatMediaLinks = createChatMediaLinks(createFileToUrl(publicFiles, {}, () => stopping ? undefined : fileBase),
+    () => fileBase !== undefined && !stopping);
   const groups = new OneBotGroups();
   const leaveGroup = createManualGroupLeave();
   const pending = new Set<Promise<void>>();
@@ -1833,6 +1836,8 @@ if (import.meta.main) {
       }
       return;
     }
+    if (await chatMediaLinks(event, nativeOperationSignal, allowNew,
+      () => groupDispatch.allowsInbound(event) && allowed(["取直链", "group", "@lotus-yunzai/group"]))) return;
     const groupToLeave = manualGroupLeaveInput(event.msg);
     if (groupToLeave !== undefined) {
       const allowedToLeave = () => groupDispatch.allowsInbound(event) && allowed(["退群", "group", "@lotus-yunzai/group"]);

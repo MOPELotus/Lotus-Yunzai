@@ -45,7 +45,7 @@ function oneBotMessageId(value: unknown): number | undefined {
 
 async function readOneBotQuote(
   calls: OneBotCalls, send: Send, id: number, selfId: number, target: { group_id: number } | { user_id: number },
-  scopedRecall?: AbortSignal,
+  scopedRecall?: AbortSignal, includeAttachment = false,
 ): Promise<QuotedMessage | undefined> {
   const quote = await calls.getMessage(send, id, scopedRecall);
   if (!quote || oneBotMessageId(quote.message_id) !== id || ("self_id" in quote && quote.self_id !== selfId)) return;
@@ -71,7 +71,10 @@ async function readOneBotQuote(
     }
   }
   const message = decodeOneBotMessage(quote.message, selfId)?.message;
-  if (message) return { user_id: sender, message };
+  if (!message) return;
+  const rawFile = includeAttachment && scopedRecall && message[0]?.type === "file" ? structuredAttachment(quote.message) : undefined;
+  const attachment = rawFile && scopedRecall && incomingAttachment(scopedRecall, calls, send, target, rawFile, "message");
+  return { user_id: sender, message, ...(attachment ? { attachment } : {}) };
 }
 
 interface ConnectionData {
@@ -882,6 +885,9 @@ async function dispatchMessage(
       ? async () => isMaster(selfId, userId) ? [await calls.recallMessage(send, temporaryMessageId, attachmentSession?.signal)] : undefined
       : undefined,
     lookupReply,
+    lookupMediaReply: lookupReply && quotedId !== undefined && selfId !== undefined && attachmentSession
+      ? active => readOneBotQuote(calls, send, quotedId, selfId, target, AbortSignal.any([attachmentSession.signal, active]), true)
+      : undefined,
     reply(reply, quote = false, options = {}) {
       const mention = options.at === true ? userId : options.at;
       const body = messageType === "group" && (isId(mention) || typeof mention === "string" && /^([1-9]\d*|all)$/u.test(mention))

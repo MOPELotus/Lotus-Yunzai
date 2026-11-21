@@ -122,6 +122,7 @@ export interface MessageEvent {
   readonly canReviewGroupRequests?: boolean;
   readonly recallReply?: () => Promise<readonly RecallResult[] | undefined>;
   readonly lookupReply?: () => Promise<QuotedMessage | undefined>;
+  readonly lookupMediaReply?: (active: AbortSignal) => Promise<QuotedMessage | undefined>;
   readonly raw_message: string;
   readonly message: string | readonly InboundSegment[];
   readonly atBot?: boolean;
@@ -136,6 +137,7 @@ export interface MessageEvent {
 
 export interface QuotedMessage {
   readonly user_id: number;
+  readonly attachment?: IncomingChatFile;
   readonly message: readonly InboundSegment[];
 }
 
