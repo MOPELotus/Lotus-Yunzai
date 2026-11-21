@@ -3199,7 +3199,7 @@ if (import.meta.main) {
           const info = await import("@lotus-yunzai/skia/info-card");
           const configured = Bun.env.LOTUS_SKIA_MODE;
           const mode = configured === "gpu" || configured === "cpu" ? configured : "auto";
-          return { ...info, renderInfoCard: (header, buildBody) => info.renderInfoCard(header, buildBody, { mode }) };
+          return { ...info, renderInfoCard: (header, buildBody, options) => info.renderInfoCard(header, buildBody, { ...options, mode }) };
         },
       },
       registerMemePoke(run, signal) {
