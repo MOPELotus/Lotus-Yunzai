@@ -82,6 +82,10 @@ function themeAt(directory: string) {
   return theme;
 }
 
+export async function openProfileCardTheme(resourceDirectory = defaultResources) {
+  return themeAt(await realpath(resourceDirectory));
+}
+
 function lines(ctx: Context, value: string | number | undefined, available: number, size: number, font: string) {
   ctx.font = `${size}px ${font}`;
   const text = String(value ?? "").replace(/\\n/gu, "\n").replace(/\n{3,}/gu, "\n\n").trim();
@@ -211,7 +215,7 @@ function fieldTexts(fields: readonly ProfileCardField[] | undefined): string[] {
 export async function renderProfileCard(model: ProfileCardModel,
   { mode = "auto", scale = 4, resourceDirectory = defaultResources }: ProfileCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("资料卡缩放比例须在 1 至 4 之间。");
-  const theme = await themeAt(await realpath(resourceDirectory));
+  const theme = await openProfileCardTheme(resourceDirectory);
   const layout = new ProfileLayout(theme);
   const groups: NonNullable<ProfileCardModel["roleGroups"]> = model.roleGroups?.length ? model.roleGroups : (model.roles ?? [])
     .map(({ label, value }) => ({ label, rows: [{ name: String(value) }] }));
