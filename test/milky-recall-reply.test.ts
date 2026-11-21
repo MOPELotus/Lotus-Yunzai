@@ -16,7 +16,7 @@ function event(overrides: Partial<MessageEvent> = {}): MessageEvent {
   };
 }
 
-test("Milky 主人撤回使用当前会话和原生序号，重复引用只提交一次且支持序号零", async () => {
+test("Milky 主人自身命令撤回支持序号零，独立引用只能进入已核实的引用入口", async () => {
   const requests: unknown[] = [];
   const prepare = createMilkyRecallReply(new AbortController().signal, async (action, params) => {
     requests.push({ action, params });
@@ -31,13 +31,13 @@ test("Milky 主人撤回使用当前会话和原生序号，重复引用只提�
   expect(requests).toEqual([]);
 
   expect(await prepare(event({ reply_id: "0" }))?.()).toEqual(["confirmed"]);
-  expect(await prepare(event({ group_id: 78, reply_id: "17" }))?.()).toEqual(["confirmed", "confirmed"]);
-  expect(await prepare(event({ message_type: "private", isGroup: false, isPrivate: true, group_id: undefined,
-    reply_id: "9007199254740992" }))?.()).toEqual(["confirmed"]);
+  expect(prepare(event({ group_id: 78, reply_id: "17" }))).toBeUndefined();
+  const friend = event({ message_type: "private", isGroup: false, isPrivate: true, group_id: undefined });
+  expect(prepare({ ...friend, reply_id: "9007199254740992" })).toBeUndefined();
+  expect(prepare({ ...friend, reply_id: 17 })).toBeUndefined();
+  expect(await prepare(friend)?.()).toEqual(["confirmed"]);
   expect(requests).toEqual([
     { action: "recall_group_message", params: { group_id: 77, message_seq: 0 } },
-    { action: "recall_group_message", params: { group_id: 78, message_seq: 0 } },
-    { action: "recall_group_message", params: { group_id: 78, message_seq: 17 } },
     { action: "recall_private_message", params: { user_id: owner, message_seq: 0 } },
   ]);
 });
@@ -54,15 +54,18 @@ test("每条撤回独立核对回执，同一命令重放和撤销权限后不�
     if (message_seq === 4) return interruptedResult.promise;
     throw new Error("回执中断");
   }, () => authorized);
-  const request = event({ reply_id: 7 });
+  const request = event();
   const invoke = prepare(request);
   const replay = prepare(request);
   const pending = invoke?.();
-  expect(calls).toEqual([0, 7]);
+  expect(calls).toEqual([0]);
   expect(await replay?.()).toBeUndefined();
   commandResult.resolve({ status: "rejected" });
-  expect(await pending).toEqual(["rejected", "unknown"]);
+  expect(await pending).toEqual(["rejected"]);
   expect(await prepare(request)?.()).toBeUndefined();
+  const uncertain = event({ message_id: 7 });
+  expect(await prepare(uncertain)?.()).toEqual(["unknown"]);
+  expect(await prepare(uncertain)?.()).toBeUndefined();
 
   const revoked = prepare(event({ message_id: 1 }));
   authorized = false;
