@@ -104,6 +104,41 @@ test("按实际链接移交默认目录、旧 YAML 和 dotenv，旧主管遗漏�
   }
 });
 
+test.skipIf(process.platform === "win32")("受管更新保留表情配置实际使用的 YAML 链接及其本机目标", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-update-meme-links-"));
+  try {
+    for (const custom of [false, true]) {
+      const active = join(dir, custom ? "custom" : "default");
+      const candidate = `${active}-candidate`;
+      const config = custom ? "local/meme" : "data/meme/config";
+      const entry = custom ? "meme-settings" : config;
+      const env = custom ? { LOTUS_MEME_CONFIG_DIR: entry } : {};
+      await mkdir(candidate);
+      await mkdir(join(active, config), { recursive: true });
+      await mkdir(join(active, "policy"), { recursive: true });
+      await writeFile(join(active, "policy/meme.yaml"), "enable: false\n");
+      await writeFile(join(active, "policy/unrelated.txt"), "不移交");
+      await symlink(custom ? "../../policy/meme.yaml" : "../../../policy/meme.yaml", join(active, config, "meme.yaml"));
+      if (custom) await symlink(config, join(active, entry), "dir");
+
+      const paths = await readUpdateRuntimePaths(active, AbortSignal.timeout(2_000), { PATH: process.env.PATH, ...env });
+      expect(paths).toEqual(custom ? ["local/meme", entry, "policy/meme.yaml"] : ["policy/meme.yaml"]);
+      async function verify(root: string) {
+        const previous = await previousUpdateDirectory(root);
+        expect(previous).toBeDefined();
+        await verifyMovedRuntimePaths(root, previous!, env);
+      }
+      await expect(activateUpdate(active, candidate, verify, custom ? [entry] : [])).rejects.toThrow("仍留在旧版本");
+      expect(await readFile(join(active, entry, "meme.yaml"), "utf8")).toBe("enable: false\n");
+      await activateUpdate(active, candidate, verify, paths);
+      expect(await readFile(join(active, entry, "meme.yaml"), "utf8")).toBe("enable: false\n");
+      expect(await Bun.file(join(active, "policy/unrelated.txt")).exists()).toBe(false);
+    }
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+
 test.skipIf(process.platform === "win32")("可写应用覆盖随宿主移动，保留原路径空白和有效 SQLite WAL", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-update-writable-"));
   const active = join(dir, "active");
