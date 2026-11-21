@@ -26,6 +26,7 @@ import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts"
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
+import { readZzzClimbingTower } from "./zzz-climbing-tower.ts";
 import { readZzzVoidFront } from "./zzz-void-front.ts";
 import { readZzzPanel, type ZzzPanelOptions } from "./zzz-panel.ts";
 import { readZzzShiyu } from "./zzz-shiyu.ts";
@@ -43,6 +44,7 @@ export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
 export type { ZzzHoloBossRoom, ZzzHoloBossSnapshot } from "./zzz-holo-boss.ts";
+export type { ZzzClimbingTowerSnapshot, ZzzTowerAvatar, ZzzTowerSeason } from "./zzz-climbing-tower.ts";
 export type { ZzzVoidFrontRound, ZzzVoidFrontSnapshot, ZzzVoidFrontStage } from "./zzz-void-front.ts";
 export { normalizeZzzShiyu, type ZzzShiyuDate, type ZzzShiyuPortrait, type ZzzShiyuSnapshot, type ZzzShiyuTeam } from "./zzz-shiyu.ts";
 export { GameCheckinChallengeError, type GameCheckinChallenge, type GameCheckinProof,
@@ -479,6 +481,9 @@ export function createHoyoClient(
     },
     fetchZzzVoidFront(source: ProfileRequestContext, options: Parameters<typeof readZzzVoidFront>[2]) {
       return readForProfile(source, options, readZzzVoidFront, isGameRecordCookieExpired);
+    },
+    fetchZzzClimbingTower(source: ProfileRequestContext, options: Parameters<typeof readZzzClimbingTower>[2]) {
+      return readForProfile(source, options, readZzzClimbingTower, isGameRecordCookieExpired);
     },
     fetchZzzPanel(source: ProfileRequestContext, options: ZzzPanelOptions = {}) {
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);
