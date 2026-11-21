@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backgroundCleanStop } from "../lib/managed-exit.ts";
+import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 
 const roots = new Set<string>();
 const source = fileURLToPath(new URL("../", import.meta.url));
@@ -30,7 +30,9 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
       const configured = process.env.FIXTURE_START_RESULT;
       if (!configured) process.exit(9);
       const [status, pid, ready] = JSON.parse(configured);
-      await Bun.write(home + "/apps.json", JSON.stringify([{ name: "lotus-yunzai", pid, pm2_env: { status } }]));
+      const { apps: [app] } = await Bun.file(Bun.argv[3]).json();
+      await Bun.write(home + "/apps.json", JSON.stringify([{ name: "lotus-yunzai", pid, pm_id: 0,
+        pm2_env: { status, env: app.env } }]));
       if (ready) await Bun.write(home + "/host-ready", ready);
     }
     else console.log(home);
@@ -94,6 +96,80 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   }
 });
 
+test.skipIf(process.platform === "win32")("取消后台启动只停止本次注册，信号可以先于 PM2 注册", async () => {
+  for (const early of [false, true]) {
+    const { cwd, launch } = await fixture();
+    const parent = dirname(cwd);
+    const bin = join(parent, "bin");
+    const home = join(parent, ".checkout.lotus-pm2");
+    const atlas = join(cwd, "data/atlas/data");
+    const called = join(home, "called");
+    const registered = join(home, "registered");
+    const register = join(home, "allow-registration");
+    await Promise.all([mkdir(bin), mkdir(home, { mode: 0o700 }), mkdir(atlas, { recursive: true })]);
+    await writeFile(join(atlas, "map.json"), index);
+    const old = { name: "lotus-yunzai", pm_id: 7, pid: 0, pm2_env: { status: "stopped", env: {} } };
+    await Bun.write(join(home, "apps.json"), JSON.stringify([old]));
+    await writeFile(join(bin, "pm2"), `#!${process.execPath}
+      const [action, operand] = Bun.argv.slice(2);
+      const home = process.env.PM2_HOME;
+      const apps = home + "/apps.json";
+      if (action === "jlist") console.log(await Bun.file(apps).text());
+      else if (action === "start") {
+        const { apps: [app] } = await Bun.file(operand).json();
+        await Bun.write(home + "/called", "");
+        while (!await Bun.file(home + "/allow-registration").exists()) await Bun.sleep(20);
+        const appsBefore = await Bun.file(apps).json();
+        await Bun.write(apps, JSON.stringify([...appsBefore, {
+          name: app.name, pm_id: 8, pid: 505, pm2_env: { status: "launching", env: app.env },
+        }]));
+        await Bun.write(home + "/registered", "");
+        while (!await Bun.file(home + "/stopped").exists()) await Bun.sleep(20);
+      } else if (action === "stop") {
+        const records = await Bun.file(apps).json();
+        const selected = records.find(item => String(item.pm_id) === operand);
+        if (!selected) process.exit(8);
+        selected.pm2_env.status = "stopped";
+        selected.pid = 0;
+        await Bun.write(apps, JSON.stringify(records));
+        await Bun.write(home + "/stopped", operand);
+      }
+    `, { mode: 0o700 });
+    const daemon = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+    const child = launch(["start:bg"], { PATH: bin + ":" + process.env.PATH });
+    const output = Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    async function wait(path: string) {
+      for (let attempt = 0; attempt < 100 && !await Bun.file(path).exists(); attempt++) await Bun.sleep(20);
+      expect(await Bun.file(path).exists()).toBe(true);
+    }
+    try {
+      await wait(called);
+      if (!early) {
+        await Bun.write(register, "");
+        await wait(registered);
+      }
+      child.kill("SIGTERM");
+      if (early) {
+        await Bun.sleep(100);
+        await Bun.write(register, "");
+      }
+      const [code, , error] = await output;
+      expect(code).toBe(1);
+      expect(error).toContain("启动操作已中止");
+      expect(await Bun.file(join(home, "stopped")).text()).toBe("8");
+      expect(await Bun.file(join(home, "host-start-attempt")).exists()).toBe(false);
+      expect(await Bun.file(join(home, "apps.json")).json()).toEqual([old, {
+        name: "lotus-yunzai", pm_id: 8, pid: 0,
+        pm2_env: { status: "stopped", env: { LOTUS_PM2_START_TOKEN: expect.any(String) } },
+      }]);
+    } finally {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      await output;
+      daemon.stop(true);
+    }
+  }
+}, 10_000);
+
 afterEach(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true });
   roots.clear();
@@ -134,13 +210,15 @@ async function fixture() {
   ]);
   const config = join(cwd, "config/global.yaml");
   const attempts = join(cwd, "data/atlas-download/attempts");
-  const start = (args: string[], env: Record<string, string> = {}) => {
-    const child = Bun.spawn([process.execPath, "scripts/launcher.ts", ...args], {
+  const launch = (args: string[], env: Record<string, string> = {}) =>
+    Bun.spawn([process.execPath, "scripts/launcher.ts", ...args], {
       cwd, env: { PATH: process.env.PATH, ...env }, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 4_000,
     });
+  const start = (args: string[], env: Record<string, string> = {}) => {
+    const child = launch(args, env);
     return Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
   };
-  return { cwd, config, attempts, start };
+  return { cwd, config, attempts, launch, start };
 }
 
 test("noninteractive first start requires a source choice before starting the host", async () => {
@@ -281,4 +359,15 @@ test.skipIf(process.platform === "win32")("PM2 启动入口先恢复中断的目
   expect(await readFile(config, "utf8")).toBe("atlas: {version_channel: latest}\n");
   expect(await readFile(join(candidate, "app.ts"), "utf8")).toBe("candidate source");
   expect(await Bun.file(journal).exists()).toBe(false);
+  await rm(join(home, "host-start-attempt"));
+  const delayed = Bun.spawn([app.script, ...app.args], {
+    cwd: app.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 4_000,
+  });
+  const [delayedStatus, delayedOutput, delayedError] = await Promise.all([
+    delayed.exited, new Response(delayed.stdout).text(), new Response(delayed.stderr).text(),
+  ]);
+  expect(delayedStatus).toBe(backgroundStartupFailure);
+  expect(delayedOutput).not.toContain("fixture host ready");
+  expect(delayedError).toContain("本次后台启动已取消或被替换");
+  expect(await readFile(readyFile, "utf8")).toBe(String(retry.pid));
 });

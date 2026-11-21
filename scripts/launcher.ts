@@ -7,6 +7,9 @@ import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-ex
 import { prepareStartup } from "./startup.ts";
 
 const name = "lotus-yunzai";
+const startToken = "LOTUS_PM2_START_TOKEN";
+const registrationGraceMs = 5_000;
+const cancelledRegistrationGraceMs = 750;
 
 function readCommand(args: string[]) {
   const [action, option, ...remaining] = args;
@@ -72,7 +75,9 @@ async function preparePm2Entry(home: string) {
   return entry;
 }
 
-async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status", options: readonly string[] = []) {
+async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "logs" | "status",
+  options: readonly string[] = [], signal?: AbortSignal,
+) {
   const parent = dirname(root);
   const home = join(parent, `.${basename(root)}.lotus-pm2`);
   const legacyHome = join(root, "data", ".pm2");
@@ -88,7 +93,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   const spawnOptions = (path: string) => ({
     cwd: parent, env: { ...env, PM2_HOME: path }, stdin: "ignore", stdout: "inherit", stderr: "inherit",
   } as const);
-  async function application(path: string) {
+  async function application(path: string, attempt?: string) {
     if (!await privateHome(path) || !await daemonListening(join(path, "rpc.sock"))) return;
     const lookup = Bun.spawn([binary, "jlist"], { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
     const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
@@ -97,13 +102,16 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     try { processes = JSON.parse(result); }
     catch { throw new Error("无法读取 PM2 应用状态。"); }
     if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
-    const process = processes.find((item) => item?.name === name);
+    const process = processes.find((item) => item?.name === name &&
+      (attempt === undefined || item.pm2_env?.env?.[startToken] === attempt));
     if (!process) return;
     const status: unknown = process.pm2_env?.status;
     if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
     const pid: unknown = process.pid;
+    const id: unknown = process.pm_id;
     return { path, status, active: status !== "stopped" && status !== "errored",
-      pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined };
+      pid: typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? String(pid) : undefined,
+      id: typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? String(id) : undefined };
   }
 
   const current = await application(home);
@@ -120,6 +128,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     return Bun.spawn([binary, ...args], spawnOptions(selected.path)).exited;
   }
 
+  signal?.throwIfAborted();
   function readyPid(path: string) {
     return readFile(join(path, "host-ready"), "utf8").catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
@@ -129,6 +138,7 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
     if (active.status !== "online" || !active.pid || active.pid !== await readyPid(active.path)) {
       throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
     }
+    signal?.throwIfAborted();
     console.log("当前目录的后台宿主已运行。");
     return 0;
   }
@@ -136,26 +146,81 @@ async function pm2(binary: string, root: string, action: "start:bg" | "stop" | "
   await privateHome(home);
   const spawn = spawnOptions(home);
   const readyFile = join(home, "host-ready");
+  const attemptFile = join(home, "host-start-attempt");
   const entry = await preparePm2Entry(home);
   await rm(readyFile, { force: true });
   const config = join(home, "host-process.json");
+  const attempt = crypto.randomUUID();
+  await writeFile(attemptFile, attempt, { mode: 0o600 });
   await writeFile(config, JSON.stringify({ apps: [{
-    name, cwd: parent, script: process.execPath, args: ["--no-env-file", entry, root, readyFile],
-    interpreter: "none", autorestart: true, stop_exit_codes: [backgroundCleanStop, backgroundStartupFailure],
+    name, cwd: parent, script: process.execPath, args: ["--no-env-file", entry, root, readyFile, attempt],
+    env: { [startToken]: attempt }, interpreter: "none", autorestart: true,
+    stop_exit_codes: [backgroundCleanStop, backgroundStartupFailure],
     min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: 120_000,
     kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
   }] }), { mode: 0o600 });
-  const start = await Bun.spawn([binary, "start", config, "--only", name], spawn).exited;
-  if (start !== 0) return start;
+  signal?.throwIfAborted();
 
-  // The marker can outlive the process that wrote it, even before PM2 returns from start.
-  const launched = await application(home);
-  const ready = await readyPid(home);
-  if (launched?.status === "online" && launched.pid && launched.pid === ready) return 0;
-  if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) {
-    await Bun.spawn([binary, "stop", name], spawn).exited;
+  const start = Bun.spawn([binary, "start", config, "--only", name], spawn);
+  const cancelled = Promise.withResolvers<void>();
+  const interrupt = () => cancelled.resolve();
+  signal?.addEventListener("abort", interrupt, { once: true });
+
+  async function stopOwnedApplication(id: string | undefined) {
+    if (id === undefined ||
+        await Bun.spawn([binary, "stop", id], { ...spawn, timeout: 25_000 }).exited !== 0) {
+      throw new Error("未能停止本次后台启动，请运行 bun run status 查看状态。");
+    }
   }
-  throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
+
+  async function waitForRegistration(ms: number) {
+    const until = performance.now() + ms;
+    do {
+      const process = await application(home, attempt).catch(() => undefined);
+      if (process) return process;
+      await Bun.sleep(50);
+    } while (performance.now() < until);
+  }
+
+  async function cancelStart() {
+    try {
+      // A configuration already submitted to the daemon may be registered after the client exits.
+      const revoked = await rm(attemptFile, { force: true }).then(() => true, () => false);
+      // Once started, the PM2 client can still be submitting its registration when the signal arrives.
+      let launched = await waitForRegistration(registrationGraceMs);
+      if (!launched && start.exitCode === null && start.signalCode === null) {
+        start.kill("SIGKILL");
+      }
+      launched ??= await waitForRegistration(cancelledRegistrationGraceMs);
+      if (launched?.active) await stopOwnedApplication(launched.id);
+      if (!revoked) throw new Error("无法撤销本次后台启动，请运行 bun run status 查看状态。");
+    } finally {
+      if (start.exitCode === null && start.signalCode === null) start.kill("SIGKILL");
+      await start.exited;
+    }
+  }
+
+  try {
+    const code = await Promise.race([start.exited, cancelled.promise]);
+    signal?.throwIfAborted();
+    if (code !== undefined && code !== 0) return code;
+
+    // The marker can outlive the process that wrote it, even before PM2 returns from start.
+    const launched = await application(home, attempt);
+    const ready = await readyPid(home);
+    signal?.throwIfAborted();
+    if (launched?.status === "online" && launched.pid && launched.pid === ready) return 0;
+    if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) await stopOwnedApplication(launched.id);
+    throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
+  } catch (error) {
+    if (signal?.aborted) {
+      await cancelStart();
+      signal.throwIfAborted();
+    }
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", interrupt);
+  }
 }
 
 async function run() {
@@ -181,7 +246,7 @@ async function run() {
       console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
       return 0;
     }
-    if (background) return await pm2(background, directory, "start:bg");
+    if (background) return await pm2(background, directory, "start:bg", [], controller.signal);
   } finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
