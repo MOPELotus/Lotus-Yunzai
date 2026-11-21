@@ -89,8 +89,8 @@ export class OneBotCalls {
     return (await this.listFriendProfiles(send, signal)).some(friend => String(friend.user_id) === String(userId));
   }
 
-  async friendship(send: Send, userId: number) {
-    const friends = await this.#request(send, "get_friend_list", {});
+  async friendship(send: Send, userId: number, signal?: AbortSignal) {
+    const friends = await this.#request(send, "get_friend_list", {}, signal);
     if (!Array.isArray(friends) || friends.some(friend => {
       if (!isRecord(friend)) return true;
       const id = friend.user_id;

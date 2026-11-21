@@ -649,7 +649,8 @@ async function dispatchMessage(
       ? bindMentionLike(mentioned, likeSession,
         async () => await calls.getGroupRole(send, target.group_id, mentioned, true) !== undefined,
         () => calls.isFriend(send, mentioned),
-        count => calls.likeSelf(send, mentioned, count, likeSession))
+        count => calls.likeSelf(send, mentioned, count, likeSession),
+        () => calls.friendship(send, mentioned, likeSession))
       : undefined,
     ...(likeSession && selfId !== undefined && "group_id" in target && event.sub_type !== "anonymous" && bindMessageGroupActions({
       bot: selfId, actor: userId, signal: likeSession,
@@ -758,6 +759,9 @@ async function dispatchMessage(
         }, ownerFriendReply) : undefined,
     isFriend: () => messageType === "private" && event.sub_type === "friend"
       ? Promise.resolve(true) : calls.isFriend(send, userId),
+    profileLikeFriendship: boundAccount && messageType === "private" && event.sub_type === "friend"
+      ? () => Promise.resolve(true)
+      : likeSession ? () => calls.friendship(send, userId, likeSession) : undefined,
     getGroupRole: selfId !== undefined && selfId === connectedBotId
       ? (id) => isId(id) ? calls.getGroupRole(send, id, userId, true) : Promise.resolve(undefined)
       : undefined,

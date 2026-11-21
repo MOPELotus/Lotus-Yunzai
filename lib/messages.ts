@@ -99,6 +99,7 @@ export interface MessageEvent {
   readonly privateGroupKick?: PrivateGroupKick;
   readonly profileLikeImageSignal?: AbortSignal;
   readonly isFriend?: () => Promise<boolean>;
+  readonly profileLikeFriendship?: () => Promise<boolean | undefined>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;

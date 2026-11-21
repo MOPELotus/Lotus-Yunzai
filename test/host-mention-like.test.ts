@@ -29,6 +29,7 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, la
 test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成员送赞", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-mention-like-wire-"));
   const milkyCalls: Action[] = [];
+  let milkyFriends: unknown = [{ user_id: target }];
   const milky = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(request) {
@@ -39,7 +40,7 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
       const data = action === "get_login_info" ? { uin: 100 }
         : action === "get_group_member_info" ? { member: { group_id: params.group_id, user_id: params.user_id, role: "member" } }
           : action === "get_friend_info" ? (params.user_id === target ? { friend: { user_id: target } } : {})
-            : { message_seq: 1 };
+            : action === "get_friend_list" ? { friends: milkyFriends } : { message_seq: 1 };
       return Response.json({ status: "ok", retcode: 0, data });
     },
   });
@@ -80,13 +81,14 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
       headers: { Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": "99" },
     });
     const oneBotCalls: Action[] = [];
+    let oneBotFriends: unknown = [{ user_id: target }];
     client.onmessage = ({ data }) => {
       const { action, params, echo } = JSON.parse(data);
       oneBotCalls.push({ action, params });
       if (!echo) return;
       const value = action === "get_group_member_info"
         ? { group_id: params.user_id === target ? group : 12345, user_id: params.user_id, role: "member" }
-        : action === "get_friend_list" ? [{ user_id: target }] : { message_id: 4 };
+        : action === "get_friend_list" ? oneBotFriends : { message_id: 4 };
       client.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: value }));
     };
     await waitFor(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 点赞测试连接未就绪。");
@@ -154,6 +156,35 @@ test("双协议自动继承旧点赞配置，只给当前群经验证的 @ 成�
     expect(oneBotCalls.some(call => call.params.group_id === 78)).toBe(false);
     expect(await readFile(primary, "utf8")).toBe(override);
     expect(await readFile(legacy, "utf8")).toBe("enable: true\n" + legacySettings);
+
+    await writeFile(legacy, "enable: true\n" + legacySettings.replace("strangeThumbUp: false", "strangeThumbUp: true")
+      .replace("收到 {{thumbUpNum}} 次", "收到 {{thumbUpNum}} 次{{noFriend:，可以添加{userId}为好友}}"));
+    oneBotFriends = [];
+    milkyFriends = [];
+    send([command, mention(target)]);
+    await waitFor(() => oneBotCalls.find(call => textOf(call).includes("3 次，可以添加42为好友")),
+      "OneBot 未用真实非好友关系展开提示。");
+    expect((await sendMilky(12, [command, { type: "mention", data: { user_id: target } }])).status).toBe(200);
+    await waitFor(() => milkyCalls.find(call => textOf(call).includes("3 次，可以添加42为好友")),
+      "Milky 未用真实非好友关系展开提示。");
+
+    oneBotFriends = [{}];
+    milkyFriends = [{}];
+    const oneBotBefore = oneBotCalls.length;
+    const milkyBefore = milkyCalls.length;
+    send([command, mention(target)]);
+    const unresolvedOnebot = await waitFor(() => oneBotCalls.slice(oneBotBefore).find(call => textOf(call).includes("42 收到 3 次")),
+      "OneBot 好友关系未知时须照常回执。");
+    expect((await sendMilky(13, [
+      { type: "text", data: { text: "#赞她" } }, { type: "mention", data: { user_id: target } },
+    ])).status).toBe(200);
+    const unresolvedMilky = await waitFor(() => milkyCalls.slice(milkyBefore).find(call => call.action === "send_group_message"),
+      "Milky 好友关系未知时须照常回执。");
+    expect(textOf(unresolvedMilky)).toContain("42 收到 3 次");
+    expect(textOf(unresolvedOnebot)).not.toContain("可以添加");
+    expect(textOf(unresolvedMilky)).not.toContain("可以添加");
+    expect(oneBotCalls.filter(call => call.action === "send_like")).toHaveLength(3);
+    expect(milkyCalls.filter(call => call.action === "send_profile_like")).toHaveLength(3);
   } finally {
     socket?.close();
     host?.kill("SIGKILL");

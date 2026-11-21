@@ -1035,11 +1035,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           });
         } : undefined,
       likeSelf: positiveId(cardOwner) ? (count: number) => likeProfile(cardOwner, count) : undefined,
+      profileLikeFriendship: positiveId(cardOwner) ? async () => message.sub_type === "friend" ||
+        (await listCurrentFriends(signal))?.has(cardOwner) : undefined,
       profileLikeImageSignal: signal,
       mentionLike: positiveId(groupId) && mentioned !== undefined ? bindMentionLike(mentioned, signal,
         () => checkinNotify.isGroupMember(groupId, mentioned),
         () => checkinNotify.isFriend(mentioned),
-        count => likeProfile(mentioned, count))
+        count => likeProfile(mentioned, count),
+        async () => (await listCurrentFriends(signal))?.has(mentioned))
         : undefined,
       ...(positiveId(groupId) && positiveId(cardOwner) && bindMessageGroupActions({
         bot: account, actor: cardOwner, signal,

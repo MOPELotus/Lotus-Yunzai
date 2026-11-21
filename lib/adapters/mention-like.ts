@@ -3,6 +3,7 @@ import type { MessageEvent } from "../messages.ts";
 export interface MentionLikeTarget {
   readonly userId: number;
   isFriend(): Promise<boolean>;
+  friendship?(): Promise<boolean | undefined>;
   like(count: number): Promise<number>;
 }
 
@@ -24,13 +25,18 @@ export function mentionedProfileId(message: MessageEvent["message"], botId: numb
 
 export function bindMentionLike(
   userId: number, signal: AbortSignal, member: () => Promise<boolean>, friend: () => Promise<boolean>,
-  send: (count: number) => Promise<number>,
+  send: (count: number) => Promise<number>, friendship?: () => Promise<boolean | undefined>,
 ): MentionLikeTarget {
   return Object.freeze({
     userId,
     async isFriend() {
       if (signal.aborted || !await member() || signal.aborted) return false;
       return await friend() && !signal.aborted;
+    },
+    async friendship() {
+      if (!friendship || signal.aborted || !await member() || signal.aborted) return;
+      const result = await friendship();
+      if (!signal.aborted) return result;
     },
     async like(count: number) {
       if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted || !await member() || signal.aborted) {
