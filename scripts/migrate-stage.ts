@@ -1,12 +1,14 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readOptionalLocalConfig } from "../lib/config.ts";
 import { stageLegacyAtlasState } from "../lib/migration-atlas-state.ts";
 import { stageLegacyCheckinSchedules } from "../lib/migration-checkin-schedules.ts";
 import { stageLegacyCoreConfig } from "../lib/migration-core-config.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
 import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
+import { stageLegacyMediaState } from "../lib/migration-media-state.ts";
 import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
@@ -38,12 +40,18 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
     const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
     const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal);
+    const tuneweave = (await readOptionalLocalConfig(Bun.pathToFileURL(`${state.directory}/`), "global"))?.tuneweave;
+    const apiUrl = tuneweave && typeof tuneweave === "object" && "api_url" in tuneweave ? tuneweave.api_url : undefined;
+    const mediaState = await stageLegacyMediaState(plan.source, state.directory, {
+      tuneweaveUrl: typeof apiUrl === "string" ? apiUrl : undefined, signal,
+    });
     const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal);
     signal?.throwIfAborted();
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, atlas, shopAudit, redeem, deferredPlugins } as const;
+      sharedGameHistory, coreConfig, groupConfig, networkConfig, globalConfig, mediaState, atlas,
+      shopAudit, redeem, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;

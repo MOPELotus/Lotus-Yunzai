@@ -22,6 +22,7 @@ interface PreparedMigration {
     readonly groupConfig: Staged["groupConfig"];
     readonly networkConfig: Staged["networkConfig"];
     readonly globalConfig: Staged["globalConfig"];
+    readonly mediaState: Staged["mediaState"];
     readonly atlas: Staged["atlas"];
     readonly shopAudit: Staged["shopAudit"];
     readonly redeem: Staged["redeem"];
@@ -75,6 +76,7 @@ async function prepare(source: string, target: string, directory: string, signal
         groupConfig: staged.groupConfig,
         networkConfig: staged.networkConfig,
         globalConfig: staged.globalConfig,
+        mediaState: staged.mediaState,
         atlas: staged.atlas,
         shopAudit: staged.shopAudit,
         redeem: staged.redeem,
