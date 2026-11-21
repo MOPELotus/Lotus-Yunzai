@@ -1,3 +1,4 @@
+import { isGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import type { ChatFile, ChatFileResult, IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
@@ -298,6 +299,19 @@ type ReplyPart = string | MessageSegment | ProtocolSegment;
 export type MessageReply = ReplyPart | readonly ReplyPart[];
 
 let imagePreviews: readonly string[] = [];
+const generatedImagePreviews = new WeakMap<Uint8Array, string | undefined>();
+
+function pickImagePreview() {
+  if (!imagePreviews.length) return;
+  return imagePreviews[Math.floor(Math.random() * imagePreviews.length)];
+}
+
+/** 让同一份渲染结果在转发和重试时沿用首次编码的摘要。 */
+export function generatedImagePreview(file: unknown, fields: Record<string, unknown>) {
+  if (Object.hasOwn(fields, "summary") || !isGeneratedImage(file)) return;
+  if (!generatedImagePreviews.has(file)) generatedImagePreviews.set(file, pickImagePreview());
+  return generatedImagePreviews.get(file);
+}
 
 export function setImagePreviews(previews: readonly string[]) {
   imagePreviews = previews;
@@ -308,7 +322,7 @@ export const segment = {
   at: (qq: string | number) => ({ type: "at", qq } as const),
   face: (id: string | number) => ({ type: "face", id } as const),
   reply: (id: string | number) => ({ type: "reply", id } as const),
-  image(file: MediaFile, summary = imagePreviews.length ? imagePreviews[Math.floor(Math.random() * imagePreviews.length)] : undefined) {
+  image(file: MediaFile, summary = pickImagePreview()) {
     return { type: "image", file, ...(summary === undefined ? {} : { summary }) } as const;
   },
   record: (file: MediaFile) => ({ type: "record", file } as const),

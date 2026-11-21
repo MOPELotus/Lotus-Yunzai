@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
-import { notifyReplyDelivery, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
+import { generatedImagePreview, notifyReplyDelivery, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
 
@@ -101,10 +101,11 @@ function mediaUri(value: unknown, remaining: number): string | undefined {
 }
 
 function encodeMedia(type: MediaType, fields: Record<string, unknown>, remaining: number): OutgoingSegment | undefined {
-  const uri = mediaUri(fields.file ?? fields.url, remaining);
+  const file = fields.file ?? fields.url;
+  const uri = mediaUri(file, remaining);
   if (!uri) return;
   if (type === "image") {
-    const summary = typeof fields.summary === "string" ? fields.summary : undefined;
+    const summary = typeof fields.summary === "string" ? fields.summary : generatedImagePreview(file, fields);
     return { type, data: { uri, sub_type: "normal", ...(summary === undefined ? {} : { summary }) } };
   }
   if (type === "record") return { type, data: { uri } };

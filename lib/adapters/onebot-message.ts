@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { InboundSegment, MessageReply, MusicCard } from "../messages.ts";
+import { generatedImagePreview, type InboundSegment, type MessageReply, type MusicCard } from "../messages.ts";
 
 interface OutboundSegment {
   type: string;
@@ -55,6 +55,10 @@ function encodeSegment(value: unknown): OutboundSegment | undefined {
     if (name === key || (fields === value && name === "type")) continue;
     const result = field(input, name);
     if (result !== undefined) data[name] = result;
+  }
+  if (type === "image") {
+    const preview = generatedImagePreview(parameter, fields);
+    if (preview !== undefined) data.summary = preview;
   }
   return { type, data };
 }

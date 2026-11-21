@@ -1,4 +1,5 @@
 import { Canvas, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
+import { markGeneratedImage } from "./generated-image.ts";
 
 type RenderMode = "auto" | "gpu" | "cpu";
 type Draw = (context: CanvasRenderingContext2D) => void | Promise<void>;
@@ -44,7 +45,8 @@ async function render(width: number, height: number, draw: Draw, mode: "gpu" | "
   } catch (error) {
     throw new BackendError(`Skia ${mode.toUpperCase()} 编码 PNG 失败。`, { cause: error });
   }
-  return { png, engine: checkEngine(canvas, mode) };
+  const engine = checkEngine(canvas, mode);
+  return { png: markGeneratedImage(png), engine };
 }
 
 /** 绘制回调应可重试，自动模式可能在另一画布重新绘制。 */

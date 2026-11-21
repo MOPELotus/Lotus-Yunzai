@@ -1,6 +1,7 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { createCredentialExchange, createHoyoClient, createPassportQr, PassportQrError } from "@lotus-yunzai/hoyo-client";
+import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import type { CommandModule } from "./commands.ts";
 
 const start = /^(?:#(?:扫码|二维码|辅助)(?:登录|绑定|登陆)|#?(?:米哈?游社?登[录陆入]|登[录陆入]米哈?游社?))([1-9]\d{0,2})?$/u;
@@ -80,7 +81,7 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
         }).catch(() => undefined);
         await verifyProfile();
         if (Date.now() >= expires) return "登录二维码已过期，请重新发送扫码指令。";
-        if (await context.reply({ type: "image", file: card?.png ?? qrPng }) === false) return [];
+        if (await context.reply({ type: "image", file: card?.png ?? markGeneratedImage(qrPng) }) === false) return [];
 
         let scanned = false;
         while (Date.now() < expires) {

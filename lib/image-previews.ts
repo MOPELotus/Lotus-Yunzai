@@ -191,20 +191,32 @@ export async function prepareImagePreviewRelease(
   }
 }
 
-export async function startImagePreviews(root: URL, signal: AbortSignal, publish: (lines: readonly string[]) => void, previous?: URL) {
+interface ImagePreviewStartup {
+  readonly wait?: (milliseconds: number, signal: AbortSignal) => Promise<unknown>;
+  readonly prepareRelease?: (root: URL, signal: AbortSignal) => Promise<readonly string[]>;
+}
+
+export async function startImagePreviews(
+  root: URL, signal: AbortSignal, publish: (lines: readonly string[]) => void, previous?: URL,
+  { wait = (milliseconds, signal) => delay(milliseconds, undefined, { ref: false, signal }),
+    prepareRelease = prepareImagePreviewRelease }: ImagePreviewStartup = {},
+) {
   try {
     signal.throwIfAborted();
-    const lines = await loadImagePreviews(root, previous, signal);
-    if (signal.aborted) return;
-    if (lines.length) {
-      publish(lines);
-      return;
+    let lines = await loadImagePreviews(root, previous, signal);
+    let nextDelay = 120_000;
+    while (lines.length === 0) {
+      await wait(nextDelay, signal);
+      signal.throwIfAborted();
+      // Reuse a cache another startup or manual import may have created.
+      lines = await loadImagePreviews(root, previous, signal);
+      signal.throwIfAborted();
+      if (lines.length === 0) {
+        lines = await prepareRelease(root, AbortSignal.any([signal, AbortSignal.timeout(600_000)]));
+      }
+      nextDelay = 5 * 60_000;
     }
-    await delay(120_000, undefined, { ref: false, signal });
-    // Reuse a local cache created while startup was settling.
-    const current = await loadImagePreviews(root, previous, signal);
-    const output = current.length ? current : await prepareImagePreviewRelease(root, AbortSignal.any([signal, AbortSignal.timeout(600_000)]));
-    if (output.length && !signal.aborted) publish(output);
+    if (!signal.aborted) publish(lines);
   } catch {
     // This background load must not interrupt the host or image delivery.
   }
