@@ -104,7 +104,8 @@ test.skipIf(!Bun.which("git"))("检查精确导入、相对路径和版本，依
   await put(source, "plugins/readiness-good/index.js",
     'import "ready-dependency/node"; import "./data/helper.js"; import "../../lib/plugins/plugin.js";');
   await put(source, "plugins/readiness-good/data/helper.js", "export {};");
-  const blocked = 'require("ready-dependency/node"); import "not-installed"; import "./missing.js"; import "../../../outside.js";';
+  const blocked = 'require("ready-dependency/node"); import "not-installed"; import "./missing.js"; import "../../../outside.js";' +
+    'import "git+ssh://fixture:private-test-value@example.invalid/module";';
   await put(source, "plugins/readiness-held/index.js", blocked);
   await put(source, "plugins/readiness-held/data/settings.json", '{"fixture":true}');
   await put(source, "plugins/readiness-held/node_modules/not-installed/index.js", "export {};");
@@ -127,11 +128,13 @@ test.skipIf(!Bun.which("git"))("检查精确导入、相对路径和版本，依
       { source: "index.js", specifier: "not-installed", mode: "import", reason: "missing" },
       { source: "index.js", specifier: "./missing.js", mode: "import", reason: "missing-relative-module" },
       { source: "index.js", specifier: "../../../outside.js", mode: "import", reason: "outside-installation" },
+      { source: "index.js", specifier: "<external-path>", mode: "import", reason: "outside-installation" },
     ] },
     { path: "plugins/version-incompatible", reason: "unresolved-dependency", issues: [
       { source: "index.js", specifier: "ready-dependency/node", mode: "import", reason: "version" },
     ] },
   ]);
+  expect(JSON.stringify(batch.held)).not.toContain("private-test-value");
   expect(await readdir(join(staging, "plugins"))).toEqual(["readiness-good"]);
   expect(await readFile(join(batch.heldDirectory!, "readiness-held/index.js"), "utf8")).toBe(blocked);
   expect(await readFile(join(batch.heldDirectory!, "readiness-held/data/settings.json"), "utf8")).toBe('{"fixture":true}');

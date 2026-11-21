@@ -162,7 +162,8 @@ async function inspectStagedPlugin(
       if (reason !== undefined) issues.push({ ...request, reason });
       continue;
     }
-    if (isAbsolute(specifier) || /^(?:file|https?|data):/iu.test(specifier)) {
+    const scheme = /^[a-z][a-z0-9+.-]*:/iu.exec(specifier)?.[0];
+    if (isAbsolute(specifier) || (scheme && scheme !== "bun:" && scheme !== "node:")) {
       issues.push({ ...request, specifier: "<external-path>", reason: "outside-installation" });
       continue;
     }
@@ -175,7 +176,8 @@ async function inspectStagedPlugin(
     }
     const range = name && declared ? declared.manifest.get(name)?.range : undefined;
     const result = await checkRetainedHostDependency(target, finalImporter, specifier, range, mode);
-    if (result.status === "unverified") issues.push({ ...request, reason: result.reason });
+    if (result.status === "unverified") issues.push({ ...request,
+      specifier: result.reason === "unsupported-specifier" ? "<unsupported-import>" : specifier, reason: result.reason });
   }
   for (const [directory, manifest] of manifests) {
     const finalImporter = join(targetRoot, relative(localRoot, directory));
