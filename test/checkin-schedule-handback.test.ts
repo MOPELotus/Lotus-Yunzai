@@ -78,6 +78,19 @@ test("旧副本已完成的档案不重开，旧副本中未确认的普通档�
   expect(result.plan.entries[5]).toMatchObject({ done: true, ok: false, stage: "handoff-held" });
 });
 
+test("旧接收方只拿到无游戏写账的范围，保留同档其他社区目标", async () => {
+  const source = planFor();
+  const entry = source.entries[0]!;
+  const key = `honkai_sr:cn:${"0".repeat(64)}`;
+  const result = await prepareLegacyCheckinSchedule({ ...source, entries: [
+    { ...entry, gameWrites: { [key]: "unconfirmed" }, gameWriteAccount: accountKey(entry.qq) },
+  ] }, undefined, "5aa3a70", { now, accountAtExecution: readAccount });
+  expect(result.counts).toMatchObject({ pendingForums: 1, pendingGames: 0 });
+  expect(result.plan.entries[0]?.communityRetry).toMatchObject({ forums: ["6"], otherFailure: true });
+  expect(result.plan.entries[0]?.communityRetry?.games).toBeUndefined();
+  expect(result.plan.entries[0]?.gameWrites).toBeUndefined();
+});
+
 test("签到交还 CLI 默认只读，明确导出时写独立私有文件并保留原版守卫提示", async () => {
   const base = await mkdtemp(join(tmpdir(), "lotus-handback-test-"));
   try {

@@ -420,12 +420,23 @@ function cookieFields(value: string) {
 const cookieIdFields = new Set(["stuid", "uid", "ltuid", "ltuid_v2", "account_id", "account_id_v2"]);
 const cookieMidFields = new Set(["mid", "stmid_v2", "ltmid_v2", "account_mid_v2"]);
 
-export function hasConflictingProfileCookieIdentity(account: ProfileAccountContext["account"]): boolean {
+function cookieIdentityEvidence(account: ProfileAccountContext["account"]) {
   const fields = [...cookieFields(account.cookie ?? ""), ...cookieFields(account.stokenCookie ?? "")];
   const ids = [account.stuid, account.ltuid,
     ...fields.filter(([key]) => cookieIdFields.has(key) || key === "login_uid").map(([, value]) => value)];
   const mids = [account.mid, ...fields.filter(([key]) => cookieMidFields.has(key)).map(([, value]) => value)];
-  return new Set(ids.filter(Boolean)).size > 1 || new Set(mids.filter(Boolean)).size > 1;
+  return { ids: new Set(ids.filter(Boolean)), conflictingMids: new Set(mids.filter(Boolean)).size > 1 };
+}
+
+export function hasConflictingProfileCookieIdentity(account: ProfileAccountContext["account"]): boolean {
+  const { ids, conflictingMids } = cookieIdentityEvidence(account);
+  return ids.size > 1 || conflictingMids;
+}
+
+export function profileCookieAccountId(account: ProfileAccountContext["account"]): string | undefined {
+  const { ids, conflictingMids } = cookieIdentityEvidence(account);
+  const [id] = ids;
+  if (ids.size === 1 && id && /^[1-9]\d{0,19}$/u.test(id) && !conflictingMids) return id;
 }
 
 function loginFields(result: ProfileLoginResult) {

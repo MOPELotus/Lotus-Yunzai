@@ -21,7 +21,8 @@ function entryKey({ qq, profileId }: ProfileIdentity) {
   return `${qq}/${profileId}`;
 }
 
-function settled({ runningAt: _running, communityRetry: _retry, communityWrites: _writes, communityWriteAccount: _owner, ...entry }: Entry) {
+function settled({ runningAt: _running, communityRetry: _retry, communityWrites: _writes, communityWriteAccount: _owner,
+  gameWrites: _games, gameWriteAccount: _gameOwner, gameWritesUnknown: _unknownGames, ...entry }: Entry) {
   return entry;
 }
 
@@ -31,11 +32,19 @@ function held(entry: Entry): Entry {
 
 function hasProgress(entry: Entry) {
   return !!(entry.runningAt || entry.communityRetry || entry.communityWrites || entry.communityWriteAccount ||
-    entry.doneAt || entry.ok !== undefined || entry.stage);
+    entry.gameWriteAccount || entry.gameWritesUnknown || entry.doneAt || entry.ok !== undefined || entry.stage);
 }
 
 function canRetryForum(status: Entry["communityWrites"], forum: string) {
   return status?.[forum] === undefined || status[forum] === "retryable";
+}
+
+function gameVerifiedUnsent(entry: Entry, game: CheckinScheduleGame) {
+  return !entry.gameWritesUnknown && !Object.keys(entry.gameWrites ?? {}).some(key => key.startsWith(`${game}:cn:`));
+}
+
+function hasUnresolvedGameWrite(entry: Entry) {
+  return entry.gameWritesUnknown || Object.values(entry.gameWrites ?? {}).some(status => status !== "confirmed");
 }
 
 function hash(fields: readonly unknown[]) {
@@ -90,11 +99,11 @@ export async function prepareLegacyCheckinSchedule(
         await accountAtExecution(candidate.qq, candidate.profileId);
       if (current && matchesAccount(candidate, retry.accountKey, current)) {
         const forums = retry.forums.filter(forum => canRetryForum(candidate.communityWrites, forum));
-        const games = retry.games;
+        const games = retry.games?.filter(game => gameVerifiedUnsent(candidate, game));
         if (forums.length || games?.length) {
           counts.pendingForums += forums.length;
           counts.pendingGames += games?.length ?? 0;
-          const unresolved = Object.values(candidate.communityWrites ?? {}).some(status =>
+          const unresolved = hasUnresolvedGameWrite(candidate) || games?.length !== retry.games?.length || Object.values(candidate.communityWrites ?? {}).some(status =>
             status === "pending" || status === "unconfirmed" || status === "rejected" || status === "blocked");
           entries.push({ ...settled(candidate), communityRetry: {
             forums, ...(games?.length && { games }), attempts: retry.attempts, nextAt: retry.nextAt,
@@ -229,11 +238,12 @@ async function guardedScopes(source: CheckinSchedulePlan, legacy: CheckinSchedul
         (entry.communityWriteAccount && !matchesAccount(entry, entry.communityWriteAccount, current))) continue;
     const allowed = current?.checkinTargets;
     const forums = retry.forums.filter(id => canRetryForum(entry.communityWrites, id) && (!allowed || allowed.forums.includes(id)));
-    const games = (retry.games || []).filter(key => !allowed || allowed.games.includes(key));
+    const games = (retry.games || []).filter(key => gameVerifiedUnsent(entry, key) && (!allowed || allowed.games.includes(key)));
     const targets: ReceiptTarget[] = [...forums.map(id => `community:${id}` as const), ...games.map(key => `game:${key}` as const)];
     if (!targets.length) continue;
     const accountKey = identity(entry, current)!.accountKey;
-    const otherFailure = Boolean(retry.otherFailure || forums.length !== retry.forums.length || games.length !== (retry.games?.length ?? 0) ||
+    const otherFailure = Boolean(retry.otherFailure || hasUnresolvedGameWrite(entry) ||
+      forums.length !== retry.forums.length || games.length !== (retry.games?.length ?? 0) ||
       Object.values(entry.communityWrites || {}).some(status => ["pending", "unconfirmed", "rejected", "blocked"].includes(status)));
     entries.push({ qq: entry.qq, profileId: entry.profileId, accountKey, targets,
       retry: { ...retry, forums, games, accountKey, otherFailure } });

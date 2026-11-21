@@ -48,6 +48,9 @@ export interface CheckinScheduleCommunityRetry {
 const communityWriteStatuses = ["pending", "accepted", "already", "rejected", "blocked", "unconfirmed", "retryable"] as const;
 export type CheckinCommunityWriteStatus = typeof communityWriteStatuses[number];
 const communityWriteForums = new Set(["1", "2", "3", "4", "5", "6", "8", "9", "10"]);
+const gameWriteStatuses = ["pending", "confirmed", "unconfirmed", "rejected"] as const;
+export type CheckinGameWriteStatus = typeof gameWriteStatuses[number];
+const gameWriteKey = /^(?:genshin|honkai_sr|zzz|tears_of_themis|honkai3rd|honkai2):(?:cn|os:[0-9a-f]{64}):[0-9a-f]{64}$/u;
 
 export interface CheckinScheduleEntry {
   readonly qq: string;
@@ -68,6 +71,9 @@ export interface CheckinScheduleEntry {
   readonly communityRetry?: CheckinScheduleCommunityRetry;
   readonly communityWrites?: Readonly<Record<string, CheckinCommunityWriteStatus>>;
   readonly communityWriteAccount?: string;
+  readonly gameWrites?: Readonly<Record<string, CheckinGameWriteStatus>>;
+  readonly gameWriteAccount?: string;
+  readonly gameWritesUnknown?: true;
 }
 
 export interface CheckinSchedulePlan {
@@ -268,7 +274,7 @@ export function generateCheckinSchedulePlan({ date, profiles = [], config, now, 
 function entryPriority(entry: CheckinScheduleEntry) {
   if (entry.done) return 5;
   if (entry.runningAt) return 4;
-  if (entry.communityRetry || entry.communityWrites) return 3;
+  if (entry.communityRetry || entry.communityWrites || entry.gameWriteAccount || entry.gameWritesUnknown) return 3;
   if (entry.notified) return 2;
   return entry.noticeAttemptedAt ? 1 : 0;
 }
@@ -302,7 +308,7 @@ export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
     const current = previous.get(key);
     previous.delete(key);
     const slot = mode === "random" ? randomIndex++ : 0;
-    if (current && (current.done || current.runningAt || current.communityRetry || current.communityWrites ||
+    if (current && (current.done || current.runningAt || current.communityRetry || current.communityWrites || current.gameWriteAccount || current.gameWritesUnknown ||
         (mode === "random" && (current.mode === "random" || current.mode === "late_random")))) {
       entries.push(current);
     } else if (mode === "fixed") {
@@ -315,7 +321,7 @@ export function reconcileCheckinSchedulePlan(existing: CheckinSchedulePlan,
     }
   }
   for (const entry of previous.values()) {
-    if (entry.done || entry.runningAt || entry.communityRetry || entry.communityWrites) entries.push(entry);
+    if (entry.done || entry.runningAt || entry.communityRetry || entry.communityWrites || entry.gameWriteAccount || entry.gameWritesUnknown) entries.push(entry);
   }
   return { ...existing, mode: scheduler.mode, window: scheduler.random, entries: entries.sort(compareEntries) };
 }
@@ -367,16 +373,16 @@ function parseCommunityRetry(value: unknown): CheckinScheduleCommunityRetry | un
 
 const communityAccountPattern = /^[0-9a-f]{64}$/u;
 
-function parseCommunityWrites(value: unknown): CheckinScheduleEntry["communityWrites"] {
+function parseWrites<Status extends string>(value: unknown, statuses: readonly Status[], validKey: (key: string) => boolean) {
   if (value === undefined) return;
   const writes = record(value);
   if (!writes || (Object.getPrototypeOf(writes) !== Object.prototype && Object.getPrototypeOf(writes) !== null)) invalid();
-  const checked: Record<string, CheckinCommunityWriteStatus> = {};
-  for (const forum of Reflect.ownKeys(writes)) {
-    if (typeof forum !== "string" || !communityWriteForums.has(forum)) invalid();
-    const status = communityWriteStatuses.find(status => status === writes[forum]);
+  const checked: Record<string, Status> = {};
+  for (const key of Reflect.ownKeys(writes)) {
+    if (typeof key !== "string" || !validKey(key)) invalid();
+    const status = statuses.find(status => status === writes[key]);
     if (!status) invalid();
-    checked[forum] = status;
+    checked[key] = status;
   }
   return checked;
 }
@@ -385,7 +391,7 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
   const entry = record(value);
   if (!entry) invalid();
   const { qq, profileId = 1, name = "", time, mode, notified = false, noticeAttemptedAt, done = false,
-    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt, communityWriteAccount } = entry;
+    ok, stage, message, late, lateRegisteredAt, runningAt, doneAt, communityWriteAccount, gameWriteAccount, gameWritesUnknown } = entry;
   if (typeof qq !== "string" || !validIdentity(qq, profileId) || (mode !== "late_random" && !isMode(mode)) ||
       typeof time !== "string" || !Number.isInteger(checkinScheduleMinute(time)) ||
       typeof name !== "string" || typeof notified !== "boolean" || typeof done !== "boolean" ||
@@ -394,13 +400,18 @@ function parseEntry(value: unknown): CheckinScheduleEntry {
       (message !== undefined && typeof message !== "string") || (late !== undefined && late !== true) ||
       (lateRegisteredAt !== undefined && !isTimestamp(lateRegisteredAt)) ||
       (runningAt !== undefined && !isTimestamp(runningAt)) || (doneAt !== undefined && !isTimestamp(doneAt)) ||
-      (communityWriteAccount !== undefined && (typeof communityWriteAccount !== "string" || !communityAccountPattern.test(communityWriteAccount)))) invalid();
+      (communityWriteAccount !== undefined && (typeof communityWriteAccount !== "string" || !communityAccountPattern.test(communityWriteAccount))) ||
+      (gameWriteAccount !== undefined && (typeof gameWriteAccount !== "string" || !communityAccountPattern.test(gameWriteAccount))) ||
+      (gameWritesUnknown !== undefined && gameWritesUnknown !== true)) invalid();
   const communityRetry = parseCommunityRetry(entry.communityRetry);
-  const communityWrites = parseCommunityWrites(entry.communityWrites);
+  const communityWrites = parseWrites(entry.communityWrites, communityWriteStatuses, key => communityWriteForums.has(key));
+  const gameWrites = parseWrites(entry.gameWrites, gameWriteStatuses, key => gameWriteKey.test(key));
+  if (gameWrites && Object.keys(gameWrites).length > 0 && !gameWriteAccount) invalid();
   return { qq, profileId, name, time, mode, notified, ...(noticeAttemptedAt && { noticeAttemptedAt }), done, ...(late && { late }),
     ...(lateRegisteredAt && { lateRegisteredAt }), ...(runningAt && { runningAt }), ...(doneAt && { doneAt }),
     ...(ok !== undefined && { ok }), ...(stage !== undefined && { stage }), ...(message !== undefined && { message }),
-    ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }), ...(communityWriteAccount && { communityWriteAccount }) };
+    ...(communityRetry && { communityRetry }), ...(communityWrites && { communityWrites }), ...(communityWriteAccount && { communityWriteAccount }),
+    ...(gameWrites && { gameWrites }), ...(gameWriteAccount && { gameWriteAccount }), ...(gameWritesUnknown && { gameWritesUnknown }) };
 }
 
 /** Validate the on-disk version 1 shape before its entries can be scheduled. */

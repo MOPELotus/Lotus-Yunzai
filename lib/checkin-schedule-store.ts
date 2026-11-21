@@ -83,7 +83,7 @@ function progress(entry: CheckinScheduleEntry) {
   if (entry.stage === legacyUnconfirmedStage) return 2;
   if (entry.done) return 3;
   if (entry.runningAt) return 2;
-  return entry.communityWrites || entry.communityRetry ? 1 : 0;
+  return entry.communityWrites || entry.communityRetry || entry.gameWriteAccount || entry.gameWritesUnknown ? 1 : 0;
 }
 
 function mergePlan(current: CheckinSchedulePlan | undefined, source: CheckinSchedulePlan): CheckinSchedulePlan {

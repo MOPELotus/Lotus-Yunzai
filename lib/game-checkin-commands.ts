@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
+import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileCookieAccountId, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, CloudGenshinWalletError, CloudZzzWalletError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
   HoyoRequestError, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
-import { runGameCheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
+import { runGameCheckinSequence, type CheckinSequence, type GameCheckinResult } from "./game-checkin-sequence.ts";
 import type { CheckinScheduleGame } from "./checkin-schedule-plan.ts";
-import { CheckinCommunityWriteError, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
+import { CheckinScheduleWriteError, type CheckinRetryTargets, type CheckinScheduledRunContext } from "./checkin-scheduler.ts";
 import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
@@ -180,6 +180,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly textOnly?: boolean;
     readonly verifyDay?: () => void;
     readonly communityWrites?: CheckinScheduledRunContext["communityWrites"];
+    readonly gameWrites?: CheckinScheduledRunContext["gameWrites"];
     readonly communityRetryForums?: readonly string[];
     readonly gameRetryKeys?: readonly CheckinScheduleGame[];
     readonly communityAccountKey?: string;
@@ -254,6 +255,47 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         return completedRun("precheck", false, "待恢复的签到对应原账号，当前档案已换绑。", revision);
       }
       const communityAccountKey = input.communityAccountKey ?? accountKey;
+      const gameJournal = input.gameWrites;
+      const digest = (fields: readonly unknown[]) => createHash("sha256").update(JSON.stringify(fields)).digest("hex");
+      const gameOwner = profileCookieAccountId(account.account);
+      const gameAccountKey = gameOwner ? digest([qq, profileId, gameOwner]) : undefined;
+      if (gameJournal?.accountKey && gameJournal.accountKey !== gameAccountKey) {
+        await verifyCurrent();
+        await auditResult("precheck", false);
+        await verifyCurrent();
+        return completedRun("precheck", false, "游戏签到提交记录对应原账号，当前档案已换绑。", revision);
+      }
+      const previousUnconfirmed = new Set(Object.entries(gameJournal?.previous ?? {})
+        .filter(([, state]) => state === "pending" || state === "unconfirmed").map(([key]) => key));
+      function gameTarget(game: CheckinScheduleGame, role: { uid: string; region: string }) {
+        return `${game}:cn:${digest([role.region, role.uid])}`;
+      }
+      async function runGame(target: string, sequence: CheckinSequence, compatibleOwner = true): Promise<GameCheckinResult> {
+        if (!gameJournal) return runGameCheckinSequence(sequence);
+        const owner = gameAccountKey;
+        if (!compatibleOwner) return { status: "unconfirmed" };
+        const previous = owner ? gameJournal.previous[target] : undefined;
+        previousUnconfirmed.delete(target);
+        if (previous === "confirmed") return { status: "already" };
+        let started = false;
+        const allowed = Boolean(owner && !gameJournal.unknown && !previous);
+        const result = await runGameCheckinSequence({ ...sequence, canSubmit: allowed,
+          beforeSubmit: async () => {
+            await gameJournal.start(target, owner!);
+            started = true;
+          },
+        });
+        if (owner && started) {
+          const state = result.status === "signed" || result.status === "already" ? "confirmed" :
+            result.status === "unconfirmed" ? "unconfirmed" : "rejected";
+          await gameJournal.settle(target, state, owner);
+        } else if (owner && (previous === "pending" || previous === "unconfirmed") && result.status === "already") {
+          await gameJournal.settle(target, "confirmed", owner);
+        } else if (owner && previous === "pending") {
+          await gameJournal.settle(target, "unconfirmed", owner);
+        }
+        return result;
+      }
       const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled &&
         (!retrying || gameScope?.includes(row.key as CheckinScheduleGame)));
       const retryForums: string[] = [];
@@ -446,7 +488,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           const results: GameCheckinResult[] = [];
           for (const role of eligible) {
             const source = { ...account, game, role };
-            const result = await runGameCheckinSequence({
+            const result = await runGame(gameTarget(key, role), {
               signal, verifyCurrent,
               readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
               submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
@@ -490,19 +532,23 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             const options = { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId };
             const blocked = new Set(overseas.blacklist);
             const results: GameCheckinResult[] = [];
+            const family = `${game}:os:`;
+            const owned = family + digest([overseas.realm, overseas.accountId]) + ":";
+            const sameBinding = !Object.keys(gameJournal?.previous ?? {}).some(key => key.startsWith(family) && !key.startsWith(owned));
             if (game === "genshin" || game === "honkai3rd") {
               const openCheckin = game === "genshin" ? client.openHoYoLabGenshinCheckin : client.openHoYoLabBh3Checkin;
               const remote = await openCheckin(overseas, options);
               if (remote.roles.length && !remote.roles.some(role => blocked.has(role.uid))) {
-                results.push(await runGameCheckinSequence({
+                results.push(await runGame(owned + digest(["account"]), {
                   signal, verifyCurrent, readInfo: remote.readInfo, submit: () => remote.submit({ blockedUids: overseas.blacklist }),
-                }));
+                }, sameBinding));
               }
             } else {
               const remote = await roleCheckins[game](overseas, options);
               for (const role of remote.roles) {
                 if (blocked.has(role.uid)) continue;
-                const result = await runGameCheckinSequence({ ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent });
+                const result = await runGame(owned + digest([role.region, role.uid]),
+                  { ...remote.forRole(role, overseas.blacklist), signal, verifyCurrent }, sameBinding);
                 results.push(result);
                 if (result.status === "failed" && result.error instanceof GameRecordRequestError) break;
               }
@@ -518,6 +564,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             row.game += ` · 国际服${finished.label}`;
             if (finished.reason) notes.push(`${row.label}国际服：${finished.reason}`);
           } catch (error) {
+            if (error instanceof CheckinScheduleWriteError) throw error;
             await verifyCurrent();
             row.game += " · 国际服失败";
             count("failed");
@@ -563,6 +610,10 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         cloud = balances.join("\n");
       }
       await verifyCurrent();
+      if (gameJournal?.unknown || previousUnconfirmed.size) {
+        notes.push("还有旧游戏签到提交结果待核对，请在官方客户端查看。");
+        count("unconfirmed");
+      }
       const otherFailure = Boolean(counts.failed || counts["first-bind"] || counts.unconfirmed);
       const retry = retryForums.length || retryGames.length ? {
         forums: retryForums, ...(retryGames.length && { games: retryGames }), otherFailure, accountKey: communityAccountKey,
@@ -575,7 +626,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       return completedRun("checkin", ok, reply, revision, retry);
     } catch (error) {
       if (signal.aborted) return { status: "busy" };
-      if (error instanceof CheckinCommunityWriteError) throw error;
+      if (error instanceof CheckinScheduleWriteError) throw error;
       if (error instanceof ProfileError && error.code === "changed") return { status: "busy", reply: changed };
       if (error instanceof HoyoRequestError && error.code === "profile-changed") return { status: "busy", reply: error.message };
       input.verifyDay?.();
@@ -623,7 +674,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       return runProfile(qq, profileId, {
         signal, verifyDay: context.verifyDay,
         source: context.gameRetryKeys?.length ? "scheduled_retry" : context.communityRetryForums ? "scheduled_community_retry" : "scheduled",
-        communityWrites: context.communityWrites, communityRetryForums: context.communityRetryForums, gameRetryKeys: context.gameRetryKeys,
+        communityWrites: context.communityWrites, gameWrites: context.gameWrites,
+        communityRetryForums: context.communityRetryForums, gameRetryKeys: context.gameRetryKeys,
         communityAccountKey: context.communityAccountKey,
       });
     },

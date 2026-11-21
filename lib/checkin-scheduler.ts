@@ -1,6 +1,6 @@
 import {
   checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, legacyUnconfirmedStage, reconcileCheckinSchedulePlan,
-  type CheckinCommunityWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinScheduleProfile,
+  type CheckinCommunityWriteStatus, type CheckinGameWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinScheduleProfile,
 } from "./checkin-schedule-plan.ts";
 import type { createCheckinScheduleStore } from "./checkin-schedule-store.ts";
 import type { MessageReply } from "./messages.ts";
@@ -23,7 +23,7 @@ interface CheckinScheduledCompletion {
 
 export type CheckinScheduledOutcome = { readonly status: "busy" } | CheckinScheduledCompletion;
 
-export class CheckinCommunityWriteError extends Error {}
+export class CheckinScheduleWriteError extends Error {}
 
 export interface CheckinScheduledRunContext {
   readonly date: string;
@@ -36,6 +36,13 @@ export interface CheckinScheduledRunContext {
     readonly previous: NonNullable<CheckinScheduleEntry["communityWrites"]>;
     readonly start: (forum: string, accountKey?: string) => Promise<void>;
     readonly settle: (forum: string, status: Exclude<CheckinCommunityWriteStatus, "pending">) => Promise<void>;
+  };
+  readonly gameWrites?: {
+    readonly previous: NonNullable<CheckinScheduleEntry["gameWrites"]>;
+    readonly accountKey?: string;
+    readonly unknown: boolean;
+    readonly start: (target: string, accountKey: string) => Promise<void>;
+    readonly settle: (target: string, status: Exclude<CheckinGameWriteStatus, "pending">, accountKey: string) => Promise<void>;
   };
 }
 
@@ -89,7 +96,7 @@ function nextAttempt(date: string, started: number, settled: number, isRetry: bo
 function clearRunning(entry: CheckinScheduleEntry): CheckinScheduleEntry {
   if (entry.stage === legacyUnconfirmedStage) return entry;
   const { runningAt: _runningAt, ...rest } = entry;
-  return rest;
+  return entry.runningAt && entry.gameWrites === undefined ? { ...rest, gameWritesUnknown: true } : rest;
 }
 
 export function createCheckinScheduler({ store, config, listProfiles, runProfile, onComplete, now = Date.now, random }: SchedulerOptions) {
@@ -143,7 +150,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
             const entry = plan?.entries.find(item => sameProfile(item, pending));
             if (!plan || !entry || !due(entry, date, at) ||
                 (communityRetriesOnly && !entry.communityRetry?.verifiedUnsent)) return { result: undefined };
-            const running = { ...entry, runningAt: checkinScheduleClock(at).iso };
+            const running = { ...entry, runningAt: checkinScheduleClock(at).iso, gameWrites: entry.gameWrites ?? {} };
             return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? running : item) }, result: running };
           });
           if (!claim) continue;
@@ -168,7 +175,27 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
                 return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
               });
             } catch {
-              throw new CheckinCommunityWriteError("无法确认社区签到提交记录已保存。");
+              throw new CheckinScheduleWriteError("无法确认社区签到提交记录已保存。");
+            }
+          }
+          async function recordGameWrite(target: string, status: CheckinGameWriteStatus, accountKey: string) {
+            try {
+              await store.update(date, plan => {
+                verifyDay();
+                const entry = plan?.entries.find(item => sameProfile(item, currentClaim));
+                if (!plan || !entry || entry.runningAt !== currentClaim.runningAt || entry.done ||
+                    (entry.gameWriteAccount !== undefined && entry.gameWriteAccount !== accountKey)) {
+                  throw new Error("游戏签到档案已失去执行资格。");
+                }
+                const previous = entry.gameWrites?.[target];
+                const allowed = status === "pending" ? !entry.gameWritesUnknown && previous === undefined
+                  : previous === "pending" || (status === "confirmed" && previous === "unconfirmed");
+                if (!allowed) throw new Error("游戏签到提交记录已变化。");
+                const next = { ...entry, gameWriteAccount: accountKey, gameWrites: { ...entry.gameWrites, [target]: status } };
+                return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
+              });
+            } catch {
+              throw new CheckinScheduleWriteError("无法确认游戏签到提交记录已保存。");
             }
           }
           let outcome: CheckinScheduledOutcome;
@@ -182,6 +209,11 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
                 previous: claim.communityWrites ?? {},
                 start: (forum, accountKey) => recordCommunityWrite(forum, "pending", accountKey),
                 settle: recordCommunityWrite,
+              },
+              gameWrites: {
+                previous: claim.gameWrites ?? {}, accountKey: claim.gameWriteAccount, unknown: claim.gameWritesUnknown === true,
+                start: (target, accountKey) => recordGameWrite(target, "pending", accountKey),
+                settle: recordGameWrite,
               },
             });
           } catch {

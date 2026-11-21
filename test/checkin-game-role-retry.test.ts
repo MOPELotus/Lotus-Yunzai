@@ -234,3 +234,62 @@ test("社区提交未知时，仅同档未提交的其他分区进入当天补�
       await runtime.stop();
     }
   }));
+
+test("游戏提交后中止，重新领取时只回读该角色，其余从未提交的游戏独立完成", () =>
+  fixture(async (root, path) => {
+    const document = Bun.YAML.parse(profile()) as Record<string, unknown>;
+    document.games = { cn: { enable: true, genshin: { checkin: true }, honkai_sr: { checkin: true }, zzz: { checkin: false } } };
+    document.mihoyobbs = { enable: false };
+    await writeFile(path, Bun.YAML.stringify(document));
+    const store = createCheckinScheduleStore(join(root, "plans"));
+    const profiles = createProfileStore(root);
+    const writes: string[] = [];
+    const reads: string[] = [];
+    let signed = false;
+    async function run(interrupt = false) {
+      const controller = new AbortController();
+      const module = gameCheckinCommands(root, controller.signal, {
+        makeClient(profiles, transport) {
+          return { ...createProfileHoyoClient(profiles, transport), refreshCredentials: async account => account };
+        },
+        async renderReceipt() { throw new Error("测试使用文字回执"); },
+        async transport(url) {
+          const game = url.searchParams.get("game_biz");
+          if (game) return ok({ list: [game === "hkrpg_cn"
+            ? { game_biz: game, game_uid: "100000016", region: "prod_gf_cn" }
+            : { game_biz: game, game_uid: roleUid, region: "cn_gf01" }] });
+          const title = url.pathname.includes("/hkrpg/") ? "sr" : "gs";
+          if (url.pathname.endsWith("/info")) {
+            reads.push(title);
+            return ok({ is_sign: title === "sr" && signed, first_bind: false });
+          }
+          if (url.pathname.endsWith("/sign")) {
+            writes.push(title);
+            expect(Object.values((await store.read(date))!.entries[0]!.gameWrites ?? {})).toContain("pending");
+            if (interrupt) {
+              controller.abort();
+              throw new Error("模拟在送达请求后中止");
+            }
+            signed = true;
+            return ok({});
+          }
+          throw new Error("Unexpected fixture operation");
+        },
+      });
+      const runtime = createCheckinScheduleRuntime({
+        store, signal: controller.signal, config: { fixed_time: "18:00" }, now: () => scheduled,
+        listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
+      });
+      try { return await runtime.runDue(); }
+      finally { controller.abort(); await runtime.stop(); }
+    }
+    expect(await run(true)).toMatchObject({ status: "interrupted" });
+    expect(writes).toEqual(["gs"]);
+    expect(Object.values((await store.read(date))!.entries[0]!.gameWrites!)).toEqual(["pending"]);
+    expect(await run()).toMatchObject({ completed: 1 });
+    expect(writes).toEqual(["gs", "sr"]);
+    expect(reads).toEqual(["gs", "gs", "sr", "sr"]);
+    expect(Object.values((await store.read(date))!.entries[0]!.gameWrites!)).toEqual(["unconfirmed", "confirmed"]);
+    expect(await run()).toMatchObject({ completed: 0 });
+    expect(writes).toEqual(["gs", "sr"]);
+  }));

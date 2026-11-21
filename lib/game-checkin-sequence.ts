@@ -7,11 +7,13 @@ interface CheckinInfo {
   readonly totalSignDays?: number;
 }
 
-interface CheckinSequence {
+export interface CheckinSequence {
   readInfo(): Promise<CheckinInfo>;
   submit(): Promise<"already" | "accepted">;
   verifyCurrent(): Promise<void>;
   readonly signal?: AbortSignal;
+  readonly canSubmit?: boolean;
+  readonly beforeSubmit?: () => Promise<void>;
 }
 
 export type GameCheckinResult =
@@ -63,8 +65,13 @@ export async function runGameCheckinSequence(sequence: CheckinSequence): Promise
   const before = await current(() => sequence.readInfo());
   if (!before.ok) return { status: "failed", error: before.error };
   if (before.value.signed) return completed("already", before.value);
+  if (sequence.canSubmit === false) return { status: "unconfirmed" };
   if (before.value.firstBind) return { status: "first-bind" };
 
+  if (sequence.beforeSubmit) {
+    await sequence.beforeSubmit();
+    await verify();
+  }
   const submitted = await current(() => sequence.submit());
   if (!submitted.ok && !submissionUnknown(submitted.error)) return { status: "failed", error: submitted.error };
 
