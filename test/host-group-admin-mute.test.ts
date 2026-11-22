@@ -1382,7 +1382,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       [887, 888, 889, 903, 991].includes(Number(params.notification_seq))).map(({ action, params }) => ({ action, params }))).toEqual([
       { action: "accept_group_request", params: { group_id: 79, notification_seq: 889, notification_type: "join_request", is_filtered: false } },
     ]);
-    const batchDecision = milkyTitle("#拒绝全部加群申请", operator);
+    const batchDecision = milkyTitle("#拒绝全部群申请", operator);
     await webhook("message_receive", batchDecision);
     const reviewedBatch = await announcementReply("本次共核对 5 条加群申请");
     const outcomes = JSON.stringify(reviewedBatch.params.message);
