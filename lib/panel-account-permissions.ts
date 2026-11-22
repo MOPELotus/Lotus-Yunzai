@@ -1,8 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
-import { accountScopePolicies, accountScopePolicy, accountScopes,
-  type AccountScope, type AccountScopePolicy, type AccountScopeSnapshot } from "./account-scope-policy.ts";
+import { accountScopePolicies, accountScopePolicy, accountScopes, mediaDownloadScopes,
+  type AccountScopePolicy, type ScopePolicySnapshot } from "./account-scope-policy.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
@@ -10,7 +10,7 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
   type Pair, type SourceEdit } from "./yaml-source-edits.ts";
 
 type Config = Readonly<Record<string, unknown>>;
-type Changes = Partial<Record<AccountScope, AccountScopePolicy>>;
+type Changes<Scope extends string> = Partial<Record<Scope, AccountScopePolicy>>;
 interface PolicyTree { [name: string]: AccountScopePolicy | PolicyTree }
 const revisionKey = randomBytes(32);
 
@@ -18,23 +18,24 @@ function record(value: unknown): Config | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Config;
 }
 
-function snapshot(document: Config, patch: Changes = {}): AccountScopeSnapshot {
+function snapshot<Scope extends string>(document: Config, allowed: readonly Scope[],
+  readPolicy: (scope: Scope, configured: unknown) => AccountScopePolicy, patch: Changes<Scope> = {}): ScopePolicySnapshot<Scope> {
   const permissions = record(document.permissions) ?? {};
   const scopes = record(permissions.scopes) ?? {};
-  const settings = Object.fromEntries(accountScopes.map(scope =>
-    [scope, patch[scope] ?? accountScopePolicy(scope, record(scopes[scope])?.policy)],
-  )) as AccountScopeSnapshot["settings"];
+  const settings = Object.fromEntries(allowed.map(scope =>
+    [scope, patch[scope] ?? readPolicy(scope, record(scopes[scope])?.policy)],
+  )) as ScopePolicySnapshot<Scope>["settings"];
   const revision = createHmac("sha256", revisionKey)
     .update(JSON.stringify([settings, permissions.default_policy, permissions.users, permissions.groups])).digest("hex");
   return { revision, settings };
 }
 
-function parseChanges(input: unknown): Changes {
+function parseChanges<Scope extends string>(input: unknown, allowed: readonly Scope[]): Changes<Scope> {
   const fields = record(input);
   if (!fields || !Object.keys(fields).length) throw new Error();
-  const changes: Changes = {};
+  const changes: Changes<Scope> = {};
   for (const [key, value] of Object.entries(fields)) {
-    const scope = accountScopes.find(entry => entry === key);
+    const scope = allowed.find(entry => entry === key);
     const policy = accountScopePolicies.find(entry => entry === value);
     if (!scope || !policy) throw new Error();
     changes[scope] = policy;
@@ -52,11 +53,11 @@ function merge(current: unknown, tree: PolicyTree): Config {
   };
 }
 
-function editPolicies(text: string, current: Config, changes: Changes) {
+function editPolicies(text: string, current: Config, changes: Changes<string>) {
   const yaml = parseDocument(text, { merge: true, strict: true, uniqueKeys: true, keepSourceTokens: true });
   if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents))) throw new GlobalConfigWriteError("config");
   const tree: PolicyTree = { permissions: { scopes: Object.fromEntries(Object.entries(changes)
-    .map(([scope, policy]) => [scope, { policy }])) } };
+    .flatMap(([scope, policy]) => policy === undefined ? [] : [[scope, { policy }]])) } };
   const edits: SourceEdit[] = [];
 
   function editMap(node: Node | undefined, prior: Config, branch: PolicyTree) {
@@ -86,23 +87,24 @@ function editPolicies(text: string, current: Config, changes: Changes) {
   return result;
 }
 
-export function panelAccountPermissions(root: URL) {
+function panelScopePermissions<Scope extends string>(root: URL, allowed: readonly Scope[],
+  readPolicy: (scope: Scope, configured: unknown) => AccountScopePolicy) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
-      try { return Response.json(snapshot(await readLotusGlobalConfig(root))); }
+      try { return Response.json(snapshot(await readLotusGlobalConfig(root), allowed, readPolicy)); }
       catch { return new Response(null, { status: 500 }); }
     }
     if (request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
 
     let revision: string;
-    let patch: Changes;
+    let patch: Changes<Scope>;
     try {
       const data = record(await readPanelJson(request, 4096));
       if (!data || Object.keys(data).length !== 2 || typeof data.revision !== "string" || !/^[a-f0-9]{64}$/u.test(data.revision)) {
         throw new Error();
       }
       revision = data.revision;
-      patch = parseChanges(data.patch);
+      patch = parseChanges(data.patch, allowed);
     } catch {
       return new Response(null, { status: 400 });
     }
@@ -112,13 +114,13 @@ export function panelAccountPermissions(root: URL) {
       return Response.json(await updateLotusGlobalConfig(root, {
         canWrite: active, canCommit: active, signal: request.signal,
         prepare(text, local, effective) {
-          const before = snapshot(effective);
+          const before = snapshot(effective, allowed, readPolicy);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
-          const changes = Object.fromEntries(accountScopes.flatMap(scope =>
+          const changes = Object.fromEntries(allowed.flatMap(scope =>
             patch[scope] === undefined || patch[scope] === before.settings[scope] ? [] : [[scope, patch[scope]]],
-          )) as Changes;
+          )) as Changes<Scope>;
           if (!Object.keys(changes).length) return { value: before };
-          return { yaml: editPolicies(text, local, changes), value: snapshot(effective, changes) };
+          return { yaml: editPolicies(text, local, changes), value: snapshot(effective, allowed, readPolicy, changes) };
         },
       }));
     } catch (error) {
@@ -126,4 +128,14 @@ export function panelAccountPermissions(root: URL) {
       return new Response(null, { status: reason === "conflict" ? 409 : reason === "permission" || reason === "cancelled" ? 401 : 500 });
     }
   };
+}
+
+export function panelAccountPermissions(root: URL) {
+  return panelScopePermissions(root, accountScopes, accountScopePolicy);
+}
+
+export function panelMediaDownloadPermissions(root: URL) {
+  // The media reader coerces legacy YAML policy values before applying its inherit fallback.
+  return panelScopePermissions(root, mediaDownloadScopes, (_scope, configured) =>
+    accountScopePolicies.find(policy => policy === String(configured || "inherit")) ?? "inherit");
 }

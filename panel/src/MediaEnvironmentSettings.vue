@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mediaEnvironmentGroups, type MediaEnvironmentSettings,
   type MediaEnvironmentSnapshot } from "../../lib/panel-media-environment-schema.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
@@ -21,7 +22,8 @@ const changes = computed(() => {
 const dirty = computed(() => Object.keys(changes.value).length > 0);
 let active: AbortController | undefined;
 
-watch(dirty, value => emit("dirty-change", value));
+const permissionsDirty = ref(false);
+watch(() => dirty.value || permissionsDirty.value, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
@@ -113,10 +115,13 @@ onBeforeUnmount(() => {
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>
+    <AccountPermissionsSettings class="media-download-permissions" :auth="auth" media-download
+      @unauthorized="emit('unauthorized')" @dirty-change="permissionsDirty = $event" />
   </section>
 </template>
 
 <style scoped>
+.media-download-permissions { margin-top: 26px; }
 .media-environment-settings { max-width: 660px; margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 fieldset { display: grid; gap: 7px; padding: 0; border: 0; margin: 0; min-width: 0; }
 fieldset + fieldset { margin-top: 16px; }

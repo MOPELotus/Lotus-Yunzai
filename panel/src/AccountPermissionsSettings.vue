@@ -1,30 +1,39 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { accountScopePolicies, accountScopes, type AccountScope, type AccountScopePolicy, type AccountScopeSnapshot } from "../../lib/account-scope-policy.ts";
+import { accountScopePolicies, accountScopes, mediaDownloadScopes, type AccountScope, type AccountScopePolicy,
+  type MediaDownloadScope, type ScopePolicySnapshot } from "../../lib/account-scope-policy.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ auth: PanelAuth }>();
+const props = defineProps<{ auth: PanelAuth; mediaDownload?: boolean }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
-const endpoint = `${import.meta.env.BASE_URL}api/settings/checkin/permissions`;
-const labels: Record<AccountScope, string> = {
+type Scope = AccountScope | MediaDownloadScope;
+type Snapshot = ScopePolicySnapshot<Scope>;
+const media = props.mediaDownload === true;
+const title = media ? "媒体下载权限" : "签到权限";
+const heading = media ? "media-download-permissions-title" : "account-permissions-title";
+const endpoint = `${import.meta.env.BASE_URL}api/settings/${media ? "media/download-permissions" : "checkin/permissions"}`;
+const scopes: readonly Scope[] = media ? mediaDownloadScopes : accountScopes;
+const labels: Record<Scope, string> = {
   "checkin.register": "注册签到",
   "checkin.refresh": "刷新登录信息",
   "checkin.group_register": "批量注册本群签到",
   "scheduler.generate": "生成全局签到计划",
   "scheduler.run_due": "执行到期签到",
   "scheduler.manage": "聊天中修改调度",
+  "bilibili.download": "B 站视频下载",
+  "douyin.download": "抖音媒体下载",
 };
 const policyLabels: Record<AccountScopePolicy, string> = {
   inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
 };
-const groups = [
+const groups = media ? [{ title: "下载策略", scopes }] : [
   { title: "档案与签到", scopes: accountScopes.slice(0, 3) },
   { title: "调度指令", scopes: accountScopes.slice(3) },
 ];
 
-const saved = shallowRef<AccountScopeSnapshot>();
-const draft = ref<AccountScopeSnapshot["settings"]>();
+const saved = shallowRef<Snapshot>();
+const draft = ref<Snapshot["settings"]>();
 const busy = ref<"GET" | "PUT">();
 const error = ref("");
 const notice = ref("");
@@ -36,7 +45,7 @@ const changed = computed(() => {
   const before = saved.value?.settings;
   const next = draft.value;
   if (!before || !next) return {};
-  return Object.fromEntries(accountScopes.filter(scope => next[scope] !== before[scope]).map(scope => [scope, next[scope]]));
+  return Object.fromEntries(scopes.filter(scope => next[scope] !== before[scope]).map(scope => [scope, next[scope]]));
 });
 const dirty = computed(() => Object.keys(changed.value).length > 0);
 watch(dirty, value => {
@@ -44,12 +53,12 @@ watch(dirty, value => {
   if (!value) confirmReload.value = false;
 });
 
-function isSnapshot(input: unknown): input is AccountScopeSnapshot {
+function isSnapshot(input: unknown): input is Snapshot {
   if (!input || typeof input !== "object" || !("revision" in input) || !("settings" in input) ||
       typeof input.revision !== "string" || !/^[a-f0-9]{64}$/u.test(input.revision) ||
       !input.settings || typeof input.settings !== "object") return false;
-  const policies = input.settings as Partial<AccountScopeSnapshot["settings"]>;
-  return accountScopes.every(scope => accountScopePolicies.some(policy => policies[scope] === policy));
+  const policies = input.settings as Partial<Snapshot["settings"]>;
+  return scopes.every(scope => accountScopePolicies.some(policy => policies[scope] === policy));
 }
 
 async function request(method: "GET" | "PUT") {
@@ -70,7 +79,7 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "签到权限已在别处修改。请重新读取后再保存。";
+      error.value = `${title}已在别处修改。请重新读取后再保存。`;
       return;
     }
     if (!response.ok) throw new Error();
@@ -82,7 +91,7 @@ async function request(method: "GET" | "PUT") {
     conflict.value = false;
     if (method === "PUT") notice.value = "权限设置已保存。";
   } catch {
-    if (active === controller) error.value = "暂时无法读取或保存签到权限。";
+    if (active === controller) error.value = `暂时无法读取或保存${title}。`;
   } finally {
     if (active === controller) {
       active = undefined;
@@ -105,9 +114,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section aria-labelledby="account-permissions-title" :aria-busy="Boolean(busy)">
+  <section :aria-labelledby="heading" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="account-permissions-title" tabindex="-1">签到权限</h1>
+      <h2 v-if="media" :id="heading">{{ title }}</h2>
+      <h1 v-else :id="heading" tabindex="-1">{{ title }}</h1>
       <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
     </div>
     <div v-if="confirmReload" class="permission-actions" role="alert">
@@ -126,7 +136,8 @@ onBeforeUnmount(() => {
           </select>
         </label>
       </fieldset>
-      <p>用户和群拒绝名单仍优先。聊天中修改调度的权限在下次操作时生效，其余项目重启宿主后生效。</p>
+      <p v-if="media">用户和群拒绝名单优先。下次需要下载权限的操作会采用新设置。</p>
+      <p v-else>用户和群拒绝名单仍优先。聊天中修改调度的权限在下次操作时生效，其余项目重启宿主后生效。</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
           :disabled="!dirty || Boolean(busy) || confirmReload || conflict">保存</ElButton>
