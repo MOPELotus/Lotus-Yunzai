@@ -102,6 +102,12 @@ function tags(item: Field, event: Event) {
   }));
 }
 
+function addTag(item: Field, option: Exclude<GuobaInput, unknown[]>) {
+  const current = value(item.field);
+  const entries = Array.isArray(current) ? current : [];
+  if (!entries.includes(option)) edit(item.field, [...entries, option]);
+}
+
 function select(item: Field, event: Event) {
   const control = event.target as HTMLSelectElement;
   const options = item.componentProps?.options ?? [];
@@ -205,9 +211,17 @@ function confirm() {
               :placeholder="item.componentProps?.placeholder" :required="required(item)" @input="updateNumber(item.field, $event)" />
             <span v-if="item.componentProps?.addonAfter">{{ item.componentProps.addonAfter }}</span>
           </div>
-          <textarea v-else-if="item.component === 'Select' && item.componentProps?.mode === 'tags'"
-            :id="`${id}-child-${index}`" :value="display(value(item.field))" rows="3" placeholder="每行一个标签" :required="required(item)"
-            @change="tags(item, $event)" />
+          <template v-else-if="item.component === 'Select' && item.componentProps?.mode === 'tags'">
+            <textarea :id="`${id}-child-${index}`" :value="display(value(item.field))"
+              rows="3" placeholder="每行一个标签" :required="required(item)" @change="tags(item, $event)" />
+            <div v-if="item.componentProps.options?.length" class="subform-actions" role="group"
+              :aria-label="`${item.label}预设`">
+              <ElButton v-for="(option, at) in item.componentProps.options" :key="at" size="small"
+                :disabled="option.disabled || selected(item, option.value)" @click="addTag(item, option.value)">
+                添加 {{ option.label }}
+              </ElButton>
+            </div>
+          </template>
           <select v-else-if="item.component === 'Select'" :id="`${id}-child-${index}`"
             :multiple="item.componentProps?.mode === 'multiple'" :required="required(item)" @change="select(item, $event)">
             <option v-if="item.componentProps?.mode !== 'multiple'" value="" disabled
