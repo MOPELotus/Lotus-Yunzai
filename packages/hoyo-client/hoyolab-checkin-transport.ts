@@ -21,7 +21,7 @@ const roleGames = {
   ltoken: ["hkrpg_global", "nap_global", "nxx_global", "bh3_global"],
 } as const;
 const zzzRecordPath = "/event/game_record_zzz/api/zzz/";
-const zzzRecordParts = { index: "index", avatar: "avatar/basic", buddy: "buddy/info" } as const;
+const zzzRecordParts = { index: "index", avatar: "avatar/basic", buddy: "buddy/info", note: "note" } as const;
 type ZzzRecordPart = keyof typeof zzzRecordParts;
 type Credential = keyof typeof cookiePaths;
 type Json = Record<string, unknown>;
@@ -99,8 +99,9 @@ export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, tra
     roleList: () => client.roleList("nap_global", "绝区零国际服角色目录"),
     read(part: ZzzRecordPart, uid: string, region: string) {
       const url = new URL(zzzRecordPath + zzzRecordParts[part], activityOrigin);
-      url.search = new URLSearchParams({ lang: client.language, role_id: uid, server: region }).toString();
-      return client.request(url, { "x-rpc-language": client.language }, "绝区零国际服战绩");
+      const note = part === "note";
+      url.search = new URLSearchParams({ ...(!note && { lang: client.language }), role_id: uid, server: region }).toString();
+      return client.request(url, { "x-rpc-language": client.language }, note ? "绝区零国际服便笺" : "绝区零国际服战绩");
     },
   };
 }

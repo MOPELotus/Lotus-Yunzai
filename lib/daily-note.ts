@@ -143,12 +143,19 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
       if (!ids.length) return "[account] 没有找到可查询的 profile，请先扫码登录并同步 UID。";
 
       const groups: DailyNoteCardModel["groups"][number][] = [];
+      const verifyInternational: (() => Promise<void>)[] = [];
+      const session = context.message_type === "private" && !context.isDelegated
+        ? context.privateCredentialSignal : undefined;
+      const active = session ? AbortSignal.any([signal, session]) : signal;
+      const changed = "[account] 登录状态已变化，本次体力查询已停止，请重新发送原指令。";
       for (const id of ids) {
-        if (signal.aborted) return;
+        if (active.aborted) return [];
         const items: DailyNoteCardItem[] = [];
         try {
-          const { sources, verifyReadOnly } = await profiles.requestContextsForRead(qq, id, games);
-          const results = await client.fetchDailyNotes(sources, { signal, verifyReadOnly });
+          const { sources: saved, verifyReadOnly } = await profiles.requestContextsForRead(qq, id, games);
+          const sources = saved.filter(({ game, role }) => game !== "zzz" ||
+            (role.gameBiz !== "nap_global" && !/^[1-9]\d{9}$/u.test(role.uid)));
+          const results = await client.fetchDailyNotes(sources, { signal: active, verifyReadOnly });
           for (const game of games) {
             const start = items.length;
             sources.forEach((source, index) => {
@@ -157,13 +164,38 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
               items.push(result.status === "fulfilled" ? noteCardItem(result.value)
                 : { game, gameName: names[game], uid: source.role.uid, ok: false, error: failure(result.reason) });
             });
+            if (game === "zzz") {
+              const international = await profiles.internationalRoleContext(qq, id, "zzz");
+              if (international && (/^[1-9]\d{9}$/u.test(international.selectedUid) ||
+                  (!international.selectedUid && items.length === start))) {
+                if (!session) {
+                  items.push({ game, gameName: names[game], ok: false, error: "绝区零国际服便笺请从本人私聊查询。" });
+                } else {
+                  const verifyProfile = async () => {
+                    active.throwIfAborted();
+                    const latest = await profiles.internationalRoleContext(qq, id, "zzz").catch(() => undefined);
+                    if (latest?.revision !== international.revision) throw new HoyoRequestError("profile-changed", changed);
+                  };
+                  try {
+                    const note = await client.fetchHoYoLabZzzDailyNote(international, { signal: active, verifyProfile });
+                    items.push(noteCardItem(note));
+                    verifyInternational.push(verifyProfile);
+                  } catch (error) {
+                    await verifyProfile();
+                    items.push({ game, gameName: names[game], ok: false, error: failure(error) });
+                  }
+                }
+              } else if (items.length === start && saved.some(source => source.game === game)) {
+                items.push({ game, gameName: names[game], ok: false, error: "请绑定当前档案的 HoYoLAB 账号并选中绝区零国际服角色。" });
+              }
+            }
             if (items.length === start) items.push({ game, gameName: names[game], ok: false, error: "未同步 UID。" });
           }
         } catch (error) {
-          if (signal.aborted) return;
+          if (active.aborted) return [];
           if ((error instanceof HoyoRequestError && error.code === "profile-changed") ||
               (error instanceof ProfileError && error.code === "changed")) {
-            return "[account] 登录状态已变化，本次体力查询已停止，请重新发送原指令。";
+            return changed;
           }
           items.push({ ok: false, error: failure(error) });
         }
@@ -172,7 +204,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
 
       const renderer = await import("@lotus-yunzai/skia/daily-note").catch(() => undefined);
       for (const page of pagesOf(groups)) {
-        if (signal.aborted) return;
+        if (active.aborted) return [];
         let reply: MessageReply;
         try {
           const image = await renderer?.renderDailyNoteCard(page, { resourceDirectory: Bun.env.LOTUS_DAILY_NOTE_RESOURCES || undefined });
@@ -180,7 +212,12 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
         } catch {
           reply = textReply(page.groups);
         }
-        if (signal.aborted) return;
+        try {
+          await Promise.all(verifyInternational.map(verify => verify()));
+        } catch {
+          return active.aborted ? [] : changed;
+        }
+        if (active.aborted) return [];
         if (await context.reply(reply) === false) break;
       }
       return [];

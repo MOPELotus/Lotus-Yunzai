@@ -4,7 +4,7 @@ import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type Bbs
 import { readCloudGenshinWallet, readInternationalCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 import { readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
-import { isDailyNoteCookieExpired, readDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
+import { isDailyNoteCookieExpired, readDailyNote, readHoYoLabZzzDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { openHoYoLabBh3Checkin } from "./hoyolab-bh3-checkin.ts";
 import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
@@ -439,6 +439,10 @@ export function createHoyoClient(
       }
       await verify();
       return results;
+    },
+    fetchHoYoLabZzzDailyNote(source: Parameters<typeof readHoYoLabZzzDailyNote>[0],
+      options: Parameters<typeof readHoYoLabZzzDailyNote>[2]) {
+      return readHoYoLabZzzDailyNote(source, transport, options);
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
       return readForProfile(source, options, readGenshinGacha, isGenshinAuthExpired);

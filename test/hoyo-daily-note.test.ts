@@ -90,6 +90,55 @@ test("归一化三款已知值，包括零、无恢复时间、备用开拓力�
     .toMatchObject({ scratchCardDone: false, stamina: { current: 0, max: 240, recoverySeconds: 0 } });
 });
 
+const overseasNote = {
+  cookie: "ltuid_v2=42; ltoken_v2=fixture-token; ltmid_v2=fixture-mid", accountId: "42", realm: "SG" as const,
+  language: "zh-cn", selectedUid: "1300000002", revision: "test-overseas-note",
+};
+const overseasNoteRole = { game_uid: "1300000002", region: "prod_gf_jp", game_biz: "nap_global" };
+const zzzEnergy = { progress: { current: 0, max: "240" }, restore: 14_400 };
+
+test("国际服绝区零便笺从 HoYoLAB 确认角色后按旧 GET 读取完整状态", async () => {
+  let calls = 0;
+  let guards = 0;
+  const client = createHoyoClient(async (url, init) => {
+    expect(init).toMatchObject({ method: "GET", redirect: "error", credentials: "omit" });
+    expect(new Headers(init.headers).get("cookie")).toBe(overseasNote.cookie);
+    if (calls++ === 0) {
+      expect(url.href).toBe("https://api-account-os.hoyolab.com/binding/api/getUserGameRolesByLtoken?game_biz=nap_global");
+      return Response.json({ retcode: 0, data: { list: [overseasNoteRole] } });
+    }
+    expect(url.href).toBe("https://sg-act-public-api.hoyolab.com/event/game_record_zzz/api/zzz/note?role_id=1300000002&server=prod_gf_jp");
+    return Response.json({ retcode: 0, data: { ...overseasNoteRole, energy: zzzEnergy,
+      vitality: { current: 0, max: 400 }, vhs_sale: { sale_state: "SaleStateDoing" }, card_sign: "CardSignDone" } });
+  });
+  expect(await client.fetchHoYoLabZzzDailyNote(overseasNote, { async verifyProfile() { guards++; } })).toMatchObject({
+    game: "zzz", uid: overseasNote.selectedUid, region: "prod_gf_jp", stamina: { current: 0, max: 240, recoverySeconds: 14_400 },
+    vitality: { current: 0, max: 400 }, videoStore: "doing", scratchCardDone: true,
+  });
+  expect([calls, guards]).toEqual([2, 4]);
+});
+
+test("国际服便笺丢弃错角色、过期和查询期间换绑的结果", async () => {
+  for (const [response, error] of [
+    [{ retcode: 0, data: { role: { ...overseasNoteRole, region: "prod_gf_us" }, energy: zzzEnergy } }, { code: "response" }],
+    [{ retcode: -100 }, { reason: "expired" }],
+    [{ retcode: 1034 }, { reason: "risk" }],
+  ] as const) {
+    let calls = 0;
+    const client = createHoyoClient(async () => Response.json(calls++ === 0
+      ? { retcode: 0, data: { list: [overseasNoteRole] } } : response));
+    await expect(client.fetchHoYoLabZzzDailyNote(overseasNote, { async verifyProfile() {} })).rejects.toMatchObject(error);
+    expect(calls).toBe(2);
+  }
+  let guards = 0;
+  const client = createHoyoClient(async () => Response.json({ retcode: 0, data: { list: [overseasNoteRole], energy: zzzEnergy } }));
+  await expect(client.fetchHoYoLabZzzDailyNote(overseasNote, {
+    async verifyProfile() {
+      if (++guards === 4) throw new HoyoRequestError("profile-changed", "合成档案切换");
+    },
+  })).rejects.toMatchObject({ code: "profile-changed" });
+});
+
 test("海外、区服不明确、游戏不匹配及不安全 Cookie 都不会调用传输", async () => {
   const noSend: HoyoTransport = async () => { throw new Error("unexpected transport"); };
   for (const [context, changes] of [

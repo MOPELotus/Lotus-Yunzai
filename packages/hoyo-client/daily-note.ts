@@ -2,6 +2,8 @@ import type { Game, ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readCnGameRecord } from "./game-record.ts";
+import type { HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
+import { openHoYoLabZzzOwnedRecord, type HoYoLabZzzRecordAccount } from "./zzz-game-record.ts";
 
 export interface DailyNoteProgress {
   readonly current: number;
@@ -141,15 +143,14 @@ function parseScratchCard(value: unknown): boolean | undefined {
   return flag(state);
 }
 
-function normalize(data: Json, source: ProfileRequestContext, region: string): DailyNoteSnapshot {
-  const { game, role: { uid } } = source;
+function normalize(data: Json, game: Game, uid: string, region: string, gameBiz: string = noteBiz[game]): DailyNoteSnapshot {
   for (const identity of [data.role_id, data.uid, data.game_uid]) {
     if (identity !== undefined && identity !== uid && identity !== Number(uid)) {
       throw new HoyoRequestError("response", "体力响应的角色与档案不一致。");
     }
   }
   if ((data.server !== undefined && data.server !== region) || (data.region !== undefined && data.region !== region) ||
-      (data.game_biz !== undefined && data.game_biz !== noteBiz[game])) {
+      (data.game_biz !== undefined && data.game_biz !== gameBiz)) {
     throw new HoyoRequestError("response", "体力响应的游戏或区服与档案不一致。");
   }
 
@@ -180,5 +181,12 @@ function normalize(data: Json, source: ProfileRequestContext, region: string): D
 export async function readDailyNote(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: DailyNoteOptions = {}, verifyProfile?: () => Promise<void>): Promise<DailyNoteSnapshot> {
   const { data, region } = await readCnGameRecord(source, transport, { kind: "daily-note", signal }, verifyProfile);
-  return normalize(data, source, region);
+  return normalize(data, source.game, source.role.uid, region);
+}
+
+export async function readHoYoLabZzzDailyNote(
+  source: HoYoLabZzzRecordAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions,
+): Promise<DailyNoteSnapshot> {
+  const { role, read } = await openHoYoLabZzzOwnedRecord(source, transport, options);
+  return normalize(await read("note"), "zzz", role.uid, role.region, role.gameBiz);
 }

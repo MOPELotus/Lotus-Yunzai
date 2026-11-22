@@ -101,14 +101,24 @@ function entries(value: unknown, kind: "avatar" | "buddy") {
 export async function readZzzGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzGameRecordSnapshot> {
   const { data: index, region } = await readCnGameRecord(source, transport, { kind: "zzz-index", signal }, verifyProfile);
-  return readRecord(source.role.uid, region, "nap_cn", index, async part =>
-    (await readCnGameRecord(source, transport, { kind: part === "avatar" ? "zzz-avatar" : "zzz-buddy", signal }, verifyProfile)).data);
+  const { uid } = source.role;
+  verifyRecordRole(index, uid, region, "nap_cn");
+  return readRecord(uid, region, index, async part => {
+    const kind = part === "avatar" ? "zzz-avatar" : "zzz-buddy";
+    const { data } = await readCnGameRecord(source, transport, { kind, signal }, verifyProfile);
+    verifyRecordRole(data, uid, region, "nap_cn");
+    return data;
+  });
 }
 
-export async function readHoYoLabZzzGameRecord(source: HoYoLabCheckinAccount & {
+export interface HoYoLabZzzRecordAccount extends HoYoLabCheckinAccount {
   readonly selectedUid: string;
   readonly revision: string;
-}, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
+}
+
+export async function openHoYoLabZzzOwnedRecord(
+  source: HoYoLabZzzRecordAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions,
+) {
   const selectionError = () => new HoyoRequestError("invalid-input", "请在此档案选中已绑定到 HoYoLAB 账号的绝区零国际服角色。");
   if (source.selectedUid && !/^[1-9]\d{9}$/u.test(source.selectedUid)) throw selectionError();
   const client = openHoYoLabZzzRecordTransport(source, transport, options);
@@ -125,27 +135,38 @@ export async function readHoYoLabZzzGameRecord(source: HoYoLabCheckinAccount & {
   if (!source.selectedUid && catalogue.filter(row => hasUid(row, role.uid)).length !== 1) throw selectionError();
   const { uid, region, gameBiz } = resolveZzzGachaLinkRole(role);
   verifyIdentity(entry, uid, region, gameBiz);
-  const data = await readRecord(uid, region, gameBiz, await client.read("index", uid, region), part => client.read(part, uid, region));
+  return {
+    role,
+    async read(part: Parameters<typeof client.read>[0]) {
+      const data = await client.read(part, uid, region);
+      verifyRecordRole(data, uid, region, gameBiz);
+      return data;
+    },
+  };
+}
+
+export async function readHoYoLabZzzGameRecord(
+  source: HoYoLabZzzRecordAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions,
+) {
+  const { role, read } = await openHoYoLabZzzOwnedRecord(source, transport, options);
+  const data = await readRecord(role.uid, role.region, await read("index"), read);
   return { ...data, revision: source.revision, role };
 }
 
-async function readRecord(uid: string, region: string, gameBiz: string, index: Json,
-  read: (part: "avatar" | "buddy") => Promise<Json>): Promise<ZzzGameRecordSnapshot> {
-  function verify(data: Json) {
-    verifyIdentity(data, uid, region, gameBiz);
-    if (data.role !== undefined && data.role !== null) verifyIdentity(record(data.role), uid, region, gameBiz);
-  }
-  verify(index);
+function verifyRecordRole(data: Json, uid: string, region: string, gameBiz: string) {
+  verifyIdentity(data, uid, region, gameBiz);
+  if (data.role !== undefined && data.role !== null) verifyIdentity(record(data.role), uid, region, gameBiz);
+}
 
+async function readRecord(uid: string, region: string, index: Json,
+  read: (part: "avatar" | "buddy") => Promise<Json>): Promise<ZzzGameRecordSnapshot> {
   const stats = record(index.stats);
   const [activeDays, avatarNum, buddyNum] = trackedStats.slice(0, 3).map((field) => whole(stats[field]));
   if (activeDays === undefined || avatarNum === undefined || buddyNum === undefined) invalid();
   const progress = whole(stats.cur_period_zone_layer_count) ?? cleanText(stats.cur_period_zone_layer_count, 48);
   const avatars = await read("avatar");
-  verify(avatars);
   const avatarEntries = entries(avatars.avatar_list, "avatar");
   const buddies = await read("buddy");
-  verify(buddies);
   return {
     uid, region, worldLevel: cleanText(stats.world_level_name, 96), avatar: cleanText(index.cur_head_icon_url, 1024),
     stats: { active_days: activeDays, avatar_num: avatarNum, buddy_num: buddyNum, cur_period_zone_layer_count: progress },
