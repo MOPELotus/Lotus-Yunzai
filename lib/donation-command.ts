@@ -10,6 +10,6 @@ export const donationCommand: CommandModule = {
     "Donate": "#捐赠",
   },
   commands: {
-    "#捐赠": argument => argument ? undefined : "https://www.lotusshared.cn/donate",
+    "#捐赠": argument => argument ? [] : "https://www.lotusshared.cn/donate",
   },
 };

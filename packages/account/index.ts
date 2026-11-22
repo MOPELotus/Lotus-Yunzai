@@ -706,6 +706,21 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         await writeProfileDocument(path, { ...record(value), device }, expected, signal);
       });
     },
+    async removeBoundDevice(qq: string, profileId: number, expected: string, signal?: AbortSignal) {
+      const filename = profileFilename(qq, profileId);
+      const path = join(await realpath(root), filename);
+      return serializeWrite(path, async () => {
+        signal?.throwIfAborted();
+        const snapshot = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
+        if (revisionOf(snapshot) !== expected) throw changedProfile();
+        const value: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
+        const { summary } = readIdentity(value, qq, profileId);
+        if (!summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!summary.deviceBound) return false;
+        await writeProfileDocument(path, { ...record(value), device: { bound: false } }, expected, signal);
+        return true;
+      });
+    },
     async summary(qq: string, id = 1): Promise<ProfileSummary> {
       return (await read(qq, id)).summary;
     },

@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { accountCommands } from "../lib/account-commands.ts";
 import { deviceCommands, isDeviceBindingInput } from "../lib/device-commands.ts";
+import { createProfileStore } from "../packages/account/index.ts";
 import { parseDeviceBinding } from "../packages/account/device-binding.ts";
 
 const id = "01234567-0123-4567-89ab-0123456789ab";
@@ -31,7 +32,38 @@ test("绝区零设备帮助保留档号，不打开设备绑定窗口", async ()
     expect(commands[aliases!["#设备信息2"]!]).toBeFunction();
     const payload = JSON.stringify({ device_id: id, device_fp: fp });
     expect(await module.fallback!(payload, { ...context, normalizedMessage: payload })).toBe("请先私聊发送 #绑定设备。");
-    expect(isDeviceBindingInput("%解绑设备")).toBe(false);
+    expect(isDeviceBindingInput("%解绑设备")).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("绝区零解绑只修改本人私聊指定档案，保留登录与其它档案", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-device-unbind-"));
+  try {
+    const slot = join(root, "42-2.yaml");
+    const other = join(root, "42.yaml");
+    const account = { cookie: "fixture-cookie", stoken: "fixture-token" };
+    const bound = { bound: true, id, fp };
+    const original = Bun.YAML.stringify({ account, device: bound });
+    await Promise.all([writeFile(slot, original), writeFile(other, original)]);
+    const module = deviceCommands(root, new AbortController().signal, () => "unexpected");
+    const command = "%解绑设备2";
+    const context = {
+      normalizedMessage: command, message_type: "private" as const, self_id: 99, user_id: 42,
+      isMaster: false, isBotMaster: () => false, reply: () => true,
+    };
+    const dispatch = module.fallback!;
+    expect(await dispatch(command, { ...context, message_type: "group" })).toContain("私聊");
+    expect(await dispatch(command, { ...context, isDelegated: true })).toBeUndefined();
+    expect(await readFile(slot, "utf8")).toBe(original);
+    const profiles = createProfileStore(root);
+    const previous = await profiles.accountContext("42", 2);
+    expect(await dispatch(command, context)).toBe("已解绑该档案的设备。");
+    expect(Bun.YAML.parse(await readFile(slot, "utf8"))).toEqual({ account, device: { bound: false } });
+    expect(await readFile(other, "utf8")).toBe(original);
+    expect(await dispatch(command, context)).toBe("该档案没有已绑定的设备。");
+    await expect(profiles.removeBoundDevice("42", 2, previous.revision)).rejects.toMatchObject({ code: "changed" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

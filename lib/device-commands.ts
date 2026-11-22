@@ -4,6 +4,7 @@ import type { CommandModule, MessageFallbackContext, CommandReply } from "./comm
 
 const bind = /^(?:#(?:原神|星铁|绝区零)?|[#/]?zzz|#?[%％](?:绝区零|zzz)?|绝区零)绑定设备(?:信息)?([1-9]\d{0,2})?(?:\s+([\s\S]*))?$/iu;
 const cancel = /^#取消绑定设备(?:信息)?([1-9]\d{0,2})?$/u;
+const unbind = /^(?:#(?:绝区零)?|[#/]?zzz|#?[%％](?:绝区零|zzz)?|绝区零)解绑设备(?:信息)?([1-9]\d{0,2})?$/iu;
 const zzzHelp = /^(?:[#/]?(?:zzz|绝区零)(?:zzz|绝区零)?|#?[%％](?:zzz|绝区零)?)绑定设备帮助([1-9]\d{0,2})?$/iu;
 const timeout = 120_000;
 const apkName = "copy_device_info_1.2.apk";
@@ -16,7 +17,7 @@ function containsDeviceInput(message: string) {
 }
 
 export function isDeviceBindingInput(message: string) {
-  return bind.test(message) || cancel.test(message) || zzzHelp.test(message) || containsDeviceInput(message);
+  return bind.test(message) || cancel.test(message) || unbind.test(message) || zzzHelp.test(message) || containsDeviceInput(message);
 }
 
 interface BindingRequest {
@@ -42,11 +43,12 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const text = context.normalizedMessage.trim();
       const opened = bind.exec(text);
       const cancelled = cancel.exec(text);
+      const unbound = unbind.exec(text);
       const help = zzzHelp.exec(text);
       const payload = containsDeviceInput(text);
-      if (!opened && !cancelled && !help && !payload && text !== "取消") return;
+      if (!opened && !cancelled && !unbound && !help && !payload && text !== "取消") return;
       const { user_id, message_type, self_id, adapter } = context;
-      const id = Number((opened ?? cancelled ?? help)?.[1] ?? 1);
+      const id = Number((opened ?? cancelled ?? unbound ?? help)?.[1] ?? 1);
       if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (help) {
         if (context.isDelegated || (message_type !== "private" && message_type !== "group")) return;
@@ -60,11 +62,26 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       }
       if (message_type !== "private" || !user_id || !Number.isSafeInteger(user_id) || user_id < 1 ||
           !self_id || !Number.isSafeInteger(self_id) || self_id < 1) {
+        if (unbound && !context.isDelegated) return "请在本人私聊中解绑设备。";
         if (opened || cancelled) return `请私聊发送 #绑定设备${id === 1 ? "" : id}。`;
         return;
       }
       const qq = String(user_id);
       const scope = `${adapter ?? "onebot"}:${self_id}:${qq}`;
+      if (unbound) {
+        if (context.isDelegated) return;
+        if (pending.get(scope)?.profileId === id) pending.delete(scope);
+        if (opening.get(scope)?.profileId === id) opening.delete(scope);
+        try {
+          const current = await profiles.accountContext(qq, id);
+          const removed = await profiles.removeBoundDevice(qq, id, current.revision, signal);
+          return removed ? "已解绑该档案的设备。" : "该档案没有已绑定的设备。";
+        } catch (error) {
+          if (signal.aborted) return;
+          if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发送解绑指令。";
+          return "暂时无法解绑该档案的设备，请确认已登录并稍后重试。";
+        }
+      }
       if (cancelled || text === "取消") {
         const waiting = pending.get(scope) ?? opening.get(scope);
         if (!waiting || (cancelled?.[1] !== undefined && waiting.profileId !== id)) {
