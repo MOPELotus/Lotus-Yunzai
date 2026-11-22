@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElButton } from "element-plus";
 import { panelFetch, type PanelAuth } from "./api";
+import GroupRoutingSettings from "./GroupRoutingSettings.vue";
 
 interface Field {
   key: string;
@@ -30,6 +31,11 @@ const busy = ref(false);
 const feedback = ref("");
 const problem = ref("");
 let active: AbortController | undefined;
+
+const groupRules = computed<Record<string, unknown>>({
+  get: () => draft.value.rules ? JSON.parse(String(draft.value.rules)) as Values : {},
+  set: value => { draft.value.rules = JSON.stringify(value, null, 2); },
+});
 
 function formatted(field: Field, value: unknown): string | boolean {
   if (field.type === "boolean") return value === true;
@@ -140,21 +146,25 @@ onBeforeUnmount(() => {
         @click="current = section.key">{{ section.label }}</ElButton>
     </nav>
     <form class="native-form" @submit.prevent="update(true)">
-      <div v-for="field in fields" :key="field.key" class="native-field">
-        <label :for="'native-' + field.key">{{ field.label }}</label>
-        <input v-if="field.type === 'boolean'" :id="'native-' + field.key" v-model="draft[field.key]"
-          :disabled="busy || field.readonly" type="checkbox">
-        <select v-else-if="field.type === 'select'" :id="'native-' + field.key" v-model="draft[field.key]"
-          :disabled="busy || field.readonly">
-          <option v-for="option in field.options" :key="option.value" :value="String(option.value)">{{ option.label }}</option>
-        </select>
-        <textarea v-else-if="field.type === 'list' || field.type === 'json' || field.multiline" :id="'native-' + field.key"
-          :value="String(draft[field.key] ?? '')" :rows="field.rows ?? 4" :disabled="busy || field.readonly"
-          :placeholder="field.type === 'list' ? '每行一项' : undefined" @input="changeText(field.key, $event)" />
-        <input v-else :id="'native-' + field.key" v-model="draft[field.key]" :disabled="busy || field.readonly"
-          :inputmode="field.type === 'number' ? 'decimal' : undefined">
-        <span v-if="field.hint" class="native-hint">{{ field.hint }}</span>
-      </div>
+      <template v-for="field in fields" :key="field.key">
+        <GroupRoutingSettings v-if="current === 'group-routing' && field.key === 'rules'"
+          v-model="groupRules" :disabled="busy" :legacy="stored.file === 'config/config/group.yaml'" />
+        <div v-else class="native-field">
+          <label :for="'native-' + field.key">{{ field.label }}</label>
+          <input v-if="field.type === 'boolean'" :id="'native-' + field.key" v-model="draft[field.key]"
+            :disabled="busy || field.readonly" type="checkbox">
+          <select v-else-if="field.type === 'select'" :id="'native-' + field.key" v-model="draft[field.key]"
+            :disabled="busy || field.readonly">
+            <option v-for="option in field.options" :key="option.value" :value="String(option.value)">{{ option.label }}</option>
+          </select>
+          <textarea v-else-if="field.type === 'list' || field.type === 'json' || field.multiline" :id="'native-' + field.key"
+            :value="String(draft[field.key] ?? '')" :rows="field.rows ?? 4" :disabled="busy || field.readonly"
+            :placeholder="field.type === 'list' ? '每行一项' : undefined" @input="changeText(field.key, $event)" />
+          <input v-else :id="'native-' + field.key" v-model="draft[field.key]" :disabled="busy || field.readonly"
+            :inputmode="field.type === 'number' ? 'decimal' : undefined">
+          <span v-if="field.hint" class="native-hint">{{ field.hint }}</span>
+        </div>
+      </template>
       <p v-if="problem" class="error" role="alert">{{ problem }}</p>
       <p v-if="feedback" role="status">{{ feedback }}</p>
       <div class="native-actions">
