@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CommandContext } from "../lib/commands.ts";
-import { createRuntimeStatus } from "../lib/runtime-status.ts";
+import { createRuntimeStatus, readRuntimeStatusRedisClients } from "../lib/runtime-status.ts";
 
 const onebot = { id: 99, adapter: "onebot" as const, seconds: 15 };
 const milky = { id: 99, adapter: "milky" as const, seconds: 2 };
@@ -77,4 +77,15 @@ test("Redis 明细只为已授权的 Pro 读取，剔除配置、进程标识和
   const model = await status(owner, true);
   expect(JSON.stringify(model)).not.toMatch(/secret|internal\.example|process_id/u);
   expect(calls).toBe(2);
+});
+
+test("空闲 Redis 监控只读取客户端数量，宿主关闭时丢弃未完成读取", async () => {
+  const controller = new AbortController();
+  expect(await readRuntimeStatusRedisClients(async () => "connected_clients:0\r\nclient_recent_max_input_buffer:99\r\n", controller.signal))
+    .toBe(0);
+  const delayed = Promise.withResolvers<string>();
+  const pending = readRuntimeStatusRedisClients(() => delayed.promise, controller.signal);
+  controller.abort();
+  expect(await pending).toBeUndefined();
+  delayed.resolve("connected_clients:99\r\n");
 });

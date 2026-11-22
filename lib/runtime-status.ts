@@ -52,20 +52,25 @@ export function parseRuntimeStatusRedis(raw: string): RuntimeStatusRedis | undef
   };
 }
 
-async function readRedisDiagnostics(read: (signal: AbortSignal) => Promise<string>, request?: AbortSignal) {
+async function readRedisInfo(read: (signal: AbortSignal) => Promise<string>, request?: AbortSignal) {
   const signal = request ? AbortSignal.any([request, AbortSignal.timeout(850)]) : AbortSignal.timeout(850);
   if (signal.aborted) return;
   const { promise, resolve } = Promise.withResolvers<undefined>();
   const stop = () => resolve(undefined);
   signal.addEventListener("abort", stop, { once: true });
   try {
-    const info = await Promise.race([promise, Promise.resolve().then(() => read(signal))]);
-    if (info !== undefined) return parseRuntimeStatusRedis(info);
+    return await Promise.race([promise, Promise.resolve().then(() => read(signal))]);
   } catch {
     // Keep the status card available when the state store is unavailable.
   } finally {
     signal.removeEventListener("abort", stop);
   }
+}
+
+export async function readRuntimeStatusRedisClients(read: (signal: AbortSignal) => Promise<string>, signal: AbortSignal) {
+  const info = await readRedisInfo(read, signal);
+  if (!info || info.length > 16 * 1024) return;
+  return integer(/^connected_clients:(\d+)\r?$/mu.exec(info)?.[1]);
 }
 
 export function createRuntimeStatus(options: {
@@ -86,7 +91,8 @@ export function createRuntimeStatus(options: {
     const current = terminal ? online : online.filter(account => account.id === id && account.adapter === scope);
     if (!terminal && !current.length) return;
     const redisStatus = pro && options.readRedisStatus
-      ? readRedisDiagnostics(options.readRedisStatus, privateCredentialSignal) : undefined;
+      ? readRedisInfo(options.readRedisStatus, privateCredentialSignal)
+        .then(info => info === undefined ? undefined : parseRuntimeStatusRedis(info)) : undefined;
     const accounts = await Promise.all(current.map(async ({ adapter, seconds, id }): Promise<RuntimeStatusAccount> => {
       const name = adapter === "onebot" ? "OneBot" : "Milky";
       // Existing counters share account IDs across adapters. A dual connection cannot claim an adapter-specific total.

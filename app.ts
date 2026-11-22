@@ -150,7 +150,7 @@ import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog, createPluginLog, runtimePluginLogger } from "./lib/runtime-log-writer.ts";
 import { readRuntimeLogs } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
-import { createRuntimeStatus } from "./lib/runtime-status.ts";
+import { createRuntimeStatus, readRuntimeStatusRedisClients } from "./lib/runtime-status.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
@@ -3054,6 +3054,9 @@ if (import.meta.main) {
       runtimeVersion,
       statusPhotoStorage: statusStorage("status-photo"),
       statusMonitorStorage: statusStorage("status-monitor"),
+      statusMonitorRedisClients: valkey === undefined ? undefined : (signal: AbortSignal) =>
+        readRuntimeStatusRedisClients(request => globalThis.redis?.sendCommand<string>(["INFO", "clients"], { signal: request })
+          ?? Promise.resolve(""), signal),
       runtimeStatus: createRuntimeStatus({
         accounts() {
           const accounts = groups.onlineAccounts().map(account => ({ ...account, adapter: "onebot" as const }));
