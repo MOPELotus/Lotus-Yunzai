@@ -10,6 +10,14 @@ export type MediaDownloadScope = typeof mediaDownloadScopes[number];
 export const accountScopePolicies = ["inherit", "allow", "deny", "master_only"] as const;
 export type AccountScopePolicy = typeof accountScopePolicies[number];
 
+export const mediaOwnerScopes = ["bilibili.login", "tools.install", "netease.partner"] as const;
+export type MediaOwnerScope = typeof mediaOwnerScopes[number];
+const restrictedMediaPolicies = ["master_only", "deny"] as const satisfies readonly AccountScopePolicy[];
+
+export function mediaOwnerScopePolicies(scope: MediaOwnerScope): readonly AccountScopePolicy[] {
+  return scope === "netease.partner" ? accountScopePolicies : restrictedMediaPolicies;
+}
+
 export function accountScopePolicy(scope: AccountScope | "group.cleanup", configured: unknown): AccountScopePolicy {
   if (configured !== null && configured !== undefined) {
     return accountScopePolicies.find(value => value === configured) ?? (scope === "group.cleanup" ? "deny" : "inherit");

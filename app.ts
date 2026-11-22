@@ -113,7 +113,7 @@ import { panelPartner } from "./lib/panel-partner.ts";
 import { panelMediaEnvironment } from "./lib/panel-media-environment.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
-import { panelAccountPermissions, panelMediaDownloadPermissions } from "./lib/panel-account-permissions.ts";
+import { panelAccountPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
@@ -3438,6 +3438,7 @@ if (import.meta.main) {
         settingsRoutes.set("/panel/api/settings/media/partner", panelPartner(root, validateModuleCron));
         settingsRoutes.set("/panel/api/settings/media/environment", panelMediaEnvironment(root));
         settingsRoutes.set("/panel/api/settings/media/download-permissions", panelMediaDownloadPermissions(root));
+        settingsRoutes.set("/panel/api/settings/media/owner-permissions", panelMediaOwnerPermissions(root));
       }
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = !panelEnabled ? undefined : panelExtensionRoutes(plugins.directories,

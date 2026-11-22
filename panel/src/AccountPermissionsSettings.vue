@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { accountScopePolicies, accountScopes, mediaDownloadScopes, type AccountScope, type AccountScopePolicy,
-  type MediaDownloadScope, type ScopePolicySnapshot } from "../../lib/account-scope-policy.ts";
+import { accountScopePolicies, accountScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
+  type AccountScope, type AccountScopePolicy, type MediaDownloadScope, type MediaOwnerScope,
+  type ScopePolicySnapshot } from "../../lib/account-scope-policy.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ auth: PanelAuth; mediaDownload?: boolean }>();
+const props = defineProps<{ auth: PanelAuth; section?: "media-download" | "media-owner" }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
-type Scope = AccountScope | MediaDownloadScope;
+type Scope = AccountScope | MediaDownloadScope | MediaOwnerScope;
 type Snapshot = ScopePolicySnapshot<Scope>;
-const media = props.mediaDownload === true;
-const title = media ? "媒体下载权限" : "签到权限";
-const heading = media ? "media-download-permissions-title" : "account-permissions-title";
-const endpoint = `${import.meta.env.BASE_URL}api/settings/${media ? "media/download-permissions" : "checkin/permissions"}`;
-const scopes: readonly Scope[] = media ? mediaDownloadScopes : accountScopes;
+const sections = {
+  account: { title: "签到权限", id: "account-permissions", path: "checkin/permissions", scopes: accountScopes },
+  "media-download": { title: "媒体下载权限", id: "media-download-permissions", path: "media/download-permissions", scopes: mediaDownloadScopes },
+  "media-owner": { title: "媒体主人权限", id: "media-owner-permissions", path: "media/owner-permissions", scopes: mediaOwnerScopes },
+} as const;
+const section = props.section ?? "account";
+const { title, id, path, scopes } = sections[section];
+const heading = `${id}-title`;
+const endpoint = `${import.meta.env.BASE_URL}api/settings/${path}`;
 const labels: Record<Scope, string> = {
   "checkin.register": "注册签到",
   "checkin.refresh": "刷新登录信息",
@@ -23,14 +28,21 @@ const labels: Record<Scope, string> = {
   "scheduler.manage": "聊天中修改调度",
   "bilibili.download": "B 站视频下载",
   "douyin.download": "抖音媒体下载",
+  "bilibili.login": "B 站扫码登录",
+  "tools.install": "初始化及按需安装媒体工具",
+  "netease.partner": "合伙人手动操作及 TuneWeave 指令",
 };
 const policyLabels: Record<AccountScopePolicy, string> = {
   inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
 };
-const groups = media ? [{ title: "下载策略", scopes }] : [
+const groups = section === "account" ? [
   { title: "档案与签到", scopes: accountScopes.slice(0, 3) },
   { title: "调度指令", scopes: accountScopes.slice(3) },
-];
+] : [{ title: section === "media-download" ? "下载策略" : "主人指令", scopes }];
+function choices(scope: Scope) {
+  const ownerScope = mediaOwnerScopes.find(name => name === scope);
+  return ownerScope ? mediaOwnerScopePolicies(ownerScope) : accountScopePolicies;
+}
 
 const saved = shallowRef<Snapshot>();
 const draft = ref<Snapshot["settings"]>();
@@ -58,7 +70,7 @@ function isSnapshot(input: unknown): input is Snapshot {
       typeof input.revision !== "string" || !/^[a-f0-9]{64}$/u.test(input.revision) ||
       !input.settings || typeof input.settings !== "object") return false;
   const policies = input.settings as Partial<Snapshot["settings"]>;
-  return scopes.every(scope => accountScopePolicies.some(policy => policies[scope] === policy));
+  return scopes.every(scope => choices(scope).some(policy => policies[scope] === policy));
 }
 
 async function request(method: "GET" | "PUT") {
@@ -116,7 +128,7 @@ onBeforeUnmount(() => {
 <template>
   <section :aria-labelledby="heading" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h2 v-if="media" :id="heading">{{ title }}</h2>
+      <h2 v-if="props.section" :id="heading">{{ title }}</h2>
       <h1 v-else :id="heading" tabindex="-1">{{ title }}</h1>
       <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
     </div>
@@ -132,11 +144,12 @@ onBeforeUnmount(() => {
         <label v-for="scope in group.scopes" :key="scope">
           {{ labels[scope] }}
           <select v-model="draft[scope]" :name="scope">
-            <option v-for="policy in accountScopePolicies" :key="policy" :value="policy">{{ policyLabels[policy] }}</option>
+            <option v-for="policy in choices(scope)" :key="policy" :value="policy">{{ policyLabels[policy] }}</option>
           </select>
         </label>
       </fieldset>
-      <p v-if="media">用户和群拒绝名单优先。下次需要下载权限的操作会采用新设置。</p>
+      <p v-if="section === 'media-download'">用户和群拒绝名单优先。下次需要下载权限的操作会采用新设置。</p>
+      <p v-else-if="section === 'media-owner'">用户和群拒绝名单优先。这些指令始终要求机器人主人，涉及扫码和合伙人日志时还要求好友私聊。保存后从下一次手动操作开始生效。</p>
       <p v-else>用户和群拒绝名单仍优先。聊天中修改调度的权限在下次操作时生效，其余项目重启宿主后生效。</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"

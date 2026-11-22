@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
-import { accountScopePolicies, accountScopePolicy, accountScopes, mediaDownloadScopes,
+import { accountScopePolicies, accountScopePolicy, accountScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
   type AccountScopePolicy, type ScopePolicySnapshot } from "./account-scope-policy.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
@@ -11,6 +11,8 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
 
 type Config = Readonly<Record<string, unknown>>;
 type Changes<Scope extends string> = Partial<Record<Scope, AccountScopePolicy>>;
+type ReadPolicy<Scope> = (scope: Scope, configured: unknown, hasScope: boolean) => AccountScopePolicy;
+type Policies<Scope> = (scope: Scope) => readonly AccountScopePolicy[];
 interface PolicyTree { [name: string]: AccountScopePolicy | PolicyTree }
 const revisionKey = randomBytes(32);
 
@@ -19,25 +21,31 @@ function record(value: unknown): Config | undefined {
 }
 
 function snapshot<Scope extends string>(document: Config, allowed: readonly Scope[],
-  readPolicy: (scope: Scope, configured: unknown) => AccountScopePolicy, patch: Changes<Scope> = {}): ScopePolicySnapshot<Scope> {
+  readPolicy: ReadPolicy<Scope>, includeRaw: boolean, patch: Changes<Scope> = {}): ScopePolicySnapshot<Scope> {
   const permissions = record(document.permissions) ?? {};
   const scopes = record(permissions.scopes) ?? {};
   const settings = Object.fromEntries(allowed.map(scope =>
-    [scope, patch[scope] ?? readPolicy(scope, record(scopes[scope])?.policy)],
+    [scope, patch[scope] ?? readPolicy(scope, record(scopes[scope])?.policy, Object.hasOwn(scopes, scope))],
   )) as ScopePolicySnapshot<Scope>["settings"];
+  const raw = includeRaw ? allowed.map(scope => ({
+    present: patch[scope] !== undefined || Object.hasOwn(scopes, scope),
+    value: patch[scope] ?? record(scopes[scope])?.policy,
+  })) : undefined;
   const revision = createHmac("sha256", revisionKey)
-    .update(JSON.stringify([settings, permissions.default_policy, permissions.users, permissions.groups])).digest("hex");
+    .update(JSON.stringify([settings, permissions.default_policy, permissions.users, permissions.groups, raw])).digest("hex");
   return { revision, settings };
 }
 
-function parseChanges<Scope extends string>(input: unknown, allowed: readonly Scope[]): Changes<Scope> {
+function parseChanges<Scope extends string>(input: unknown, allowed: readonly Scope[],
+  policies: Policies<Scope> = () => accountScopePolicies): Changes<Scope> {
   const fields = record(input);
   if (!fields || !Object.keys(fields).length) throw new Error();
   const changes: Changes<Scope> = {};
   for (const [key, value] of Object.entries(fields)) {
     const scope = allowed.find(entry => entry === key);
-    const policy = accountScopePolicies.find(entry => entry === value);
-    if (!scope || !policy) throw new Error();
+    if (!scope) throw new Error();
+    const policy = policies(scope).find(entry => entry === value);
+    if (!policy) throw new Error();
     changes[scope] = policy;
   }
   return changes;
@@ -88,10 +96,10 @@ function editPolicies(text: string, current: Config, changes: Changes<string>) {
 }
 
 function panelScopePermissions<Scope extends string>(root: URL, allowed: readonly Scope[],
-  readPolicy: (scope: Scope, configured: unknown) => AccountScopePolicy) {
+  readPolicy: ReadPolicy<Scope>, ownerPolicies?: Policies<Scope>) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
-      try { return Response.json(snapshot(await readLotusGlobalConfig(root), allowed, readPolicy)); }
+      try { return Response.json(snapshot(await readLotusGlobalConfig(root), allowed, readPolicy, ownerPolicies !== undefined)); }
       catch { return new Response(null, { status: 500 }); }
     }
     if (request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
@@ -104,7 +112,7 @@ function panelScopePermissions<Scope extends string>(root: URL, allowed: readonl
         throw new Error();
       }
       revision = data.revision;
-      patch = parseChanges(data.patch, allowed);
+      patch = parseChanges(data.patch, allowed, ownerPolicies);
     } catch {
       return new Response(null, { status: 400 });
     }
@@ -114,13 +122,14 @@ function panelScopePermissions<Scope extends string>(root: URL, allowed: readonl
       return Response.json(await updateLotusGlobalConfig(root, {
         canWrite: active, canCommit: active, signal: request.signal,
         prepare(text, local, effective) {
-          const before = snapshot(effective, allowed, readPolicy);
+          const before = snapshot(effective, allowed, readPolicy, ownerPolicies !== undefined);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           const changes = Object.fromEntries(allowed.flatMap(scope =>
             patch[scope] === undefined || patch[scope] === before.settings[scope] ? [] : [[scope, patch[scope]]],
           )) as Changes<Scope>;
           if (!Object.keys(changes).length) return { value: before };
-          return { yaml: editPolicies(text, local, changes), value: snapshot(effective, allowed, readPolicy, changes) };
+          return { yaml: editPolicies(text, local, changes),
+            value: snapshot(effective, allowed, readPolicy, ownerPolicies !== undefined, changes) };
         },
       }));
     } catch (error) {
@@ -138,4 +147,12 @@ export function panelMediaDownloadPermissions(root: URL) {
   // The media reader coerces legacy YAML policy values before applying its inherit fallback.
   return panelScopePermissions(root, mediaDownloadScopes, (_scope, configured) =>
     accountScopePolicies.find(policy => policy === String(configured || "inherit")) ?? "inherit");
+}
+
+export function panelMediaOwnerPermissions(root: URL) {
+  return panelScopePermissions(root, mediaOwnerScopes, (scope, configured, hasScope) => {
+    if (scope !== "netease.partner") return configured === "deny" ? "deny" : "master_only";
+    if (!hasScope) return "master_only";
+    return accountScopePolicies.find(policy => policy === String(configured || "inherit")) ?? "inherit";
+  }, mediaOwnerScopePolicies);
 }
