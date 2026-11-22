@@ -76,7 +76,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
     if (event.groupRequestScope === "milky" && event.canReviewGroupRequests === true && groupReviewEntry.test(event.msg)) return false;
     const files = typeof event.message === "string" ? [] : event.message.filter(({ type }) => type === "file");
     const text = event.raw_message || event.msg;
-    const help = /^#(?:星铁|绝区零)(?:帮助|help)$/u.test(normalizeGameCommand(event).msg);
+    const help = /^#(?:星铁|绝区零)?(?:帮助|help)$/u.test(normalizeGameCommand(event).msg);
     const allowed = files.length > 0
       ? files.every(({ name, file }) => {
         const filename = typeof name === "string" ? name : file;

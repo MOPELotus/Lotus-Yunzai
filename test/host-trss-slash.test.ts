@@ -65,10 +65,13 @@ test.each([
     send("*帮助", 3);
     send("%帮助", 4);
     send("%help", 5);
+    send("#help", 6);
+    send("*help", 7);
+    const expected = enabled ? 7 : 6;
     const deadline = performance.now() + 500;
-    while (replies.length < (enabled ? 5 : 4) && performance.now() < deadline) await Bun.sleep(10);
+    while (replies.length < expected && performance.now() < deadline) await Bun.sleep(10);
     if (!enabled) await Bun.sleep(80);
-    expect(replies).toHaveLength(enabled ? 5 : 4);
+    expect(replies).toHaveLength(expected);
     for (const reply of replies) expect(reply).toEqual(expect.stringContaining("https://www.lotusshared.cn/yunzai/"));
   } finally {
     client?.close();
