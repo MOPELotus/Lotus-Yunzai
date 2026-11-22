@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { zzzTuningPools, type ZzzTuningSnapshot } from "../packages/hoyo-client/zzz-tuning.ts";
 import { createStarRailGachaHistoryStore } from "../plugins/starrail/gacha-store.ts";
 import { readZzzLegacyGachaSources } from "../plugins/zzz/gacha-legacy.ts";
+import { readZzzTuningHistory } from "../plugins/zzz/tuning-history.ts";
 import { createZzzTuningSync } from "../plugins/zzz/tuning-sync.ts";
 import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-history.ts";
 
@@ -116,6 +117,41 @@ test("迁移退役跃迁、调频逐抽和官方统计至独立只读回退，�
     join(state, "data/zzzTuningStats"), lockNeverTaken, retired("zzzTuningStats"));
   expect(await tuning.read(qq, { uid: zzzUid, region })).toEqual(zzzStats(5, "2026-03-03T00:00:00.000Z"));
   expect(await tuning.read("43", { uid: zzzUid, region })).toBeNull();
+}));
+
+test("旧官方调频仅将期次首 UP 的字符串零读取为空", () => fixture(async (source, state) => {
+  const identity = { uid: zzzUid, region } as const;
+  const stats = zzzStats(4, "2026-03-04T00:00:00.000Z");
+  const absent = {
+    itemId: "0", name: "", icon: "", rarity: "", itemType: "", isUp: false, upTag: "",
+    count: null, time: null, sort: "", version: "1.0",
+  };
+  const period = {
+    version: "1.0", status: "CURRENT", startAt: null, endAt: null, leftStartAt: null, leftEndAt: null,
+    firstUp: absent, records: [], items: [],
+  };
+  const valid = { ...absent, itemId: "12001", name: "合成音擎", rarity: "S", version: "1.1" };
+  const next = { ...period, version: "1.1", firstUp: valid };
+  const document = (periods: readonly unknown[]) => ({
+    ...stats, pools: stats.pools.map((pool, index) => index === 0 ? { ...pool, periods } : pool),
+  });
+  const original = oldFile(source, secondPlugin, "zzzTuningStats", zzzUid);
+  const input = await writeJson(original, document([period, next]));
+  expect(await stageLegacySharedGameHistory(source, state)).toMatchObject([{ files: 1 }]);
+  expect(await readFile(original, "utf8")).toBe(input);
+  expect(await readFile(stagedFile(state, secondPlugin, "zzzTuningStats", zzzUid), "utf8")).toBe(input);
+
+  const fallback = join(state, migrationRoot, secondPlugin, "zzzTuningStats");
+  const tuning = createZzzTuningSync({ requestSelectedContext: lockNeverTaken }, { fetchZzzTuning: lockNeverTaken },
+    join(state, "data/zzzTuningStats"), lockNeverTaken, [fallback]);
+  expect((await tuning.read(qq, identity))?.pools[0]?.periods).toEqual([{ ...period, firstUp: null }, next]);
+  expect(() => readZzzTuningHistory(document([{ ...period, items: [absent] }]), identity)).toThrow("物品编号");
+  expect(() => readZzzTuningHistory(document([{ ...period, records: [absent] }]), identity)).toThrow("物品编号");
+  expect(() => readZzzTuningHistory(document([{ ...period, firstUp: { ...absent, itemId: 0 } }]), identity)).toThrow("物品编号");
+  expect(() => readZzzTuningHistory(document([{ ...period, firstUp: { ...absent, version: "9.0" } }]), identity)).toThrow("物品与期次的归属");
+  expect(() => readZzzTuningHistory(document([{ ...period, firstUp: { ...absent, isUp: "false" } }]), identity)).toThrow("UP 标记");
+  const invalidPool = { ...stats, pools: stats.pools.map((pool, index) => index === 0 ? { ...pool, records: [absent] } : pool) };
+  expect(() => readZzzTuningHistory(invalidPool, identity)).toThrow("物品编号");
 }));
 
 test("迁移拒绝身份错配、含凭据的已识别旧历史及矛盾回退，同时仅返回脱敏错误", () => fixture(async (source, state) => {
