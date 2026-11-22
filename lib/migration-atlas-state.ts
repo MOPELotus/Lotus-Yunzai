@@ -7,6 +7,7 @@ import { copyAtlasCandidate } from "../plugins/atlas/assemble-candidate.ts";
 import { isAtlasSourceWebp } from "../plugins/atlas/source-transport.ts";
 import { prepareAtlasTheme } from "../plugins/atlas/prepare-theme.ts";
 import { parseAtlasUpdatePolicy } from "../plugins/atlas/update-policy.ts";
+import { parseAtlasSearchLimit } from "../plugins/atlas/search-limit.ts";
 import { validateAtlasCandidate } from "../plugins/atlas/validate-candidate.ts";
 import { isAtlasChannel } from "./atlas-channel.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
@@ -110,6 +111,8 @@ function safeArgs(selections: readonly string[]) {
 function stageConfig(atlas: Record<string, unknown>) {
   const value: Record<string, unknown> = {};
   if (isAtlasChannel(atlas.version_channel)) value.version_channel = atlas.version_channel;
+  const searchLimit = parseAtlasSearchLimit(atlas.max_results);
+  if (searchLimit !== undefined) value.max_results = searchLimit;
   const auto = record(atlas.auto_update);
   if (auto) {
     value.auto_update = Object.fromEntries([

@@ -107,6 +107,37 @@ test("编辑图鉴定时配置保留 YAML 锚、共享源和原有版路选择",
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("图鉴搜索上限可保存并回读，独立于定时任务并拒绝过期写入", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-search-limit-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    const config = join(directory, "config");
+    await mkdir(config);
+    const file = join(config, "global.yaml");
+    const source = "atlas:\r\n  version_channel: live\r\n  max_results: '3' # 模糊匹配\r\n  auto_update: { enable: false }\r\n";
+    await writeFile(file, source);
+    const route = panelAtlasUpdate(root, validTask);
+    const get = async () => (await route(request(), () => true)).json();
+    const before = await get();
+    const put = (searchLimit: unknown) => route(request("PUT", { settings: before.settings,
+      revision: before.revision, searchLimit }), () => true);
+    expect(before.searchLimit).toBe(3);
+    for (const value of [0, 1.5, 2 ** 53, "2", null]) {
+      const response = await put(value);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ field: "searchLimit" });
+    }
+    expect(await readFile(file, "utf8")).toBe(source);
+    const applied = await put(60);
+    expect(applied.status).toBe(200);
+    expect(await applied.json()).toMatchObject({ searchLimit: 60, settings: before.settings });
+    expect(await get()).toMatchObject({ searchLimit: 60 });
+    expect(await readFile(file, "utf8")).toBe(source.replace("'3'", "60"));
+    expect((await put(7)).status).toBe(409);
+    expect((await readLotusGlobalConfig(root)).atlas).toMatchObject({ max_results: 60, version_channel: "live", auto_update: { enable: false } });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("缺数据开关仅在重启后的版本任务读取，并保持原版本渠道和两条 Cron", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-empty-"));
   try {

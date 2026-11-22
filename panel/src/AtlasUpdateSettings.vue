@@ -2,10 +2,11 @@
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AtlasScopeField, AtlasScopePatch, AtlasScopeSelections } from "../../lib/panel-atlas-scope-schema.ts";
+import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
-interface Snapshot { settings: Settings; revision: string; scopes?: AtlasScopeSelections }
+interface Snapshot { settings: Settings; revision: string; scopes?: AtlasScopeSelections; searchLimit?: number }
 
 const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
 const scopeFields = ["update_args", "challenge_args"] as const;
@@ -26,6 +27,7 @@ const endpoint = `${import.meta.env.BASE_URL}api/settings/atlas/update`;
 const saved = ref<Snapshot>();
 const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
 const scopeDraft = ref<AtlasScopePatch>({});
+const searchLimit = ref<number>();
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
@@ -36,15 +38,18 @@ const scopePatch = computed<AtlasScopePatch>(() => Object.fromEntries(scopeField
     (selected.length !== original.length || original.some(item => !selected.includes(item))) ? [[field, selected]] : [];
 })));
 const scopeInvalid = computed(() => Object.values(scopePatch.value).some(scope => !scope.length));
-const dirty = computed(() => !!saved.value && (Object.keys(scopePatch.value).length > 0 ||
+const searchInvalid = computed(() => saved.value?.searchLimit !== undefined &&
+  (typeof searchLimit.value !== "number" || parseAtlasSearchLimit(searchLimit.value) === undefined));
+const searchDirty = computed(() => saved.value?.searchLimit !== searchLimit.value);
+const dirty = computed(() => !!saved.value && (searchDirty.value || Object.keys(scopePatch.value).length > 0 ||
   JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
 watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
-  if (active || (mode === "save" && (!dirty.value || scopeInvalid.value))) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的图鉴自动更新设置？")) return;
+  if (active || (mode === "save" && (!dirty.value || scopeInvalid.value || searchInvalid.value))) return;
+  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的图鉴设置？")) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -55,6 +60,7 @@ async function sync(mode: "load" | "save") {
       method: mode === "load" ? "GET" : "PUT",
       headers: mode === "save" ? { "Content-Type": "application/json" } : undefined,
       body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision,
+        ...(searchDirty.value && { searchLimit: searchLimit.value }),
         ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
@@ -75,23 +81,26 @@ async function sync(mode: "load" | "save") {
       const { field } = await response.json().catch(() => ({})) as { field?: string };
       if (active !== controller) return;
       error.value = field === "check_cron" ? "版本检查的 Cron 表达式无效。" : field === "challenge_cron"
-        ? "挑战刷新的 Cron 表达式无效。" : "请检查图鉴自动更新设置。";
+        ? "挑战刷新的 Cron 表达式无效。" : field === "searchLimit"
+          ? "查询条数须为有效的正整数。" : "请检查图鉴设置。";
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取图鉴自动更新设置。" : "宿主未能保存图鉴自动更新设置。";
+      error.value = mode === "load" ? "宿主未能读取图鉴设置。" : "宿主未能保存图鉴设置。";
       return;
     }
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
-        typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string") {
-      error.value = "宿主返回了无法识别的图鉴自动更新设置。";
+        typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
+        (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
+      error.value = "宿主返回了无法识别的图鉴设置。";
       return;
     }
     saved.value = result;
     draft.value = { ...result.settings };
+    searchLimit.value = result.searchLimit;
     scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
@@ -118,12 +127,18 @@ onBeforeUnmount(() => {
 <template>
   <section class="atlas-update" aria-labelledby="atlas-update-title" :aria-busy="Boolean(busy)">
     <div class="update-heading">
-      <h2 id="atlas-update-title">图鉴自动更新</h2>
+      <h2 id="atlas-update-title">查询与自动更新</h2>
       <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <form v-if="saved" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
+        <template v-if="saved.searchLimit !== undefined">
+          <label for="atlas-search-limit">每次查询最多返回</label>
+          <input id="atlas-search-limit" v-model.number="searchLimit" type="number" min="1" step="1" required
+            aria-describedby="atlas-search-limit-note" />
+          <p id="atlas-search-limit-note" class="subtitle toggle-note">控制同名或模糊查询返回的条目数。</p>
+        </template>
         <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />启用图鉴定时更新</label>
         <label for="atlas-check-cron">版本检查 Cron</label>
         <input id="atlas-check-cron" v-model="draft.check_cron" type="text" maxlength="160" autocomplete="off"
@@ -160,7 +175,7 @@ onBeforeUnmount(() => {
       </fieldset>
       <p class="subtitle">清空时间表可恢复默认频率。保存后重启宿主生效。</p>
       <div class="update-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || scopeInvalid || Boolean(busy)">保存自动更新</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || scopeInvalid || searchInvalid || Boolean(busy)">保存图鉴设置</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>
@@ -174,7 +189,7 @@ onBeforeUnmount(() => {
 .update-heading h2 { margin: 0; font-size: 17px; }
 .update-actions span { color: var(--accent); }
 fieldset { display: grid; gap: 7px; padding: 0; border: 0; margin: 0; min-width: 0; }
-fieldset input[type="text"] { border: 1px solid var(--line); padding: 8px; border-radius: 6px; color: inherit; background: var(--surface); }
+fieldset input:is([type="text"], [type="number"]) { border: 1px solid var(--line); padding: 8px; border-radius: 6px; color: inherit; background: var(--surface); }
 .update-toggle input { accent-color: var(--accent); }
 .subtitle { margin: 12px 0; }
 .toggle-note { margin: 0; }

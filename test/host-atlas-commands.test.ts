@@ -78,6 +78,7 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
     disableMemberPrewarm(root);
     await Promise.all([
       writeCatalog(data),
+      writeFile(join(root, "config", "global.yaml"), "atlas: { max_results: 2, auto_update: { enable: false } }\n"),
       cp(new URL("../plugins/atlas/", import.meta.url), join(root, "plugins", "atlas"), {
         recursive: true, filter: (path) => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
       }),
@@ -146,7 +147,11 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       const gSet = "原神 · 圣遗物 · 共用样例 · ID 103";
       const cone = "星铁 · 光锥 · 共用样例 · 四星 · 巡猎 · ID 202";
       expect(await query("#圣遗物图鉴 共用样例")).toBe(`${gSet}\n1件套 · 样例增益。`);
-      expect((await query("#图鉴 共用样例")).split("\n")).toEqual(expect.arrayContaining([gWeapon, gSet, cone]));
+      for (const command of ["#图鉴 共用样例", "#图鉴共用样例"]) {
+        const result = await query(command);
+        expect(result.split("\n").filter(line => [gWeapon, gSet, cone].includes(line))).toHaveLength(2);
+        expect(result).toContain("结果较多");
+      }
       const suffixMatch = await query("#共用样例图鉴");
       expect(suffixMatch.split("\n")).toEqual(expect.arrayContaining([gWeapon, gSet]));
       expect(suffixMatch).not.toContain(cone);
