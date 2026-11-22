@@ -7,6 +7,11 @@ const register = /^#注册自动签到([1-9]\d{0,2})?$/u;
 export const checkinStatusCommand = "#签到状态";
 export const unregisterCheckinCommand = "#删除签到";
 
+interface CheckinSession {
+  readonly signal: AbortSignal;
+  readonly isCurrent: () => boolean;
+}
+
 const domesticGames = [
   ["genshin", "原神"], ["honkai_sr", "星铁"], ["zzz", "绝区零"],
   ["honkai3rd", "崩坏3"], ["honkai2", "崩坏2"], ["tears_of_themis", "未定事件簿"],
@@ -14,20 +19,20 @@ const domesticGames = [
 
 export function checkinStatus(directory: string | undefined) {
   const profiles = createProfileStore(directory);
-  return async (qq: string, signal: AbortSignal) => {
+  return async (qq: string, { isCurrent }: Pick<CheckinSession, "isCurrent">) => {
     let ids: number[];
+    if (!isCurrent()) return;
     try {
-      signal.throwIfAborted();
       ids = await profiles.listIds(qq);
     } catch {
-      if (!signal.aborted) return "暂时无法读取本人的签到档案。";
+      if (isCurrent()) return "暂时无法读取本人的签到档案。";
       return;
     }
     let bound = 0;
     let unreadable = 0;
     const registered: string[] = [];
     for (const id of ids) {
-      if (signal.aborted) return;
+      if (!isCurrent()) return;
       try {
         const { enabled, loggedIn, games, communityForums } = await profiles.checkinSettings(qq, id);
         if (loggedIn) bound++;
@@ -37,7 +42,7 @@ export function checkinStatus(directory: string | undefined) {
         registered.push(`档案 ${id}：${scopes}`);
       } catch { unreadable++; }
     }
-    if (signal.aborted) return;
+    if (!isCurrent()) return;
     if (unreadable && unreadable === ids.length) return "暂时无法读取本人的签到档案。";
     const lines = [`已绑定 ${bound} 个登录档案，已注册 ${registered.length} 个自动签到档案。`, ...registered];
     if (!bound) lines.push("尚无登录资料，可发送 #扫码登录。");
@@ -49,26 +54,27 @@ export function checkinStatus(directory: string | undefined) {
 
 export function checkinUnregistration(directory: string | undefined, reconcilePlans: () => Promise<void>) {
   const profiles = createProfileStore(directory);
-  return async (qq: string, signal: AbortSignal) => {
+  return async (qq: string, { signal, isCurrent }: CheckinSession) => {
     let disabled = 0;
     let failed = 0;
     let ids: number[];
+    if (!isCurrent()) return;
     try {
-      signal.throwIfAborted();
       ids = await profiles.listIds(qq);
     } catch {
-      if (!signal.aborted) return "暂时无法读取本人的签到档案。";
+      if (isCurrent()) return "暂时无法读取本人的签到档案。";
       return;
     }
     for (const id of ids) {
-      if (signal.aborted) break;
+      if (!isCurrent()) break;
       try {
         const current = await profiles.checkinSettings(qq, id);
         if (!current.enabled) continue;
-        const change = await profiles.setCheckinEnabled(qq, id, current.revision, false, signal);
+        if (!isCurrent()) break;
+        const change = await profiles.setCheckinEnabled(qq, id, current.revision, false, signal, isCurrent);
         if (change.changed) disabled++;
       } catch (error) {
-        if (signal.aborted) break;
+        if (!isCurrent()) break;
         if (!(error instanceof ProfileError && error.code === "missing")) failed++;
       }
     }
@@ -77,7 +83,7 @@ export function checkinUnregistration(directory: string | undefined, reconcilePl
       try { await reconcilePlans(); }
       catch { planPending = true; }
     }
-    if (signal.aborted) return;
+    if (!isCurrent()) return;
     if (!disabled) return failed ? "暂时无法关闭本人的自动签到，请重新发送指令。" : "未注册自动签到，无需关闭。";
     const lines = [`已关闭 ${disabled} 个档案的自动签到，登录资料已保留。`,
       "如需继续，请重新发送 #注册自动签到，其他档案按编号注册。"];

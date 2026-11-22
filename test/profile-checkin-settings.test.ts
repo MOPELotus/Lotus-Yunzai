@@ -127,3 +127,19 @@ test("个人档案设置与旧版一样要求已登录", async () => {
     expect(await readFile(path, "utf8")).toBe(before);
   }, { ...fixture, account: { cookie: "cookie_token=fixture" } });
 });
+
+test("既有异步校验期间外部写入生效，停用也在提交前检查当前授权", async () => {
+  await withProfile(async (store, path) => {
+    const { revision } = await store.checkinSettings(qq, profileId);
+    const externallyUpdated = Bun.YAML.stringify({ ...fixture, account: { ...fixture.account, cookie: "cookie_token=external" } });
+    await expect(store.setPreviewRedeemSettings(qq, profileId, revision, true, ["gs"], undefined, async () => {
+      await writeFile(path, externallyUpdated);
+    })).rejects.toMatchObject({ code: "changed" });
+    expect(await readFile(path, "utf8")).toBe(externallyUpdated);
+
+    const fresh = await store.checkinSettings(qq, profileId);
+    await expect(store.setCheckinEnabled(qq, profileId, fresh.revision, false, undefined, () => false))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(await readFile(path, "utf8")).toBe(externallyUpdated);
+  });
+});

@@ -939,6 +939,25 @@ if (import.meta.main) {
     return AbortSignal.any([lifecycle.signal, handoffSession.signal, dispatchPower.activeSignal, ...scopes]);
   }
 
+  function ownCheckinSession(event: MessageEvent, features: readonly string[]) {
+    const { user_id: user, self_id: bot, group_id: groupId, sender } = event;
+    const group = event.message_type === "group" && event.sub_type !== "anonymous" &&
+      groupId !== undefined && Number.isSafeInteger(groupId) && groupId > 0;
+    const privateFriend = event.message_type === "private" && event.sub_type === "friend" && groupId === undefined;
+    const connection = group ? event[delegationSession]?.signal : privateFriend ? event.privateCredentialSignal : undefined;
+    if (!connection || event.isDelegated || event.attachmentOnly ||
+        user === undefined || !Number.isSafeInteger(user) || user < 1 ||
+        bot === undefined || !Number.isSafeInteger(bot) || bot < 1 || user === bot ||
+        event.message_id === undefined || (sender?.user_id !== undefined && sender.user_id !== user && sender.user_id !== String(user))) return;
+    const signal = nativeOperationSignal(connection);
+    const isCurrent = () => !signal.aborted && !stopping && handoff.accepting && !dispatchPower.paused &&
+      groupDispatch.allowsInbound(event) && groupDispatch.allows(event, features) && (event.adapter === "milky" ? onlineMilkyBotId() === bot : event.boundAccount === true);
+    if (!isCurrent()) return;
+    return { user, signal, privateFriend, isCurrent,
+      async verifySession() { if (!isCurrent()) throw new DOMException("签到会话已失效。", "AbortError"); },
+    };
+  }
+
   function allowsOwnerRelay(event: MessageEvent) {
     return !stopping && handoff.accepting && !dispatchPower.paused &&
       groupDispatch.allowsInbound(event) && groupDispatch.allows(event, ownerRelayFeatureNames);
@@ -2002,14 +2021,11 @@ if (import.meta.main) {
     if (event.msg === unregisterCheckinCommand || event.msg === checkinStatusCommand) {
       const status = event.msg === checkinStatusCommand;
       const features = status ? ["签到状态", "@lotus-yunzai/checkin-status"] : ["删除签到", "@lotus-yunzai/checkin-registration"];
-      if (!allowNew || event.isDelegated || !allowed(features)) return;
-      const connection = event[delegationSession]?.signal;
-      const { user_id: qq } = event;
-      if ((event.message_type !== "group" && event.message_type !== "private") ||
-          !connection || connection.aborted || qq === undefined || !Number.isSafeInteger(qq) || qq < 1) return;
-      const signal = nativeOperationSignal(connection);
-      const reply = await (status ? readCheckinStatus : unregisterCheckin)(String(qq), signal);
-      if (reply !== undefined && !signal.aborted && allowed(features)) await event.reply(reply);
+      if (!allowNew) return;
+      const scope = ownCheckinSession(event, features);
+      if (!scope) return;
+      const reply = await (status ? readCheckinStatus : unregisterCheckin)(String(scope.user), scope);
+      if (reply !== undefined && scope.isCurrent()) await event.reply(reply);
       return;
     }
     if (!event.isDelegated && await legacy.dispatchContext(event, allowed)) {
@@ -2066,22 +2082,12 @@ if (import.meta.main) {
     const namedCheckin = namedCheckinCommand(command.msg);
     if (namedCheckin) {
       const features = ["@lotus-yunzai/checkin"];
-      const { user_id: user, self_id: bot, group_id: groupId, sender } = event;
-      const group = event.message_type === "group" && event.sub_type !== "anonymous" &&
-        groupId !== undefined && Number.isSafeInteger(groupId) && groupId > 0;
-      const privateFriend = event.message_type === "private" && event.sub_type === "friend" && groupId === undefined;
-      const connection = group ? event[delegationSession]?.signal : privateFriend ? event.privateCredentialSignal : undefined;
-      if (!connection || event.isDelegated || event.attachmentOnly || !runNamedCheckin ||
-          user === undefined || !Number.isSafeInteger(user) || user < 1 ||
-          bot === undefined || !Number.isSafeInteger(bot) || bot < 1 || user === bot ||
-          event.message_id === undefined || (sender?.user_id !== undefined && sender.user_id !== user && sender.user_id !== String(user))) return;
-      const signal = nativeOperationSignal(connection);
-      const isCurrent = () => !signal.aborted && !stopping && handoff.accepting && !dispatchPower.paused &&
-        groupDispatch.allowsInbound(event) && allowed(features) && (event.adapter === "milky" ? onlineMilkyBotId() === bot : event.boundAccount === true);
-      if (!isCurrent()) return;
+      const scope = ownCheckinSession(event, features);
+      if (!scope || !runNamedCheckin) return;
+      const { user, signal, privateFriend, isCurrent, verifySession } = scope;
       const reply = await runNamedCheckin(String(user), namedCheckin, {
         signal,
-        async verifySession() { if (!isCurrent()) throw new DOMException("签到会话已失效。", "AbortError"); },
+        verifySession,
         notify: privateFriend ? message => isCurrent() ? event.reply(message) : false : undefined,
       });
       if (reply !== undefined && isCurrent()) await sendCommandReply(event, reply);

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkinScheduleClock, generateCheckinSchedulePlan } from "../lib/checkin-schedule-plan.ts";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
+import { lockFile } from "../lib/file-lock.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 test("旧删除签到按真实两协议停用本人所有档案并保留关键词、登录和签到回执", async () => {
@@ -105,3 +106,71 @@ test("旧删除签到按真实两协议停用本人所有档案并保留关键�
     await store.update(clock.date, () => ({ plan: { ...today, entries: currentEntries }, result: undefined }));
   });
 });
+
+test("群内本人停用签到在原网关离线或群策略收回后停止写入", async () => {
+  const profile = Bun.YAML.stringify({ user: { qq: "42" }, profile: { id: 1 }, enabled: true });
+  const originalGroup = { message_type: "group", sub_type: "normal", group_id: 77, sender: { user_id: 42, role: "member" } };
+  const pendingConfig = "default: {groupCD: 0, singleCD: 0}\n";
+  const preload = [
+    'Bun.env.LOTUS_PROFILE_DIR = process.cwd() + "/profiles";',
+    'const originalFetch = globalThis.fetch;',
+    'globalThis.fetch = Object.assign((input, init) => {',
+    '  const url = new URL(input instanceof Request ? input.url : input);',
+    '  if (url.hostname !== "127.0.0.1") throw new Error("offline fixture");',
+    '  return originalFetch(input, init);',
+    '}, originalFetch);',
+  ].join("\n");
+
+  await withDualGatewayFixture("checkin-local-revocation", 'master: ["99:91", "100:92"]\n', async ({ root, ws, onebot, sendOneBot }) => {
+    const profiles = join(root, "profiles");
+    const file = join(profiles, "42.yaml");
+    const sidecar = join(profiles, ".42.yaml.lotus-profile.sqlite");
+    async function staged(present: boolean) {
+      const until = performance.now() + 1500;
+      while (performance.now() < until) {
+        if ((await readdir(profiles)).some(name => name.startsWith(".profile-write-")) === present) return;
+        await Bun.sleep(15);
+      }
+      throw new Error(present ? "未开始暂存档案" : "档案仍在暂存");
+    }
+
+    sendOneBot("＃删除签到", { ...originalGroup, group_id: 79, sender: { user_id: 43 } });
+    sendOneBot("井删除签到", { ...originalGroup, group_id: 80, sub_type: "anonymous" });
+    await Bun.sleep(120);
+    expect(onebot.calls).toEqual([]);
+    expect(await readFile(file, "utf8")).toBe(profile);
+
+    const pending = await lockFile(sidecar, "测试签到档案");
+    try {
+      sendOneBot("#删除签到", originalGroup);
+      await staged(true);
+      await writeFile(join(root, "config/group.yaml"), pendingConfig + "77: {disable: [删除签到], botAlias: 助手}\n");
+      await Bun.sleep(1150);
+      sendOneBot("助手#签到状态", originalGroup);
+      const current = await onebot.next("send_msg");
+      expect(current.params.message).toContain("已注册 1 个自动签到档案");
+      current.respond({ message_id: 57 });
+    } finally { pending.close(); }
+    await staged(false);
+    expect(await readFile(file, "utf8")).toBe(profile);
+    expect(onebot.calls).toEqual([]);
+
+    const afterPolicy = await lockFile(sidecar, "测试签到档案");
+    try {
+      sendOneBot("＃删除签到", { ...originalGroup, group_id: 78 });
+      await staged(true);
+      const closed = Promise.withResolvers<void>();
+      ws.addEventListener("close", () => closed.resolve(), { once: true });
+      ws.close();
+      await closed.promise;
+    } finally { afterPolicy.close(); }
+    await staged(false);
+    expect(await readFile(file, "utf8")).toBe(profile);
+    expect(onebot.calls).toEqual([]);
+  }, 2000, preload, async root => {
+    await mkdir(join(root, "profiles"));
+    await writeFile(join(root, "profiles", "42.yaml"), profile);
+    await writeFile(join(root, "config/group.yaml"), pendingConfig);
+    await writeFile(join(root, "config/global.yaml"), "scheduler: {enable: false}\n");
+  });
+}, 8000);

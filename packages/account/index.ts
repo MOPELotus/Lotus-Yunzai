@@ -354,7 +354,7 @@ function changedProfile(): ProfileError {
 }
 
 async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal,
-  verify?: () => Promise<void>) {
+  verify?: () => Promise<void>, canCommit?: () => boolean) {
   const yaml = Bun.YAML.stringify(document);
   if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
   const temporary = await mkdtemp(join(dirname(path), ".profile-write-"));
@@ -377,6 +377,7 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
         const current = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
         if (revisionOf(current) !== expected) throw changedProfile();
         signal?.throwIfAborted();
+        if (canCommit && !canCommit()) throw new DOMException("档案写入授权已失效。", "AbortError");
         await rename(staged, path);
       }
       return revisionOf(Buffer.from(yaml));
@@ -613,7 +614,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   async function updateCheckinProfile(
     qq: string, id: number, expectedRevision: string,
     change: (document: Record<string, unknown>, state: ReturnType<typeof readIdentity>) => Record<string, unknown>,
-    signal?: AbortSignal, verify?: () => Promise<void>,
+    signal?: AbortSignal, verify?: () => Promise<void>, canCommit?: () => boolean,
   ) {
     const filename = profileFilename(qq, id);
     const directory = await realpath(root).catch((error: unknown) => {
@@ -627,7 +628,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (revision !== expectedRevision) throw changedProfile();
       const updated = change(document, state);
       if (isDeepStrictEqual(document, updated)) return { changed: false, revision };
-      const saved = await writeProfileDocument(path, updated, revision, signal, verify);
+      const saved = await writeProfileDocument(path, updated, revision, signal, verify, canCommit);
       return { changed: true, revision: saved };
     });
   }
@@ -978,12 +979,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }] : [];
       return { revision, wallets: [...wallets, ...international] };
     },
-    async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean, signal?: AbortSignal) {
+    async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean,
+      signal?: AbortSignal, canCommit?: () => boolean) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         return state.summary.enabled === enabled ? document : { ...document, enabled };
-      }, signal);
+      }, signal, undefined, canCommit);
       return { enabled, ...result };
     },
     async registerGroupCheckin(qq: string, id: number, expectedRevision: string, groupId: number, nickname?: string) {

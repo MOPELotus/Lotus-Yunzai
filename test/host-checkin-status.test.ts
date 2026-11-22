@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { checkinStatus } from "../lib/checkin-registration-commands.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 test("旧签到状态只读取当前已认证 QQ 即时的各档登记", async () => {
@@ -61,6 +63,8 @@ test("旧签到状态只读取当前已认证 QQ 即时的各档登记", async (
     empty.respond({ message_id: 103 });
 
     gateways.sendOneBot("#签到状态 44", group);
+    gateways.sendOneBot("#签到状态", { ...group, group_id: 78, user_id: 44, sender: { user_id: 45 } });
+    gateways.sendOneBot("#签到状态", { ...group, group_id: 78, user_id: 46, sub_type: "anonymous", sender: { user_id: 46 } });
     gateways.sendOneBot("#签到状态", { ...group, group_id: 79, user_id: 44, sender: { user_id: 44, role: "member" } });
     await Bun.sleep(160);
     expect(gateways.onebot.calls).toEqual([]);
@@ -77,4 +81,15 @@ test("旧签到状态只读取当前已认证 QQ 即时的各档登记", async (
     }));
     await writeFile(join(root, "config/global.yaml"), "scheduler: {enable: false}\n");
   });
+});
+
+test("本人签到状态读取后收到会话撤回时不返回档案状态", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-status-revoked-"));
+  try {
+    await writeFile(join(directory, "42.yaml"), "user: {qq: 42}\nprofile: {id: 1}\nenabled: true\n");
+    const readStatus = checkinStatus(directory);
+    let checks = 0;
+    expect(await readStatus("42", { isCurrent: () => ++checks <= 2 })).toBeUndefined();
+    expect(checks).toBe(3);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
