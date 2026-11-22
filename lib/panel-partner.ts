@@ -122,6 +122,19 @@ function editPartner(text: string, local: Config, effective: Config, changes: Pa
 
 class PartnerInputError extends Error {}
 
+export async function enablePartnerAfterLogin(
+  root: URL, signal: AbortSignal, canWrite: (effective: Config) => boolean,
+): Promise<void> {
+  await updateLotusGlobalConfig(root, {
+    signal,
+    canWrite,
+    prepare(text, local, effective) {
+      if (record(effective.netease_partner)?.enable === true) return { value: undefined };
+      return { yaml: editPartner(text, local, effective, { enable: true }).yaml, value: undefined };
+    },
+  });
+}
+
 export function panelPartner(root: URL, validModuleCron: (cron: string) => boolean) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {

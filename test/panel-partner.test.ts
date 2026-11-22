@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { panelPartner } from "../lib/panel-partner.ts";
+import { enablePartnerAfterLogin, panelPartner } from "../lib/panel-partner.ts";
 import { panelApi } from "../lib/panel.ts";
 import { HandlerScope } from "../lib/plugins/handler.ts";
 import { LegacyTasks } from "../lib/plugins/tasks.ts";
@@ -147,5 +147,35 @@ test("评论库和乐评限制分别编辑，保留旧 YAML 共享配置、注�
     const result = await changedBack.json();
     expect(result.settings.comments).toEqual(["打卡支持"]);
     expect(result.settings.schedule).toBe("0 5 0 * * ? *");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("合伙人扫码确认后的定时启用保留原有选项并检查权限与取消", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-partner-login-settings-"));
+  try {
+    const root = pathToFileURL(`${dir}/`);
+    const file = join(dir, "config/global.yaml");
+    const oldFile = join(dir, "plugins/Lotus-ReFactor/config/global.yaml");
+    await mkdir(join(dir, "config"));
+    await mkdir(join(dir, "plugins/Lotus-ReFactor/config"), { recursive: true });
+    const original = "# unrelated\nmusic: { search_limit: 8 }\n";
+    const inherited = "netease_partner: { enable: false, schedule: '0 55 23 * * *', review: { mode: codex, max_chars: 80 } }\n";
+    await writeFile(file, original);
+    await writeFile(oldFile, inherited);
+
+    const active = new AbortController();
+    await expect(enablePartnerAfterLogin(root, active.signal, () => false)).rejects.toThrow("permission");
+    await expect(enablePartnerAfterLogin(root, AbortSignal.abort(), () => true)).rejects.toThrow("cancelled");
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    await enablePartnerAfterLogin(root, active.signal, effective => effective.music != null);
+    expect((await loadGlobalConfig(root)).netease_partner).toEqual({
+      enable: true, schedule: "0 55 23 * * *", review: { mode: "codex", max_chars: 80 },
+    });
+    expect(await readFile(oldFile, "utf8")).toBe(inherited);
+    const enabled = await readFile(file, "utf8");
+    expect(enabled).toStartWith(original);
+    await enablePartnerAfterLogin(root, active.signal, () => true);
+    expect(await readFile(file, "utf8")).toBe(enabled);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
