@@ -1,5 +1,5 @@
-import { quantityText, summaryBox, summaryIcon, summarySection } from "./genshin-summary-elements.ts";
-import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard, type InfoCardOptions } from "./info-card.ts";
+import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, summarySection, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
+import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
 export interface GenshinBackpackCardModel {
   readonly categories: readonly {
@@ -13,7 +13,7 @@ export interface GenshinBackpackCardModel {
   }[];
 }
 
-export type GenshinBackpackCardOptions = InfoCardOptions;
+export type GenshinBackpackCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel, options: GenshinBackpackCardOptions = {}) {
   return renderInfoCard({ title: "原神背包", metadata: "米游社养成计算器 · ≥ 表示至少拥有该数量" },
@@ -60,5 +60,5 @@ export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel,
           }
         },
       };
-    }, options);
+    }, await genshinSummaryOptions(options));
 }

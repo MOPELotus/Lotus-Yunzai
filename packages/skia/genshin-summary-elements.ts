@@ -1,8 +1,47 @@
+import { realpath, stat } from "node:fs/promises";
+import { join, sep } from "node:path";
 import { loadImage, type CanvasRenderingContext2D as Context } from "skia-canvas";
-import { drawInfoText, infoCardColors } from "./info-card.ts";
+import { drawInfoText, infoCardColors, type InfoCardOptions } from "./info-card.ts";
+import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
 
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const quantity = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
+
+export interface GenshinSummaryCardOptions extends InfoCardOptions {
+  readonly miaoResourceDirectory?: string;
+}
+
+const originalFonts = [
+  ["Han", "HYWH-65W.ttf"], ["Number", "tttgbnumber.ttf"], ["Title", "NZBZ.ttf"],
+] as const;
+const registered = new Map<string, string>();
+
+export async function genshinSummaryOptions({ miaoResourceDirectory, ...options }: GenshinSummaryCardOptions): Promise<InfoCardOptions> {
+  if (!miaoResourceDirectory || options.typography) return options;
+  const root = await realpath(miaoResourceDirectory).catch(() => undefined);
+  if (!root) return options;
+  const [han, number, title] = await Promise.all(originalFonts.map(async ([scope, filename]) => {
+    const file = await realpath(join(root, "common", "font", filename)).catch(() => undefined);
+    if (!file?.startsWith(root + sep)) return;
+    const alias = registered.get(file);
+    if (alias) return alias;
+    const info = await stat(file).catch(() => undefined);
+    if (!info?.isFile() || info.size <= 0 || info.size > 8 * 1024 * 1024) return;
+    try {
+      const loaded = registerGachaThemeFont(scope, file);
+      registered.set(file, loaded);
+      return loaded;
+    } catch {
+      return;
+    }
+  }));
+  if (!han && !number && !title) return options;
+  const fallback = '"LotusInfoText", "LotusInfoMiSans", sans-serif';
+  return { ...options, typography: {
+    body: [number, han, fallback].filter(Boolean).join(", "),
+    title: [number, title, han, fallback].filter(Boolean).join(", "),
+  } };
+}
 
 export function quantityText(value: number) {
   return quantity.format(value);

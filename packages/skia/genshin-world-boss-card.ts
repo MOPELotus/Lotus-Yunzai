@@ -1,5 +1,5 @@
-import { quantityText, summaryBox, summaryIcon, summarySection } from "./genshin-summary-elements.ts";
-import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard, type InfoCardOptions } from "./info-card.ts";
+import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, summarySection, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
+import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
 export interface GenshinWorldBossCardModel {
   readonly groups: readonly {
@@ -12,7 +12,7 @@ export interface GenshinWorldBossCardModel {
   }[];
 }
 
-export type GenshinWorldBossCardOptions = InfoCardOptions;
+export type GenshinWorldBossCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardModel, options: GenshinWorldBossCardOptions = {}) {
   return renderInfoCard({ title: "原神世界 BOSS 击杀" }, ({ x: left, y, width, measure }) => {
@@ -56,5 +56,5 @@ export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardMode
         }
       },
     };
-  }, options);
+  }, await genshinSummaryOptions(options));
 }

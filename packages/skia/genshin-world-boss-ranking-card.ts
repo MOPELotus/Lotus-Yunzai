@@ -1,5 +1,5 @@
-import { quantityText, summaryBox, summaryIcon } from "./genshin-summary-elements.ts";
-import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard, type InfoCardOptions } from "./info-card.ts";
+import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
+import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
 export interface GenshinWorldBossRankingCardModel {
   readonly rows: readonly {
@@ -10,7 +10,7 @@ export interface GenshinWorldBossRankingCardModel {
   }[];
 }
 
-export type GenshinWorldBossRankingCardOptions = InfoCardOptions;
+export type GenshinWorldBossRankingCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossRankingCardModel,
   options: GenshinWorldBossRankingCardOptions = {}) {
@@ -43,5 +43,5 @@ export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossR
         }
       },
     };
-  }, options);
+  }, await genshinSummaryOptions(options));
 }

@@ -8,6 +8,7 @@ export interface InfoCardOptions {
   readonly scale?: number;
   readonly themeDirectory?: string;
   readonly allowHalfScale?: boolean;
+  readonly typography?: { readonly body: string; readonly title: string };
 }
 
 export interface InfoCardHeader {
@@ -36,6 +37,7 @@ interface InfoTextOptions {
   readonly leading?: number;
   readonly color?: string;
   readonly align?: Context["textAlign"];
+  readonly title?: boolean;
 }
 
 // The Bilibili video card's typography, panel, and footer.
@@ -49,6 +51,7 @@ export const infoCardColors = {
   tile: "rgba(255,255,255,.08)",
 } as const;
 const font = '"LotusInfoText", "LotusInfoMiSans", sans-serif';
+const textStyles = new WeakMap<Context, NonNullable<InfoCardOptions["typography"]>>();
 const defaultTheme = fileURLToPath(new URL("../../data/atlas/theme", import.meta.url));
 const themes = new Map<string, ReturnType<typeof loadTheme>>();
 
@@ -76,8 +79,13 @@ function themeImage(directory: string) {
   return image;
 }
 
-export function measureInfoText(ctx: Context, value: string, maxWidth: number, size: number) {
-  ctx.font = `${size}px ${font}`;
+function selectFont(ctx: Context, size: number, title: boolean) {
+  const custom = textStyles.get(ctx);
+  ctx.font = `${size}px ${(title ? custom?.title : custom?.body) ?? font}`;
+}
+
+export function measureInfoText(ctx: Context, value: string, maxWidth: number, size: number, title = false) {
+  selectFont(ctx, size, title);
   return value.split(/\r?\n/u).flatMap((text) => {
     const rows: string[] = [];
     let row = "";
@@ -98,8 +106,8 @@ export function measureInfoText(ctx: Context, value: string, maxWidth: number, s
 }
 
 export function drawInfoText(ctx: Context, rows: readonly string[], x: number, y: number,
-  { size, leading = size * 1.5, color = infoCardColors.text, align = "left" }: InfoTextOptions) {
-  ctx.font = `${size}px ${font}`;
+  { size, leading = size * 1.5, color = infoCardColors.text, align = "left", title = false }: InfoTextOptions) {
+  selectFont(ctx, size, title);
   ctx.textBaseline = "top";
   ctx.textAlign = align;
   ctx.fillStyle = color;
@@ -108,7 +116,7 @@ export function drawInfoText(ctx: Context, rows: readonly string[], x: number, y
 
 async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: InfoCardHeader,
   buildBody: (layout: InfoCardBodyLayout) => InfoCardBody,
-  { themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme }: InfoCardOptions) {
+  { themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme, typography }: InfoCardOptions) {
   if (!Number.isFinite(width) || width < 300) throw new RangeError("信息卡逻辑宽度最小为 300px。");
   const [background, badge] = await Promise.all([
     themeImage(themeDirectory),
@@ -117,11 +125,12 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
   const metrics = new Canvas(1, 1);
   metrics.gpu = false;
   const measure = metrics.getContext("2d");
+  if (typography) textStyles.set(measure, typography);
   const x = 30;
   const contentWidth = width - 2 * x;
   const eyebrowX = badge ? 143 : 35;
   const labels = eyebrow ? measureInfoText(measure, eyebrow, width - eyebrowX - 35, 30) : [];
-  const heading = measureInfoText(measure, title, contentWidth, 44);
+  const heading = measureInfoText(measure, title, contentWidth, 44, true);
   const meta = metadata ? measureInfoText(measure, metadata, contentWidth, 18) : [];
   const hasHeader = Boolean(eyebrow || badge);
   const titleTop = hasHeader ? Math.max(150, 56 + labels.length * 46) + 20 : 44;
@@ -135,6 +144,7 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
   const height = Math.max(240, bottom + footerHeight);
 
   async function draw(ctx: Context, visible: { readonly top: number; readonly bottom: number }) {
+    if (typography) textStyles.set(ctx, typography);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = infoCardColors.background;
@@ -161,7 +171,7 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
       ctx.fillStyle = infoCardColors.rule;
       ctx.fillRect(x, titleTop - 5, contentWidth, 1);
     }
-    drawInfoText(ctx, heading, x, titleTop, { size: 44, leading: 60 });
+    drawInfoText(ctx, heading, x, titleTop, { size: 44, leading: 60, title: true });
     drawInfoText(ctx, meta, x, metadataTop, { size: 18, leading: 28, color: infoCardColors.gold });
     ctx.fillStyle = infoCardColors.rule;
     ctx.fillRect(x, ruleTop, contentWidth, 1);
