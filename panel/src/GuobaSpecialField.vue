@@ -149,7 +149,7 @@ function updateTree(value: unknown) {
   <ElTreeSelect v-else-if="schema.component === 'TreeSelect'" :id="id" :model-value="treeValue"
     :data="schema.componentProps?.treeData ? [...schema.componentProps.treeData] : []"
     :multiple="schema.componentProps?.multiple" :show-checkbox="schema.componentProps?.treeCheckable"
-    :check-strictly="!schema.componentProps?.treeCheckable" :disabled="disabled"
+    :check-strictly="!schema.componentProps?.treeCheckable || schema.componentProps?.treeCheckStrictly" :disabled="disabled"
     :placeholder="schema.componentProps?.placeholder ?? '选择分类'" :teleported="false" clearable filterable @update:model-value="updateTree" />
   <template v-else-if="contact && schema.componentProps?.single">
     <input :id="id" inputmode="numeric" pattern="[1-9][0-9]*" :value="pickerValue" :list="`${id}-options`"

@@ -78,6 +78,8 @@ export interface GuobaField {
     dateType?: "date" | "datetime" | "week" | "month" | "year";
     treeData?: readonly GuobaTreeNode[];
     treeCheckable?: boolean;
+    treeCheckStrictly?: boolean;
+    labelInValue?: boolean;
   }>;
 }
 
@@ -188,7 +190,6 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
     ? aliases[schema.component] : schema.component;
   const component = group ? "Divider" : components.find((name) => name === rawComponent);
   if (!component) return undefined;
-  if (component === "CheckboxGroup" && child) return undefined;
   const { field, label, bottomHelpMessage } = schema;
   if (group && (label === undefined || label === null || label === "")) return undefined;
   if (typeof label !== "string") throw new Error();
@@ -217,9 +218,10 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
     const raw = schema.componentProps;
     const { placeholder, rows, min, max, step, options, mode, defaultValue, addonAfter } = raw;
     if (component === "TreeSelect") {
-      if (raw.labelInValue === true || raw.treeCheckStrictly === true) return undefined;
-      props.multiple = raw.multiple === true || raw.treeCheckable === true;
-      props.treeCheckable = raw.treeCheckable === true;
+      props.treeCheckStrictly = raw.treeCheckStrictly === true;
+      props.treeCheckable = raw.treeCheckable === true || props.treeCheckStrictly;
+      props.multiple = raw.multiple === true || props.treeCheckable;
+      props.labelInValue = raw.labelInValue === true || props.treeCheckStrictly;
       props.treeData = normaliseTree(raw.treeData, record(raw.fieldNames) ? raw.fieldNames : {});
     }
     if (component === "GTags") {
@@ -301,6 +303,38 @@ function inputValue(schema: ValueField, value: unknown): GuobaInput {
   throw new Error();
 }
 
+function labeledTree(schema: GuobaField) {
+  return schema.component === "TreeSelect" && schema.componentProps?.labelInValue === true;
+}
+
+function displayValue(schema: ValueField, value: unknown): GuobaInput {
+  if (!labeledTree(schema) || value == null) return inputValue(schema, value);
+  const raw = (item: unknown) => record(item) ? item.value : item;
+  const display = Array.isArray(value) ? value.filter(item => !record(item) || item.halfChecked !== true).map(raw) : raw(value);
+  return inputValue(schema, display);
+}
+
+function treeNode(nodes: readonly GuobaTreeNode[], item: Scalar): GuobaTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.value === item) return node;
+    const child = node.children && treeNode(node.children, item);
+    if (child) return child;
+  }
+}
+
+function storedValue(schema: GuobaField, value: GuobaInput, previous: unknown): unknown {
+  if (!labeledTree(schema) || value === null) return value;
+  const { treeData = [], treeCheckStrictly } = schema.componentProps!;
+  const old = (Array.isArray(previous) ? previous : [previous]).filter(record);
+  const item = (key: Scalar) => {
+    const carried = old.find(entry => entry.value === key && entry.halfChecked !== true);
+    return carried ?? { value: key, label: treeNode(treeData, key)?.label ?? String(key) };
+  };
+  if (!Array.isArray(value)) return item(value);
+  const halfChecked = treeCheckStrictly ? old.filter(entry => entry.halfChecked === true && !value.includes(entry.value as Scalar)) : [];
+  return [...value.map(item), ...halfChecked];
+}
+
 function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   const value = inputValue(schema, raw);
   if (value === null) return value;
@@ -320,11 +354,9 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   if ((schema.component === "DatePicker" || schema.component === "TimePicker") &&
       typeof value !== "string" && typeof value !== "number") throw new Error();
   if (schema.component === "TreeSelect") {
-    const valid = (nodes: readonly GuobaTreeNode[], item: Scalar): boolean => nodes.some(node =>
-      (!node.disabled && node.value === item) || Boolean(node.children && valid(node.children, item)));
     const values = Array.isArray(value) ? value : [value];
     if (Array.isArray(value) !== Boolean(props?.multiple) ||
-        values.some(item => !valid(props?.treeData ?? [], item))) throw new Error();
+        values.some(item => { const node = treeNode(props?.treeData ?? [], item); return !node || node.disabled; })) throw new Error();
   }
   if (schema.component === "InputNumber") {
     const number = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
@@ -372,7 +404,7 @@ function subformSnapshot(file: string, schema: ValueField, rows: readonly Record
       if (child.component === "InputPassword") {
         if (typeof value === "string" && value.length) configuredPasswords.push(child.field);
       } else if (child.component !== "GSubForm" && value !== undefined) {
-        values[child.field] = inputValue({ ...child, field: child.field }, value);
+        values[child.field] = displayValue({ ...child, field: child.field }, value);
       }
     }
     const subforms = Object.fromEntries(nested.map(child =>
@@ -426,10 +458,10 @@ function mergeSubform(file: string, schema: ValueField, current: readonly Record
         row[child.field] = child.component === "GSubForm"
           ? mergeSubform(file, { ...child, field: child.field }, readRows({ ...child, field: child.field }, row[child.field]),
             changedValue as GuobaSubformEdit)
-          : changedValue;
+          : storedValue(child, changedValue as GuobaInput, row[child.field]);
       }
       if (single && changed && row[child.field] === undefined && child.componentProps?.defaultValue !== undefined) {
-        row[child.field] = child.componentProps.defaultValue;
+        row[child.field] = storedValue(child, child.componentProps.defaultValue, undefined);
       }
       if (child.component === "InputPassword" && row[child.field] === "") {
         row[child.field] = existing?.[child.field] ?? "";
@@ -538,7 +570,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
     const compiled = compile(configSchemas.filter(item => item !== undefined));
     const allowed = guobaActions(raw, providerVersions.get(file) === version ? configInfo.actions : undefined, field => {
       const schema = compiled.fields.get(field)?.schema;
-      return schema !== undefined && schema.component !== "InputPassword" && schema.component !== "GSubForm";
+      return schema !== undefined && schema.component !== "InputPassword" && schema.component !== "GSubForm" && !labeledTree(schema);
     });
     const schemas = configSchemas.map((schema, index) => schema ?? allowed.groups.get(index))
       .filter(item => item !== undefined);
@@ -580,7 +612,7 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
             } else if (schema.component === "GSubForm") {
               subforms[field] = subformSnapshot(file, schema, readRows(schema, value));
             } else if (value !== undefined) {
-              values[field] = inputValue(schema, value);
+              values[field] = displayValue(schema, value);
             }
           }
           return { values, configuredPasswords, ...(Object.keys(subforms).length ? { subforms } : {}),
@@ -614,6 +646,13 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
                 } else if (existing !== undefined) {
                   values[field] = schema.componentProps?.multiple === false ? existing : readRows(schema, existing);
                 }
+                continue;
+              }
+              if (labeledTree(schema)) {
+                current ??= await readData();
+                const existing = getValue(current, field, parts);
+                if (Object.hasOwn(values, field)) values[field] = storedValue(schema, values[field] as GuobaInput, existing);
+                else if (existing !== undefined) values[field] = existing;
                 continue;
               }
               if (Object.hasOwn(values, field) && !(schema.component === "InputPassword" && values[field] === "")) continue;

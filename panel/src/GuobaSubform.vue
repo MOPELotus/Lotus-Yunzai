@@ -120,6 +120,15 @@ function addTag(item: Field, option: Exclude<GuobaInput, unknown[]>) {
   if (!entries.includes(option)) edit(item.field, [...entries, option]);
 }
 
+function toggle(item: Field, option: Exclude<GuobaInput, unknown[]>, event: Event) {
+  if ((event.target as HTMLInputElement).checked) {
+    addTag(item, option);
+    return;
+  }
+  const current = value(item.field);
+  if (Array.isArray(current)) edit(item.field, current.filter(entry => entry !== option));
+}
+
 function select(item: Field, event: Event) {
   const control = event.target as HTMLSelectElement;
   const options = item.componentProps?.options ?? [];
@@ -208,7 +217,8 @@ function confirm() {
       <h3 v-if="!single" :id="`${id}-editor-title`">{{ position === null ? "新增" : "编辑" }}{{ heading }}</h3>
       <div class="subform-editor-fields">
         <div v-for="(item, index) in fields" :key="item.field" class="subform-field">
-          <label v-if="item.component !== 'GSubForm'" :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
+          <label v-if="item.component !== 'GSubForm' && item.component !== 'CheckboxGroup'"
+            :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
           <GuobaSubform v-if="item.component === 'GSubForm' && nestedSnapshot(item.field)"
             :id="`${id}-child-${index}`" :schema="item" :saved="nestedSnapshot(item.field)!"
             :edited="fieldEdits[item.field] as GuobaSubformEdit | undefined" @update="editNested(item.field, $event)" />
@@ -229,6 +239,14 @@ function confirm() {
               :min="item.componentProps?.min" :max="item.componentProps?.max" :step="item.componentProps?.step ?? 'any'"
               :placeholder="item.componentProps?.placeholder" :required="required(item)" @input="updateNumber(item.field, $event)" />
             <span v-if="item.componentProps?.addonAfter">{{ item.componentProps.addonAfter }}</span>
+          </div>
+          <div v-else-if="item.component === 'CheckboxGroup'" class="subform-checkboxes" role="group"
+            :aria-labelledby="`${id}-child-${index}`">
+            <span :id="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></span>
+            <label v-for="(option, at) in item.componentProps?.options" :key="at">
+              <input type="checkbox" :checked="selected(item, option.value)" :disabled="option.disabled"
+                @change="toggle(item, option.value, $event)" />{{ option.label }}
+            </label>
           </div>
           <template v-else-if="item.component === 'Select' && item.componentProps?.mode === 'tags'">
             <textarea :id="`${id}-child-${index}`" :value="display(value(item.field))"
@@ -292,6 +310,9 @@ function confirm() {
 .subform-field { display: grid; gap: 4px; margin-top: 10px; }
 .subform-field label { font-weight: 600; font-size: 14px; }
 .subform-field input[type="checkbox"] { justify-self: start; margin: 3px 0; accent-color: var(--accent); }
+.subform-checkboxes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.subform-checkboxes > span { flex-basis: 100%; font-weight: 600; }
+.subform-checkboxes label { display: inline-flex; align-items: center; gap: 4px; }
 .subform-field input:not([type="checkbox"], .el-input__inner, .el-select__input), .subform-field select, .subform-field textarea {
   width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px;
   background: var(--surface); color: var(--ink); font: inherit;

@@ -329,9 +329,12 @@ test("锅巴 Next 的专用字段与多层子表单沿用值类型和保留约�
       const schema = (component, field, componentProps) => ({ component, field, label: field, componentProps });
       let config = {
         tags: [12], groups: ["123456"], friend: 87543, color: "#56bfaa", date: "2026/11/22", time: "14:25",
-        tree: ["leaf"],
-        outer: [{ label: "existing", inner: [{ url: "original", password: "never-return-this", hidden: true }] }]
+        tree: ["leaf"], singleTree: { value: "leaf", label: "原标签", extra: "保留" },
+        strictTree: [{ value: "leaf", label: "叶子" }, { value: "root", label: "根", halfChecked: true }],
+        outer: [{ label: "existing", inner: [{ url: "original", password: "never-return-this", hidden: true,
+          nestedTree: { value: "root", label: "根" }, flags: ["read"] }] }]
       };
+      const treeData = [{ title: "根", value: "root", children: [{ title: "叶子", value: "leaf" }, { title: "另一条", value: "other" }] }];
       export const supportGuoba = () => ({ configInfo: {
         schemas: [
           schema("GTags", "tags", { numeric: true }),
@@ -344,10 +347,13 @@ test("锅巴 Next 的专用字段与多层子表单沿用值类型和保留约�
             fieldNames: { label: "name", value: "id", children: "items" },
             treeData: [{ name: "root", id: "root", items: [{ name: "leaf", id: "leaf" }, { name: "blocked", id: "blocked", disabled: true }] }]
           }),
+          schema("TreeSelect", "singleTree", { labelInValue: true, treeData }),
+          schema("TreeSelect", "strictTree", { treeCheckStrictly: true, treeData }),
           schema("GSubForm", "outer", { multiple: true, schemas: [
             schema("Input", "label"),
             schema("GSubForm", "inner", { multiple: true, schemas: [
-              schema("Input", "url"), schema("InputPassword", "password"),
+              schema("Input", "url"), schema("InputPassword", "password"), schema("TreeSelect", "nestedTree", { labelInValue: true, treeData }),
+              schema("CheckboxGroup", "flags", { options: ["read", "write"] }),
             ] }),
           ] })
         ],
@@ -361,28 +367,33 @@ test("锅巴 Next 的专用字段与多层子表单沿用值类型和保留约�
     const form = await loadGuobaForm(directory);
     if (!form) throw new Error("表单未加载");
     expect(form.schemas.map(item => item.component)).toEqual([
-      "GTags", "GSelectGroup", "GSelectFriend", "GColorPicker", "DatePicker", "TimePicker", "TreeSelect", "GSubForm",
+      "GTags", "GSelectGroup", "GSelectFriend", "GColorPicker", "DatePicker", "TimePicker", "TreeSelect", "TreeSelect", "TreeSelect", "GSubForm",
     ]);
     expect(form.schemas[6]?.componentProps?.treeData?.[0]?.children?.[0]).toEqual({ label: "leaf", value: "leaf" });
     const snapshot = await form.read();
-    expect(snapshot.values).toMatchObject({ tags: [12], groups: ["123456"], friend: 87543, tree: ["leaf"] });
+    expect(snapshot.values).toMatchObject({ tags: [12], groups: ["123456"], friend: 87543, tree: ["leaf"], singleTree: "leaf", strictTree: ["leaf"] });
     expect(JSON.stringify(snapshot)).not.toContain("never-return-this");
     const outer = snapshot.subforms?.outer;
     const inner = outer?.rows[0]?.subforms?.inner;
     if (!outer || !inner || !outer.emptySubforms?.inner) throw new Error("子表单未加载");
     expect(inner.rows[0]?.configuredPasswords).toEqual(["password"]);
+    expect(inner.rows[0]?.values.nestedTree).toBe("root");
+    expect(inner.rows[0]?.values.flags).toEqual(["read"]);
     for (const data of [
       { groups: ["not-an-id"] },
       { friend: [87543] },
       { tree: ["blocked"] },
+      { singleTree: { value: "root", label: "浏览器不得覆盖原标签" } },
+      { strictTree: "root" },
       { tags: [true] },
       { outer: { revision: outer.revision, rows: [{ index: 0, values: {
         inner: { revision: inner.revision, rows: [{ index: 0, values: { hidden: false } }] },
       } }] } },
     ]) expect(await form.save(data)).toMatchObject({ ok: false, status: 400 });
-    expect(await form.save({ color: "#112233", date: "2026/12/14", time: "16:10", outer: {
+    expect(await form.save({ color: "#112233", date: "2026/12/14", time: "16:10", strictTree: ["leaf", "other"], outer: {
       revision: outer.revision, rows: [
-        { index: 0, values: { inner: { revision: inner.revision, rows: [{ index: 0, values: { url: "new" } }] } } },
+        { index: 0, values: { inner: { revision: inner.revision, rows: [{ index: 0,
+          values: { url: "new", nestedTree: "leaf", flags: ["read", "write"] } }] } } },
         { index: null, values: { label: "new parent", inner: {
           revision: outer.emptySubforms.inner.revision, rows: [{ index: null, values: { url: "new child" } }],
         } } },
@@ -390,8 +401,11 @@ test("锅巴 Next 的专用字段与多层子表单沿用值类型和保留约�
     } })).toMatchObject({ ok: true, status: 200 });
     expect(await Bun.file(join(directory, "saved.json")).json()).toMatchObject({
       color: "#112233", date: "2026/12/14", time: "16:10",
+      singleTree: { value: "leaf", label: "原标签", extra: "保留" },
+      strictTree: [{ value: "leaf", label: "叶子" }, { value: "other", label: "另一条" }, { value: "root", label: "根", halfChecked: true }],
       outer: [
-        { label: "existing", inner: [{ url: "new", password: "never-return-this", hidden: true }] },
+        { label: "existing", inner: [{ url: "new", password: "never-return-this", hidden: true,
+          nestedTree: { value: "leaf", label: "叶子" }, flags: ["read", "write"] }] },
         { label: "new parent", inner: [{ url: "new child" }] },
       ],
     });
