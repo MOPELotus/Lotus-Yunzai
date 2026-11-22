@@ -2,6 +2,8 @@ import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readCnGameRecord } from "./game-record.ts";
+import type { HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
+import { openHoYoLabZzzOwnedRecord, type HoYoLabZzzRecordAccount } from "./zzz-game-record.ts";
 
 type Json = Record<string, unknown>;
 type Identity = { readonly uid: string; readonly region: string };
@@ -68,7 +70,7 @@ export function normalizeZzzMonthly(input: unknown, identity: Identity, requeste
   const current = data.current_month == null ? undefined : zzzMonthlyKey(data.current_month);
   if (data.current_month != null && !current) invalid("当前月份");
   if (current && month > current) invalid("查询月份");
-  const available = [...new Set(list(data.optional_month, "可用月份").map(row => {
+  const available = [...new Set(list(data.optional_month, "可用月份", 36).map(row => {
     const key = zzzMonthlyKey(row);
     if (!key || (current && key > current)) invalid("可用月份");
     return key;
@@ -97,12 +99,27 @@ export function normalizeZzzMonthly(input: unknown, identity: Identity, requeste
 export async function readZzzMonthly(source: ProfileRequestContext, transport: HoyoTransport,
   { month, collect = false, signal }: { readonly month: string; readonly collect?: boolean; readonly signal?: AbortSignal },
   verifyProfile?: () => Promise<void>) {
-  if (month !== "" && zzzMonthlyKey(month) !== month) throw new HoyoRequestError("invalid-input", "绝区零月报月份无效。");
   const uid = source.role.uid;
-  async function read(requested: string) {
+  return readMonths(uid, month, collect, async requested => {
     const { data, region } = await readCnGameRecord(source, transport, { kind: "zzz-monthly", month: requested, signal }, verifyProfile);
     return normalizeZzzMonthly(data, { uid, region }, requested);
-  }
+  });
+}
+
+export async function openHoYoLabZzzMonthly(source: HoYoLabZzzRecordAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
+  const { role, readMonthly } = await openHoYoLabZzzOwnedRecord(source, transport, options);
+  return {
+    role,
+    read({ month, collect = false }: { readonly month: string; readonly collect?: boolean }) {
+      return readMonths(role.uid, month, collect, async requested =>
+        normalizeZzzMonthly(await readMonthly(requested), role, requested));
+    },
+  };
+}
+
+async function readMonths(uid: string, month: string, collect: boolean,
+  read: (requested: string) => Promise<ReturnType<typeof normalizeZzzMonthly>>) {
+  if (month !== "" && zzzMonthlyKey(month) !== month) throw new HoyoRequestError("invalid-input", "绝区零月报月份无效。");
   const initial = await read(month);
   const months = new Map<string, ZzzMonthlyRecord>();
   if (initial.record) months.set(initial.record.data_month, initial.record);

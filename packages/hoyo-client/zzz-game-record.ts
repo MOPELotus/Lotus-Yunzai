@@ -142,6 +142,11 @@ export async function openHoYoLabZzzOwnedRecord(
       verifyRecordRole(data, uid, region, gameBiz);
       return data;
     },
+    async readMonthly(month: string) {
+      const data = await client.readMonthly(uid, region, month);
+      verifyRecordRole(data, uid, region, gameBiz);
+      return data;
+    },
   };
 }
 

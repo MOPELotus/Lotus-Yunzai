@@ -6,6 +6,8 @@ import type { HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 const officialOrigin = "https://act.hoyolab.com";
 const roleOrigin = "https://api-account-os.hoyolab.com";
 const activityOrigin = "https://sg-act-public-api.hoyolab.com";
+const ledgerOrigin = "https://sg-public-api.hoyolab.com";
+const zzzMonthlyPath = "/event/nap_ledger/month_info";
 const browserUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const riskCodes = [1034, 10035, 10041];
 const cookiePaths = {
@@ -83,6 +85,7 @@ function checkAccount(data: Json, source: ReturnType<typeof validateSource>, sub
 
 function officialRoute(url: URL, writing: boolean, credential: Credential, zzzRecord: boolean) {
   if (url.origin === roleOrigin) return !writing && url.pathname === cookiePaths[credential];
+  if (url.origin === ledgerOrigin) return zzzRecord && !writing && url.pathname === zzzMonthlyPath;
   if (url.origin !== activityOrigin) return false;
   if (zzzRecord) return !writing && Object.values(zzzRecordParts).some(part => url.pathname === zzzRecordPath + part);
   return activityPaths[credential].some(base => url.pathname === `${base}/${writing ? "sign" : "info"}`);
@@ -102,6 +105,11 @@ export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, tra
       const note = part === "note";
       url.search = new URLSearchParams({ ...(!note && { lang: client.language }), role_id: uid, server: region }).toString();
       return client.request(url, { "x-rpc-language": client.language }, note ? "绝区零国际服便笺" : "绝区零国际服战绩");
+    },
+    readMonthly(uid: string, region: string, month: string) {
+      const url = new URL(zzzMonthlyPath, ledgerOrigin);
+      url.search = new URLSearchParams({ uid, region, month }).toString();
+      return client.request(url, { "x-rpc-language": client.language }, "绝区零国际服月报");
     },
   };
 }
@@ -173,7 +181,10 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
     if (status === 401) throw new HoyoRequestError("http", `官方${subject}拒绝请求。`, status);
     if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) invalidResponse(subject);
     if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
-    if (!data) invalidResponse(subject);
+    if (!data) {
+      if (url.origin === ledgerOrigin && payload?.data === null) return {};
+      invalidResponse(subject);
+    }
     checkAccount(data, auth, subject);
     return data;
   }

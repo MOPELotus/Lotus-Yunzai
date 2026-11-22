@@ -133,3 +133,90 @@ test("月报不会回退到另一已认证角色，也不会以不一致的 Cook
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("国际服月报由本人选档，按官方月份回读并保留旧档", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zzz-monthly-overseas-"));
+  try {
+    const old = join(root, "legacy");
+    await mkdir(old);
+    const role = { uid: "1000000023", region: "prod_gf_us", gameBiz: "nap_global" };
+    const identity = { ...role, qq: "42" };
+    const oldMonth = { ...body("202410", 23), ...role };
+    await writeFile(join(old, role.uid + ".json"), JSON.stringify([oldMonth]));
+    const profile = join(root, "42-2.yaml");
+    const config = `user: { qq: "42" }
+profile: { id: 2 }
+account:
+  cookie: "cookie_token=domestic-only; account_id=43"
+  stoken: fixture-stoken
+  stuid: "43"
+  current_uid: { zzz: "${role.uid}" }
+games:
+  os:
+    verified_account_id: "44"
+    verified_realm: US
+    verified_activity_cookie: "ltuid=44; ltoken=international-fixture"
+`;
+    await writeFile(profile, config);
+    const profiles = createProfileStore(root);
+    const requests: string[] = [];
+    let mismatched = false;
+    let expired = false;
+    let change = false;
+    const client = createProfileHoyoClient(profiles, async (url, request) => {
+      expect(new Headers(request.headers).get("cookie")).toBe("ltuid=44; ltoken=international-fixture");
+      expect(request).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+      requests.push(url.href);
+      if (url.hostname === "api-account-os.hoyolab.com") {
+        expect(url.pathname).toBe("/binding/api/getUserGameRolesByLtoken");
+        expect(url.search).toBe("?game_biz=nap_global");
+        return Response.json({ retcode: 0, data: { list: [{
+          game_uid: role.uid, region: role.region, game_biz: role.gameBiz,
+        }] } });
+      }
+      expect(url.origin + url.pathname).toBe("https://sg-public-api.hoyolab.com/event/nap_ledger/month_info");
+      const month = url.searchParams.get("month") ?? "";
+      expect(url.search).toBe(`?uid=${role.uid}&region=${role.region}&month=${month}`);
+      if (change) await writeFile(profile, config.replace("international-fixture", "new-international-fixture"));
+      if (expired) return Response.json({ retcode: -100, data: null });
+      return Response.json({ retcode: 0, data: {
+        ...body(month || "202601", 15, month ? [] : ["202601", 202512, "202512"]),
+        ...role, game_biz: role.gameBiz, ...(mismatched && { uid: "1000000024" }),
+      } });
+    });
+    const archive = createZzzMonthlyArchive(join(root, "new"), [old], lockFile);
+    const query = createZzzMonthlyCommands(profiles, client, archive, new AbortController().signal);
+    const context = { user_id: 42, message_type: "private", privateCredentialSignal: new AbortController().signal };
+    expect(await query({ ...context, message_type: "group" }, 2, { collect: true })).toBe("绝区零国际服月报请从本人私聊查询。");
+    expect(await query({ ...context, privateCredentialSignal: undefined }, 2, { collect: true })).toBe("绝区零国际服月报请从本人私聊查询。");
+    expect(await query({ ...context, isDelegated: true }, 2, { collect: true })).toBe("请从登录档案对应的 QQ 会话查询绝区零月报。");
+    expect(await query({ ...context, privateCredentialSignal: AbortSignal.abort() }, 2, { collect: true })).toEqual([]);
+    expect(requests).toEqual([]);
+    const result = await query(context, 2, { collect: true });
+    expect(typeof result === "string" ? result.includes("绝区零月报 ·") : "type" in result && result.type === "image").toBe(true);
+    expect(requests).toHaveLength(3);
+    expect((await archive.read(identity)).map(month => month.data_month)).toEqual(["202601", "202512", "202410"]);
+    const saved = await archive.read(identity);
+
+    mismatched = true;
+    expect(await query(context, 2, { collect: false, year: "2025", month: "11" })).toMatch(/获取月报数据失败/u);
+    expect(await archive.read(identity)).toEqual(saved);
+    expired = true;
+    expect(await query(context, 2, { collect: false, year: "2025", month: "11" })).toContain("Cookie 已失效");
+    expect(await archive.read(identity)).toEqual(saved);
+    change = true;
+    expect(await query(context, 2, { collect: true })).toBe("绝区零档案已变化，请重新查询月报。");
+    expect(await archive.read(identity)).toEqual(saved);
+
+    const oldProfile = config.slice(0, config.indexOf("games:")).replace("  current_uid:",
+      `  game_roles: { zzz: [{ uid: "${role.uid}", region: ${role.region}, game_biz: ${role.gameBiz} }] }\n  current_uid:`);
+    await writeFile(profile, oldProfile);
+    const before = requests.length;
+    const savedResult = await query(context, 2, { collect: false, year: "2024", month: "10" });
+    expect(typeof savedResult === "string" ? savedResult.includes("本次未更新") : "type" in savedResult && savedResult.type === "image").toBe(true);
+    expect(requests).toHaveLength(before);
+    expect(await readFile(join(old, role.uid + ".json"), "utf8")).toBe(JSON.stringify([oldMonth]));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

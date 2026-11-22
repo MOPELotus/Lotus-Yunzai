@@ -33,7 +33,7 @@ import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts"
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readHoYoLabZzzGameRecord, readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
-import { readZzzMonthly } from "./zzz-monthly.ts";
+import { openHoYoLabZzzMonthly, readZzzMonthly } from "./zzz-monthly.ts";
 import { readZzzExploration } from "./zzz-exploration.ts";
 import { readZzzZenkov } from "./zzz-zenkov.ts";
 import { readZzzHollowZero } from "./zzz-hollow-zero.ts";
@@ -633,6 +633,9 @@ export function createHoyoClient(
     },
     fetchZzzMonthly(source: ProfileRequestContext, options: Parameters<typeof readZzzMonthly>[2]) {
       return readForProfile(source, options, readZzzMonthly, isGameRecordCookieExpired);
+    },
+    openHoYoLabZzzMonthly(source: Parameters<typeof openHoYoLabZzzMonthly>[0], options: Parameters<typeof openHoYoLabZzzMonthly>[2]) {
+      return openHoYoLabZzzMonthly(source, transport, options);
     },
     fetchZzzPanel(source: ProfileRequestContext, options: ZzzPanelOptions = {}) {
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);
