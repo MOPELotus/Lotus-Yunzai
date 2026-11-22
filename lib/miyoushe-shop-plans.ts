@@ -9,6 +9,7 @@ import { MiyousheExchangeError, type MiyousheShopExchangeResult, type ShopManual
 import type { createManualCaptchaRelay } from "./captcha/manual-relay.ts";
 import { lockFile } from "./file-lock.ts";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
+import { miyousheShopRegionName } from "./miyoushe-shop-catalog.ts";
 import { asTrackerRecord, confirmedTracker, matchesTrackingGood, readTrackingInput, trackingCycle, trackingGame, trackingGames,
   trackingProfileGames, trackingRule, trackingSection, type ShopTracker, type TrackingGood, type TrackingRole } from "./miyoushe-shop-tracking.ts";
 
@@ -122,7 +123,8 @@ interface Options {
       verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
     readonly destinations: (target: MiyousheOverviewTarget, game: string, itemType: 1 | 2, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<{
-        roles?: readonly TrackingRole[]; addresses?: readonly { readonly id: string; readonly label: string }[];
+        roles?: readonly (TrackingRole & { readonly regionName?: string })[];
+        addresses?: readonly { readonly id: string; readonly label: string }[];
       }>;
   };
 }
@@ -165,7 +167,8 @@ function validPlan(value: unknown): value is MiyousheShopPlan {
 function publicPlan(plan: MiyousheShopPlan) {
   const { id, profileId, goodsId, goodsName, price, type, status, opensAt, immediate, createdAt, attempts } = plan;
   const role = plan.role && matching(plan.role.uid, numericId) && matching(plan.role.region, code)
-    ? { uid: plan.role.uid, region: plan.role.region, gameBiz: matching(plan.role.gameBiz, code) ? plan.role.gameBiz : "" } : null;
+    ? { uid: plan.role.uid, region: plan.role.region, gameBiz: matching(plan.role.gameBiz, code) ? plan.role.gameBiz : "",
+      regionName: miyousheShopRegionName(plan.role.gameBiz || plan.gameBiz, plan.role.region) } : null;
   return { id, profileId, goodsId, goodsName: clean(goodsName, 240), price, type, status, opensAt, immediate, createdAt, attempts,
     role, addressLabel: addressLabel(plan.addressLabel), message: publicMessages.has(plan.message) ? plan.message : statusMessage[status],
     ...(natural(plan.finishedAt) ? { finishedAt: plan.finishedAt } : {}),
@@ -441,7 +444,8 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
       nextPollAt: natural(rule.nextPollAt) ? rule.nextPollAt : undefined,
       lastPolledAt: natural(rule.lastPolledAt) ? rule.lastPolledAt : undefined,
       matchedCount: natural(rule.matchedCount) ? rule.matchedCount : undefined, enabled: confirmed && rule.enabled,
-      needsConfirmation: !confirmed, role: rule.role && { uid: rule.role.uid, region: rule.role.region },
+      needsConfirmation: !confirmed, role: rule.role && { uid: rule.role.uid, region: rule.role.region,
+        regionName: miyousheShopRegionName(rule.role.gameBiz, rule.role.region) },
       addressLabel: addressLabel(rule.addressLabel), ...trackerUsage(data, rule.id),
       message: !confirmed ? "旧追踪规则，重新确认后才会兑换。" :
         publicTrackerMessages.has(rule.message) ? rule.message : (rule.enabled ? trackerMessages.watching : trackerMessages.pause) };
@@ -845,7 +849,8 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
       if (!trackingGame(game)) bad("请选择支持角色兑换的游戏分区。");
       const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[game]);
       return { type: "role" as const, items: (result.roles ?? []).filter(role => role.gameBiz === trackingGames[game] &&
-        role.uid === selected && matching(role.region, code)).map(role => ({ uid: role.uid, region: role.region })) };
+        role.uid === selected && matching(role.region, code)).map(role => ({ uid: role.uid, region: role.region,
+        regionName: miyousheShopRegionName(role.gameBiz, role.region, role.regionName) })) };
     },
     async listTrackers(target: MiyousheOverviewTarget, verifyLogin?: Verify) {
       await verifyLogin?.();

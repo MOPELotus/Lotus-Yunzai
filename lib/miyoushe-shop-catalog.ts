@@ -1,4 +1,4 @@
-import { createProfileStore, type ProfileAccountContext } from "@lotus-yunzai/account";
+import { createProfileStore, gameRegionDisplayName, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { createProfileHoyoClient, HoyoRequestError, isCookieExpired } from "@lotus-yunzai/hoyo-client";
 import { MiyousheShopError, readMiyousheShop } from "@lotus-yunzai/hoyo-client/miyoushe-shop";
 import type { MiyousheOverviewTarget } from "./miyoushe-overview.ts";
@@ -113,6 +113,13 @@ function redacted(value: string, account: ProfileAccountContext) {
   return text(value, 80);
 }
 
+export function miyousheShopRegionName(gameBiz: string, region: string, reported?: string) {
+  const game = gameKeys.get(gameBiz);
+  if (game === "gs" || game === "sr" || game === "zzz") return gameRegionDisplayName(game, region, reported);
+  const name = text(reported, 80);
+  return name && !codePattern.test(name) ? name : "未知区服";
+}
+
 interface ShopOptions {
   readonly profileDirectory?: string | URL;
   readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
@@ -161,7 +168,8 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
       await verifyLogin?.();
       const { account, catalog } = await readBoundRoles(await profiles.accountContext(target.qq, target.profileId), signal, verifyLogin);
       return catalog[game].filter(role => role.gameBiz === gameBiz && /^[a-z0-9_]{1,32}$/iu.test(role.region))
-        .map(role => ({ uid: role.uid, region: role.region, gameBiz, nickname: redacted(role.nickname, account) }));
+        .map(role => ({ uid: role.uid, region: role.region, gameBiz, nickname: redacted(role.nickname, account),
+          regionName: miyousheShopRegionName(gameBiz, role.region, redacted(role.regionName ?? "", account)) }));
     },
     async list(_target: MiyousheOverviewTarget, query: URLSearchParams, signal?: AbortSignal,
       verifyLogin?: () => Promise<void>) {
@@ -208,7 +216,8 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
         const roles = catalog[game]
           .filter(role => role.gameBiz === good.gameBiz && /^[a-z0-9_]{1,32}$/iu.test(role.region))
           .map(role => ({ uid: role.uid, nickname: redacted(role.nickname, account), region: role.region,
-            regionName: redacted(role.regionName ?? "", account), level: count(role.level) }));
+            regionName: miyousheShopRegionName(good.gameBiz, role.region, redacted(role.regionName ?? "", account)),
+            level: count(role.level) }));
         return { good, roles, roleError: undefined };
       } catch (error) {
         signal?.throwIfAborted();

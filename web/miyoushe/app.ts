@@ -658,7 +658,7 @@ async function openDetail(id: string) {
 }
 
 function roleLabel(role: Role) {
-  return [role.nickname || "角色", role.regionName || role.region, role.level ? "Lv." + role.level : ""]
+  return [role.nickname || "角色", role.regionName || "未知区服", role.level ? "Lv." + role.level : ""]
     .filter(Boolean).join(" · ");
 }
 
@@ -678,7 +678,7 @@ function planRow(plan: Plan) {
     (destination.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(destination.hostname)));
   copy.append(add("span", "shop-badge " + status, canOpenVerification ? "等待人工验证" : planStatus[status]), add("h3", "", plan.goodsName),
     add("p", "muted", "档案 " + plan.profileId + " · " + point(plan.price) + " 米游币 × 1 · " + shopTime(plan.opensAt)));
-  if (plan.role) copy.append(add("p", "muted", "游戏角色 UID " + plan.role.uid + " · " + plan.role.region));
+  if (plan.role) copy.append(add("p", "muted", "游戏角色 UID " + plan.role.uid + " · " + (plan.role.regionName || "未知区服")));
   if (plan.addressLabel) copy.append(add("p", "muted", "收货地址 " + plan.addressLabel));
   if (canOpenVerification) {
     const prompt = add("div", "plan-verification", "");
@@ -803,7 +803,7 @@ async function loadTrackers() {
       const selection = rule.mode === "goods" ? (rule.names.length ? rule.names : rule.goodsIds).join("、")
         : rule.keywords.join("、") || "全部商品";
       const limit = rule.spendLimit === null ? "不限" : point(rule.spendLimit);
-      const destination = rule.role ? `UID ${rule.role.uid} · ${rule.role.region}` : rule.addressLabel;
+      const destination = rule.role ? `UID ${rule.role.uid} · ${rule.role.regionName || "未知区服"}` : rule.addressLabel;
       copy.append(add("h3", "", `${group} · ${item}`), add("p", "", selection),
         add("p", "muted", `${destination} · 已用 ${point(rule.spent)} / ${limit} · 待结算 ${point(rule.held)}`),
         add("p", "muted", `${rule.enabled ? "追踪中" : "已暂停"} · ${rule.message}`));
@@ -859,7 +859,7 @@ async function loadTrackerTargets() {
     const data = await trackingResponse<TrackerTargets>(await request("api/tracking-targets?" + query, { signal: controller.signal }));
     if (controller.signal.aborted) return;
     const options = data.items.map(item => data.type === "role"
-      ? new Option(`UID ${(item as TrackerRole).uid} · ${(item as TrackerRole).region}`, (item as TrackerRole).uid)
+      ? new Option(`UID ${(item as TrackerRole).uid} · ${(item as TrackerRole).regionName || "未知区服"}`, (item as TrackerRole).uid)
       : new Option((item as TrackerAddress).label || "已脱敏地址", (item as TrackerAddress).id));
     form.destination.replaceChildren(...options);
     submit.disabled = !options.length;

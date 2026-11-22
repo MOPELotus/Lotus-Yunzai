@@ -218,7 +218,9 @@ test("旧版本保留预约，重启恢复时待确认中断的提交并暂停�
     expect(saved.plans.map((item: { status: string }) => item.status)).toEqual(["unknown", "scheduled"]);
     expect(saved.trackers).toMatchObject([{ enabled: false, customOldField: ["keep"] }]);
     const recovered = (await noSubmit.list(target)).plans[0]!;
-    expect(recovered.role).toEqual(planRole);
+    expect(recovered.role).toEqual({ ...planRole, regionName: "天空岛" });
+    expect(saved.plans[0].role.region).toBe("cn_gf01");
+    expect(saved.plans[0].role.regionName).toBeUndefined();
     expect(recovered).not.toHaveProperty("botId");
     expect(await noSubmit.resolve(target, recovered.id, true)).toMatchObject({ status: "succeeded" });
   });
