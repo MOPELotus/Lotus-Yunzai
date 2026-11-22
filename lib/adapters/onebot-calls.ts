@@ -177,6 +177,10 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_admin", { group_id, user_id, enable }, signal);
   }
 
+  setGroupName(send: Send, group_id: number, group_name: string, signal: AbortSignal) {
+    return this.#moderateGroup(send, "set_group_name", { group_id, group_name }, signal);
+  }
+
   setQuotedEssence(send: Send, message_id: number, enabled: boolean, signal: AbortSignal) {
     return this.#moderateGroup(send, enabled ? "set_essence_msg" : "delete_essence_msg", { message_id }, signal);
   }

@@ -13,6 +13,7 @@ import type { PendingGroupInvitationDecision, QuotedGroupInvitationDecision } fr
 import { createRequestClaim } from "../request-claim.ts";
 import { hashPrivateNotice, privateNoticeText } from "../private-notice-receipts.ts";
 import { bindGroupCard } from "./group-card.ts";
+import { bindGroupName } from "./group-name.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
   groupMayReadPendingJoins, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
@@ -1031,6 +1032,17 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             if (record(group) && group.group_id === group_id && typeof group.group_name === "string") return group.group_name;
           },
         })),
+      setGroupName: !message.attachmentOnly && positiveId(cardOwner) && (positiveId(groupId) || ownerSignal)
+        ? bindGroupName({
+            bot: account, actor: cardOwner, group: groupId, signal: ownerSignal ?? signal, isMaster: () => isMaster(cardOwner),
+            groupAllowed: id => positiveId(groupId) ? options.canModerateGroups?.() !== false
+              : options.canModeratePrivateGroup?.(account, id) === true,
+            role: memberRole,
+            async write(group_id, new_group_name, active) {
+              return (await call.confirmed("set_group_name", { group_id, new_group_name }, active)).status;
+            },
+          })
+        : undefined,
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
         ? (visibility: GroupActivityVisibility | undefined) => listGroupActivity(groupId, cardOwner, visibility) : undefined,
       groupActivitySignal: positiveId(groupId) ? signal : undefined,

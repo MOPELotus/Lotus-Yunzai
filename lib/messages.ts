@@ -106,6 +106,7 @@ export interface MessageEvent {
   readonly profileLikeFriendship?: () => Promise<boolean | undefined>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;
+  readonly setGroupName?: (name: string, groupId?: number) => Promise<"confirmed" | "rejected" | "unknown" | "unavailable">;
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;

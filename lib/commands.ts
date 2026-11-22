@@ -10,7 +10,7 @@ export type CommandContext = Readonly<Pick<
     "attachment" | "canReadAttachments" | "adapter" | "inlineImageByteLimit" | "isNapCat" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
     "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
-    "groupSetSpecialTitle" | "groupSetAdmin" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
+    "groupSetSpecialTitle" | "groupSetAdmin" | "setGroupName" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
     "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" | "listPendingGroupInvitations" |
     "listPendingFriendRequests" | "reviewPendingFriendRequest" | "reviewPendingGroupInvitation" | "reviewQuotedGroupInvitation" |
     "sendOwnerFriendReply" | "sendQuotedOwnerFriendReply" |
@@ -121,7 +121,7 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
-    groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, groupMuteRoster,
+    groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
     groupListPendingJoinRequests, listPendingGroupInvitations, reviewPendingGroupInvitation, reviewQuotedGroupInvitation,
     listPendingFriendRequests, reviewPendingFriendRequest, sendOwnerFriendReply, sendQuotedOwnerFriendReply, groupListAnnouncements,
@@ -146,6 +146,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupManageWhitelistAutoUnmute ? { groupManageWhitelistAutoUnmute } : {}),
     ...(message_type === "group" && !isDelegated && groupSetSpecialTitle ? { groupSetSpecialTitle } : {}),
     ...(message_type === "group" && !isDelegated && groupSetAdmin ? { groupSetAdmin } : {}),
+    ...(message_type !== "terminal" && !isDelegated && setGroupName ? { setGroupName } : {}),
     ...(message_type === "group" && !isDelegated && groupMuteRoster ? { groupMuteRoster } : {}),
     ...(message_type === "group" && !isDelegated && groupActivityRoster ? { groupActivityRoster } : {}),
     ...(message_type === "group" && !isDelegated && groupActivitySignal ? { groupActivitySignal } : {}),

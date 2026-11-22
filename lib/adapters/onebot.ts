@@ -11,6 +11,7 @@ import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type Frie
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
+import { bindGroupName } from "./group-name.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
@@ -686,6 +687,16 @@ async function dispatchMessage(
         wholeMute: (groupId, enabled, active) => calls.setGroupWholeMute(send, groupId, enabled, active),
         groupName: (groupId, active) => calls.getGroupName(send, groupId, active, true),
       })),
+    setGroupName: leaveSignal && selfId !== undefined && ("group_id" in target || ownerSignal)
+      ? bindGroupName({
+          bot: selfId, actor: userId, group: "group_id" in target ? target.group_id : undefined,
+          signal: ownerSignal ?? leaveSignal, isMaster: () => isMaster(selfId, userId),
+          groupAllowed: groupId => "group_id" in target ? groupActions?.canModerateGroups?.() !== false
+            : groupActions?.canModeratePrivateGroup?.(selfId, groupId) === true,
+          role: (groupId, id, signal) => calls.getGroupRole(send, groupId, id, true, signal),
+          write: (groupId, name, signal) => calls.setGroupName(send, groupId, name, signal),
+        })
+      : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
       (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,
