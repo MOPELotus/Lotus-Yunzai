@@ -19,6 +19,7 @@ import { appendFileSync } from "node:fs";
 const realFetch = globalThis.fetch;
 globalThis.redis = {
   async get() { return null; },
+  async mGet(keys) { return keys.map(() => null); },
   async hSet(key, field, value) { appendFileSync("rank-writes.jsonl", JSON.stringify({key,field,value}) + "\\n"); return 1; },
 };
 globalThis.fetch = async (input, options) => {
