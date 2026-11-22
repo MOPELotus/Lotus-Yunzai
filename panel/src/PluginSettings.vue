@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ElButton, ElInput } from "element-plus";
-import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, provide, reactive, ref, shallowRef, watch } from "vue";
 import GuobaSubform from "./GuobaSubform.vue";
 import GuobaSpecialField from "./GuobaSpecialField.vue";
 import type { GuobaButton, GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
-import { isSpecialGuobaField } from "./guoba-fields.ts";
+import { guobaPanelAuth, isSpecialGuobaField } from "./guoba-fields.ts";
 
 const props = defineProps<{ auth: PanelAuth }>();
+provide(guobaPanelAuth, () => props.auth);
 const emit = defineEmits<{
   unauthorized: [];
   "dirty-change": [dirty: boolean];

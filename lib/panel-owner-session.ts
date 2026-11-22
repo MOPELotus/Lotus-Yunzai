@@ -3,6 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { CommandModule } from "./commands.ts";
+import { memberDisplayName } from "./adapters/onebot-member-display.ts";
+import { ownerContactListSession, parseFriendList, type OwnerContactListSession } from "./owner-contact-list.ts";
 import { readPanelJson } from "./panel.ts";
 import { panelPublicPage } from "./server.ts";
 
@@ -49,6 +51,7 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
   const initialLifetimes = panelOwnerLifetimes(config);
   const lifetimes = async () => readLoginConfig ? panelOwnerLifetimes(await readLoginConfig()) : initialLifetimes;
   let db: Database | undefined;
+  const bindings = new Map<string, { gateway: OwnerContactListSession; expires: number }>();
 
   const page = () => panelPublicPage(publicBase());
 
@@ -79,7 +82,9 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
       [digest(key), kind, owner.bot, owner.user, Math.min(Number.MAX_SAFE_INTEGER, now() + lifetime)]);
   }
   function remove(key: string, kind: Kind) {
-    database().run("DELETE FROM credentials WHERE hash = ? AND kind = ?", [digest(key), kind]);
+    const hash = digest(key);
+    database().run("DELETE FROM credentials WHERE hash = ? AND kind = ?", [hash, kind]);
+    bindings.delete(hash);
   }
   function browserResponse(page: URL, value: string, age: number) {
     const secure = page.protocol === "https:" ? "; Secure" : "";
@@ -92,6 +97,43 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
     if (site && site !== "same-origin") return false;
     return !writes || (request.headers.get("Origin") === destination.origin &&
       request.headers.get("X-Lotus-Panel-Session") === "1");
+  }
+
+  function currentOwner(key: string, kind: Kind) {
+    const owner = lookup(key, kind);
+    if (!owner) return;
+    if (isOwner(owner.bot, owner.user)) return owner;
+    remove(key, kind);
+  }
+
+  async function contacts(request: Request, key: string | undefined) {
+    if (!key || request.headers.has("Authorization")) return response(403);
+    const hash = digest(key);
+    const binding = bindings.get(hash);
+    const gateway = binding?.gateway;
+    const authorized = () => {
+      const owner = currentOwner(key, "session");
+      return !signal.aborted && !request.signal.aborted && gateway && !gateway.signal.aborted &&
+        bindings.get(hash) === binding && owner?.bot === gateway.botId && owner.user === gateway.ownerId && gateway.authorized();
+    };
+    if (!authorized() || !gateway) return response(403);
+    const input = await readPanelJson(request, 1024).catch(() => undefined);
+    if (!input || typeof input !== "object" || !("kind" in input) || !("query" in input) || !("page" in input) ||
+        (input.kind !== "group" && input.kind !== "friend") || typeof input.query !== "string" ||
+        input.query.length > 80 || typeof input.page !== "number" || !Number.isSafeInteger(input.page) ||
+        input.page < 1 || input.page > 250) return response(400);
+    if (!authorized()) return response(403);
+    const active = AbortSignal.any([signal, request.signal, gateway.signal, AbortSignal.timeout(10_000)]);
+    const list = input.kind === "group" ? await gateway.groups(active).catch(() => undefined) :
+      parseFriendList(await gateway.friends(active).catch(() => undefined));
+    if (!authorized()) return response(403);
+    if (!list || active.aborted) return response(503);
+    const query = input.query.trim().toLowerCase();
+    const matched = list.filter(({ id, name }) => String(id).includes(query) || name?.toLowerCase().includes(query));
+    const start = (input.page - 1) * 30;
+    const items = matched.slice(start, start + 30).map(({ id, name }) =>
+      ({ id, name: memberDisplayName(name)?.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "") }));
+    return Response.json({ items, next: input.page < 250 && start + 30 < matched.length }, { headers });
   }
 
   const commands: CommandModule = {
@@ -112,8 +154,15 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
         if (signal.aborted || context.privateCredentialSignal?.aborted !== false) return;
         if (!isOwner(bot, user)) return "只有当前机器人主人可以登录管理面板。";
         database().run("DELETE FROM credentials WHERE expiresAt <= ?", [now()]);
+        for (const [hash, binding] of bindings) {
+          if (binding.expires <= now() || binding.gateway.signal.aborted) bindings.delete(hash);
+        }
         const ticket = token();
         insert(ticket, "ticket", { bot, user }, ticketMinutes * 60_000);
+        const gateway = context[ownerContactListSession];
+        if (gateway?.botId === bot && gateway.ownerId === user && !gateway.signal.aborted && gateway.authorized()) {
+          bindings.set(digest(ticket), { gateway, expires: now() + ticketMinutes * 60_000 });
+        }
         destination.hash = `ticket=${ticket}`;
         return `管理面板\n${destination.href}\n链接 ${ticketMinutes} 分钟内有效且只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch {
@@ -125,13 +174,14 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
   return {
     commands,
     async handle(request: Request, path: string) {
-      if (path !== "/panel/api/session/claim" && path !== "/panel/api/session/logout") return;
+      if (path !== "/panel/api/session/claim" && path !== "/panel/api/session/logout" && path !== "/panel/api/session/contacts") return;
       const destination = page();
       if (!destination || signal.aborted) return response(404);
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { ...headers, Allow: "POST" } });
       if (!sameOrigin(request, destination, true)) return response(403);
       const current = browserToken(request);
       try {
+        if (path.endsWith("/contacts")) return await contacts(request, current);
         if (path.endsWith("/logout")) {
           if (current) remove(current, "session");
           return browserResponse(destination, "", 0);
@@ -145,14 +195,18 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
         if (request.signal.aborted || signal.aborted) return response(503);
         const fresh = token();
         const claimed = database().transaction(() => {
-          const owner = lookup(key, "ticket");
+          const owner = currentOwner(key, "ticket");
           if (!owner) return false;
-          remove(key, "ticket");
-          if (!isOwner(owner.bot, owner.user)) return false;
+          database().run("DELETE FROM credentials WHERE hash = ? AND kind = 'ticket'", [digest(key)]);
           if (current) remove(current, "session");
           insert(fresh, "session", owner, sessionMs);
           return true;
         }).immediate();
+        const bound = bindings.get(digest(key));
+        bindings.delete(digest(key));
+        if (claimed && bound && !bound.gateway.signal.aborted) {
+          bindings.set(digest(fresh), { gateway: bound.gateway, expires: now() + sessionMs });
+        }
         return claimed ? browserResponse(destination, fresh, sessionMs / 1000) : response(401);
       } catch {
         return response(503);
@@ -164,16 +218,14 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
       if (!destination || !key || signal.aborted) return false;
       if (!sameOrigin(request, destination, request.method !== "GET" && request.method !== "HEAD")) return false;
       try {
-        const owner = lookup(key, "session");
-        if (!owner) return false;
-        if (isOwner(owner.bot, owner.user)) return true;
-        remove(key, "session");
+        return currentOwner(key, "session") !== undefined;
       } catch {
         // Treat unavailable storage like an expired session.
       }
       return false;
     },
     close() {
+      bindings.clear();
       db?.close();
       db = undefined;
     },

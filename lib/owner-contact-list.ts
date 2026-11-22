@@ -40,7 +40,7 @@ function gatewayId(value: unknown) {
   return typeof value === "string" && /^[1-9]\d{0,15}$/u.test(value) ? Number(value) : value;
 }
 
-function parseFriendList(items: readonly unknown[] | undefined): readonly Contact[] | undefined {
+export function parseFriendList(items: readonly unknown[] | undefined): readonly Contact[] | undefined {
   if (!items) return;
   const entries: Contact[] = [];
   for (const item of items) {

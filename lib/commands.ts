@@ -2,6 +2,7 @@ import { sendBatchedImageForward, type BatchedImageForward } from "@lotus-yunzai
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts";
+import { ownerContactListSession } from "./owner-contact-list.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
@@ -23,7 +24,8 @@ export type CommandContext = Readonly<Pick<
   calculationSignal?: AbortSignal;
 }>;
 
-export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent, "reply_id" | "sender" | "lookupReply" | "reply" | "forward">> & {
+export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
+  "reply_id" | "sender" | "lookupReply" | "reply" | "forward" | typeof ownerContactListSession>> & {
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly canManagePackages?: true;
@@ -301,6 +303,7 @@ export class CommandRegistry {
       const context = {
         ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
         reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
+        [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
       };
       if (features && !allowed([...names, ...features(context)])) continue;
       const reply = await handler(event.msg, context);

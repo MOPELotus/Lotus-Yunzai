@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { panelApi } from "../lib/panel.ts";
 import { createPanelOwnerSession } from "../lib/panel-owner-session.ts";
+import { ownerContactListSession, type OwnerContactListSession } from "../lib/owner-contact-list.ts";
+import { CommandRegistry } from "../lib/commands.ts";
 
 test("owner tickets are private, one-use, expiring and scoped to a current owner across a restart", async () => {
   const dir = await mkdtemp(join(tmpdir(), "panel-owner-"));
@@ -95,6 +97,98 @@ test("owner tickets are private, one-use, expiring and scoped to a current owner
     expect(fourthCookie).toBeDefined();
     time += 3_600_000;
     expect((await business("status", { headers: { Cookie: fourthCookie! } }))?.status).toBe(401);
+  } finally {
+    lifecycle.abort();
+    session.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("锅巴群友搜索只使用登录时绑定的私聊网关，断线、退出和撤销权限后立即失效", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "panel-guoba-contacts-"));
+  const lifecycle = new AbortController();
+  const originalConnection = new AbortController();
+  let allowed = true;
+  let connected = true;
+  let reads = 0;
+  const gateway: OwnerContactListSession = {
+    botId: 202, ownerId: 303, signal: originalConnection.signal, authorized: () => connected,
+    async groups() {
+      reads += 1;
+      return Array.from({ length: 32 }, (_, index) => ({ id: 400 + index, name: "测试小组 " + index }));
+    },
+    async friends() {
+      reads += 1;
+      return [{ user_id: "605", nickname: "旧友", private_details: "无权读取" }];
+    },
+    async reply() { return "rejected"; },
+    async forward() { return "rejected"; },
+  };
+  const session = createPanelOwnerSession({
+    databasePath: join(dir, "panel.sqlite"), config: {}, signal: lifecycle.signal, publicBase: () => new URL("https://panel.test/"),
+    isOwner: (bot, user) => allowed && bot === 202 && user === 303,
+  });
+  const api = panelApi("static-test-token", [], undefined, undefined, session);
+  const commands = new CommandRegistry();
+  let leaked: OwnerContactListSession | undefined;
+  commands.registerModule({
+    name: "unrelated-plugin", commands: {},
+    fallback(_message, context) { leaked = context[ownerContactListSession]; },
+  });
+  commands.registerModule(session.commands);
+  const request = (part: string, body: unknown, extra?: HeadersInit) => {
+    const headers = new Headers(extra);
+    headers.set("Content-Type", "application/json");
+    headers.set("X-Lotus-Panel-Session", "1");
+    if (!headers.has("Origin")) headers.set("Origin", "https://panel.test");
+    return api(new Request("https://panel.test/panel/api/session/" + part, {
+      method: "POST", headers, body: JSON.stringify(body),
+    }));
+  };
+  const login = async (sessionGateway = gateway) => {
+    const issued = await commands.dispatchFallback({
+      msg: "#管理面板", post_type: "message", isGroup: false, isPrivate: true,
+      self_id: 202, user_id: 303, message_type: "private", privateCredentialSignal: lifecycle.signal,
+      isMaster: true, reply: async () => true,
+      [ownerContactListSession]: sessionGateway,
+    }, () => true, () => true);
+    expect(leaked).toBeUndefined();
+    const ticket = new URLSearchParams(new URL(String(issued).split("\n")[1]!).hash.slice(1)).get("ticket");
+    const claimed = await request("claim", { ticket });
+    expect(claimed?.status).toBe(204);
+    return claimed!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+  };
+  const search = (kind = "friend", query = "", page = 1, headers?: HeadersInit) =>
+    request("contacts", { kind, query, page }, headers);
+  try {
+    const wrong = await login({ ...gateway, botId: 999 });
+    expect((await search("friend", "", 1, { Cookie: wrong }))?.status).toBe(403);
+    expect((await search("friend", "", 1, { Authorization: "Bearer static-test-token" }))?.status).toBe(403);
+    const cookie = await login();
+    expect((await search("friend", "", 1, { Cookie: cookie, Origin: "https://other.test" }))?.status).toBe(403);
+    expect((await search("friend", "", 1, { Cookie: cookie, Authorization: "Bearer static-test-token" }))?.status).toBe(403);
+    expect((await search("invalid", "", 1, { Cookie: cookie }))?.status).toBe(400);
+    expect(reads).toBe(0);
+    const friend = await search("friend", "旧", 1, { Cookie: cookie });
+    expect(friend?.headers.get("Cache-Control")).toBe("no-store");
+    expect(await friend?.json()).toEqual({ items: [{ id: 605, name: "旧友" }], next: false });
+    const first = await search("group", "测试", 1, { Cookie: cookie });
+    expect(await first?.json()).toMatchObject({ next: true });
+    const later = await search("group", "测试", 2, { Cookie: cookie });
+    expect(await later?.json()).toEqual({ items: [{ id: 430, name: "测试小组 30" }, { id: 431, name: "测试小组 31" }], next: false });
+    connected = false;
+    expect((await search("friend", "", 1, { Cookie: cookie }))?.status).toBe(403);
+    connected = true;
+    const another = await login();
+    await request("logout", {}, { Cookie: another });
+    expect((await search("friend", "", 1, { Cookie: another }))?.status).toBe(403);
+    allowed = false;
+    expect((await search("friend", "", 1, { Cookie: cookie }))?.status).toBe(403);
+    allowed = true;
+    const fresh = await login();
+    originalConnection.abort();
+    expect((await search("friend", "", 1, { Cookie: fresh }))?.status).toBe(403);
+    expect(reads).toBe(3);
   } finally {
     lifecycle.abort();
     session.close();
