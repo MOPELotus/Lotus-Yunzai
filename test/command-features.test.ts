@@ -22,6 +22,25 @@ test("引用回复沿用原消息并将撤回选项交给当前协议", async ()
   expect(sent).toEqual([["保留", true], ["稍后撤回", true, { recallMsg: 20 }]]);
 });
 
+test("主人普通对话命令可在结束前回执，代操作不可获得原会话回复", async () => {
+  const registry = new CommandRegistry();
+  const sent: unknown[] = [];
+  const event = { ...group, isMaster: true, reply(message: unknown) { sent.push(message); return true; } };
+  registry.registerModule({ name: "command-feedback-fixture", commands: { async "#阶段回执"(_argument, context) {
+    if (!context.reply) return "无原会话回复";
+    await context.reply("开始");
+    await context.reply("完成");
+    return [];
+  } } });
+  const result = await registry.dispatch("#阶段回执", event);
+  expect(result).toEqual([]);
+  await sendCommandReply(event, result!);
+  expect(sent).toEqual(["开始", "完成"]);
+  expect(await registry.dispatch("#阶段回执", { ...event, isMaster: false })).toBe("无原会话回复");
+  expect(await registry.dispatch("#阶段回执", { ...event, isDelegated: true })).toBe("无原会话回复");
+  expect(await registry.dispatch("#阶段回执", { ...event, message_type: "terminal" })).toBe("无原会话回复");
+});
+
 test("合并转发按指定批次和署名发送，结果未知时停止后续批次", async () => {
   const sent: { nodes: readonly unknown[]; senderName: string | undefined }[] = [];
   const fallback: unknown[] = [];

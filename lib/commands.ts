@@ -16,7 +16,7 @@ export type CommandContext = Readonly<Pick<
     "sendOwnerFriendReply" | "sendQuotedOwnerFriendReply" |
     "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
     "groupRuleImageDigest" | "groupVote" | "groupVerification" | "privateGroupMute" | "privateGroupWholeMute" | "privateGroupKick"
-> & Partial<Pick<MessageEvent, "message" | "raw_message">> & {
+> & Partial<Pick<MessageEvent, "message" | "raw_message" | "reply">> & {
   ownGroupCardAccount?: OwnGroupCardAccount;
   atlasMaintenance?: true;
   runtimeDiagnosticsScope?: "milky";
@@ -63,6 +63,7 @@ export type MessageFallback = (
 ) => CommandReply | undefined | Promise<CommandReply | undefined>;
 
 export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forward">, reply: CommandReply): Promise<void> {
+  if (Array.isArray(reply) && reply.length === 0) return;
   if (typeof reply !== "object" || reply === null || !("type" in reply)) {
     await event.reply(reply);
     return;
@@ -129,7 +130,8 @@ function commandContext(context: CommandContext): CommandContext {
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile, deliverMedia, sendMusicCard,
     attachment, canReadAttachments, adapter, inlineImageByteLimit, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
-    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal } = context;
+    privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal,
+    reply } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, inlineImageByteLimit, listCheckinGroupMembers,
@@ -175,6 +177,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
+    ...(message_type !== "terminal" && !isDelegated && (isMaster || atlasMaintenance === true) && reply ? { reply } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     ...(runtimeStatusScope ? { runtimeStatusScope } : {}),
