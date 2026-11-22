@@ -13,6 +13,7 @@ import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 import WebLoginSettings from "./WebLoginSettings.vue";
 import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
 import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
+import GlobalPermissionsSettings from "./GlobalPermissionsSettings.vue";
 import MusicSettings from "./MusicSettings.vue";
 import BilibiliSettings from "./BilibiliSettings.vue";
 import DouyinSettings from "./DouyinSettings.vue";
@@ -30,7 +31,8 @@ const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
 type MediaView = "music" | "bilibili" | "douyin" | "partner" | "media-environment";
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" | "account-permissions" | MediaView | "extensions";
+type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" |
+  "account-permissions" | "global-permissions" | MediaView | "extensions";
 const view = ref<PanelView>("overview");
 const mediaSection = ref<MediaView>("bilibili");
 const viewingMedia = computed(() => isMediaView(view.value));
@@ -86,6 +88,7 @@ function focusView(next: PanelView) {
     "web-login": "web-login-title",
     "checkin-schedule": "checkin-schedule-title",
     "account-permissions": "account-permissions-title",
+    "global-permissions": "global-permissions-title",
     music: "music-settings-title",
     bilibili: "bilibili-settings-title",
     douyin: "douyin-settings-title",
@@ -291,6 +294,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
       <ElButton :type="view === 'account-permissions' ? 'primary' : 'default'"
         :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">签到权限</ElButton>
+      <ElButton :type="view === 'global-permissions' ? 'primary' : 'default'"
+        :aria-current="view === 'global-permissions' ? 'page' : undefined" @click="setView('global-permissions')">业务权限</ElButton>
       <ElButton v-if="hasMedia" :type="viewingMedia ? 'primary' : 'default'"
         :aria-current="viewingMedia ? 'true' : undefined" @click="setView(mediaSection)">媒体设置</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
@@ -326,6 +331,8 @@ onBeforeUnmount(() => {
     <CheckinScheduleSettings v-else-if="view === 'checkin-schedule'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <AccountPermissionsSettings v-else-if="view === 'account-permissions'" :auth="auth" @unauthorized="expireSession"
+      @dirty-change="updateDirty" />
+    <GlobalPermissionsSettings v-else-if="view === 'global-permissions'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <MusicSettings v-else-if="view === 'music'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />

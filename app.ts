@@ -114,6 +114,7 @@ import { panelMediaEnvironment } from "./lib/panel-media-environment.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
+import { panelGlobalPermissions } from "./lib/panel-global-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
@@ -3430,6 +3431,7 @@ if (import.meta.main) {
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
         ["/panel/api/settings/checkin/schedule", panelCheckinSchedule(root)],
         ["/panel/api/settings/checkin/permissions", panelAccountPermissions(root)],
+        ["/panel/api/settings/global/permissions", panelGlobalPermissions(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
         ["/panel/api/settings/atlas/update", panelAtlasUpdate(root, validateModuleCron)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],

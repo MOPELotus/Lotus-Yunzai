@@ -19,7 +19,7 @@ function legacyPermissionList(...sources: unknown[]) {
   return [...new Set(sources.flatMap(configList).map(String).filter(Boolean))];
 }
 
-function normalizeLotusGlobalConfig(raw: Readonly<Config>): Config {
+export function normalizeLotusGlobalConfig(raw: Readonly<Config>): Config {
   const normalized = { ...raw };
   if (typeof raw.schedule === "string") {
     const fields = raw.schedule.trim().split(/\s+/u);
