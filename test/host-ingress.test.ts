@@ -119,7 +119,7 @@ test("私聊过滤先于指令派发，好友申请按旧配置通过且尊重 V
     await reply(expect.stringContaining("Lotus-Yunzai 正在运行"), { group_id: 77 });
     command("#帮助", 43, { message_type: "group", group_id: 77 });
     command("#帮助");
-    await reply(expect.stringContaining("Lotus-Yunzai 系统指令"), { message_type: "private", user_id: 42 });
+    await reply(expect.stringContaining("https://www.lotusshared.cn/yunzai/"), { message_type: "private", user_id: 42 });
     command("#通行12");
     await reply("旧入口放行");
     command("https://example.invalid/history?authkey=fixture");

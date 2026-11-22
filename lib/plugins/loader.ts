@@ -27,6 +27,7 @@ import { builtInDirectories, systemModuleName } from "../builtin-modules.ts";
 import type { CommandContext, CommandModule, CommandRegistry } from "../commands.ts";
 import type { FileToUrl } from "../file-to-url.ts";
 import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
+import type { PanelRebuildGame, PanelRebuilder } from "../panel-rebuild.ts";
 import type { lockFile } from "../file-lock.ts";
 import { isManagedLegacyScript, isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
 import type { MessageReply } from "../messages.ts";
@@ -220,6 +221,7 @@ export async function loadPlugins(
     readonly reportLoading?: (wait: number) => void;
     readonly fileWatch?: boolean;
     readonly registerGacha?: (game: GachaGame, update: GachaUpdater) => () => void;
+    readonly registerPanelRebuild?: (game: PanelRebuildGame, rebuild: PanelRebuilder) => () => void;
     readonly hostReplacementModules?: readonly string[];
     readonly noticeServices?: {
       readonly noticeGroups: NoticeGroupTransport;
@@ -478,7 +480,8 @@ export async function loadPlugins(
           ...(zzzPanelRankRoles && { zzzPanelRankRoles }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
-        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, atlasSchedule, handlePoke, nativeEvents } = record(module);
+        const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, panelRebuild, atlasSchedule,
+          handlePoke, nativeEvents } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -526,6 +529,15 @@ export async function loadPlugins(
           const disposeFactory = cleanup;
           cleanup = () => {
             unregisterGacha();
+            return disposeFactory?.();
+          };
+        }
+        if (builtIn && (game === "gs" || game === "sr") && panelRebuild !== undefined && options.registerPanelRebuild) {
+          if (typeof panelRebuild !== "function") throw new Error("面板重建入口须为函数。");
+          const unregisterRebuild = options.registerPanelRebuild(game, panelRebuild as PanelRebuilder);
+          const disposeFactory = cleanup;
+          cleanup = () => {
+            unregisterRebuild();
             return disposeFactory?.();
           };
         }

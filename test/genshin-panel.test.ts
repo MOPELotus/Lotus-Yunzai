@@ -140,6 +140,57 @@ test("按已绑角色读旧面板，更新合并现有记录，档案切换终�
 });
 
 
+test("跨档案重建原神面板时接受同账号续期，空数据和授权撤回都保留档案", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-genshin-panel-rebuild-"));
+  const controller = new AbortController();
+  try {
+    const archiveDirectory = join(directory, "archive");
+    const profiles = createProfileStore(directory);
+    await writeFile(join(directory, "42.yaml"), Bun.YAML.stringify({
+      version: 1, user: { qq: "42" }, profile: { id: 1 }, account: {
+        ltuid: "12", stuid: "12", stoken: "synthetic-stoken",
+        stoken_cookie: "stuid=12; stoken=synthetic-stoken",
+        cookie: "account_id=12; cookie_token=synthetic-cookie",
+        game_roles: { gs: [{ uid, region: role.region, game_biz: role.gameBiz }] },
+        current_uid: { gs: uid },
+      },
+    }));
+    let authorized = true;
+    let avatars: readonly typeof avatar[] = [avatar];
+    let fetches = 0;
+    let clock = 3000;
+    const query = createGenshinPanelQuery(profiles, {
+      async fetchGenshinPanel(source) {
+        if (++fetches === 1) {
+          await profiles.saveRefreshedCredentials(source.qq, source.profileId, source.revision, {
+            cookie: "account_id=12; cookie_token=renewed-cookie", ltoken: "synthetic-ltoken",
+          });
+        }
+        if (fetches === 3) authorized = false;
+        return { avatars, revision: (await profiles.requestContext(source.qq, source.profileId, "gs")).revision };
+      },
+    }, lockFile, controller.signal, {
+      archiveDirectory, legacyDirectory: directory, now: () => clock++,
+      theme: async () => ({ ...catalog, async picture() { return undefined; } }),
+    });
+    const run = () => query.rebuild("42", 1, uid, controller.signal, () => {
+      if (!authorized) throw new Error("fixture owner revoked");
+    });
+    expect(await run()).toBe(true);
+    const archive = join(archiveDirectory, "42", `${uid}.json`);
+    const accepted = await readFile(archive, "utf8");
+    expect(JSON.parse(accepted).avatars["10000089"].name).toBe("芙宁娜");
+    avatars = [];
+    await expect(run()).rejects.toThrow("没有返回原神角色面板");
+    expect(await readFile(archive, "utf8")).toBe(accepted);
+    avatars = [avatar];
+    await expect(run()).rejects.toThrow("fixture owner revoked");
+    expect(await readFile(archive, "utf8")).toBe(accepted);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指令生效", () => {
   const controller = new AbortController();
   const module = createModule({ signal: controller.signal, lockFile });

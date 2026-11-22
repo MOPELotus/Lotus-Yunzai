@@ -213,7 +213,7 @@ test("双协议继承旧点赞和状态配置，主人聊天修改即时作用�
     expect(Bun.YAML.parse(await readFile(status, "utf8"))).toEqual({ defaultState: false });
     const disabledStart = oneBotCalls.length;
     send([text("状态")]);
-    await commandOneBot("#帮助", "Lotus-Yunzai 系统指令");
+    await commandOneBot("#帮助", "https://www.lotusshared.cn/yunzai/");
     expect(oneBotCalls.slice(disabledStart).map(textOf).join("\n")).not.toContain("Lotus-Yunzai 正在运行");
     await commandOneBot("#设置状态开启", "默认状态 已开启");
     await commandMilky("状态", "Lotus-Yunzai 正在运行");

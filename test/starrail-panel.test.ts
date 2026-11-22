@@ -21,7 +21,8 @@ test("星铁面板保留更新、列表、详情别名与 profile 后缀", () =>
   expect(parsePanelCommand("#星铁角色面板列表 20")).toEqual({ type: "list", profileId: 20, name: "" });
   expect(parsePanelCommand("*托帕&账账面板")).toEqual({ type: "detail", profileId: 1, name: "托帕&账账" });
   expect(parsePanelCommand("*银狼LV.999面版2")).toEqual({ type: "detail", profileId: 2, name: "银狼LV.999" });
-  for (const name of ["*删除面板", "*混沌", "#角色面板", "*更新面板256", "*抽卡记录"]) {
+  expect(parsePanelCommand("*删除面板")).toEqual({ type: "discard", profileId: 1, name: "" });
+  for (const name of ["*混沌", "#角色面板", "*更新面板256", "*抽卡记录"]) {
     expect(parsePanelCommand(name)).toBeUndefined();
   }
 });

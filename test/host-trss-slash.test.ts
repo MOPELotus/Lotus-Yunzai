@@ -60,11 +60,14 @@ test.each([
     }
     send("/帮助", 1);
     send("#帮助", 2);
+    send("*帮助", 3);
+    send("%帮助", 4);
+    send("%help", 5);
     const deadline = performance.now() + 500;
-    while (replies.length < (enabled ? 2 : 1) && performance.now() < deadline) await Bun.sleep(10);
+    while (replies.length < (enabled ? 5 : 4) && performance.now() < deadline) await Bun.sleep(10);
     if (!enabled) await Bun.sleep(80);
-    expect(replies).toHaveLength(enabled ? 2 : 1);
-    for (const reply of replies) expect(reply).toEqual(expect.stringContaining("Lotus-Yunzai 系统指令"));
+    expect(replies).toHaveLength(enabled ? 5 : 4);
+    for (const reply of replies) expect(reply).toEqual(expect.stringContaining("https://www.lotusshared.cn/yunzai/"));
   } finally {
     client?.close();
     host?.kill("SIGTERM");

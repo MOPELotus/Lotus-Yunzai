@@ -78,6 +78,7 @@ import { createMessageRecallCache, isRecallMedia, maxRecallMediaCacheBytes, maxR
   type NativeFriendRecallNotice, type NativeGroupRecallNotice,
   type RecallBody, type RecallMedia, type RecallTextBody } from "./lib/message-recall-notice.ts";
 import { createGachaBatch } from "./lib/gacha-batch.ts";
+import { createPanelRebuild } from "./lib/panel-rebuild.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
@@ -312,6 +313,7 @@ if (import.meta.main) {
     listIds: createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined).listIds,
     signal: lifecycle.signal,
   });
+  const panelRebuild = createPanelRebuild(createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined), lifecycle.signal);
   const restartPausedAt = readRestartPausedAt();
   const durablePause = handoff.powerState;
   const recordedPause = durablePause?.load();
@@ -2783,6 +2785,9 @@ if (import.meta.main) {
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[gacha] 抽卡记录");
+    commands.registerModule({
+      name: "@lotus-yunzai/panel-rebuild", commands: {}, fallback: panelRebuild.fallback,
+    }, "原神和星铁面板重建");
     const { hostname, oneBot, https, panelToken, panelPublicUrl } = network;
     const panelEnabled = panelToken !== undefined || panelPublicUrl !== undefined;
     if (panelEnabled) {
@@ -3044,6 +3049,8 @@ if (import.meta.main) {
         },
         readCounts: counts.read,
         countImages: segmentCounts,
+        readRedisStatus: valkey === undefined ? undefined : (signal) =>
+          globalThis.redis?.sendCommand<string>(["INFO"], { signal }) ?? Promise.resolve(""),
         loadedNames: () => plugins?.records.filter(record => record.status === "loaded").map(record => record.name),
       }),
       runtimeDiagnostics(context: CommandContext) {
@@ -3069,6 +3076,7 @@ if (import.meta.main) {
       },
     }), {
       loadTimeout, reportLoading, fileWatch: botConfig.file_watch !== false && !probingUpdate, registerGacha: gachaBatch.register,
+      registerPanelRebuild: panelRebuild.register,
       hostReplacementModules: [gachaExpectationModuleName],
       noticeServices: {
         whenNoticeActive: probingUpdate ? () => () => {} : whenModuleTasksActive,

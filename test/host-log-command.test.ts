@@ -215,7 +215,7 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
         client.command("#帮助", userId, groupId);
         const expectedTarget = groupId ? { group_id: groupId } : { user_id: userId };
         expect(await client.next()).toMatchObject({
-          action: "send_msg", params: { ...expectedTarget, message: expect.stringContaining("Lotus-Yunzai 系统指令") },
+          action: "send_msg", params: { ...expectedTarget, message: expect.stringContaining("https://www.lotusshared.cn/yunzai/") },
         });
       }
 
@@ -248,7 +248,7 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
 
       host.stdin.write(`#日志 1 ${terminalMarker}\n#帮助\n`);
       host.stdin.flush();
-      await readUntil(/Lotus-Yunzai 系统指令\n/u);
+      await readUntil(/https:\/\/www\.lotusshared\.cn\/yunzai\/\n/u);
       expect(stdout).toContain(`最近 1 条运行日志\n${terminalMarker}\n`);
 
       host.kill();
@@ -389,7 +389,7 @@ test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文�
       await command(`#日志 ${key}`, 51, undefined, 100);
       await command(`#日志 ${key}`, 51, 77);
       await command("#帮助", 51, 77);
-      await mock.singleText({ group_id: 77 }, expect.stringContaining("Lotus-Yunzai 系统指令"));
+      await mock.singleText({ group_id: 77 }, expect.stringContaining("https://www.lotusshared.cn/yunzai/"));
       for (const user of [42, 52]) {
         await command(`#日志 ${key}`, user);
         await mock.singleText({ user_id: user }, "私聊限制夹具");
@@ -428,7 +428,7 @@ test("Milky 私聊主人可查询脱敏日志，按原生转发回执决定文�
       await mock.singleText(owner, "日志转发结果未确认，请在聊天中核对。");
 
       await command("#帮助");
-      await mock.singleText(owner, expect.stringContaining("Lotus-Yunzai 系统指令"));
+      await mock.singleText(owner, expect.stringContaining("https://www.lotusshared.cn/yunzai/"));
       await Bun.sleep(80);
       expect(mock.frames).toEqual([]);
     } finally {
