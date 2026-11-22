@@ -23,9 +23,20 @@ export function panelGroupNoticeSettings(root: URL, directories: PluginLoadRepor
       return new Response(null, { status: 500 });
     }
 
+    const query = new URL(request.url).searchParams;
+    const scope = query.get("scope") ?? undefined;
+    if (scope !== undefined && (!module.validNoticeScope(scope) || query.getAll("scope").length !== 1)) {
+      return new Response(null, { status: 400 });
+    }
+    const active = () => !request.signal.aborted && stillAuthorized();
+    const registered = () => directories.get("group") === group;
+    if (!active()) return new Response(null, { status: 401 });
     const service = module.createGroupNoticePanelSettings(root, lockFile);
     if (request.method === "GET") {
-      try { return Response.json(await service.read()); }
+      try {
+        const data = await service.read(scope);
+        return active() ? registered() ? Response.json(data) : new Response(null, { status: 409 }) : new Response(null, { status: 401 });
+      }
       catch { return new Response(null, { status: 500 }); }
     }
 
@@ -36,10 +47,8 @@ export function panelGroupNoticeSettings(root: URL, directories: PluginLoadRepor
         typeof payload.revision !== "string" || Object.keys(payload).length !== 2) {
       return new Response(null, { status: 400 });
     }
-    const active = () => !request.signal.aborted && stillAuthorized();
-    const registered = () => directories.get("group") === group;
     try {
-      return Response.json(await service.write(payload.revision, payload.patch, () => active() && registered()));
+      return Response.json(await service.write(payload.revision, payload.patch, () => active() && registered(), scope));
     } catch (error) {
       if (error instanceof module.GroupNoticePanelSettingsPermission) return new Response(null, { status: active() ? 409 : 401 });
       if (error instanceof module.GroupNoticePanelSettingsConflict) return new Response(null, { status: 409 });

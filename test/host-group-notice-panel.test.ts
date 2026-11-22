@@ -18,7 +18,8 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     await mkdir(join(root, "config"), { recursive: true });
     const file = join(root, "config/group-notice.yaml");
     const original = "# 保留注释\ndefault: { groupMessage: false, privateMessage: true }\n" +
-      '42: { groupMessage: false }\n"99:42": { groupRecall: false }\n"bot:99": { notificationsAll: true }\n';
+      '42: { groupMessage: false }\n"99:42": { groupRecall: false }\n"bot:99": { notificationsAll: true }\n' +
+      '"bot:99:42": { groupMessage: false, groupRecall: true, other: 1 }\n';
     await writeFile(file, original);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
@@ -45,8 +46,8 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
       stream.releaseLock();
     }
 
-    async function request(method = "GET", body?: unknown, credential = token) {
-      return fetch(endpoint, {
+    async function request(method = "GET", body?: unknown, credential = token, path?: string) {
+      return fetch(path ? new URL(path, endpoint) : endpoint, {
         method, signal: AbortSignal.timeout(3_000),
         headers: { Authorization: `Bearer ${credential}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -83,6 +84,59 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     expect(changed).toContain('42: { groupMessage: false }\n"99:42": { groupRecall: false }\n"bot:99": { notificationsAll: true }');
     expect((await request("PUT", { revision: before.revision, patch: { groupMessage: false } })).status).toBe(409);
     expect(await readFile(file, "utf8")).toBe(changed);
+
+    const scopePath = "?scope=bot%3A99%3A42";
+    const scope = await (await request("GET", undefined, token, scopePath)).json() as typeof before;
+    expect(scope).toMatchObject({ scope: "bot:99:42", scopes: ["42", "bot:99", "bot:99:42"], writable: true,
+      settings: { groupMessage: false, groupRecall: true, botBeenBanned: null } });
+    expect((await request("GET", undefined, token, "?scope=../default")).status).toBe(400);
+    expect((await request("PUT", { revision: scope.revision, patch: { groupMessage: true } }, token, "?scope=42")).status).toBe(409);
+    expect((await request("PUT", { revision: scope.revision, patch: { groupMessage: null, groupRecall: null, botBeenBanned: true } },
+      token, scopePath)).status).toBe(200);
+    const cleared = await (await request("GET", undefined, token, scopePath)).json();
+    expect(cleared).toMatchObject({ settings: { groupMessage: null, groupRecall: null, botBeenBanned: true } });
+    expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ "bot:99:42": { botBeenBanned: true, other: 1 } });
+
+    const moderationFile = join(root, "config/groupAdmin.yaml");
+    const legacyManagement = join(root, "plugins/yenai-plugin/config/config");
+    await mkdir(legacyManagement, { recursive: true });
+    await writeFile(join(legacyManagement, "groupAdmin.yaml"), 'groupAddNotice: {openGroup: [88], msg: 旧提醒}\n' +
+      'groupVerify: {openGroup: [88], mode: 模糊, time: "120", range: {min: 3, max: 60}, SuccessMsgs: {88: 旧文案, 0: 默认旧文案}}\n');
+    await writeFile(moderationFile, 'groupVerify: {range: {min: 5, keep: true}, time: 180}\nblackQQ: [20] # 保持\n');
+    const base = "/panel/api/settings/native/";
+    const moderationPath = base + "group-moderation";
+    const moderationResult = await request("GET", undefined, token, moderationPath);
+    expect(moderationResult.status).toBe(200);
+    const moderation = await moderationResult.json() as { values: Record<string, unknown> };
+    expect(moderation.values).toMatchObject({ noticeGroups: [88], noticeMessage: "旧提醒", verifyGroups: [88], verifyMode: "模糊",
+      verifySeconds: 180, verifyMin: 5, verifyMax: 60, verifyMessages: { 88: "旧文案", 0: "默认旧文案" } });
+    expect((await request("PUT", { previous: moderation.values, values: { ...moderation.values, verifyMin: 70 } }, token, moderationPath)).status).toBe(400);
+    const managementSave = { previous: moderation.values, values: { ...moderation.values, verifyMax: 80, verifyMessages: { 0: "默认旧文案", 99: "本群新文案" },
+      verifyGroups: [99], noticeGroups: [99], noticeMessage: "审核提醒。\n请查看。" } };
+    const managementSaved = await request("PUT", managementSave, token, moderationPath);
+    expect(managementSaved.status).toBe(200);
+    expect(await managementSaved.json()).toMatchObject({ values: managementSave.values });
+    expect((await request("PUT", managementSave, token, moderationPath)).status).toBe(409);
+    const managementYaml = await readFile(moderationFile, "utf8");
+    expect(managementYaml).toContain("# 保持");
+    expect(Bun.YAML.parse(managementYaml)).toMatchObject({ blackQQ: [20], groupVerify: { range: { keep: true, min: 5, max: 80 }, SuccessMsgs: { 88: "", 99: "本群新文案" } } });
+
+    await mkdir(join(root, "config/config"));
+    const cardFile = join(root, "config/config/auto-group-card.yaml");
+    await writeFile(cardFile, 'cron: "0 0 * * * *"\nsuffixes: [旧文案]\nnotGroup: ["88"]\nother: 保留\n');
+    const cardPath = base + "group-card";
+    const card = await (await request("GET", undefined, token, cardPath)).json() as { values: Record<string, unknown> };
+    expect(card.values).toMatchObject({ enable: true, notGroup: [88], suffixes: ["旧文案"] });
+    expect((await request("PUT", { previous: card.values, values: { ...card.values, cron: "61 0 * * * *" } }, token, cardPath)).status).toBe(400);
+    const cardConfig = { ...card.values, notGroup: [99], suffixes: ["新文案"], cron: "0 30 * * * *" };
+    expect((await request("PUT", { previous: card.values, values: cardConfig }, token, cardPath)).status).toBe(200);
+    expect(Bun.YAML.parse(await readFile(cardFile, "utf8"))).toMatchObject({ notGroup: [99], suffixes: ["新文案"], other: "保留" });
+
+    const leavePath = base + "group-leave-blacklist";
+    const leave = await (await request("GET", undefined, token, leavePath)).json() as { values: Record<string, unknown> };
+    expect(leave.values).toEqual({ enable: false, groups: [] });
+    expect((await request("PUT", { previous: leave.values, values: { enable: true, groups: [99] } }, token, leavePath)).status).toBe(200);
+    expect(Bun.YAML.parse(await readFile(join(root, "config/group-leave-blacklist.yaml"), "utf8"))).toEqual({ enable: true, groups: [99] });
 
     await writeFile(file, "default: {broken");
     const unavailable = await (await request()).json() as { revision: string; writable: boolean };

@@ -35,7 +35,8 @@ interface Location {
 }
 
 type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
-  "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel";
+  "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
+  "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
 
 async function canonicalDirectory(path: string): Promise<string> {
   const state = await named(path);
@@ -49,7 +50,7 @@ async function canonicalDirectory(path: string): Promise<string> {
 
 async function effectiveFile(root: URL, name: ConfigurationName, override?: string): Promise<Location> {
   const primary = override ? resolve(override) : fileURLToPath(new URL(`config/${name}.yaml`, root));
-  const legacy = name === "global" || name === "bot"
+  const legacy = ["global", "bot", "auto-group-card", "group-leave-blacklist"].includes(name)
     ? [fileURLToPath(new URL(`config/config/${name}.yaml`, root))] : [];
   for (const source of [primary, ...legacy]) {
     const state = await named(source);
@@ -145,7 +146,8 @@ export async function updateLocalConfiguration<T>(
       if (errno(cause) !== "EEXIST") throw cause;
     });
   }
-  const sidecar = join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
+  const sidecar = name === "groupAdmin" ? fileURLToPath(new URL("config/.lotus-group-admin.sqlite", root)) :
+    join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
   const database = await lockFile(sidecar, name === "global" ? "全局配置" : `${name}.yaml`).catch(() => error("conflict"));
   try {
     assertActive();

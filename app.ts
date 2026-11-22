@@ -134,6 +134,7 @@ import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
 import { panelAccountPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
 import { panelGlobalPermissions } from "./lib/panel-global-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
+import { panelGroupManagement } from "./lib/panel-group-management.ts";
 import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
@@ -3512,6 +3513,9 @@ if (import.meta.main) {
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
+        ["/panel/api/settings/native/group-moderation", panelGroupManagement(root, plugins.directories, "groupAdmin", validateModuleCron)],
+        ["/panel/api/settings/native/group-card", panelGroupManagement(root, plugins.directories, "auto-group-card", validateModuleCron)],
+        ["/panel/api/settings/native/group-leave-blacklist", panelGroupManagement(root, plugins.directories, "group-leave-blacklist", validateModuleCron)],
         ["/panel/api/settings/group/cleanup", panelGroupCleanup(root)],
       ]);
       if (plugins.records.some(plugin => plugin.name === "media" && plugin.status === "loaded")) {
