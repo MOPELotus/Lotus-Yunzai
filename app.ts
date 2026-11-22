@@ -31,7 +31,7 @@ import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
 import { checkinBatchRefreshCommands } from "./lib/checkin-batch-refresh-commands.ts";
-import { checkinRegistrationCommands } from "./lib/checkin-registration-commands.ts";
+import { checkinRegistrationCommands, checkinUnregistration, unregisterCheckinCommand } from "./lib/checkin-registration-commands.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
@@ -325,6 +325,8 @@ if (import.meta.main) {
   let stopUpdateSchedule: (() => Promise<void>) | undefined;
   let stopMilky: (() => Promise<void>) | undefined;
   let checkinRuntime: ReturnType<typeof createCheckinScheduleRuntime> | undefined;
+  const unregisterCheckin = checkinUnregistration(Bun.env.LOTUS_PROFILE_DIR || undefined,
+    async () => { await checkinRuntime?.reconcileExistingPlans(); });
   let dailyNoteReminders: ReturnType<typeof createDailyNoteReminders> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
@@ -1954,6 +1956,17 @@ if (import.meta.main) {
           user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
+      return;
+    }
+    if (event.msg === unregisterCheckinCommand) {
+      if (!allowNew || event.isDelegated || !allowed(["删除签到", "@lotus-yunzai/checkin-registration"])) return;
+      const connection = event[delegationSession]?.signal;
+      const { user_id: qq } = event;
+      if ((event.message_type !== "group" && event.message_type !== "private") ||
+          !connection || connection.aborted || qq === undefined || !Number.isSafeInteger(qq) || qq < 1) return;
+      const signal = nativeOperationSignal(connection);
+      const reply = await unregisterCheckin(String(qq), signal);
+      if (reply !== undefined && !signal.aborted) await event.reply(reply);
       return;
     }
     if (!event.isDelegated && await legacy.dispatchContext(event, allowed)) {

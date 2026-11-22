@@ -972,12 +972,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }] : [];
       return { revision, wallets: [...wallets, ...international] };
     },
-    async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean) {
+    async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean, signal?: AbortSignal) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         return state.summary.enabled === enabled ? document : { ...document, enabled };
-      });
+      }, signal);
       return { enabled, ...result };
     },
     async registerGroupCheckin(qq: string, id: number, expectedRevision: string, groupId: number, nickname?: string) {

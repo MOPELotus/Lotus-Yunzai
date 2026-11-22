@@ -4,6 +4,48 @@ import type { CommandContext, CommandModule, CommandReply } from "./commands.ts"
 
 const register = /^#注册自动签到([1-9]\d{0,2})?$/u;
 
+export const unregisterCheckinCommand = "#删除签到";
+
+export function checkinUnregistration(directory: string | undefined, reconcilePlans: () => Promise<void>) {
+  const profiles = createProfileStore(directory);
+  return async (qq: string, signal: AbortSignal) => {
+    let disabled = 0;
+    let failed = 0;
+    let ids: number[];
+    try {
+      signal.throwIfAborted();
+      ids = await profiles.listIds(qq);
+    } catch {
+      if (!signal.aborted) return "暂时无法读取本人的签到档案。";
+      return;
+    }
+    for (const id of ids) {
+      if (signal.aborted) break;
+      try {
+        const current = await profiles.checkinSettings(qq, id);
+        if (!current.enabled) continue;
+        const change = await profiles.setCheckinEnabled(qq, id, current.revision, false, signal);
+        if (change.changed) disabled++;
+      } catch (error) {
+        if (signal.aborted) break;
+        if (!(error instanceof ProfileError && error.code === "missing")) failed++;
+      }
+    }
+    let planPending = false;
+    if (disabled) {
+      try { await reconcilePlans(); }
+      catch { planPending = true; }
+    }
+    if (signal.aborted) return;
+    if (!disabled) return failed ? "暂时无法关闭本人的自动签到，请重新发送指令。" : "未注册自动签到，无需关闭。";
+    const lines = [`已关闭 ${disabled} 个档案的自动签到，登录资料已保留。`,
+      "如需继续，请重新发送 #注册自动签到，其他档案按编号注册。"];
+    if (failed) lines.push(`另有 ${failed} 个档案未能关闭，请重试。`);
+    if (planPending) lines.push("签到计划将在下一轮重新检查。");
+    return lines.join("\n");
+  };
+}
+
 export function checkinRegistrationCommands(directory: string | undefined, signal: AbortSignal, {
   canRegister, addRegisteredProfile, viewProfile,
 }: {
