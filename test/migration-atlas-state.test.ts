@@ -43,7 +43,7 @@ test("保留固定旧宿主的定时语义和分类范围，只迁现行 Atlas �
       "    enable: true",
       '    check_cron: "0 0 */6 * * * *"',
       '    challenge_cron: ""',
-      "    run_on_missing_data: true",
+      "    run_on_missing_data: false",
     ].join("\n");
     await write(old, contents);
     const staged = join(stage, "config/global.yaml");
@@ -53,7 +53,7 @@ test("保留固定旧宿主的定时语义和分类范围，只迁现行 Atlas �
     expect(result).toEqual({
       scheduler: { mode: "fixed" },
       atlas: { version_channel: "live", update_args: ["--page", "hsr=lightcone"], challenge_args: ["--page", "zzz=shiyu"],
-        auto_update: { enable: true, check_cron: "0 0 */6 * * *" } },
+        auto_update: { enable: true, check_cron: "0 0 */6 * * *", run_on_missing_data: false } },
     });
     const policy = parseAtlasUpdatePolicy(result.atlas);
     expect(policy.version).toEqual({ selections: ["hsr/lightcone"], cron: "0 0 */6 * * *" });

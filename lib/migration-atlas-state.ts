@@ -114,6 +114,7 @@ function stageConfig(atlas: Record<string, unknown>) {
   if (auto) {
     value.auto_update = Object.fromEntries([
       ["enable", auto.enable], ["check_cron", oldCron(auto.check_cron)], ["challenge_cron", oldCron(auto.challenge_cron)],
+      ["run_on_missing_data", typeof auto.run_on_missing_data === "boolean" ? auto.run_on_missing_data : undefined],
     ].filter(([, configured]) => configured !== undefined));
   }
   const policy = parseAtlasUpdatePolicy({ ...value, update_args: atlas.update_args, challenge_args: atlas.challenge_args });
