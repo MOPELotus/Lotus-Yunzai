@@ -956,6 +956,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         blacklist: Array.isArray(setting.black_list) ? setting.black_list.map(accountId).filter(Boolean) : [],
       } as const;
     },
+    async domesticCloudGenshin(qq: string, id: number) {
+      const { document, state, revision } = await readDocument(qq, id);
+      const { loggedIn } = state.summary;
+      const genshin = record(record(record(document.cloud_games).cn).genshin);
+      return { loggedIn, revision, token: loggedIn && typeof genshin.token === "string" ? genshin.token.trim() : "" };
+    },
     async cloudCheckin(qq: string, id: number) {
       const { document, state, revision } = await readDocument(qq, id);
       const settings = record(document.cloud_games);

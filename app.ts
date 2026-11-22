@@ -22,7 +22,7 @@ import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
 import { createChatMediaLinks } from "./lib/chat-media-links.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
-import { cloudProfileCommands, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
+import { cloudProfileCommands, cloudWalletProfile, createCloudGenshinWalletQuery, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
 import { notifyCheckin, type BotNotifications, type CheckinNotifyDelivery, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
@@ -502,6 +502,7 @@ if (import.meta.main) {
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
+  let cloudGenshinWallet: ReturnType<typeof createCloudGenshinWalletQuery> | undefined;
   let miyousheBalance: ReturnType<typeof createMiyousheBalanceQuery> | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
@@ -1936,6 +1937,24 @@ if (import.meta.main) {
       }
       return;
     }
+    const cloudWallet = cloudWalletProfile(incoming.msg);
+    if (cloudWallet !== undefined) {
+      const features = ["云原神查询", "@lotus-yunzai/cloud-profile"];
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
+      const { user_id: user, self_id: bot, group_id: groupId, sender } = event;
+      const group = event.message_type === "group" && event.sub_type !== "anonymous" && groupId !== undefined && groupId > 0;
+      const privateFriend = event.message_type === "private" && event.sub_type === "friend";
+      const connection = group ? event[delegationSession]?.signal : privateFriend ? event.privateCredentialSignal : undefined;
+      if (!connection || connection.aborted || user === undefined || !Number.isSafeInteger(user) || user < 1 ||
+          bot === undefined || event.message_id === undefined ||
+          (sender?.user_id !== undefined && sender.user_id !== user && sender.user_id !== String(user))) return;
+      const signal = nativeOperationSignal(connection);
+      const reply = cloudWallet === null ? "档案编号须在 1 到 255 之间。" : await cloudGenshinWallet?.(user, cloudWallet, signal);
+      if (reply !== undefined && !signal.aborted && allowed(features)) {
+        await event.reply(group ? [segment.at(user), "\n" + reply] : reply);
+      }
+      return;
+    }
     const balanceProfile = miyousheBalanceProfile(event.msg);
     if (balanceProfile !== undefined) {
       const features = ["米游币查询", "米币查询", "account", "@lotus-yunzai/account"];
@@ -2388,6 +2407,9 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    cloudGenshinWallet = createCloudGenshinWalletQuery({
+      readDomesticCloud: checkinProfiles.domesticCloudGenshin, readProfile: checkinProfiles.checkinSettings, transport: hoyoTransport,
+    });
     miyousheBalance = createMiyousheBalanceQuery(profileDirectory, hoyoTransport);
     if (!probingUpdate) {
       const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean; readonly cooldown_hours?: unknown; readonly cron?: unknown; readonly message?: unknown } | undefined;

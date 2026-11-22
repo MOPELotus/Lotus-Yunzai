@@ -5,6 +5,7 @@ import type { CommandContext, CommandModule, CommandReply, MessageFallbackContex
 
 const secretPrefix = /^\s*[#＃井/]\s*绑定\s*云\s*(?:原神|绝区零)\s*token/iu;
 const binding = /^\s*[#＃井/]\s*绑定\s*云\s*(原神|绝区零)\s*token([0-9]*)[ \t]+([^\r\n]+)$/iu;
+const walletQuery = /^#*云原神查询([0-9]*)$/u;
 const toggle = /^#(启用|开启|关闭|禁用)云(原神|绝区零)(?:签到)?([0-9]*)$/u;
 
 type CloudGame = "genshin" | "zzz";
@@ -34,6 +35,57 @@ function userId(context: CommandContext) {
 
 function missing(error: unknown): boolean {
   return error instanceof ProfileError && (error.code === "missing" || error.code === "login-required");
+}
+
+export function cloudWalletProfile(message: string) {
+  const match = walletQuery.exec(message);
+  if (match) return profileId(match[1]!) ?? null;
+}
+
+interface CloudWalletQueryOptions {
+  readonly readDomesticCloud: (qq: string, profileId: number) => Promise<{
+    readonly loggedIn: boolean; readonly revision: string; readonly token: string;
+  }>;
+  readonly readProfile: CloudProfileCommandsOptions["readProfile"];
+  readonly transport?: Parameters<typeof readCloudGenshinWallet>[1];
+  readonly readWallet?: typeof readCloudGenshinWallet;
+}
+
+export function createCloudGenshinWalletQuery({
+  readDomesticCloud, readProfile, transport = fetch, readWallet = readCloudGenshinWallet,
+}: CloudWalletQueryOptions) {
+  return async (user: number, id: number, signal: AbortSignal) => {
+    const qq = String(user);
+    if (signal.aborted) return;
+    try {
+      const current = await readDomesticCloud(qq, id);
+      signal.throwIfAborted();
+      if (!current.loggedIn) return `请先登录 profile ${id}。`;
+      if (!current.token) return `档案 ${id} 尚未绑定国服云原神凭据。`;
+      const verifyProfile = async () => {
+        signal.throwIfAborted();
+        const latest = await readProfile(qq, id).catch(() => undefined);
+        if (!latest?.loggedIn || latest.revision !== current.revision) throw new ProfileError("changed", "档案已变更。");
+        signal.throwIfAborted();
+      };
+      await verifyProfile();
+      const wallet = await readWallet(current.token, transport, { signal: signal, verifyProfile });
+      await verifyProfile();
+      return [
+        `云原神钱包 · 档案 ${id}`,
+        ...(wallet.cloudCoins !== undefined ? [`米云币：${wallet.cloudCoins}`] : []),
+        `免费时长：${wallet.freeTimeMinutes} 分钟`,
+        ...(wallet.totalTimeMinutes !== undefined ? [`总时长：${wallet.totalTimeMinutes} 分钟`] : []),
+      ].join("\n");
+    } catch (error) {
+      if (signal.aborted) return;
+      if (missing(error)) return `请先登录 profile ${id}。`;
+      if (error instanceof ProfileError && error.code === "changed") return "档案已变更，请重新查询云原神钱包。";
+      if (error instanceof CloudGenshinWalletError) return error.message;
+      if (error instanceof HoyoRequestError && error.code === "invalid-input") return `档案 ${id} 的国服云原神凭据无效，请在私聊重新绑定。`;
+      return "暂时无法查询云原神钱包。";
+    }
+  };
 }
 
 export function cloudProfileCommands({

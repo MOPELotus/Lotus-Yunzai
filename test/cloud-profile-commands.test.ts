@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ProfileError } from "@lotus-yunzai/account";
 import { CloudGenshinWalletError } from "../packages/hoyo-client/cloud-genshin-wallet.ts";
-import { cloudProfileCommands, isCloudTokenInput } from "../lib/cloud-profile-commands.ts";
+import { cloudProfileCommands, cloudWalletProfile, createCloudGenshinWalletQuery, isCloudTokenInput } from "../lib/cloud-profile-commands.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 
 const browserCombo = "ai=4;ci=1;oi=fixture-open;ct=fixture%2Bopaque==;si=fixture-sig;bi=hk4e_cn";
@@ -148,4 +148,38 @@ test("云原神和云绝区零的旧开关只更新当前档案旗标", async ()
     ["42", 2, "r2", "genshin", true], ["42", 2, "r2", "genshin", false],
     ["42", 1, "r1", "zzz", true], ["42", 1, "r1", "zzz", false],
   ]);
+});
+
+test("国服云钱包查询只读指定档案，换绑或连接关闭时零请求", async () => {
+  const lifecycle = new AbortController();
+  let revision = "r1";
+  const checked: [string, number][] = [];
+  let fetched = 0;
+  const readOnly = createCloudGenshinWalletQuery({
+    async readDomesticCloud(qq, slot) {
+      checked.push([qq, slot]);
+      return { loggedIn: true, revision: "r1", token: browserCombo };
+    },
+    async readProfile() { return { loggedIn: true, revision }; },
+    async readWallet(token, _transport, options) {
+      expect(token).toBe(browserCombo);
+      await options?.verifyProfile?.();
+      fetched++;
+      return { freeTimeMinutes: 0, cloudCoins: 0, totalTimeMinutes: 0 };
+    },
+  });
+  expect(cloudWalletProfile("#云原神查询2")).toBe(2);
+  expect(cloudWalletProfile("云原神查询")).toBe(1);
+  expect(cloudWalletProfile("#云原神查询256")).toBeNull();
+  expect(cloudWalletProfile("#云原神查询 其他QQ")).toBeUndefined();
+  const run = () => readOnly(42, 2, lifecycle.signal);
+  revision = "r2";
+  expect(await run()).toContain("档案已变更");
+  expect(fetched).toBe(0);
+  revision = "r1";
+  expect(await run()).toBe("云原神钱包 · 档案 2\n米云币：0\n免费时长：0 分钟\n总时长：0 分钟");
+  lifecycle.abort();
+  expect(await run()).toBeUndefined();
+  expect(checked).toEqual([["42", 2], ["42", 2]]);
+  expect(fetched).toBe(1);
 });

@@ -5,6 +5,8 @@ import { readGameRecordPayload } from "./game-record.ts";
 
 export interface CloudGenshinWallet {
   readonly freeTimeMinutes: number;
+  readonly cloudCoins?: number;
+  readonly totalTimeMinutes?: number;
 }
 
 interface CloudGenshinWalletOptions {
@@ -76,12 +78,15 @@ function object(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
 }
 
-function readMinutes(value: unknown, label = "云原神"): number {
+function readQuantity(value: unknown): number | undefined {
   const count = typeof value === "string" && /^\d{1,16}$/u.test(value) ? Number(value) : value;
-  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
-    throw new HoyoRequestError("response", `${label}钱包返回的剩余免费时长无效。`);
-  }
-  return count === 0 ? 0 : count;
+  if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0) return count === 0 ? 0 : count;
+}
+
+function readMinutes(value: unknown, label = "云原神"): number {
+  const minutes = readQuantity(value);
+  if (minutes === undefined) throw new HoyoRequestError("response", `${label}钱包返回的剩余免费时长无效。`);
+  return minutes;
 }
 
 /** Reads a cloud session's balance through the public web client's default wallet query. */
@@ -92,7 +97,7 @@ export async function readCloudGenshinWallet(comboToken: string, transport: Hoyo
   if (typeof browserDeviceId !== "string" || !browserDeviceIdPattern.test(browserDeviceId)) {
     throw new HoyoRequestError("invalid-input", "云原神浏览器设备标识无效。");
   }
-  const freeTime = await readWallet(walletUrl, transport, {
+  const wallet = await readWallet(walletUrl, transport, {
     Accept: "application/json", Origin: "https://ys.mihoyo.com", Referer: "https://ys.mihoyo.com/cloud/",
     "x-rpc-combo_token": token,
     ...(appId && { "x-rpc-app_id": appId }),
@@ -100,7 +105,13 @@ export async function readCloudGenshinWallet(comboToken: string, transport: Hoyo
     "x-rpc-channel": "mihoyo", "x-rpc-vendor_id": "2", "x-rpc-cg_game_biz": "hk4e_cn",
     "x-rpc-op_biz": "clgm_cn", "x-rpc-language": "zh-cn",
   }, { signal, verifyProfile });
-  return { freeTimeMinutes: readMinutes(freeTime?.free_time) };
+  const cloudCoins = readQuantity(object(wallet?.coin)?.coin_num);
+  const totalTimeMinutes = readQuantity(wallet?.total_time);
+  return {
+    freeTimeMinutes: readMinutes(object(wallet?.free_time)?.free_time),
+    ...(cloudCoins !== undefined && { cloudCoins }),
+    ...(totalTimeMinutes !== undefined && { totalTimeMinutes }),
+  };
 }
 
 export async function readInternationalCloudGenshinWallet(comboToken: string, transport: HoyoTransport,
@@ -117,7 +128,7 @@ export async function readInternationalCloudGenshinWallet(comboToken: string, tr
   const digest = createHash("md5").update(`salt=${internationalAppSalt}&t=${now}&r=${nonce}`).digest("hex");
   const os = androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(androidVersion) ? androidVersion : "12";
   const model = deviceModel && /^[\x20-\x7e]{1,128}$/u.test(deviceModel) ? deviceModel : "Lotus";
-  const freeTime = await readWallet(internationalWalletUrl, transport, {
+  const wallet = await readWallet(internationalWalletUrl, transport, {
     Accept: "application/json, text/plain, */*", "Content-Type": "application/json; charset=UTF-8",
     Origin: "https://act.hoyolab.com", Referer: "https://app.mihoyo.com",
     "User-Agent": `Mozilla/5.0 (Linux; Android ${os}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 miHoYoBBSOversea/${internationalAppVersion}`,
@@ -126,6 +137,7 @@ export async function readInternationalCloudGenshinWallet(comboToken: string, tr
     "x-rpc-client_type": "3", "x-rpc-cg_game_biz": "hk4e_global", "x-rpc-channel_id": "1", "x-rpc-language": language,
     DS: `${now},${nonce},${digest}`,
   }, { signal, verifyProfile }, label);
+  const freeTime = object(wallet?.free_time);
   return {
     ...(freeTime?.free_time != null && { freeTimeMinutes: readMinutes(freeTime.free_time, label) }),
     ...(freeTime?.send_freetime != null && { grantedMinutes: readMinutes(freeTime.send_freetime, label) }),
@@ -176,5 +188,5 @@ async function readWallet(url: string, transport: HoyoTransport, headers: Record
     throw new HoyoRequestError("response", `${label}钱包返回了无效响应。`);
   }
   if (retcode !== 0) throw new HoyoRequestError("api", `${label}钱包拒绝请求。`, status, retcode);
-  return object(object(payload?.data)?.free_time);
+  return object(payload?.data);
 }
