@@ -190,7 +190,7 @@ device:
     const hoyo = createHoyoClient(async (endpoint, init) => {
       expect(endpoint.origin).toBe("https://api-takumi.mihoyo.com");
       expect(endpoint.pathname).toBe("/binding/api/getUserGameRolesByCookie");
-      expect(init.redirect).toBe("error");
+      expect(init).toMatchObject({ redirect: "error", proxy: false });
       captured.push({ biz: endpoint.searchParams.get("game_biz"), cookie: new Headers(init.headers).get("Cookie") });
       return Response.json({ retcode: 0, data: { list: [
         { game_biz: "nap_cn", game_uid: "910001", region: "prod_gf_cn", nickname: "示例" },
@@ -443,7 +443,7 @@ test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业�
     const targets: number[] = [];
     const lifecycleIds = new Set<string>();
     const client = createProfileHoyoClient(profiles, async (url, init) => {
-      expect(init.redirect).toBe("error");
+      expect(init).toMatchObject({ redirect: "error", proxy: false });
       requests.push(url.pathname);
       const headers = new Headers(init.headers);
       if (url.pathname.endsWith("getUserGameRolesByCookie")) {

@@ -4,7 +4,7 @@ import { HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { passportAppHeaders } from "./passport-qr.ts";
 
-export type HoyoTransport = (endpoint: URL, init: RequestInit) => Promise<Response>;
+export type HoyoTransport = (endpoint: URL, init: RequestInit & { readonly proxy?: false }) => Promise<Response>;
 
 const passportOrigin = "https://passport-api.mihoyo.com";
 const webOrigin = "https://api-takumi.mihoyo.com";
@@ -130,7 +130,7 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
       const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
       let response: Response;
       try {
-        response = await transport(endpoint, { ...init, redirect: "error", credentials: "omit", signal: deadline });
+        response = await transport(endpoint, { ...init, redirect: "error", credentials: "omit", proxy: false, signal: deadline });
       } catch {
         signal?.throwIfAborted();
         throw new HoyoRequestError("transport", `${target} 换票请求未完成。`);

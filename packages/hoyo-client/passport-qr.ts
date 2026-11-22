@@ -202,7 +202,7 @@ export function createPassportQr(transport: HoyoTransport) {
     let response: Response;
     try {
       response = await transport(new URL(passportPath + path, passportOrigin), {
-        method: "POST", redirect: "error", credentials: "omit", body,
+        method: "POST", redirect: "error", credentials: "omit", proxy: false, body,
         headers: passportAppHeaders(device, body), signal: deadline,
       });
     } catch {

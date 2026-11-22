@@ -26,7 +26,7 @@ test("Passport App 只发官方 POST，创建和各次查询用同一档案设�
   const qr = createPassportQr(async (endpoint, init) => {
     const start = steps.length === 5;
     expect(endpoint.href).toBe(`${origin}${start ? "createQRLogin" : "queryQRLoginStatus"}`);
-    expect(init).toMatchObject({ method: "POST", credentials: "omit", redirect: "error" });
+    expect(init).toMatchObject({ method: "POST", credentials: "omit", redirect: "error", proxy: false });
     expect(init.body).toBe(start ? "{}" : JSON.stringify({ ticket }));
     expect(init.signal).toBeInstanceOf(AbortSignal);
     const headers = new Headers(init.headers);

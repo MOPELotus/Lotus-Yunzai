@@ -216,6 +216,7 @@ export function createHoyoClient(
       response = await transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
         redirect: "error",
+        proxy: false,
         signal: deadline,
       });
     } catch (error) {
