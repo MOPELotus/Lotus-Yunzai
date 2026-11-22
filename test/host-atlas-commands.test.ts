@@ -152,9 +152,12 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       expect(suffixMatch).not.toContain(cone);
       expect(await query("*共用样例图鉴")).toBe(cone);
 
-      const status = await query("#图鉴状态");
-      expect(status).toContain("原神 · 武器 · 1 · 3 个条目");
-      expect(await query("图鉴状态")).toBe(status);
+      for (const command of ["#图鉴状态", "图鉴状态"]) {
+        const status: unknown = await query(command);
+        expect(status).toEqual([{ type: "image", data: expect.objectContaining({
+          file: expect.stringMatching(/^base64:\/\/iVBORw0KGgo/u),
+        }) }]);
+      }
       expect(await query("图鉴 更新")).toBe("原神 · 武器 · 更新 · 四星 · 单手剑 · ID 104");
       for (const command of ["图鉴更新", "#更新图鉴", "#检查图鉴更新"]) {
         expect(await query(command)).toBe("只有 bot 主人可以操作图鉴更新。");
