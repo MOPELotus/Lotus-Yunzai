@@ -321,3 +321,82 @@ test("单对象子表单保留缺值与原对象形状，只保存当前版本�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("锅巴 Next 的专用字段与多层子表单沿用值类型和保留约束", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-nested-"));
+  try {
+    await writeFile(join(directory, "guoba.support.js"), `
+      const schema = (component, field, componentProps) => ({ component, field, label: field, componentProps });
+      let config = {
+        tags: [12], groups: ["123456"], friend: 87543, color: "#56bfaa", date: "2026/11/22", time: "14:25",
+        tree: ["leaf"],
+        outer: [{ label: "existing", inner: [{ url: "original", password: "never-return-this", hidden: true }] }]
+      };
+      export const supportGuoba = () => ({ configInfo: {
+        schemas: [
+          schema("GTags", "tags", { numeric: true }),
+          schema("GSelectGroup", "groups"),
+          schema("GSelectFriend", "friend", { single: true }),
+          schema("GColorPicker", "color"),
+          schema("DatePicker", "date", { valueFormat: "YYYY/MM/DD" }),
+          schema("TimePicker", "time", { valueFormat: "HH:mm" }),
+          schema("TreeSelect", "tree", { treeCheckable: true,
+            fieldNames: { label: "name", value: "id", children: "items" },
+            treeData: [{ name: "root", id: "root", items: [{ name: "leaf", id: "leaf" }, { name: "blocked", id: "blocked", disabled: true }] }]
+          }),
+          schema("GSubForm", "outer", { multiple: true, schemas: [
+            schema("Input", "label"),
+            schema("GSubForm", "inner", { multiple: true, schemas: [
+              schema("Input", "url"), schema("InputPassword", "password"),
+            ] }),
+          ] })
+        ],
+        getConfigData() { return config; },
+        async setConfigData(data) {
+          config = data;
+          await Bun.write(new URL("saved.json", import.meta.url), JSON.stringify(config));
+        },
+      } });
+    `);
+    const form = await loadGuobaForm(directory);
+    if (!form) throw new Error("表单未加载");
+    expect(form.schemas.map(item => item.component)).toEqual([
+      "GTags", "GSelectGroup", "GSelectFriend", "GColorPicker", "DatePicker", "TimePicker", "TreeSelect", "GSubForm",
+    ]);
+    expect(form.schemas[6]?.componentProps?.treeData?.[0]?.children?.[0]).toEqual({ label: "leaf", value: "leaf" });
+    const snapshot = await form.read();
+    expect(snapshot.values).toMatchObject({ tags: [12], groups: ["123456"], friend: 87543, tree: ["leaf"] });
+    expect(JSON.stringify(snapshot)).not.toContain("never-return-this");
+    const outer = snapshot.subforms?.outer;
+    const inner = outer?.rows[0]?.subforms?.inner;
+    if (!outer || !inner || !outer.emptySubforms?.inner) throw new Error("子表单未加载");
+    expect(inner.rows[0]?.configuredPasswords).toEqual(["password"]);
+    for (const data of [
+      { groups: ["not-an-id"] },
+      { friend: [87543] },
+      { tree: ["blocked"] },
+      { tags: [true] },
+      { outer: { revision: outer.revision, rows: [{ index: 0, values: {
+        inner: { revision: inner.revision, rows: [{ index: 0, values: { hidden: false } }] },
+      } }] } },
+    ]) expect(await form.save(data)).toMatchObject({ ok: false, status: 400 });
+    expect(await form.save({ color: "#112233", date: "2026/12/14", time: "16:10", outer: {
+      revision: outer.revision, rows: [
+        { index: 0, values: { inner: { revision: inner.revision, rows: [{ index: 0, values: { url: "new" } }] } } },
+        { index: null, values: { label: "new parent", inner: {
+          revision: outer.emptySubforms.inner.revision, rows: [{ index: null, values: { url: "new child" } }],
+        } } },
+      ],
+    } })).toMatchObject({ ok: true, status: 200 });
+    expect(await Bun.file(join(directory, "saved.json")).json()).toMatchObject({
+      color: "#112233", date: "2026/12/14", time: "16:10",
+      outer: [
+        { label: "existing", inner: [{ url: "new", password: "never-return-this", hidden: true }] },
+        { label: "new parent", inner: [{ url: "new child" }] },
+      ],
+    });
+    expect(await form.save({ outer: { revision: outer.revision, rows: [] } })).toMatchObject({ ok: false, status: 409 });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

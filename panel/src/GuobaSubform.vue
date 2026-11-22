@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, ref, shallowRef, watch } from "vue";
-import type { GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
+import type { GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
+import GuobaSpecialField from "./GuobaSpecialField.vue";
+import { isSpecialGuobaField } from "./guoba-fields.ts";
 
 type Row = GuobaSubformEdit["rows"][number];
 type Field = GuobaField & { field: string };
@@ -9,14 +11,15 @@ const props = defineProps<{ id: string; schema: GuobaField; saved: GuobaSubformS
 const emit = defineEmits<{ update: [value: GuobaSubformEdit | undefined] }>();
 const editor = ref<HTMLElement>();
 const position = ref<number | null>(null);
-const draft = shallowRef<Record<string, GuobaInput>>({});
+const draft = shallowRef<Record<string, GuobaEdit>>({});
 const pendingRemove = ref<number>();
 const error = ref("");
 const single = computed(() => props.schema.componentProps?.multiple === false);
 const dialog = () => editor.value instanceof HTMLDialogElement ? editor.value : undefined;
 const heading = computed(() => props.schema.componentProps?.title ?? props.schema.label);
 const fields = computed(() => (props.schema.componentProps?.schemas ?? []).filter((item): item is Field => item.field !== undefined));
-const summaries = computed(() => fields.value.filter(item => item.component !== "InputPassword").slice(0, 3));
+const summaries = computed(() => fields.value.filter(item =>
+  item.component !== "InputPassword" && item.component !== "GSubForm").slice(0, 3));
 const rows = computed<readonly Row[]>(() => props.edited?.rows ?? props.saved.rows.map((_, index) => ({ index, values: {} })));
 const target = computed(() => single.value ? rows.value[0] : position.value === null ? undefined : rows.value[position.value]);
 const stored = computed(() => target.value?.index == null ? undefined : props.saved.rows[target.value.index]);
@@ -27,10 +30,12 @@ function savedValue(field: string) {
   return current === undefined && single.value
     ? fields.value.find(item => item.field === field)?.componentProps?.defaultValue : current;
 }
-const value = (field: string) => Object.hasOwn(fieldEdits.value, field) ? fieldEdits.value[field] : savedValue(field);
+const value = (field: string) => Object.hasOwn(fieldEdits.value, field)
+  ? fieldEdits.value[field] as GuobaInput | undefined : savedValue(field);
+const nestedSnapshot = (field: string) => stored.value?.subforms?.[field] ?? props.saved.emptySubforms?.[field];
 const required = (item: Field) => single.value && Boolean(props.edited) && item.required;
 
-function updateEdits(edits: Record<string, GuobaInput>) {
+function updateEdits(edits: Record<string, GuobaEdit>) {
   if (single.value) {
     emit("update", Object.keys(edits).length ? {
       revision: props.saved.revision, rows: [{ index: target.value?.index ?? null, values: edits }],
@@ -38,6 +43,13 @@ function updateEdits(edits: Record<string, GuobaInput>) {
   } else {
     draft.value = edits;
   }
+}
+
+function editNested(field: string, next: GuobaSubformEdit | undefined) {
+  const edits = { ...fieldEdits.value };
+  if (next) edits[field] = next;
+  else delete edits[field];
+  updateEdits(edits);
 }
 
 watch(() => props.saved.revision, () => {
@@ -124,7 +136,7 @@ function rowText(row: Row, field: Field) {
   const input = Object.hasOwn(row.values, field.field) ? row.values[field.field] :
     row.index === null ? undefined : props.saved.rows[row.index]?.values[field.field];
   if (typeof input === "boolean") return input ? "是" : "否";
-  return field.componentProps?.options?.find(option => option.value === input)?.label ?? (display(input, "、") || "—");
+  return field.componentProps?.options?.find(option => option.value === input)?.label ?? (display(input as GuobaInput, "、") || "—");
 }
 
 function selected(item: Field, option: Exclude<GuobaInput, unknown[]>) {
@@ -140,6 +152,7 @@ function publish(next: readonly Row[]) {
 
 function confirm() {
   for (const item of fields.value) {
+    if (item.component === "GSubForm") continue;
     const input = value(item.field);
     const hasPassword = item.component === "InputPassword" && !Object.hasOwn(draft.value, item.field) &&
       stored.value?.configuredPasswords.includes(item.field);
@@ -148,7 +161,8 @@ function confirm() {
       return;
     }
   }
-  const invalid = editor.value?.querySelector<HTMLInputElement>("input:invalid");
+  const invalid = [...(editor.value?.querySelectorAll<HTMLInputElement>("input:invalid") ?? [])]
+    .find(input => input.closest("dialog") === editor.value);
   if (invalid) {
     invalid.reportValidity();
     return;
@@ -194,15 +208,20 @@ function confirm() {
       <h3 v-if="!single" :id="`${id}-editor-title`">{{ position === null ? "新增" : "编辑" }}{{ heading }}</h3>
       <div class="subform-editor-fields">
         <div v-for="(item, index) in fields" :key="item.field" class="subform-field">
-          <label :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
-          <template v-if="item.component === 'InputPassword'">
+          <label v-if="item.component !== 'GSubForm'" :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
+          <GuobaSubform v-if="item.component === 'GSubForm' && nestedSnapshot(item.field)"
+            :id="`${id}-child-${index}`" :schema="item" :saved="nestedSnapshot(item.field)!"
+            :edited="fieldEdits[item.field] as GuobaSubformEdit | undefined" @update="editNested(item.field, $event)" />
+          <template v-else-if="item.component === 'InputPassword'">
             <input :id="`${id}-child-${index}`" type="password" autocomplete="new-password"
-              :value="display(fieldEdits[item.field])" :disabled="fieldEdits[item.field] === null" placeholder="留空保留现有密码"
+              :value="display(fieldEdits[item.field] as GuobaInput | undefined)" :disabled="fieldEdits[item.field] === null" placeholder="留空保留现有密码"
                 :required="required(item) && !stored?.configuredPasswords.includes(item.field)"
               @input="password(item.field, $event)" />
             <ElButton v-if="fieldEdits[item.field] === null" @click="keepPassword(item.field)">撤销清除</ElButton>
             <ElButton v-else-if="stored?.configuredPasswords.includes(item.field)" @click="edit(item.field, null)">清除密码</ElButton>
           </template>
+          <GuobaSpecialField v-else-if="isSpecialGuobaField(item)" :id="`${id}-child-${index}`" :schema="item"
+            :value="value(item.field)" :required="required(item)" @update="edit(item.field, $event)" />
           <input v-else-if="item.component === 'Switch'" :id="`${id}-child-${index}`" type="checkbox"
             :checked="value(item.field) === true" @change="edit(item.field, ($event.target as HTMLInputElement).checked)" />
           <div v-else-if="item.component === 'InputNumber'" class="subform-number">
@@ -273,7 +292,7 @@ function confirm() {
 .subform-field { display: grid; gap: 4px; margin-top: 10px; }
 .subform-field label { font-weight: 600; font-size: 14px; }
 .subform-field input[type="checkbox"] { justify-self: start; margin: 3px 0; accent-color: var(--accent); }
-.subform-field input:not([type="checkbox"]), .subform-field select, .subform-field textarea {
+.subform-field input:not([type="checkbox"], .el-input__inner, .el-select__input), .subform-field select, .subform-field textarea {
   width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px;
   background: var(--surface); color: var(--ink); font: inherit;
 }

@@ -6,25 +6,34 @@ import { guobaActions, resolveGuobaArguments } from "./panel-guoba-actions.ts";
 
 const components = [
   "Divider", "Input", "InputPassword", "InputTextArea", "InputNumber", "Switch", "Select", "EasyCron", "GSubForm",
-  "CheckboxGroup",
+  "CheckboxGroup", "GTags", "GSelectGroup", "GSelectFriend", "GColorPicker", "DatePicker", "TimePicker", "TreeSelect",
 ] as const;
 type Component = typeof components[number] | "GButtons";
 type Scalar = string | number | boolean | null;
 export type GuobaInput = Scalar | Scalar[];
 
+export interface GuobaTreeNode {
+  readonly label: string;
+  readonly value: string | number;
+  readonly disabled?: boolean;
+  readonly children?: readonly GuobaTreeNode[];
+}
+
 export interface GuobaSubformRow {
   readonly values: Readonly<Record<string, GuobaInput>>;
   readonly configuredPasswords: readonly string[];
+  readonly subforms?: Readonly<Record<string, GuobaSubformSnapshot>>;
 }
 
 export interface GuobaSubformSnapshot {
   readonly revision: string;
   readonly rows: readonly GuobaSubformRow[];
+  readonly emptySubforms?: Readonly<Record<string, GuobaSubformSnapshot>>;
 }
 
 export interface GuobaSubformEdit {
   readonly revision: string;
-  readonly rows: readonly { index: number | null; values: Record<string, GuobaInput> }[];
+  readonly rows: readonly { index: number | null; values: Record<string, GuobaEdit> }[];
 }
 
 export type GuobaEdit = GuobaInput | GuobaSubformEdit;
@@ -60,6 +69,15 @@ export interface GuobaField {
     lengthMin?: number;
     lengthMax?: number;
     buttons?: readonly GuobaButton[];
+    numeric?: boolean;
+    allowAdd?: boolean;
+    allowDel?: boolean;
+    single?: boolean;
+    format?: string;
+    valueFormat?: string;
+    dateType?: "date" | "datetime" | "week" | "month" | "year";
+    treeData?: readonly GuobaTreeNode[];
+    treeCheckable?: boolean;
   }>;
 }
 
@@ -135,10 +153,40 @@ function getValue(values: Record<string, unknown>, field: string, parts: readonl
   return value;
 }
 
-function normaliseField(schema: unknown, child = false): GuobaField | undefined {
+function normaliseTree(input: unknown, fields: Record<string, unknown>, seen = new Set<string | number>()): GuobaTreeNode[] {
+  if (!Array.isArray(input)) return [];
+  const key = (name: string, fallback: string) => typeof fields[name] === "string" && !deniedKeys.has(fields[name])
+    ? fields[name] : fallback;
+  const valueKey = key("value", "value");
+  const labelKey = key("label", key("title", "title"));
+  const childrenKey = key("children", "children");
+  function visit(nodes: unknown[], ancestors: ReadonlySet<object>): GuobaTreeNode[] {
+    return nodes.flatMap(node => {
+      if (!record(node) || ancestors.has(node)) return [];
+      const value = node[valueKey];
+      if ((typeof value !== "string" && !(typeof value === "number" && Number.isFinite(value))) || seen.has(value)) return [];
+      seen.add(value);
+      const label = node[labelKey] ?? node.label;
+      const children = node[childrenKey];
+      return [{
+        label: typeof label === "string" ? label : String(value),
+        value,
+        ...(node.disabled === true || node.selectable === false ? { disabled: true } : {}),
+        ...(Array.isArray(children) && children.length ? { children: visit(children, new Set([...ancestors, node])) } : {}),
+      }];
+    });
+  }
+  return visit(input, new Set());
+}
+
+function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): GuobaField | undefined {
   if (!record(schema)) throw new Error();
+  const child = ancestors.length > 0;
   const group = schema.component === "SOFT_GROUP_BEGIN";
-  const component = group ? "Divider" : components.find((name) => name === schema.component);
+  const aliases: Record<string, Component> = { Textarea: "InputTextArea", Checkbox: "Switch", RadioGroup: "Select" };
+  const rawComponent = typeof schema.component === "string" && Object.hasOwn(aliases, schema.component)
+    ? aliases[schema.component] : schema.component;
+  const component = group ? "Divider" : components.find((name) => name === rawComponent);
   if (!component) return undefined;
   if (component === "CheckboxGroup" && child) return undefined;
   const { field, label, bottomHelpMessage } = schema;
@@ -152,10 +200,10 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
   const props: { -readonly [Key in keyof ComponentProps]: ComponentProps[Key] } = {};
   if (component === "GSubForm") {
     const raw = schema.componentProps;
-    if (child || !record(raw) || !Array.isArray(raw.schemas) ||
+    if (ancestors.includes(schema) || !record(raw) || !Array.isArray(raw.schemas) ||
         (raw.multiple !== undefined && typeof raw.multiple !== "boolean")) return undefined;
     props.multiple = raw.multiple === true;
-    props.schemas = raw.schemas.map(item => normaliseField(item, true)).filter(item => item !== undefined);
+    props.schemas = raw.schemas.map(item => normaliseField(item, [...ancestors, schema])).filter(item => item !== undefined);
     if (!props.schemas.some(item => item.field !== undefined)) return undefined;
     compile(props.schemas);
     if (record(raw.modalProps) && typeof raw.modalProps.title === "string") props.title = raw.modalProps.title;
@@ -166,7 +214,28 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
       }
     }
   } else if (component !== "InputPassword" && record(schema.componentProps)) {
-    const { placeholder, rows, min, max, step, options, mode, defaultValue, addonAfter } = schema.componentProps;
+    const raw = schema.componentProps;
+    const { placeholder, rows, min, max, step, options, mode, defaultValue, addonAfter } = raw;
+    if (component === "TreeSelect") {
+      if (raw.labelInValue === true || raw.treeCheckStrictly === true) return undefined;
+      props.multiple = raw.multiple === true || raw.treeCheckable === true;
+      props.treeCheckable = raw.treeCheckable === true;
+      props.treeData = normaliseTree(raw.treeData, record(raw.fieldNames) ? raw.fieldNames : {});
+    }
+    if (component === "GTags") {
+      props.numeric = raw.numeric === true;
+      props.allowAdd = raw.allowAdd !== false;
+      props.allowDel = raw.allowDel !== false;
+    }
+    if (component === "GSelectGroup" || component === "GSelectFriend") props.single = raw.single === true;
+    if (component === "DatePicker" || component === "TimePicker") {
+      if (typeof raw.format === "string" && raw.format.length <= 80) props.format = raw.format;
+      if (typeof raw.valueFormat === "string" && raw.valueFormat.length <= 80) props.valueFormat = raw.valueFormat;
+      if (component === "DatePicker") {
+        props.dateType = raw.showTime ? "datetime" : raw.picker === "week" || raw.picker === "month" || raw.picker === "year"
+          ? raw.picker : "date";
+      }
+    }
     if (typeof placeholder === "string") props.placeholder = placeholder;
     if (typeof rows === "number" && Number.isSafeInteger(rows) && rows > 0) props.rows = rows;
     if (typeof min === "number" && Number.isFinite(min)) props.min = min;
@@ -180,9 +249,10 @@ function normaliseField(schema: unknown, child = false): GuobaField | undefined 
     }
     if (Array.isArray(options)) {
       props.options = options.flatMap((option: unknown) => {
-        if (component === "CheckboxGroup" && (typeof option === "string" ||
-            (typeof option === "number" && Number.isFinite(option)))) return [{ label: String(option), value: option }];
-        if (!record(option) || !scalar(option.value) || (!child && typeof option.label !== "string")) return [];
+        if (typeof option === "string" || (typeof option === "number" && Number.isFinite(option))) {
+          return [{ label: String(option), value: option }];
+        }
+        if (!record(option) || !scalar(option.value)) return [];
         const { label: optionLabel, value, disabled } = option;
         return [{ label: typeof optionLabel === "string" ? optionLabel : String(value), value,
           ...(typeof disabled === "boolean" ? { disabled } : {}) }];
@@ -235,6 +305,27 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   const value = inputValue(schema, raw);
   if (value === null) return value;
   const { componentProps: props } = schema;
+  if (schema.component === "GTags" && (!Array.isArray(value) || value.some(item =>
+    !(typeof item === "string" || typeof item === "number") ||
+    (Boolean(props?.options?.length) && !props?.options?.some(option => option.value === item && !option.disabled))))) {
+    throw new Error();
+  }
+  if (schema.component === "GSelectGroup" || schema.component === "GSelectFriend") {
+    const ids = Array.isArray(value) ? value : [value];
+    if (Array.isArray(value) === Boolean(props?.single) || ids.some(id => typeof id === "number"
+      ? !Number.isSafeInteger(id) || id < 1
+      : typeof id !== "string" || !/^[1-9][0-9]*$/u.test(id))) throw new Error();
+  }
+  if (schema.component === "GColorPicker" && typeof value !== "string") throw new Error();
+  if ((schema.component === "DatePicker" || schema.component === "TimePicker") &&
+      typeof value !== "string" && typeof value !== "number") throw new Error();
+  if (schema.component === "TreeSelect") {
+    const valid = (nodes: readonly GuobaTreeNode[], item: Scalar): boolean => nodes.some(node =>
+      (!node.disabled && node.value === item) || Boolean(node.children && valid(node.children, item)));
+    const values = Array.isArray(value) ? value : [value];
+    if (Array.isArray(value) !== Boolean(props?.multiple) ||
+        values.some(item => !valid(props?.treeData ?? [], item))) throw new Error();
+  }
   if (schema.component === "InputNumber") {
     const number = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
     if (typeof number !== "number" || !Number.isFinite(number) ||
@@ -269,20 +360,25 @@ function subformRevision(file: string, field: string, rows: readonly unknown[]):
 }
 
 function subformSnapshot(file: string, schema: ValueField, rows: readonly Record<string, unknown>[]): GuobaSubformSnapshot {
+  const children = schema.componentProps?.schemas ?? [];
+  const nested = children.filter((child): child is ValueField => child.component === "GSubForm" && child.field !== undefined);
+  const emptySubforms = Object.fromEntries(nested.map(child => [child.field, subformSnapshot(file, child, [])]));
   return { revision: subformRevision(file, schema.field, rows), rows: rows.map(row => {
     const values: Record<string, GuobaInput> = Object.create(null);
     const configuredPasswords: string[] = [];
-    for (const child of schema.componentProps?.schemas ?? []) {
+    for (const child of children) {
       if (!child.field || !Object.hasOwn(row, child.field)) continue;
       const value = row[child.field];
       if (child.component === "InputPassword") {
         if (typeof value === "string" && value.length) configuredPasswords.push(child.field);
-      } else if (value !== undefined) {
+      } else if (child.component !== "GSubForm" && value !== undefined) {
         values[child.field] = inputValue({ ...child, field: child.field }, value);
       }
     }
-    return { values, configuredPasswords };
-  }) };
+    const subforms = Object.fromEntries(nested.map(child =>
+      [child.field, subformSnapshot(file, child, readRows(child, row[child.field]))]));
+    return { values, configuredPasswords, ...(nested.length ? { subforms } : {}) };
+  }), ...(nested.length ? { emptySubforms } : {}) };
 }
 
 function parseSubformEdit(schema: ValueField, input: unknown): GuobaSubformEdit {
@@ -304,7 +400,8 @@ function parseSubformEdit(schema: ValueField, input: unknown): GuobaSubformEdit 
     const entries = Object.entries(row.values).map(([field, value]) => {
       const child = children.fields.get(field);
       if (!child) throw new Error();
-      return [field, submittedValue(child.schema, value)] as const;
+      return [field, child.schema.component === "GSubForm"
+        ? parseSubformEdit(child.schema, value) : submittedValue(child.schema, value)] as const;
     });
     return { index, values: Object.fromEntries(entries) };
   });
@@ -320,10 +417,17 @@ function mergeSubform(file: string, schema: ValueField, current: readonly Record
     if ((index !== null && !existing) || (single && index === null && current.length !== 0)) {
       throw new SubformInputError();
     }
-    const row = { ...existing, ...values };
+    const row = { ...existing };
     const changed = index === null || Object.keys(values).length > 0;
     for (const child of fields) {
       if (!child.field) continue;
+      if (Object.hasOwn(values, child.field)) {
+        const changedValue = values[child.field]!;
+        row[child.field] = child.component === "GSubForm"
+          ? mergeSubform(file, { ...child, field: child.field }, readRows({ ...child, field: child.field }, row[child.field]),
+            changedValue as GuobaSubformEdit)
+          : changedValue;
+      }
       if (single && changed && row[child.field] === undefined && child.componentProps?.defaultValue !== undefined) {
         row[child.field] = child.componentProps.defaultValue;
       }

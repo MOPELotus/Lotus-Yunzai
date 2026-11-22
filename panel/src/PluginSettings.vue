@@ -2,8 +2,10 @@
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import GuobaSubform from "./GuobaSubform.vue";
+import GuobaSpecialField from "./GuobaSpecialField.vue";
 import type { GuobaButton, GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import { isSpecialGuobaField } from "./guoba-fields.ts";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{
@@ -461,6 +463,8 @@ onBeforeUnmount(() => {
                 <span v-else>尚未配置密码</span>
               </div>
             </template>
+            <GuobaSpecialField v-else-if="isSpecialGuobaField(schema)" :id="id" :schema="schema" :value="fieldValue(field)"
+              :disabled="Boolean(busy) || (readOnly && !actionFields.has(field))" @update="update(field, $event)" />
             <input
               v-else-if="schema.component === 'Switch'"
               :id="id" type="checkbox" :checked="fieldValue(field) === true"
@@ -575,7 +579,7 @@ onBeforeUnmount(() => {
 .plugin-field label, .plugin-field-label, .filters label { font-size: 14px; font-weight: 600; }
 .checkbox-group label { display: inline-flex; align-items: center; gap: 5px; font-weight: 400; }
 
-.plugin-field :is(input:not([type="checkbox"]), select) {
+.plugin-field :is(input:not([type="checkbox"], .el-input__inner, .el-select__input), select) {
   min-height: 38px;
   width: 100%;
   padding: 0 10px;
@@ -587,7 +591,10 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .plugin-field select[multiple] { min-height: 80px; padding: 4px 8px; }
-.plugin-field :is(input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plugin-field :is(input:not(.el-input__inner, .el-select__input), select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .plugin-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 
 .plugin-feedback, .plugin-actions, .password-controls {
