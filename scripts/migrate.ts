@@ -21,6 +21,7 @@ interface PreparedMigration {
     readonly sharedGameHistory: Staged["sharedGameHistory"];
     readonly coreConfig: Staged["coreConfig"];
     readonly groupConfig: Staged["groupConfig"];
+    readonly panelRank?: Staged["panelRank"];
     readonly keywords: Staged["keywords"];
     readonly networkConfig: Staged["networkConfig"];
     readonly globalConfig: Staged["globalConfig"];
@@ -79,6 +80,7 @@ async function prepare(source: string, target: string, directory: string, signal
         sharedGameHistory: staged.sharedGameHistory,
         coreConfig: staged.coreConfig,
         groupConfig: staged.groupConfig,
+        panelRank: staged.panelRank,
         keywords: staged.keywords,
         networkConfig: staged.networkConfig,
         globalConfig: staged.globalConfig,

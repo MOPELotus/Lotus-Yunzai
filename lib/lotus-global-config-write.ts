@@ -73,14 +73,19 @@ function sameState(a: Stats, b: Stats | undefined) {
     b.mode === a.mode && b.uid === a.uid && b.gid === a.gid;
 }
 
-async function snapshot(location: Location) {
+async function snapshot(location: Location, maxBytes = Infinity) {
   if (!location.exists) return;
   const file = location.file;
   const input = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await input.stat();
-    if (!stat.isFile() || stat.nlink !== 1) error("config");
-    const bytes = await input.readFile();
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > maxBytes) error("config");
+    const bytes = Buffer.alloc(stat.size);
+    for (let offset = 0; offset < bytes.length;) {
+      const { bytesRead } = await input.read(bytes, offset, bytes.length - offset, offset);
+      if (!bytesRead) error("conflict");
+      offset += bytesRead;
+    }
     if (!sameState(stat, await input.stat()) || !sameState(stat, await named(file))) error("conflict");
     return { stat, bytes };
   } finally {
@@ -90,6 +95,15 @@ async function snapshot(location: Location) {
 
 function record(value: unknown): Record<string, unknown> | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+}
+
+export async function readCanonicalLocalConfiguration(root: URL, name: ConfigurationName, maxBytes: number) {
+  const location = await effectiveFile(root, name);
+  const current = await snapshot(location, maxBytes);
+  const latest = await effectiveFile(root, name);
+  if (!sameLocation(location, latest) || location.exists !== latest.exists) error("conflict");
+  const parsed: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current?.bytes));
+  return parsed == null ? {} : record(parsed) ?? error("config");
 }
 
 interface UpdateOptions<T> {
