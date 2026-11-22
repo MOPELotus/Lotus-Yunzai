@@ -182,6 +182,7 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
       expect(aggregate).toContain(`总消息量\n${displayDate} 收 104 发 0`);
       expect(aggregate).toContain(`用户量\n${displayDate} 收 2 发 2`);
       expect(aggregate).toContain(`群量\n${displayDate} 收 2 发 1`);
+      expect(await main.reply(`#统计日期 ${displayDate}`, 51, 77)).toBe(aggregate);
 
       expect(await main.reply(`#统计 日期 ${displayDate}`, 42, 77)).toBe([
         "消息统计", `用户 42\n${displayDate} 收 17 发 5`, `群 77\n${displayDate} 收 33 发 11`,
@@ -196,6 +197,8 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
       expect(await main.reply("#状态", 42, 77)).toContain("Lotus-Yunzai 正在运行");
       expect(await main.reply(`#状态 用户 42 日期 ${displayDate}`, 51, 77))
         .toContain(`用户 42\n${displayDate} 收 17 发 5`);
+      expect(await main.reply(`#状态机器人 99 日期 ${displayDate}`, 51, 77))
+        .toContain(`机器人 99\n${displayDate} 收 88 发 19`);
     });
 
     const [year, month] = today.split(":");
@@ -214,7 +217,7 @@ test.skipIf(!valkeyServer || !valkeyCli)("TRSS 旧统计键可查询，新消息
       seedKey("receive", "msg", "bot:99", "total"), seedKey("send", "msg", "bot:99", "total"),
       seedKey("receive", "msg", "bot:100", "total"), seedKey("send", "msg", "bot:100", "total"),
       seedKey("receive", "msg", "user:66", "total"), seedKey("send", "msg", "user:66", "total"),
-    )).toEqual(["9", "9", "8", "8", "1", "1", "2", "2"]);
+    )).toEqual(["11", "11", "10", "10", "1", "1", "2", "2"]);
 
     await runHost('"unsupported"', async (connect) => {
       const main = await connect(99);

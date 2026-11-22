@@ -291,8 +291,18 @@ export class CommandRegistry {
     const input = message.trim();
     const separator = input.search(/\s/u);
     const name = separator === -1 ? input : input.slice(0, separator);
-    const argument = separator === -1 ? "" : input.slice(separator).trimStart();
-    const command = this.#handlers.get(name);
+    let argument = separator === -1 ? "" : input.slice(separator).trimStart();
+    let command = this.#handlers.get(name);
+    if (!command) {
+      const original = /^(#(?:状态|统计))(机器人|用户|群|消息|日期)$/u.exec(name);
+      if (original?.[1]) {
+        const systemCommand = this.#handlers.get(original[1]);
+        if (systemCommand?.names[0] === "@lotus-yunzai/system") {
+          command = systemCommand;
+          argument = `${original[2]} ${argument}`.trimEnd();
+        }
+      }
+    }
     if (!command || (allowed && !allowed(command.names))) return;
 
     return command.handler(argument, commandContext(context));
