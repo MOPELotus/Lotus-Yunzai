@@ -22,6 +22,7 @@ export interface BbsMissionProgress {
 
 export interface BbsMissionState {
   readonly totalPoints?: number;
+  readonly remainingPoints?: number;
   readonly receivedPoints?: number;
   readonly todayTotalPoints?: number;
   readonly states: readonly BbsMissionProgress[];
@@ -203,11 +204,13 @@ function missionState(data: Json): BbsMissionState {
     });
   }
   const totalPoints = count(data.total_points);
+  const rawRemainingPoints = integer(data.can_get_points);
+  const remainingPoints = rawRemainingPoints !== undefined && rawRemainingPoints >= 0 ? rawRemainingPoints : undefined;
   const receivedPoints = count(data.already_received_points);
   const todayTotalPoints = count(data.today_total_points);
   return {
     states, ...(totalPoints !== undefined && { totalPoints }), ...(receivedPoints !== undefined && { receivedPoints }),
-    ...(todayTotalPoints !== undefined && { todayTotalPoints }),
+    ...(todayTotalPoints !== undefined && { todayTotalPoints }), ...(remainingPoints !== undefined && { remainingPoints }),
   };
 }
 

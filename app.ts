@@ -97,7 +97,7 @@ import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-en
 import { appendBlackUser, updateHostAccessList } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
 import { createMessageStatistics } from "./lib/message-statistics.ts";
-import { pokeDeliverySession, setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest,
+import { pokeDeliverySession, segment, setImagePreviews, type BotEvent, type FriendPoke, type GroupNotice, type GroupRequest,
   type MessageEvent, type MessageReply } from "./lib/messages.ts";
 import { notifyOnlineMasters, onlineNoticeSeconds } from "./lib/online-notice.ts";
 import { resolvePrivateFriendRoute } from "./lib/private-friend-route.ts";
@@ -132,6 +132,7 @@ import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receip
 import { takeLegacyProcessReceipt } from "./lib/legacy-process-receipts.ts";
 import { createPublicFiles, maxPublicFileBytes } from "./lib/public-files.ts";
 import { createMediaDelivery, sendSessionMedia, type MediaDelivery } from "./lib/media-delivery.ts";
+import { createMiyousheBalanceQuery, miyousheBalanceProfile } from "./lib/miyoushe-balance.ts";
 import { createMiyousheOverview } from "./lib/miyoushe-overview.ts";
 import { createMiyousheWeb, isMiyousheWebCommand, MiyoushePreviewSettingsError, MiyousheSettingsError,
   miyousheWebSettings } from "./lib/miyoushe-web.ts";
@@ -501,6 +502,7 @@ if (import.meta.main) {
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
+  let miyousheBalance: ReturnType<typeof createMiyousheBalanceQuery> | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
   let autoQuit: Awaited<ReturnType<typeof readAutoQuit>>;
   let masterEnrollment: ReturnType<typeof createMasterEnrollment>;
@@ -1934,6 +1936,24 @@ if (import.meta.main) {
       }
       return;
     }
+    const balanceProfile = miyousheBalanceProfile(event.msg);
+    if (balanceProfile !== undefined) {
+      const features = ["米游币查询", "米币查询", "account", "@lotus-yunzai/account"];
+      const connection = event[delegationSession]?.signal;
+      const user = event.user_id;
+      const group = event.message_type === "group" && event.sub_type !== "anonymous";
+      const privateFriend = event.message_type === "private" && event.sub_type === "friend";
+      if (allowNew && connection && !event.isDelegated && (group || privateFriend) &&
+          user !== undefined && Number.isSafeInteger(user) && user > 0 &&
+          allowed(features)) {
+        const signal = nativeOperationSignal(connection);
+        const reply = await miyousheBalance?.(user, balanceProfile, signal);
+        if (reply !== undefined && !signal.aborted && allowed(features)) {
+          await event.reply(group ? [segment.at(user), "\n" + reply] : reply);
+        }
+      }
+      return;
+    }
     if (allowed(calendarScheduleNames) && await handleCalendarSchedule(event, allowNew)) return;
     if (allowNew && commands.hasModule("@lotus-yunzai/execute")) {
       const delegation = commandDelegation.authorize(event);
@@ -2368,6 +2388,7 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    miyousheBalance = createMiyousheBalanceQuery(profileDirectory, hoyoTransport);
     if (!probingUpdate) {
       const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean; readonly cooldown_hours?: unknown; readonly cron?: unknown; readonly message?: unknown } | undefined;
       const reminderThemeDirectory = Bun.env.LOTUS_DAILY_NOTE_REMINDER_THEME_DIR?.trim() ||
