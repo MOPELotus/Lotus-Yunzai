@@ -241,7 +241,8 @@ function paintBanner(ctx: Context, model: GachaDetailModel, theme: Theme, face: 
   round(ctx, 29, 39, 64, 64, 32);
   ctx.clip();
   ctx.drawImage(theme.star, 29, 39, 64, 64);
-  ctx.drawImage(face, 29, 39, face.width * 64 / face.height, 64);
+  const crop = Math.min(face.width, face.height);
+  ctx.drawImage(face, (face.width - crop) / 2, (face.height - crop) / 2, crop, crop, 29, 39, 64, 64);
   ctx.restore();
 
   const labels = [...statLabels, ["upYs", `UP${games[game].currency}`] as const];

@@ -208,7 +208,8 @@ function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme, assets
   shape(ctx, 29, 39, 64, 64, 32);
   ctx.clip();
   ctx.drawImage(theme.five, 29, 39, 64, 64);
-  ctx.drawImage(icon, 29, 39, icon.width * 64 / icon.height, 64);
+  const crop = Math.min(icon.width, icon.height);
+  ctx.drawImage(icon, (icon.width - crop) / 2, (icon.height - crop) / 2, crop, crop, 29, 39, 64, 64);
   ctx.restore();
 
   const gauges = bannerStats.flatMap(([key, label]) => model.gacha.totalStat[key]
