@@ -181,6 +181,16 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_name", { group_id, group_name }, signal);
   }
 
+  async setGroupPortrait(send: Send, groupId: number, file: string, signal: AbortSignal): Promise<GroupModerationResult> {
+    try {
+      const result = await this.#request(send, "set_group_portrait", { group_id: String(groupId), file }, signal);
+      if (!isRecord(result) || typeof result.result !== "number") return "unknown";
+      return result.result === 0 ? "confirmed" : "rejected";
+    } catch (error) {
+      return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" : "unknown";
+    }
+  }
+
   setQuotedEssence(send: Send, message_id: number, enabled: boolean, signal: AbortSignal) {
     return this.#moderateGroup(send, enabled ? "set_essence_msg" : "delete_essence_msg", { message_id }, signal);
   }

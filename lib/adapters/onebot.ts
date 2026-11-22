@@ -12,6 +12,7 @@ import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type Frie
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
+import { bindGroupAvatar, groupAvatarSession } from "./group-avatar.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
@@ -595,6 +596,13 @@ async function dispatchMessage(
       (!sender || sender.user_id === undefined || sender.user_id === userId) &&
       (messageType === "group" ? event.sub_type === "normal" : event.sub_type === "friend" && !isId(event.group_id)) &&
       connection && selfId !== undefined && groupActionSignal(connection, selfId);
+  const groupSettings = leaveSignal && selfId !== undefined && ("group_id" in target || ownerSignal) ? {
+    bot: selfId, actor: userId, group: "group_id" in target ? target.group_id : undefined,
+    signal: ownerSignal ?? leaveSignal, isMaster: () => isMaster(selfId, userId),
+    groupAllowed: (id: number) => "group_id" in target ? groupActions?.canModerateGroups?.() !== false
+      : groupActions?.canModeratePrivateGroup?.(selfId, id) === true,
+    role: (id: number, member: number, signal: AbortSignal) => calls.getGroupRole(send, id, member, true, signal),
+  } : undefined;
   const ownerFriendReplyClaim = groupActions?.ownerFriendReplyClaim;
   const ownerFriendReply = ownerSignal && selfId !== undefined ? bindOwnerFriendReply({
     account: selfId, signal: ownerSignal, isOwner: () => isMaster(selfId, userId), source: incoming.message,
@@ -687,16 +695,13 @@ async function dispatchMessage(
         wholeMute: (groupId, enabled, active) => calls.setGroupWholeMute(send, groupId, enabled, active),
         groupName: (groupId, active) => calls.getGroupName(send, groupId, active, true),
       })),
-    setGroupName: leaveSignal && selfId !== undefined && ("group_id" in target || ownerSignal)
-      ? bindGroupName({
-          bot: selfId, actor: userId, group: "group_id" in target ? target.group_id : undefined,
-          signal: ownerSignal ?? leaveSignal, isMaster: () => isMaster(selfId, userId),
-          groupAllowed: groupId => "group_id" in target ? groupActions?.canModerateGroups?.() !== false
-            : groupActions?.canModeratePrivateGroup?.(selfId, groupId) === true,
-          role: (groupId, id, signal) => calls.getGroupRole(send, groupId, id, true, signal),
-          write: (groupId, name, signal) => calls.setGroupName(send, groupId, name, signal),
-        })
-      : undefined,
+    setGroupName: groupSettings ? bindGroupName({
+      ...groupSettings, write: (groupId, name, signal) => calls.setGroupName(send, groupId, name, signal),
+    }) : undefined,
+    [groupAvatarSession]: groupSettings ? bindGroupAvatar({
+      ...groupSettings, available: signal => calls.isNapCat(send, signal),
+      write: (groupId, file, signal) => calls.setGroupPortrait(send, groupId, file, signal),
+    }) : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
       (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,

@@ -16,6 +16,7 @@ import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.
 import { donationCommand } from "./lib/donation-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
+import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -377,6 +378,7 @@ if (import.meta.main) {
   let groupDispatch: Awaited<ReturnType<typeof readGroupDispatch>>;
   let otherPolicies: Awaited<ReturnType<typeof readRequestOtherPolicies>>;
   const imageOcr = createImageOcr();
+  const groupAvatar = createGroupAvatarCommand();
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
     policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
@@ -2054,6 +2056,13 @@ if (import.meta.main) {
     }
     const useKeywords = allowed(keywordFeatureNames);
     if (!event.isDelegated && useKeywords && await keywords.continue(event)) {
+      handled?.();
+      return;
+    }
+    if (allowed(groupAvatarNames) && await groupAvatar(event, {
+      allowNew, workflow: nativeOperationSignal,
+      permitted: async () => groupDispatch.allowsInbound(event) && allowed(groupAvatarNames) && !await privateAccess.blocked(event),
+    })) {
       handled?.();
       return;
     }
