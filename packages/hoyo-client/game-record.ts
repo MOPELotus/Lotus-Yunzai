@@ -54,6 +54,8 @@ type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "starrail-index" | "starrail-avatar-basic" | "starrail-grid-fight" | "starrail-monthly" | "genshin-panel-list" |
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-abyss"; readonly scheduleType: 1 | 2 } |
+  { readonly kind: "starrail-rogue"; readonly scheduleType: 1 | 2 } |
+  { readonly kind: "starrail-rogue-locust" | "starrail-rogue-tourn" } |
   { readonly kind: "genshin-theater" } |
   { readonly kind: "genshin-monthly"; readonly month: number } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
@@ -157,7 +159,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const starRailMonthly = kind === "starrail-monthly";
   const starRailRoster = kind === "starrail-index" || kind === "starrail-avatar-basic";
   const starRailGridFight = kind === "starrail-grid-fight";
-  const forStarRail = starRailPanel || starRailMonthly || starRailRoster || starRailGridFight;
+  const starRailRogue = kind === "starrail-rogue" || kind === "starrail-rogue-locust" || kind === "starrail-rogue-tourn";
+  const forStarRail = starRailPanel || starRailMonthly || starRailRoster || starRailGridFight || starRailRogue;
   const genshinMonthly = kind === "genshin-monthly";
   const forDeck = kind === "genshin-gcg-deck";
   const forGcgCards = kind === "genshin-gcg-cards" || kind === "genshin-gcg-collection-summary";
@@ -176,7 +179,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const label = forNote ? "体力" : genshinMonthly ? "原石札记" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
     hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
-    starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
+    starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -185,10 +188,10 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
   }
-  if ((starRailMonthly || starRailGridFight) && (!source.role.region.trim() || !gameBiz.trim())) {
+  if ((starRailMonthly || starRailGridFight || starRailRogue) && (!source.role.region.trim() || !gameBiz.trim())) {
     throw new HoyoRequestError("invalid-input", `${label}需使用档案中已同步的国服角色。`);
   }
-  if ((starRailMonthly || starRailGridFight) && (!source.device.id?.trim() || !source.device.fp?.trim())) {
+  if ((starRailMonthly || starRailGridFight || starRailRogue) && (!source.device.id?.trim() || !source.device.fp?.trim())) {
     throw new HoyoRequestError("invalid-input", `请先在此档案绑定同一设备的 device_id 和 device_fp，再查询${label}。`);
   }
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
@@ -210,8 +213,12 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (kind === "genshin-abyss" && options.scheduleType !== 1 && options.scheduleType !== 2) {
     throw new HoyoRequestError("invalid-input", "深境螺旋查询期次无效。");
   }
+  if (kind === "starrail-rogue" && options.scheduleType !== 1 && options.scheduleType !== 2) {
+    throw new HoyoRequestError("invalid-input", "模拟宇宙查询期次无效。");
+  }
   const path = forNote ? route.path : starRailPanel ? "/game_record/app/hkrpg/api/avatar/info"
     : starRailGridFight ? "/game_record/app/hkrpg/api/grid_fight"
+    : starRailRogue ? `/game_record/app/hkrpg/api/${kind === "starrail-rogue" ? "rogue" : kind === "starrail-rogue-locust" ? "rogue_locust" : "rogue_tourn"}`
     : starRailRoster ? `/game_record/app/hkrpg/api/${kind === "starrail-index" ? "index" : "avatar/basic"}`
     : forGenshinPanel ? `/game_record/app/genshin/api/${genshinPanelPaths[kind]}`
     : genshinMonthly ? "/event/ys_ledger/monthInfo" : starRailMonthly ? "/event/srledger/month_info" : zzzMonthly ? "/event/nap_ledger/month_info"
@@ -239,8 +246,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       endpoint.searchParams.set("need_stats", "true");
       endpoint.searchParams.set("offset", "0");
     }
+    if (starRailRogue) endpoint.searchParams.set("need_detail", "true");
     endpoint.searchParams.set(usesRegion ? "uid" : "role_id", uid);
-    if (options.kind === "genshin-abyss") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
+    if (options.kind === "genshin-abyss" || options.kind === "starrail-rogue") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (kind === "genshin-theater") endpoint.searchParams.set("need_detail", "true");
     endpoint.searchParams.set(usesRegion ? "region" : "server", region);
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
@@ -304,7 +312,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
   if (starRailPanel && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
-  const data = (starRailGridFight || climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
+  const data = (starRailGridFight || starRailRogue || climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
   if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);
   return { data, region };
 }

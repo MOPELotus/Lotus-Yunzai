@@ -23,6 +23,7 @@ import { readGenshinWorldBoss } from "./genshin-world-boss.ts";
 import { readGenshinMiniapp, type GenshinMiniappOptions } from "./genshin-miniapp.ts";
 import { createGenshinChallengeReader, createGenshinPersonalRecordReader, readGenshinCharacterList, readGenshinPanel, readGenshinTalents, type GenshinChallengeOptions, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailGridFight, type StarRailGridFightOptions } from "./starrail-grid-fight.ts";
+import { readStarRailRogue, type StarRailRogueOptions } from "./starrail-rogue.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailPersonalRoster, type StarRailRosterOptions } from "./starrail-roster.ts";
@@ -543,6 +544,9 @@ export function createHoyoClient(
     },
     fetchStarRailGridFight(source: ProfileRequestContext, options: StarRailGridFightOptions = {}) {
       return readForProfile(source, options, readStarRailGridFight, isGameRecordCookieExpired);
+    },
+    fetchStarRailRogue(source: ProfileRequestContext, options: StarRailRogueOptions) {
+      return readForProfile(source, options, readStarRailRogue, isGameRecordCookieExpired);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
       return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
