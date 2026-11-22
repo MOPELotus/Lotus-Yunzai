@@ -1,5 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
-import type { OwnerRequestBatchEntry, OwnerRequestBatchResult } from "../../plugins/group/owner-request-batch.ts";
+import type { OwnerRequestBatchResult } from "../../plugins/group/owner-request-batch.ts";
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
@@ -42,6 +41,7 @@ import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts"
 import { memberDisplayName } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
+import { reviewObservedBatch } from "./owner-request-batch.ts";
 
 type MessageRecipient = { readonly group_id?: number; readonly user_id?: number };
 type MilkyJoinOrigin = Extract<JoinRequestOrigin, { adapter: "milky" }>;
@@ -93,20 +93,6 @@ function hasMessageSequence(value: unknown): value is number {
 }
 
 const maxGroupMembers = 10_000;
-const maxRequestBatchSize = 50;
-
-async function reviewObservedBatch<T>(candidates: readonly T[], active: () => boolean, scope: AbortSignal, spacingMs: number,
-  id: (candidate: T) => number, review: (candidate: T) => Promise<Omit<OwnerRequestBatchEntry, "id">>): Promise<OwnerRequestBatchResult> {
-  if (!candidates.length) return { status: "not-found" };
-  if (candidates.length > maxRequestBatchSize) return { status: "unavailable" };
-  const entries: OwnerRequestBatchEntry[] = [];
-  for (const candidate of candidates) {
-    if (entries.length && active()) await delay(spacingMs, undefined, { signal: scope }).catch(() => {});
-    const result = active() ? await review(candidate) : { status: "unavailable" as const };
-    entries.push({ id: id(candidate), ...result });
-  }
-  return { status: "processed", entries };
-}
 
 export async function openMilkySession(settings: MilkySettings, options: MilkyTransportOptions): Promise<MilkySession | undefined> {
   const { signal, dispatch, onSent } = options;

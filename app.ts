@@ -3002,6 +3002,8 @@ if (import.meta.main) {
     function listenOneBot(port: number, auth: Headers, fetch?: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
       const server = startOneBot(dispatch, {
         ...groupActions,
+        friendRequestReviewClaim: probingUpdate ? undefined : friendReview,
+        invitationReviewClaim: probingUpdate ? undefined : invitationReview,
         hostname, port, auth, groups, isMaster: permissions.isMaster, masterIds: permissions.masterIds,
         onFriendRelationship(notice) {
           const handling = forwardFriendRelationship(notice).catch(() => {});

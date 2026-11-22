@@ -5,8 +5,17 @@ import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility
 import type { JoinRequestOrigin, PendingGroupJoinEntry, PendingGroupJoinList } from "../group-join-review.ts";
 import type { PendingGroupInvitation, PendingGroupInvitationList } from "../group-invitations.ts";
 import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-requests.ts";
+import type { RequestDecisionOutcome } from "../request-claim.ts";
+import { reviewObservedBatch } from "./owner-request-batch.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
+interface ObservedRequest<T> {
+  readonly entry: T;
+  readonly expires: number;
+  reviewing: number;
+  settled: boolean;
+  conflicted?: boolean;
+}
 export interface OneBotAction {
   readonly action: string;
   readonly params: object;
@@ -35,7 +44,9 @@ function isPositiveInteger(value: unknown): value is number {
 export class OneBotCalls {
   readonly #requests = new Map<string, (response: ResponseValue) => void>();
   readonly #recalls = new Set<ReturnType<typeof setTimeout>>();
-  readonly #friendRequests = new Map<string, { entry: PendingFriendRequest; expires: number; reviewing: number; settled: boolean }>();
+  readonly #friendRequests = new Map<string, ObservedRequest<PendingFriendRequest>>();
+  readonly #groupInvitations = new Map<string, ObservedRequest<PendingGroupInvitation>>();
+  readonly #reviewingOwnerBatches = new Set<"friend" | "invite">();
   #closed = false;
 
   async #request(send: Send, action: string, params: object, signal?: AbortSignal): Promise<unknown> {
@@ -143,10 +154,12 @@ export class OneBotCalls {
     } catch { return; }
   }
 
-  async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = ""): Promise<boolean> {
+  async reviewGroupRequest(send: Send, flag: string, sub_type: GroupRequestType, approve: boolean, reason = "", signal?: AbortSignal): Promise<boolean> {
     if (!isRequestFlag(flag) || (sub_type !== "add" && sub_type !== "invite") ||
-        typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512) return false;
-    return this.#confirmAction(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason });
+        typeof approve !== "boolean" || typeof reason !== "string" || reason.length > 512 || signal?.aborted) return false;
+    const observed = sub_type === "invite" ? this.#groupInvitations.get(flag) : undefined;
+    return this.#reviewObservedRequest(observed, () =>
+      this.#confirmAction(send, "set_group_add_request", { flag, sub_type, approve, reason: approve ? "" : reason }, signal));
   }
 
   #moderateGroup(send: Send, action: string, params: object, signal: AbortSignal): Promise<GroupModerationResult> {
@@ -309,34 +322,82 @@ export class OneBotCalls {
   }
 
   observeFriendRequest(flag: string, entry: PendingFriendRequest) {
-    const now = performance.now();
-    this.#pruneFriendRequests(now);
-    if (this.#friendRequests.has(flag)) return;
-    this.#friendRequests.set(flag, { entry, expires: now + 60 * 60 * 1_000, reviewing: 0, settled: false });
-    if (this.#friendRequests.size > 1_000) this.#friendRequests.delete(this.#friendRequests.keys().next().value!);
+    this.#observeRequest(this.#friendRequests, flag, entry, previous => previous.userId === entry.userId);
   }
 
-  #pruneFriendRequests(now: number) {
-    for (const [flag, request] of this.#friendRequests) {
+  observeGroupInvitation(flag: string, entry: PendingGroupInvitation) {
+    this.#observeRequest(this.#groupInvitations, flag, entry,
+      previous => previous.groupId === entry.groupId && previous.inviterId === entry.inviterId);
+  }
+
+  #observeRequest<T>(requests: Map<string, ObservedRequest<T>>, flag: string, entry: T, sameIdentity: (previous: T) => boolean) {
+    const now = performance.now();
+    this.#pruneObservedRequests(requests, now);
+    const previous = requests.get(flag);
+    if (previous) {
+      if (!sameIdentity(previous.entry)) previous.conflicted = true;
+      return;
+    }
+    requests.set(flag, { entry, expires: now + 60 * 60 * 1_000, reviewing: 0, settled: false });
+    if (requests.size > 1_000) requests.delete(requests.keys().next().value!);
+  }
+
+  #pruneObservedRequests<T>(requests: Map<string, ObservedRequest<T>>, now: number) {
+    for (const [flag, request] of requests) {
       if (request.expires > now) break;
-      this.#friendRequests.delete(flag);
+      requests.delete(flag);
+    }
+  }
+
+  #observedOwnerRequests(kind: "friend" | "invite") {
+    const now = performance.now();
+    this.#pruneObservedRequests(this.#friendRequests, now);
+    this.#pruneObservedRequests(this.#groupInvitations, now);
+    const requests: ReadonlyMap<string, ObservedRequest<PendingFriendRequest | PendingGroupInvitation>> =
+      kind === "friend" ? this.#friendRequests : this.#groupInvitations;
+    return [...requests].flatMap(([flag, request]) => {
+      if (request.settled || request.reviewing || request.conflicted) return [];
+      const { entry } = request;
+      const id = "groupId" in entry ? entry.groupId : entry.userId;
+      return [{ flag, id, pending: () => !this.#closed && requests.get(flag) === request &&
+        !request.settled && !request.reviewing && !request.conflicted && request.expires > performance.now() }];
+    }).reverse();
+  }
+
+  async reviewObservedOwnerRequests(kind: "friend" | "invite", active: () => boolean, scope: AbortSignal,
+    review: (flag: string, pending: () => boolean) => Promise<RequestDecisionOutcome>) {
+    if (!active() || this.#reviewingOwnerBatches.has(kind)) return { status: "unavailable" as const };
+    this.#reviewingOwnerBatches.add(kind);
+    try {
+      return await reviewObservedBatch(this.#observedOwnerRequests(kind), active, scope, kind === "friend" ? 2_000 : 1_000,
+        ({ id }) => id, async ({ flag, pending }) => {
+          if (!pending()) return { status: "not-found" };
+          const status = await review(flag, pending);
+          return status === "confirmed" && kind === "invite" ? { status, resolvedFlag: flag } : { status };
+        });
+    } finally {
+      this.#reviewingOwnerBatches.delete(kind);
     }
   }
 
   listObservedFriendRequests(): PendingFriendRequestList {
-    this.#pruneFriendRequests(performance.now());
+    this.#pruneObservedRequests(this.#friendRequests, performance.now());
     const entries = [...this.#friendRequests.values()].filter(request => !request.settled && !request.reviewing).map(request => request.entry).reverse();
     return { entries, complete: false };
   }
 
-  async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = ""): Promise<boolean> {
-    if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512) {
+  async reviewFriendRequest(send: Send, flag: string, approve: boolean, remark = "", signal?: AbortSignal): Promise<boolean> {
+    if (!isRequestFlag(flag) || typeof approve !== "boolean" || typeof remark !== "string" || remark.length > 512 || signal?.aborted) {
       return false;
     }
-    const observed = this.#friendRequests.get(flag);
+    return this.#reviewObservedRequest(this.#friendRequests.get(flag), () =>
+      this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" }, signal));
+  }
+
+  async #reviewObservedRequest(observed: ObservedRequest<unknown> | undefined, perform: () => Promise<boolean>): Promise<boolean> {
     if (observed) observed.reviewing++;
     try {
-      const confirmed = await this.#confirmAction(send, "set_friend_add_request", { flag, approve, remark: approve ? remark : "" });
+      const confirmed = await perform();
       if (confirmed && observed) observed.settled = true;
       return confirmed;
     } catch (error) {

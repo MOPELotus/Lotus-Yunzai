@@ -391,6 +391,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       if (action === "_del_group_notice" && params.notice_id === "opaque-image") removedOneBotAnnouncements.add(params.notice_id);
       if (action === "set_group_admin") updateRole(params, params.enable);
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
+      const uncertainInvite = action === "set_group_add_request" && params.flag === "do-not-style-owner-invite";
       const reply = action === "get_group_member_info" ? member(params)
         : action === "send_msg" ? { message_id: oneBotCalls.length }
         : action === "get_friend_list" ? [{ user_id: 42 }, ...(includeNoticeOwnersInFriendList ? [{ user_id: 52 }] : []),
@@ -430,7 +431,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
           message_type: "group", sender: { user_id: oneBotJoinReceipts.has(Number(params.message_id)) ? oneBotId : 42 },
           message: [{ type: "text", data: { text: "原群引用内容" } }],
         } : {};
-      if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied ? 100 : 0, data: reply }));
+      if (echo) client.send(JSON.stringify({ echo, status: denied ? "failed" : "ok", retcode: denied || uncertainInvite ? 100 : 0, data: reply }));
     };
     await waitUntil(() => client.readyState === WebSocket.OPEN || undefined, "OneBot 测试连接未就绪。");
 
@@ -1418,6 +1419,18 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     client.send(JSON.stringify(oneBotPrivate("#同意好友申请95")));
     await ownerReplyWith("当前无法按 QQ 核实并处理这条好友申请");
     expect(oneBotCalls.filter(({ action }) => action === "set_friend_add_request")).toHaveLength(0);
+    const oneBotFriendBatch = oneBotPrivate("#拒绝全部好友申请");
+    client.send(JSON.stringify({ ...oneBotFriendBatch, user_id: operator }));
+    client.send(JSON.stringify({ ...oneBotPrivate("#同意全部好友申请"), sub_type: "group" }));
+    client.send(JSON.stringify(oneBotFriendBatch));
+    const friendBatchReceipt = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("本次共核对 1 条好友申请")), "OneBot 未送达好友批量审核回执。");
+    expect(JSON.stringify(friendBatchReceipt.params.messages)).toContain("已拒绝：1 条");
+    expect(JSON.stringify(friendBatchReceipt.params.messages)).not.toContain(incomingFriend.flag);
+    client.send(JSON.stringify(oneBotFriendBatch));
+    expect(oneBotCalls.filter(({ action }) => action === "set_friend_add_request")).toEqual([
+      { action: "set_friend_add_request", params: { flag: incomingFriend.flag, approve: false, remark: "" } },
+    ]);
     await webhook("message_receive", milkyPrivate("#拒绝好友申请94"));
     await milkyOwnerReply(operator, "风险账号请在 QQ 中手动处理");
     await webhook("message_receive", milkyPrivate("#同意好友申请97"));
@@ -1915,6 +1928,28 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const ordinaryOwnerInvite = JSON.stringify((await ownerReplyWith("群 97 · 邀请者 52")).params.message);
     expect(ordinaryOwnerInvite).toContain("待审核群请求");
     expect(ordinaryOwnerInvite).not.toContain("p.qlogo.cn");
+    const firstInviteId = /#同意入群 ([a-f0-9]{12})/u.exec(richOneBotInvite)?.[1];
+    const secondInviteId = /#同意入群 ([a-f0-9]{12})/u.exec(ordinaryOwnerInvite)?.[1];
+    expect(firstInviteId).toBeDefined();
+    expect(secondInviteId).toBeDefined();
+    const readsBeforeBatch = invitationCalls();
+    const oneBotInviteBatch = oneBotPrivate("#拒绝全部群邀请");
+    client.send(JSON.stringify(oneBotInviteBatch));
+    const inviteBatchReceipt = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_private_forward_msg" &&
+      params.user_id === 52 && JSON.stringify(params.messages).includes("本次共核对 2 条群邀请")), "OneBot 未送达群邀请批量审核回执。");
+    expect(JSON.stringify(inviteBatchReceipt.params.messages)).toContain("已拒绝：1 条");
+    expect(JSON.stringify(inviteBatchReceipt.params.messages)).toContain("结果未知：1 条");
+    expect(JSON.stringify(inviteBatchReceipt.params.messages)).not.toContain(oneBotInvite.flag);
+    client.send(JSON.stringify(oneBotPrivate(`#拒绝入群 ${firstInviteId}`)));
+    await ownerReplyWith("未找到当前机器人的待审核群请求");
+    client.send(JSON.stringify(oneBotPrivate(`#拒绝入群 ${secondInviteId}`)));
+    await ownerReplyWith("群请求处理结果未确认");
+    client.send(JSON.stringify(oneBotInviteBatch));
+    expect(oneBotCalls.filter(({ action, params }) => action === "set_group_add_request" && params.sub_type === "invite")).toEqual([
+      { action: "set_group_add_request", params: { flag: "do-not-style-owner-invite", sub_type: "invite", approve: false, reason: "" } },
+      { action: "set_group_add_request", params: { flag: oneBotInvite.flag, sub_type: "invite", approve: false, reason: "" } },
+    ]);
+    expect(invitationCalls()).toBe(readsBeforeBatch);
 
     const milkyInvite = { group_id: 98, initiator_id: 84, invitation_seq: 1810 };
     await webhook("group_invitation", milkyInvite);
@@ -2442,4 +2477,4 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     milky.stop(true);
     await rm(root, { recursive: true, force: true });
   }
-}, 14_000);
+}, 17_000);

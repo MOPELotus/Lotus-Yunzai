@@ -128,3 +128,30 @@ test("好友申请窗口只显示当前连接观察到且未提交的普通申�
   expect(calls.listObservedFriendRequests().entries).toEqual([]);
   expect(connection().calls.listObservedFriendRequests()).toEqual({ entries: [], complete: false });
 });
+
+test("OneBot 批量仅选择本连接未处理且身份一致的原邀请标识", async () => {
+  const { calls, send, frames, confirm } = connection();
+  const invite = { groupId: 77, inviterId: 42 };
+  calls.observeGroupInvitation("exact", invite);
+  calls.observeGroupInvitation("exact", invite);
+  calls.observeGroupInvitation("conflicted", invite);
+  calls.observeGroupInvitation("conflicted", { ...invite, inviterId: 43 });
+  calls.observeFriendRequest("friend-only", { userId: 44 });
+  const scope = new AbortController().signal;
+  const review = async (flag: string, pending: () => boolean) => {
+    expect(flag).toBe("exact");
+    expect(pending()).toBe(true);
+    const accepted = calls.reviewGroupRequest(send, flag, "invite", false, undefined, scope);
+    expect(pending()).toBe(false);
+    expect(frames[0]).toMatchObject({ action: "set_group_add_request", params: { flag, sub_type: "invite", approve: false, reason: "" } });
+    confirm(frames[0]!);
+    return await accepted ? "confirmed" as const : "rejected" as const;
+  };
+  expect(await calls.reviewObservedOwnerRequests("invite", () => false, scope, review)).toEqual({ status: "unavailable" });
+  expect(await calls.reviewObservedOwnerRequests("invite", () => true, scope, review)).toEqual({ status: "processed", entries: [
+    { id: invite.groupId, status: "confirmed", resolvedFlag: "exact" },
+  ] });
+  expect(await calls.reviewObservedOwnerRequests("invite", () => true, scope, review)).toEqual({ status: "not-found" });
+  expect(await connection().calls.reviewObservedOwnerRequests("invite", () => true, scope, review)).toEqual({ status: "not-found" });
+  expect(frames).toHaveLength(1);
+});

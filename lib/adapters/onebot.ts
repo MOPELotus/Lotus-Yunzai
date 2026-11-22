@@ -18,14 +18,14 @@ import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationSco
   isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
 import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
-import { isRequestFlag, OneBotCalls, type OneBotAction, type Send } from "./onebot-calls.ts";
+import { isRequestFlag, OneBotCalls, OneBotNotSentError, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
 import { OneBotMemberDisplay } from "./onebot-member-display.ts";
 import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
-import type { createRequestClaim } from "../request-claim.ts";
+import type { createRequestClaim, RequestDecisionOutcome } from "../request-claim.ts";
 
 const bindQuotedRecall = createQuotedRecall();
 
@@ -97,7 +97,27 @@ interface OwnerNoticeOptions {
   readonly masterIds?: (bot: number) => readonly number[];
   readonly friendNoticeReceipts?: FriendMessageReceipts;
   readonly ownerFriendReplyClaim?: ReturnType<typeof createRequestClaim>;
+  readonly friendRequestReviewClaim?: ReturnType<typeof createRequestClaim>;
+  readonly invitationReviewClaim?: ReturnType<typeof createRequestClaim>;
   readonly onFriendRelationship?: (notice: NativeFriendRelationshipNotice) => void;
+}
+
+function decideOneBotRequest(claim: NonNullable<OwnerNoticeOptions["friendRequestReviewClaim"]>, botId: number, flag: string,
+  active: () => boolean, write: () => Promise<boolean>): Promise<RequestDecisionOutcome> {
+  return claim({ adapter: "onebot", botId, flag }, async () => {
+    if (!active()) return "unavailable";
+    try {
+      return await write() ? "confirmed" : "rejected";
+    } catch (error) {
+      return error instanceof OneBotNotSentError ? "unavailable" : "unknown";
+    }
+  });
+}
+
+async function confirmedOneBotRequest(outcome: Promise<RequestDecisionOutcome>) {
+  const status = await outcome;
+  if (status === "unknown") throw new Error("OneBot 请求审核结果未确认。");
+  return status === "confirmed";
 }
 
 function attachmentSize(value: unknown): number | undefined {
@@ -214,7 +234,7 @@ async function dispatchRequest(
   send: Send,
   event: Record<string, unknown>,
   calls: OneBotCalls,
-  permissions: GroupActionPolicy & { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
+  permissions: GroupActionPolicy & OwnerNoticeOptions & { isMaster(bot: number, user: number): boolean; masterIds(bot: number): readonly number[] },
   connection: ConnectionData,
 ): Promise<void> {
   const { request_type, sub_type, self_id, user_id, group_id, flag } = event;
@@ -254,7 +274,12 @@ async function dispatchRequest(
         const active = AbortSignal.any([session, workflow]);
         return notifyOwnerReplies(calls, send, self_id, await selectNoticeOwners(permissions, self_id, active, permissions.isMaster), reply, active);
       },
-      approve: (approve = true, remark) => session.aborted ? Promise.resolve(false) : calls.reviewFriendRequest(send, flag, approve, remark),
+      approve(approve = true, remark) {
+        const write = () => calls.reviewFriendRequest(send, flag, approve, remark, session);
+        return permissions.friendRequestReviewClaim
+          ? confirmedOneBotRequest(decideOneBotRequest(permissions.friendRequestReviewClaim, self_id, flag, () => !session.aborted, write))
+          : write();
+      },
       reply: replyToApplicant,
     });
     return;
@@ -265,6 +290,9 @@ async function dispatchRequest(
   const joinReview = sub_type === "add" ? permissions.joinReview : undefined;
   const session = groupActionSignal(connection, self_id);
   if (sub_type === "invite" && !session) return;
+  if (sub_type === "invite" && user_id !== self_id) {
+    calls.observeGroupInvitation(flag, { groupId: group_id, inviterId: user_id, groupName: stringField(event.group_name), nickname: stringField(event.nickname) });
+  }
 
   const request: GroupRequest = {
     ...common(), request_type, sub_type, group_id, isGroup: true, isPrivate: false,
@@ -273,9 +301,14 @@ async function dispatchRequest(
     inviter_id: isId(event.inviter_id) ? event.inviter_id : undefined,
     notifyOwners: session ? (reply, active) => notifyVerifiedFriendOwners(calls, send, self_id,
       scope => selectNoticeOwners(permissions, self_id, scope, permissions.isMaster), reply, AbortSignal.any([session, active])) : undefined,
-    approve: (approve = true, reason) => sub_type === "invite" && session?.aborted
-      ? Promise.resolve(false)
-      : confirmJoinReview(joinReview, reviewKey, () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason)),
+    approve(approve = true, reason) {
+      if (sub_type === "add") return confirmJoinReview(joinReview, reviewKey, () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason));
+      if (!session || session.aborted) return Promise.resolve(false);
+      const write = () => calls.reviewGroupRequest(send, flag, sub_type, approve, reason, session);
+      return permissions.invitationReviewClaim
+        ? confirmedOneBotRequest(decideOneBotRequest(permissions.invitationReviewClaim, self_id, flag, () => !session.aborted, write))
+        : write();
+    },
     replyToApplicant,
     reply(reply, _quote, options) {
       const message = encodeOneBotReply(reply);
@@ -592,6 +625,11 @@ async function dispatchMessage(
     ? groupActions?.groupWorkflowSignal?.() : undefined;
   const ownerSignal = privateGroupSignal && attachmentSession && !noticeAttachment
     ? AbortSignal.any([privateGroupSignal, attachmentSession.signal]) : undefined;
+  const ownerRequestActive = ownerSignal && selfId !== undefined && messageId !== undefined &&
+      (!sender || sender.user_id === undefined || sender.user_id === userId || sender.user_id === String(userId))
+    ? () => !ownerSignal.aborted && isMaster(selfId, userId) : undefined;
+  const friendRequestReviewClaim = groupActions?.friendRequestReviewClaim;
+  const invitationReviewClaim = groupActions?.invitationReviewClaim;
   const leaveSignal = !noticeAttachment && temporaryMessageId !== undefined &&
       (!sender || sender.user_id === undefined || sender.user_id === userId) &&
       (messageType === "group" ? event.sub_type === "normal" : event.sub_type === "friend" && !isId(event.group_id)) &&
@@ -806,6 +844,14 @@ async function dispatchMessage(
     listPendingFriendRequests: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment ? async () => {
       if (!privateGroupSignal.aborted && !attachmentSession.signal.aborted && isMaster(selfId, userId)) return calls.listObservedFriendRequests();
     } : undefined,
+    reviewAllPendingFriendRequests: ownerSignal && ownerRequestActive && friendRequestReviewClaim && selfId !== undefined ? approve =>
+      calls.reviewObservedOwnerRequests("friend", ownerRequestActive, ownerSignal, (flag, pending) =>
+        decideOneBotRequest(friendRequestReviewClaim, selfId, flag, () => ownerRequestActive() && pending(),
+          () => calls.reviewFriendRequest(send, flag, approve, undefined, ownerSignal))) : undefined,
+    reviewAllPendingGroupInvitations: ownerSignal && ownerRequestActive && invitationReviewClaim && selfId !== undefined ? approve =>
+      calls.reviewObservedOwnerRequests("invite", ownerRequestActive, ownerSignal, (flag, pending) =>
+        decideOneBotRequest(invitationReviewClaim, selfId, flag, () => ownerRequestActive() && pending(),
+          () => calls.reviewGroupRequest(send, flag, "invite", approve, undefined, ownerSignal))) : undefined,
     sendOwnerFriendReply: ownerFriendReply,
     sendQuotedOwnerFriendReply: friendNoticeReceipts && ownerFriendReply && ownerSignal && quotedId !== undefined && selfId !== undefined
       ? bindQuotedOwnerFriendReply(friendNoticeReceipts, { adapter: "onebot", account: selfId, owner: userId, message: quotedId },
@@ -874,8 +920,15 @@ async function dispatchMessage(
       return message ? calls.sendConfirmed(send, target, message) : "rejected";
     } : undefined,
     reviewGroupRequest: messageType === "private" && owner && selfId !== undefined
-      ? (flag, type, approve, reason) => confirmJoinReview(type === "add" ? joinReview : undefined,
-        { adapter: "onebot", botId: selfId, flag }, () => calls.reviewGroupRequest(send, flag, type, approve, reason))
+      ? (flag, type, approve, reason) => {
+        if (type === "invite" && invitationReviewClaim) {
+          if (!ownerRequestActive) return Promise.resolve(false);
+          return confirmedOneBotRequest(decideOneBotRequest(invitationReviewClaim, selfId, flag, ownerRequestActive,
+            () => calls.reviewGroupRequest(send, flag, type, approve, reason, ownerSignal)));
+        }
+        return confirmJoinReview(type === "add" ? joinReview : undefined,
+          { adapter: "onebot", botId: selfId, flag }, () => calls.reviewGroupRequest(send, flag, type, approve, reason));
+      }
       : undefined,
     groupReviewQuotedRequest: joinReview && lookupReply && likeSession && event.sub_type !== "anonymous" &&
       quotedId !== undefined && selfId !== undefined && "group_id" in target
