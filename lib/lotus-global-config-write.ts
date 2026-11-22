@@ -34,7 +34,8 @@ interface Location {
   readonly exists: boolean;
 }
 
-type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage";
+type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
+  "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel";
 
 async function canonicalDirectory(path: string): Promise<string> {
   const state = await named(path);
