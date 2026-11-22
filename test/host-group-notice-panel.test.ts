@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { copyHost } from "./host-fixture.ts";
+import { lockFile } from "../lib/file-lock.ts";
+import { readGroupRecallPermissions } from "../lib/quoted-recall.ts";
+import { createManagedBlacklist, readManagedWhitelist } from "../plugins/group/managed-blacklist.ts";
 
 test("面板群通知用宿主令牌和版本控制保存全部默认开关与撤回缓存", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-panel-notice-"));
@@ -101,6 +105,7 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     const legacyManagement = join(root, "plugins/yenai-plugin/config/config");
     await mkdir(legacyManagement, { recursive: true });
     await writeFile(join(legacyManagement, "groupAdmin.yaml"), 'groupAddNotice: {openGroup: [88], msg: 旧提醒}\n' +
+      'whiteQQ: [10]\nrecallMsgPer: {bot: owner, member: master}\n' +
       'groupVerify: {openGroup: [88], mode: 模糊, time: "120", range: {min: 3, max: 60}, SuccessMsgs: {88: 旧文案, 0: 默认旧文案}}\n');
     await writeFile(moderationFile, 'groupVerify: {range: {min: 5, keep: true}, time: 180}\nblackQQ: [20] # 保持\n');
     const base = "/panel/api/settings/native/";
@@ -109,10 +114,12 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     expect(moderationResult.status).toBe(200);
     const moderation = await moderationResult.json() as { values: Record<string, unknown> };
     expect(moderation.values).toMatchObject({ noticeGroups: [88], noticeMessage: "旧提醒", verifyGroups: [88], verifyMode: "模糊",
-      verifySeconds: 180, verifyMin: 5, verifyMax: 60, verifyMessages: { 88: "旧文案", 0: "默认旧文案" } });
+      verifySeconds: 180, verifyMin: 5, verifyMax: 60, verifyMessages: { 88: "旧文案", 0: "默认旧文案" },
+      whiteQQ: [10], blackQQ: [20], recallBot: "owner", recallMember: "master" });
     expect((await request("PUT", { previous: moderation.values, values: { ...moderation.values, verifyMin: 70 } }, token, moderationPath)).status).toBe(400);
+    expect((await request("PUT", { previous: moderation.values, values: { ...moderation.values, recallBot: "invalid" } }, token, moderationPath)).status).toBe(400);
     const managementSave = { previous: moderation.values, values: { ...moderation.values, verifyMax: 80, verifyMessages: { 0: "默认旧文案", 99: "本群新文案" },
-      verifyGroups: [99], noticeGroups: [99], noticeMessage: "审核提醒。\n请查看。" } };
+      verifyGroups: [99], noticeGroups: [99], noticeMessage: "审核提醒。\n请查看。", whiteQQ: [], recallBot: "admin", recallMember: "owner" } };
     const managementSaved = await request("PUT", managementSave, token, moderationPath);
     expect(managementSaved.status).toBe(200);
     expect(await managementSaved.json()).toMatchObject({ values: managementSave.values });
@@ -120,6 +127,16 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     const managementYaml = await readFile(moderationFile, "utf8");
     expect(managementYaml).toContain("# 保持");
     expect(Bun.YAML.parse(managementYaml)).toMatchObject({ blackQQ: [20], groupVerify: { range: { keep: true, min: 5, max: 80 }, SuccessMsgs: { 88: "", 99: "本群新文案" } } });
+    const managementRoot = pathToFileURL(root + "/");
+    expect(await readGroupRecallPermissions(managementRoot)).toEqual({ bot: "admin", member: "owner" });
+    expect(await readManagedWhitelist(managementRoot)).toEqual(new Set());
+    const blackListUpdate = { ...managementSave.values, blackQQ: [40], whiteQQ: [41], noBan: true, VoteKick: true, minNum: 6 };
+    expect((await request("PUT", { previous: managementSave.values, values: blackListUpdate }, token, moderationPath)).status).toBe(200);
+    const groupManagement = createManagedBlacklist(managementRoot, lockFile);
+    expect(await groupManagement.blocked(40)).toBe(true);
+    expect(await groupManagement.blocked(20)).toBe(false);
+    expect(await groupManagement.shouldAutoUnmute(41)).toBe(true);
+    expect(await groupManagement.readGroupVoteSettings()).toMatchObject({ VoteKick: true, minNum: 6 });
 
     await mkdir(join(root, "config/config"));
     const cardFile = join(root, "config/config/auto-group-card.yaml");

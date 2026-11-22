@@ -6,6 +6,7 @@ import { readOptionalLocalConfig } from "./config.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
+import { groupRecallPermissionValues, readGroupRecallPermissions } from "./quoted-recall.ts";
 
 type ManagedBlacklistModule = typeof import("../plugins/group/managed-blacklist.ts");
 type AutoGroupCardModule = typeof import("../plugins/group/auto-group-card.ts");
@@ -29,7 +30,21 @@ interface Field {
 
 const restart = "定时任务在重启宿主后重新载入。";
 const integerLimit = 1_000_000;
-const moderationFields = (maxGroupVerificationSeconds: number): readonly Field[] => [
+const recallPermissionLabels = { all: "本群成员", admin: "群管理员及群主", owner: "群主", master: "机器人主人" };
+const recallPermissionOptions = groupRecallPermissionValues.map(value => ({ label: recallPermissionLabels[value], value }));
+const moderationFields = ({ maxGroupVerificationSeconds, groupVoteNumericLimits }: ManagedBlacklistModule): readonly Field[] => [
+  { key: "whiteQQ", label: "群管白名单", type: "list", itemType: "number", path: ["whiteQQ"] },
+  { key: "blackQQ", label: "群管黑名单", type: "list", itemType: "number", path: ["blackQQ"] },
+  { key: "noBan", label: "自动解除白名单成员的禁言", type: "boolean", path: ["noBan"] },
+  { key: "recallBot", label: "谁可以请求撤回机器人消息", type: "select", path: ["recallMsgPer", "bot"], options: recallPermissionOptions },
+  { key: "recallMember", label: "谁可以请求撤回群成员消息", type: "select", path: ["recallMsgPer", "member"], options: recallPermissionOptions },
+  { key: "VoteBan", label: "启用投票禁言", type: "boolean", path: ["VoteBan"] },
+  { key: "VoteKick", label: "启用投票踢出", type: "boolean", path: ["VoteKick"] },
+  { key: "outTime", label: "投票时限（秒）", type: "number", min: 1, max: groupVoteNumericLimits.outTime, path: ["outTime"] },
+  { key: "minNum", label: "投票通过所需的最低赞成票数", type: "number", min: 1, max: groupVoteNumericLimits.minNum, path: ["minNum"] },
+  { key: "BanTime", label: "投票通过后的禁言时长（秒）", type: "number", min: 1, max: groupVoteNumericLimits.BanTime, path: ["BanTime"] },
+  { key: "veto", label: "允许管理员一票决定", type: "boolean", path: ["veto"] },
+  { key: "voteAdmin", label: "允许对管理员发起投票", type: "boolean", path: ["voteAdmin"] },
   { key: "noticeGroups", label: "向群管理员提醒入群申请的群", type: "list", itemType: "number", path: ["groupAddNotice", "openGroup"] },
   { key: "noticeMessage", label: "入群申请提醒文案", type: "text", multiline: true, max: 2048, path: ["groupAddNotice", "msg"] },
   { key: "verifyGroups", label: "启用入群验证的群", type: "list", itemType: "number", path: ["groupVerify", "openGroup"] },
@@ -100,10 +115,14 @@ export function panelGroupManagement(root: URL, directories: PluginLoadReport["d
     try {
       const management = name === "groupAdmin" ? await import(pathToFileURL(join(group.path, "managed-blacklist.ts")).href) as ManagedBlacklistModule : undefined;
       const cards = name === "auto-group-card" ? await import(pathToFileURL(join(group.path, "auto-group-card.ts")).href) as AutoGroupCardModule : undefined;
-      const fields = management ? moderationFields(management.maxGroupVerificationSeconds) : cards ? cardFields : leaveFields;
+      const fields = management ? moderationFields(management) : cards ? cardFields : leaveFields;
       const publicFields = fields.map(({ path: _, ...field }) => field);
       async function readValues(): Promise<Values> {
-        if (management) return management.readGroupManagementPanelValues(root);
+        if (management) {
+          const [values, recall] = await Promise.all([management.readGroupManagementPanelValues(root), readGroupRecallPermissions(root)]);
+          if (!recall) throw new GlobalConfigWriteError("config");
+          return { ...values, recallBot: recall.bot, recallMember: recall.member };
+        }
         const raw = await readOptionalLocalConfig(root, name);
         if (cards) {
           const card = cards.parseAutoGroupCardSettings(raw ?? { enable: false });

@@ -73,7 +73,7 @@ const nativeSections = computed(() => [
   { key: "notice", label: "群公告调度" },
   { key: "mys-notice", label: "米游社资讯" },
   { key: "notice-delivery", label: "公告送达与订阅覆盖" },
-  ...(hasGroup.value ? [{ key: "group-moderation", label: "入群申请与验证" },
+  ...(hasGroup.value ? [{ key: "group-moderation", label: "群管权限与入群" },
     { key: "group-card", label: "自动群名片" }, { key: "group-leave-blacklist", label: "退群拉黑" }] : []),
   ...(hasMedia.value ? [{ key: "bilibili-subscriptions", label: "B 站订阅对象" },
     { key: "weibo-subscriptions", label: "微博订阅对象" }] : []),

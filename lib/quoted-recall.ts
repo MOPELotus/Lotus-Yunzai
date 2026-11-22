@@ -2,10 +2,11 @@ import type { MessageEvent, QuotedMessage, RecallResult } from "./messages.ts";
 import type { QuotedGroupFileRemoval } from "./adapters/quoted-group-file.ts";
 
 export type GroupRecallRole = "member" | "admin" | "owner";
-type Permission = "all" | "admin" | "owner" | "master";
+export const groupRecallPermissionValues = ["all", "admin", "owner", "master"] as const;
+type Permission = (typeof groupRecallPermissionValues)[number];
 type GroupRecallPermissions = Readonly<{ bot: Permission; member: Permission }>;
 const configurationPaths = ["plugins/yenai-plugin/config/config/groupAdmin.yaml", "config/groupAdmin.yaml"];
-const permissions = new Set<unknown>(["all", "admin", "owner", "master"]);
+const permissions = new Set<unknown>(groupRecallPermissionValues);
 const commandLimit = 4_096;
 
 export async function readGroupRecallPermissions(root: URL): Promise<GroupRecallPermissions | undefined> {
