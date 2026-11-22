@@ -434,6 +434,7 @@ export function createHoyoClient(
     },
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
       readonly verifyReadOnly?: () => Promise<void>;
+      readonly onCredentialRefresh?: (profile: ProfileAccountContext) => void;
     } = {}) {
       const first = sources[0];
       const results: PromiseSettledResult<DailyNoteSnapshot>[] = [];
@@ -456,7 +457,10 @@ export function createHoyoClient(
           verifyCookieIdentity(source);
           const value = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
             : await readForProfile({ ...current, game, role }, options, readDailyNote,
-            canRefresh, (attempt) => { current = attempt; });
+            canRefresh, (attempt) => {
+              if (attempt.revision !== current.revision) options.onCredentialRefresh?.(attempt);
+              current = attempt;
+            });
           results.push({ status: "fulfilled", value });
         } catch (reason) {
           options.signal?.throwIfAborted();

@@ -8,6 +8,7 @@ import type { HoyoTransport } from "../packages/hoyo-client/credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote } from "../packages/hoyo-client/daily-note.ts";
 import { HoyoRequestError } from "../packages/hoyo-client/errors.ts";
 import { createHoyoClient } from "../packages/hoyo-client/index.ts";
+import { dailyNoteCommands } from "../lib/daily-note.ts";
 
 const source = {
   qq: "42", profileId: 2, game: "gs", revision: "synthetic-revision",
@@ -31,6 +32,58 @@ const gsResponse = {
   remain_resin_discount_num: 1, resin_discount_num_limit: 3,
   transformer: { obtained: true, recovery_time: { reached: false, Day: "1", Hour: 2, Minute: 3, Second: 4 } },
 };
+
+test("体力查询续期后发出首页，换绑时停止发送余下页面", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-daily-note-delivery-"));
+  const profiles = createProfileStore(directory);
+  const originalFetch = globalThis.fetch;
+  const roles = Array.from({ length: 7 }, (_, index) => ({
+    uid: `12345678${index}`, region: "cn_gf01", game_biz: "hk4e_cn",
+  }));
+  let exchanges = 0;
+  let pages = 0;
+  try {
+    await writeFile(join(directory, "42.yaml"), JSON.stringify({
+      account: { stuid: "62", stoken: "fixture-stoken", cookie: "ltoken=expired", game_roles: { gs: roles } },
+      device: { id: "fixture-device" },
+    }));
+    globalThis.fetch = (async (input, options) => {
+      const endpoint = new URL(String(input));
+      const cookie = new Headers(options?.headers).get("cookie");
+      const ok = (data: unknown) => Response.json({ retcode: 0, data });
+      if (endpoint.pathname.endsWith("getLTokenBySToken")) {
+        exchanges++;
+        return ok({ ltoken: "fixture-fresh" });
+      }
+      if (endpoint.pathname.endsWith("getCookieAccountInfoBySToken")) {
+        exchanges++;
+        return ok({ uid: "62", cookie_token: "fixture-cookie" });
+      }
+      if (endpoint.pathname.endsWith("getUserGameRolesByCookie")) {
+        return ok({ list: roles.map(role => ({ ...role, game_uid: role.uid })) });
+      }
+      expect(endpoint.pathname).toEndWith("/dailyNote");
+      return cookie === "ltoken=expired" ? Response.json({ retcode: -100 }) : ok(gsResponse);
+    }) as typeof fetch;
+    const run = dailyNoteCommands(directory, new AbortController().signal).fallback!;
+    const reply = await run("", {
+      user_id: 42, self_id: 51, message_type: "group", group_id: 100,
+      isMaster: false, isBotMaster: () => false, normalizedMessage: "#体力",
+      async reply(message) {
+        if (typeof message === "string" && message.includes("正在查询")) return true;
+        pages++;
+        if (pages === 1) await profiles.clearLogin("42");
+        return true;
+      },
+    });
+    expect(exchanges).toBe(2);
+    expect(pages).toBe(1);
+    expect(reply).toContain("登录状态已变化");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("国服三款官方体力 GET 采用固定接口、已选 UID、原档案设备和签名 query", async () => {
   const games = [

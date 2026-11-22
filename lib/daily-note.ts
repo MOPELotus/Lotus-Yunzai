@@ -143,7 +143,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
       if (!ids.length) return "[account] 没有找到可查询的 profile，请先扫码登录并同步 UID。";
 
       const groups: DailyNoteCardModel["groups"][number][] = [];
-      const verifyInternational: (() => Promise<void>)[] = [];
+      const verifyDelivery: (() => Promise<void>)[] = [];
       const session = context.message_type === "private" && !context.isDelegated
         ? context.privateCredentialSignal : undefined;
       const active = session ? AbortSignal.any([signal, session]) : signal;
@@ -155,7 +155,19 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
           const { sources: saved, verifyReadOnly } = await profiles.requestContextsForRead(qq, id, games);
           const sources = saved.filter(({ game, role }) => game !== "zzz" ||
             (role.gameBiz !== "nap_global" && !/^[1-9]\d{9}$/u.test(role.uid)));
-          const results = await client.fetchDailyNotes(sources, { signal: active, verifyReadOnly });
+          let revision = sources[0]?.revision;
+          const results = await client.fetchDailyNotes(sources, {
+            signal: active,
+            verifyReadOnly,
+            onCredentialRefresh(refreshed) { revision = refreshed.revision; },
+          });
+          if (revision && results.some(result => result.status === "fulfilled")) {
+            verifyDelivery.push(verifyReadOnly ?? (async () => {
+              if ((await profiles.checkinSettings(qq, id)).revision !== revision) {
+                throw new HoyoRequestError("profile-changed", changed);
+              }
+            }));
+          }
           for (const game of games) {
             const start = items.length;
             sources.forEach((source, index) => {
@@ -179,7 +191,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
                   try {
                     const note = await client.fetchHoYoLabZzzDailyNote(international, { signal: active, verifyProfile });
                     items.push(noteCardItem(note));
-                    verifyInternational.push(verifyProfile);
+                    verifyDelivery.push(verifyProfile);
                   } catch (error) {
                     await verifyProfile();
                     items.push({ game, gameName: names[game], ok: false, error: failure(error) });
@@ -213,7 +225,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
           reply = textReply(page.groups);
         }
         try {
-          await Promise.all(verifyInternational.map(verify => verify()));
+          await Promise.all(verifyDelivery.map(verify => verify()));
         } catch {
           return active.aborted ? [] : changed;
         }
