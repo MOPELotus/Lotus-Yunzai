@@ -1,6 +1,7 @@
 import { lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseBiliLocal } from "../plugins/media/services/subscriptions/session.ts";
+import { TuneWeaveService } from "../plugins/media/services/tuneweave/service.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
@@ -79,14 +80,14 @@ function endpoint(value: unknown) {
   const raw = typeof value === "string" && value ? value : defaultTuneWeave;
   const url = URL.parse(raw);
   if (url && ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash) {
-    return url.href.replace(/\/+$/u, "");
+    const identity = url.href.replace(/\/+$/u, "");
+    try {
+      new TuneWeaveService({ config: { api_url: raw } }).localUrl();
+      return { identity, local: true };
+    } catch {
+      return { identity, local: false };
+    }
   }
-}
-
-function ownService(value: string | undefined) {
-  const url = value && URL.parse(value);
-  return !!url && url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
-    !url.pathname.replaceAll("/", "");
 }
 
 /** Writes verified media state under the migration's private stage. */
@@ -176,7 +177,7 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
         if (!rule.validate(value)) { reason = "format"; break; }
       } catch { reason = "format"; break; }
       if (rule.tuneweaveBound?.(value) &&
-          (!destinationEndpoint || (await sourceEndpoint(candidate.prefix)) !== destinationEndpoint)) {
+          (!destinationEndpoint || (await sourceEndpoint(candidate.prefix))?.identity !== destinationEndpoint.identity)) {
         reason = "endpoint";
         break;
       }
@@ -232,7 +233,8 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
     let reason: (typeof held)[number]["reason"] | undefined;
     for (const candidate of considered) {
       if (!candidate.supported) { reason = "format"; break; }
-      if (!ownService(destinationEndpoint) || (await sourceEndpoint(candidate.prefix)) !== destinationEndpoint) {
+      const previous = await sourceEndpoint(candidate.prefix);
+      if (!destinationEndpoint?.local || !previous?.local || previous.identity !== destinationEndpoint.identity) {
         reason = "endpoint";
         break;
       }

@@ -9,6 +9,7 @@ import { NeteasePartnerAccounts } from "../plugins/media/services/music/partner-
 import { NeteasePartnerTask } from "../plugins/media/services/music/partner-task.ts";
 import { createSubscriptionConfig } from "../plugins/media/services/subscriptions/config.ts";
 import { readBiliLocal } from "../plugins/media/services/subscriptions/session.ts";
+import { TuneWeaveService } from "../plugins/media/services/tuneweave/service.ts";
 
 async function put(root: string, name: string, bytes: string) {
   const path = join(root, name);
@@ -36,6 +37,31 @@ const neteaseState = "data/netease/state.yaml";
 const yukiCookie = "data/yuki-plugin/biliCookie.yaml";
 const yukiRoutes = "data/yuki-plugin/config/bilibili/push.guoba.support.yaml";
 const managed = "data/tuneweave/accounts/accounts/bilibili/66697874757265/1.json";
+
+test("uses TuneWeave's original address to decide whether its private account tree belongs to a local service", async () => {
+  const root = "http://127.0.0.1:7832/";
+  const doubleSlash = root + "/";
+  for (const [previous, current, active] of [
+    [root, root, true],
+    [root, doubleSlash, false],
+    [doubleSlash, root, false],
+    [doubleSlash, doubleSlash, false],
+  ] as const) {
+    await fixture(async (source, stage) => {
+      if (current === root) expect(new TuneWeaveService({ config: { api_url: current } }).localUrl().href).toBe(root);
+      else expect(() => new TuneWeaveService({ config: { api_url: current } }).localUrl()).toThrow("远程 TuneWeave");
+      await put(source, join(oldRoot, "config/global.yaml"), Bun.YAML.stringify({ tuneweave: { api_url: previous } }));
+      await put(source, join(oldRoot, account), "tuneweave_account: fixture-alias\n");
+      await put(source, join(oldRoot, managed), "{}\n");
+      const result = await stageLegacyMediaState(source, stage, { tuneweaveUrl: current });
+      const store = "data/tuneweave/accounts";
+      expect(result.active).toEqual([{ path: account, files: 1 }, ...(active ? [{ path: store, files: 1 }] : [])]);
+      expect(result.held).toEqual(active ? [] : [{ path: store, files: 1, reason: "endpoint" }]);
+      expect(await Bun.file(join(stage, managed)).exists()).toBe(active);
+      if (!active) expect(await readFile(join(stage, "backup/media-state", oldRoot, managed), "utf8")).toBe("{}\n");
+    });
+  }
+});
 
 test("stages old media bytes exactly at current runtime reader paths without invoking services", () => fixture(async (source, stage) => {
   const copies = {
