@@ -131,7 +131,7 @@ import { LegacyTasks } from "./lib/plugins/tasks.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
-import { readPrivateAccess, zzzLinkEntry } from "./lib/private-access.ts";
+import { isStarRailGachaLinkMessage, readPrivateAccess, starRailLinkEntry, zzzLinkEntry } from "./lib/private-access.ts";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { takeLegacyProcessReceipt } from "./lib/legacy-process-receipts.ts";
 import { createPublicFiles, maxPublicFileBytes } from "./lib/public-files.ts";
@@ -216,7 +216,7 @@ const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_t
 
 function isPrivateCredentialMessage(text: string): boolean {
   return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
-    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text);
+    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text);
 }
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
@@ -1803,10 +1803,11 @@ if (import.meta.main) {
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
-        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || zzzLinkEntry.test(event.msg) ||
+        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) ||
+        zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
-          isPassportLoginInput(value) || isDeviceBindingInput(value) || isZzzGachaLinkMessage(value)))) return;
+          isPassportLoginInput(value) || isDeviceBindingInput(value) || isZzzGachaLinkMessage(value) || isStarRailGachaLinkMessage(value)))) return;
     if (dispatchPower.paused) {
       if (allowNew && event.msg === "#开机" && allowed(["开机", "system", systemModuleName])) {
         await dispatchPower.handle(event);
@@ -1888,6 +1889,19 @@ if (import.meta.main) {
         }
       }
       if (tuningLink || tuningLinkEntry) return;
+    }
+    const warpLink = originalMessage.find(isStarRailGachaLinkMessage);
+    const warpLinkEntry = starRailLinkEntry.test(event.msg);
+    if (warpLink || warpLinkEntry || (event.isPrivate && event.msg.trim() === "取消")) {
+      if (allowNew && (event.isPrivate || warpLinkEntry)) {
+        const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/starrail" && allowed(names),
+          (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId), warpLink ?? event.msg);
+        if (reply !== undefined) {
+          await sendCommandReply(event, reply);
+          return;
+        }
+      }
+      if (warpLink || warpLinkEntry) return;
     }
     if (event.isPrivate && event.msg.trim() === "取消") {
       const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/device" && allowed(names),

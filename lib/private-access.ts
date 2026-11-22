@@ -7,6 +7,15 @@ const accountEntry = /^#(?:登录列表|账号列表|(?:清除|删除)(?:登录|
 const gachaImportEntry = /^#?(?:原神|\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)?(?:强制)?导入记录(?:json)?(?:[1-9]\d{0,2})?$/u;
 const zzzLinkPrefix = "(?:[#/]?(?:zzz|绝区零|绝区)(?:zzz|绝区零)?|#?[%％](?:zzz|绝区零|绝区)?)";
 export const zzzLinkEntry = new RegExp(`^${zzzLinkPrefix}((?:获取)?抽卡链接(?:[1-9]\\d{0,2})?)$`, "iu");
+export const starRailLinkEntry = /^#?(?:\*|星穹铁道|崩坏星穹铁道|星铁|星轨|穹轨|星穹|崩铁|铁道)+\s*抽卡链接(?:绑定)?([1-9]\d{0,2})?$/u;
+
+export function isStarRailGachaLinkMessage(text: string) {
+  if (!/^https?:\/\/[^/?#\s]+\/common\/gacha_record\/api\/get(?:Ld)?GachaLog(?:[/?#]|$)/iu.test(text.trim())) return false;
+  const url = URL.parse(text.trim());
+  return !!url && (url.hostname === "public-operation-hkrpg.mihoyo.com" ||
+    url.hostname === "public-operation-hkrpg-sg.hoyoverse.com" ||
+    url.searchParams.getAll("game_biz").some(game => game === "hkrpg_cn" || game === "hkrpg_global"));
+}
 const zzzLinkedViewEntry = new RegExp(`^${zzzLinkPrefix}逐抽记录(?:[1-9]\\d{0,2})?$`, "iu");
 const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;
@@ -72,7 +81,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
         return typeof filename === "string" && allowedFile.test(filename);
       })
       : legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
-        zzzLinkEntry.test(event.msg) || zzzLinkedViewEntry.test(event.msg) || custom?.test(text);
+        zzzLinkEntry.test(event.msg) || zzzLinkedViewEntry.test(event.msg) || starRailLinkEntry.test(event.msg) || custom?.test(text);
     if (allowed) return false;
     if (event.isDelegated) return true;
 
