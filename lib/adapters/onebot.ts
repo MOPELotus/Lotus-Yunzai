@@ -625,7 +625,7 @@ async function dispatchMessage(
     ? groupActions?.groupWorkflowSignal?.() : undefined;
   const ownerSignal = privateGroupSignal && attachmentSession && !noticeAttachment
     ? AbortSignal.any([privateGroupSignal, attachmentSession.signal]) : undefined;
-  const ownerRequestActive = ownerSignal && selfId !== undefined && messageId !== undefined &&
+  const ownerRequestActive = ownerSignal && selfId !== undefined &&
       (!sender || sender.user_id === undefined || sender.user_id === userId || sender.user_id === String(userId))
     ? () => !ownerSignal.aborted && isMaster(selfId, userId) : undefined;
   const friendRequestReviewClaim = groupActions?.friendRequestReviewClaim;
@@ -844,11 +844,11 @@ async function dispatchMessage(
     listPendingFriendRequests: privateGroupSignal && attachmentSession && selfId !== undefined && !noticeAttachment ? async () => {
       if (!privateGroupSignal.aborted && !attachmentSession.signal.aborted && isMaster(selfId, userId)) return calls.listObservedFriendRequests();
     } : undefined,
-    reviewAllPendingFriendRequests: ownerSignal && ownerRequestActive && friendRequestReviewClaim && selfId !== undefined ? approve =>
+    reviewAllPendingFriendRequests: ownerSignal && ownerRequestActive && messageId !== undefined && friendRequestReviewClaim && selfId !== undefined ? approve =>
       calls.reviewObservedOwnerRequests("friend", ownerRequestActive, ownerSignal, (flag, pending) =>
         decideOneBotRequest(friendRequestReviewClaim, selfId, flag, () => ownerRequestActive() && pending(),
           () => calls.reviewFriendRequest(send, flag, approve, undefined, ownerSignal))) : undefined,
-    reviewAllPendingGroupInvitations: ownerSignal && ownerRequestActive && invitationReviewClaim && selfId !== undefined ? approve =>
+    reviewAllPendingGroupInvitations: ownerSignal && ownerRequestActive && messageId !== undefined && invitationReviewClaim && selfId !== undefined ? approve =>
       calls.reviewObservedOwnerRequests("invite", ownerRequestActive, ownerSignal, (flag, pending) =>
         decideOneBotRequest(invitationReviewClaim, selfId, flag, () => ownerRequestActive() && pending(),
           () => calls.reviewGroupRequest(send, flag, "invite", approve, undefined, ownerSignal))) : undefined,
