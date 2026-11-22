@@ -128,7 +128,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
 
     const image = { type: "image", data: { file: "https://example.invalid/notice.png" } };
     expect((await command([
-      { type: "text", data: { text: "#发布公告 停机回执测试" } }, image,
+      { type: "text", data: { text: "#发布公告停机回执测试" } }, image,
       { type: "text", data: { text: "图后文字" } },
     ])).params).toMatchObject({
       user_id: 51, message: expect.stringContaining("公告已发布"),
