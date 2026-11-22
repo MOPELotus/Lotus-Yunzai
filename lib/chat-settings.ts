@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
-import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
+import { GlobalConfigWriteError, updateLocalConfiguration, withLocalGroupConfigWrite } from "./lotus-global-config-write.ts";
 import { readGroupLikeSettingsModule } from "./panel-group.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 import type { MessageReply } from "./messages.ts";
@@ -98,7 +98,7 @@ export function createChatSettings(root: URL, directories: PluginLoadReport["dir
         for (let attempt = 0; ; attempt++) {
           const { revision } = await service.readLikeSettings();
           try {
-            await service.saveLikeSettings({ strangeThumbUp: enabled }, { revision, canWrite });
+            await withLocalGroupConfigWrite(root, () => service.saveLikeSettings({ strangeThumbUp: enabled }, { revision, canWrite }));
             break;
           } catch (cause) {
             if (!canWrite() || attempt >= 2 || !(cause instanceof service.LikeSettingsError) || cause.code !== "conflict") throw cause;

@@ -36,7 +36,19 @@ interface Location {
 
 type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
   "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
-  "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
+  "group" | "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
+
+function groupConfigLockPath(root: URL) {
+  return fileURLToPath(new URL("config/.lotus-group-config.sqlite", root));
+}
+
+export async function withLocalGroupConfigWrite<T>(root: URL, write: () => Promise<T>): Promise<T> {
+  const path = groupConfigLockPath(root);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const lock = await lockFile(path, "群组配置");
+  try { return await write(); }
+  finally { lock.close(); }
+}
 
 async function canonicalDirectory(path: string): Promise<string> {
   const state = await named(path);
@@ -146,8 +158,9 @@ export async function updateLocalConfiguration<T>(
       if (errno(cause) !== "EEXIST") throw cause;
     });
   }
-  const sidecar = name === "groupAdmin" ? fileURLToPath(new URL("config/.lotus-group-admin.sqlite", root)) :
-    join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
+  const sidecar = name === "group" ? groupConfigLockPath(root) :
+    name === "groupAdmin" ? fileURLToPath(new URL("config/.lotus-group-admin.sqlite", root)) :
+      join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
   const database = await lockFile(sidecar, name === "global" ? "全局配置" : `${name}.yaml`).catch(() => error("conflict"));
   try {
     assertActive();

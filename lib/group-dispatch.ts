@@ -82,22 +82,25 @@ function cooldown(value: unknown): number {
   return typeof time === "number" && Number.isInteger(time) && time > 0 && time <= 2_147_483_647 ? time : 0;
 }
 
-async function readRoutingConfig(root: URL) {
+export const groupRoutingScopePattern = /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u;
+
+export async function readGroupRoutingConfig(root: URL, maxBytes = Infinity) {
   const legacyPath = "config/config/group.yaml";
   for (const path of ["config/group.yaml", legacyPath]) {
     const file = Bun.file(new URL(path, root));
     if (!await file.exists()) continue;
     try {
+      if (file.size > maxBytes) throw new Error();
       const value: unknown = Bun.YAML.parse(await file.text());
       if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
       const config = record(value);
       const keys = Object.keys(config);
       const legacy = path === legacyPath;
       // An empty TRSS runtime overlay still inherited its bundled group defaults.
-      if (legacy && keys.length === 0) return { config, legacy };
+      if (legacy && keys.length === 0) return { config, legacy, path };
       // Lotus likes settings also use config/group.yaml, with flat keys.
-      if (keys.some((key) => /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u.test(key))) {
-        return { config, legacy };
+      if (keys.some((key) => groupRoutingScopePattern.test(key))) {
+        return { config, legacy, path };
       }
     } catch {
       throw new Error(`无法读取 ${path}。`);
@@ -167,12 +170,13 @@ function watchRoutingFiles(name: "bot" | "group" | "other", signal: AbortSignal,
 
 export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
   let [lists, groups, slashAlias] = await Promise.all([
-    readRoutingLists(root), readRoutingConfig(root), readSlashAlias(root),
+    readRoutingLists(root), readGroupRoutingConfig(root), readSlashAlias(root),
   ]);
   const groupCooldowns = new Cooldowns();
   const memberCooldowns = new Cooldowns();
   const duplicates = new Cooldowns();
   let listRevision = 0;
+  let groupRevision = 0;
 
   async function refreshLists() {
     while (!watchSignal?.aborted) {
@@ -187,15 +191,25 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     }
   }
 
+  async function refreshGroups() {
+    while (!watchSignal?.aborted) {
+      const revision = groupRevision;
+      const updated = await readGroupRoutingConfig(root);
+      if (revision !== groupRevision) continue;
+      if (!watchSignal?.aborted) {
+        groups = updated;
+        groupRevision++;
+      }
+      break;
+    }
+  }
+
   if (watchSignal) {
     watchRoutingFiles("bot", watchSignal, async () => {
       const updated = await readSlashAlias(root);
       if (!watchSignal.aborted) slashAlias = updated;
     });
-    watchRoutingFiles("group", watchSignal, async () => {
-      const updated = await readRoutingConfig(root);
-      if (!watchSignal.aborted) groups = updated;
-    });
+    watchRoutingFiles("group", watchSignal, refreshGroups);
     watchRoutingFiles("other", watchSignal, refreshLists);
   }
 
@@ -357,5 +371,6 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     }
   }
 
-  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, refreshLists, blockUser, keywordSettings };
+  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, refreshLists, refreshGroups,
+    blockUser, keywordSettings };
 }

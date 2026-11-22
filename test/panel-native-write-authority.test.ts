@@ -40,7 +40,7 @@ test("原生配置在实际提交前复核会话，群配置同时复核已加�
     const directories = new Map([["group", group]]);
     const channel = panelAtlasChannel(url);
     const webLogin = panelWebLogin(url);
-    const like = panelGroupSettings(directories);
+    const like = panelGroupSettings(url, directories);
     const notice = panelGroupNoticeSettings(url, directories);
     const allowed = () => true;
     const changeAtlas = { channel: "latest", previous: "live" };

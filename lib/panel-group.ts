@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockFile } from "./file-lock.ts";
+import { withLocalGroupConfigWrite } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
 import type { PluginLoadReport } from "./plugins/loader.ts";
 
@@ -66,7 +67,7 @@ export async function readGroupLikeSettingsModule(directories: PluginLoadReport[
   }
 }
 
-export function panelGroupSettings(directories: PluginLoadReport["directories"]) {
+export function panelGroupSettings(root: URL, directories: PluginLoadReport["directories"]) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const group = directories.get("group");
     if (!group || group.packageName !== "@lotus-yunzai/group") return new Response(null, { status: 404 });
@@ -104,10 +105,11 @@ export function panelGroupSettings(directories: PluginLoadReport["directories"])
     const active = () => !request.signal.aborted && stillAuthorized();
     const registered = () => directories.get("group") === group;
     try {
-      return Response.json(await service.saveLikeSettings(payload.patch, {
-        revision: payload.revision,
+      const { patch, revision } = payload;
+      return Response.json(await withLocalGroupConfigWrite(root, () => service.saveLikeSettings(patch, {
+        revision,
         canWrite: () => active() && registered(),
-      }));
+      })));
     } catch (error) {
       if (error instanceof service.LikeSettingsError) {
         return Response.json({ message: error.message }, { status: error.code === "conflict" ? (active() ? 409 : 401) : 400 });

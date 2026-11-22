@@ -109,6 +109,40 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
       'groupVerify: {openGroup: [88], mode: 模糊, time: "120", range: {min: 3, max: 60}, SuccessMsgs: {88: 旧文案, 0: 默认旧文案}}\n');
     await writeFile(moderationFile, 'groupVerify: {range: {min: 5, keep: true}, time: 180}\nblackQQ: [20] # 保持\n');
     const base = "/panel/api/settings/native/";
+    const routingPath = base + "group-routing";
+    const likesFile = join(root, "config/group.yaml");
+    const groupRouting = join(root, "config/config/group.yaml");
+    await mkdir(join(root, "config/config"), { recursive: true });
+    await writeFile(likesFile, "enable: true\ncount: 5\n");
+    await writeFile(groupRouting, '# 旧安装\ndefault: { groupCD: 0, extra: 42 }\n42:\n  onlyReplyAt: 1 # 仅响应提及\n');
+    const routingResult = await request("GET", undefined, token, routingPath);
+    expect(routingResult.status).toBe(200);
+    const { values: routing } = await routingResult.json() as { values: { file: string; rules: Record<string, object> } };
+    expect(routing).toEqual({ file: "config/config/group.yaml", rules: { default: { groupCD: 0 }, 42: { onlyReplyAt: 1 } } });
+    const routingSave = { previous: routing, values: {
+      ...routing, rules: { ...routing.rules, default: { groupCD: 5 }, "99:42": { disable: ["群公告"] } },
+    } };
+    expect((await request("PUT", { ...routingSave, values: {
+      ...routingSave.values, rules: { default: { unrelated: true } },
+    } }, token, routingPath)).status).toBe(400);
+    const routingSaved = await request("PUT", routingSave, token, routingPath);
+    expect(routingSaved.status).toBe(200);
+    expect(await routingSaved.json()).toMatchObject({ values: routingSave.values });
+    expect((await request("PUT", routingSave, token, routingPath)).status).toBe(409);
+    const routingYaml = await readFile(groupRouting, "utf8");
+    expect(routingYaml).toContain("仅响应提及");
+    expect(Bun.YAML.parse(routingYaml)).toMatchObject({
+      default: { groupCD: 5, extra: 42 }, 42: { onlyReplyAt: 1 }, "99:42": { disable: ["群公告"] },
+    });
+    expect(await readFile(likesFile, "utf8")).toBe("enable: true\ncount: 5\n");
+    await writeFile(likesFile, "enable: true\ncount: 5\n42: { onlyReplyAt: 2 }\n");
+    const { values: modernRouting } = await (await request("GET", undefined, token, routingPath)).json() as { values: typeof routing };
+    expect(modernRouting).toEqual({ file: "config/group.yaml", rules: { 42: { onlyReplyAt: 2 } } });
+    const clearedRules = await request("PUT", { previous: modernRouting, values: { ...modernRouting, rules: {} } }, token, routingPath);
+    expect(clearedRules.status).toBe(200);
+    expect(await clearedRules.json()).toMatchObject({ values: { file: "config/group.yaml", rules: { default: {} } } });
+    expect(Bun.YAML.parse(await readFile(likesFile, "utf8"))).toEqual({ enable: true, count: 5, default: {} });
+    expect(await readFile(groupRouting, "utf8")).toBe(routingYaml);
     const moderationPath = base + "group-moderation";
     const moderationResult = await request("GET", undefined, token, moderationPath);
     expect(moderationResult.status).toBe(200);
@@ -138,7 +172,7 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     expect(await groupManagement.shouldAutoUnmute(41)).toBe(true);
     expect(await groupManagement.readGroupVoteSettings()).toMatchObject({ VoteKick: true, minNum: 6 });
 
-    await mkdir(join(root, "config/config"));
+    await mkdir(join(root, "config/config"), { recursive: true });
     const cardFile = join(root, "config/config/auto-group-card.yaml");
     await writeFile(cardFile, 'cron: "0 0 * * * *"\nsuffixes: [旧文案]\nnotGroup: ["88"]\nother: 保留\n');
     const cardPath = base + "group-card";

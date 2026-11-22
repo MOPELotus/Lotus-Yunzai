@@ -117,6 +117,7 @@ import { panelStatusSettings } from "./lib/panel-status-settings.ts";
 import { panelGameSettings } from "./lib/panel-game-settings.ts";
 import { panelGuidesSettings, panelGenshinGuideSettings, panelZzzGuideSettings, panelGuideCalendarSettings } from "./lib/panel-guides-settings.ts";
 import { panelIngressSettings } from "./lib/panel-ingress-settings.ts";
+import { panelGroupRouting } from "./lib/panel-group-routing.ts";
 import { panelNoticeSettings, panelNoticeMysSettings } from "./lib/panel-notice-settings.ts";
 import { panelNoticeDeliverySettings } from "./lib/panel-notice-delivery-settings.ts";
 import { panelZzzSettings } from "./lib/panel-zzz-settings.ts";
@@ -3520,6 +3521,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/zzz-reminders", panelZzzSettings(root, "reminders")],
         ["/panel/api/settings/native/ingress", panelIngressSettings(root,
           () => Promise.all([groupDispatch.refreshLists(), privateAccess.refresh(true), otherPolicies.refresh(true)]))],
+        ["/panel/api/settings/native/group-routing", panelGroupRouting(root, groupDispatch.refreshGroups)],
         ["/panel/api/settings/native/guides", panelGuidesSettings(root)],
         ["/panel/api/settings/native/genshin-guides", panelGenshinGuideSettings(root)],
         ["/panel/api/settings/native/zzz-guides", panelZzzGuideSettings(root)],
@@ -3529,7 +3531,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/notice-delivery", panelNoticeDeliverySettings(() => globalThis.redis, () => groupTransport.onlineBots())],
         ["/panel/api/settings/atlas/update", panelAtlasUpdate(root, validateModuleCron)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
-        ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
+        ["/panel/api/settings/group/likes", panelGroupSettings(root, plugins.directories)],
         ["/panel/api/settings/group/notices", panelGroupNoticeSettings(root, plugins.directories)],
         ["/panel/api/settings/native/group-moderation", panelGroupManagement(root, plugins.directories, "groupAdmin", validateModuleCron)],
         ["/panel/api/settings/native/group-card", panelGroupManagement(root, plugins.directories, "auto-group-card", validateModuleCron)],

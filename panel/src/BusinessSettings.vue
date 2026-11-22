@@ -12,6 +12,7 @@ interface Field {
   max?: number;
   hint?: string;
   readonly?: boolean;
+  rows?: number;
   itemType?: "number" | "string";
   separator?: "line";
   multiline?: boolean;
@@ -148,7 +149,7 @@ onBeforeUnmount(() => {
           <option v-for="option in field.options" :key="option.value" :value="String(option.value)">{{ option.label }}</option>
         </select>
         <textarea v-else-if="field.type === 'list' || field.type === 'json' || field.multiline" :id="'native-' + field.key"
-          :value="String(draft[field.key] ?? '')" rows="4" :disabled="busy || field.readonly"
+          :value="String(draft[field.key] ?? '')" :rows="field.rows ?? 4" :disabled="busy || field.readonly"
           :placeholder="field.type === 'list' ? '每行一项' : undefined" @input="changeText(field.key, $event)" />
         <input v-else :id="'native-' + field.key" v-model="draft[field.key]" :disabled="busy || field.readonly"
           :inputmode="field.type === 'number' ? 'decimal' : undefined">
