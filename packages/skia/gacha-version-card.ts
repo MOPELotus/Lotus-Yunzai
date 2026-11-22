@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
+import { gachaBannerShadow } from "./gacha-banner-shadow.ts";
 import { renderPng } from "./index.ts";
 import { Canvas, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
@@ -228,6 +229,7 @@ function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme, assets
   text(ctx, `#${model.uid}`, 111, 86, 16, ink, "left", nameWidth);
   ctx.restore();
   if (!gauges.length) return;
+  if (game === "gs") gachaBannerShadow(ctx, left, bandWidth);
   ctx.save();
   shape(ctx, left, 41, bandWidth, 58, 29);
   ctx.clip();
@@ -483,7 +485,7 @@ export async function renderGachaVersion(
     const image = await readImage(root, path);
     if (image) images.set(path, image);
   }
-  const zoom = scale;
+  const zoom = scale * (game === "gs" ? 1.4 : 1);
   return renderPng(Math.round(width * zoom), Math.round(height * zoom), (ctx) => {
     fontFamilies.set(ctx, theme.family);
     ctx.scale(zoom, zoom);

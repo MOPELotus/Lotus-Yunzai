@@ -59,7 +59,7 @@ const light = "#f5f6fb";
 const ink = "#1e1f20";
 const muted = "#7f858a";
 const paper = "#fff";
-const fontFamilies = new WeakMap<Context, { han: string; number: string }>();
+const fontFamilies = new WeakMap<Context, { han: string; number: string; wenHei: string }>();
 
 async function canonicalAsset(root: string, source: string) {
   const path = source.replace(/^\//u, "");
@@ -103,8 +103,9 @@ async function loadTheme(genshin: string, characterTheme: string, game: Game) {
     image(genshin, "img/other/bg5.png"),
   ]);
   if (!banner || !logo || !star) throw new Error(`${config.label}特殊池记录的原版图片不可用。`);
-  const han = aliases[1] + ", sans-serif";
-  return { banner, logo, star, fonts: { han, number: aliases[0] + ", " + han } };
+  const wenHei = aliases[1] + ", sans-serif";
+  const han = game === "gs" ? 'PingFangSC-Medium, "PingFang SC", "Droid Sans Fallback", sans-serif' : wenHei;
+  return { banner, logo, star, fonts: { han, number: aliases[0] + ", " + han, wenHei } };
 }
 
 const themeCache = new Map<string, ReturnType<typeof loadTheme>>();
@@ -136,9 +137,9 @@ function panel(ctx: Context, x: number, y: number, w: number, h: number, corners
 }
 
 function text(ctx: Context, value: string, x: number, y: number, size: number, color = ink,
-  align: CanvasTextAlign = "left", useNumberFont = false, maxWidth?: number, weight = false) {
+  align: CanvasTextAlign = "left", family: "han" | "number" | "wenHei" = "han", maxWidth?: number, weight = false) {
   const fonts = fontFamilies.get(ctx)!;
-  ctx.font = `${weight ? "700 " : ""}${size}px ${useNumberFont ? fonts.number : fonts.han}`;
+  ctx.font = `${weight ? "700 " : ""}${size}px ${fonts[family]}`;
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
@@ -157,11 +158,12 @@ function text(ctx: Context, value: string, x: number, y: number, size: number, c
   ctx.restore();
 }
 
-function shadow(ctx: Context, draw: () => void) {
+function shadow(ctx: Context, game: Game, draw: () => void) {
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.15)";
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 5;
+  const scale = game === "gs" ? ctx.getTransform().a : 1;
+  ctx.shadowBlur = 10 * scale;
+  ctx.shadowOffsetY = 5 * scale;
   draw();
   ctx.restore();
 }
@@ -176,7 +178,7 @@ function drawHeader(ctx: Context, theme: Theme, pool: Pool, uid: string, x: numb
   const height = headerHeight(game, crossPool);
   const compact = height === 95;
   const corners = [15, 50, 50, 15];
-  shadow(ctx, () => panel(ctx, x, y, width, height, corners, light));
+  shadow(ctx, game, () => panel(ctx, x, y, width, height, corners, light));
   ctx.save();
   shape(ctx, x, y, width, height, corners);
   ctx.clip();
@@ -186,9 +188,9 @@ function drawHeader(ctx: Context, theme: Theme, pool: Pool, uid: string, x: numb
 
   const idSize = compact ? 24 : 26;
   const drawSize = compact ? 20 : 22;
-  text(ctx, `ID: ${uid}`, x + 20, y + (compact ? 31 : 32), idSize, "#000", "left", true, width - 170);
+  text(ctx, `ID: ${uid}`, x + 20, y + (compact ? 31 : 32), idSize, "#000", "left", "number", width - 170);
   const draws = `${pool.allNum}抽`;
-  text(ctx, draws, x + 20, y + (compact ? 68 : 72), drawSize, "#000", "left", true, width - 250, true);
+  text(ctx, draws, x + 20, y + (compact ? 68 : 72), drawSize, "#000", "left", "number", width - 250, true);
   const labelX = x + 26 + ctx.measureText(draws).width;
   const label = `${pool.typeName}池`;
   ctx.font = `700 12px ${fontFamilies.get(ctx)!.han}`;
@@ -197,7 +199,7 @@ function drawHeader(ctx: Context, theme: Theme, pool: Pool, uid: string, x: numb
   // The original Genshin overview uses the same label_301 style for each pool.
   const badge = game === "gs" ? (crossPool ? "#eb6a4b" : undefined) : pool.type === 2 && !crossPool ? "#75c895" : undefined;
   if (badge) panel(ctx, labelX, badgeY, badgeWidth, 17, 9, badge);
-  text(ctx, label, labelX + 7, badgeY + 8.5, 12, "#555", "left", false, undefined, true);
+  text(ctx, label, labelX + 7, badgeY + 8.5, 12, "#555", "left", "han", undefined, true);
   ctx.drawImage(theme.logo, x + width - config.logoRight - config.logoWidth, y + config.logoTop,
     config.logoWidth, theme.logo.height * config.logoWidth / theme.logo.width);
 }
@@ -217,9 +219,9 @@ function drawMetrics(ctx: Context, pool: Pool, x: number, y: number, width: numb
       const unitWidth = ctx.measureText(suffix).width;
       const numberWidth = Math.min(naturalWidth, cell - unitWidth - 4);
       const left = center - (numberWidth + unitWidth) / 2;
-      text(ctx, amount, left, top + 14, 24, ink, "left", true, numberWidth);
+      text(ctx, amount, left, top + 14, 24, ink, "left", "number", numberWidth);
       text(ctx, suffix, left + numberWidth, top + 18, 12);
-      text(ctx, label, center, top + labelOffset, 14, muted, "center", false, cell - 4);
+      text(ctx, label, center, top + labelOffset, 14, muted, "center", "han", cell - 4);
     }
   }
 }
@@ -231,13 +233,13 @@ function dateRange(pool: Pool) {
 
 function drawHistoryHeading(ctx: Context, pool: Pool, x: number, y: number, width: number) {
   const label = dateRange(pool);
-  ctx.font = `15px ${fontFamilies.get(ctx)!.han}`;
+  ctx.font = `15px ${fontFamilies.get(ctx)!.wenHei}`;
   const textWidth = Math.min(ctx.measureText(label).width, width - 60);
   const barWidth = (width - textWidth) / 2 - 20;
   ctx.fillStyle = "#ebebeb";
   ctx.fillRect(x + 10, y + 15, barWidth, 2);
   ctx.fillRect(x + width - barWidth - 10, y + 15, barWidth, 2);
-  text(ctx, label, x + width / 2, y + 14, 15, "#7d7d7d", "center", false, textWidth);
+  text(ctx, label, x + width / 2, y + 14, 15, "#7d7d7d", "center", "wenHei", textWidth);
 }
 
 function amountColors(row: FiveStar, pool: Pool): readonly [string, string] {
@@ -248,9 +250,9 @@ function amountColors(row: FiveStar, pool: Pool): readonly [string, string] {
   return ["#9d3333", paper];
 }
 
-function drawFiveStar(ctx: Context, row: FiveStar, pool: Pool, theme: Theme,
+function drawFiveStar(ctx: Context, row: FiveStar, pool: Pool, theme: Theme, game: Game,
   portraits: ReadonlyMap<string, Image>, x: number, y: number) {
-  shadow(ctx, () => panel(ctx, x, y, 70, 90, 7, "#af8256"));
+  shadow(ctx, game, () => panel(ctx, x, y, 70, 90, 7, "#af8256"));
   ctx.save();
   shape(ctx, x, y, 70, 90, 7);
   ctx.clip();
@@ -260,16 +262,16 @@ function drawFiveStar(ctx: Context, row: FiveStar, pool: Pool, theme: Theme,
     const w = 70 * art.width / art.height;
     ctx.drawImage(art, x + (70 - w) / 2, y, w, 70);
   } else {
-    text(ctx, row.abbr || row.name, x + 35, y + 35, 13, "#51351d", "center", false, 65);
+    text(ctx, row.abbr || row.name, x + 35, y + 35, 13, "#51351d", "center", "han", 65);
   }
 
   const [fill, color] = amountColors(row, pool);
   ctx.fillStyle = fill;
   ctx.fillRect(x, y + 70, 70, 20);
-  text(ctx, row.num === undefined ? "—" : String(row.num), x + 35, y + 80, 16, color, "center", true, 66);
+  text(ctx, row.num === undefined ? "—" : String(row.num), x + 35, y + 80, 16, color, "center", "number", 66);
   if (row.isUp === true) {
     panel(ctx, x + 48, y, 22, 16, [2, 0, 2, 2], "rgba(0,0,0,.80)");
-    text(ctx, "UP", x + 59, y + 8, 12, paper, "center", true);
+    text(ctx, "UP", x + 59, y + 8, 12, paper, "center", "number");
   }
   ctx.restore();
 }
@@ -312,10 +314,10 @@ function drawPool(ctx: Context, p: PositionedPool, model: GachaSpecialView, them
   drawHeader(ctx, theme, pool, model.uid, x, y, width, crossPool, game);
   const top = y + headerHeight(game, crossPool) + 20;
   const cardsHeight = historyHeight(rows, game);
-  shadow(ctx, () => panel(ctx, x, top, width, 175 + cardsHeight + (note ? 22 : 0), 15, paper));
+  shadow(ctx, game, () => panel(ctx, x, top, width, 175 + cardsHeight + (note ? 22 : 0), 15, paper));
 
   panel(ctx, x - 8, top - 10, 76, 23, [15, 0, 15, 15], "#d4b98c");
-  text(ctx, "数据总览", x + 30, top + 1.5, 14, paper, "center");
+  text(ctx, "数据总览", x + 30, top + 1.5, 14, paper, "center", "wenHei");
   drawMetrics(ctx, pool, x, top, width, game);
   const historyTop = top + 138;
   drawHistoryHeading(ctx, pool, x + 10, historyTop, width - 10);
@@ -326,10 +328,10 @@ function drawPool(ctx: Context, p: PositionedPool, model: GachaSpecialView, them
   const stride = crossPool ? 90 : 78;
   const inset = crossPool ? 20 : 10;
   for (const [index, row] of pool.fiveLog.entries()) {
-    drawFiveStar(ctx, row, pool, theme, portraits, x + inset + index % columns * stride,
+    drawFiveStar(ctx, row, pool, theme, game, portraits, x + inset + index % columns * stride,
       historyTop + 32 + Math.floor(index / columns) * 100);
   }
-  if (note) text(ctx, note, x + width / 2, historyTop + 41 + cardsHeight, 12, muted, "center", false, width - 20);
+  if (note) text(ctx, note, x + width / 2, historyTop + 41 + cardsHeight, 12, muted, "center", "han", width - 20);
 }
 
 export async function renderGachaSpecialCard(
@@ -357,7 +359,7 @@ export async function renderGachaSpecialCard(
     if (art) portraits.set(path, art);
   }
 
-  const zoom = scale;
+  const zoom = scale * (game === "gs" ? 1.5 : 1);
   const pixelWidth = Math.round(width * zoom);
   const pixelHeight = Math.round(height * zoom);
   return renderPng(pixelWidth, pixelHeight, (ctx) => {
@@ -371,6 +373,6 @@ export async function renderGachaSpecialCard(
     if (page) text(ctx, `第 ${page.page}/${page.total} 张 · ${crossPool ? "各池" : ""}第 ${page.from}~${page.to} 条五星记录`,
       width / 2, bottom + 9, 14, muted, "center");
     text(ctx, "Created By Lotus-Yunzai", width / 2 + 5, bottom + (page ? 29.5 : 7.5),
-      12, "#7994a7", "center", true);
+      12, "#7994a7", "center", "number");
   }, mode, { allowHalfScale: scale === 4 });
 }

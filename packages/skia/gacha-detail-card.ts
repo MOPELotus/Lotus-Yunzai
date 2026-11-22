@@ -3,6 +3,7 @@ import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
 import type { GachaLuck } from "@lotus-yunzai/gacha";
 import { registerGachaThemeFont } from "./gacha-theme-fonts.ts";
+import { gachaBannerShadow } from "./gacha-banner-shadow.ts";
 import { renderPng } from "./index.ts";
 import { loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 
@@ -268,6 +269,7 @@ function paintBanner(ctx: Context, model: GachaDetailModel, theme: Theme, face: 
   if (!stats.length) return;
 
   let left = right - statWidth;
+  if (game === "gs") gachaBannerShadow(ctx, left, statWidth);
   ctx.save();
   round(ctx, left, 41, statWidth, 58, 29);
   ctx.clip();
@@ -509,7 +511,7 @@ export async function renderGachaDetail(
   const bottom = top + panelHeight;
   const height = bottom + 47;
   if (height > 24_000) throw new RangeError(`${games[game].name}抽卡记录超出可渲染高度。`);
-  const zoom = scale;
+  const zoom = scale * (game === "gs" ? 1.4 : 1);
   const pixelHeight = game === "gs" ? Math.round(height * zoom) : Math.ceil(height * zoom);
 
   return renderPng(Math.round(width * zoom), pixelHeight, (ctx) => {
