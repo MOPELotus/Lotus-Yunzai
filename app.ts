@@ -144,7 +144,7 @@ import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTo
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import type { LegacyExitReason } from "./lib/plugins/exit-hooks.ts";
 import { HandlerScope } from "./lib/plugins/handler.ts";
-import { LegacyTasks } from "./lib/plugins/tasks.ts";
+import { LegacyTasks, legacyHostCronTimeZone } from "./lib/plugins/tasks.ts";
 import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
@@ -268,7 +268,7 @@ if (import.meta.main) {
   const handoffSession = new AbortController();
   const stopWatchingHandoff = handoff.onDisconnect(() => handoffSession.abort());
   lifecycle.signal.addEventListener("abort", stopWatchingHandoff, { once: true });
-  const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted);
+  const moduleTasks = new LegacyTasks(() => handoff.accepting && !lifecycle.signal.aborted, legacyHostCronTimeZone);
   const pendingModuleTasks = new Set<() => void>();
   let moduleTasksActive = false;
   function whenModuleTasksActive(start: () => void) {
