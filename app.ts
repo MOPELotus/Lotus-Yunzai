@@ -2614,6 +2614,20 @@ if (import.meta.main) {
         legacyFiles: legacyLotusDirectories.map(id => ({ id,
           file: fileURLToPath(new URL(`plugins/${id}/data/coinShop/plans.json`, root)),
         })),
+        async receiptRoute(qq, { adapter, botId }, signal) {
+          const userId = Number(qq);
+          const active = () => !signal?.aborted && !lifecycle.signal.aborted && handoff.accepting && !stopping;
+          if (!active() || !Number.isSafeInteger(userId) || userId < 1 || userId === botId) return;
+          const milky = milkyOnline;
+          const transport = adapter === "milky"
+            ? milky?.id === botId && !milky.signal.aborted ? milky.checkinNotify : undefined
+            : groups.checkinNotifications().find(session => session.botId === botId);
+          if (!transport || !await transport.friendship?.(userId) || !active()) return;
+          return async message => {
+            if (!active() || (adapter === "milky" && (milky !== milkyOnline || milky?.signal.aborted))) return;
+            return transport.sendPrivate(userId, message);
+          };
+        },
         tracking: {
           async catalog(target, game, signal, verifyBinding) {
             const result = [];

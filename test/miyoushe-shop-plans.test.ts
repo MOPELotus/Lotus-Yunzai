@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createMiyousheShopPlans, type MiyousheShopInspection } from "../lib/miyoushe-shop-plans.ts";
+import { createMiyousheShopPlans, type MiyousheShopInspection, type MiyousheShopReceiptRoute } from "../lib/miyoushe-shop-plans.ts";
 import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 
 const target = { qq: "42", profileId: 1 };
@@ -39,6 +39,75 @@ async function inspection(good: MiyousheShopInspection["good"] = mockGood) {
 }
 
 function gate() { return Promise.withResolvers<void>(); }
+
+test("终态回执等待原机器人渠道，持久认领后并行扫描和重启均不中途重发", async () => {
+  await fixture(async ({ file, profileDirectory, profile }) => {
+    let posts = 0, lookups = 0, online = false;
+    const messages: string[] = [];
+    const bothLookedUp = gate();
+    const options = { file, profileDirectory, now: () => startTime, inspect: () => inspection(),
+      async submit() { posts++; return "succeeded" as const; },
+      async receiptRoute(qq: string, route: MiyousheShopReceiptRoute) {
+        expect([qq, route]).toEqual(["42", { adapter: "milky", botId: 67 }]);
+        if (!online) return;
+        if (++lookups === 2) bothLookedUp.resolve();
+        await bothLookedUp.promise;
+        return async (message: string) => {
+          const saved = JSON.parse(await readFile(file, "utf8"));
+          expect(saved.plans[0]).toMatchObject({ receipt: "claimed", status: "succeeded" });
+          messages.push(message);
+          throw new Error("模拟发送后回执丢失");
+        };
+      },
+    };
+    const shop = createMiyousheShopPlans(options);
+    const plan = await shop.reserve(target, body, undefined, undefined, undefined, "milky:67");
+    expect(plan).not.toHaveProperty("receiptRoute");
+    await shop.scan();
+    expect(posts).toBe(1);
+    expect(messages).toEqual([]);
+    online = true;
+    await profile(target.qq, target.profileId, "88");
+    await shop.scan();
+    expect(lookups).toBe(0);
+    await profile(target.qq, target.profileId);
+    await Promise.all([createMiyousheShopPlans(options).scan(), createMiyousheShopPlans(options).scan()]);
+    await createMiyousheShopPlans(options).scan();
+    expect(posts).toBe(1);
+    expect(lookups).toBe(2);
+    expect(messages).toEqual([`[米游币兑换]测试商品\n档案 1 · 计划 ${plan.id}\n兑换成功，请查看米游社兑换记录或游戏内邮件。`]);
+  });
+});
+
+test("重启时在途兑换只转待确认和私聊一次，过期回执与旧计划保持网页可查", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let now = startTime;
+    const messages: string[] = [];
+    const options = { file, profileDirectory, now: () => now,
+      inspect: (_target: unknown, id: string) => inspection({ ...mockGood, id }),
+      async submit() { throw new Error("重启不得重发购买"); },
+      async receiptRoute() { return async (message: string) => { messages.push(message); }; },
+    };
+    const service = createMiyousheShopPlans(options);
+    const pending = await service.reserve(target, body, undefined, undefined, undefined, "onebot:67");
+    const expired = await service.reserve(target, { ...body, goodsId: "28" }, undefined, undefined, undefined, "onebot:67");
+    const legacy = await service.reserve(target, { ...body, goodsId: "31" });
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    Object.assign(saved.plans[0], { status: "submitting", attempts: 1 });
+    Object.assign(saved.plans[1], { status: "failed", receipt: "pending", finishedAt: now });
+    Object.assign(saved.plans[2], { status: "submitting", attempts: 1 });
+    await writeFile(file, JSON.stringify(saved));
+    now += 24 * 3_600_000;
+    const restarted = createMiyousheShopPlans(options);
+    await restarted.scan();
+    expect((await restarted.list(target)).plans).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: pending.id, status: "unknown" }),
+      expect.objectContaining({ id: expired.id, status: "failed" }),
+      expect.objectContaining({ id: legacy.id, status: "unknown" }),
+    ]));
+    expect(messages).toEqual([`[米游币兑换]测试商品\n档案 1 · 计划 ${pending.id}\n兑换结果待确认，请查米游社兑换记录。请勿在确认前重新兑换。`]);
+  });
+});
 
 test("只有原快捷兑换会话能接续。重启不认领其待提交计划，普通预约维持原流程", async () => {
   await fixture(async ({ file, profileDirectory }) => {
@@ -325,16 +394,21 @@ test("持续追踪按官方周期、同名选项和累计预算兑换，并在�
     let now = startTime;
     let favorite: MiyousheShopInspection["good"] = trackedGood;
     const submits: string[] = [];
+    const receipts: Array<[string, MiyousheShopReceiptRoute]> = [];
     const options = { file, profileDirectory, now: () => now,
       inspect: async (_target: unknown, id: string) => inspection({ ...favorite, id }),
       tracking: { async catalog() { return [favorite, { ...favorite, id: "28", name: "其他商品" }]; },
         async destinations() { return { roles: [planRole] }; } },
       async submit(plan: { goodsId: string }) { submits.push(plan.goodsId); return "succeeded" as const; },
+      async receiptRoute(qq: string, route: MiyousheShopReceiptRoute) {
+        return async () => { receipts.push([qq, route]); };
+      },
     };
     const service = createMiyousheShopPlans(options);
     const parallel = createMiyousheShopPlans(options);
     await expect(service.createTracker(target, { ...trackingBody, confirmed: false })).rejects.toMatchObject({ status: 400 });
-    const rule = await service.createTracker(target, trackingBody);
+    const rule = await service.createTracker(target, trackingBody, undefined, undefined, "onebot:67");
+    expect(rule).not.toHaveProperty("receiptRoute");
     await expect(parallel.createTracker(target, trackingBody)).rejects.toMatchObject({ status: 409 });
     await expect(parallel.setTracker(other, rule.id, false, undefined)).rejects.toMatchObject({ status: 404 });
     expect((await service.listTrackers(other)).trackers).toEqual([]);
@@ -351,6 +425,7 @@ test("持续追踪按官方周期、同名选项和累计预算兑换，并在�
     await service.scan();
     expect(submits).toEqual(["27", "31"]);
     expect((await service.listTrackers(target)).trackers[0]).toMatchObject({ spent: 600, held: 0, successes: 2 });
+    expect(receipts).toEqual([["42", { adapter: "onebot", botId: 67 }], ["42", { adapter: "onebot", botId: 67 }]]);
   });
 });
 

@@ -9,7 +9,7 @@ import { MiyousheExchangeError } from "@lotus-yunzai/hoyo-client/miyoushe-exchan
 import type { CommandModule } from "./commands.ts";
 import type { MiyousheOverview, MiyousheOverviewTarget } from "./miyoushe-overview.ts";
 import { MiyousheShopError, type createMiyousheShopCatalog } from "./miyoushe-shop-catalog.ts";
-import { MiyousheShopPlanError, type createMiyousheShopPlans } from "./miyoushe-shop-plans.ts";
+import { MiyousheShopPlanError, parseMiyousheShopReceiptRoute, type createMiyousheShopPlans } from "./miyoushe-shop-plans.ts";
 import { readPanelJson } from "./panel.ts";
 import { isReservedServerPath } from "./server-redirect.ts";
 
@@ -32,6 +32,7 @@ const headers = {
 interface Row extends MiyousheOverviewTarget {
   readonly account: string;
   readonly expiresAt: number;
+  readonly receiptRoute: string | null;
 }
 
 type VerifyLogin = () => Promise<void>;
@@ -244,6 +245,9 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         CREATE TABLE IF NOT EXISTS sessions (
           hash TEXT PRIMARY KEY, kind TEXT NOT NULL, qq TEXT NOT NULL,
           profileId INTEGER NOT NULL, account TEXT NOT NULL, expiresAt INTEGER NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS session_receipt_routes (
+          hash TEXT PRIMARY KEY, route TEXT NOT NULL
         ) STRICT;`);
       db = connection;
       return db;
@@ -254,16 +258,22 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
   }
   function lookup(token: string, kind: "ticket" | "web", time = now()) {
     return database().query<Row, [string, string, number]>(
-      "SELECT qq, profileId, account, expiresAt FROM sessions WHERE hash = ? AND kind = ? AND expiresAt > ?",
+      `SELECT qq, profileId, account, expiresAt, route AS receiptRoute FROM sessions
+       LEFT JOIN session_receipt_routes USING (hash) WHERE hash = ? AND kind = ? AND expiresAt > ?`,
     ).get(digest(token), kind, time);
   }
 
   function insert(token: string, kind: "ticket" | "web", row: Row) {
-    database().run("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)", [digest(token), kind, row.qq, row.profileId, row.account, row.expiresAt]);
+    const hash = digest(token);
+    database().run("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)", [hash, kind, row.qq, row.profileId, row.account, row.expiresAt]);
+    if (row.receiptRoute) database().run("INSERT INTO session_receipt_routes VALUES (?, ?)", [hash, row.receiptRoute]);
   }
 
   function remove(token: string, kind: "ticket" | "web") {
-    database().run("DELETE FROM sessions WHERE hash = ? AND kind = ?", [digest(token), kind]);
+    const hash = digest(token);
+    if (database().run("DELETE FROM sessions WHERE hash = ? AND kind = ?", [hash, kind]).changes) {
+      database().run("DELETE FROM session_receipt_routes WHERE hash = ?", [hash]);
+    }
   }
 
   const commands: CommandModule = {
@@ -273,7 +283,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       if (!match || signal.aborted) return;
       if (context.message_type !== "private") return "请私聊机器人发送 #米游社功能，获取专属登录链接。";
       const connection = context.privateCredentialSignal;
-      if (!connection || connection.aborted || !context.user_id) return "请从当前连接的机器人好友私聊获取登录链接。";
+      if (!connection || connection.aborted || !context.user_id || context.isDelegated) return "请从当前连接的机器人好友私聊获取登录链接。";
       const profileId = Number(match[2] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       const link = publicPage();
@@ -284,9 +294,14 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         const account = await loginIdentity(qq, profileId);
         if (signal.aborted || connection.aborted) return;
         const time = now();
-        database().run("DELETE FROM sessions WHERE expiresAt <= ?", [time]);
         const token = generateToken();
-        insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMinutes * 60_000 });
+        const route = `${context.adapter ?? "onebot"}:${context.self_id}`;
+        const receiptRoute = context.self_id !== context.user_id && parseMiyousheShopReceiptRoute(route) ? route : null;
+        database().transaction(() => {
+          database().run("DELETE FROM sessions WHERE expiresAt <= ?", [time]);
+          database().run("DELETE FROM session_receipt_routes WHERE hash NOT IN (SELECT hash FROM sessions)");
+          insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMinutes * 60_000, receiptRoute });
+        }).immediate();
         link.hash = `ticket=${token}${catalog && match[1] !== "米游社功能" ? "&tab=shop" : ""}`;
         return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 ${ticketMinutes} 分钟内有效，只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
       } catch (failure) {
@@ -493,14 +508,15 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         const confirmed = body && typeof body === "object" && "confirmed" in body ? body.confirmed : undefined;
         const result = trackingAction ? await plans.setTracker(target, trackingAction[1]!, trackingAction[2] === "resume",
           confirmed, deadline, verifyLogin) : method === "GET" ? await plans.listTrackers(target, verifyLogin)
-          : await plans.createTracker(target, body, deadline, verifyLogin);
+          : await plans.createTracker(target, body, deadline, verifyLogin, row.receiptRoute ?? undefined);
         await verifyLogin();
         return Response.json(result, { headers });
       }
       if (plans && part === "api/plans") {
         const sessionId = digest(currentToken);
         const result = method === "GET" ? await plans.list(target, verifyLogin, sessionId) : await plans.reserve(target,
-          await readPanelJson(request).catch(() => undefined), deadline, verifyLogin, { sessionId, signal: shopSignal, verify: verifySession });
+          await readPanelJson(request).catch(() => undefined), deadline, verifyLogin, { sessionId, signal: shopSignal, verify: verifySession },
+          row.receiptRoute ?? undefined);
         await verifyLogin();
         return Response.json(result, { headers });
       }

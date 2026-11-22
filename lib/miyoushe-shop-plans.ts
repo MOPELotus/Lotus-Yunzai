@@ -20,6 +20,8 @@ const intentPattern = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u;
 const preparingLead = 15_000;
 const maxDelay = 30_000;
 const manualVerificationTimeout = 185_000;
+const receiptLifetime = 24 * 3_600_000;
+const receiptPollInterval = 15_000;
 
 const statusMessage = {
   scheduled: "等待开放兑换",
@@ -60,6 +62,13 @@ const publicTrackerMessages = new Set<string>([...Object.values(trackerMessages)
 const publicMessages = new Set([...Object.values(statusMessage), ...Object.values(details)]);
 type Status = keyof typeof statusMessage;
 type Role = { readonly uid: string; readonly region: string; readonly gameBiz: string };
+export type MiyousheShopReceiptRoute = { readonly adapter: "onebot" | "milky"; readonly botId: number };
+
+export function parseMiyousheShopReceiptRoute(value: unknown): MiyousheShopReceiptRoute | undefined {
+  const match = typeof value === "string" ? /^(onebot|milky):([1-9]\d*)$/u.exec(value) : null;
+  if (!match || !Number.isSafeInteger(Number(match[2]))) return;
+  return { adapter: match[1] === "milky" ? "milky" : "onebot", botId: Number(match[2]) };
+}
 type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
 interface ManualShopSession {
   readonly sessionId: string;
@@ -86,6 +95,7 @@ export interface MiyousheShopPlan extends MiyousheOverviewTarget {
   readonly addressLabel: string;
   readonly immediate: boolean;
   readonly createdAt: number;
+  readonly receiptRoute?: string;
   readonly trackingId?: string;
   readonly cycleKey?: string;
   readonly preStartMs?: number;
@@ -99,6 +109,7 @@ export interface MiyousheShopPlan extends MiyousheOverviewTarget {
   message: string;
   attempts: number;
   finishedAt?: number;
+  receipt?: "pending" | "claimed";
 }
 
 export interface MiyousheShopInspection {
@@ -118,6 +129,8 @@ interface Options {
   readonly submit?: (plan: Readonly<MiyousheShopPlan>, signal?: AbortSignal,
     verifyBinding?: () => Promise<void>, manual?: ShopManualVerification) => Promise<MiyousheShopExchangeResult>;
   readonly manualRelay?: () => ManualRelay | undefined;
+  readonly receiptRoute?: (qq: string, route: MiyousheShopReceiptRoute, signal?: AbortSignal) =>
+    Promise<((message: string) => Promise<unknown>) | undefined>;
   readonly tracking?: {
     readonly catalog: (target: MiyousheOverviewTarget, game: string, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
@@ -337,7 +350,9 @@ function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   return plan;
 }
 
-export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirectory, now = Date.now, inspect, submit, manualRelay, tracking }: Options) {
+export function createMiyousheShopPlans({
+  file, legacyFiles = [], profileDirectory, now = Date.now, inspect, submit, manualRelay, receiptRoute, tracking,
+}: Options) {
   const store = createStore(resolvePath(file), legacyFiles);
   const profiles = createProfileStore(profileDirectory);
   const immediateVerification = new Map<string, ImmediateVerification>();
@@ -364,6 +379,43 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
 
   function finish(plan: MiyousheShopPlan, status: Status, message = statusMessage[status]) {
     Object.assign(plan, { status, message, finishedAt: now() });
+    if (status !== "cancelled" && parseMiyousheShopReceiptRoute(plan.receiptRoute)) plan.receipt = "pending";
+  }
+
+  function pendingReceipt(plan: MiyousheShopPlan) {
+    return plan.receipt === "pending" && (plan.status === "succeeded" || plan.status === "failed" ||
+      plan.status === "missed" || plan.status === "unknown") && natural(plan.finishedAt) &&
+      now() - plan.finishedAt < receiptLifetime;
+  }
+
+  async function ownsReceiptAccount(plan: MiyousheShopPlan) {
+    const profile = await profiles.accountContext(plan.qq, plan.profileId).catch(() => undefined);
+    return !!profile && profileCookieAccountId(profile.account) === plan.accountId;
+  }
+
+  let deliveringReceipts: Promise<void> | undefined;
+  function deliverReceipts(signal?: AbortSignal) {
+    if (!receiptRoute || signal?.aborted) return;
+    return deliveringReceipts ??= (async () => {
+      for (const candidate of (await store.read()).plans.filter(pendingReceipt)) {
+        if (signal?.aborted) return;
+        const route = parseMiyousheShopReceiptRoute(candidate.receiptRoute);
+        if (!route || !await ownsReceiptAccount(candidate)) continue;
+        const send = await receiptRoute(candidate.qq, route, signal).catch(() => undefined);
+        if (!send || signal?.aborted) continue;
+        const claimed = await store.change(async data => {
+          const plan = data.plans.find(item => item.id === candidate.id);
+          if (!plan || !pendingReceipt(plan) || plan.status !== candidate.status || plan.finishedAt !== candidate.finishedAt ||
+              !await ownsReceiptAccount(plan) || signal?.aborted) return;
+          // After this durable claim a crash or uncertain delivery must never send a duplicate.
+          plan.receipt = "claimed";
+          return plan;
+        });
+        if (!claimed || signal?.aborted || !await ownsReceiptAccount(claimed) || signal?.aborted) continue;
+        const { goodsName, profileId, id, message } = publicPlan(claimed);
+        await send(`[米游币兑换]${goodsName}\n档案 ${profileId} · 计划 ${id}\n${message}`).catch(() => undefined);
+      }
+    })().finally(() => { deliveringReceipts = undefined; });
   }
 
   async function update(id: string, expected: Status, edit: (plan: MiyousheShopPlan, data: Store) => void) {
@@ -554,7 +606,9 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
           if (opensAt < createdAt) return false;
           let id: string;
           do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
-          data.plans.push({ id, ...target, accountId: rule.accountId, botId: "", bindingStamp: booked.stamp,
+          const route = parseMiyousheShopReceiptRoute(rule.receiptRoute);
+          data.plans.push({ id, ...target, accountId: rule.accountId, botId: route ? String(route.botId) : "", bindingStamp: booked.stamp,
+            ...(route && { receiptRoute: rule.receiptRoute }),
             trackingId: rule.id, cycleKey, preStartMs: rule.leadMs, retryIntervalMs: rule.intervalMs,
             goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz,
             type: rule.itemType, price: good.price, role: rule.role, addressId: rule.addressId || "",
@@ -810,6 +864,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
     const initial = select(signal).then(jobs => Promise.allSettled(jobs));
     const following = poll(signal).then(() => select(signal)).then(jobs => Promise.allSettled(jobs));
     const results = (await Promise.all([initial, following])).flat();
+    await deliverReceipts(signal);
     const failed = results.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
   }
@@ -819,8 +874,13 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
     start(signal: AbortSignal, onError?: (error: unknown) => void) {
       if (timer || signal.aborted) return;
       const seen = new WeakSet<Promise<void>>();
+      let nextReceiptPoll = 0;
       const tick = () => {
         if (!polling) void poll(signal).catch(error => onError?.(error));
+        if (receiptRoute && !deliveringReceipts && now() >= nextReceiptPoll) {
+          nextReceiptPoll = now() + receiptPollInterval;
+          void deliverReceipts(signal)?.catch(error => onError?.(error));
+        }
         void select(signal).then(jobs => {
           for (const job of jobs) if (!seen.has(job)) {
             seen.add(job);
@@ -828,7 +888,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
           }
         }).catch(error => onError?.(error));
       };
-      if (submit) {
+      if (submit || receiptRoute) {
         timer = setInterval(tick, 1_000);
         timer.unref();
         signal.addEventListener("abort", () => { clearInterval(timer); timer = undefined; }, { once: true });
@@ -871,7 +931,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
       }).filter(row => row !== undefined).sort((a, b) => b.createdAt - a.createdAt);
       return { now: now(), canTrack: Boolean(tracking && submit), trackers };
     },
-    async createTracker(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
+    async createTracker(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, origin?: string) {
       if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
       const input = readTrackingInput(value);
       if (!input) bad("请核对追踪范围、预算并确认持续兑换。");
@@ -904,6 +964,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         let id: string;
         do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (findTracker(data, id));
         const rule: ShopTracker = { ...input, ...target, id, accountId: booked.accountId, names,
+          ...(parseMiyousheShopReceiptRoute(origin) && { receiptRoute: origin }),
           role: role ? { uid: role.uid, region: role.region, gameBiz: role.gameBiz } : null,
           gameBiz: role?.gameBiz ?? "", addressId: address?.id ?? "", addressLabel: addressLabel(address?.label),
           enabled: true, createdAt: now(), confirmation: { bindingStamp: booked.stamp, at: now() },
@@ -978,7 +1039,8 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         if (immediate.session.sessionId === sessionId) immediate.cancel.abort();
       }
     },
-    async reserve(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, session?: ManualShopSession) {
+    async reserve(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, session?: ManualShopSession,
+      origin?: string) {
       const input = reservationInput(value);
       if (!submit) throw new MiyousheShopPlanError(503, "预约兑换服务暂未启用。");
       await verifyLogin?.();
@@ -1025,8 +1087,10 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         let id: string;
         do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
         const manualSessionExpected = input.immediate && input.intentId && session && manualRelay?.() ? true : undefined;
+        const route = parseMiyousheShopReceiptRoute(origin);
         const plan: MiyousheShopPlan = {
-          id, qq: target.qq, profileId: target.profileId, accountId: booked.accountId, botId: "", bindingStamp: booked.stamp,
+          id, qq: target.qq, profileId: target.profileId, accountId: booked.accountId, botId: route ? String(route.botId) : "", bindingStamp: booked.stamp,
+          ...(route && { receiptRoute: origin }),
           ...(input.intentId ? { intentId: input.intentId, intentFingerprint } : {}),
           ...(manualSessionExpected ? { manualSessionExpected } : {}),
           goodsId: good.id, goodsName: clean(good.name, 240), gameBiz: good.gameBiz, price: good.price, type: good.type,
@@ -1065,6 +1129,7 @@ export function createMiyousheShopPlans({ file, legacyFiles = [], profileDirecto
         const latest = await profiles.accountContext(target.qq, target.profileId).catch(() => undefined);
         if (latest?.revision !== current.revision) conflict(details.resolveAccount);
         finish(plan, redeemed ? "succeeded" : "failed", redeemed ? details.redeemed : details.unredeemed);
+        delete plan.receipt;
         return publicPlan(plan);
       });
     },

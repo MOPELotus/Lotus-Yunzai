@@ -35,6 +35,7 @@ export interface ShopTracker extends MiyousheOverviewTarget {
   readonly leadMs: number;
   readonly intervalMs: number;
   readonly createdAt: number;
+  readonly receiptRoute?: string;
   confirmation?: { bindingStamp: string; at: number };
   enabled: boolean;
   message: string;

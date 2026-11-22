@@ -8,7 +8,7 @@ import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import { createMiyousheOverview, type MiyousheOverviewTarget } from "../lib/miyoushe-overview.ts";
 import { createMiyousheShopCatalog } from "../lib/miyoushe-shop-catalog.ts";
-import { createMiyousheShopPlans } from "../lib/miyoushe-shop-plans.ts";
+import { createMiyousheShopPlans, type MiyousheShopReceiptRoute } from "../lib/miyoushe-shop-plans.ts";
 import { createMiyousheWeb, miyousheWebSettings } from "../lib/miyoushe-web.ts";
 
 const origin = new URL("https://miyoushe.example.org");
@@ -31,6 +31,60 @@ function claim(ticket: string, from = origin.origin) {
 function read(cookie: string, site = "same-origin") {
   return request("api/overview", { headers: { Cookie: cookie, "Sec-Fetch-Site": site } });
 }
+
+test("网页登录票据在重启后保留签发机器人及协议，浏览器只能确认订单", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-shop-receipt-"));
+  const profiles = createProfileStore(root);
+  const role = { uid: "1000042", region: "cn_gf01" };
+  const received: Array<{ qq: string; route: MiyousheShopReceiptRoute; message: string }> = [];
+  let submissions = 0;
+  const plans = createMiyousheShopPlans({ file: join(root, "plans.json"), profileDirectory: root,
+    async inspect(_target, id) {
+      return { good: { id, name: "合成商品", gameBiz: "hk4e_cn", price: 300, type: 2, status: "available", opensAt: null },
+        balance: 999, roles: [role] };
+    },
+    async submit() { submissions++; return "succeeded"; },
+    async receiptRoute(qq, route) {
+      return async message => { received.push({ qq, route, message }); };
+    },
+  });
+  const options = { publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: root,
+    signal: new AbortController().signal, loginIdentity: profiles.loginIdentity, plans,
+    async overview(): Promise<never> { throw new Error("隔离测试仅使用商城"); },
+  };
+  let web = createMiyousheWeb(options);
+  try {
+    await writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({
+      user: { qq: "42" }, profile: { id: 2 }, account: { stuid: "27", ltuid: "27", stoken: "fixture", cookie: "account_id=27;cookie_token=fixture" },
+      device: { id: "fixture-device", fp: "fixture-fingerprint" },
+    }));
+    for (const [index, adapter] of ([undefined, "milky"] as const).entries()) {
+      const issued = await web.commands.fallback!(command, message({ adapter }));
+      const ticket = /#ticket=([\w-]{43})/u.exec(String(issued))?.[1];
+      expect(ticket).toBeString();
+      web.close();
+      web = createMiyousheWeb(options);
+      const login = await web.handle(claim(ticket!));
+      expect(login?.status).toBe(204);
+      const cookie = login!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+      const order = { ...role, confirmed: true, goodsId: String(271 + index), immediate: true, expectedPrice: 300 };
+      const post = (body: object) => web.handle(request("api/plans", { method: "POST",
+        headers: { Origin: origin.origin, Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      expect((await post({ ...order, receiptRoute: "milky:77" }))?.status).toBe(400);
+      const result = await post(order);
+      expect(result?.status).toBe(200);
+      expect(await result?.json()).not.toHaveProperty("receiptRoute");
+      await plans.scan();
+      expect(received[index]).toMatchObject({ qq: "42", route: { adapter: adapter ?? "onebot", botId: 99 },
+        message: expect.stringContaining("兑换成功") });
+    }
+    expect(submissions).toBe(2);
+    expect(received).toHaveLength(2);
+  } finally {
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("米游社网页按原脚本地址提供 Bun 转译后的浏览器资源，不公开 TypeScript 源文件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-browser-script-"));
