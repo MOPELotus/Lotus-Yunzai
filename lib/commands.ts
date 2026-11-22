@@ -1,3 +1,4 @@
+import { sendBatchedImageForward, type BatchedImageForward } from "@lotus-yunzai/skia/forward-images";
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts";
@@ -52,7 +53,7 @@ export interface DeliveryCommandReply {
   readonly onDelivered: NonNullable<ReplyOptions["onDelivered"]>;
 }
 
-export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply;
+export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply | BatchedImageForward;
 export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
 export type MessageFallback = (
   message: string,
@@ -71,6 +72,11 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
   }
   if (reply.type === "delivery") {
     await event.reply(reply.message, false, { onDelivered: reply.onDelivered });
+    return;
+  }
+  if (reply.type === "forward-image-batches") {
+    const notice = await sendBatchedImageForward(reply, event.forward?.bind(event));
+    if (notice) await event.reply(notice);
     return;
   }
   if (reply.type !== "forward") {
