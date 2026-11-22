@@ -1,26 +1,49 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { AtlasScopeField, AtlasScopePatch, AtlasScopeSelections } from "../../lib/panel-atlas-scope-schema.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
-interface Snapshot { settings: Settings; revision: string }
+interface Snapshot { settings: Settings; revision: string; scopes?: AtlasScopeSelections }
+
+const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
+const scopeFields = ["update_args", "challenge_args"] as const;
+const gameLabels = { gi: "原神", hsr: "崩坏：星穹铁道", zzz: "绝区零" };
+const games = Object.entries(gameLabels);
+const pages: Readonly<Record<string, string>> = {
+  character: "角色", artifact: "圣遗物", monster: "敌人", weapon: "武器", "zzz/weapon": "音擎",
+  "achievement/achievement": "成就", leyline: "地脉", rolecombat: "幻想真境剧诗", tower: "深境螺旋",
+  lightcone: "光锥", relicset: "遗器", maze_boss: "末日幻影", maze: "混沌回忆", maze_peak: "异相仲裁",
+  maze_extra: "虚构叙事", monstervalue: "敌人数值", EliteGroup: "精英敌人组", HardLevelGroup: "关卡敌人组",
+  InfiniteEliteGroup: "虚构敌人组", bangboo: "邦布", equipment: "驱动盘", boss: "危局强袭战",
+  shiyu: "式舆防卫战", gcg: "七圣召唤",
+};
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/atlas/update`;
 const saved = ref<Snapshot>();
 const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
+const scopeDraft = ref<AtlasScopePatch>({});
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
-const dirty = computed(() => !!saved.value && JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value));
+const scopePatch = computed<AtlasScopePatch>(() => Object.fromEntries(scopeFields.flatMap(field => {
+  const original = saved.value?.scopes?.[field].selected;
+  const selected = scopeDraft.value[field];
+  return original && selected &&
+    (selected.length !== original.length || original.some(item => !selected.includes(item))) ? [[field, selected]] : [];
+})));
+const scopeInvalid = computed(() => Object.values(scopePatch.value).some(scope => !scope.length));
+const dirty = computed(() => !!saved.value && (Object.keys(scopePatch.value).length > 0 ||
+  JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
 watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
-  if (active || (mode === "save" && !dirty.value)) return;
+  if (active || (mode === "save" && (!dirty.value || scopeInvalid.value))) return;
   if (mode === "load" && dirty.value && !window.confirm("放弃未保存的图鉴自动更新设置？")) return;
   const controller = new AbortController();
   active = controller;
@@ -31,13 +54,21 @@ async function sync(mode: "load" | "save") {
     const response = await panelFetch(endpoint, props.auth, {
       method: mode === "load" ? "GET" : "PUT",
       headers: mode === "save" ? { "Content-Type": "application/json" } : undefined,
-      body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision }) : undefined,
+      body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision,
+        ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      return;
+    }
+    if (response.status === 422) {
+      const { field } = await response.json().catch(() => ({})) as { field?: AtlasScopeField };
+      if (active !== controller) return;
+      const label = field && scopeLabels[field];
+      error.value = `无法安全改写${label ?? "图鉴分类范围"}。请在本机配置中调整原参数，并重新读取。`;
       return;
     }
     if (response.status === 400) {
@@ -61,6 +92,10 @@ async function sync(mode: "load" | "save") {
     }
     saved.value = result;
     draft.value = { ...result.settings };
+    scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
+      const selected = result.scopes?.[field].selected;
+      return selected ? [[field, [...selected]]] : [];
+    }));
     if (mode === "save") feedback.value = "已保存，重启宿主后生效。";
   } catch {
     if (active === controller) error.value = "暂时无法连接宿主，请重试。";
@@ -103,10 +138,29 @@ onBeforeUnmount(() => {
         <p id="atlas-initialize-missing-note" class="subtitle toggle-note">
           选定版本渠道后，定时版本检查和主人普通更新均可补齐受管空目录。停用定时更新仍可手动执行。
         </p>
+        <details v-for="field in scopeFields" v-show="saved.scopes" :key="field" class="scope-editor">
+          <summary>{{ scopeLabels[field] }}
+            <span v-if="scopeDraft[field]" class="subtitle">已选 {{ scopeDraft[field]?.length }} 项</span>
+            <span v-else class="subtitle">需在本机编辑</span>
+          </summary>
+          <template v-if="saved.scopes?.[field].selected">
+            <ElButton size="small" @click="scopeDraft[field] = [...saved.scopes[field].available]">全部选中</ElButton>
+            <fieldset v-for="[game, gameLabel] in games" :key="game" class="scope-game">
+              <legend>{{ gameLabel }}</legend>
+              <label v-for="item in saved.scopes[field].available.filter(value => value.startsWith(game + '/'))"
+                :key="item" class="update-toggle">
+                <input v-model="scopeDraft[field]" type="checkbox" :value="item" :name="field" />
+                {{ pages[item] ?? pages[item.slice(game.length + 1)] ?? item.slice(game.length + 1) }}
+              </label>
+            </fieldset>
+            <p v-if="!scopeDraft[field]?.length" class="error">请至少选择一类资料。</p>
+          </template>
+          <p v-else class="subtitle">现有参数无法在页面中安全编辑，已保留原配置。请在本机 YAML 中调整。</p>
+        </details>
       </fieldset>
       <p class="subtitle">清空时间表可恢复默认频率。保存后重启宿主生效。</p>
       <div class="update-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存自动更新</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || scopeInvalid || Boolean(busy)">保存自动更新</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>
@@ -124,4 +178,10 @@ fieldset input[type="text"] { border: 1px solid var(--line); padding: 8px; borde
 .update-toggle input { accent-color: var(--accent); }
 .subtitle { margin: 12px 0; }
 .toggle-note { margin: 0; }
+.scope-editor { border: 1px solid var(--line); padding: 9px 12px; border-radius: 6px; }
+.scope-editor summary { cursor: pointer; overflow-wrap: anywhere; }
+.scope-editor summary .subtitle { margin-left: 7px; }
+.scope-editor > button { margin-top: 7px; }
+.scope-game { display: flex; flex-wrap: wrap; column-gap: 12px; padding: 6px 0; }
+.scope-game legend { font-weight: 650; }
 </style>

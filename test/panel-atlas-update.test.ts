@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -98,7 +98,7 @@ test("编辑图鉴定时配置保留 YAML 锚、共享源和原有版路选择",
     await writeFile(file, source);
     const handler = panelAtlasUpdate(root, validTask);
     const before = await (await handler(request(), () => true)).json();
-    const response = await handler(request("PUT", { ...before, settings: { ...before.settings, enable: true } }), () => true);
+    const response = await handler(request("PUT", { revision: before.revision, settings: { ...before.settings, enable: true } }), () => true);
     expect(response.status).toBe(200);
     expect(await readFile(file, "utf8")).toContain("  auto_update: {<<: *shared, enable: true} # 原共享");
     const config = await readLotusGlobalConfig(root);
@@ -118,7 +118,7 @@ test("缺数据开关仅在重启后的版本任务读取，并保持原版本�
     const route = panelAtlasUpdate(root, validTask);
     const get = async () => (await route(request(), () => true)).json();
     const put = (snapshot: { revision: string; settings: Record<string, unknown> }, run_on_missing_data: unknown) =>
-      route(request("PUT", { ...snapshot, settings: { ...snapshot.settings, run_on_missing_data } }), () => true);
+      route(request("PUT", { revision: snapshot.revision, settings: { ...snapshot.settings, run_on_missing_data } }), () => true);
     const initial = await get();
     expect(initial.settings.run_on_missing_data).toBe(true);
     expect(initial.settings.enable).toBe(false);
@@ -154,5 +154,106 @@ test("缺数据开关仅在重启后的版本任务读取，并保持原版本�
     await reloaded.version.run();
     expect(checks).toBe(1);
     expect(await Bun.file(join(data, "current/map.json")).exists()).toBeFalse();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("编辑两组旧图鉴范围后重建任务，实际仅读取所选分类", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-scopes-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const before = "# 保留原值\r\natlas:\r\n  version_channel: live # 原版路\r\n" +
+      "  update_args: ['src/scrape.mjs', '--mode', 'incremental', '--game=gi', '--page', 'gi=weapon'] # 保留行尾备注\r\n" +
+      "  challenge_args:\r\n    - --page\r\n    - gi=tower\r\n" +
+      "  auto_update: {enable: true, run_on_missing_data: false, check_cron: '10 4 * * *'}\r\n";
+    await writeFile(file, before);
+    const handler = panelAtlasUpdate(root, validTask);
+    const panel = panelApi(token, [], path => path === endpoint ? handler : undefined);
+    const read = async () => (await panel(request()))!.json();
+    const initial = await read();
+    expect(initial.scopes.update_args.selected).toEqual(["gi/weapon"]);
+    expect(initial.scopes.challenge_args.selected).toEqual(["gi/tower"]);
+    const put = (scopePatch: unknown, previous = initial, authenticated = true) =>
+      panel(request("PUT", { revision: previous.revision, settings: previous.settings, scopePatch }, authenticated));
+    expect((await put({ update_args: ["gi/weapon"], challenge_args: ["gi/tower"] }))?.status).toBe(200);
+    expect(await readFile(file, "utf8")).toBe(before);
+    expect((await put({ update_args: ["hsr/lightcone"] }, initial, false))?.status).toBe(401);
+    expect((await put({ update_args: [] }))?.status).toBe(400);
+    expect((await put({ challenge_args: ["hsr/lightcone"] }))?.status).toBe(422);
+    expect((await put({ update_args: ["--page=gi=weapon"] }))?.status).toBe(422);
+
+    const dataRoot = join(directory, "data/atlas");
+    const data = join(dataRoot, "snapshots/1/data");
+    await mkdir(join(data, "items"), { recursive: true });
+    await symlink("snapshots/1/data", join(dataRoot, "current"));
+    const games = { gi: { locales: { zh: { pages: {} as Record<string, unknown> } } },
+      hsr: { locales: { zh: { pages: {} as Record<string, unknown> } } },
+      zzz: { locales: { zh: { pages: {} as Record<string, unknown> } } } };
+    const cases = [["gi", "weapon"], ["gi", "tower"], ["hsr", "lightcone"], ["zzz", "shiyu"]] as const;
+    const row = { zh: "同版资料", begin: "2026-11-01", end: "2026-12-01" };
+    for (const [game, page] of cases) {
+      const path = `items/${game}-${page}.json`;
+      const entry = { id: "1", name: row.zh, path, hasDetail: false };
+      games[game].locales.zh.pages[page] = { id: page, version: "7.2", sampled: false, recordCount: 1,
+        totalRecordCount: 1, records: { "1": entry } };
+      await writeFile(join(data, path), JSON.stringify({
+        meta: { gameId: game, pageId: page, version: "7.2", locale: "zh", recordId: "1", name: row.zh, hasDetail: false },
+        content: { list: row, detail: null },
+      }));
+    }
+    await writeFile(join(data, "map.json"), JSON.stringify({ games }));
+    const release = { live: "7.2", latest: "7.2", available: ["7.2"] };
+    const calls: string[] = [];
+    const schedule = async () => createAtlasMaintenance(dataRoot, {
+      updateConfig: (await readLotusGlobalConfig(root)).atlas,
+      manifest: async () => ({ gi: release, hsr: release, zzz: release }),
+      async request(url) { calls.push(new URL(url).pathname); return Response.json({ "1": row }); },
+    }).atlasSchedule;
+    const old = await schedule();
+    const result = (await put({ update_args: ["hsr/lightcone"], challenge_args: ["zzz/shiyu"] }))!;
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual(await read());
+    expect(await readFile(file, "utf8")).toBe(before
+      .replace("['src/scrape.mjs', '--mode', 'incremental', '--game=gi', '--page', 'gi=weapon']", '["--pages","hsr=lightcone"]')
+      .replace("- --page\r\n    - gi=tower\r\n", '["--pages","zzz=shiyu"]\r\n'));
+    expect((await put({ challenge_args: ["gi/tower"] }))?.status).toBe(409);
+    expect(calls).toEqual([]);
+    expect(await old.version.run()).toContain("gi 7.2");
+    expect(await old.challenge.run()).toContain("来源索引与现用资料一致");
+    expect(calls).toEqual(["/gi/7.2/tower.json"]);
+    calls.length = 0;
+    const reloaded = await schedule();
+    expect(reloaded.version.cron).toBe(old.version.cron);
+    expect(reloaded.challenge.cron).toBe(old.challenge.cron);
+    expect(await reloaded.version.run()).toContain("hsr 7.2");
+    expect(await reloaded.challenge.run()).toContain("来源索引与现用资料一致");
+    expect(calls).toEqual(["/zzz/7.2/shiyu.json"]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("网页拒绝覆盖未知或无法往返的旧参数，并让未编辑值保持原样", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-unrepresentable-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const before = "atlas:\n  version_channel: live\n  update_args: ['--page', 'gi=weapon,unknown'] # 无损保留\n" +
+      "  challenge_args:\n    - --page\n    - gi=tower # 字段条目附有注释\n  auto_update: {enable: false}\n";
+    await writeFile(file, before);
+    const route = panelAtlasUpdate(root, validTask);
+    const original = await (await route(request(), () => true)).json();
+    expect(original.scopes.update_args.selected).toBeNull();
+    expect(original.scopes.challenge_args.selected).toEqual(["gi/tower"]);
+    for (const scopePatch of [{ update_args: ["gi/weapon"] }, { challenge_args: ["zzz/shiyu"] }]) {
+      const response = await route(request("PUT", { revision: original.revision, settings: original.settings, scopePatch }), () => true);
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ field: Object.keys(scopePatch)[0] });
+    }
+    expect(await readFile(file, "utf8")).toBe(before);
+    const response = await route(request("PUT", { revision: original.revision,
+      settings: { ...original.settings, run_on_missing_data: false } }), () => true);
+    expect(response.status).toBe(200);
+    expect(await readFile(file, "utf8")).toBe(before.replace("{enable: false}", "{run_on_missing_data: false, enable: false}"));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
