@@ -66,9 +66,11 @@ test.each([
               template:${JSON.stringify(template)}});
           case "/event/miyolive/refreshCode": return reply({code_list:codes.map(code=>({code,to_get_time:0}))});
           case "/binding/api/getUserGameRolesByCookie":
-            appendFileSync("fixture-calls", "roles\\n");
-            assert.equal(chosen.get("game_biz"), "hk4e_cn");
-            if (cookie === "account_id=71;cookie_token=expired;") return Response.json({retcode:-100});
+            if (chosen.has("game_biz")) {
+              appendFileSync("fixture-calls", "roles\\n");
+              assert.equal(chosen.get("game_biz"), "hk4e_cn");
+              if (cookie === "account_id=71;cookie_token=expired;") return Response.json({retcode:-100});
+            } else appendFileSync("fixture-calls", "roles-sync\\n");
             assert.match(cookie, /cookie_token_v2=v2_fresh_cookie/);
             return reply({list:[{game_biz:"hk4e_cn",game_uid:"81",region:"cn_gf01"},{game_biz:"hk4e_cn",game_uid:"82",region:"cn_qd01"}]});
           case "/common/apicdkey/api/webExchangeCdkey":
@@ -132,7 +134,7 @@ test.each([
       }
       expect(messages[0]).toContain("档案 2 已开启");
       expect(messages[1]).toMatch(/档案 2.*UID 81[\s\S]*FIXTURE-A：使用成功[\s\S]*FIXTURE-B：请求已被拒绝[\s\S]*FIXTURE-C：未提交/u);
-      expect(await readFile(join(root, "fixture-calls"), "utf8")).toBe("roles\nltoken\ncookie\nroles\nFIXTURE-A\nFIXTURE-B\n");
+      expect(await readFile(join(root, "fixture-calls"), "utf8")).toBe("roles\nltoken\ncookie\nroles-sync\nroles\nFIXTURE-A\nFIXTURE-B\n");
       expect(JSON.parse(await readFile(join(root, journal), "utf8"))[id]).toMatchObject({ status: "finished" });
       expect(await readFile(join(root, "data/users/42.yaml"), "utf8")).toBe(original);
       expect(Bun.YAML.parse(await readFile(join(root, "data/users/42-2.yaml"), "utf8"))).toMatchObject({
