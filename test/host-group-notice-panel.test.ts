@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
 
-test("面板群通知使用宿主令牌和版本控制，仅保存八项全局默认开关", async () => {
+test("面板群通知用宿主令牌和版本控制保存全部默认开关与撤回缓存", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-panel-notice-"));
   const token = "group-notice-panel-fixture";
   let host: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
@@ -18,7 +18,7 @@ test("面板群通知使用宿主令牌和版本控制，仅保存八项全局�
     await mkdir(join(root, "config"), { recursive: true });
     const file = join(root, "config/group-notice.yaml");
     const original = "# 保留注释\ndefault: { groupMessage: false, privateMessage: true }\n" +
-      '42: { groupMessage: false }\n"99:42": { groupRecall: false }\n';
+      '42: { groupMessage: false }\n"99:42": { groupRecall: false }\n"bot:99": { notificationsAll: true }\n';
     await writeFile(file, original);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
@@ -57,27 +57,30 @@ test("面板群通知使用宿主令牌和版本控制，仅保存八项全局�
     const reading = await request();
     expect(reading.status).toBe(200);
     expect(reading.headers.get("Cache-Control")).toBe("no-store");
-    const before = await reading.json() as { revision: string; settings: Record<string, boolean>; writable: boolean };
+    const before = await reading.json() as { revision: string; settings: Record<string, boolean | number>; writable: boolean };
     expect(before.writable).toBe(true);
-    expect(Object.keys(before.settings)).toHaveLength(8);
-    expect(before.settings.groupMessage).toBe(false);
-    expect(before.settings.privateMessage).toBeUndefined();
+    expect(Object.keys(before.settings)).toHaveLength(15);
+    expect(before.settings).toMatchObject({ groupMessage: false, privateMessage: true, PrivateRecall: false,
+      friendRequest: false, groupInviteRequest: false, friendNumberChange: false, notificationsAll: true, msgSaveDeltime: 600 });
     expect(Object.keys(before).sort()).toEqual(["revision", "settings", "writable"]);
 
-    const save = { revision: before.revision, patch: { groupMessage: true, addGroupApplication: true } };
+    const patch = { groupMessage: true, addGroupApplication: true, privateMessage: false, PrivateRecall: true,
+      friendRequest: true, groupInviteRequest: true, friendNumberChange: true, notificationsAll: false, msgSaveDeltime: 300 };
+    const save = { revision: before.revision, patch };
     expect((await request("PUT", { ...save, path: "config/other.yaml" })).status).toBe(400);
-    expect((await request("PUT", { ...save, patch: { privateMessage: false } })).status).toBe(400);
+    expect((await request("PUT", { ...save, patch: { msgSaveDeltime: 0 } })).status).toBe(400);
+    expect((await request("PUT", { ...save, patch: { default: { notificationsAll: false } } })).status).toBe(400);
     expect((await request("PUT", save, "other-panel-token")).status).toBe(401);
     expect(await readFile(file, "utf8")).toBe(original);
 
     const saved = await request("PUT", save);
     expect(saved.status).toBe(200);
-    expect(await saved.json()).toMatchObject({ settings: { groupMessage: true, addGroupApplication: true }, writable: true });
-    expect(await (await request()).json()).toMatchObject({ settings: { groupMessage: true, addGroupApplication: true } });
+    expect(await saved.json()).toMatchObject({ settings: patch, writable: true });
+    expect(await (await request()).json()).toMatchObject({ settings: patch });
     const changed = await readFile(file, "utf8");
     expect(changed).toContain("# 保留注释");
-    expect(changed).toContain("privateMessage: true");
-    expect(changed).toContain('42: { groupMessage: false }\n"99:42": { groupRecall: false }');
+    expect(changed).toContain("privateMessage: false");
+    expect(changed).toContain('42: { groupMessage: false }\n"99:42": { groupRecall: false }\n"bot:99": { notificationsAll: true }');
     expect((await request("PUT", { revision: before.revision, patch: { groupMessage: false } })).status).toBe(409);
     expect(await readFile(file, "utf8")).toBe(changed);
 

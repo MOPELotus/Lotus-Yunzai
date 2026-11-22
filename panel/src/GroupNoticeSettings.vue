@@ -11,16 +11,24 @@ const emit = defineEmits<{
 }>();
 
 const fields = [
+  { key: "privateMessage", label: "好友消息" },
   { key: "groupMessage", label: "群消息" },
   { key: "grouptemporaryMessage", label: "群临时消息" },
+  { key: "PrivateRecall", label: "好友撤回" },
   { key: "groupRecall", label: "群撤回" },
+  { key: "friendRequest", label: "好友申请通知主人" },
+  { key: "groupInviteRequest", label: "群邀请通知主人" },
   { key: "addGroupApplication", label: "加群申请通知主人" },
+  { key: "friendNumberChange", label: "好友列表变动" },
   { key: "groupNumberChange", label: "群聊列表变动" },
   { key: "groupMemberNumberChange", label: "群成员变动" },
   { key: "groupAdminChange", label: "群管理变动" },
   { key: "botBeenBanned", label: "机器人被禁言" },
+  { key: "notificationsAll", label: "向所有主人发送通知" },
 ] as const;
-type Settings = Record<(typeof fields)[number]["key"], boolean>;
+const settingsKeys = [...fields.map(({ key }) => key), "msgSaveDeltime"] as const;
+const maxRetention = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
+type Settings = Record<(typeof fields)[number]["key"], boolean> & { msgSaveDeltime: number | null };
 interface Snapshot {
   settings: Settings;
   revision: string;
@@ -41,10 +49,13 @@ const patch = computed(() => {
   const previous = baseline.value?.settings;
   const current = draft.value;
   if (!previous || !current) return {};
-  return Object.fromEntries(fields.filter(({ key }) => previous[key] !== current[key])
-    .map(({ key }) => [key, current[key]]));
+  return Object.fromEntries(settingsKeys.filter(key => previous[key] !== current[key]).map(key => [key, current[key]]));
 });
 const dirty = computed(() => Object.keys(patch.value).length > 0);
+const validRetention = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= maxRetention;
+const canSaveRetention = computed(() =>
+  draft.value?.msgSaveDeltime === baseline.value?.settings.msgSaveDeltime || validRetention(draft.value?.msgSaveDeltime));
 const cleanupDirty = ref(false);
 const readOnly = computed(() => baseline.value?.writable === false);
 watch(dirty, (value) => {
@@ -58,13 +69,14 @@ function isSnapshot(value: unknown): value is Snapshot {
       !("settings" in value) || value.settings === null || typeof value.settings !== "object") return false;
 
   const settings = value.settings as Record<string, unknown>;
-  return fields.every(({ key }) => typeof settings[key] === "boolean");
+  return fields.every(({ key }) => typeof settings[key] === "boolean") &&
+    (settings.msgSaveDeltime === null || validRetention(settings.msgSaveDeltime));
 }
 
 async function request(method: "GET" | "PUT") {
   if (active) return;
   const current = baseline.value;
-  if (method === "PUT" && (!current?.writable || !dirty.value || conflict.value || confirmReload.value)) return;
+  if (method === "PUT" && (!current?.writable || !dirty.value || !canSaveRetention.value || conflict.value || confirmReload.value)) return;
   const body = method === "PUT" && current ? JSON.stringify({ revision: current.revision, patch: patch.value }) : undefined;
 
   const controller = new AbortController();
@@ -126,6 +138,11 @@ function reload() {
   else void request("GET");
 }
 
+function setRetention(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  if (draft.value) draft.value.msgSaveDeltime = Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : null;
+}
+
 watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
@@ -170,14 +187,24 @@ onBeforeUnmount(() => {
         <h2 id="group-notice-defaults">全局默认</h2>
         <p id="group-notice-scope" class="subtitle">群或机器人有单独配置时，以单独配置为准。</p>
         <label v-for="{ key, label } in fields" :key="key" class="notice-option">
-          <span>{{ label }}</span>
+          <span>{{ label }}
+            <small v-if="key === 'notificationsAll'" class="option-hint">{{ draft.notificationsAll ? "当前机器人的所有主人" : "当前机器人的首位主人" }}</small>
+          </span>
           <input :id="`group-notice-${key}`" v-model="draft[key]" type="checkbox" />
         </label>
+        <label class="notice-option" for="group-notice-msgSaveDeltime">
+          <span>撤回消息缓存（秒）
+            <small v-if="baseline?.settings.msgSaveDeltime === null" class="option-hint">旧配置的缓存时长无效，可填入正整数修正。</small>
+          </span>
+          <input id="group-notice-msgSaveDeltime" class="retention-input" type="number" min="1" :max="maxRetention" step="1"
+            :value="draft.msgSaveDeltime ?? ''" :aria-invalid="!canSaveRetention" @input="setRetention" />
+        </label>
+        <p v-if="!canSaveRetention" class="error" role="alert">撤回缓存时长须填写有效的正整数秒数。</p>
       </fieldset>
       <div class="feedback save-bar">
         <p v-if="notice || dirty" role="status">{{ dirty ? "有未保存的改动" : notice }}</p>
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || readOnly || conflict || Boolean(busy) || confirmReload">保存配置</ElButton>
+          :disabled="!dirty || !canSaveRetention || readOnly || conflict || Boolean(busy) || confirmReload">保存配置</ElButton>
       </div>
     </form>
     <GroupCleanupSettings :auth="auth" @unauthorized="emit('unauthorized')" @dirty-change="cleanupDirty = $event" />
@@ -201,6 +228,8 @@ onBeforeUnmount(() => {
 }
 
 .notice-option:last-child { padding-bottom: 0; }
-.notice-option input { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.notice-option input[type="checkbox"] { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.option-hint { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
+.retention-input { width: min(125px, 35%); }
 .notice-option input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
