@@ -98,9 +98,11 @@ async function update(save = false) {
     });
     if (response.status === 401) { emit("unauthorized"); return; }
     if (response.status === 409) throw new Error("配置已被修改。请重新读取后保存。");
-    if (response.status === 400) {
+    if (response.status === 400 || response.status === 403 || response.status === 503) {
       const reply = await response.json().catch(() => undefined) as { message?: string } | undefined;
-      throw new Error(reply?.message ?? "请检查设置项的值。");
+      if (typeof reply?.message === "string" && reply.message) throw new Error(reply.message);
+      if (response.status === 400) throw new Error("请检查设置项的值。");
+      if (response.status === 403) throw new Error("当前会话无权修改或读取此设置。");
     }
     if (!response.ok) throw new Error(save ? "暂时无法保存设置。" : "暂时无法读取设置。");
     const result = await response.json() as Snapshot;
