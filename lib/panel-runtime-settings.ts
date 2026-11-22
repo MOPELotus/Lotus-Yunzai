@@ -5,6 +5,8 @@ import { isLogLevel, logLevels, type LogLevel } from "./log-level-command.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { onlineNoticeSeconds } from "./online-notice.ts";
 import { readPanelJson } from "./panel.ts";
+import { defaultPluginLoadMs, maxPluginLoadMs, parsePluginLoadMilliseconds } from "./plugin-load-progress.ts";
+import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 
 const restart = "保存后重启宿主生效。";
 const reload = "配置监听开启时自动生效；关闭监听时，重启宿主生效。";
@@ -15,6 +17,11 @@ const fields = [
   { key: "log_level", label: "日志等级", type: "select", hint: reload,
     options: logLevels.map(value => ({ label: value, value })) },
   { key: "log_length", label: "日志单段字符上限", type: "number", min: 1, max: 32_000, hint: restart },
+  { key: "log_object", label: "日志对象格式", type: "json",
+    hint: "填 false 简化对象输出，或设置 length、depth、maxArrayLength、maxStringLength。留空使用默认。保存后重启宿主生效。" },
+  { key: "log_align", label: "日志标签对齐", type: "text", hint: "标签最多 64 个字符。留空取消对齐。保存后重启宿主生效。" },
+  { key: "plugin_load_timeout", label: "单个插件加载超时（秒）", type: "number", min: 0, max: maxPluginLoadMs / 1000,
+    hint: "默认 60 秒，填 0 时立即触发加载超时。保存后重启宿主生效。" },
   { key: slash, label: "识别斜线命令前缀", type: "boolean", hint: reload },
   { key: "cache_group_member", label: "上线预缓存群成员", type: "boolean", hint: restart },
   { key: "msg_type_count", label: "统计消息段类型", type: "boolean", hint: restart },
@@ -27,6 +34,9 @@ interface RuntimeValues {
   imageRenderPreset: "low" | "standard";
   log_level: LogLevel;
   log_length: number;
+  log_object: LogObject;
+  log_align: string;
+  plugin_load_timeout: number;
   [slash]: boolean;
   cache_group_member: boolean;
   msg_type_count: boolean;
@@ -36,6 +46,25 @@ interface RuntimeValues {
 
 function enabled(value: unknown) {
   return value === true || value === 1;
+}
+
+const objectLimits = { length: 32_000, depth: 10, maxArrayLength: 100, maxStringLength: 1_000 } as const;
+type LogObjectKey = keyof typeof objectLimits;
+type LogObject = boolean | null | Partial<Record<LogObjectKey, number>>;
+
+function logObjectValue(value: unknown): LogObject {
+  if (typeof value === "boolean") return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const options = value as Record<string, unknown>;
+  const result: Partial<Record<LogObjectKey, number>> = {};
+  for (const key of Object.keys(objectLimits) as LogObjectKey[]) {
+    const option = options[key];
+    const number = key === "length" && typeof option === "string" ? Number(option) : option;
+    if (typeof number === "number" && Number.isSafeInteger(number) && number >= (key === "length" ? 1 : 0)) {
+      result[key] = Math.min(number, objectLimits[key]);
+    }
+  }
+  return result;
 }
 
 async function readValues(root: URL): Promise<RuntimeValues> {
@@ -55,6 +84,10 @@ async function readValues(root: URL): Promise<RuntimeValues> {
     imageRenderPreset: config.imageRenderPreset === "low" ? "low" : "standard",
     log_level: isLogLevel(level) ? level : "info",
     log_length: Number.isSafeInteger(length) && length > 0 ? Math.min(length, 32_000) : 10_000,
+    log_object: logObjectValue(config.log_object),
+    log_align: typeof config.log_align === "string" ? sanitizeRuntimeLog(config.log_align, 64) : "Lotus-Yunzai",
+    plugin_load_timeout: config.plugin_load_timeout !== undefined && parsePluginLoadMilliseconds(config.plugin_load_timeout) !== undefined
+      ? Number(config.plugin_load_timeout) : defaultPluginLoadMs / 1000,
     [slash]: slashEnabled,
     cache_group_member: config.cache_group_member === undefined || Boolean(config.cache_group_member),
     msg_type_count: enabled(config.msg_type_count) || config.msg_type_count === "1",
@@ -71,6 +104,9 @@ function parseValues(input: unknown): RuntimeValues | undefined {
   if ((values.imageRenderPreset !== "low" && values.imageRenderPreset !== "standard") ||
       !isLogLevel(values.log_level) || typeof values.log_length !== "number" || !Number.isSafeInteger(values.log_length) ||
       values.log_length < 1 || values.log_length > 32_000 ||
+      !isDeepStrictEqual(values.log_object, logObjectValue(values.log_object)) ||
+      typeof values.log_align !== "string" || values.log_align !== sanitizeRuntimeLog(values.log_align, 64) ||
+      typeof values.plugin_load_timeout !== "number" || parsePluginLoadMilliseconds(values.plugin_load_timeout) === undefined ||
       !([slash, "cache_group_member", "msg_type_count", "file_watch"] as const).every(key => typeof values[key] === "boolean") ||
       typeof values.online_msg_exp !== "number" ||
       (values.online_msg_exp !== 0 && onlineNoticeSeconds(values.online_msg_exp) === undefined)) return;
@@ -100,7 +136,7 @@ export function panelRuntimeSettings(root: URL) {
         resolveEffective: async () => ({ ...await readValues(root) }),
         prepare(content, local, current) {
           if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
-          const changed = fields.filter(({ key }) => current[key] !== values[key]);
+          const changed = fields.filter(({ key }) => !isDeepStrictEqual(current[key], values[key]));
           if (!changed.length) return { value: undefined };
           const document = parseDocument(content, { strict: true, uniqueKeys: true, merge: true });
           if (document.errors.length || (document.contents && !isMap(document.contents))) {

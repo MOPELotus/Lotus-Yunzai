@@ -16,7 +16,7 @@ const fields = [
   { key: "whitelist", label: "公告全局白名单", type: "list" },
   { key: "blacklist", label: "公告全局黑名单", type: "list" },
   { key: "accounts", label: "在线机器人的公告推送配置", type: "json",
-    hint: "以机器人 QQ 为键。enabled 为开关，pushInterval 为毫秒（500–10000），retryCount 为重试次数（0–10），whitelist 和 blacklist 为群号数组。" },
+    hint: "以机器人 QQ 为键。enabled 为开关，pushInterval 为毫秒（500–10000），whitelist 和 blacklist 为群号数组。retryCount 是兼容旧配置保留的字段，当前投递只尝试一次。" },
   ...channels.map(({ key, label }) => ({ key, label, type: "json", hint: "以“机器人QQ:群号”为键。on 强制启用，off 强制停用，删掉该项后按 YAML 基础名单。" })),
 ] as const;
 
