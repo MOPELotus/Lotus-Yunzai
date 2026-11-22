@@ -2,6 +2,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { readGameRecordPayload } from "./game-record.ts";
 
 export const starRailGachaPools = Object.freeze({
   GachaType_AvatarUp: "角色活动跃迁",
@@ -25,6 +26,11 @@ const maxPages = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function responseRetcode(value: unknown): number | undefined {
+  const number = typeof value === "string" && /^-?\d{1,16}$/u.test(value) ? Number(value) : value;
+  if (typeof number === "number" && Number.isSafeInteger(number)) return number;
 }
 
 function requiredArray(value: unknown, label: string): unknown[] {
@@ -176,7 +182,8 @@ export async function readStarRailGacha(
 
   async function request(url: URL, referer: string, init: RequestInit = {}) {
     await check();
-    const deadline = AbortSignal.timeout(30_000);
+    const timeout = AbortSignal.timeout(30_000);
+    const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let response: Response;
     try {
       const headers = new Headers(init.headers);
@@ -186,21 +193,32 @@ export async function readStarRailGacha(
       headers.set("Referer", referer);
       headers.set("User-Agent", "Mozilla/5.0 Lotus-StarRail-Gacha");
       response = await transport(url, {
-        ...init, headers, redirect: "error", signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+        ...init, headers, redirect: "error", signal: deadline,
       });
     } catch {
       throw new HoyoRequestError("transport", "星铁抽卡请求未完成。");
     }
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
+      if (response.status === 401) {
+        const payload = await readGameRecordPayload(response, 16 * 1024, deadline);
+        const message = [payload?.msg, payload?.message].filter((value): value is string => typeof value === "string").join(" ");
+        const challenge = response.headers.get("x-rpc-aigis")?.trim();
+        if ((!challenge || challenge === "{}") && !/验证码|captcha|geetest|challenge|风控/iu.test(message) &&
+            !deadline.aborted && responseRetcode(payload?.retcode) === -100) {
+          throw new HoyoRequestError("api", "星铁抽卡接口拒绝请求。", response.status, -100);
+        }
+      } else {
+        await response.body?.cancel().catch(() => undefined);
+      }
       throw new HoyoRequestError("http", "星铁抽卡接口返回 HTTP 错误。", response.status);
     }
     const payload: unknown = await response.json().catch(() => undefined);
-    if (!isRecord(payload) || typeof payload.retcode !== "number" || !Number.isSafeInteger(payload.retcode)) {
+    const retcode = isRecord(payload) ? responseRetcode(payload.retcode) : undefined;
+    if (!isRecord(payload) || retcode === undefined) {
       throw new HoyoRequestError("response", "星铁抽卡接口响应格式有误。");
     }
-    if (payload.retcode !== 0) {
-      throw new HoyoRequestError("api", "星铁抽卡接口拒绝请求。", response.status, payload.retcode);
+    if (retcode !== 0) {
+      throw new HoyoRequestError("api", "星铁抽卡接口拒绝请求。", response.status, retcode);
     }
     for (const value of response.headers.getSetCookie()) {
       const pair = value.split(";", 1)[0];

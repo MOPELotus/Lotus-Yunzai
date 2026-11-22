@@ -135,7 +135,7 @@ test("只对明确失效刷新同一档案一次，并从 badge 开始重新拉�
         expect(cookie).toBe(`cookie_token=${attempts === 1 ? "old-cookie" : "new-cookie"}`);
       }
       if (attempts === 1 && path.endsWith("/five_star_list")) {
-        return Response.json({ retcode: -100, message: "内部凭据" });
+        return Response.json({ retcode: "-100", message: "内部凭据" });
       }
       return emptyResponse(path);
     }, {
@@ -156,13 +156,13 @@ test("只对明确失效刷新同一档案一次，并从 badge 开始重新拉�
   });
 });
 
-test("刷新后仍收到失效响应时返回错误，保留已交换的档案 Cookie", async () => {
+test("HTTP 401 明确报告 Cookie 失效时刷新一次，再遇失效保留已交换的档案 Cookie", async () => {
   await withProfile(async ({ context, profiles }) => {
     let attempts = 0;
     let refreshes = 0;
     const client = createHoyoClient(async () => {
       attempts++;
-      return Response.json({ retcode: -100, message: "不应透传的详情" });
+      return Response.json({ retcode: -100, message: "不应透传的详情" }, { status: attempts === 1 ? 401 : 200 });
     }, { profiles, async exchange() {
       refreshes++;
       return { ltoken: "mock-ltoken", cookie: "cookie_token=new-cookie" };
@@ -183,6 +183,9 @@ test("拒绝不完整分页、风险和未知网络错误，不把它们当作�
     const client = createHoyoClient(async (url) => {
       const path = url.pathname;
       if (mode === "403") return Response.json({ retcode: -100 }, { status: 403 });
+      if (mode === "401") return new Response(null, { status: 401 });
+      if (mode === "401-risk") return Response.json({ retcode: -100, message: "请先完成验证" },
+        { status: 401, headers: { "x-rpc-aigis": '{"challenge":"fixture"}' } });
       if (path.endsWith("/five_star_list")) {
         if (mode === "repeat") return ok({ list: [], has_more: true, version_id: "4", next_max_id: "4" });
         if (mode === "incomplete") return ok({ list: [] });
@@ -202,6 +205,8 @@ test("拒绝不完整分页、风险和未知网络错误，不把它们当作�
       { mode: "risk", code: "api" },
       { mode: "network", code: "transport" },
       { mode: "403", code: "http" },
+      { mode: "401", code: "http" },
+      { mode: "401-risk", code: "http" },
     ]) {
       mode = testCase.mode;
       await expect(client.fetchStarRailGacha(context, options)).rejects.toMatchObject({ code: testCase.code });
