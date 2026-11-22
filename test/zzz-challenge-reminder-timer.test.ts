@@ -2,10 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import { closeStorage, connectStorage } from "@lotus-yunzai/storage";
 import type { BotNotifications } from "../lib/checkin-notify.ts";
+import { panelZzzSettings } from "../lib/panel-zzz-settings.ts";
 import { resolvePrivateFriendRoute } from "../lib/private-friend-route.ts";
 import { createZzzChallengeReminders } from "../plugins/zzz/challenge-reminder.ts";
 import { startZzzChallengeReminders, type ZzzReminderRuntime } from "../plugins/zzz/challenge-reminder-runtime.ts";
@@ -161,6 +163,28 @@ test.skipIf(!valkey)("隔离定时轮询尊重本人撤回、窗口和换绑，�
     expect(await store.user("42")).toMatchObject({ enable: true, botId: 100 });
     await restarted.stop();
     await second.stop();
+
+    const panel = panelZzzSettings(pathToFileURL(root + "/"), "reminders");
+    const endpoint = "http://localhost/panel/api/settings/games/zzz-reminders";
+    const snapshotReply = await panel(new Request(endpoint), () => true);
+    const initial = await snapshotReply.json();
+    expect(initial.fields.map((field: { key: string }) => field.key))
+      .toEqual(["enable", "abyssCheckLevel", "deadlyStars", "remindTime"]);
+    const previous = initial.values;
+    const updated = { enable: false, abyssCheckLevel: 6, deadlyStars: 8, remindTime: "每周五21时30分" };
+    const save = (values: object) => new Request(endpoint, { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ previous, values }) });
+    expect((await panel(save({ ...updated, remindTime: "每日20时15分" }), () => true)).status).toBe(400);
+    expect((await panel(save(updated), () => false)).status).toBe(401);
+    let checks = 0;
+    expect((await panel(save(updated), () => ++checks === 1)).status).toBe(401);
+    expect(await store.global()).toEqual(previous);
+    expect((await panel(save(updated), () => true)).status).toBe(200);
+    expect(await store.global()).toEqual(updated);
+    expect((await panel(save(updated), () => true)).status).toBe(409);
+    await store.updateGlobal("enable", true);
+    expect((await (await panel(new Request(endpoint), () => true)).json()).values).toEqual({ ...updated, enable: true });
+    expect(await store.user("42")).toMatchObject({ enable: true, botId: 100 });
   } finally {
     globalThis.redis = before;
     await closeStorage();
