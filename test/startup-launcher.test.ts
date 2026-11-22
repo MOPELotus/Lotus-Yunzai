@@ -461,7 +461,8 @@ async function fixture() {
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup", "migration-publication", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
+      "migration-publication", "startup-render-preset", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
@@ -498,13 +499,75 @@ async function fixture() {
 }
 
 test("noninteractive first start requires a source choice before starting the host", async () => {
-  const { config, attempts, start } = await fixture();
+  const { cwd, config, attempts, start } = await fixture();
   const [code, output, error] = await start(["start"]);
   expect(code).toBe(1);
   expect(output).toBe("");
   expect(error).toContain("bun run init latest");
   expect(await Bun.file(config).exists()).toBe(false);
+  expect(await Bun.file(join(cwd, "config/bot.yaml")).exists()).toBe(false);
   expect(await Bun.file(attempts).exists()).toBe(false);
+});
+
+test.skipIf(process.platform === "win32")("首次前台启动用一个实际终端选择图鉴与低配档，暖启保留配置", async () => {
+  const { cwd, config, start } = await fixture();
+  const ready = Promise.withResolvers<void>();
+  let output = "";
+  let answeredAtlas = false;
+  let answeredRender = false;
+  const decoder = new TextDecoder();
+  const launcher = Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "start"], {
+    cwd, env: { PATH: process.env.PATH },
+    terminal: { data(terminal, bytes) {
+      output += decoder.decode(bytes, { stream: true });
+      if (!answeredAtlas && output.includes("图鉴版本 [")) {
+        answeredAtlas = true;
+        terminal.write("2\n");
+      }
+      if (!answeredRender && output.includes("图片渲染档位 [")) {
+        answeredRender = true;
+        terminal.write("low\n");
+      }
+      if (output.includes("fixture host ready")) ready.resolve();
+    } },
+  });
+  const deadline = setTimeout(() => ready.reject(new Error("终端初始化未完成。\n" + output)), 4_000);
+  try {
+    await ready.promise;
+    expect(await launcher.exited).toBe(0);
+    expect(output).toContain("标准配置（4×");
+    expect(output).toContain("低配配置（1×");
+    expect(Bun.YAML.parse(await readFile(config, "utf8"))).toEqual({ atlas: { version_channel: "live" } });
+    const bot = join(cwd, "config/bot.yaml");
+    const initial = await readFile(bot, "utf8");
+    expect(Bun.YAML.parse(initial)).toEqual({ imageRenderPreset: "low" });
+    expect((await start(["start"]))[0]).toBe(0);
+    expect((await start(["init"]))[0]).toBe(0);
+    expect(await readFile(bot, "utf8")).toBe(initial);
+  } finally {
+    clearTimeout(deadline);
+    if (launcher.exitCode === null && launcher.signalCode === null) launcher.kill("SIGKILL");
+    await launcher.exited;
+    launcher.terminal?.close();
+  }
+});
+
+test("已有图鉴时普通暖启不写旧 bot.yaml，显式 init 写入缺失档位且保留原 YAML", async () => {
+  const { cwd, start } = await fixture();
+  const atlas = join(cwd, "data/atlas/data");
+  const legacyDirectory = join(cwd, "config/config");
+  const bot = join(legacyDirectory, "bot.yaml");
+  const original = "# 原有说明\nfile_watch: false # 保留旧选项\n";
+  await Promise.all([mkdir(atlas, { recursive: true }), mkdir(legacyDirectory)]);
+  await Promise.all([writeFile(join(atlas, "map.json"), index), writeFile(bot, original)]);
+  expect((await start(["start"]))[0]).toBe(0);
+  expect(await readFile(bot, "utf8")).toBe(original);
+  expect((await start(["init"]))[0]).toBe(0);
+  const initialized = await readFile(bot, "utf8");
+  expect(initialized).toBe(original + "imageRenderPreset: standard\n");
+  expect(await Bun.file(join(cwd, "config/bot.yaml")).exists()).toBe(false);
+  expect((await start(["init"]))[0]).toBe(0);
+  expect(await readFile(bot, "utf8")).toBe(initialized);
 });
 
 test("an already prepared installation starts without choosing a channel and rejects malformed YAML", async () => {
@@ -556,7 +619,7 @@ test("an existing unusable index prevents startup without replacing legacy or ex
 });
 
 test("first start retries incomplete preparation, preserves config, and reuses published data", async () => {
-  const { config, attempts, start } = await fixture();
+  const { cwd, config, attempts, start } = await fixture();
   await writeFile(config, "atlas:\n  update: true\n# unrelated settings\npermissions:\n  mode: partial\n");
   const [failed, , failure] = await start(["init", "live"], { FAIL_FIXTURE: "1" });
   expect(failed).toBe(1);
@@ -571,6 +634,7 @@ test("first start retries incomplete preparation, preserves config, and reuses p
     permissions: { mode: "partial" },
   });
   expect(await readFile(attempts, "utf8")).toBe("live\nlive\n");
+  expect(Bun.YAML.parse(await readFile(join(cwd, "config/bot.yaml"), "utf8"))).toEqual({ imageRenderPreset: "standard" });
 });
 
 test("first initialization can fetch the original Star Rail theme while a prepared start only reuses local assets", async () => {

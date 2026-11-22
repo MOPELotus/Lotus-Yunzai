@@ -9,6 +9,7 @@ import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
+import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia";
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
@@ -2320,6 +2321,7 @@ if (import.meta.main) {
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
     const botConfig = await readLocalConfig(root, "bot", { update_time: 1440 });
+    setImageRenderPreset(botConfig.imageRenderPreset);
     runtimeLogConfig = botConfig;
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
     const [network, permissions, globalConfig, access, requestPolicies, routing,
@@ -3385,6 +3387,7 @@ if (import.meta.main) {
       },
       profileLikeImages: probingUpdate ? undefined : {
         directory: likeAssets,
+        rasterScale: nativeImageRasterScale(),
         register(renderer) {
           likeImageRenderer = renderer;
           return () => {

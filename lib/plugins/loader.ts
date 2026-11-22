@@ -280,6 +280,7 @@ export async function loadPlugins(
     readonly zzzReminderRuntime?: import("../../plugins/zzz/challenge-reminder-runtime.ts").ZzzReminderRuntime;
     readonly profileLikeImages?: {
       readonly directory: string;
+      readonly rasterScale?: 1 | 4;
       register(renderer: ProfileLikeImage): () => void;
     };
     readonly guidesSchedule?: {
@@ -508,7 +509,7 @@ export async function loadPlugins(
         }
         if (builtIn && moduleName === "@lotus-yunzai/meme" && options.profileLikeImages &&
             typeof published.createProfileLikeImageRenderer === "function") {
-          const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory);
+          const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory, options.profileLikeImages.rasterScale);
           if (typeof renderer !== "function") throw new Error("资料卡回执图片入口必须返回渲染函数。");
           const removeRenderer = options.profileLikeImages.register(renderer);
           const dispose = cleanup;

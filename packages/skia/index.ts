@@ -5,6 +5,7 @@ import { markGeneratedImage } from "./generated-image.ts";
 export { ImageSizeLimitError };
 
 type RenderMode = "auto" | "gpu" | "cpu";
+type ImageRenderPreset = "standard" | "low";
 type Draw = (context: CanvasRenderingContext2D) => void | Promise<void>;
 const singleSurfaceDimension = 32_768;
 const maxImagePixels = 256_000_000;
@@ -13,6 +14,15 @@ const tileSize = 8_192;
 const bleed = 128;
 const bandBudgetBytes = 32 * 1024 * 1024;
 let pendingBandedRender = Promise.resolve();
+let imageRenderPreset: ImageRenderPreset = "standard";
+
+export function setImageRenderPreset(value: unknown): void {
+  imageRenderPreset = value === "low" ? "low" : "standard";
+}
+
+export function nativeImageRasterScale(): 1 | 4 {
+  return imageRenderPreset === "low" ? 1 : 4;
+}
 
 export interface PngRender {
   readonly png: Buffer;
@@ -129,14 +139,17 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
     throw new RangeError("画布尺寸须为正整数。");
   }
-  try {
-    return await renderByMode(width, height, draw, mode);
-  } catch (error) {
-    if (!allowHalfScale || !(error instanceof BackendError || error instanceof ImageSizeLimitError)) throw error;
-    const reduced = await renderByMode(Math.ceil(width / 2), Math.ceil(height / 2), context => {
-      context.scale(0.5, 0.5);
+  const initialScale = nativeImageRasterScale() / 4;
+  const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(height * scale),
+    scale === 1 ? draw : context => {
+      context.scale(scale, scale);
       return draw(context);
     }, mode);
+  try {
+    return await renderAt(initialScale);
+  } catch (error) {
+    if (!allowHalfScale || !(error instanceof BackendError || error instanceof ImageSizeLimitError)) throw error;
+    const reduced = await renderAt(initialScale / 2);
     return { ...reduced, reducedScaleReason: error.message };
   }
 }

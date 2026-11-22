@@ -3,23 +3,39 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AtlasChannel } from "../lib/atlas-channel.ts";
+import type { ImageRenderPreset } from "../lib/startup-render-preset.ts";
 
-async function askAtlasChannel(signal: AbortSignal): Promise<AtlasChannel> {
+async function askStartupOptions(chooseAtlas: boolean, chooseRender: boolean, signal: AbortSignal):
+  Promise<{ channel?: AtlasChannel; renderPreset?: ImageRenderPreset }> {
+  if (!chooseAtlas && !chooseRender) return {};
   if (!process.stdin.isTTY) {
-    throw new Error("还未选择图鉴版本来源。请先运行 bun run init latest 或 bun run init live。");
+    if (chooseAtlas) throw new Error("还未选择图鉴版本来源。请先运行 bun run init latest 或 bun run init live。");
+    return { renderPreset: "standard" };
   }
   const input = createInterface({ input: process.stdin, output: process.stderr });
   const interactive = new AbortController();
   input.once("close", () => interactive.abort(new Error("已取消初始化。")));
+  const questionSignal = AbortSignal.any([signal, interactive.signal]);
   try {
-    console.log("[初始化] 请选择图鉴版本来源。1. 最新版（含预览资料） 2. 正式版");
-    for (;;) {
-      const answer = (await input.question("图鉴版本 [1/2，默认 1] ", {
-        signal: AbortSignal.any([signal, interactive.signal]),
-      })).trim().toLowerCase();
-      if (answer === "" || answer === "1" || answer === "latest") return "latest";
-      if (answer === "2" || answer === "live") return "live";
+    let channel: AtlasChannel | undefined;
+    let renderPreset: ImageRenderPreset | undefined;
+    if (chooseAtlas) {
+      console.log("[初始化] 请选择图鉴版本来源。1. 最新版（含预览资料） 2. 正式版");
+      while (!channel) {
+        const answer = (await input.question("图鉴版本 [1/2，默认 1] ", { signal: questionSignal })).trim().toLowerCase();
+        if (answer === "" || answer === "1" || answer === "latest") channel = "latest";
+        if (answer === "2" || answer === "live") channel = "live";
+      }
     }
+    if (chooseRender) {
+      console.log("[初始化] 请选择图片渲染档位。1. 标准配置（4×，效果更好，较慢） 2. 低配配置（1×，适合低资源或无独显）");
+      while (!renderPreset) {
+        const answer = (await input.question("图片渲染档位 [1/2，默认 1] ", { signal: questionSignal })).trim().toLowerCase();
+        if (answer === "" || answer === "1" || answer === "standard") renderPreset = "standard";
+        if (answer === "2" || answer === "low") renderPreset = "low";
+      }
+    }
+    return { channel, renderPreset };
   } finally {
     input.close();
   }
@@ -107,8 +123,12 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   const directory = fileURLToPath(new URL("data/atlas/", root));
   const ready = await atlasReady(directory);
   signal.throwIfAborted();
+  const { needsInitialRenderPreset, persistInitialRenderPreset } = await import("../lib/startup-render-preset.ts");
+  const options = await askStartupOptions(!ready && requested === undefined && previous === null,
+    (!ready || initialize) && await needsInitialRenderPreset(root), signal);
+  if (options.renderPreset) await persistInitialRenderPreset(root, options.renderPreset, signal);
   if (!ready || requested !== undefined) {
-    const channel = requested ?? previous ?? await askAtlasChannel(signal);
+    const channel = requested ?? previous ?? options.channel!;
     if (previous !== channel) {
       await persistAtlasChannel(root, channel, previous, { signal, canWrite: () => true });
     }

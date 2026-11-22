@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { inflateSync } from "node:zlib";
+import type { CanvasRenderingContext2D } from "skia-canvas";
 import { encodeBandedPng } from "./banded-png.ts";
-import { renderPng } from "./index.ts";
+import { nativeImageRasterScale, renderPng, setImageRenderPreset } from "./index.ts";
 
 async function* bands(...parts: Buffer[]) {
   yield* parts;
@@ -39,4 +40,25 @@ test("编码拒绝尺寸错误与缺行，渲染在申请画布前拒绝超出�
   let paints = 0;
   await expect(renderPng(32_768, 32_768, () => { paints++; }, "gpu")).rejects.toThrow("总像素");
   expect(paints).toBe(0);
+});
+
+test("低配档在分配画布前按 1× 直接绘制，旧设置仍是标准档", async () => {
+  const draw = (context: CanvasRenderingContext2D) => {
+    context.scale(4, 4);
+    context.fillStyle = "#005fcc";
+    context.fillRect(4, 6, 80, 48);
+  };
+  const size = (png: Buffer) => [png.readUInt32BE(16), png.readUInt32BE(20)];
+  try {
+    setImageRenderPreset(undefined);
+    expect(nativeImageRasterScale()).toBe(4);
+    expect(size((await renderPng(404, 283, draw)).png)).toEqual([404, 283]);
+    setImageRenderPreset("low");
+    expect(nativeImageRasterScale()).toBe(1);
+    const result = await renderPng(404, 283, draw, "auto", { allowHalfScale: true });
+    expect(size(result.png)).toEqual([101, 71]);
+    expect(result.reducedScaleReason).toBeUndefined();
+  } finally {
+    setImageRenderPreset("standard");
+  }
 });
