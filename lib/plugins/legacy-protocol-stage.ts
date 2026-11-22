@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { lstat, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { readMigrationSourceFile } from "../migration-files.ts";
+import { inspectOptionalProtocolPackage } from "../optional-protocol-package.ts";
 import { selectApprovedProtocolCandidates, type ApprovedProtocolReplacement } from "./legacy-protocol-replacements.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
 
@@ -44,41 +45,13 @@ function sha256(bytes: Uint8Array) {
 }
 
 async function attest(directory: string, paths: ReplacementPaths, signal?: AbortSignal) {
-  const [pkg, config] = await Promise.all([lstat(paths.packageDirectory), lstat(paths.configFile)]);
-  if (!pkg.isDirectory() || (pkg.mode & 0o6000) || !config.isFile() || (config.mode & 0o6077) ||
-      await realpath(paths.packageDirectory) !== paths.packageDirectory) return;
-  const candidates = (await readdir(paths.packageDirectory, { recursive: true, withFileTypes: true }))
-    .sort((a, b) => {
-      const first = join(a.parentPath, a.name);
-      const second = join(b.parentPath, b.name);
-      return first < second ? -1 : first > second ? 1 : 0;
-    });
-  const files: { path: string; sha256: string }[] = [];
-  if (candidates.length > 4096) return;
-  let bytesRemaining = 64 * 1024 * 1024;
-  let packageName: string | undefined;
-  for (const entry of candidates) {
-    signal?.throwIfAborted();
-    if ([".git", ".env", "node_modules"].includes(entry.name) || entry.name.startsWith(".env.")) return;
-    const absolute = join(entry.parentPath, entry.name);
-    if ((await lstat(absolute)).mode & 0o6000) return;
-    if (entry.isDirectory()) continue;
-    if (!entry.isFile()) return;
-    const path = relative(paths.packageDirectory, absolute);
-    const source = await readMigrationSourceFile(paths.packageDirectory, absolute, bytesRemaining, signal);
-    if (!source) return;
-    bytesRemaining -= source.bytes.length;
-    if (path === "package.json") {
-      const manifest = JSON.parse(source.bytes.toString("utf8"));
-      if (typeof manifest?.name !== "string") return;
-      packageName = manifest.name;
-    }
-    files.push({ path, sha256: sha256(source.bytes) });
-  }
-  if (!packageName) return;
+  const config = await lstat(paths.configFile);
+  if (!config.isFile() || (config.mode & 0o6077)) return;
+  const pkg = await inspectOptionalProtocolPackage(paths.packageDirectory, signal);
+  if (!pkg) return;
   const configuration = await readMigrationSourceFile(directory, paths.configFile, 256 * 1024, signal);
   if (!configuration?.bytes.length) return;
-  return { packageName, packageFiles: files, packageTreeSha256: sha256(Buffer.from(JSON.stringify(files))),
+  return { packageName: pkg.manifest.name, packageFiles: pkg.packageFiles, packageTreeSha256: pkg.packageTreeSha256,
     configSha256: sha256(configuration.bytes) };
 }
 
