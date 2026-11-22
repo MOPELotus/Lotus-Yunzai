@@ -101,19 +101,37 @@ test("扩展脚本在反代前缀内转发当前和旧锅巴 API，并只发送�
       return new Response(null, { status: 204 });
     },
   });
-  runInNewContext(extensionBridge({ apiBase: current, relativeApi: "extensions-api/fixture", legacyApiBase: legacy }), {
+  runInNewContext(extensionBridge({
+    apiBase: current, relativeApi: "extensions-api/fixture", legacyApiBase: legacy,
+    legacyRoutes: ["/data", "/config/选项"],
+  }), {
     window, location, document: { currentScript: { src: new URL(`${prefix}/panel/extensions-bridge/fixture/asset-ticket`, origin).href } },
     URL, URLSearchParams, Request, Headers,
   });
   expect(window.__GUOBA__).toMatchObject({ apiBase: prefix + current, token: "page-ticket" });
-  for (const route of [current, legacy, prefix + current, prefix + legacy, "/guoba/api", prefix + "/guoba/api"]) {
+  for (const route of [
+    current, legacy, prefix + current, prefix + legacy, "/guoba/api", prefix + "/guoba/api",
+    "/old-admin/tools/api", prefix + "/previous/api",
+  ]) {
     await window.fetch(`${origin}${route}/data?item=one`);
   }
-  expect(calls.map(({ url }) => url)).toEqual(Array(6).fill(`${origin}${prefix}${current}/data?item=one`));
+  expect(calls.map(({ url }) => url)).toEqual(Array(8).fill(`${origin}${prefix}${current}/data?item=one`));
   for (const call of calls) {
     expect(new Headers(call.init?.headers).get("guoba-access-token")).toBe("page-ticket");
     expect(call.init?.credentials).toBe("omit");
   }
-  await window.fetch("https://other.example/guoba/api/data");
-  expect(calls.at(-1)).toEqual({ url: "https://other.example/guoba/api/data", init: undefined });
+  await window.fetch(`${origin}/old-admin/api/config/选项?scope=group`, {
+    method: "POST", body: '{"enabled":true}', headers: { "Content-Type": "application/json" },
+  });
+  const rewritten = calls.at(-1)!;
+  expect(rewritten.url).toBe(`${origin}${prefix}${current}/config/%E9%80%89%E9%A1%B9?scope=group`);
+  expect(rewritten.init?.method).toBe("POST");
+  expect(new TextDecoder().decode(rewritten.init?.body as ArrayBuffer)).toBe('{"enabled":true}');
+  for (const unchanged of [
+    `${origin}/old-admin/api/missing`, `${origin}/old-admin/not-api/data`,
+    `${origin}/old-admin/api/custom/another-plugin/api/data`, "https://other.example/old-admin/api/data",
+  ]) {
+    await window.fetch(unchanged);
+    expect(calls.at(-1)).toEqual({ url: unchanged, init: undefined });
+  }
 });

@@ -1,7 +1,12 @@
 export const extensionTokenHeader = "guoba-access-token";
 export const extensionTicketLifetimeMs = 5 * 60_000;
 
-export function extensionBridge(api?: { apiBase: string; relativeApi: string; legacyApiBase: string }): string {
+export function extensionBridge(api?: {
+  apiBase: string;
+  relativeApi: string;
+  legacyApiBase: string;
+  legacyRoutes: readonly string[];
+}): string {
   // This script runs in the extension frame, whose origin is opaque.
   const configuration = api ? JSON.stringify({ ...api, tokenKey: extensionTokenHeader }) : "null";
   return `(() => {
@@ -51,7 +56,7 @@ export function extensionBridge(api?: { apiBase: string; relativeApi: string; le
     const config = ${configuration};
     if (!config) return;
     let token = new URLSearchParams(location.search).get("token") || "";
-    const { apiBase: internalApi, relativeApi, legacyApiBase, tokenKey } = config;
+    const { apiBase: internalApi, relativeApi, legacyApiBase, legacyRoutes, tokenKey } = config;
     const script = document.currentScript.src;
     const apiBase = new URL("../../" + relativeApi, script).pathname;
     const publicRoot = new URL("../../../", script).pathname.slice(0, -1);
@@ -84,6 +89,11 @@ export function extensionBridge(api?: { apiBase: string; relativeApi: string; le
     const original = window.fetch.bind(window);
     const legacy = "/guoba/api";
     const includesPath = (path, prefix) => path === prefix || path.startsWith(prefix + "/");
+    const legacyPaths = legacyRoutes.map(route => {
+      const url = new URL(location.href);
+      url.pathname = route;
+      return url.pathname;
+    }).sort((left, right) => right.length - left.length);
     window.fetch = async (input, init) => {
       const source = new Request(input, init);
       const target = new URL(source.url);
@@ -97,7 +107,12 @@ export function extensionBridge(api?: { apiBase: string; relativeApi: string; le
       } else if (includesPath(target.pathname, internalApi)) {
         target.pathname = apiBase + target.pathname.slice(internalApi.length);
       } else if (!includesPath(target.pathname, apiBase)) {
-        return original(source);
+        // Old extensions can hard-code a different mount. Match only an exact
+        // registered route suffix and leave explicit API owners alone.
+        if (target.pathname.includes("/api/custom/")) return original(source);
+        const route = legacyPaths.find(route => target.pathname.endsWith("/api" + route));
+        if (!route) return original(source);
+        target.pathname = apiBase + route;
       }
       await renewToken();
       const headers = new Headers(source.headers);

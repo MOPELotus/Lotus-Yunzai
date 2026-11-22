@@ -206,10 +206,13 @@ export function panelExtensionRoutes(
     if (!page || source !== current || !registered(source, page.plugin)) {
       return new Response(null, { status: 404, headers: frameHeaders });
     }
-    const script = extensionBridge(apis.get(page.plugin)?.length ? {
+    const routes = apis.get(page.plugin);
+    const script = extensionBridge(routes?.length ? {
       apiBase: `${apiRoot}/${id}`,
       relativeApi: `extensions-api/${id}`,
       legacyApiBase: `/guoba/api/custom/${encodeURIComponent(page.plugin)}`,
+      // Guoba Next's custom-mount shim matches literal routes, not parameters.
+      legacyRoutes: [...new Set(routes.filter(({ route }) => !route.includes(":")).map(({ route }) => route))],
     } : undefined);
     return new Response(request.method === "HEAD" ? null : script, {
       headers: { ...frameHeaders, "Content-Type": "text/javascript; charset=utf-8" },
