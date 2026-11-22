@@ -4,7 +4,48 @@ import type { CommandContext, CommandModule, CommandReply } from "./commands.ts"
 
 const register = /^#注册自动签到([1-9]\d{0,2})?$/u;
 
+export const checkinStatusCommand = "#签到状态";
 export const unregisterCheckinCommand = "#删除签到";
+
+const domesticGames = [
+  ["genshin", "原神"], ["honkai_sr", "星铁"], ["zzz", "绝区零"],
+  ["honkai3rd", "崩坏3"], ["honkai2", "崩坏2"], ["tears_of_themis", "未定事件簿"],
+] as const;
+
+export function checkinStatus(directory: string | undefined) {
+  const profiles = createProfileStore(directory);
+  return async (qq: string, signal: AbortSignal) => {
+    let ids: number[];
+    try {
+      signal.throwIfAborted();
+      ids = await profiles.listIds(qq);
+    } catch {
+      if (!signal.aborted) return "暂时无法读取本人的签到档案。";
+      return;
+    }
+    let bound = 0;
+    let unreadable = 0;
+    const registered: string[] = [];
+    for (const id of ids) {
+      if (signal.aborted) return;
+      try {
+        const { enabled, loggedIn, games, communityForums } = await profiles.checkinSettings(qq, id);
+        if (loggedIn) bound++;
+        if (!enabled) continue;
+        const selected = domesticGames.filter(([game]) => games[game]?.enabled).map(([, name]) => name).join("、");
+        const scopes = [selected || "无国服游戏", communityForums.length ? " + 社区" : "", loggedIn ? "" : "（待登录）"].join("");
+        registered.push(`档案 ${id}：${scopes}`);
+      } catch { unreadable++; }
+    }
+    if (signal.aborted) return;
+    if (unreadable && unreadable === ids.length) return "暂时无法读取本人的签到档案。";
+    const lines = [`已绑定 ${bound} 个登录档案，已注册 ${registered.length} 个自动签到档案。`, ...registered];
+    if (!bound) lines.push("尚无登录资料，可发送 #扫码登录。");
+    else if (!registered.length) lines.push("尚未注册自动签到，可发送 #注册自动签到。");
+    if (unreadable) lines.push(`另有 ${unreadable} 个档案暂时无法读取。`);
+    return lines.join("\n");
+  };
+}
 
 export function checkinUnregistration(directory: string | undefined, reconcilePlans: () => Promise<void>) {
   const profiles = createProfileStore(directory);
