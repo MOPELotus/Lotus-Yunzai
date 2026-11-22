@@ -74,6 +74,15 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
   }
 
+  if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
+    const { prepareGenshinWishCalendar } = await import("../plugins/genshin/wish-calendar.ts");
+    const wishCalendar = await prepareGenshinWishCalendar(root, { signal, download: firstSetup });
+    if (wishCalendar === "installed") console.log("[原神] 已准备原祈愿日历。");
+    if (wishCalendar === "missing" && firstSetup) {
+      console.warn("[原神] 原祈愿日历暂不可用，可运行 bun run init 重试。");
+    }
+  }
+
   if (await Bun.file(new URL("plugins/starrail/challenge-theme.ts", root)).exists()) {
     const { prepareStarRailChallengeTheme } = await import("../plugins/starrail/challenge-theme.ts");
     const starrail = await prepareStarRailChallengeTheme(root, {

@@ -590,6 +590,28 @@ test("first initialization can fetch the original Star Rail theme while a prepar
   expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
 });
 
+test("原神祈愿日历首装可联网，离线后启动保持可用且暖启不请求", async () => {
+  const { cwd, start } = await fixture();
+  const directory = join(cwd, "plugins/genshin");
+  const attempts = join(cwd, "wish-calendar-attempts");
+  await mkdir(directory);
+  await writeFile(join(directory, "wish-calendar.ts"), `
+    import { appendFile } from "node:fs/promises";
+    export async function prepareGenshinWishCalendar(root, { download }) {
+      await appendFile(new URL("wish-calendar-attempts", root), download ? "download\\n" : "local\\n");
+      return "missing";
+    }
+  `);
+  const [init, , warning] = await start(["init", "live"]);
+  expect(init).toBe(0);
+  expect(warning).toContain("原祈愿日历暂不可用");
+  const [warm, output, warmWarning] = await start(["start"]);
+  expect(warm).toBe(0);
+  expect(output).toContain("fixture host ready");
+  expect(warmWarning).not.toContain("原祈愿日历暂不可用");
+  expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
+});
+
 test("a migrated OneBot listener without authentication gets one private token through init", async () => {
   const { cwd, start } = await fixture();
   const atlas = join(cwd, "data/atlas/data");
