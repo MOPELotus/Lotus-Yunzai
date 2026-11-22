@@ -20,16 +20,15 @@ export function isStarRailGachaLinkMessage(text: string) {
 const zzzLinkedViewEntry = new RegExp(`^${zzzLinkPrefix}逐抽记录(?:[1-9]\\d{0,2})?$`, "iu");
 const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;
-const defaultMessage = "私聊功能已禁用，仅支持发送cookie，抽卡记录链接，记录日志文件";
+export const defaultPrivateAccessMessage = "私聊功能已禁用，仅支持发送cookie，抽卡记录链接，记录日志文件";
 const cooldownMs = 10_000;
 const maxCooldownEntries = 10_000;
 
 type ClaimTip = (userId: number) => Promise<boolean>;
 
-async function readPolicy(root: URL) {
-  const config = await readLocalConfig(root, "other");
+export function privateAccessPolicy(config: Readonly<Record<string, unknown>>) {
   const enabled = Boolean(config.disablePrivate);
-  const tip = typeof config.disableMsg === "string" ? config.disableMsg : defaultMessage;
+  const tip = typeof config.disableMsg === "string" ? config.disableMsg : defaultPrivateAccessMessage;
   const configured = Object.hasOwn(config, "disableAdopt") ? config.disableAdopt : ["stoken"];
   const patterns = Array.isArray(configured)
     ? configured.filter((entry): entry is string => typeof entry === "string" && entry !== "") : [];
@@ -45,17 +44,18 @@ async function readPolicy(root: URL) {
 }
 
 export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatch = false) {
-  let policy = await readPolicy(root);
+  const readPolicy = async () => privateAccessPolicy(await readLocalConfig(root, "other"));
+  let policy = await readPolicy();
   const tips = new Map<number, number>();
   let nextRefresh = performance.now() + 1_000;
   let reloading: Promise<void> | undefined;
   let reloadFailed = false;
 
-  function refresh() {
-    if (!fileWatch) return;
-    if (reloading) return reloading;
-    if (performance.now() < nextRefresh) return;
-    reloading = readPolicy(root).then(candidate => {
+  function refresh(force = false): Promise<void> | undefined {
+    if (!force && !fileWatch) return;
+    if (reloading) return force ? reloading.then(() => refresh(true)) : reloading;
+    if (!force && performance.now() < nextRefresh) return;
+    reloading = readPolicy().then(candidate => {
       policy = candidate;
       reloadFailed = false;
     }).catch(() => {

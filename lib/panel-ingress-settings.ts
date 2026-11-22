@@ -1,0 +1,71 @@
+import { readLocalConfig } from "./config.ts";
+import {
+  hostIngressKeys, hostIngressListKeys, hostIngressSettings, HostIngressSettingsError, saveHostIngressSettings,
+  type HostIngressSettings,
+} from "./master-config.ts";
+import { readPanelJson } from "./panel.ts";
+
+const fields = [
+  { key: "whiteUser", label: "用户白名单", type: "list", hint: "每行一个 QQ 号。留空时允许名单外的用户。" },
+  { key: "blackUser", label: "用户黑名单", type: "list" },
+  { key: "whiteGroup", label: "群白名单", type: "list", hint: "每行一个群号。留空时允许名单外的群。" },
+  { key: "blackGroup", label: "群黑名单", type: "list" },
+  { key: "disablePrivate", label: "限制普通用户私聊", type: "boolean" },
+  { key: "disableMsg", label: "私聊限制提示", type: "text", hint: "留空时不回复限制提示。" },
+] as const;
+
+function record(input: unknown): Record<string, unknown> | undefined {
+  if (typeof input === "object" && input !== null && !Array.isArray(input)) return input as Record<string, unknown>;
+}
+
+function validIds(value: unknown): value is string[] {
+  return Array.isArray(value) && new Set(value).size === value.length &&
+    value.every(id => typeof id === "string" && /^[1-9]\d{0,15}$/u.test(id) && Number.isSafeInteger(Number(id)));
+}
+
+function validValues(value: unknown): value is HostIngressSettings {
+  const input = record(value);
+  return !!input && Object.keys(input).length === hostIngressKeys.length &&
+    hostIngressKeys.every(key => Object.hasOwn(input, key)) &&
+    hostIngressListKeys.every(key => validIds(input[key])) &&
+    typeof input.disablePrivate === "boolean" && typeof input.disableMsg === "string" && !input.disableMsg.includes("\0");
+}
+
+export function panelIngressSettings(root: URL, onSaved?: () => Promise<unknown>) {
+  return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
+    if (request.method !== "GET" && request.method !== "PUT") {
+      return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
+    }
+    const active = () => !request.signal.aborted && stillAuthorized();
+    if (!active()) return new Response(null, { status: 401 });
+    if (request.method === "GET") {
+      try {
+        const values = hostIngressSettings(await readLocalConfig(root, "other"));
+        return active() ? Response.json({ fields, values }) : new Response(null, { status: 401 });
+      } catch {
+        return new Response(null, { status: 500 });
+      }
+    }
+
+    let input: Record<string, unknown> | undefined;
+    try { input = record(await readPanelJson(request, 262_144)); }
+    catch { return new Response(null, { status: 400 }); }
+    if (!input || Object.keys(input).length !== 2 || !validValues(input.previous) || !validValues(input.values)) {
+      return new Response(null, { status: 400 });
+    }
+    try {
+      const values = await saveHostIngressSettings(root, input.previous, input.values, active);
+      try { await onSaved?.(); }
+      catch {
+        return Response.json({ fields, values, warning: "配置已保存，运行时重载失败，请检查宿主日志或重启。" });
+      }
+      return Response.json({ fields, values });
+    } catch (error) {
+      if (!active()) return new Response(null, { status: 401 });
+      if (error instanceof HostIngressSettingsError) {
+        return Response.json({ message: error.message }, { status: error.code === "conflict" ? 409 : 400 });
+      }
+      return new Response(null, { status: 409 });
+    }
+  };
+}

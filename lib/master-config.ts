@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, isNode, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { lockFile } from "./file-lock.ts";
+import { configuredIds } from "./config.ts";
+import { defaultPrivateAccessMessage, privateAccessPolicy } from "./private-access.ts";
 
 const ownerFields = new Set(["master", "masterQQ"]);
 const ownerPair = /^(?:stdin:stdin|[1-9]\d*:[1-9]\d*)$/u;
@@ -279,4 +281,66 @@ export function updateHostAccessList(root: URL, key: HostAccessList, target: num
   if (actor !== "stdin" && (!isId(actor.botId) || !isId(actor.userId))) throw new Error("主人会话无效。");
   const owner = actor === "stdin" ? "stdin:stdin" : `${actor.botId}:${actor.userId}`;
   return editAccessList(root, key, target, remove, isCurrent, owner);
+}
+
+export const hostIngressListKeys = ["whiteUser", "blackUser", "whiteGroup", "blackGroup"] as const;
+export const hostIngressKeys = [...hostIngressListKeys, "disablePrivate", "disableMsg"] as const;
+
+export function hostIngressSettings(config: Readonly<Record<string, unknown>>) {
+  const ids = (key: HostAccessList) => [...configuredIds(config[key])].map(String);
+  return {
+    whiteUser: ids("whiteUser"), blackUser: ids("blackUser"), whiteGroup: ids("whiteGroup"), blackGroup: ids("blackGroup"),
+    disablePrivate: Boolean(config.disablePrivate),
+    disableMsg: typeof config.disableMsg === "string" ? config.disableMsg : defaultPrivateAccessMessage,
+  };
+}
+
+export type HostIngressSettings = ReturnType<typeof hostIngressSettings>;
+
+export class HostIngressSettingsError extends Error {
+  constructor(readonly code: "conflict" | "invalid", message: string) { super(message); }
+}
+
+export function saveHostIngressSettings(root: URL, previous: HostIngressSettings, next: HostIngressSettings, isCurrent: () => boolean) {
+  return editOtherConfig(root, ({ document, values, config, text }) => {
+    const current = hostIngressSettings(config);
+    if (!isDeepStrictEqual(current, previous)) throw new HostIngressSettingsError("conflict", "配置已变更，请重新载入。");
+    const blocked = next.blackUser.filter(id => !current.blackUser.includes(id));
+    if (blocked.length && (
+      [...configuredIds(config.masterQQ)].some(id => blocked.includes(String(id))) ||
+      valuesOf(config.master).some(entry => typeof entry === "string" && ownerPair.test(entry.trim()) &&
+        blocked.some(id => entry.trim().endsWith(`:${id}`)))
+    )) throw new HostIngressSettingsError("invalid", "不能把已配置的主人加入用户黑名单。");
+
+    const changed = hostIngressKeys.filter(key => !isDeepStrictEqual(current[key], next[key]));
+    if (!changed.length) return { result: current };
+    for (const key of changed) {
+      const value = next[key];
+      const original = document.get(key, true);
+      const replacement = document.createNode(Array.isArray(value) ? value.map(Number) : value);
+      if (isNode(original)) {
+        replacement.comment = original.comment;
+        replacement.commentBefore = original.commentBefore;
+        replacement.spaceBefore = original.spaceBefore;
+        if (isSeq(original) && isSeq(replacement)) replacement.flow = original.flow;
+      }
+      document.set(key, replacement);
+    }
+    const formatted = document.toString();
+    const yaml = text.includes("\r\n") ? formatted.replaceAll("\n", "\r\n") : formatted;
+    const saved = readDocument(yaml);
+    const belongsToOtherFields = (key: unknown) => !changed.some(changedKey => changedKey === key);
+    const untouched = (map: Map<unknown, unknown>) => new Map([...map].filter(([key]) => belongsToOtherFields(key)));
+    const runtime = (input: Record<string, unknown>) => Object.fromEntries(Object.entries(input).filter(([key]) => belongsToOtherFields(key)));
+    if (!isDeepStrictEqual(untouched(values), untouched(saved.values)) ||
+        !isDeepStrictEqual(runtime(config), runtime(saved.config)) ||
+        !isDeepStrictEqual(hostIngressSettings(saved.config), next)) {
+      throw new Error("配置保存会改变其它 YAML 字段或引用。");
+    }
+    if (changed.includes("disablePrivate")) {
+      try { privateAccessPolicy(saved.config); }
+      catch { throw new HostIngressSettingsError("invalid", "现有私聊放行规则无法解析，请先修正配置。"); }
+    }
+    return { result: next, yaml };
+  }, isCurrent);
 }
