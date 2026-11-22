@@ -20,6 +20,9 @@ const roleGames = {
   cookie: ["hk4e_global"],
   ltoken: ["hkrpg_global", "nap_global", "nxx_global", "bh3_global"],
 } as const;
+const zzzRecordPath = "/event/game_record_zzz/api/zzz/";
+const zzzRecordParts = { index: "index", avatar: "avatar/basic", buddy: "buddy/info" } as const;
+type ZzzRecordPart = keyof typeof zzzRecordParts;
 type Credential = keyof typeof cookiePaths;
 type Json = Record<string, unknown>;
 
@@ -62,7 +65,7 @@ function validateSource(source: HoYoLabCheckinAccount, credential: Credential) {
   const aid = current?.[1] ?? legacy?.[1];
   if (!aid || aid !== accountId || legacy?.[2]?.toLowerCase().startsWith("v2_") ||
       (realm !== "SG" && realm !== "US" && realm !== "EU") || !/^[a-z]{2}-[a-z]{2}$/u.test(language)) {
-    throw new HoyoRequestError("invalid-input", "国际服签到需要同档案已核验的 HoYoLAB 登录凭据和有效语言。");
+    throw new HoyoRequestError("invalid-input", "国际服请求需要同档案已核验的 HoYoLAB 登录凭据和有效语言。");
   }
   return { cookie, accountId, realm, language, mid: current?.[2] };
 }
@@ -78,13 +81,32 @@ function checkAccount(data: Json, source: ReturnType<typeof validateSource>, sub
   }
 }
 
-function officialRoute(url: URL, writing: boolean, credential: Credential) {
+function officialRoute(url: URL, writing: boolean, credential: Credential, zzzRecord: boolean) {
   if (url.origin === roleOrigin) return !writing && url.pathname === cookiePaths[credential];
-  return url.origin === activityOrigin && activityPaths[credential].some(base => url.pathname === `${base}/${writing ? "sign" : "info"}`);
+  if (url.origin !== activityOrigin) return false;
+  if (zzzRecord) return !writing && Object.values(zzzRecordParts).some(part => url.pathname === zzzRecordPath + part);
+  return activityPaths[credential].some(base => url.pathname === `${base}/${writing ? "sign" : "info"}`);
 }
 
 export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport,
   { signal, verifyProfile, deviceId }: HoYoLabCheckinOptions, credential: Credential = "cookie") {
+  return openHoYoLabTransport(source, transport, { signal, verifyProfile, deviceId }, credential, false);
+}
+
+export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
+  const client = openHoYoLabTransport(source, transport, options, "ltoken", true);
+  return {
+    roleList: () => client.roleList("nap_global", "绝区零国际服角色目录"),
+    read(part: ZzzRecordPart, uid: string, region: string) {
+      const url = new URL(zzzRecordPath + zzzRecordParts[part], activityOrigin);
+      url.search = new URLSearchParams({ lang: client.language, role_id: uid, server: region }).toString();
+      return client.request(url, { "x-rpc-language": client.language }, "绝区零国际服战绩");
+    },
+  };
+}
+
+function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport,
+  { signal, verifyProfile, deviceId }: HoYoLabCheckinOptions, credential: Credential, zzzRecord: boolean) {
   const auth = validateSource(source, credential);
   if (deviceId !== undefined && (typeof deviceId !== "string" || !browserUuid.test(deviceId))) {
     throw new HoyoRequestError("invalid-input", "国际服浏览器会话 ID 无效。");
@@ -94,8 +116,8 @@ export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, trans
 
   async function request(url: URL, headers: HeadersInit, subject: string, body?: string): Promise<Json> {
     const writing = body !== undefined;
-    if (url.username || url.password || url.hash || !officialRoute(url, writing, credential)) {
-      throw new HoyoRequestError("invalid-input", "HoYoLAB 签到请求地址无效。");
+    if (url.username || url.password || url.hash || !officialRoute(url, writing, credential, zzzRecord)) {
+      throw new HoyoRequestError("invalid-input", "HoYoLAB 请求地址无效。");
     }
     const signedHeaders = new Headers(headers);
     for (const [key, value] of Object.entries(commonHeaders)) signedHeaders.set(key, value);
@@ -135,7 +157,7 @@ export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, trans
       throw new HoyoRequestError("http", `官方${subject}返回 HTTP 错误。`, status);
     }
 
-    const payload = await readGameRecordPayload(response, 128 * 1024, deadline);
+    const payload = await readGameRecordPayload(response, (zzzRecord && url.origin === activityOrigin ? 512 : 128) * 1024, deadline);
     await guard();
     const retcode = payload?.retcode;
     const data = object(payload?.data);

@@ -1,7 +1,9 @@
-import type { ProfileRequestContext } from "@lotus-yunzai/account";
+import { normalizeGameRoles, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readCnGameRecord } from "./game-record.ts";
+import { openHoYoLabZzzRecordTransport, type HoYoLabCheckinAccount, type HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
+import { resolveZzzGachaLinkRole } from "./zzz-gacha-link.ts";
 
 export interface ZzzGameRecordItem {
   readonly itemId: string;
@@ -52,7 +54,7 @@ function cleanText(value: unknown, limit: number) {
   if (text && Buffer.byteLength(text) <= limit) return text;
 }
 
-function verifyIdentity(data: Json, uid: string, region: string) {
+function verifyIdentity(data: Json, uid: string, region: string, gameBiz: string) {
   for (const key of ["uid", "role_id", "game_uid"]) {
     const value = data[key];
     if (value !== undefined && value !== uid && !(typeof value === "number" && String(value) === uid)) {
@@ -62,7 +64,7 @@ function verifyIdentity(data: Json, uid: string, region: string) {
   for (const key of ["server", "region"]) {
     if (data[key] !== undefined && data[key] !== region) invalid("官方绝区零战绩的区服与当前档案不一致。");
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("官方绝区零战绩的游戏与当前档案不一致。");
+  if (data.game_biz !== undefined && data.game_biz !== gameBiz) invalid("官方绝区零战绩的游戏与当前档案不一致。");
 }
 
 function entries(value: unknown, kind: "avatar" | "buddy") {
@@ -98,20 +100,52 @@ function entries(value: unknown, kind: "avatar" | "buddy") {
 // Former battle card reads in ZZZure/ZZZ-Plugin 2057599, dist/apps/card.js.
 export async function readZzzGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzGameRecordSnapshot> {
-  const uid = source.role.uid;
   const { data: index, region } = await readCnGameRecord(source, transport, { kind: "zzz-index", signal }, verifyProfile);
-  verifyIdentity(index, uid, region);
-  if (index.role !== undefined && index.role !== null) verifyIdentity(record(index.role), uid, region);
+  return readRecord(source.role.uid, region, "nap_cn", index, async part =>
+    (await readCnGameRecord(source, transport, { kind: part === "avatar" ? "zzz-avatar" : "zzz-buddy", signal }, verifyProfile)).data);
+}
+
+export async function readHoYoLabZzzGameRecord(source: HoYoLabCheckinAccount & {
+  readonly selectedUid: string;
+  readonly revision: string;
+}, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
+  const selectionError = () => new HoyoRequestError("invalid-input", "请在此档案选中已绑定到 HoYoLAB 账号的绝区零国际服角色。");
+  if (source.selectedUid && !/^[1-9]\d{9}$/u.test(source.selectedUid)) throw selectionError();
+  const client = openHoYoLabZzzRecordTransport(source, transport, options);
+  const catalogue = (await client.roleList()).map(record);
+  const hasUid = (row: Json, uid: string) => row.game_uid === uid ||
+    (typeof row.game_uid === "number" && String(row.game_uid) === uid);
+  const candidates = catalogue.filter(row => source.selectedUid
+    ? hasUid(row, source.selectedUid)
+    : catalogue.length === 1 || row.is_chosen === true);
+  if (candidates.length !== 1) throw selectionError();
+  const entry = candidates[0]!;
+  const [role] = normalizeGameRoles([{ ...entry, uid: entry.game_uid, game_biz: entry.game_biz ?? "nap_global" }]);
+  if (!role || !role.region || role.gameBiz !== "nap_global" || !/^[1-9]\d{9}$/u.test(role.uid)) throw selectionError();
+  if (!source.selectedUid && catalogue.filter(row => hasUid(row, role.uid)).length !== 1) throw selectionError();
+  const { uid, region, gameBiz } = resolveZzzGachaLinkRole(role);
+  verifyIdentity(entry, uid, region, gameBiz);
+  const data = await readRecord(uid, region, gameBiz, await client.read("index", uid, region), part => client.read(part, uid, region));
+  return { ...data, revision: source.revision, role };
+}
+
+async function readRecord(uid: string, region: string, gameBiz: string, index: Json,
+  read: (part: "avatar" | "buddy") => Promise<Json>): Promise<ZzzGameRecordSnapshot> {
+  function verify(data: Json) {
+    verifyIdentity(data, uid, region, gameBiz);
+    if (data.role !== undefined && data.role !== null) verifyIdentity(record(data.role), uid, region, gameBiz);
+  }
+  verify(index);
 
   const stats = record(index.stats);
   const [activeDays, avatarNum, buddyNum] = trackedStats.slice(0, 3).map((field) => whole(stats[field]));
   if (activeDays === undefined || avatarNum === undefined || buddyNum === undefined) invalid();
   const progress = whole(stats.cur_period_zone_layer_count) ?? cleanText(stats.cur_period_zone_layer_count, 48);
-  const { data: avatars } = await readCnGameRecord(source, transport, { kind: "zzz-avatar", signal }, verifyProfile);
-  verifyIdentity(avatars, uid, region);
+  const avatars = await read("avatar");
+  verify(avatars);
   const avatarEntries = entries(avatars.avatar_list, "avatar");
-  const { data: buddies } = await readCnGameRecord(source, transport, { kind: "zzz-buddy", signal }, verifyProfile);
-  verifyIdentity(buddies, uid, region);
+  const buddies = await read("buddy");
+  verify(buddies);
   return {
     uid, region, worldLevel: cleanText(stats.world_level_name, 96), avatar: cleanText(index.cur_head_icon_url, 1024),
     stats: { active_days: activeDays, avatar_num: avatarNum, buddy_num: buddyNum, cur_period_zone_layer_count: progress },

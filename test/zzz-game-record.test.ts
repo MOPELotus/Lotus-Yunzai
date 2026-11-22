@@ -96,3 +96,69 @@ test("绝区零战绩接受空列表，国际服角色不会把国服 Cookie 发
   const overseas = { ...source, role: { ...source.role, uid: "1000000001", region: "prod_gf_us", gameBiz: "nap_global" } };
   await expect(read.fetchZzzGameRecord(overseas)).rejects.toMatchObject({ code: "invalid-input" });
 });
+
+const international = {
+  cookie: "ltuid_v2=42; ltoken_v2=fixture-token; ltmid_v2=fixture-mid",
+  accountId: "42", realm: "SG" as const, language: "zh-cn", selectedUid: "1000000001", revision: "fixture-revision",
+};
+const internationalRole = { game_uid: "1000000001", region: "prod_gf_us", game_biz: "nap_global", nickname: "合成测试" };
+
+test("绝区零国际服战绩只读取 HoYoLAB 本人角色，使用独立凭据和三个只读接口", async () => {
+  const expected = [
+    "https://api-account-os.hoyolab.com/binding/api/getUserGameRolesByLtoken?game_biz=nap_global",
+    ...["index", "avatar/basic", "buddy/info"].map(part =>
+      `https://sg-act-public-api.hoyolab.com/event/game_record_zzz/api/zzz/${part}?lang=zh-cn&role_id=1000000001&server=prod_gf_us`),
+  ];
+  const data = [{ list: [internationalRole] }, { stats: index.stats, role: internationalRole },
+    { game_biz: "nap_global", avatar_list: [avatar] }, { list: [buddy] }];
+  let guards = 0;
+  let requests = 0;
+  const client = createHoyoClient(async (url, init) => {
+    expect(url.href).toBe(expected[requests]!);
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+    expect(new Headers(init.headers).get("cookie")).toBe(international.cookie);
+    return payload(data[requests++]);
+  });
+  const result = await client.fetchHoYoLabZzzGameRecord(international, { async verifyProfile() { guards++; } });
+  expect(result).toMatchObject({
+    revision: international.revision, uid: international.selectedUid, region: "prod_gf_us",
+    role: { nickname: "合成测试", gameBiz: "nap_global" },
+    avatars: [{ itemId: "1091", name: "雅" }], buddies: [{ itemId: "54001", name: "鲨牙布" }],
+  });
+  expect([requests, guards]).toEqual([4, 8]);
+});
+
+test("绝区零国际服战绩拒绝异人、错区、重复角色、错账号、风控与会话切换", async () => {
+  for (const [list, code] of [
+    [[{ ...internationalRole, game_uid: "1000000002" }], "invalid-input"],
+    [[{ ...internationalRole, region: "prod_gf_eu" }], "invalid-input"],
+    [[internationalRole, internationalRole], "invalid-input"],
+    [[{ ...internationalRole, account_id: "43" }], "response"],
+  ] as const) {
+    let queries = 0;
+    const client = createHoyoClient(async () => { queries++; return payload({ list }); });
+    await expect(client.fetchHoYoLabZzzGameRecord(international, { async verifyProfile() {} })).rejects.toMatchObject({ code });
+    expect(queries).toBe(1);
+  }
+
+  for (const [reply, expected] of [
+    [() => payload({ stats: index.stats, role: { ...internationalRole, game_uid: "1000000002" } }), { code: "response" }],
+    [() => Response.json({ retcode: 1034 }), { reason: "risk" }],
+    [() => Response.json({ retcode: -100 }), { reason: "expired" }],
+  ] as const) {
+    let queries = 0;
+    const client = createHoyoClient(async () => ++queries === 1 ? payload({ list: [internationalRole] }) : reply());
+    await expect(client.fetchHoYoLabZzzGameRecord(international, { async verifyProfile() {} })).rejects.toMatchObject(expected);
+    expect(queries).toBe(2);
+  }
+
+  let checks = 0;
+  let queries = 0;
+  const client = createHoyoClient(async () => { queries++; return payload({ list: [internationalRole] }); });
+  await expect(client.fetchHoYoLabZzzGameRecord(international, {
+    async verifyProfile() {
+      if (++checks === 2) throw new HoyoRequestError("profile-changed", "合成档案切换");
+    },
+  })).rejects.toMatchObject({ code: "profile-changed" });
+  expect(queries).toBe(1);
+});

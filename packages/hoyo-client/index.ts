@@ -31,7 +31,7 @@ import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, typ
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
-import { readZzzGameRecord } from "./zzz-game-record.ts";
+import { readHoYoLabZzzGameRecord, readZzzGameRecord } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
 import { readZzzMonthly } from "./zzz-monthly.ts";
 import { readZzzExploration } from "./zzz-exploration.ts";
@@ -570,6 +570,10 @@ export function createHoyoClient(
     },
     fetchZzzGameRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGameRecord, isGameRecordCookieExpired);
+    },
+    fetchHoYoLabZzzGameRecord(source: Parameters<typeof readHoYoLabZzzGameRecord>[0],
+      options: Parameters<typeof readHoYoLabZzzGameRecord>[2]) {
+      return readHoYoLabZzzGameRecord(source, transport, options);
     },
     fetchZzzShiyu(source: ProfileRequestContext, options: Parameters<typeof readZzzShiyu>[2]) {
       return readForProfile(source, options, readZzzShiyu, isGameRecordCookieExpired);
