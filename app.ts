@@ -35,7 +35,7 @@ import { checkinRegistrationCommands, checkinStatus, checkinStatusCommand, check
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
-import { gameCheckinCommands } from "./lib/game-checkin-commands.ts";
+import { gameCheckinCommands, namedCheckinCommand } from "./lib/game-checkin-commands.ts";
 import { isPreviewRedeemSetting, redeemCodeCommands } from "./lib/redeem-code-commands.ts";
 import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
@@ -502,6 +502,7 @@ if (import.meta.main) {
   const moderatedMessages = new Set<string>();
   let likeImageRenderer: ProfileLikeImage | undefined;
   let calendarSchedule: { policy: CalendarSchedule; signal: AbortSignal } | undefined;
+  let runNamedCheckin: ReturnType<typeof gameCheckinCommands>["runNamed"] | undefined;
   let cloudGenshinWallet: ReturnType<typeof createCloudGenshinWalletQuery> | undefined;
   let miyousheBalance: ReturnType<typeof createMiyousheBalanceQuery> | undefined;
   let reviewInvitation: Awaited<ReturnType<typeof readGroupInvitations>>;
@@ -2062,6 +2063,30 @@ if (import.meta.main) {
     if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg, alias)) return;
 
     const command = normalizeGameCommand(event);
+    const namedCheckin = namedCheckinCommand(command.msg);
+    if (namedCheckin) {
+      const features = ["@lotus-yunzai/checkin"];
+      const { user_id: user, self_id: bot, group_id: groupId, sender } = event;
+      const group = event.message_type === "group" && event.sub_type !== "anonymous" &&
+        groupId !== undefined && Number.isSafeInteger(groupId) && groupId > 0;
+      const privateFriend = event.message_type === "private" && event.sub_type === "friend" && groupId === undefined;
+      const connection = group ? event[delegationSession]?.signal : privateFriend ? event.privateCredentialSignal : undefined;
+      if (!connection || event.isDelegated || event.attachmentOnly || !runNamedCheckin ||
+          user === undefined || !Number.isSafeInteger(user) || user < 1 ||
+          bot === undefined || !Number.isSafeInteger(bot) || bot < 1 || user === bot ||
+          event.message_id === undefined || (sender?.user_id !== undefined && sender.user_id !== user && sender.user_id !== String(user))) return;
+      const signal = nativeOperationSignal(connection);
+      const isCurrent = () => !signal.aborted && !stopping && handoff.accepting && !dispatchPower.paused &&
+        groupDispatch.allowsInbound(event) && allowed(features) && (event.adapter === "milky" ? onlineMilkyBotId() === bot : event.boundAccount === true);
+      if (!isCurrent()) return;
+      const reply = await runNamedCheckin(String(user), namedCheckin, {
+        signal,
+        async verifySession() { if (!isCurrent()) throw new DOMException("签到会话已失效。", "AbortError"); },
+        notify: privateFriend ? message => isCurrent() ? event.reply(message) : false : undefined,
+      });
+      if (reply !== undefined && isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
     const sendMedia = command.isDelegated ? undefined : command[sendSessionMedia];
     const deliverMedia = sendMedia && ((file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia));
     if (deliverMedia) Object.defineProperty(command, "deliverMedia", { value: deliverMedia });
@@ -2439,6 +2464,7 @@ if (import.meta.main) {
     const zzzRankClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore });
+    runNamedCheckin = gameCheckin.runNamed;
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = {
       historyFile: fileURLToPath(new URL("data/redeemCodes/activities.json", root)), signal: previewSignal,

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileCookieAccountId, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, CloudGenshinWalletError, CloudZzzWalletError, createProfileHoyoClient, GameCheckinChallengeError, GameRecordRequestError,
-  HoyoRequestError, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
+  HoyoRequestError, type BbsCheckinForum, type BbsMissionState, type CnGameCheckinSource } from "@lotus-yunzai/hoyo-client";
 import { renderCheckinReceiptCard, type CheckinReceiptCardModel } from "@lotus-yunzai/skia/checkin-receipt";
 import type { CheckinAuditEntry, createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
@@ -14,6 +14,35 @@ import { CheckinScheduleWriteError, withManualCheckinJournals, type CheckinRetry
 import { segment, type MessageReply } from "./messages.ts";
 
 const manual = /^#(?:测试签到|开始签到|手动签到|补签)([1-9]\d{0,2})?$/u;
+const namedManual = /^#*(米游社|mys|社区)?([^#\s]+)签到([1-9]\d{0,2})?$/u;
+const namedGames = new Map<string, CheckinScheduleGame>([
+  ["原神", "genshin"],
+  ["星铁", "honkai_sr"], ["穹轨", "honkai_sr"], ["崩坏星穹铁道", "honkai_sr"], ["sr", "honkai_sr"],
+  ["绝区零", "zzz"], ["zzz", "zzz"],
+  ["崩三", "honkai3rd"], ["崩坏3", "honkai3rd"], ["崩崩崩", "honkai3rd"], ["bh3", "honkai3rd"],
+  ["崩二", "honkai2"], ["崩坏2", "honkai2"], ["崩崩", "honkai2"], ["bh2", "honkai2"],
+  ["未定", "tears_of_themis"], ["未定事件簿", "tears_of_themis"], ["事件簿", "tears_of_themis"],
+]);
+const namedForums = new Map<string, BbsCheckinForum>([
+  ["崩坏3", "1"], ["原神", "2"], ["崩坏2", "3"], ["未定事件簿", "4"], ["大别野", "5"], ["崩坏星穹铁道", "6"], ["绝区零", "8"],
+]);
+type ManualTarget = { readonly kind: "game"; readonly game: CheckinScheduleGame } |
+  { readonly kind: "community"; readonly forum: BbsCheckinForum };
+
+export function namedCheckinCommand(message: string): { readonly profileId: number; readonly target: ManualTarget } | undefined {
+  const named = namedManual.exec(message);
+  if (!named) return;
+  const [, community, name, profile] = named;
+  const profileId = Number(profile ?? 1);
+  if (community) {
+    const forum = namedForums.get(name!);
+    if (forum) return { profileId, target: { kind: "community", forum } };
+  } else {
+    const game = namedGames.get(name!);
+    if (game) return { profileId, target: { kind: "game", game } };
+  }
+}
+
 const targets = {
   genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx", honkai3rd: "bh3", honkai2: "bh2",
 } as const satisfies Readonly<Record<CheckinScheduleGame, CnGameCheckinSource["game"]>>;
@@ -186,6 +215,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly communityRetryForums?: readonly string[];
     readonly gameRetryKeys?: readonly CheckinScheduleGame[];
     readonly communityAccountKey?: string;
+    readonly manualTarget?: ManualTarget;
   }): Promise<CheckinRun> {
     const { signal } = input;
     if (signal.aborted) return { status: "busy" };
@@ -239,25 +269,43 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         verifyDay();
         if (current?.revision !== revision) throw new ProfileError("changed", changed);
       }
-      const rows = rowsFor(settings);
+      const { manualTarget } = input;
+      let rows = rowsFor(settings);
       const notes: string[] = [];
+      if (manualTarget?.kind === "game") {
+        rows = rows.filter(row => row.key === manualTarget.game);
+        for (const row of rows) row.community = "不在本轮";
+        if (!settings.games[manualTarget.game]?.enabled) {
+          notes.push("此档案未开启所选国服游戏签到。");
+          count("failed");
+        }
+      } else if (manualTarget?.kind === "community") {
+        rows = rows.filter(row => row.forum === manualTarget.forum);
+        for (const row of rows) row.game = "不在本轮";
+        if (!settings.communityForums.includes(manualTarget.forum)) {
+          notes.push("此档案未开启所选社区分区签到。");
+          count("failed");
+        }
+      }
       const scoped = input.communityRetryForums;
       const gameScope = input.gameRetryKeys;
       const retrying = scoped !== undefined || gameScope !== undefined;
-      const shortReadRetry = input.source === "scheduled" || !!gameScope?.length;
+      const shortReadRetry = input.source === "scheduled" || !!gameScope?.length || manualTarget?.kind === "game";
+      const includeAllServices = !manualTarget && !retrying;
       // A refreshed device or login ticket does not change the account that owns the retry.
       // Keep accepting the original MID-based key for an existing community write journal.
       const accountIdentity = [qq, profileId, account.account.stuid || account.account.ltuid] as const;
       const legacyAccountKey = createHash("sha256").update(JSON.stringify([...accountIdentity, account.account.mid])).digest("hex");
       const accountKey = accountIdentity[2] ? createHash("sha256").update(JSON.stringify(accountIdentity)).digest("hex") : legacyAccountKey;
-      if (input.communityAccountKey && input.communityAccountKey !== accountKey && input.communityAccountKey !== legacyAccountKey) {
+      if (manualTarget?.kind !== "game" && input.communityAccountKey &&
+          input.communityAccountKey !== accountKey && input.communityAccountKey !== legacyAccountKey) {
         await verifyCurrent();
         await auditResult("precheck", false);
         await verifyCurrent();
         return completedRun("precheck", false, "待恢复的签到对应原账号，当前档案已换绑。", revision);
       }
       const communityAccountKey = input.communityAccountKey ?? accountKey;
-      const gameJournal = input.gameWrites;
+      const gameJournal = manualTarget?.kind === "community" ? undefined : input.gameWrites;
       const digest = (fields: readonly unknown[]) => createHash("sha256").update(JSON.stringify(fields)).digest("hex");
       const gameOwner = profileCookieAccountId(account.account);
       const gameAccountKey = gameOwner ? digest([qq, profileId, gameOwner]) : undefined;
@@ -268,7 +316,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         return completedRun("precheck", false, "游戏签到提交记录对应原账号，当前档案已换绑。", revision);
       }
       const previousUnconfirmed = new Set(Object.entries(gameJournal?.previous ?? {})
-        .filter(([, state]) => state === "pending" || state === "unconfirmed").map(([key]) => key));
+        .filter(([key, state]) => (state === "pending" || state === "unconfirmed") &&
+          (manualTarget?.kind !== "game" || key.startsWith(manualTarget.game + ":cn:"))).map(([key]) => key));
       function gameTarget(game: CheckinScheduleGame, role: { uid: string; region: string }) {
         return `${game}:cn:${digest([role.region, role.uid])}`;
       }
@@ -302,12 +351,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
         return result;
       }
-      const gameRows = rows.filter(row => Object.hasOwn(targets, row.key) && settings.games[row.key]?.enabled &&
+      const gameRows = rows.filter(row => row.game === "未执行" && Object.hasOwn(targets, row.key) &&
         (!retrying || gameScope?.includes(row.key as CheckinScheduleGame)));
       const retryForums: string[] = [];
       const retryGames: CheckinScheduleGame[] = [];
       const hna = rows.find(row => row.key === "hna");
-      if (!retrying && hna?.game === "未执行") {
+      if (includeAllServices && hna?.game === "未执行") {
         hna.game = "跳过";
         count("skipped");
       }
@@ -458,7 +507,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           return completedRun("refresh", false, reply, revision);
         }
         const scheduled = input.source !== "manual";
-        const catalog = scheduled ? undefined : client.fetchRoleCatalog(account, signal);
+        const catalog = scheduled || manualTarget?.kind === "game" ? undefined : client.fetchRoleCatalog(account, signal);
         for (const row of gameRows) {
           const key = row.key as CheckinScheduleGame;
           const game = targets[key];
@@ -510,7 +559,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           if (finished.reason) notes.push(`${row.label}：${finished.reason}`);
         }
       }
-      if (!retrying) {
+      if (includeAllServices) {
         const roleCheckins = {
           honkai_sr: client.openHoYoLabStarRailCheckin,
           zzz: client.openHoYoLabZzzCheckin,
@@ -586,7 +635,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       const points = await runCommunity();
       let cloud: string | undefined;
-      if (!retrying) {
+      if (includeAllServices) {
         const { wallets, revision: walletRevision } = await profiles.cloudCheckin(qq, profileId);
         await verifyCurrent();
         if (walletRevision !== revision) throw new ProfileError("changed", changed);
@@ -659,7 +708,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   }
 
   async function runManual(qq: string, profileId: number, input: Pick<Parameters<typeof runProfile>[2],
-    "signal" | "verifySession" | "notify" | "textOnly">): Promise<CheckinRun> {
+    "signal" | "verifySession" | "notify" | "textOnly" | "manualTarget">): Promise<CheckinRun> {
     if (!scheduleStore) return completedRun("precheck", false, "签到记录暂不可用。");
     try {
       const run = await withManualCheckinJournals(scheduleStore, qq, profileId, input.signal,
@@ -690,6 +739,16 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
 
   return {
     ...commands,
+    async runNamed(qq: string, command: NonNullable<ReturnType<typeof namedCheckinCommand>>, { signal, verifySession, notify }: {
+      readonly signal: AbortSignal; readonly verifySession: () => Promise<void>;
+      readonly notify?: (message: string) => unknown;
+    }) {
+      if (command.profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      const result = await runManual(qq, command.profileId, {
+        signal: AbortSignal.any([lifecycleSignal, signal]), verifySession, notify, manualTarget: command.target,
+      });
+      return result.reply;
+    },
     async runWeb(qq: string, profileId: number, { signal, verifySession, notify }: {
       readonly signal: AbortSignal; readonly verifySession: () => Promise<void>;
       readonly notify?: (message: string) => unknown;
