@@ -61,6 +61,31 @@ test("去除 ANSI 和控制符，隐藏常见凭据格式且可安全重复脱�
   expect(sanitizeRuntimeLog("😀😀xx", 2)).toBe("…");
 });
 
+test("仅摘要完整图片 MIME 的内联 Base64，保留上下文和已有脱敏", () => {
+  const png = Buffer.alloc(144, 65).toString("base64");
+  const jpeg = "/9j/AA==";
+  const ordinary = [
+    "data:text/plain;base64,QUJD",
+    "data:image/png,raw-illustration",
+    "data:image/png;base64,",
+    "data:image/png;base64,abc-def_",
+    "metadata:image/png;base64,QUJD",
+    "unrelated-data:image/png;base64,QUJD",
+  ];
+  for (const line of ordinary) expect(sanitizeRuntimeLog(line)).toBe(line);
+  const first = `前文😀 {"image":"data:image/png;base64,${png}","token":"fixture-image-secret","note":"保留"}`;
+  const second = `Error: 图片 DATA:IMAGE/JPEG;BASE64,${jpeg} 状态，at 处理器.ts:20:8`;
+  const combined = sanitizeRuntimeLog(first + " " + second);
+  expect(combined).toBe(
+    '前文😀 {"image":"data:image/png;base64,[图片 Base64 省略，192 字符]","token":[已隐藏],"note":"保留"} ' +
+    'Error: 图片 DATA:IMAGE/JPEG;BASE64,[图片 Base64 省略，8 字符] 状态，at 处理器.ts:20:8',
+  );
+  expect(sanitizeRuntimeLog(combined)).toBe(combined);
+  expect(sanitizeRuntimeLog(`data:image/svg+xml;base64,${png.repeat(20)} 仍有结尾😀`)).toBe(
+    "data:image/svg+xml;base64,[图片 Base64 省略，3840 字符] 仍有结尾😀",
+  );
+});
+
 test("筛选对脱敏后的内容做字面匹配，最多 1000 条", () => fixture(async (root, _directory, logs) => {
   const file = join(logs, "error.log");
   await writeFile(file, "a [literal] .*\nordinary\nCookie: literal-secret=very-rare\npassword: xyz-only-existing\n");

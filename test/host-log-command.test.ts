@@ -9,6 +9,9 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 const token = "log-command-fixture";
 const startupMarker = "fixture-plugin-startup-marker";
 const terminalMarker = "fixture-terminal-log-marker";
+const inlineData = Buffer.alloc(144, 65).toString("base64");
+const inlineImage = "data:image/png;base64," + inlineData;
+const inlineSummary = "data:image/png;base64,[图片 Base64 省略，192 字符]";
 const unsafeMarkers = ["fixture-cookie-value", "fixture-authorization-value", "fixture-authkey-value"];
 
 interface Frame {
@@ -136,6 +139,8 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
       writeFile(join(root, "plugins/log-fixture.js"), `throw new Error(${JSON.stringify(startupMarker)});`),
       writeFile(join(root, "plugins/log-error-fixture.js"), `
         console.error("fixture-new-error token=fixture-local-secret");
+        console.error(new Error("fixture-native-inline 前文😀 " + ${JSON.stringify(inlineImage)} + " 末尾"));
+        Bot.makeLog("warn", "fixture-v3-inline " + ${JSON.stringify(inlineImage)}, false);
         export default class extends plugin {}
       `),
     ]);
@@ -177,6 +182,11 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
       const errorLog = await readFile(join(root, "logs/error.log"), "utf8");
       expect(errorLog).toContain("fixture-new-error token=[已隐藏]");
       expect(errorLog).not.toContain("fixture-local-secret");
+      expect(errorLog).toContain(`Error: fixture-native-inline 前文😀 ${inlineSummary} 末尾`);
+      expect(errorLog).toMatch(/at [^\n]*log-error-fixture\.js:\d+:/u);
+      expect(errorLog).not.toContain(inlineData);
+      expect(readyLog).toContain(`fixture-v3-inline ${inlineSummary}`);
+      expect(readyLog).not.toContain(inlineData);
 
       await Promise.all([
         appendFile(runtime, [
@@ -184,6 +194,7 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
           `fixture-query-key Cookie: ${unsafeMarkers[0]}`,
           `fixture-query-key Authorization: Bearer ${unsafeMarkers[1]}`,
           `fixture-query-key newest AuthKey=${unsafeMarkers[2]}`,
+          `fixture-historical-inline 中文😀 ${inlineImage} 末尾 token=fixture-inline-secret`,
           terminalMarker,
           "",
         ].join("\n")),
@@ -220,7 +231,11 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
         return frame.params.messages?.flatMap(({ data }) => data.content.map((segment) => segment.data.text)).join("\n");
       }
 
-      expect(await forwarded("#日志")).toContain(startupMarker);
+      const log = await forwarded("#日志");
+      expect(log).toContain(startupMarker);
+      expect(log).toContain(`fixture-historical-inline 中文😀 ${inlineSummary} 末尾 token=[已隐藏]`);
+      expect(log).not.toContain(inlineData);
+      expect(log).not.toContain("fixture-inline-secret");
       const limited = await forwarded("#日志 1 fixture-query-key");
       expect(limited).toBe("最近 1 条运行日志\nfixture-query-key newest AuthKey=[已隐藏]");
       const filtered = await forwarded("#运行日志 fixture-query-key");
