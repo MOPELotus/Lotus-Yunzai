@@ -99,6 +99,28 @@ test("旧抽卡记录功能标签仅影响真正带该标签的入口", async ()
   expect(seen).toEqual(["#星铁战绩", "#星铁抽卡记录"]);
 });
 
+test("异步取得功能标签后检查许可，并将同一派发上下文传给入口", async () => {
+  const registry = new CommandRegistry();
+  const label = "[starrail] 角色面板";
+  const checked = new WeakSet<object>();
+  registry.registerModule({
+    name: "@lotus-yunzai/starrail", commands: {},
+    async fallbackFeatures(context) {
+      await Promise.resolve();
+      checked.add(context);
+      return context.normalizedMessage === "#星铁别称遗器排行" ? [label] : [];
+    },
+    fallback(_message, context) {
+      expect(checked.has(context)).toBe(true);
+      return context.normalizedMessage;
+    },
+  });
+  const allowed = (names: readonly string[]) => !names.includes(label);
+  expect(await registry.dispatchFallback(group, allowed, () => false, "#星铁别称遗器排行")).toBeUndefined();
+  expect(await registry.dispatchFallback(group, allowed, () => false, "#星铁其他排行")).toBe("#星铁其他排行");
+  expect(await registry.dispatchFallback(group, () => true, () => false, "#星铁别称遗器排行")).toBe("#星铁别称遗器排行");
+});
+
 test("旧配置选择器匹配当前模块名称，禁用优先且保持其他功能可用", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-feature-names-"));
   try {

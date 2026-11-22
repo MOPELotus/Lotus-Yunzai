@@ -111,7 +111,7 @@ export interface CommandModule {
   readonly commands: Readonly<Record<string, CommandHandler>>;
   readonly aliases?: Readonly<Record<string, string>>;
   readonly fallback?: MessageFallback;
-  readonly fallbackFeatures?: (context: MessageFallbackContext) => readonly string[];
+  readonly fallbackFeatures?: (context: MessageFallbackContext) => readonly string[] | Promise<readonly string[]>;
 }
 
 interface RegisteredCommand {
@@ -306,7 +306,7 @@ export class CommandRegistry {
         reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
       };
-      if (features && !allowed([...names, ...features(context)])) continue;
+      if (features && !allowed([...names, ...(await features(context))])) continue;
       const reply = await handler(event.msg, context);
       if (reply !== undefined) return reply;
     }
