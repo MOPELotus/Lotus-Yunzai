@@ -419,19 +419,25 @@ test("锅巴区间、评分、自动补全和级联选择保留原值类型", as
   const directory = await mkdtemp(join(tmpdir(), "lotus-guoba-controls-"));
   try {
     await writeFile(join(directory, "guoba.support.js"), `
-      let values = { range: [3, 12], rating: 3.5, note: "原文本", region: ["other", 1], cron: "0 0 8 * * ?" };
+      let values = { range: [3, 12], marks: 8, rating: 3.5, note: "原文本", region: ["other", 1],
+        regions: [["other", 1]], cron: "0 0 8 * * ?" };
+      const regionalOptions = [
+        { id: "main", name: "本区", nodes: [{ id: 1, name: "一号" }] },
+        { id: "other", name: "外区", nodes: [{ id: 1, name: "外区一号" }] },
+        { id: "closed", name: "关闭区", disabled: true, nodes: [{ id: 9, name: "隐藏" }] },
+      ];
+      const fieldNames = { label: "name", value: "id", children: "nodes" };
       export const supportGuoba = () => ({ configInfo: {
         schemas: [
           { field: "range", label: "区间", component: "Slider", componentProps: { range: true, min: 2, max: 20 } },
+          { field: "marks", label: "指定档位", component: "Slider", componentProps: { step: null, marks: { 2:"低", 8:"中", 19:{ label:"高" } } } },
           { field: "rating", label: "评分", component: "Rate", componentProps: { count: 6, allowHalf: true } },
           { field: "note", label: "建议标签", component: "AutoComplete", componentProps: { options: ["预设"] } },
           { field: "region", label: "地区", component: "Cascader", componentProps: {
-            fieldNames: { label: "name", value: "id", children: "nodes" },
-            options: [
-              { id: "main", name: "本区", nodes: [{ id: 1, name: "一号" }] },
-              { id: "other", name: "外区", nodes: [{ id: 1, name: "外区一号" }] },
-              { id: "closed", name: "关闭区", disabled: true, nodes: [{ id: 9, name: "隐藏" }] },
-            ],
+            fieldNames, options: regionalOptions,
+          } },
+          { field: "regions", label: "多选地区", component: "Cascader", componentProps: {
+            fieldNames, options: regionalOptions, multiple: true, changeOnSelect: true,
           } },
           { field: "cron", label: "计划", component: "EasyCron" },
         ],
@@ -441,15 +447,19 @@ test("锅巴区间、评分、自动补全和级联选择保留原值类型", as
     `);
     const form = await loadGuobaForm(directory);
     if (!form) throw new Error("表单未加载");
-    expect(form.schemas.map(item => item.component)).toEqual(["Slider", "Rate", "AutoComplete", "Cascader", "EasyCron"]);
+    expect(form.schemas.map(item => item.component)).toEqual(["Slider", "Slider", "Rate", "AutoComplete", "Cascader", "Cascader", "EasyCron"]);
     expect((await form.read()).values).toEqual({
-      range: [3, 12], rating: 3.5, note: "原文本", region: ["other", 1], cron: "0 0 8 * * ?",
+      range: [3, 12], marks: 8, rating: 3.5, note: "原文本", region: ["other", 1], regions: [["other", 1]], cron: "0 0 8 * * ?",
     });
     for (const data of [
       { range: [21, 22] }, { range: [12, 3] }, { range: 3 }, { rating: 1.25 }, { rating: 6.5 },
-      { note: false }, { region: ["main"] }, { region: ["closed", 9] }, { region: ["main", "1"] },
+      { marks: 7 }, { note: false }, { region: ["main"] }, { region: ["closed", 9] }, { region: ["main", "1"] },
+      { regions: ["main", 1] }, { regions: [["closed"]] },
     ]) expect(await form.save(data)).toMatchObject({ status: 400 });
-    const changed = { range: [2, 17], rating: 5.5, note: "输入新文字", region: ["main", 1], cron: "0 2 6 * * ?" };
+    const changed = {
+      range: [2, 17], marks: 19, rating: 5.5, note: "输入新文字",
+      region: ["main", 1], regions: [["main"], ["other", 1]], cron: "0 2 6 * * ?",
+    };
     expect(await form.save(changed)).toMatchObject({ status: 200 });
     expect((await form.read()).values).toEqual(changed);
   } finally {

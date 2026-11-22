@@ -7,7 +7,7 @@ import "element-plus/es/components/slider/style/css";
 import "element-plus/es/components/time-picker/style/css";
 import "element-plus/es/components/tree-select/style/css";
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
-import type { GuobaField, GuobaInput, GuobaTreeNode } from "../../lib/panel-guoba.ts";
+import type { GuobaField, GuobaInput, GuobaPath, GuobaTreeNode } from "../../lib/panel-guoba.ts";
 import { panelFetch } from "./api.ts";
 import { guobaPanelAuth } from "./guoba-fields.ts";
 
@@ -18,7 +18,7 @@ const options = computed(() => props.schema.componentProps?.options ?? []);
 const contact = computed(() => props.schema.component === "GSelectGroup" || props.schema.component === "GSelectFriend");
 const contactTitle = computed(() => props.schema.component === "GSelectGroup" ? "群" : "好友");
 const auth = inject(guobaPanelAuth);
-const items = computed(() => Array.isArray(props.value) ? props.value : []);
+const items = computed(() => Array.isArray(props.value) ? props.value.filter((item): item is Item => !Array.isArray(item)) : []);
 const draft = ref("");
 const dateType = computed(() => props.schema.componentProps?.dateType ?? "date");
 const valueFormat = computed(() => props.schema.componentProps?.valueFormat ??
@@ -34,11 +34,32 @@ function cascaderOptions(nodes: readonly GuobaTreeNode[]): CascaderOption[] {
   }));
 }
 const cascader = computed(() => cascaderOptions(props.schema.componentProps?.treeData ?? []));
+function isPath(value: unknown): value is GuobaPath {
+  return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === "string" || typeof item === "number");
+}
+const cascaderValue = computed(() => {
+  const value = props.value;
+  if (props.schema.componentProps?.multiple) return Array.isArray(value) ? value.filter(isPath) : [];
+  return isPath(value) ? value : [];
+});
+const sliderMarks = computed(() => Object.keys(props.schema.componentProps?.marks ?? {}).map(Number).sort((a, b) => a - b));
+const sliderLimits = computed(() => {
+  const { min = 0, max = 100, marksOnly } = props.schema.componentProps ?? {};
+  return marksOnly ? { min: 0, max: Math.max(1, sliderMarks.value.length - 1) } : { min, max };
+});
+const sliderLabels = computed(() => props.schema.componentProps?.marksOnly
+  ? Object.fromEntries(sliderMarks.value.map((value, index) => [index, props.schema.componentProps?.marks?.[value] ?? String(value)]))
+  : props.schema.componentProps?.marks);
 const sliderValue = computed(() => Array.isArray(props.value)
   ? props.value.filter(item => typeof item === "number")
   : typeof props.value === "number" ? props.value
     : props.schema.componentProps?.multiple ? [props.schema.componentProps.min ?? 0, props.schema.componentProps.max ?? 100]
       : props.schema.componentProps?.min ?? 0);
+const displayedSliderValue = computed(() => {
+  if (!props.schema.componentProps?.marksOnly) return sliderValue.value;
+  const index = (entry: number) => Math.max(0, sliderMarks.value.indexOf(entry));
+  return Array.isArray(sliderValue.value) ? sliderValue.value.map(index) : index(sliderValue.value);
+});
 const cronPresets = [
   { label: "每分钟", value: "0 * * * * ?" },
   { label: "每小时", value: "0 0 * * * ?" },
@@ -173,6 +194,22 @@ function updateTree(value: unknown) {
     emit("update", value);
   } else updatePicker(value);
 }
+
+function updateCascader(value: unknown) {
+  if (value == null) {
+    emit("update", []);
+    return;
+  }
+  const paths = props.schema.componentProps?.multiple && Array.isArray(value) ? value.every(isPath) : isPath(value);
+  if (Array.isArray(value) && (value.length === 0 || paths)) emit("update", value);
+}
+
+function updateSlider(value: unknown) {
+  if (!props.schema.componentProps?.marksOnly) return updateTree(value);
+  const mark = (index: unknown) => typeof index === "number" ? sliderMarks.value[index] : undefined;
+  const next = Array.isArray(value) ? value.map(mark) : mark(value);
+  updateTree(next);
+}
 </script>
 
 <template>
@@ -194,12 +231,15 @@ function updateTree(value: unknown) {
     :check-strictly="!schema.componentProps?.treeCheckable || schema.componentProps?.treeCheckStrictly" :disabled="disabled"
     :placeholder="schema.componentProps?.placeholder ?? '选择分类'" :teleported="false" clearable filterable @update:model-value="updateTree" />
   <ElCascader v-else-if="schema.component === 'Cascader'" :id="id"
-    :model-value="Array.isArray(treeValue) ? treeValue : undefined" :options="cascader"
+    :model-value="cascaderValue" :options="cascader"
+    :props="{ multiple: schema.componentProps?.multiple, checkStrictly: schema.componentProps?.changeOnSelect }"
     :disabled="disabled" :placeholder="schema.componentProps?.placeholder ?? '请选择'"
-    :teleported="false" clearable filterable @update:model-value="updateTree" />
-  <ElSlider v-else-if="schema.component === 'Slider'" :id="id" :model-value="sliderValue"
-    :min="schema.componentProps?.min" :max="schema.componentProps?.max" :step="schema.componentProps?.step"
-    :range="schema.componentProps?.multiple" :aria-label="schema.label" :disabled="disabled" @update:model-value="updateTree" />
+    :teleported="false" clearable filterable @update:model-value="updateCascader" />
+  <ElSlider v-else-if="schema.component === 'Slider'" :id="id" :model-value="displayedSliderValue"
+    :min="sliderLimits.min" :max="sliderLimits.max" :step="schema.componentProps?.step" :marks="sliderLabels"
+    :format-tooltip="schema.componentProps?.marksOnly ? index => String(sliderMarks[index] ?? sliderMarks.at(-1)) : undefined"
+    :range="schema.componentProps?.multiple" :aria-label="schema.label"
+    :disabled="disabled || (schema.componentProps?.marksOnly && sliderMarks.length === 1)" @update:model-value="updateSlider" />
   <ElRate v-else-if="schema.component === 'Rate'" :id="id" :model-value="typeof value === 'number' ? value : 0"
     :max="schema.componentProps?.count" :allow-half="schema.componentProps?.allowHalf" :aria-label="schema.label"
     :disabled="disabled" clearable @update:model-value="updatePicker" />

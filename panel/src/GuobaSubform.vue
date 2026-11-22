@@ -313,7 +313,8 @@ function confirm() {
 .subform-checkboxes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .subform-checkboxes > span { flex-basis: 100%; font-weight: 600; }
 .subform-checkboxes label { display: inline-flex; align-items: center; gap: 4px; }
-.subform-field input:not([type="checkbox"], .el-input__inner, .el-select__input), .subform-field select, .subform-field textarea {
+.subform-field input:not([type="checkbox"], .el-input__inner, .el-select__input, .el-cascader__search-input),
+.subform-field select, .subform-field textarea {
   width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px;
   background: var(--surface); color: var(--ink); font: inherit;
 }

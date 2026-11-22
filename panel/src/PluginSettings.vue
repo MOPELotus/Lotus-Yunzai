@@ -580,7 +580,7 @@ onBeforeUnmount(() => {
 .plugin-field label, .plugin-field-label, .filters label { font-size: 14px; font-weight: 600; }
 .checkbox-group label { display: inline-flex; align-items: center; gap: 5px; font-weight: 400; }
 
-.plugin-field :is(input:not([type="checkbox"], .el-input__inner, .el-select__input), select) {
+.plugin-field :is(input:not([type="checkbox"], .el-input__inner, .el-select__input, .el-cascader__search-input), select) {
   min-height: 38px;
   width: 100%;
   padding: 0 10px;
@@ -592,7 +592,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .plugin-field select[multiple] { min-height: 80px; padding: 4px 8px; }
-.plugin-field :is(input:not(.el-input__inner, .el-select__input), select):focus-visible {
+.plugin-field :is(input:not(.el-input__inner, .el-select__input, .el-cascader__search-input), select):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

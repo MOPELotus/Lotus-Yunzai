@@ -11,7 +11,8 @@ const components = [
 ] as const;
 type Component = typeof components[number] | "GButtons";
 type Scalar = string | number | boolean | null;
-export type GuobaInput = Scalar | Scalar[];
+export type GuobaPath = (string | number)[];
+export type GuobaInput = Scalar | (Scalar | GuobaPath)[];
 
 export interface GuobaTreeNode {
   readonly label: string;
@@ -83,6 +84,9 @@ export interface GuobaField {
     labelInValue?: boolean;
     allowHalf?: boolean;
     count?: number;
+    marks?: Readonly<Record<number, string>>;
+    marksOnly?: boolean;
+    changeOnSelect?: boolean;
   }>;
 }
 
@@ -134,6 +138,11 @@ function record(value: unknown): value is Record<string, unknown> {
 function scalar(value: unknown): value is Scalar {
   return value === null || typeof value === "string" || typeof value === "boolean" ||
     (typeof value === "number" && Number.isFinite(value));
+}
+
+function isGuobaPath(value: unknown): value is GuobaPath {
+  return Array.isArray(value) && value.length > 0 &&
+    value.every(item => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)));
 }
 
 function pathParts(field: string): string[] {
@@ -230,12 +239,24 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
       props.treeData = normaliseTree(raw.treeData, record(raw.fieldNames) ? raw.fieldNames : {});
     }
     if (component === "Cascader") {
-      if (raw.multiple === true || raw.changeOnSelect === true) return undefined;
+      props.multiple = raw.multiple === true;
+      props.changeOnSelect = raw.changeOnSelect === true;
       props.treeData = normaliseTree(options, record(raw.fieldNames) ? raw.fieldNames : {}, false);
     }
     if (component === "Slider") {
-      if (raw.step === null) return undefined;
       props.multiple = raw.range === true;
+      props.marksOnly = raw.step === null;
+      const minimum = typeof min === "number" && Number.isFinite(min) ? min : 0;
+      const maximum = typeof max === "number" && Number.isFinite(max) ? max : 100;
+      if (record(raw.marks)) {
+        props.marks = Object.fromEntries(Object.entries(raw.marks).flatMap(([key, rawLabel]) => {
+          const number = Number(key);
+          if (!Number.isFinite(number) || number < minimum || number > maximum || !key.trim()) return [];
+          const label = record(rawLabel) ? rawLabel.label : rawLabel;
+          return [[number, typeof label === "string" || typeof label === "number" ? String(label) : key]];
+        }));
+      }
+      if (props.marksOnly && !Object.keys(props.marks ?? {}).length) return undefined;
     }
     if (component === "Rate") {
       props.count = typeof raw.count === "number" && Number.isSafeInteger(raw.count) && raw.count >= 1 && raw.count <= 50 ? raw.count : 5;
@@ -263,7 +284,8 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
     if (mode === "multiple" || mode === "tags") props.mode = mode;
     if (component === "CheckboxGroup") props.mode = "multiple";
     if (child && typeof addonAfter === "string") props.addonAfter = addonAfter;
-    if (child && (scalar(defaultValue) || (Array.isArray(defaultValue) && defaultValue.every(scalar)))) {
+    if (child && (scalar(defaultValue) || (Array.isArray(defaultValue) && defaultValue.every(scalar)) ||
+        (component === "Cascader" && props.multiple && Array.isArray(defaultValue) && defaultValue.every(isGuobaPath)))) {
       props.defaultValue = defaultValue;
     }
     if (component !== "Cascader" && Array.isArray(options)) {
@@ -279,7 +301,8 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
     }
   }
   if (child && component !== "InputPassword" &&
-      (scalar(schema.defaultValue) || (Array.isArray(schema.defaultValue) && schema.defaultValue.every(scalar)))) {
+      (scalar(schema.defaultValue) || (Array.isArray(schema.defaultValue) && schema.defaultValue.every(scalar)) ||
+        (component === "Cascader" && props.multiple && Array.isArray(schema.defaultValue) && schema.defaultValue.every(isGuobaPath)))) {
     props.defaultValue = schema.defaultValue;
   }
   return {
@@ -316,6 +339,7 @@ function inputValue(schema: ValueField, value: unknown): GuobaInput {
   if (schema.component !== "InputPassword") {
     if (scalar(value)) return value;
     if (Array.isArray(value) && value.every(scalar)) return [...value];
+    if (schema.component === "Cascader" && schema.componentProps?.multiple && Array.isArray(value) && value.every(isGuobaPath)) return value;
   }
   throw new Error();
 }
@@ -339,22 +363,22 @@ function treeNode(nodes: readonly GuobaTreeNode[], item: Scalar): GuobaTreeNode 
   }
 }
 
-function validCascaderPath(nodes: readonly GuobaTreeNode[], selection: readonly Scalar[]) {
+function validCascaderPath(nodes: readonly GuobaTreeNode[], selection: GuobaPath, acceptsParents: boolean) {
   for (const value of selection) {
     const current = nodes.find(node => !node.disabled && node.value === value);
     if (!current) return false;
     nodes = current.children ?? [];
   }
-  return nodes.length === 0;
+  return acceptsParents || nodes.length === 0;
 }
 
 function storedValue(schema: GuobaField, value: GuobaInput, previous: unknown): unknown {
   if (!labeledTree(schema) || value === null) return value;
   const { treeData = [], treeCheckStrictly } = schema.componentProps!;
   const old = (Array.isArray(previous) ? previous : [previous]).filter(record);
-  const item = (key: Scalar) => {
+  const item = (key: Scalar | GuobaPath) => {
     const carried = old.find(entry => entry.value === key && entry.halfChecked !== true);
-    return carried ?? { value: key, label: treeNode(treeData, key)?.label ?? String(key) };
+    return carried ?? { value: key, label: (scalar(key) && treeNode(treeData, key)?.label) || String(key) };
   };
   if (!Array.isArray(value)) return item(value);
   const halfChecked = treeCheckStrictly ? old.filter(entry => entry.halfChecked === true && !value.includes(entry.value as Scalar)) : [];
@@ -381,18 +405,25 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
   if (schema.component === "Slider") {
     const values = Array.isArray(value) ? value : [value];
     if (Array.isArray(value) !== Boolean(props?.multiple) || (Array.isArray(value) && (value.length !== 2 || Number(value[0]) > Number(value[1]))) ||
-        values.some(item => typeof item !== "number" || item < (props?.min ?? 0) || item > (props?.max ?? 100))) throw new Error();
+        values.some(item => typeof item !== "number" || item < (props?.min ?? 0) || item > (props?.max ?? 100) ||
+          (props?.marksOnly && !Object.hasOwn(props.marks ?? {}, item)))) throw new Error();
   }
   if (schema.component === "Rate" && (typeof value !== "number" || value < 0 || value > (props?.count ?? 5) ||
       !Number.isInteger(value * (props?.allowHalf ? 2 : 1)))) throw new Error();
-  if (schema.component === "Cascader" && (!Array.isArray(value) ||
-      (value.length > 0 && !validCascaderPath(props?.treeData ?? [], value)))) throw new Error();
+  if (schema.component === "Cascader") {
+    if (!Array.isArray(value)) throw new Error();
+    const paths = props?.multiple ? value : value.length ? [value] : [];
+    if (!paths.every(path => isGuobaPath(path) && validCascaderPath(props?.treeData ?? [], path, props?.changeOnSelect === true))) throw new Error();
+  }
   if ((schema.component === "DatePicker" || schema.component === "TimePicker") &&
       typeof value !== "string" && typeof value !== "number") throw new Error();
   if (schema.component === "TreeSelect") {
     const values = Array.isArray(value) ? value : [value];
     if (Array.isArray(value) !== Boolean(props?.multiple) ||
-        values.some(item => { const node = treeNode(props?.treeData ?? [], item); return !node || node.disabled; })) throw new Error();
+        values.some(item => {
+          const node = scalar(item) ? treeNode(props?.treeData ?? [], item) : undefined;
+          return !node || node.disabled;
+        })) throw new Error();
   }
   if (schema.component === "InputNumber") {
     const number = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
@@ -606,7 +637,8 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
     const compiled = compile(configSchemas.filter(item => item !== undefined));
     const allowed = guobaActions(raw, providerVersions.get(file) === version ? configInfo.actions : undefined, field => {
       const schema = compiled.fields.get(field)?.schema;
-      return schema !== undefined && schema.component !== "InputPassword" && schema.component !== "GSubForm" && !labeledTree(schema);
+      return schema !== undefined && schema.component !== "InputPassword" && schema.component !== "GSubForm" && !labeledTree(schema) &&
+        !(schema.component === "Cascader" && schema.componentProps?.multiple);
     });
     const schemas = configSchemas.map((schema, index) => schema ?? allowed.groups.get(index))
       .filter(item => item !== undefined);
