@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
 import { exists, move, writeJournal } from "../lib/filesystem-transaction.ts";
 import { publishMigrationPayload } from "../lib/migration-publication.ts";
+import { verifyLegacyProtocolBackups } from "../lib/plugins/legacy-backup-stage.ts";
+import { verifyStagedProtocolReceipts, type ProtocolMigrationOptions, type StagedProtocolReceipt } from "../lib/plugins/legacy-protocol-stage.ts";
 import { stageMigration } from "./migrate-stage.ts";
 
 type Staged = Awaited<ReturnType<typeof stageMigration>>;
@@ -12,8 +14,10 @@ interface PreparedMigration {
   readonly source: string;
   readonly target: string;
   readonly plugins: readonly string[];
+  readonly protocolReceipts?: readonly StagedProtocolReceipt[];
   readonly report: {
     readonly archiveCount: number;
+    readonly protocolReplacements?: readonly { readonly id: string; readonly legacyPath: string }[];
     readonly profiles: Staged["profiles"];
     readonly officialBindings?: Staged["officialBindings"];
     readonly schedules: Staged["schedules"];
@@ -44,7 +48,8 @@ async function loadPrepared(directory: string, source: string, target: string): 
   if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size > 256 * 1024) throw new Error("迁移暂存清单无效。");
   const result = JSON.parse(await readFile(file, "utf8")) as PreparedMigration;
   if (!result || result.version !== 1 || !Array.isArray(result.plugins) ||
-      !result.plugins.every(path => typeof path === "string") || !result.report || typeof result.report !== "object") {
+      !result.plugins.every(path => typeof path === "string") ||
+      (result.protocolReceipts !== undefined && !Array.isArray(result.protocolReceipts)) || !result.report || typeof result.report !== "object") {
     throw new Error("迁移暂存清单无效。");
   }
   if (result.source !== source || result.target !== target) {
@@ -53,8 +58,9 @@ async function loadPrepared(directory: string, source: string, target: string): 
   return result;
 }
 
-async function prepare(source: string, target: string, directory: string, signal?: AbortSignal): Promise<PreparedMigration> {
-  const staged = await stageMigration(source, target, signal);
+async function prepare(source: string, target: string, directory: string, signal?: AbortSignal,
+  protocolOptions?: ProtocolMigrationOptions): Promise<PreparedMigration> {
+  const staged = await stageMigration(source, target, signal, protocolOptions);
   try {
     const payload = join(staged.directory, "payload");
     await rename(staged.state.directory, payload);
@@ -70,7 +76,11 @@ async function prepare(source: string, target: string, directory: string, signal
       source,
       target,
       plugins: staged.retained.retained.map(entry => entry.path),
+      ...(staged.protocolReceipts?.length && { protocolReceipts: staged.protocolReceipts }),
       report: {
+        ...(staged.protocolReceipts?.length && {
+          protocolReplacements: staged.protocolReceipts.map(({ id, legacyPath }) => ({ id, legacyPath })),
+        }),
         archiveCount: staged.backup.archived,
         profiles: staged.profiles,
         officialBindings: staged.officialBindings,
@@ -102,7 +112,8 @@ async function prepare(source: string, target: string, directory: string, signal
   }
 }
 
-export async function migrateInstallation(sourcePath: string, targetPath: string, signal?: AbortSignal) {
+export async function migrateInstallation(sourcePath: string, targetPath: string, signal?: AbortSignal,
+  protocolOptions?: ProtocolMigrationOptions) {
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
   const directory = join(dirname(target), "." + basename(target) + ".lotus-migration-prepared");
   const lock = await lockFile(directory + ".sqlite", "旧安装迁移", 0);
@@ -110,11 +121,18 @@ export async function migrateInstallation(sourcePath: string, targetPath: string
     signal?.throwIfAborted();
     const prepared = await exists(directory)
       ? await loadPrepared(directory, source, target)
-      : await prepare(source, target, directory, signal);
+      : await prepare(source, target, directory, signal, protocolOptions);
     signal?.throwIfAborted();
-    const result = await publishMigrationPayload(target, join(directory, "payload"), async () => {
+    const verify = async (root: string) => {
       signal?.throwIfAborted();
-    }, prepared.plugins);
+      if (prepared.protocolReceipts?.length) {
+        await verifyStagedProtocolReceipts(root, prepared.protocolReceipts, protocolOptions, signal);
+        await verifyLegacyProtocolBackups(source, root, prepared.protocolReceipts, signal);
+      }
+      signal?.throwIfAborted();
+    };
+    const result = await publishMigrationPayload(target, join(directory, "payload"), verify, prepared.plugins,
+      prepared.protocolReceipts?.length ? verify : undefined);
     return { ...result, ...prepared.report };
   } finally {
     lock.close();

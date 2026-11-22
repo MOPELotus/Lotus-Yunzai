@@ -6,6 +6,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { builtInDirectories } from "../builtin-modules.ts";
 import { createLocalGit } from "../local-git.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
+import { approvedProtocolReplacements, matchApprovedProtocolReplacement, type ApprovedProtocolReplacement } from "./legacy-protocol-replacements.ts";
 import { inspectPluginMetadata, legacyHostScriptGroup, pluginScriptExtensions, retiredPluginScript } from "./metadata.ts";
 
 export type LegacyPluginPlanEntry =
@@ -13,7 +14,8 @@ export type LegacyPluginPlanEntry =
       readonly replacementModule?: string }
   | { readonly path: string; readonly status: "retain" | "built-in" }
   | { readonly path: string; readonly status: "review" | "scan-error"; readonly reason: string }
-  | { readonly path: string; readonly status: "protocol-candidate"; readonly protocol: string };
+  | { readonly path: string; readonly status: "protocol-candidate"; readonly protocol: string;
+      readonly replacement?: string };
 
 const maximumMetadataBytes = 256 * 1024;
 const maximumScriptBytes = 8 * 1024 * 1024;
@@ -152,6 +154,7 @@ async function legacyHostDirectory(source: string, name: string): Promise<Legacy
 export async function planLegacyPlugins(
   installation: string,
   targetBuiltInPaths: ReadonlySet<string>,
+  replacements: readonly ApprovedProtocolReplacement[] = approvedProtocolReplacements,
 ): Promise<readonly LegacyPluginPlanEntry[]> {
   const root = resolve(installation, "plugins");
   const plan: LegacyPluginPlanEntry[] = [];
@@ -202,9 +205,14 @@ export async function planLegacyPlugins(
         plan.push({ path, status: "review", reason: metadata.rejection });
         continue;
       }
-      const protocol = protocolCandidate(entry.name, metadata);
+      const replacement = await matchApprovedProtocolReplacement({
+        packageName: metadata.declaredName,
+        manifest: contents,
+        gitRemotes: repositories,
+      }, script => readScript(source, script), replacements);
+      const protocol = replacement?.legacy.protocol ?? protocolCandidate(entry.name, metadata);
       if (protocol) {
-        plan.push({ path, status: "protocol-candidate", protocol });
+        plan.push({ path, status: "protocol-candidate", protocol, ...(replacement && { replacement: replacement.id }) });
         continue;
       }
       const duplicate = metadata.identities.map(identity => seen.get(identity)).find(label => label !== undefined);
@@ -233,7 +241,8 @@ export function withinInstallation(base: string, path: string) {
   return !isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`);
 }
 
-export async function planMigration(sourcePath: string, targetPath: string) {
+export async function planMigration(sourcePath: string, targetPath: string,
+  replacements: readonly ApprovedProtocolReplacement[] = approvedProtocolReplacements) {
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
   const [sourceInfo, targetInfo] = await Promise.all([lstat(source), lstat(target)]);
   if (!sourceInfo.isDirectory() || !targetInfo.isDirectory()) throw new Error("旧安装副本与目标安装须为实体目录。");
@@ -256,7 +265,7 @@ export async function planMigration(sourcePath: string, targetPath: string) {
     const name = /^(?:040000|160000) [^ ]+ [^\t]+\t(.+)$/u.exec(entry)?.[1];
     if (name && nativeDirectories.has(name)) protectedPaths.add(`plugins/${name}`);
   }
-  const plugins = await planLegacyPlugins(source, protectedPaths);
+  const plugins = await planLegacyPlugins(source, protectedPaths, replacements);
   return { version: 1, mode: "dry-run", scope: "legacy-plugins", source, target, plugins } as const;
 }
 

@@ -285,6 +285,7 @@ export async function publishMigrationPayload(
   payloadDirectory: string,
   verify?: (target: string) => Promise<void>,
   approvedPlugins: readonly string[] = [],
+  verifyStage?: (stage: string) => Promise<void>,
 ) {
   const [root, stage] = await Promise.all([realpath(targetDirectory), realpath(payloadDirectory)]);
   const startup = await lockFile(managedStartupLockPath(root), "启动操作", 0);
@@ -314,6 +315,7 @@ export async function publishMigrationPayload(
         }
         throw new Error("该目标已有另一份迁移结果，不能直接覆盖。");
       }
+      await verifyStage?.(stage);
       const names = (await readdir(stage)).sort();
       if (!names.every(name => isScope(name) || name === "plugins")) {
         throw new Error("迁移暂存只接受已验证的 config、data、backup 和兼容插件。");

@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { move } from "../lib/filesystem-transaction.ts";
 import { readOptionalLocalConfig } from "../lib/config.ts";
 import { stageLegacyAtlasState } from "../lib/migration-atlas-state.ts";
 import { stageLegacyCheckinSchedules } from "../lib/migration-checkin-schedules.ts";
@@ -19,20 +20,26 @@ import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-histo
 import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
 import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
+import { protocolReceipt, stageApprovedProtocolReplacements, type ProtocolMigrationOptions } from "../lib/plugins/legacy-protocol-stage.ts";
 import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
 import { planMigration } from "../lib/plugins/migration-plan.ts";
 import { prepareStarRailChallengeTheme } from "../plugins/starrail/challenge-theme.ts";
 
-export async function stageMigration(source: string, target: string, signal?: AbortSignal) {
+export async function stageMigration(source: string, target: string, signal?: AbortSignal,
+  protocolOptions?: ProtocolMigrationOptions) {
   signal?.throwIfAborted();
-  const plan = await planMigration(source, target);
+  const enabledProtocols = protocolOptions?.approvals?.length && protocolOptions.installer ? protocolOptions : undefined;
+  const plan = await planMigration(source, target, enabledProtocols?.approvals);
   signal?.throwIfAborted();
   const directory = await mkdtemp(join(dirname(plan.target), `.${basename(plan.target)}.lotus-migration-`));
   try {
     const archiveRoot = join(directory, "plugin-archive");
     await mkdir(archiveRoot, { mode: 0o700 });
-    const backup = await stageLegacyPluginBackup(plan, archiveRoot, signal);
-    const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal);
+    const replacements = enabledProtocols ? await stageApprovedProtocolReplacements(plan, directory, enabledProtocols, signal) : undefined;
+    const protocolReceipts = replacements?.prepared.map(protocolReceipt);
+    const backup = await stageLegacyPluginBackup(plan, archiveRoot, signal, enabledProtocols &&
+      { approvals: enabledProtocols.approvals, prepared: protocolReceipts ?? [] });
+    const retained = await stageRetainedLegacyPlugins(plan, archiveRoot, signal, enabledProtocols?.approvals);
     const state = await stageLegacyState(plan.source, directory, signal);
     const profiles = await stageLegacyProfiles(plan.source, state.directory, signal);
     const officialBindings = await stageLegacyOfficialBindings(plan.source, state.directory, signal);
@@ -56,12 +63,22 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const starRailTheme = await prepareStarRailChallengeTheme(Bun.pathToFileURL(`${state.directory}/`), {
       source: Bun.pathToFileURL(`${plan.source}/`), signal,
     });
+    for (const replacement of replacements?.prepared ?? []) {
+      const packageDirectory = join(state.directory, "data", "optional-protocols", replacement.id);
+      const configFile = join(state.directory, "config", "optional-protocols", replacement.id + ".yaml");
+      await mkdir(dirname(packageDirectory), { mode: 0o700, recursive: true });
+      await mkdir(dirname(configFile), { mode: 0o700, recursive: true });
+      await move(replacement.packageDirectory, packageDirectory);
+      await move(replacement.configFile, configFile);
+      await rm(replacement.directory, { recursive: true });
+    }
     signal?.throwIfAborted();
+    const replaced = new Set(protocolReceipts?.map(item => item.legacyPath));
     const deferredPlugins = plan.plugins.filter(entry =>
-      entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
+      entry.status === "review" || entry.status === "scan-error" || (entry.status === "protocol-candidate" && !replaced.has(entry.path)));
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
       sharedGameHistory, coreConfig, groupConfig, keywords, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
-      shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
+      shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins, protocolReceipts } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
     throw error;
@@ -80,7 +97,8 @@ if (import.meta.main) {
     process.on("SIGTERM", interrupt);
     try {
       const result = await stageMigration(source, fileURLToPath(new URL("../", import.meta.url)), controller.signal);
-      console.log(JSON.stringify(result, null, 2));
+      const { protocolReceipts: _privateReceipts, ...report } = result;
+      console.log(JSON.stringify(report, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);
       else console.error("迁移暂存无法读取或保存所需文件。");

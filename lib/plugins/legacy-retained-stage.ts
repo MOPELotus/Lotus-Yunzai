@@ -6,6 +6,7 @@ import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { checkRetainedHostDependency, legacyDependencyName, resolveLegacySpecifier,
   type LegacyImportMode, type LegacyUnresolvedDependency } from "./legacy-dependency-resolution.ts";
 import { copyLocalPlugin } from "./local-plugin-copy.ts";
+import { type ApprovedProtocolReplacement } from "./legacy-protocol-replacements.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
 
 const browserPackages = new Set([
@@ -202,7 +203,8 @@ type HeldPlugin = { readonly path: string } & (
   { readonly reason: "retired-entry" });
 
 /** Populate an isolated overlay. Only the later migration publisher may install it. */
-export async function stageRetainedLegacyPlugins(plan: LegacyMigrationPlan, stagingPath: string, signal?: AbortSignal) {
+export async function stageRetainedLegacyPlugins(plan: LegacyMigrationPlan, stagingPath: string, signal?: AbortSignal,
+  approvals?: readonly ApprovedProtocolReplacement[]) {
   signal?.throwIfAborted();
   const staging = await realpath(stagingPath);
   const stagingInfo = await lstat(staging);
@@ -223,7 +225,7 @@ export async function stageRetainedLegacyPlugins(plan: LegacyMigrationPlan, stag
   try {
     const confirmPlan = async () => {
       signal?.throwIfAborted();
-      if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target))) {
+      if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target, approvals))) {
         throw new Error("旧插件或目标工作区已变化，请重新预检。");
       }
     };

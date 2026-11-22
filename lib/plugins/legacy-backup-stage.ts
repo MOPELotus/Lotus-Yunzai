@@ -4,6 +4,8 @@ import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { lockFile } from "../file-lock.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
+import { type ApprovedProtocolReplacement } from "./legacy-protocol-replacements.ts";
+import { type StagedProtocolReceipt } from "./legacy-protocol-stage.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
 
 const blockSize = 128 * 1024;
@@ -158,8 +160,23 @@ async function checkedPath(root: string, path: string, createParents = false) {
   return join(root, ...parts);
 }
 
+/** Confirm recovered protocol backups still contain the original snapshot bytes before committing the new adapter. */
+export async function verifyLegacyProtocolBackups(source: string, payload: string,
+  prepared: readonly StagedProtocolReceipt[], signal?: AbortSignal) {
+  const backup = join(payload, "backup");
+  const root = await lstat(backup);
+  if (!root.isDirectory() || (root.mode & 0o077) !== 0) throw new Error("附加协议须有私有旧目录备份。");
+  for (const { legacyPath } of prepared) {
+    const input = await checkedPath(source, legacyPath);
+    const archived = await checkedPath(backup, legacyPath);
+    if (!(await lstat(input)).isDirectory()) throw sourceChanged();
+    await transferTree(input, archived, false, signal);
+  }
+}
+
 /** The caller owns the disposable staging checkout. This never changes the legacy snapshot or the target checkout. */
-export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, stagingPath: string, signal?: AbortSignal) {
+export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, stagingPath: string, signal?: AbortSignal,
+  replacements?: { readonly approvals: readonly ApprovedProtocolReplacement[]; readonly prepared: readonly StagedProtocolReceipt[] }) {
   signal?.throwIfAborted();
   const staging = await realpath(stagingPath);
   const staged = await lstat(staging);
@@ -171,9 +188,19 @@ export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, staging
         (info.dev === staged.dev && info.ino === staged.ino)) throw new Error("插件归档暂存根须与新旧安装独立。");
   }
   const confirmPlan = async () => {
-    if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target))) throw sourceChanged();
+    if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target, replacements?.approvals))) throw sourceChanged();
   };
-  const archive = plan.plugins.filter(entry => entry.status === "archive");
+  const archive: { readonly path: string; readonly kind: "directory" | "script" }[] =
+    plan.plugins.filter(entry => entry.status === "archive");
+  const paths = new Set(archive.map(entry => entry.path));
+  for (const prepared of replacements?.prepared ?? []) {
+    if (paths.has(prepared.legacyPath) || !plan.plugins.some(entry => entry.status === "protocol-candidate" &&
+        entry.path === prepared.legacyPath && entry.replacement === prepared.id)) {
+      throw new Error("附加协议归档未匹配已验证的迁移方案。");
+    }
+    paths.add(prepared.legacyPath);
+    archive.push({ path: prepared.legacyPath, kind: "directory" });
+  }
   const lock = await lockFile(join(dirname(staging), `.${basename(staging)}.lotus-plugin-backup.sqlite`), "迁移插件归档");
   let temporary: string | undefined;
   try {
