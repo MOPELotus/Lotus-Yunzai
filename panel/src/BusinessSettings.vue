@@ -13,6 +13,8 @@ interface Field {
   hint?: string;
   readonly?: boolean;
   itemType?: "number" | "string";
+  separator?: "line";
+  multiline?: boolean;
 }
 type Values = Record<string, unknown>;
 interface Snapshot { fields: Field[]; values: Values; warning?: string }
@@ -69,7 +71,7 @@ function decode(field: Field) {
     catch { throw new Error(`${field.label}的 JSON 格式有误。`); }
   }
   if (field.type === "list") {
-    const items = text.split(/[\n,，]+/u).map(item => item.trim()).filter(Boolean);
+    const items = text.split(field.separator === "line" ? /\r?\n/u : /[\n,，]+/u).map(item => item.trim()).filter(Boolean);
     return field.itemType === "number" ? items.map(item => {
       const number = Number(item);
       if (!Number.isSafeInteger(number)) throw new Error(`${field.label}须填写有效数字。`);
@@ -143,7 +145,7 @@ onBeforeUnmount(() => {
           :disabled="busy || field.readonly">
           <option v-for="option in field.options" :key="option.value" :value="String(option.value)">{{ option.label }}</option>
         </select>
-        <textarea v-else-if="field.type === 'list' || field.type === 'json'" :id="'native-' + field.key"
+        <textarea v-else-if="field.type === 'list' || field.type === 'json' || field.multiline" :id="'native-' + field.key"
           :value="String(draft[field.key] ?? '')" rows="4" :disabled="busy || field.readonly"
           :placeholder="field.type === 'list' ? '每行一项' : undefined" @input="changeText(field.key, $event)" />
         <input v-else :id="'native-' + field.key" v-model="draft[field.key]" :disabled="busy || field.readonly"
