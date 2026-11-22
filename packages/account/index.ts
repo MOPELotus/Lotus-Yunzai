@@ -1090,8 +1090,15 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           ...current.account, cookie: credentials.cookie,
           stokenCookie: credentials.stokenCookie ?? current.account.stokenCookie,
         })) throw new ProfileError("invalid", "刷新返回的 Cookie 与档案账号不一致。");
+        const login = new Map(cookieFields(credentials.stokenCookie ?? ""));
+        const stuid = accountId(login.get("stuid"));
+        const stoken = current.account.stoken || new Map(cookieFields(current.account.stokenCookie)).get("stoken");
+        if (stuid && stoken && login.get("stoken") !== stoken) {
+          throw new ProfileError("invalid", "刷新返回的登录令牌与当前档案不一致。");
+        }
         return {
           ...account, cookie: credentials.cookie, ltoken: credentials.ltoken,
+          ...(stuid && stoken && { stuid, ltuid: stuid, stoken, mid: login.get("mid") ?? current.account.mid }),
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
           ...(roles && { ...rolesForStorage(roles, current), roles_updated_at: new Date().toISOString(), role_sync_error: "" }),
         };

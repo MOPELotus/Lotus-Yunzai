@@ -631,7 +631,9 @@ test("旧 Cookie 自检只换掉异常的可续期档案并保留失败档", asy
     const rejected = content("72", "v2_expired", bad("72"));
     const healthy = content("73", "v2_healthy", "ltoken=legacy;ltuid=73;cookie_token_v2=v2_new;account_id_v2=73;account_mid_v2=fixture-mid;");
     await Promise.all([writeFile(join(root, "41.yaml"), stranded), writeFile(join(root, "42.yaml"), rejected),
-      writeFile(join(root, "43.yaml"), healthy), writeFile(join(root, "44.yaml"), content("74", "v2_valid", bad("74")))]);
+      writeFile(join(root, "43.yaml"), healthy), writeFile(join(root, "44.yaml"), Bun.YAML.stringify({ account: {
+        stoken_cookie: "stoken=v2_valid;stuid=74;mid=fixture-mid;", cookie: bad("74"),
+      } }))]);
     const profiles = createProfileStore(root);
     const seen: string[] = [];
     const client = createProfileHoyoClient(profiles, async (url, init) => {
@@ -650,7 +652,8 @@ test("旧 Cookie 自检只换掉异常的可续期档案并保留失败档", asy
     expect(await Bun.file(join(root, "41.yaml")).text()).toBe(stranded);
     expect(await Bun.file(join(root, "42.yaml")).text()).toBe(rejected);
     expect(await Bun.file(join(root, "43.yaml")).text()).toBe(healthy);
-    expect((await profiles.accountContext("44")).account.cookie).toBe("ltoken=legacy;ltuid=74;cookie_token_v2=v2_new;account_id_v2=74;account_mid_v2=fixture-mid;");
+    expect((await profiles.accountContext("44")).account).toMatchObject({ stuid: "74", ltuid: "74", stoken: "v2_valid", mid: "fixture-mid",
+      cookie: "ltoken=legacy;ltuid=74;cookie_token_v2=v2_new;account_id_v2=74;account_mid_v2=fixture-mid;" });
     expect(await repairLegacyPassportCookies(profiles, client, AbortSignal.abort())).toEqual({ repaired: 0, failed: 0 });
   } finally {
     await rm(root, { recursive: true, force: true });
