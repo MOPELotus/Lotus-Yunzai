@@ -22,8 +22,10 @@ function entryKey({ qq, profileId }: ProfileIdentity) {
 }
 
 function settled({ runningAt: _running, communityRetry: _retry, communityWrites: _writes, communityWriteAccount: _owner,
-  gameWrites: _games, gameWriteAccount: _gameOwner, gameWritesUnknown: _unknownGames, ...entry }: Entry) {
-  return entry;
+  gameWrites: _games, gameWriteAccount: _gameOwner, gameWritesUnknown: _unknownGames, manualOnly: _manual,
+  noticeAttemptedAt, ...entry }: Entry) {
+  // The older scheduler uses notified to suppress repeats and ignores the attempt marker.
+  return noticeAttemptedAt ? { ...entry, notified: true } : entry;
 }
 
 function held(entry: Entry): Entry {
@@ -32,7 +34,7 @@ function held(entry: Entry): Entry {
 
 function hasProgress(entry: Entry) {
   return !!(entry.runningAt || entry.communityRetry || entry.communityWrites || entry.communityWriteAccount ||
-    entry.gameWriteAccount || entry.gameWritesUnknown || entry.doneAt || entry.ok !== undefined || entry.stage);
+    entry.gameWriteAccount || entry.gameWritesUnknown || entry.manualOnly || entry.doneAt || entry.ok !== undefined || entry.stage);
 }
 
 function canRetryForum(status: Entry["communityWrites"], forum: string) {
@@ -84,7 +86,7 @@ export async function prepareLegacyCheckinSchedule(
       continue;
     }
     if (target === "e28c6df") counts.unsupportedGames += retry?.games?.length ?? 0;
-    if (candidate.runningAt || (previous && hasProgress(previous) && !isDeepStrictEqual(previous, candidate))) {
+    if (candidate.runningAt || candidate.manualOnly || (previous && hasProgress(previous) && !isDeepStrictEqual(previous, candidate))) {
       counts.held++;
       if (retry || previous?.communityRetry) counts.heldRetries++;
       entries.push(held(candidate));
@@ -121,7 +123,8 @@ export async function prepareLegacyCheckinSchedule(
       entries.push(held(candidate));
     } else {
       counts.unstarted++;
-      entries.push(settled(candidate));
+      const noticeAttemptedAt = candidate.noticeAttemptedAt ?? previous?.noticeAttemptedAt;
+      entries.push(settled({ ...candidate, notified: candidate.notified || previous?.notified === true, noticeAttemptedAt }));
     }
   }
   return { plan: { ...source, entries }, counts };
@@ -241,7 +244,7 @@ async function guardedScopes(source: CheckinSchedulePlan, legacy: CheckinSchedul
   const earlier = new Map(legacy?.entries.map(item => [entryKey(item), item]));
   for (const entry of source.entries) {
     const retry = entry.communityRetry;
-    if (entry.done || entry.runningAt || !retry?.verifiedUnsent ||
+    if (entry.done || entry.runningAt || entry.manualOnly || !retry?.verifiedUnsent ||
         Date.parse(retry.nextAt) > startedAt || checkinScheduleClock(Date.parse(retry.nextAt)).date !== date) continue;
     const previous = earlier.get(entryKey(entry));
     if (previous && (previous.done || hasProgress(previous))) continue;
