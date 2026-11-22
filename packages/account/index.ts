@@ -11,6 +11,7 @@ export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
 export { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { loadOfficialArtwork, loadPublicQqAvatar } from "./official-artwork.ts";
 export { createGroupRankRefresh, type GroupRankRefreshResult } from "./group-rank-refresh.ts";
+export { gameRegionDisplayName } from "./region-display.ts";
 
 export const profileGames = ["gs", "sr", "zzz"] as const;
 export type Game = typeof profileGames[number];

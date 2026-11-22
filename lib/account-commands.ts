@@ -1,4 +1,4 @@
-import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileGames } from "@lotus-yunzai/account";
+import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
@@ -125,7 +125,9 @@ export function accountCommands(
       const roleGroups = profileGames.map((game) => ({
         label: roleLabels[game],
         rows: profile.roles[game].map((role) => ({
-          uid: role.uid, name: role.nickname || role.regionName, level: role.level, active: role.uid === profile.activeRoles[game],
+          uid: role.uid,
+          name: role.nickname || gameRegionDisplayName(game, role.region, role.regionName),
+          level: role.level, active: role.uid === profile.activeRoles[game],
           avatar: role.avatar,
         })),
       }));
