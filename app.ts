@@ -112,6 +112,15 @@ import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
 import { panelAtlasGallery } from "./lib/panel-atlas-gallery.ts";
+import { panelGroupRankSettings } from "./lib/group-panel-rank-settings.ts";
+import { panelStatusSettings } from "./lib/panel-status-settings.ts";
+import { panelGameSettings } from "./lib/panel-game-settings.ts";
+import { panelGuidesSettings, panelGenshinGuideSettings, panelZzzGuideSettings, panelGuideCalendarSettings } from "./lib/panel-guides-settings.ts";
+import { panelIngressSettings } from "./lib/panel-ingress-settings.ts";
+import { panelNoticeSettings, panelNoticeMysSettings } from "./lib/panel-notice-settings.ts";
+import { panelNoticeDeliverySettings } from "./lib/panel-notice-delivery-settings.ts";
+import { panelZzzSettings } from "./lib/panel-zzz-settings.ts";
+import { panelRuntimeSettings } from "./lib/panel-runtime-settings.ts";
 import { panelAtlasUpdate } from "./lib/panel-atlas-update.ts";
 import { panelMusic } from "./lib/panel-music.ts";
 import { panelBilibili } from "./lib/panel-bilibili.ts";
@@ -3478,6 +3487,23 @@ if (import.meta.main) {
         ["/panel/api/settings/global/permissions", panelGlobalPermissions(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
         ["/panel/api/settings/atlas/gallery", panelAtlasGallery(root)],
+        ["/panel/api/settings/native/rank", panelGroupRankSettings(root)],
+        ["/panel/api/settings/native/status", panelStatusSettings(root)],
+        ["/panel/api/settings/native/runtime", panelRuntimeSettings(root)],
+        ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],
+        ["/panel/api/settings/native/genshin-damage", panelGameSettings(root, "genshin-damage")],
+        ["/panel/api/settings/native/zzz-rank", panelZzzSettings(root)],
+        ["/panel/api/settings/native/zzz-panel", panelZzzSettings(root, "panel")],
+        ["/panel/api/settings/native/zzz-reminders", panelZzzSettings(root, "reminders")],
+        ["/panel/api/settings/native/ingress", panelIngressSettings(root,
+          () => Promise.all([groupDispatch.refreshLists(), privateAccess.refresh(true), otherPolicies.refresh(true)]))],
+        ["/panel/api/settings/native/guides", panelGuidesSettings(root)],
+        ["/panel/api/settings/native/genshin-guides", panelGenshinGuideSettings(root)],
+        ["/panel/api/settings/native/zzz-guides", panelZzzGuideSettings(root)],
+        ["/panel/api/settings/native/calendar", panelGuideCalendarSettings(() => calendarSchedule?.policy)],
+        ["/panel/api/settings/native/notice", panelNoticeSettings(root)],
+        ["/panel/api/settings/native/mys-notice", panelNoticeMysSettings(root, validateModuleCron)],
+        ["/panel/api/settings/native/notice-delivery", panelNoticeDeliverySettings(() => globalThis.redis, () => groupTransport.onlineBots())],
         ["/panel/api/settings/atlas/update", panelAtlasUpdate(root, validateModuleCron)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],
@@ -3492,6 +3518,12 @@ if (import.meta.main) {
         settingsRoutes.set("/panel/api/settings/media/environment", panelMediaEnvironment(root));
         settingsRoutes.set("/panel/api/settings/media/download-permissions", panelMediaDownloadPermissions(root));
         settingsRoutes.set("/panel/api/settings/media/owner-permissions", panelMediaOwnerPermissions(root));
+        for (const platform of ["bilibili", "weibo"] as const) {
+          settingsRoutes.set(`/panel/api/settings/native/${platform}-subscriptions`, async (request, authorized) => {
+            const { panelMediaSubscriptionSettings } = await import("./plugins/media/services/subscriptions/panel.ts");
+            return panelMediaSubscriptionSettings(root, platform, input => panelOwnerSession?.contactSession(input))(request, authorized);
+          });
+        }
       }
       const guoba = panelGuobaRoutes(plugins.directories);
       const extensions = !panelEnabled ? undefined : panelExtensionRoutes(plugins.directories,

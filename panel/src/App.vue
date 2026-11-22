@@ -9,6 +9,7 @@ import ExtensionPages from "./ExtensionPages.vue";
 import PluginSettings from "./PluginSettings.vue";
 import LikeSettings from "./LikeSettings.vue";
 import GroupNoticeSettings from "./GroupNoticeSettings.vue";
+import BusinessSettings from "./BusinessSettings.vue";
 import AtlasChannelSettings from "./AtlasChannelSettings.vue";
 import WebLoginSettings from "./WebLoginSettings.vue";
 import CheckinScheduleSettings from "./CheckinScheduleSettings.vue";
@@ -31,7 +32,7 @@ const updatedAt = ref("");
 const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
 type MediaView = "music" | "bilibili" | "douyin" | "partner" | "media-environment";
-type PanelView = "overview" | "likes" | "notices" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" |
+type PanelView = "overview" | "likes" | "notices" | "native-settings" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" |
   "account-permissions" | "global-permissions" | MediaView | "extensions";
 const view = ref<PanelView>("overview");
 const mediaSection = ref<MediaView>("bilibili");
@@ -52,6 +53,27 @@ const hasGroup = computed(() => snapshot.value?.plugins.some((plugin) =>
 
 const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "media" && plugin.status === "loaded") ?? false);
+
+const nativeSections = computed(() => [
+  { key: "rank", label: "原神与星铁群榜" },
+  { key: "status", label: "状态与监控" },
+  { key: "runtime", label: "宿主运行" },
+  { key: "showcase", label: "游戏展柜与战绩" },
+  { key: "genshin-damage", label: "原神伤害计算" },
+  { key: "zzz-rank", label: "绝区零群榜" },
+  { key: "zzz-panel", label: "绝区零面板刷新" },
+  { key: "zzz-reminders", label: "绝区零挑战提醒" },
+  { key: "ingress", label: "消息接收与私聊" },
+  { key: "guides", label: "攻略来源与推送" },
+  { key: "genshin-guides", label: "原神攻略" },
+  { key: "zzz-guides", label: "绝区零攻略" },
+  { key: "calendar", label: "活动日历" },
+  { key: "notice", label: "群公告调度" },
+  { key: "mys-notice", label: "米游社资讯" },
+  { key: "notice-delivery", label: "公告送达与订阅覆盖" },
+  ...(hasMedia.value ? [{ key: "bilibili-subscriptions", label: "B 站订阅对象" },
+    { key: "weibo-subscriptions", label: "微博订阅对象" }] : []),
+]);
 
 function isMediaView(target: PanelView): target is MediaView {
   return target === "music" || target === "bilibili" || target === "douyin" || target === "partner" || target === "media-environment";
@@ -83,6 +105,7 @@ function focusView(next: PanelView) {
     overview: "overview-title",
     likes: "like-settings-title",
     notices: "group-notice-settings-title",
+    "native-settings": "native-settings-title",
     "plugin-settings": "plugin-settings-title",
     atlas: "atlas-channel-title",
     "web-login": "web-login-title",
@@ -284,6 +307,8 @@ onBeforeUnmount(() => {
         :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
       <ElButton v-if="hasGroup" :type="view === 'notices' ? 'primary' : 'default'"
         :aria-current="view === 'notices' ? 'page' : undefined" @click="setView('notices')">群通知</ElButton>
+      <ElButton :type="view === 'native-settings' ? 'primary' : 'default'"
+        :aria-current="view === 'native-settings' ? 'page' : undefined" @click="setView('native-settings')">业务设置</ElButton>
       <ElButton :type="view === 'plugin-settings' ? 'primary' : 'default'"
         :aria-current="view === 'plugin-settings' ? 'page' : undefined" @click="setView('plugin-settings')">插件配置</ElButton>
       <ElButton :type="view === 'atlas' ? 'primary' : 'default'"
@@ -322,6 +347,8 @@ onBeforeUnmount(() => {
       @dirty-change="updateDirty" />
     <GroupNoticeSettings v-else-if="view === 'notices'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
+    <BusinessSettings v-else-if="view === 'native-settings'" :auth="auth" :sections="nativeSections"
+      @unauthorized="expireSession" @dirty-change="updateDirty" />
     <PluginSettings v-else-if="view === 'plugin-settings'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
     <AtlasChannelSettings v-else-if="view === 'atlas'" :auth="auth" @unauthorized="expireSession"

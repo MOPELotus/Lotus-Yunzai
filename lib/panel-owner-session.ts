@@ -106,27 +106,40 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
     remove(key, kind);
   }
 
-  async function contacts(request: Request, key: string | undefined) {
-    if (!key || request.headers.has("Authorization")) return response(403);
+  function contactSession(request: Request, key = browserToken(request)): OwnerContactListSession | undefined {
+    if (!key || request.headers.has("Authorization")) return;
+    const destination = page();
+    if (!destination || !sameOrigin(request, destination, request.method !== "GET" && request.method !== "HEAD")) return;
     const hash = digest(key);
     const binding = bindings.get(hash);
     const gateway = binding?.gateway;
+    if (!binding || !gateway) return;
     const authorized = () => {
-      const owner = currentOwner(key, "session");
-      return !signal.aborted && !request.signal.aborted && gateway && !gateway.signal.aborted &&
-        bindings.get(hash) === binding && owner?.bot === gateway.botId && owner.user === gateway.ownerId && gateway.authorized();
+      if (signal.aborted || request.signal.aborted || gateway.signal.aborted || binding.expires <= now() ||
+          bindings.get(hash) !== binding) return false;
+      try {
+        const owner = currentOwner(key, "session");
+        return owner?.bot === gateway.botId && owner.user === gateway.ownerId && gateway.authorized();
+      } catch {
+        return false;
+      }
     };
-    if (!authorized() || !gateway) return response(403);
+    if (authorized()) return { ...gateway, authorized };
+  }
+
+  async function contacts(request: Request, key: string | undefined) {
+    const gateway = contactSession(request, key);
+    if (!gateway) return response(403);
     const input = await readPanelJson(request, 1024).catch(() => undefined);
     if (!input || typeof input !== "object" || !("kind" in input) || !("query" in input) || !("page" in input) ||
         (input.kind !== "group" && input.kind !== "friend") || typeof input.query !== "string" ||
         input.query.length > 80 || typeof input.page !== "number" || !Number.isSafeInteger(input.page) ||
         input.page < 1 || input.page > 250) return response(400);
-    if (!authorized()) return response(403);
+    if (!gateway.authorized()) return response(403);
     const active = AbortSignal.any([signal, request.signal, gateway.signal, AbortSignal.timeout(10_000)]);
     const list = input.kind === "group" ? await gateway.groups(active).catch(() => undefined) :
       parseFriendList(await gateway.friends(active).catch(() => undefined));
-    if (!authorized()) return response(403);
+    if (!gateway.authorized()) return response(403);
     if (!list || active.aborted) return response(503);
     const query = input.query.trim().toLowerCase();
     const matched = list.filter(({ id, name }) => String(id).includes(query) || name?.toLowerCase().includes(query));
@@ -173,6 +186,7 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
 
   return {
     commands,
+    contactSession,
     async handle(request: Request, path: string) {
       if (path !== "/panel/api/session/claim" && path !== "/panel/api/session/logout" && path !== "/panel/api/session/contacts") return;
       const destination = page();
