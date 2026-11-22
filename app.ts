@@ -14,6 +14,7 @@ import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-remin
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { donationCommand } from "./lib/donation-command.ts";
+import { weatherCommands } from "./lib/weather-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
@@ -3464,6 +3465,7 @@ if (import.meta.main) {
       },
     });
     if (!stopping) {
+      commands.registerModule(weatherCommands(lifecycle.signal), "天气");
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
