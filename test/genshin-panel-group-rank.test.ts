@@ -35,7 +35,8 @@ test("原神旧角色排名别名及 103 级默认情景，排除公开统计与
   expect(matchGroupPanelRank("#胡桃双暴词条排行")).toMatchObject({ character: { id: 10000046 }, mode: "crit" });
   expect(matchGroupPanelRank("#加权有效词条胡桃排名榜")).toMatchObject({ character: { id: 10000046 }, mode: "valid" });
   expect(matchGroupPanelRank("#胡桃词条排行")).toMatchObject({ character: { id: 10000046 }, mode: "valid" });
-  for (const raw of ["#芙芙排名统计", "#世界BOSS排行", "#星铁胡桃排行", "#双暴胡桃词条排行", "#最强胡桃"]) {
+  expect(matchGroupPanelRank("#最强胡桃")).toMatchObject({ character: { id: 10000046 }, mode: "damage", strongest: true });
+  for (const raw of ["#芙芙排名统计", "#世界BOSS排行", "#星铁胡桃排行", "#双暴胡桃词条排行", "#极限胡桃"]) {
     expect(matchGroupPanelRank(raw)).toBeUndefined();
   }
   const result = await projectRankAvatar(avatar, theme);
@@ -80,7 +81,10 @@ test("群榜只取本群主动展示的摘要，查榜期间离群或切档不�
     const item = records[Number(qq) as keyof typeof records];
     const uid = revision.get(Number(qq)) ?? item?.uid;
     return { loggedIn: qq !== "44", roles: { gs: uid ? [role(uid)] : [] }, activeRoles: { gs: uid } };
-  } }, lockFile, new AbortController().signal, { groups: "77,78", async render(_name, _mode, rows) {
+  } }, lockFile, new AbortController().signal, { groups: "77,78",
+    async readSelector() { return "0"; },
+    async readShowcase(role) { return { uid: role.uid, avatars: { [avatar.id]: { ...avatar, _source: "mgg" } } }; },
+    async render(_name, _mode, rows) {
     exposed = rows.map(row => row.uid);
     if (phase === "leave") departed = 43;
     if (phase === "change") revision.set(43, "100123459");
@@ -140,10 +144,14 @@ test("删除面板立即撤回旧榜，随后展示新角色时只计删除后�
   const role = { uid, region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true, nickname: "" };
   const archive = createGenshinPanelArchive(lockFile, { archiveDirectory: join(directory, "owner"), legacyDirectory: join(directory, "legacy") });
   let discardDuringRender = false;
+  let displayed = avatar;
   const verify = async () => {};
   const ranking = createGroupPanelRank(join(directory, "rank"), { async describe() {
     return { loggedIn: true, roles: { gs: [role] }, activeRoles: { gs: uid } };
-  } }, lockFile, new AbortController().signal, { groups: "77,78", discardedAt: archive.discardedAt, async render() {
+  } }, lockFile, new AbortController().signal, { groups: "77,78", discardedAt: archive.discardedAt,
+    async readSelector() { return "0"; },
+    async readShowcase(role) { return { uid: role.uid, avatars: { [displayed.id]: { ...displayed, _source: "mgg" } } }; },
+    async render() {
     if (discardDuringRender) await archive.discard("42", uid, () => 3000, verify);
     return { png: new Uint8Array([1]) };
   } });
@@ -166,12 +174,75 @@ test("删除面板立即撤回旧榜，随后展示新角色时只计删除后�
     expect(await ranking.query("#胡桃双暴排行", otherGroup, load)).toContain("本群暂无");
     await ranking.observe(context, 2, role, avatar, theme, 1500, verify);
     await ranking.observe(context, 2, role, otherAvatar, theme, 2500, verify);
-    expect(await ranking.query("#胡桃双暴排行", context, load)).toContain("本群暂无");
+    displayed = otherAvatar;
+    expect(await ranking.query("#胡桃双暴排行", context, load)).toContain("未展示 1 个");
     expect(await ranking.query("#芙宁娜双暴排行", context, load)).toMatchObject({ type: "image" });
     const markersAfter = await ranking.listMarkers(context, 2, role, [avatar.id, otherAvatar.id]);
     expect([...markersAfter?.markers.keys() ?? []]).toEqual([otherAvatar.id]);
     discardDuringRender = true;
     expect(await ranking.query("#芙宁娜双暴排行", context, load)).toContain("重新查询排行");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("刷新所有本群已登记 UID，失效或未展示不使用旧分，榜首复用本轮公开快照", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-panel-rank-fresh-"));
+  const role = (qq: number) => ({ uid: String(100123400 + qq), region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true, nickname: "" });
+  const seen: string[] = [];
+  let ranked: string[] = [];
+  let summary: string | undefined;
+  let strongest: { uid: string; source: string } | undefined;
+  const signal = new AbortController().signal;
+  const ranking = createGroupPanelRank(directory, {
+    async describe(qq) {
+      const current = role(Number(qq));
+      return { loggedIn: true, roles: { gs: [current] }, activeRoles: { gs: current.uid } };
+    },
+  }, lockFile, signal, {
+    groups: "77,78",
+    async readSelector() { return "0"; },
+    async readShowcase(target) {
+      seen.push(target.uid);
+      if (target.uid === role(44).uid) return;
+      if (target.uid === role(45).uid) throw new Error("public source unavailable");
+      const gear = avatar.artis["1"]!;
+      const publicAvatar = { ...avatar, _source: "mgg", artis: {
+        1: target.uid === role(42).uid ? { ...gear, attrIds: ["501224"] } : gear,
+      } };
+      return { uid: target.uid, avatars: { [avatar.id]: publicAvatar } };
+    },
+    async render(_name, _mode, rows, _theme, _modeHint, options) {
+      ranked = rows.map(row => row.uid);
+      summary = options?.refreshSummary;
+      return { png: new Uint8Array([1]) };
+    },
+    async renderStrongest(snapshot, leader, assets) {
+      expect(assets.galleryPortrait).toBeUndefined();
+      strongest = { uid: snapshot.uid, source: leader._source };
+      return { png: new Uint8Array([1]) };
+    },
+  });
+  const context = (qq: number, group = 77): GroupRankContext => ({
+    user_id: qq, self_id: 99, group_id: group, message_type: "group",
+    async listCurrentGroupMembers() { return [99, 42, 43, 44, 45, 46].map(id => ({ id })); },
+  });
+  const load = async () => theme;
+  try {
+    for (const qq of [42, 43, 44, 45, 46]) {
+      const observed = qq === 43 ? { ...avatar, id: 10000089, name: "芙宁娜" } : avatar;
+      await ranking.observe(context(qq, qq === 46 ? 78 : 77), 1, role(qq), observed, theme, 1000, async () => {});
+    }
+    await ranking.observe(context(42), 2, role(42), avatar, theme, 1100, async () => {});
+    expect(await ranking.query("#胡桃圣遗物排行", context(42), load)).toMatchObject({ type: "image" });
+    expect(seen.sort()).toEqual([role(42).uid, role(43).uid, role(44).uid, role(45).uid]);
+    expect(ranked).toEqual([role(43).uid, role(42).uid]);
+    expect(summary).toContain("可排名 2 个，未展示 1 个，无法刷新或计算 1 个");
+    seen.length = 0;
+    const result = await ranking.query("#最强胡桃圣遗物", context(42), load);
+    expect(result).toEqual([expect.stringContaining(role(43).uid), { type: "image", file: new Uint8Array([1]) }]);
+    expect(strongest).toEqual({ uid: role(43).uid, source: "mgg" });
+    expect(seen.sort()).toEqual([role(42).uid, role(43).uid, role(44).uid, role(45).uid]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
