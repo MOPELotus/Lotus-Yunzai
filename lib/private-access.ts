@@ -1,5 +1,6 @@
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
+import { normalizeGameCommand } from "./command-prefix.ts";
 import type { MessageEvent } from "./messages.ts";
 
 const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹果|ck|cookie|体力)帮助|^#?帮助$|^#*(?:删除|我的)ck$|^#(?:我的)?(?:uid|UID)[0-9]{0,2}$/u;
@@ -75,12 +76,13 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
     if (event.groupRequestScope === "milky" && event.canReviewGroupRequests === true && groupReviewEntry.test(event.msg)) return false;
     const files = typeof event.message === "string" ? [] : event.message.filter(({ type }) => type === "file");
     const text = event.raw_message || event.msg;
+    const help = /^#(?:星铁|绝区零)(?:帮助|help)$/u.test(normalizeGameCommand(event).msg);
     const allowed = files.length > 0
       ? files.every(({ name, file }) => {
         const filename = typeof name === "string" ? name : file;
         return typeof filename === "string" && allowedFile.test(filename);
       })
-      : legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
+      : help || legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
         zzzLinkEntry.test(event.msg) || zzzLinkedViewEntry.test(event.msg) || starRailLinkEntry.test(event.msg) || custom?.test(text);
     if (allowed) return false;
     if (event.isDelegated) return true;

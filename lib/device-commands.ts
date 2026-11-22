@@ -69,15 +69,17 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const qq = String(user_id);
       const scope = `${adapter ?? "onebot"}:${self_id}:${qq}`;
       if (unbound) {
-        if (context.isDelegated) return;
+        if (context.isDelegated || !context.privateCredentialSignal || context.privateCredentialSignal.aborted) return;
+        const active = AbortSignal.any([signal, context.privateCredentialSignal]);
         if (pending.get(scope)?.profileId === id) pending.delete(scope);
         if (opening.get(scope)?.profileId === id) opening.delete(scope);
         try {
           const current = await profiles.accountContext(qq, id);
-          const removed = await profiles.removeBoundDevice(qq, id, current.revision, signal);
+          const removed = await profiles.removeBoundDevice(qq, id, current.revision, active);
+          if (active.aborted) return;
           return removed ? "已解绑该档案的设备。" : "该档案没有已绑定的设备。";
         } catch (error) {
-          if (signal.aborted) return;
+          if (active.aborted) return;
           if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发送解绑指令。";
           return "暂时无法解绑该档案的设备，请确认已登录并稍后重试。";
         }

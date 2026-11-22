@@ -52,10 +52,13 @@ test("绝区零解绑只修改本人私聊指定档案，保留登录与其它�
     const context = {
       normalizedMessage: command, message_type: "private" as const, self_id: 99, user_id: 42,
       isMaster: false, isBotMaster: () => false, reply: () => true,
+      privateCredentialSignal: new AbortController().signal,
     };
     const dispatch = module.fallback!;
     expect(await dispatch(command, { ...context, message_type: "group" })).toContain("私聊");
     expect(await dispatch(command, { ...context, isDelegated: true })).toBeUndefined();
+    expect(await dispatch(command, { ...context, privateCredentialSignal: undefined })).toBeUndefined();
+    expect(await dispatch(command, { ...context, privateCredentialSignal: AbortSignal.abort() })).toBeUndefined();
     expect(await readFile(slot, "utf8")).toBe(original);
     const profiles = createProfileStore(root);
     const previous = await profiles.accountContext("42", 2);
