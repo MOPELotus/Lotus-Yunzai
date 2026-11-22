@@ -1,13 +1,17 @@
-import { createHash } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
 import { groupCleanupConfig } from "./group-cleanup-config.ts";
+import { accountScopePolicies, accountScopePolicy, type AccountScopePolicy } from "./account-scope-policy.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
+import { editAccountScopePolicies } from "./panel-account-permissions.ts";
 import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMappingPair, type Pair, type SourceEdit } from "./yaml-source-edits.ts";
 
 const fields = ["dry_run", "remove_group_fallback"] as const;
+const scope = "group.cleanup";
+const revisionKey = randomBytes(32);
 type Patch = Partial<Record<typeof fields[number], boolean>>;
 type Config = Readonly<Record<string, unknown>>;
 
@@ -15,11 +19,15 @@ function record(value: unknown): Config | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Config;
 }
 
-function snapshot(groups: unknown, patch: Patch = {}) {
-  const { dryRun, removeFallback, archiveRequested } = groupCleanupConfig(groups);
+function snapshot(effective: Config, patch: Patch = {}, policy?: AccountScopePolicy) {
+  const { dryRun, removeFallback, archiveRequested } = groupCleanupConfig(effective.groups);
+  const permissions = record(effective.permissions);
+  const configured = policy ?? record(record(permissions?.scopes)?.[scope])?.policy;
   const settings = { dry_run: patch.dry_run ?? dryRun, remove_group_fallback: patch.remove_group_fallback ?? removeFallback };
-  const revision = createHash("sha256").update(JSON.stringify([settings, archiveRequested])).digest("hex");
-  return { settings, archiveRequested, revision };
+  const scopePolicy = accountScopePolicy(scope, configured);
+  const revision = createHmac("sha256", revisionKey).update(JSON.stringify([settings, archiveRequested,
+    scopePolicy, configured, permissions?.default_policy, permissions?.users, permissions?.groups])).digest("hex");
+  return { settings, archiveRequested, scopePolicy, revision };
 }
 
 function editCleanup(text: string, local: Config, patch: Patch) {
@@ -63,12 +71,13 @@ function editCleanup(text: string, local: Config, patch: Patch) {
 export function panelGroupCleanup(root: URL) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
-      try { return Response.json(snapshot((await readLotusGlobalConfig(root)).groups)); }
+      try { return Response.json(snapshot(await readLotusGlobalConfig(root))); }
       catch { return new Response(null, { status: 500 }); }
     }
     if (request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
     let revision: string;
     const patch: Patch = {};
+    let policy: AccountScopePolicy | undefined;
     try {
       const body = record(await readPanelJson(request, 4096));
       const values = record(body?.patch);
@@ -76,6 +85,11 @@ export function panelGroupCleanup(root: URL) {
           !values || !Object.keys(values).length) throw new Error();
       revision = body.revision;
       for (const [key, value] of Object.entries(values)) {
+        if (key === "scope_policy") {
+          policy = accountScopePolicies.find(item => item === value);
+          if (!policy) throw new Error();
+          continue;
+        }
         const field = fields.find(name => name === key);
         if (!field || typeof value !== "boolean") throw new Error();
         patch[field] = value;
@@ -87,12 +101,18 @@ export function panelGroupCleanup(root: URL) {
       return Response.json(await updateLotusGlobalConfig(root, {
         canWrite: active, canCommit: active, signal: request.signal,
         prepare(text, local, effective) {
-          const before = snapshot(effective.groups);
+          const before = snapshot(effective);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           const changes = Object.fromEntries(fields.flatMap(key => patch[key] === undefined || patch[key] === before.settings[key]
             ? [] : [[key, patch[key]]]));
-          if (!Object.keys(changes).length) return { value: before };
-          return { yaml: editCleanup(text, local, changes), value: snapshot(effective.groups, changes) };
+          const newPolicy = policy === before.scopePolicy ? undefined : policy;
+          const editOptions = Object.keys(changes).length > 0;
+          if (!editOptions && !newPolicy) return { value: before };
+          let yaml = editOptions ? editCleanup(text, local, changes) : text;
+          if (newPolicy) {
+            yaml = editAccountScopePolicies(yaml, editOptions ? Bun.YAML.parse(yaml) as Config : local, { [scope]: newPolicy });
+          }
+          return { yaml, value: snapshot(effective, changes, newPolicy) };
         },
       }));
     } catch (error) {

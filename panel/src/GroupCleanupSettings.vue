@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { accountScopePolicies, type AccountScopePolicy } from "../../lib/account-scope-policy.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 const props = defineProps<{ auth: PanelAuth }>();
@@ -10,10 +11,14 @@ const fields = [
   { key: "dry_run", label: "仅预览清理" },
   { key: "remove_group_fallback", label: "移除当前群的通知回退" },
 ] as const;
+const policyLabels: Record<AccountScopePolicy, string> = {
+  inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
+};
 type Settings = Record<typeof fields[number]["key"], boolean>;
-interface Snapshot { settings: Settings; archiveRequested: boolean; revision: string }
+interface Snapshot { settings: Settings; archiveRequested: boolean; scopePolicy: AccountScopePolicy; revision: string }
 const saved = shallowRef<Snapshot>();
 const draft = ref<Settings>();
+const draftPolicy = ref<AccountScopePolicy>();
 const busy = ref<"GET" | "PUT">();
 const error = ref("");
 const notice = ref("");
@@ -25,7 +30,10 @@ const patch = computed(() => {
   const before = saved.value?.settings;
   const current = draft.value;
   if (!before || !current) return {};
-  return Object.fromEntries(fields.filter(({ key }) => before[key] !== current[key]).map(({ key }) => [key, current[key]]));
+  return {
+    ...Object.fromEntries(fields.filter(({ key }) => before[key] !== current[key]).map(({ key }) => [key, current[key]])),
+    ...(draftPolicy.value !== saved.value?.scopePolicy && { scope_policy: draftPolicy.value }),
+  };
 });
 const dirty = computed(() => Object.keys(patch.value).length > 0);
 watch(dirty, value => emit("dirty-change", value));
@@ -53,10 +61,12 @@ async function request(method: "GET" | "PUT") {
     if (!response.ok) throw new Error();
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
-    if (typeof result?.revision !== "string" || typeof result.archiveRequested !== "boolean" || !result.settings ||
+    if (typeof result?.revision !== "string" || typeof result.archiveRequested !== "boolean" ||
+        !accountScopePolicies.includes(result.scopePolicy) || !result.settings ||
         !fields.every(({ key }) => typeof result.settings[key] === "boolean")) throw new Error();
     saved.value = result;
     draft.value = { ...result.settings };
+    draftPolicy.value = result.scopePolicy;
     conflict.value = false;
     if (method === "PUT") notice.value = "已保存，下次手动清理时读取。";
   } catch {
@@ -73,6 +83,7 @@ watch(() => props.auth, () => {
   active?.abort();
   active = undefined;
   saved.value = draft.value = undefined;
+  draftPolicy.value = undefined;
   void request("GET");
 }, { immediate: true });
 onBeforeUnmount(() => { active?.abort(); active = undefined; });
@@ -98,6 +109,15 @@ onBeforeUnmount(() => { active?.abort(); active = undefined; });
         <p class="subtitle">通过 <code>#群清理退群</code> 手动执行。即使关闭预览，也须在当前群确认目标已离群后才会移除该群的通知回退。</p>
         <p v-if="saved?.archiveRequested" class="subtitle">旧配置已请求归档。当前只会生成预览，同时保留通知回退。</p>
         <p v-else class="subtitle">档案归档仅提供预览。</p>
+        <label class="cleanup-option cleanup-policy" for="group-cleanup-scope-policy">
+          <span>手动清理权限</span>
+          <select id="group-cleanup-scope-policy" v-model="draftPolicy" aria-describedby="group-cleanup-policy-note">
+            <option v-for="mode in accountScopePolicies" :key="mode" :value="mode">{{ policyLabels[mode] }}</option>
+          </select>
+        </label>
+        <p id="group-cleanup-policy-note" class="subtitle">
+          用户和群拒绝名单优先。「允许」或继承的全局规则可能准许普通成员使用命令。好友私聊只提供预览。
+        </p>
         <label v-for="{ key, label } in fields" :key="key" class="cleanup-option">
           <span>{{ label }}</span>
           <input :id="`group-cleanup-${key}`" v-model="draft[key]" type="checkbox" />
@@ -121,4 +141,9 @@ onBeforeUnmount(() => { active?.abort(); active = undefined; });
 .cleanup-option:last-child { padding-bottom: 0; }
 .cleanup-option input { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .cleanup-option input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cleanup-policy { flex-wrap: wrap; }
+.cleanup-policy select {
+  min-height: 36px; padding: 0 9px; border: 1px solid var(--el-border-color);
+  border-radius: 4px; background: var(--surface); color: inherit; font: inherit; font-weight: 400;
+}
 </style>

@@ -61,7 +61,7 @@ function merge(current: unknown, tree: PolicyTree): Config {
   };
 }
 
-function editPolicies(text: string, current: Config, changes: Changes<string>) {
+export function editAccountScopePolicies(text: string, current: Config, changes: Changes<string>) {
   const yaml = parseDocument(text, { merge: true, strict: true, uniqueKeys: true, keepSourceTokens: true });
   if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents))) throw new GlobalConfigWriteError("config");
   const tree: PolicyTree = { permissions: { scopes: Object.fromEntries(Object.entries(changes)
@@ -128,7 +128,7 @@ function panelScopePermissions<Scope extends string>(root: URL, allowed: readonl
             patch[scope] === undefined || patch[scope] === before.settings[scope] ? [] : [[scope, patch[scope]]],
           )) as Changes<Scope>;
           if (!Object.keys(changes).length) return { value: before };
-          return { yaml: editPolicies(text, local, changes),
+          return { yaml: editAccountScopePolicies(text, local, changes),
             value: snapshot(effective, allowed, readPolicy, ownerPolicies !== undefined, changes) };
         },
       }));

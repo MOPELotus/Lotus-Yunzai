@@ -112,3 +112,84 @@ test("面板显示旧归档预览状态并保留锚、其他群配置和仍然�
     } });
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("退群手动权限四档沿实际命令生效且不改会话和同群核验", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-cleanup-policy-panel-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    const legacyDir = join(directory, "plugins/Lotus-ReFactor/config");
+    await mkdir(legacyDir, { recursive: true });
+    await mkdir(join(directory, "config"));
+    const old = "permissions: {default_policy: deny, users: {deny: [51]}, groups: {allow: [601], deny: [999]}, " +
+      "scopes: {group.cleanup: {policy: master_only, source: old}, checkin.refresh: {policy: deny}}}\n";
+    const legacy = join(legacyDir, "global.yaml");
+    await writeFile(legacy, old);
+    const local = join(directory, "config/global.yaml");
+    const initial = "# 本地备注\r\nother: {private: retained}\r\n";
+    await writeFile(local, initial);
+    const profileDir = join(directory, "profiles");
+    await mkdir(profileDir);
+    const profileFile = join(profileDir, "123.yaml");
+    const initialProfile = "user: {qq: '123'}\nprofile: {id: 1, notify: {fallback_groups: [601, 602]}}\n";
+    await writeFile(profileFile, initialProfile);
+    const audit = join(directory, "cleanup-audit.jsonl");
+    const route = panelGroupCleanup(root);
+    const panel = panelApi(token, [], url => url.endsWith("/group/cleanup") ? route : undefined);
+    const read = async () => (await panel(request()))!.json();
+    const beginning = await read();
+    expect(beginning.scopePolicy).toBe("master_only");
+    expect(Object.keys(beginning).sort()).toEqual(["archiveRequested", "revision", "scopePolicy", "settings"]);
+    const put = (patch: unknown, revision: string, authenticated = true) => panel(request("PUT", { patch, revision }, authenticated));
+    expect((await put({ scope_policy: "master_only" }, beginning.revision))?.status).toBe(200);
+    expect(await readFile(local, "utf8")).toBe(initial);
+    for (const invalid of ["ALLOW", "group_admin", true, null]) {
+      expect((await put({ scope_policy: invalid }, beginning.revision))?.status).toBe(400);
+    }
+    expect((await put({ scope_policy: "allow" }, beginning.revision, false))?.status).toBe(401);
+    const saved = (await put({ scope_policy: "allow", dry_run: false }, beginning.revision))!;
+    expect(saved.status).toBe(200);
+    const changed = await saved.json();
+    expect(changed).toEqual(await read());
+    expect(changed.scopePolicy).toBe("allow");
+    expect(changed.settings.dry_run).toBe(false);
+    expect(await readFile(local, "utf8")).toStartWith(initial);
+    expect(await readFile(legacy, "utf8")).toBe(old);
+    const applied = await readLotusGlobalConfig(root);
+    expect(applied.permissions).toMatchObject({
+      default_policy: "deny", users: { deny: [51] }, groups: { allow: [601], deny: [999] },
+      scopes: { "group.cleanup": { policy: "allow", source: "old" }, "checkin.refresh": { policy: "deny" } },
+    });
+    expect(await Bun.file(audit).exists()).toBe(false);
+    expect(await readFile(profileFile, "utf8")).toBe(initialProfile);
+
+    const profiles = createProfileStore(profileDir);
+    const command = groupCleanupCommands({ profiles, auditPath: audit, readConfig: () => readLotusGlobalConfig(root),
+      isMaster: (bot, user) => bot === 99 && user === 42, activeSignal: signal => signal,
+      async render() { throw new Error("fixture uses text"); },
+    }).commands["#群清理退群"]!;
+    const signal = new AbortController().signal;
+    const roster = (ids: readonly number[]) => ids.map(userId => ({ userId, role: "member" as const, joinTime: 1, lastSentTime: 0 }));
+    const group = { self_id: 99, user_id: 52, message_type: "group", group_id: 601, isMaster: false,
+      groupActivitySignal: signal, async groupActivityRoster() { return roster([99, 52]); },
+    } as const;
+    expect(await command("123", { ...group, user_id: 51 })).toMatch(/没有群配置清理权限/u);
+    expect(await command("123", { ...group, user_id: 42, group_id: 999 })).toMatch(/没有群配置清理权限/u);
+    expect(await command("123", { ...group, groupActivitySignal: undefined })).toMatch(/没有群配置清理权限/u);
+    expect(await command("123", { ...group, isDelegated: true })).toMatch(/没有群配置清理权限/u);
+    expect(await command("123 601", {
+      self_id: 99, user_id: 52, message_type: "private", isMaster: false, privateCredentialSignal: signal,
+    })).toMatch(/已写入清理预览/u);
+    expect(await command("123 602", group)).toMatch(/已写入清理预览/u);
+    expect(await readFile(profileFile, "utf8")).toBe(initialProfile);
+    expect(await command("123", group)).toMatch(/已移除群通知回退　1/u);
+    expect((await profiles.checkinSettings("123", 1)).notify.fallbackGroups).toEqual([602]);
+
+    await writeFile(legacy, old.replace("groups: {allow: [601]", "groups: {allow: [602]"));
+    expect((await put({ scope_policy: "inherit" }, changed.revision))?.status).toBe(409);
+    expect((await put({ scope_policy: "inherit" }, (await read()).revision))?.status).toBe(200);
+    expect(await command("123", group)).toMatch(/没有群配置清理权限/u);
+    expect(await command("123", { ...group, group_id: 602 })).toMatch(/已移除群通知回退　1/u);
+    expect((await put({ scope_policy: "deny" }, (await read()).revision))?.status).toBe(200);
+    expect(await command("123", { ...group, user_id: 42 })).toMatch(/没有群配置清理权限/u);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
