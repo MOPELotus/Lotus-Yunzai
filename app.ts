@@ -108,6 +108,7 @@ import { panelApi, panelAssets } from "./lib/panel.ts";
 import { createPanelOwnerSession } from "./lib/panel-owner-session.ts";
 import { panelExtensionRoutes } from "./lib/panel-extension-routes.ts";
 import { panelAtlasChannel } from "./lib/panel-atlas-channel.ts";
+import { panelAtlasGallery } from "./lib/panel-atlas-gallery.ts";
 import { panelAtlasUpdate } from "./lib/panel-atlas-update.ts";
 import { panelMusic } from "./lib/panel-music.ts";
 import { panelBilibili } from "./lib/panel-bilibili.ts";
@@ -3460,6 +3461,7 @@ if (import.meta.main) {
         ["/panel/api/settings/checkin/permissions", panelAccountPermissions(root)],
         ["/panel/api/settings/global/permissions", panelGlobalPermissions(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
+        ["/panel/api/settings/atlas/gallery", panelAtlasGallery(root)],
         ["/panel/api/settings/atlas/update", panelAtlasUpdate(root, validateModuleCron)],
         ["/panel/api/settings/web/login", panelWebLogin(root, milkyWebhookPath)],
         ["/panel/api/settings/group/likes", panelGroupSettings(plugins.directories)],

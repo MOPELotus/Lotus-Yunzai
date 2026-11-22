@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
+import AtlasGalleryInventory from "./AtlasGalleryInventory.vue";
 import AtlasUpdateSettings from "./AtlasUpdateSettings.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
@@ -110,6 +111,7 @@ onBeforeUnmount(() => {
       </div>
     </form>
     <AtlasUpdateSettings :auth="auth" @unauthorized="emit('unauthorized')" @dirty-change="updateDirty = $event" />
+    <AtlasGalleryInventory :auth="auth" @unauthorized="emit('unauthorized')" />
   </section>
 </template>
 
