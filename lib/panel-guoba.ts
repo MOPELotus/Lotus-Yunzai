@@ -7,6 +7,7 @@ import { guobaActions, resolveGuobaArguments } from "./panel-guoba-actions.ts";
 const components = [
   "Divider", "Input", "InputPassword", "InputTextArea", "InputNumber", "Switch", "Select", "EasyCron", "GSubForm",
   "CheckboxGroup", "GTags", "GSelectGroup", "GSelectFriend", "GColorPicker", "DatePicker", "TimePicker", "TreeSelect",
+  "Slider", "Rate", "AutoComplete", "Cascader",
 ] as const;
 type Component = typeof components[number] | "GButtons";
 type Scalar = string | number | boolean | null;
@@ -80,6 +81,8 @@ export interface GuobaField {
     treeCheckable?: boolean;
     treeCheckStrictly?: boolean;
     labelInValue?: boolean;
+    allowHalf?: boolean;
+    count?: number;
   }>;
 }
 
@@ -155,14 +158,16 @@ function getValue(values: Record<string, unknown>, field: string, parts: readonl
   return value;
 }
 
-function normaliseTree(input: unknown, fields: Record<string, unknown>, seen = new Set<string | number>()): GuobaTreeNode[] {
+function normaliseTree(input: unknown, fields: Record<string, unknown>, uniqueTree = true): GuobaTreeNode[] {
   if (!Array.isArray(input)) return [];
   const key = (name: string, fallback: string) => typeof fields[name] === "string" && !deniedKeys.has(fields[name])
     ? fields[name] : fallback;
   const valueKey = key("value", "value");
   const labelKey = key("label", key("title", "title"));
   const childrenKey = key("children", "children");
+  const treeKeys = new Set<string | number>();
   function visit(nodes: unknown[], ancestors: ReadonlySet<object>): GuobaTreeNode[] {
+    const seen = uniqueTree ? treeKeys : new Set<string | number>();
     return nodes.flatMap(node => {
       if (!record(node) || ancestors.has(node)) return [];
       const value = node[valueKey];
@@ -224,6 +229,18 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
       props.labelInValue = raw.labelInValue === true || props.treeCheckStrictly;
       props.treeData = normaliseTree(raw.treeData, record(raw.fieldNames) ? raw.fieldNames : {});
     }
+    if (component === "Cascader") {
+      if (raw.multiple === true || raw.changeOnSelect === true) return undefined;
+      props.treeData = normaliseTree(options, record(raw.fieldNames) ? raw.fieldNames : {}, false);
+    }
+    if (component === "Slider") {
+      if (raw.step === null) return undefined;
+      props.multiple = raw.range === true;
+    }
+    if (component === "Rate") {
+      props.count = typeof raw.count === "number" && Number.isSafeInteger(raw.count) && raw.count >= 1 && raw.count <= 50 ? raw.count : 5;
+      props.allowHalf = raw.allowHalf === true;
+    }
     if (component === "GTags") {
       props.numeric = raw.numeric === true;
       props.allowAdd = raw.allowAdd !== false;
@@ -249,7 +266,7 @@ function normaliseField(schema: unknown, ancestors: readonly unknown[] = []): Gu
     if (child && (scalar(defaultValue) || (Array.isArray(defaultValue) && defaultValue.every(scalar)))) {
       props.defaultValue = defaultValue;
     }
-    if (Array.isArray(options)) {
+    if (component !== "Cascader" && Array.isArray(options)) {
       props.options = options.flatMap((option: unknown) => {
         if (typeof option === "string" || (typeof option === "number" && Number.isFinite(option))) {
           return [{ label: String(option), value: option }];
@@ -322,6 +339,15 @@ function treeNode(nodes: readonly GuobaTreeNode[], item: Scalar): GuobaTreeNode 
   }
 }
 
+function validCascaderPath(nodes: readonly GuobaTreeNode[], selection: readonly Scalar[]) {
+  for (const value of selection) {
+    const current = nodes.find(node => !node.disabled && node.value === value);
+    if (!current) return false;
+    nodes = current.children ?? [];
+  }
+  return nodes.length === 0;
+}
+
 function storedValue(schema: GuobaField, value: GuobaInput, previous: unknown): unknown {
   if (!labeledTree(schema) || value === null) return value;
   const { treeData = [], treeCheckStrictly } = schema.componentProps!;
@@ -351,6 +377,16 @@ function submittedValue(schema: ValueField, raw: unknown): GuobaInput {
       : typeof id !== "string" || !/^[1-9][0-9]*$/u.test(id))) throw new Error();
   }
   if (schema.component === "GColorPicker" && typeof value !== "string") throw new Error();
+  if (schema.component === "AutoComplete" && typeof value !== "string") throw new Error();
+  if (schema.component === "Slider") {
+    const values = Array.isArray(value) ? value : [value];
+    if (Array.isArray(value) !== Boolean(props?.multiple) || (Array.isArray(value) && (value.length !== 2 || Number(value[0]) > Number(value[1]))) ||
+        values.some(item => typeof item !== "number" || item < (props?.min ?? 0) || item > (props?.max ?? 100))) throw new Error();
+  }
+  if (schema.component === "Rate" && (typeof value !== "number" || value < 0 || value > (props?.count ?? 5) ||
+      !Number.isInteger(value * (props?.allowHalf ? 2 : 1)))) throw new Error();
+  if (schema.component === "Cascader" && (!Array.isArray(value) ||
+      (value.length > 0 && !validCascaderPath(props?.treeData ?? [], value)))) throw new Error();
   if ((schema.component === "DatePicker" || schema.component === "TimePicker") &&
       typeof value !== "string" && typeof value !== "number") throw new Error();
   if (schema.component === "TreeSelect") {

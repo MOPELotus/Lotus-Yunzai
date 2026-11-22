@@ -6,5 +6,6 @@ export const guobaPanelAuth: InjectionKey<() => PanelAuth> = Symbol("guobaPanelA
 
 export function isSpecialGuobaField({ component }: GuobaField) {
   return component === "GTags" || component === "GSelectGroup" || component === "GSelectFriend" ||
-    component === "GColorPicker" || component === "DatePicker" || component === "TimePicker" || component === "TreeSelect";
+    component === "GColorPicker" || component === "DatePicker" || component === "TimePicker" || component === "TreeSelect" ||
+    component === "Slider" || component === "Rate" || component === "AutoComplete" || component === "Cascader" || component === "EasyCron";
 }
