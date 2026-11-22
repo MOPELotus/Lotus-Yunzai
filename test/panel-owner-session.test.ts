@@ -147,7 +147,7 @@ test("锅巴群友搜索只使用登录时绑定的私聊网关，断线、退�
   };
   const login = async (sessionGateway = gateway) => {
     const issued = await commands.dispatchFallback({
-      msg: "#管理面板", post_type: "message", isGroup: false, isPrivate: true,
+      msg: "#管理面板", raw_message: "#管理面板", message: "#管理面板", post_type: "message", isGroup: false, isPrivate: true,
       self_id: 202, user_id: 303, message_type: "private", privateCredentialSignal: lifecycle.signal,
       isMaster: true, reply: async () => true,
       [ownerContactListSession]: sessionGateway,
