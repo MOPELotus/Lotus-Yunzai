@@ -88,6 +88,20 @@ test("天气主请求失败有明确回执，空气质量失败仍可出图", as
     .toEqual({ message: "天气服务暂时无法连接，请稍后再试。" });
 });
 
+test("市、区后缀区分同名地区，并兼容腾讯将县级市归入区县字段", async () => {
+  const transport: WeatherTransport = async url => {
+    const city = url.searchParams.get("city");
+    const data = url.host !== "wis.qq.com" ? observation : {
+      internal: city === "朝阳" ? { "101010300": "北京, 北京, 朝阳", "101071201": "辽宁, 朝阳" }
+        : city === "都江堰" ? { "101270111": "四川, 成都, 都江堰" } : null,
+    };
+    return Response.json({ status: "200", data });
+  };
+  expect(await fetchWeather("朝阳市", signal, transport)).toMatchObject({ area: "辽宁 · 朝阳" });
+  expect(await fetchWeather("朝阳区", signal, transport)).toMatchObject({ area: "北京 · 朝阳" });
+  expect(await fetchWeather("都江堰市", signal, transport)).toMatchObject({ area: "四川 · 成都 · 都江堰" });
+});
+
 test("宿主从 OneBot 和 Milky 的普通成员命令分发天气用法", async () => {
   await withDualGatewayFixture("weather-fixture", "disablePrivate: false\n",
     async ({ onebot, milky, sendOneBot, sendMilky }) => {

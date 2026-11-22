@@ -46,23 +46,32 @@ function areaCandidates(query: string) {
     .filter(Boolean);
 }
 
-function areaMatches(value: Area, target: string) {
+function areaMatches(value: Area, target: string, raw: string) {
   const a = locality(value.province);
   const b = locality(value.city);
   const c = locality(value.district);
-  return [a, b, c, a + b, b + c, a + b + c, a + c]
-    .some(candidate => candidate.replace(/(省|市|区|县)/gu, "") === target);
+  const provinceNames = [a];
+  const cityNames = value.district ? [] : [b, a + b];
+  const districtNames = c ? [c, b + c, a + b + c, a + c] : [];
+  const names = /(?:省|自治区|特别行政区)$/u.test(raw) ? provinceNames
+    : /(?:市|自治州)$/u.test(raw) ? [...cityNames, ...districtNames]
+    : /(?:区|县)$/u.test(raw) ? districtNames : [...provinceNames, ...cityNames, ...districtNames];
+  return names.some(candidate => candidate.replace(/(省|市|区|县)/gu, "") === target);
 }
 
 function matchingAreas(response: WeatherFields, query: string): readonly Area[] {
-  const target = query.replace(/\s+/gu, "").replace(/(省|市|区|县)/gu, "");
-  return Object.entries(object(response.internal) ?? {}).flatMap(([id, value]) => {
+  const target = query.replace(/\s+/gu, "").replace(/特别行政区|自治区|自治州|自治县|省|市|区|县/gu, "");
+  const matches = Object.entries(object(response.internal) ?? {}).flatMap(([id, value]) => {
     if (!/^\d{8,12}$/u.test(id) || typeof value !== "string") return [];
     const [province = "", city = "", district = "", excess] = value.split(/\s*[,，]\s*/u);
     if (excess || !province || !city || ![province, city, district].every(piece => /^[\p{Script=Han}]{0,24}$/u.test(piece))) return [];
     const area = { province, city, district };
-    return areaMatches(area, target) ? [area] : [];
+    return areaMatches(area, target, query) ? [area] : [];
   });
+  // The service's county-level city is stored in the district field.
+  if (!/(?:市|自治州)$/u.test(query)) return matches;
+  const cities = matches.filter(area => !area.district);
+  return cities.length ? cities : matches;
 }
 
 export function formatWeatherArea({ province, city, district }: Area) {
