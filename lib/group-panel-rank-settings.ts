@@ -27,6 +27,25 @@ const fields = games.flatMap(game => {
   ] as const;
 });
 
+const legacyRankPolicies = [
+  "不限",
+  "已绑定 CK",
+  "16 个角色或已绑定 CK",
+  "含安柏、凯亚、丽莎或已绑定 CK",
+  "16 个角色且含安柏、凯亚、丽莎，或已绑定 CK",
+];
+
+function rankSettingsSnapshot(raw: Readonly<Record<string, unknown>>, values = effective(configured(raw))) {
+  const legacyMode = raw.legacyGroupRankLimit;
+  const legacyPolicy = typeof legacyMode === "number" && Number.isInteger(legacyMode)
+    ? legacyRankPolicies[legacyMode - 1] : undefined;
+  const explainedFields = fields.map(field => {
+    if (!legacyPolicy || field.key !== "gsDefault") return field;
+    return { ...field, hint: `${field.hint} 原铁旧参榜条件为「${legacyPolicy}」。目前只收录主动登记且已登录核验的角色，已满足旧条件允许的 CK 分支。` };
+  });
+  return { fields: explainedFields, values };
+}
+
 function list(value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length > 512 || !value.every(id => typeof id === "string" &&
       /^[1-9]\d{0,15}$/u.test(id) && Number.isSafeInteger(Number(id)))) return;
@@ -127,8 +146,8 @@ export function panelGroupRankSettings(root: URL) {
     }
     try {
       if (request.method === "GET") {
-        const values = effective(await readConfiguration(root));
-        return active() ? Response.json({ fields, values }) : new Response(null, { status: 401 });
+        const snapshot = rankSettingsSnapshot(await readConfiguration(root));
+        return active() ? Response.json(snapshot) : new Response(null, { status: 401 });
       }
       const body = await readPanelJson(request).catch(() => undefined);
       if (!body || typeof body !== "object" || !("previous" in body) || !("values" in body)) {
@@ -142,7 +161,7 @@ export function panelGroupRankSettings(root: URL) {
           const current = effective(configured(local));
           if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
           const changed = fields.map(({ key }) => key).filter(key => !isDeepStrictEqual(current[key], values[key]));
-          if (!changed.length) return { value: current };
+          if (!changed.length) return { value: rankSettingsSnapshot(local, current) };
           const document = parseDocument(text, { strict: true, uniqueKeys: true });
           if (document.errors.length) throw new GlobalConfigWriteError("config");
           for (const key of changed) document.set(key, values[key]);
@@ -150,10 +169,10 @@ export function panelGroupRankSettings(root: URL) {
           if (!isDeepStrictEqual(Bun.YAML.parse(yaml), { ...local, ...Object.fromEntries(changed.map(key => [key, values[key]])) })) {
             throw new GlobalConfigWriteError("config");
           }
-          return { yaml, value: values };
+          return { yaml, value: rankSettingsSnapshot(local, values) };
         },
       });
-      return Response.json({ fields, values: saved });
+      return Response.json(saved);
     } catch (error) {
       if (!active() || error instanceof GlobalConfigWriteError && error.reason === "permission") return new Response(null, { status: 401 });
       return new Response(null, { status: error instanceof GlobalConfigWriteError && error.reason === "conflict" ? 409 : 500 });

@@ -17,11 +17,14 @@ test("群榜面板有效列表保留旧环境默认，支持即时保存、冲�
     await mkdir(join(directory, "mounted-config"));
     await symlink("mounted-config", join(directory, "config"));
     const file = join(directory, "mounted-config/panel-rank.yaml");
-    await writeFile(file, "# separate game options\nother: true\nsr: ['456']\n");
+    await writeFile(file, "# separate game options\nother: true\nsr: ['456']\nlegacyGroupRankLimit: 5\n");
     const url = "http://127.0.0.1" + endpoint;
     const headers = { Authorization: "Bearer panel-owner", "Content-Type": "application/json" };
     const initial = await handle(new Request(url, { headers }));
-    const previous = (await initial?.json()).values;
+    const initialSnapshot = await initial?.json();
+    const previous = initialSnapshot.values;
+    expect(initialSnapshot.fields[0].hint).toContain("原铁旧参榜条件为「16 个角色且含安柏、凯亚、丽莎，或已绑定 CK」");
+    expect(initialSnapshot.fields[0].hint).toContain("目前只收录主动登记且已登录核验的角色");
     expect(previous).toEqual({ gs: ["123", "789"], sr: ["456"], gsDisabled: [], srDisabled: [],
       gsDefault: false, srDefault: false, gsLimit: 15, srLimit: 15 });
     expect(await readGroupPanelRankEnabled("gs", 123, true, root)).toBe(true);
@@ -33,8 +36,13 @@ test("群榜面板有效列表保留旧环境默认，支持即时保存、冲�
     expect((await handle(req(values, false)))?.status).toBe(401);
     expect((await handle(req({ ...values, gs: ["../789"] })))?.status).toBe(400);
     expect((await handle(req({ ...values, srLimit: 31 })))?.status).toBe(400);
-    expect((await handle(req(values)))?.status).toBe(200);
-    expect(Bun.YAML.parse(await Bun.file(file).text())).toEqual({ other: true, gs: values.gs, sr: values.sr, srLimit: 30 });
+    expect((await handle(req({ ...values, legacyGroupRankLimit: 1 })))?.status).toBe(400);
+    const changed = await handle(req(values));
+    expect(changed?.status).toBe(200);
+    expect((await changed?.json()).fields).toEqual(initialSnapshot.fields);
+    expect(Bun.YAML.parse(await Bun.file(file).text())).toEqual({
+      other: true, gs: values.gs, sr: values.sr, srLimit: 30, legacyGroupRankLimit: 5,
+    });
     expect((await (await handle(new Request(url, { headers })))?.json()).values).toEqual(values);
     expect(await Bun.file(file).text()).toContain("# separate game options");
     expect(await readGroupPanelRankEnabled("gs", 123, true, root)).toBe(false);

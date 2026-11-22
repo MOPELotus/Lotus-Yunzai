@@ -13,7 +13,7 @@ function legacySettings(text: string) {
   const source = text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/gu,
     token => token.startsWith("/") ? token.replace(/[^\r\n]/gu, " ") : token.replace(/[^\r\n]/gu, "?"));
   const fields = new Map<string, string>();
-  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber)[ \t]*=([^\r\n]*)$/gmu)) {
+  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber|groupRankLimit)[ \t]*=([^\r\n]*)$/gmu)) {
     if (key !== undefined && value !== undefined) fields.set(key, fields.has(key) ? "" : value.trim().replace(/;$/u, "").trim());
   }
   if (!fields.size) return;
@@ -22,9 +22,11 @@ function legacySettings(text: string) {
   if ((enabled !== "true" && enabled !== "false") || !/^\d+$/u.test(size)) return { deferred: true } as const;
   const count = Number(size);
   if (!Number.isSafeInteger(count) || count < 5 || count > 30) return { deferred: true } as const;
+  const legacyGroupRankLimit = fields.get("groupRankLimit");
   return { config: {
     gsDefault: enabled === "true", srDefault: enabled === "true", gsLimit: count, srLimit: count,
     legacyGroupStatus: true,
+    ...(/^[1-5]$/u.test(legacyGroupRankLimit ?? "") ? { legacyGroupRankLimit: Number(legacyGroupRankLimit) } : {}),
   } } as const;
 }
 

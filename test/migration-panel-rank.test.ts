@@ -26,6 +26,7 @@ test.skipIf(!Bun.which("git"))("迁移入口从已归档的旧插件配置恢复
       "*/",
       "export const groupRank = true // 官方字段",
       "export const rankNumber = 30;",
+      "export const groupRankLimit = 5;",
       "throw new Error('迁移不得执行旧配置');",
     ].join("\r\n");
     await put(source, `${plugin}/package.json`, '{"name":"miao-plugin"}');
@@ -41,7 +42,7 @@ test.skipIf(!Bun.which("git"))("迁移入口从已归档的旧插件配置恢复
     expect(await migrateInstallation(source, target)).toMatchObject({ status: "published", panelRank: report });
     const published = join(target, "config/panel-rank.yaml");
     expect(Bun.YAML.parse(await readFile(published, "utf8"))).toEqual({
-      gsDefault: true, srDefault: true, gsLimit: 30, srLimit: 30, legacyGroupStatus: true,
+      gsDefault: true, srDefault: true, gsLimit: 30, srLimit: 30, legacyGroupStatus: true, legacyGroupRankLimit: 5,
     });
     expect((await lstat(published)).mode & 0o777).toBe(0o600);
     expect(await readFile(join(target, "backup", path), "utf8")).toBe(original);
