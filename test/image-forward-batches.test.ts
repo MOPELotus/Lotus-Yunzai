@@ -25,11 +25,32 @@ test("图鉴按协议逐批确认，明确失败或结果未知时停止且不�
       expect(replies).toEqual([]);
     } else if (outcome === "unavailable") {
       expect(attempts).toEqual([]);
-      expect(replies).toEqual(["当前会话无法分段合并转发图鉴。"]);
+      expect(replies).toEqual(["当前会话无法分段合并转发图片。"]);
     } else {
       expect(attempts).toEqual(["第 1 段", "第 2 段"]);
       expect(replies).toHaveLength(1);
       expect(replies[0]).toContain(outcome === "rejected" ? "未发送" : "未确认");
     }
   }
+});
+
+test("每批发送前重新核对档案，并区分权限变化和传输回执未知", async () => {
+  let current = true;
+  const attempts: string[] = [];
+  const replies: unknown[] = [];
+  await sendCommandReply({
+    forward: async nodes => {
+      attempts.push(String(nodes[0]));
+      current = false;
+      return true;
+    },
+    reply: async value => { replies.push(value); return true; },
+  }, {
+    ...batches,
+    async beforeSend() {
+      if (!current) throw new Error("profile changed");
+    },
+  });
+  expect(attempts).toEqual(["第 1 段"]);
+  expect(replies).toEqual(["会话或档案已变更，余下图片已停止发送。"]);
 });
