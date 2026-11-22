@@ -2,6 +2,7 @@
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, ref } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import AtlasGalleryBrowser from "./AtlasGalleryBrowser.vue";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: [] }>();
@@ -10,6 +11,7 @@ type Row = { game: keyof typeof gameNames; images: number; bytes: number };
 type Inventory = { version: number | null; rows: Row[] };
 const inventory = ref<Inventory>();
 const busy = ref(false);
+const browsing = ref(false);
 const error = ref("");
 const format = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 let active: AbortController | undefined;
@@ -62,7 +64,12 @@ onBeforeUnmount(() => {
         <h2 id="atlas-gallery-title">图鉴图库</h2>
         <p v-if="inventory?.version">快照版本 {{ inventory.version }}</p>
       </div>
-      <ElButton :loading="busy" :disabled="busy" @click="load">读取图库统计</ElButton>
+      <div class="inventory-actions">
+        <ElButton :loading="busy" :disabled="busy" @click="load">读取图库统计</ElButton>
+        <ElButton :aria-expanded="browsing" @click="browsing = !browsing">
+          {{ browsing ? "收起浏览" : "浏览图库" }}
+        </ElButton>
+      </div>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <table v-if="inventory" aria-labelledby="atlas-gallery-title">
@@ -77,6 +84,7 @@ onBeforeUnmount(() => {
         </tr>
       </tbody>
     </table>
+    <AtlasGalleryBrowser v-if="browsing" :auth="auth" @unauthorized="emit('unauthorized')" />
   </section>
 </template>
 
@@ -90,6 +98,8 @@ onBeforeUnmount(() => {
   background: var(--surface);
 }
 .inventory-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.inventory-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.inventory-actions :deep(.el-button + .el-button) { margin-left: 0; }
 h2 { margin: 0; font-size: 17px; font-weight: 650; }
 .inventory-heading p { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
 table { width: 100%; border-collapse: collapse; margin-top: 13px; }

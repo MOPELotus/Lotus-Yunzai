@@ -1,4 +1,4 @@
-import { Canvas, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
+import { Canvas, loadImage, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
 import { encodeBandedPng, ImageSizeLimitError } from "./banded-png.ts";
 import { markGeneratedImage } from "./generated-image.ts";
 
@@ -131,6 +131,16 @@ function renderByMode(width: number, height: number, draw: Draw, mode: RenderMod
   const next = pendingBandedRender.then(() => renderByBackend(width, height, draw, mode));
   pendingBandedRender = next.then(() => {}, () => {});
   return next;
+}
+
+/** 缩略图采用固定的像素边长，不随聊天图片倍率缩小。 */
+export async function renderRasterThumbnail(bytes: Buffer, maxSide: number, maxPixels: number, mode: RenderMode = "auto") {
+  const image = await loadImage(bytes).catch(() => undefined);
+  if (!image?.width || !image.height || image.width * image.height > maxPixels) return;
+  const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(scale * image.width));
+  const height = Math.max(1, Math.round(scale * image.height));
+  return renderByBackend(width, height, context => context.drawImage(image, 0, 0, width, height), mode);
 }
 
 /** 绘制回调应可重试。只有按 4× 请求的业务调用方才应允许减半。 */

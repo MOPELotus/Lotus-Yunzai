@@ -53,6 +53,10 @@ const imageSize: Record<RasterType, (data: Buffer) => Size | undefined> = {
   "image/png": pngSize, "image/jpeg": jpegSize, "image/webp": webpSize,
 };
 
+export function rasterImageSize(data: Buffer, type: string): Size | undefined {
+  return Object.hasOwn(imageSize, type) ? imageSize[type as RasterType](data) : undefined;
+}
+
 async function responseImage(response: Response, signal: AbortSignal): Promise<Buffer | undefined> {
   const type = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   const length = Number(response.headers.get("content-length"));
@@ -82,7 +86,7 @@ async function responseImage(response: Response, signal: AbortSignal): Promise<B
     if (signal.aborted || !bytes) return;
 
     const data = Buffer.concat(chunks, bytes);
-    const size = imageSize[type as RasterType](data);
+    const size = rasterImageSize(data, type);
     if (size?.every((side) => side > 0 && side <= maxSide)) return data;
   } finally {
     signal.removeEventListener("abort", stop);
