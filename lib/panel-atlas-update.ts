@@ -7,8 +7,14 @@ import { readPanelJson } from "./panel.ts";
 import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMappingPair, type Pair } from "./yaml-source-edits.ts";
 
 const defaults = { check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" };
-type Settings = typeof defaults & { enable: boolean };
+const cronFields = ["check_cron", "challenge_cron"] as const;
+type Settings = typeof defaults & { enable: boolean; run_on_missing_data: boolean };
+type ProposedSettings = Omit<Settings, "run_on_missing_data"> & Partial<Pick<Settings, "run_on_missing_data">>;
 type Config = Readonly<Record<string, unknown>>;
+
+class InvalidAtlasCron extends Error {
+  constructor(readonly field: typeof cronFields[number]) { super(); }
+}
 
 function record(value: unknown): Config | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Config;
@@ -22,6 +28,7 @@ function snapshot(document: Config) {
       (auto?.enable === undefined || auto.enable === true),
     check_cron: typeof auto?.check_cron === "string" ? auto.check_cron : defaults.check_cron,
     challenge_cron: typeof auto?.challenge_cron === "string" ? auto.challenge_cron : defaults.challenge_cron,
+    run_on_missing_data: auto?.run_on_missing_data === undefined || auto.run_on_missing_data === true,
   };
   const revision = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
   return { settings, revision };
@@ -72,28 +79,26 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
     }
     if (request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
     let revision: string;
-    let proposed: Settings;
+    let proposed: ProposedSettings;
     try {
       const body = record(await readPanelJson(request, 4096));
       const settings = record(body?.settings);
       if (!body || Object.keys(body).length !== 2 || typeof body.revision !== "string" || !/^[a-f0-9]{64}$/u.test(body.revision) ||
-          !settings || Object.keys(settings).length !== 3 || typeof settings.enable !== "boolean" ||
+          !settings || Object.keys(settings).length !== (Object.hasOwn(settings, "run_on_missing_data") ? 4 : 3) ||
+          typeof settings.enable !== "boolean" ||
+          (Object.hasOwn(settings, "run_on_missing_data") && typeof settings.run_on_missing_data !== "boolean") ||
           typeof settings.check_cron !== "string" || settings.check_cron.length > 160 ||
           typeof settings.challenge_cron !== "string" || settings.challenge_cron.length > 160) throw new Error();
       revision = body.revision;
-      proposed = { enable: settings.enable, check_cron: settings.check_cron.trim() || defaults.check_cron,
-        challenge_cron: settings.challenge_cron.trim() || defaults.challenge_cron };
+      proposed = { enable: settings.enable, check_cron: settings.check_cron, challenge_cron: settings.challenge_cron,
+        run_on_missing_data: settings.run_on_missing_data as boolean | undefined };
     } catch { return new Response(null, { status: 400 }); }
 
-    let policies: ReturnType<typeof import("../plugins/atlas/update-policy.ts").parseAtlasUpdatePolicy>;
+    let parsePolicy: typeof import("../plugins/atlas/update-policy.ts").parseAtlasUpdatePolicy;
     try {
       // The builtin may be absent before bootstrap. Load its parser only when editing its configuration.
-      const { parseAtlasUpdatePolicy } = await import("../plugins/atlas/update-policy.ts");
-      policies = parseAtlasUpdatePolicy({ auto_update: { ...proposed, enable: true } });
+      ({ parseAtlasUpdatePolicy: parsePolicy } = await import("../plugins/atlas/update-policy.ts"));
     } catch { return new Response(null, { status: 503 }); }
-    for (const [key, rule] of [["check_cron", policies.version], ["challenge_cron", policies.challenge]] as const) {
-      if (!rule.cron || !validModuleCron(rule.cron)) return Response.json({ field: key }, { status: 400 });
-    }
 
     const active = () => !request.signal.aborted && stillAuthorized();
     try {
@@ -103,18 +108,31 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
           const before = snapshot(effective);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           const changes: Partial<Settings> = {};
-          if (before.settings.enable !== proposed.enable || (!record(effective.atlas) &&
-              (before.settings.check_cron !== proposed.check_cron || before.settings.challenge_cron !== proposed.challenge_cron))) {
-            changes.enable = proposed.enable;
+          if (before.settings.enable !== proposed.enable) changes.enable = proposed.enable;
+          if (proposed.run_on_missing_data !== undefined && proposed.run_on_missing_data !== before.settings.run_on_missing_data) {
+            changes.run_on_missing_data = proposed.run_on_missing_data;
           }
-          if (before.settings.check_cron !== proposed.check_cron) changes.check_cron = proposed.check_cron;
-          if (before.settings.challenge_cron !== proposed.challenge_cron) changes.challenge_cron = proposed.challenge_cron;
+          for (const key of cronFields) {
+            if (before.settings[key] === proposed[key]) continue;
+            const normalized = proposed[key].trim() || defaults[key];
+            if (normalized !== before.settings[key]) changes[key] = normalized;
+          }
           if (!Object.keys(changes).length) return { value: before };
+          // Creating the first Atlas mapping would otherwise enable its schedule implicitly.
+          if (!record(effective.atlas)) changes.enable = proposed.enable;
+          const next = { ...before.settings, ...changes };
+          const policies = parsePolicy({ auto_update: { ...next, enable: true } });
+          for (const [key, rule] of [["check_cron", policies.version], ["challenge_cron", policies.challenge]] as const) {
+            if ((changes[key] !== undefined || changes.enable === true) && (!rule.cron || !validModuleCron(rule.cron))) {
+              throw new InvalidAtlasCron(key);
+            }
+          }
           const yaml = writeSettings(text, local, effective, changes);
-          return { yaml, value: snapshot({ atlas: { auto_update: proposed } }) };
+          return { yaml, value: snapshot({ atlas: { auto_update: next } }) };
         },
       }));
     } catch (error) {
+      if (error instanceof InvalidAtlasCron) return Response.json({ field: error.field }, { status: 400 });
       const reason = error instanceof GlobalConfigWriteError ? error.reason : undefined;
       return new Response(null, { status: reason === "conflict" ? 409 : reason === "permission" || reason === "cancelled" ? 401 : 500 });
     }

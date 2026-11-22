@@ -3,14 +3,14 @@ import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
-interface Settings { enable: boolean; check_cron: string; challenge_cron: string }
+interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
 interface Snapshot { settings: Settings; revision: string }
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/atlas/update`;
 const saved = ref<Snapshot>();
-const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "" });
+const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
@@ -54,6 +54,7 @@ async function sync(mode: "load" | "save") {
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
+        typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string") {
       error.value = "宿主返回了无法识别的图鉴自动更新设置。";
       return;
@@ -95,6 +96,13 @@ onBeforeUnmount(() => {
         <label for="atlas-challenge-cron">挑战刷新 Cron</label>
         <input id="atlas-challenge-cron" v-model="draft.challenge_cron" type="text" maxlength="160" autocomplete="off"
           spellcheck="false" placeholder="0 15 */2 * * ? *" />
+        <label class="update-toggle">
+          <input id="atlas-initialize-missing" v-model="draft.run_on_missing_data" type="checkbox"
+            aria-describedby="atlas-initialize-missing-note" />受管数据为空时定时补齐
+        </label>
+        <p id="atlas-initialize-missing-note" class="subtitle toggle-note">
+          启用定时更新并配置版本渠道后，由重启后的定时版本检查补齐空目录。
+        </p>
       </fieldset>
       <p class="subtitle">清空时间表可恢复默认频率。保存后重启宿主生效。</p>
       <div class="update-actions">
@@ -115,4 +123,5 @@ fieldset { display: grid; gap: 7px; padding: 0; border: 0; margin: 0; min-width:
 fieldset input[type="text"] { border: 1px solid var(--line); padding: 8px; border-radius: 6px; color: inherit; background: var(--surface); }
 .update-toggle input { accent-color: var(--accent); }
 .subtitle { margin: 12px 0; }
+.toggle-note { margin: 0; }
 </style>

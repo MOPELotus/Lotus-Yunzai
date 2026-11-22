@@ -47,7 +47,9 @@ test("图鉴面板写入现有 Atlas 调度配置，版本来源、旧字段与�
     const raw = await beforeResponse.text();
     expect(raw).not.toContain("private-atlas-path");
     const before = JSON.parse(raw);
-    expect(before.settings).toEqual({ enable: true, check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" });
+    expect(before.settings).toEqual({
+      enable: true, check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *", run_on_missing_data: false,
+    });
     const edited = { ...before.settings, check_cron: "13 8 * * MON-FRI", challenge_cron: "0 14 */3 * * ? *" };
     const invalid = await admin(request("PUT", { revision: before.revision, settings: { ...edited, challenge_cron: "0 0 9 ? * 1-5 *" } }));
     expect(invalid?.status).toBe(400);
@@ -102,5 +104,55 @@ test("编辑图鉴定时配置保留 YAML 锚、共享源和原有版路选择",
     const config = await readLotusGlobalConfig(root);
     expect(config.config).toEqual({ enable: false, check_cron: "18 8 * * *", unsupported: "retained" });
     expect(config.atlas).toEqual({ version_channel: "live", auto_update: { ...config.config as object, enable: true } });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("缺数据开关仅在重启后的版本任务读取，并保持原版本渠道和两条 Cron", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-empty-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const unrelated = "# 保留 CRLF 和原值\r\ncoin_shop: { enable: false }\r\n";
+    await writeFile(file, unrelated);
+    const route = panelAtlasUpdate(root, validTask);
+    const get = async () => (await route(request(), () => true)).json();
+    const put = (snapshot: { revision: string; settings: Record<string, unknown> }, run_on_missing_data: unknown) =>
+      route(request("PUT", { ...snapshot, settings: { ...snapshot.settings, run_on_missing_data } }), () => true);
+    const initial = await get();
+    expect(initial.settings.run_on_missing_data).toBe(true);
+    expect(initial.settings.enable).toBe(false);
+    expect((await put(initial, "false")).status).toBe(400);
+    expect((await put(initial, false)).status).toBe(200);
+    expect(await get()).toMatchObject({ settings: { enable: false, run_on_missing_data: false } });
+    expect(await readFile(file, "utf8")).toStartWith(unrelated);
+    expect((await readLotusGlobalConfig(root)).atlas).toEqual({ auto_update: { enable: false, run_on_missing_data: false } });
+
+    const original = unrelated + "atlas:\r\n  version_channel: live # 原版本\r\n" +
+      "  auto_update: {check_cron: ' 4 5 * * * ', challenge_cron: '', run_on_missing_data: false}\r\n";
+    await writeFile(file, original);
+    let checks = 0;
+    const data = join(directory, "data/atlas");
+    const runtime = async () => createAtlasMaintenance(data, {
+      updateConfig: (await readLotusGlobalConfig(root)).atlas,
+      async manifest() { checks++; return {}; },
+    }).atlasSchedule;
+    const running = await runtime();
+    const before = await get();
+    const saved = await put(before, true);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual(await get());
+    expect(await readFile(file, "utf8")).toBe(original.replace("run_on_missing_data: false", "run_on_missing_data: true"));
+    expect(await Bun.file(join(data, "current/map.json")).exists()).toBeFalse();
+    expect(checks).toBe(0);
+    expect((await put(before, false)).status).toBe(409);
+    expect(await running.version.run()).toContain("未初始化");
+    expect(checks).toBe(0);
+    const reloaded = await runtime();
+    expect(reloaded.version.cron).toBe("0 4 5 * * *");
+    expect(reloaded.challenge.cron).toBeUndefined();
+    await reloaded.version.run();
+    expect(checks).toBe(1);
+    expect(await Bun.file(join(data, "current/map.json")).exists()).toBeFalse();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
