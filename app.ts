@@ -13,6 +13,7 @@ import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
+import { donationCommand } from "./lib/donation-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
@@ -2424,6 +2425,7 @@ if (import.meta.main) {
       return renderStatusCard(...args);
     });
     commands.registerModule(accounts);
+    commands.registerModule(donationCommand);
     const viewProfile = (id: number, { message_type, self_id, user_id, group_id, isMaster }: CommandContext) =>
       accounts.commands[`#配置${id === 1 ? "" : id}`]!("", { message_type, self_id, user_id, group_id, isMaster });
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
