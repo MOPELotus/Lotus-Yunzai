@@ -14,6 +14,7 @@ import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-remin
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { donationCommand } from "./lib/donation-command.ts";
+import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
 import { weatherCommands } from "./lib/weather-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
@@ -2458,6 +2459,7 @@ if (import.meta.main) {
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       viewProfile));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
+    commands.registerModule(legacyAnniversaryCommands(root, Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)), undefined,
       legacyLotusDirectories.map(id => fileURLToPath(new URL(`plugins/${id}/data/audit/checkin.jsonl`, root))));
