@@ -98,10 +98,10 @@ onBeforeUnmount(() => {
           spellcheck="false" placeholder="0 15 */2 * * ? *" />
         <label class="update-toggle">
           <input id="atlas-initialize-missing" v-model="draft.run_on_missing_data" type="checkbox"
-            aria-describedby="atlas-initialize-missing-note" />受管数据为空时定时补齐
+            aria-describedby="atlas-initialize-missing-note" />受管数据为空时补齐
         </label>
         <p id="atlas-initialize-missing-note" class="subtitle toggle-note">
-          启用定时更新并配置版本渠道后，由重启后的定时版本检查补齐空目录。
+          选定版本渠道后，定时版本检查和主人普通更新均可补齐受管空目录。停用定时更新仍可手动执行。
         </p>
       </fieldset>
       <p class="subtitle">清空时间表可恢复默认频率。保存后重启宿主生效。</p>
