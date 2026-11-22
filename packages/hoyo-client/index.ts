@@ -54,7 +54,7 @@ export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { readBbsForumPosts, type BbsForumPost } from "./bbs-forum-posts.ts";
 export { normalizeGenshinMonthly, type GenshinMonthlySnapshot } from "./genshin-monthly.ts";
-export { GameRecordRequestError } from "./game-record.ts";
+export { GameRecordRequestError, genshinCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
 export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
