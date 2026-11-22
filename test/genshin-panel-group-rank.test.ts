@@ -192,7 +192,8 @@ test("刷新所有本群已登记 UID，失效或未展示不使用旧分，榜�
   const seen: string[] = [];
   let ranked: string[] = [];
   let summary: string | undefined;
-  let strongest: { uid: string; source: string } | undefined;
+  let strongest: { uid: string; source: string; enemyLevel: number } | undefined;
+  const preferenceReads: string[] = [];
   const signal = new AbortController().signal;
   const ranking = createGroupPanelRank(directory, {
     async describe(qq) {
@@ -217,9 +218,13 @@ test("刷新所有本群已登记 UID，失效或未展示不使用旧分，榜�
       summary = options?.refreshSummary;
       return { png: new Uint8Array([1]) };
     },
-    async renderStrongest(snapshot, leader, assets) {
+    async readEnemyLevel(qq) {
+      preferenceReads.push(qq);
+      return qq === "42" ? 93 : 120;
+    },
+    async renderStrongest(snapshot, leader, assets, _options, enemyLevel) {
       expect(assets.galleryPortrait).toBeUndefined();
-      strongest = { uid: snapshot.uid, source: leader._source };
+      strongest = { uid: snapshot.uid, source: leader._source, enemyLevel };
       return { png: new Uint8Array([1]) };
     },
   });
@@ -238,10 +243,12 @@ test("刷新所有本群已登记 UID，失效或未展示不使用旧分，榜�
     expect(seen.sort()).toEqual([role(42).uid, role(43).uid, role(44).uid, role(45).uid]);
     expect(ranked).toEqual([role(43).uid, role(42).uid]);
     expect(summary).toContain("可排名 2 个，未展示 1 个，无法刷新或计算 1 个");
+    expect(preferenceReads).toEqual([]);
     seen.length = 0;
     const result = await ranking.query("#最强胡桃圣遗物", context(42), load);
     expect(result).toEqual([expect.stringContaining(role(43).uid), { type: "image", file: new Uint8Array([1]) }]);
-    expect(strongest).toEqual({ uid: role(43).uid, source: "mgg" });
+    expect(strongest).toEqual({ uid: role(43).uid, source: "mgg", enemyLevel: 93 });
+    expect(preferenceReads).toEqual(["42"]);
     expect(seen.sort()).toEqual([role(42).uid, role(43).uid, role(44).uid, role(45).uid]);
   } finally {
     await rm(directory, { recursive: true, force: true });

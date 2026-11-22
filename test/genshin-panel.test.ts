@@ -156,8 +156,11 @@ test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指�
     for (const raw of ["#世界BOSS击杀", "#BOSS击杀", "#原神世界boss击杀2", "#原神世界Boss击杀排行", "#boss击杀排行"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 世界 BOSS"]);
     }
+    for (const raw of ["#芙宁娜排行", "#芙宁娜双爆排行", "#最强芙宁娜"]) {
+      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 角色面板"]);
+    }
     for (const raw of ["#面板", "#更新面板2", "#芙宁娜面板", "#武器十连", "#原神养成计算 芙宁娜",
-      "#原神练度统计", "#天赋统计", "#芙宁娜排行", "#背包", "#世界boss", "#星铁BOSS击杀", "#更新小助手抽卡记录"]) {
+      "#原神练度统计", "#天赋统计", "#背包", "#世界boss", "#星铁BOSS击杀", "#更新小助手抽卡记录"]) {
       expect(module.fallbackFeatures(context(raw))).toEqual([]);
     }
     expect(module.fallbackFeatures({ ...context(""), attachment })).toEqual(gachaFeature);
