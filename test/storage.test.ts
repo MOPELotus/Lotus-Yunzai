@@ -84,13 +84,21 @@ async function verifyNoticePush(root: string, storageUrl: string) {
       return next;
     }
 
+    async function confirmNoticeStart(echo: string, membership: unknown) {
+      const start = await confirm(echo, membership);
+      expect(start).toMatchObject({ action: "send_msg", params: {
+        user_id: 51, message: expect.stringContaining("开始推送，共 1 个账号、1 个目标群"),
+      } });
+      return confirm(start.echo, { message_id: 600 });
+    }
+
     expect(await command("#推送公告", 42)).toMatchObject({ action: "send_msg", params: {
       user_id: 42, message: "仅机器人主人可管理公告。",
     } });
     const discovery = await command("#推送公告");
     expect(discovery.action).toBe("get_group_list");
     const membership = [{ group_id: 77, group_name: "目标群" }, { group_id: 78, group_name: "群外" }];
-    const delivery = await confirm(discovery.echo, membership);
+    const delivery = await confirmNoticeStart(discovery.echo, membership);
     expect(delivery).toMatchObject({ action: "send_msg", params: {
       group_id: 77, auto_escape: true, message: "【公告通知】\n旧公告 [CQ:at,qq=all]\n2026-11-19 00:00",
     } });
@@ -100,7 +108,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
     expect(receipt.params).toMatchObject({ user_id: 51, message: expect.stringContaining("群 77 · 机器人 99 · 确认送达 · 消息 -601") });
     const second = await command("#推送公告");
     expect(second.action).toBe("get_group_list");
-    const duplicate = await confirm(second.echo, membership);
+    const duplicate = await confirmNoticeStart(second.echo, membership);
     expect(duplicate.params).toMatchObject({ user_id: 51, message: expect.stringContaining("已跳过 1 个已有投递记录的群") });
 
     expect(await command("#撤回已发公告 00001ABC 77", 42)).toMatchObject({ action: "send_msg", params: {
@@ -127,7 +135,7 @@ async function verifyNoticePush(root: string, storageUrl: string) {
     });
     const beforeShutdown = await command("#推送公告");
     expect(beforeShutdown.action).toBe("get_group_list");
-    const outstanding = await confirm(beforeShutdown.echo, membership);
+    const outstanding = await confirmNoticeStart(beforeShutdown.echo, membership);
     expect(outstanding).toMatchObject({ action: "send_msg", params: { group_id: 77, auto_escape: true,
       message: [
         { type: "text", data: { text: "【公告通知】\n" } },
