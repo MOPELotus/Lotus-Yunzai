@@ -191,7 +191,7 @@ test("跨档案重建原神面板时接受同账号续期，空数据和授权�
   }
 });
 
-test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指令生效", () => {
+test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指令生效", async () => {
   const controller = new AbortController();
   const module = createModule({ signal: controller.signal, lockFile });
   try {
@@ -199,23 +199,23 @@ test("原神背包、世界 BOSS 与抽卡档案的群开关各按本功能指�
     const context = (normalizedMessage: string) => ({ normalizedMessage, reply() {} });
     const gachaFeature = ["[gacha] 抽卡记录"];
     for (const raw of ["#抽卡记录2", "#更新抽卡记录", "#强制导出记录", "#同步外部抽卡记录", "#同步外部抽卡记录2", "#抽卡帮助", "#导入记录"]) {
-      expect(module.fallbackFeatures(context(raw))).toEqual(gachaFeature);
+      expect(await module.fallbackFeatures(context(raw))).toEqual(gachaFeature);
     }
     for (const raw of ["#原神背包", "#原神背包2"]) {
-      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 背包"]);
+      expect(await module.fallbackFeatures(context(raw))).toEqual(["[genshin] 背包"]);
     }
     for (const raw of ["#世界BOSS击杀", "#BOSS击杀", "#原神世界boss击杀2", "#原神世界Boss击杀排行", "#boss击杀排行"]) {
-      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 世界 BOSS"]);
+      expect(await module.fallbackFeatures(context(raw))).toEqual(["[genshin] 世界 BOSS"]);
     }
     for (const raw of ["#芙宁娜排行", "#芙宁娜双爆排行", "#最强芙宁娜"]) {
-      expect(module.fallbackFeatures(context(raw))).toEqual(["[genshin] 角色面板"]);
+      expect(await module.fallbackFeatures(context(raw))).toEqual(["[genshin] 角色面板"]);
     }
     for (const raw of ["#面板", "#更新面板2", "#芙宁娜面板", "#武器十连", "#原神养成计算 芙宁娜",
       "#原神练度统计", "#天赋统计", "#背包", "#世界boss", "#星铁BOSS击杀", "#更新小助手抽卡记录"]) {
-      expect(module.fallbackFeatures(context(raw))).toEqual([]);
+      expect(await module.fallbackFeatures(context(raw))).toEqual([]);
     }
-    expect(module.fallbackFeatures({ ...context(""), attachment })).toEqual(gachaFeature);
-    expect(module.fallbackFeatures({ ...context(""), attachment: { ...attachment, name: "表情.png" } })).toEqual([]);
+    expect(await module.fallbackFeatures({ ...context(""), attachment })).toEqual(gachaFeature);
+    expect(await module.fallbackFeatures({ ...context(""), attachment: { ...attachment, name: "表情.png" } })).toEqual([]);
   } finally {
     controller.abort();
   }
