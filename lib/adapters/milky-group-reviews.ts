@@ -10,6 +10,7 @@ interface Entry {
   readonly decision: Decision;
   readonly invitation?: PendingGroupInvitation;
   readonly observedAt: number;
+  observedSession?: symbol;
   state: "pending" | "sending" | "completed" | "unknown";
 }
 
@@ -20,9 +21,16 @@ export function createMilkyGroupReviews() {
   const maxRequests = 4096;
   const unconfirmed = () => new Error("Milky 群请求审批结果未确认。");
 
-  function register(request: Pick<GroupRequest, "self_id" | "sub_type" | "flag" | "group_id" | "user_id" | "nickname">, decision: Decision): boolean {
+  function register(request: Pick<GroupRequest, "self_id" | "sub_type" | "flag" | "group_id" | "user_id" | "nickname">, decision: Decision,
+    observedSession?: symbol): boolean {
     const existing = requests.get(request.flag);
-    if (existing) return existing.state === "pending";
+    if (existing) {
+      if (observedSession && existing.state === "pending" && existing.account === request.self_id && existing.kind === request.sub_type &&
+          existing.invitation?.groupId === request.group_id && existing.invitation.inviterId === request.user_id) {
+        existing.observedSession = observedSession;
+      }
+      return existing.state === "pending";
+    }
     if (requests.size >= maxRequests) {
       const settled = [...requests].find(([, { state }]) => state === "completed" || state === "unknown");
       if (!settled) return false;
@@ -31,18 +39,31 @@ export function createMilkyGroupReviews() {
     requests.set(request.flag, {
       account: request.self_id, kind: request.sub_type, decision, state: "pending",
       invitation: request.sub_type === "invite" ? { groupId: request.group_id, inviterId: request.user_id, nickname: request.nickname } : undefined,
-      observedAt: performance.now(),
+      observedAt: performance.now(), observedSession,
     });
     return true;
   }
 
-  function listObservedInvitations(account: number): PendingGroupInvitationList {
+  function observedInvitations(account: number, session?: symbol) {
     const cutoff = performance.now() - observedLifetime;
-    const entries: PendingGroupInvitation[] = [];
-    for (const entry of requests.values()) {
-      if (entry.account === account && entry.state === "pending" && entry.invitation && entry.observedAt >= cutoff) entries.push(entry.invitation);
+    const entries: { readonly flag: string; readonly invitation: PendingGroupInvitation }[] = [];
+    for (const [flag, entry] of requests) {
+      if (entry.account === account && entry.state === "pending" && entry.invitation && entry.observedAt >= cutoff &&
+          (!session || entry.observedSession === session)) {
+        entries.push({ flag, invitation: entry.invitation });
+      }
     }
-    return { entries: entries.reverse(), complete: false };
+    return entries.reverse();
+  }
+
+  function isObservedInvitationPending(account: number, flag: string, session: symbol) {
+    const entry = requests.get(flag);
+    return entry?.account === account && entry.state === "pending" && entry.invitation !== undefined && entry.observedSession === session &&
+      entry.observedAt >= performance.now() - observedLifetime;
+  }
+
+  function listObservedInvitations(account: number): PendingGroupInvitationList {
+    return { entries: observedInvitations(account).map(({ invitation }) => invitation), complete: false };
   }
 
   function selectObservedInvitation(account: number, groupId: number): { status: "pending"; flag: string } |
@@ -79,5 +100,5 @@ export function createMilkyGroupReviews() {
     }
   }
 
-  return { register, review, listObservedInvitations, selectObservedInvitation };
+  return { register, review, listObservedInvitations, selectObservedInvitation, observedInvitations, isObservedInvitationPending };
 }

@@ -13,6 +13,7 @@ export type CommandContext = Readonly<Pick<
     "groupSetSpecialTitle" | "groupSetAdmin" | "setGroupName" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
     "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" | "listPendingGroupInvitations" |
     "listPendingFriendRequests" | "reviewPendingFriendRequest" | "reviewPendingGroupInvitation" | "reviewQuotedGroupInvitation" |
+    "reviewAllPendingFriendRequests" | "reviewAllPendingGroupInvitations" |
     "sendOwnerFriendReply" | "sendQuotedOwnerFriendReply" |
     "groupListAnnouncements" | "groupPublishAnnouncement" | "groupDeleteAnnouncement" |
     "groupRuleImageDigest" | "groupVote" | "groupVerification" | "privateGroupMute" | "privateGroupWholeMute" | "privateGroupKick"
@@ -125,7 +126,8 @@ function commandContext(context: CommandContext): CommandContext {
     groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
     groupListPendingJoinRequests, listPendingGroupInvitations, reviewPendingGroupInvitation, reviewQuotedGroupInvitation,
-    listPendingFriendRequests, reviewPendingFriendRequest, sendOwnerFriendReply, sendQuotedOwnerFriendReply, groupListAnnouncements,
+    listPendingFriendRequests, reviewPendingFriendRequest, reviewAllPendingFriendRequests, reviewAllPendingGroupInvitations,
+    sendOwnerFriendReply, sendQuotedOwnerFriendReply, groupListAnnouncements,
     groupPublishAnnouncement, groupDeleteAnnouncement, groupRuleImageDigest, groupVote, groupVerification, privateGroupMute, privateGroupWholeMute, privateGroupKick,
     profileLikeImageSignal, isFriend, reviewGroupRequest,
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile, deliverMedia, sendMusicCard,
@@ -158,9 +160,11 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupListPendingJoinRequests ? { groupListPendingJoinRequests } : {}),
     ...(message_type === "private" && !isDelegated && listPendingGroupInvitations ? { listPendingGroupInvitations } : {}),
     ...(message_type === "private" && !isDelegated && reviewPendingGroupInvitation ? { reviewPendingGroupInvitation } : {}),
+    ...(message_type === "private" && !isDelegated && reviewAllPendingGroupInvitations ? { reviewAllPendingGroupInvitations } : {}),
     ...(message_type === "private" && !isDelegated && reviewQuotedGroupInvitation ? { reviewQuotedGroupInvitation } : {}),
     ...(message_type === "private" && !isDelegated && listPendingFriendRequests ? { listPendingFriendRequests } : {}),
     ...(message_type === "private" && !isDelegated && reviewPendingFriendRequest ? { reviewPendingFriendRequest } : {}),
+    ...(message_type === "private" && !isDelegated && reviewAllPendingFriendRequests ? { reviewAllPendingFriendRequests } : {}),
     ...(message_type === "private" && !isDelegated && sendOwnerFriendReply ? { sendOwnerFriendReply } : {}),
     ...(message_type === "private" && !isDelegated && sendQuotedOwnerFriendReply ? { sendQuotedOwnerFriendReply } : {}),
     ...(message_type === "group" && !isDelegated && groupReviewPendingJoin ? { groupReviewPendingJoin } : {}),

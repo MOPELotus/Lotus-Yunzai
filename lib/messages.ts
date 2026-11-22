@@ -11,6 +11,7 @@ import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/o
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationDecision, PendingGroupInvitationList, QuotedGroupInvitationDecision } from "./group-invitations.ts";
 import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
+import type { OwnerRequestBatchResult } from "../plugins/group/owner-request-batch.ts";
 import { friendMessageNoticeSession, type FriendMessageNoticeSession, type QuotedOwnerFriendReplyOutcome } from "./friend-message-notice.ts";
 import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
@@ -86,9 +87,11 @@ export interface MessageEvent {
   readonly groupListPendingJoinRequests?: () => Promise<PendingGroupJoinList | undefined>;
   readonly listPendingGroupInvitations?: () => Promise<PendingGroupInvitationList | undefined>;
   readonly reviewPendingGroupInvitation?: (groupId: number, approve: boolean) => Promise<PendingGroupInvitationDecision>;
+  readonly reviewAllPendingGroupInvitations?: (approve: boolean) => Promise<OwnerRequestBatchResult>;
   readonly reviewQuotedGroupInvitation?: (approve: boolean) => Promise<QuotedGroupInvitationDecision>;
   readonly listPendingFriendRequests?: () => Promise<PendingFriendRequestList | undefined>;
   readonly reviewPendingFriendRequest?: (userId: number, approve: boolean) => Promise<PendingFriendRequestDecision>;
+  readonly reviewAllPendingFriendRequests?: (approve: boolean) => Promise<OwnerRequestBatchResult>;
   readonly sendOwnerFriendReply?: (userId: number, body: OwnerFriendReplyBody) => Promise<OwnerFriendReplyOutcome>;
   readonly sendQuotedOwnerFriendReply?: (body: OwnerFriendReplyBody) => Promise<QuotedOwnerFriendReplyOutcome>;
   readonly groupReviewPendingJoin?: (userId: number, approve: boolean) => Promise<PendingGroupJoinDecision>;

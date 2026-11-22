@@ -9,6 +9,7 @@ const account = 99;
 const now = 1_700_000_000;
 const autoUid = "u_fixture_automatic";
 const manualUid = "u_fixture_manually_rejected";
+const batchUid = "u_fixture_batch_only";
 const unknownWarning = "[好友申请] 未确认自动审批结果。";
 
 interface Review {
@@ -31,6 +32,9 @@ function mockGateway() {
   const replayReply = Promise.withResolvers<unknown>();
   const ownerNotice = Promise.withResolvers<unknown>();
   const ownerReview = Promise.withResolvers<unknown>();
+  const batchReview = Promise.withResolvers<unknown>();
+  let batchRows = false;
+  let batchState = "pending";
   const notifiedOwners: unknown[] = [];
   const release = Promise.withResolvers<void>();
   const server = Bun.serve({
@@ -51,17 +55,24 @@ function mockGateway() {
           ownerNotice.resolve(body);
         } else if (JSON.stringify(body).includes("好友申请处理结果未确认")) {
           ownerReview.resolve(body);
+        } else if (JSON.stringify(body).includes("本次共核对 3 条好友申请")) {
+          batchReview.resolve(body);
         } else replayReply.resolve(body);
         return Response.json({ status: "ok", retcode: 0, data: { message_seq: 11 } });
       }
       if (action === "get_friend_requests") {
-        const requests = body.is_filtered ? [] : [{ initiator_id: 45, initiator_uid: autoUid, target_user_id: account,
-          is_filtered: false, time: now - 5, state: "pending" }];
+        const ordinary = { initiator_id: 45, initiator_uid: autoUid, target_user_id: account,
+          is_filtered: false, time: now - 5, state: "pending" };
+        const requests = body.is_filtered
+          ? batchRows ? [{ ...ordinary, is_filtered: true, initiator_id: 47, initiator_uid: "risk-only" }] : []
+          : [ordinary, ...(batchRows ? [{ ...ordinary, initiator_id: 46, initiator_uid: batchUid, state: batchState },
+            { ...ordinary, target_user_id: account + 1, initiator_id: 48, initiator_uid: "other-account" }] : [])];
         return Response.json({ status: "ok", retcode: 0, data: { requests } });
       }
       const review = { action, body, receivedAt: performance.now() };
       reviews.push(review);
       if (action === "reject_friend_request") {
+        if (body.initiator_uid === batchUid) batchState = "rejected";
         rejected.resolve(review);
         return Response.json({ status: "ok", retcode: 0, data: {} });
       }
@@ -73,7 +84,8 @@ function mockGateway() {
       return new Response(null, { status: 404 });
     },
   });
-  return { server, reviews, accepted, rejected, release, replayReply, ownerNotice, ownerReview, notifiedOwners };
+  return { server, reviews, accepted, rejected, release, replayReply, ownerNotice, ownerReview, notifiedOwners, batchReview,
+    enableBatch() { batchRows = true; } };
 }
 
 async function startup(stream: ReadableStream<Uint8Array>) {
@@ -214,6 +226,25 @@ test("Milky Webhook 好友申请按旧配置延时审批，保留 V3 手动拒�
       });
       expect(mock.reviews.map(({ action }) => action)).toEqual(["reject_friend_request", "accept_friend_request"]);
       expect(mock.notifiedOwners).toHaveLength(1);
+
+      mock.enableBatch();
+      const batch = { time: now, self_id: account, event_type: "message_receive", data: {
+        message_scene: "friend", sender_id: 52, peer_id: 52, message_seq: 304,
+        segments: [{ type: "text", data: { text: "#拒绝全部好友申请" } }],
+      } };
+      expect((await webhook(endpoint, batch)).status).toBe(200);
+      const summary = JSON.stringify(await deadline(mock.batchReview.promise, "未收到好友申请批量回执。", 6_000));
+      expect(summary).toContain("审核仅覆盖本次可核验的范围");
+      expect(summary).toContain("已拒绝：1 条");
+      expect(summary).toContain("结果未知：1 条");
+      expect(summary).toContain("风险：1 条");
+      expect(summary).not.toContain(batchUid);
+      expect((await webhook(endpoint, batch)).status).toBe(200);
+      expect(mock.reviews.map(({ action, body }) => ({ action, body }))).toEqual([
+        { action: "reject_friend_request", body: { initiator_uid: manualUid, is_filtered: false, reason: "夹具拒绝" } },
+        { action: "accept_friend_request", body: { initiator_uid: autoUid, is_filtered: false } },
+        { action: "reject_friend_request", body: { initiator_uid: batchUid, is_filtered: false } },
+      ]);
     } finally {
       mock.release.resolve();
       if (host.exitCode === null && host.signalCode === null) host.kill();
@@ -226,4 +257,4 @@ test("Milky Webhook 好友申请按旧配置延时审批，保留 V3 手动拒�
     mock.server.stop(true);
     await rm(root, { recursive: true, force: true });
   }
-}, 9_000);
+}, 12_000);

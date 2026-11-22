@@ -284,6 +284,14 @@ test("Milky 只自动通过主人邀请机器人入群，其他群申请由当�
       }
       await command(`#拒绝群邀请${ambiguousGroup}`);
       expect(await privateText(mock)).toContain("多条待处理的邀请");
+      await command("#拒绝全部群邀请");
+      expect(await mock.next("reject_group_invitation")).toEqual({ group_id: ambiguousGroup, invitation_seq: 107 });
+      expect(await mock.next("reject_group_invitation")).toEqual({ group_id: ambiguousGroup, invitation_seq: 106 });
+      const batchReply = await mock.next("send_private_message");
+      expect(JSON.stringify(batchReply)).toContain("本次共核对 2 条群邀请");
+      expect(JSON.stringify(batchReply)).toContain("已拒绝：2 条");
+      await command("#查看群邀请");
+      expect(await privateText(mock)).toContain("本次查询范围内未发现待处理的群邀请");
 
       const quotedGroup = pendingInviteGroup + 200;
       expect((await webhook(endpoint, "group_invitation", invitation(quotedGroup, 108, outsider))).status).toBe(200);

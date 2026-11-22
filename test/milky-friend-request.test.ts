@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { milkyFriendRequest } from "../lib/adapters/milky-friend-request.ts";
+import { milkyFriendRequest, milkyFriendRequestBatchUsers, milkyFriendRequestLimit } from "../lib/adapters/milky-friend-request.ts";
 import type { MessageReply } from "../lib/messages.ts";
 
 const selfId = 1001;
@@ -103,4 +103,19 @@ test("Milky 好友申请只回复申请人，给主人通知按确认回执计�
   expect(done).toBe(false);
   confirmed.resolve(true);
   expect(await notified).toBe(1);
+});
+
+test("好友批量审核取当前账号内两份有效列表，达到协议上限或字段无效时拒绝批量选择", () => {
+  const pending = { initiator_id: applicant, initiator_uid: uid, target_user_id: selfId,
+    is_filtered: false, time, state: "pending" };
+  const none = { requests: [] };
+  const batch = (requests: readonly unknown[], risk: unknown = none) => milkyFriendRequestBatchUsers(selfId, { requests }, risk);
+  expect(batch([pending, { ...pending, target_user_id: selfId + 1 }, { ...pending, state: "rejected", initiator_id: 3003 }],
+    { requests: [{ ...pending, is_filtered: true, initiator_id: 4004 }] })).toEqual([applicant, 4004]);
+  expect(milkyFriendRequestBatchUsers(selfId, { requests: [pending] }, undefined)).toBeUndefined();
+  expect(batch([pending], null)).toBeUndefined();
+  expect(batch(Array.from({ length: milkyFriendRequestLimit }, () => pending))).toBeUndefined();
+  expect(batch([pending, { ...pending, state: "unknown" }])).toBeUndefined();
+  expect(batch([pending, { ...pending, initiator_uid: null }])).toBeUndefined();
+  expect(batch([pending], { requests: [pending] })).toBeUndefined();
 });

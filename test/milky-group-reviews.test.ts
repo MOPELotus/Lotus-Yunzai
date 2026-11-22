@@ -29,3 +29,22 @@ test("Milky 审核使用当前连接，结果未知后阻止再次提交", async
   await expect(reviews.review(99, request.flag, "add", true, undefined, invoke)).rejects.toThrow("未确认");
   expect(attempts).toEqual([decision(true)]);
 });
+
+test("批量群邀请只取当前连接实际观察的同账号待审邀请", () => {
+  const reviews = createMilkyGroupReviews();
+  const first = Symbol(), next = Symbol();
+  const invite = { self_id: 99, sub_type: "invite", group_id: 42, user_id: 51, flag: "current" } as const;
+  const decision = () => ({ action: "reject_group_invitation", params: {} });
+  reviews.register(invite, decision, first);
+  reviews.register({ ...invite, flag: "quoted" }, decision);
+  reviews.register({ ...invite, flag: "other", self_id: 98 }, decision, first);
+  reviews.register({ ...invite, flag: "join", sub_type: "add" }, decision, first);
+  expect(reviews.observedInvitations(99, first).map(({ flag }) => flag)).toEqual(["current"]);
+  expect(reviews.observedInvitations(99, next)).toEqual([]);
+  expect(reviews.isObservedInvitationPending(99, "current", next)).toBe(false);
+
+  reviews.register(invite, decision, next);
+  expect(reviews.isObservedInvitationPending(99, "current", first)).toBe(false);
+  expect(reviews.isObservedInvitationPending(99, "current", next)).toBe(true);
+  expect(reviews.observedInvitations(99, next).map(({ flag }) => flag)).toEqual(["current"]);
+});

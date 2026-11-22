@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+import type { OwnerRequestBatchEntry, OwnerRequestBatchResult } from "../../plugins/group/owner-request-batch.ts";
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
@@ -23,8 +25,8 @@ import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationSco
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { createMilkyApi } from "./milky-api.ts";
 import type { MilkySettings } from "./milky-config.ts";
-import { milkyFriendRequest, milkyFriendRequestLimit, milkyFriendRequestState, milkyPendingFriendRequests,
-  selectCurrentMilkyFriendRequest } from "./milky-friend-request.ts";
+import { milkyFriendRequest, milkyFriendRequestBatchUsers, milkyFriendRequestLimit, milkyFriendRequestState, milkyPendingFriendRequests,
+  selectCurrentMilkyFriendRequest, type MilkyFriendRequestIdentity } from "./milky-friend-request.ts";
 import { milkyGroupRequest, milkyGroupRequestFlag } from "./milky-group-request.ts";
 import { createMilkyGroupReviews } from "./milky-group-reviews.ts";
 import type { createMilkyInvitationReceipts } from "./milky-invitation-receipts.ts";
@@ -91,6 +93,20 @@ function hasMessageSequence(value: unknown): value is number {
 }
 
 const maxGroupMembers = 10_000;
+const maxRequestBatchSize = 50;
+
+async function reviewObservedBatch<T>(candidates: readonly T[], active: () => boolean, scope: AbortSignal, spacingMs: number,
+  id: (candidate: T) => number, review: (candidate: T) => Promise<Omit<OwnerRequestBatchEntry, "id">>): Promise<OwnerRequestBatchResult> {
+  if (!candidates.length) return { status: "not-found" };
+  if (candidates.length > maxRequestBatchSize) return { status: "unavailable" };
+  const entries: OwnerRequestBatchEntry[] = [];
+  for (const candidate of candidates) {
+    if (entries.length && active()) await delay(spacingMs, undefined, { signal: scope }).catch(() => {});
+    const result = active() ? await review(candidate) : { status: "unavailable" as const };
+    entries.push({ id: id(candidate), ...result });
+  }
+  return { status: "processed", entries };
+}
 
 export async function openMilkySession(settings: MilkySettings, options: MilkyTransportOptions): Promise<MilkySession | undefined> {
   const { signal, dispatch, onSent } = options;
@@ -99,6 +115,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   if (signal.aborted || !positiveId(login?.uin)) return;
   const account = login.uin;
   const groupReviews = options.groupReviews ?? createMilkyGroupReviews();
+  const invitationSession = Symbol();
   const friendReview = options.friendReview ?? createRequestClaim(() => undefined);
   const invitationReview = options.invitationReview ?? createRequestClaim(() => undefined);
   const invitationReceipts = options.invitationReceipts;
@@ -238,16 +255,18 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   async function reviewCurrentFriendRequest(actor: number, user: number, approve: boolean, scope: AbortSignal): Promise<PendingFriendRequestDecision> {
     const active = () => !scope.aborted && isMaster(actor);
     if (!active() || !positiveId(user) || user === account || typeof approve !== "boolean") return { status: "unavailable" };
-    const select = async () => selectCurrentMilkyFriendRequest(account, user, ...await readFriendRequestWindows(scope));
-    const selected = await select();
+    const selected = selectCurrentMilkyFriendRequest(account, user, ...await readFriendRequestWindows(scope));
     if (!active()) return { status: "unavailable" };
     if (selected.status !== "pending") return { status: selected.status };
+    return reviewExactFriendRequest(selected.identity, approve, scope, active);
+  }
 
-    const { identity } = selected;
+  async function reviewExactFriendRequest(identity: MilkyFriendRequestIdentity, approve: boolean, scope: AbortSignal,
+    active: () => boolean): Promise<PendingFriendRequestDecision> {
     // The native write is by UID. The event timestamp need not equal the request-list timestamp.
     const status = await friendReview({ adapter: "milky", botId: account, flag: identity.uid }, async () => {
       if (!active()) return "unavailable";
-      const current = await select();
+      const current = selectCurrentMilkyFriendRequest(account, identity.userId, ...await readFriendRequestWindows(scope));
       if (!active() || current.status !== "pending" || current.identity.flag !== identity.flag) return "unavailable";
       return (await call.confirmed(approve ? "accept_friend_request" : "reject_friend_request", {
         initiator_uid: identity.uid, is_filtered: false,
@@ -256,6 +275,23 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (status !== "confirmed" || !active()) return { status };
     const current = await readFriendRequestWindow(false, scope);
     return { status: milkyFriendRequestState(account, identity, current) === (approve ? "accepted" : "rejected") ? "confirmed" : "submitted" };
+  }
+
+  let reviewingFriendBatch = false;
+  async function reviewAllCurrentFriendRequests(actor: number, approve: boolean, scope: AbortSignal): Promise<OwnerRequestBatchResult> {
+    const active = () => !scope.aborted && isMaster(actor);
+    if (!active() || typeof approve !== "boolean" || reviewingFriendBatch) return { status: "unavailable" };
+    reviewingFriendBatch = true;
+    try {
+      const windows = await readFriendRequestWindows(scope);
+      const users = milkyFriendRequestBatchUsers(account, ...windows);
+      if (!users || !active()) return { status: "unavailable" };
+      const candidates = users.map(id => ({ id, request: selectCurrentMilkyFriendRequest(account, id, ...windows) }));
+      return await reviewObservedBatch(candidates, active, scope, 2_000, entry => entry.id, ({ request }) =>
+        request.status === "pending" ? reviewExactFriendRequest(request.identity, approve, scope, active) : Promise.resolve({ status: request.status }));
+    } finally {
+      reviewingFriendBatch = false;
+    }
   }
 
   function submitGroupInvitation(flag: string, approve: boolean, scope: AbortSignal, authorized: () => boolean) {
@@ -293,6 +329,24 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return current.status === "pending" && current.flag === selected.flag;
     });
     return status === "confirmed" ? { status, resolvedFlag: selected.flag } : { status };
+  }
+
+  let reviewingInvitationBatch = false;
+  async function reviewAllCurrentGroupInvitations(actor: number, approve: boolean, scope: AbortSignal): Promise<OwnerRequestBatchResult> {
+    const active = () => !scope.aborted && isMaster(actor);
+    if (!active() || typeof approve !== "boolean" || reviewingInvitationBatch) return { status: "unavailable" };
+    reviewingInvitationBatch = true;
+    try {
+      return await reviewObservedBatch(groupReviews.observedInvitations(account, invitationSession), active, scope, 1_000,
+        ({ invitation }) => invitation.groupId, async ({ flag }) => {
+          if (!groupReviews.isObservedInvitationPending(account, flag, invitationSession)) return { status: "not-found" };
+          const status = await submitGroupInvitation(flag, approve, scope,
+            () => active() && groupReviews.isObservedInvitationPending(account, flag, invitationSession));
+          return status === "confirmed" ? { status, resolvedFlag: flag } : { status };
+        });
+    } finally {
+      reviewingInvitationBatch = false;
+    }
   }
 
   async function reviewQuotedGroupInvitation(actor: number, message: number, approve: boolean, scope: AbortSignal,
@@ -906,7 +960,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       });
       if (candidate) {
         const { decision, joinRequestOrigin, invitationOrigin, ...request } = candidate;
-        if (groupReviews.register(request, decision)) {
+        if (groupReviews.register(request, decision, invitationOrigin ? invitationSession : undefined)) {
           groupRequest = invitationReceipts && invitationOrigin ? {
             ...request,
             notifyOwners: notifyVerifiedOwnerReplies,
@@ -1003,6 +1057,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       } : undefined,
       reviewPendingGroupInvitation: privateGroupSignal && positiveId(cardOwner) ? (group: number, approve: boolean) =>
         reviewCurrentGroupInvitation(cardOwner, group, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
+      reviewAllPendingGroupInvitations: privateGroupSignal && positiveId(cardOwner) ? (approve: boolean) =>
+        reviewAllCurrentGroupInvitations(cardOwner, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
       reviewQuotedGroupInvitation: invitationReceipts && privateGroupSignal && lookupReply && hasMessageSequence(quoted) && positiveId(cardOwner)
         ? (approve: boolean) => reviewQuotedGroupInvitation(cardOwner, quoted, approve,
           AbortSignal.any([signal, privateGroupSignal]), lookupReply) : undefined,
@@ -1015,6 +1071,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       } : undefined,
       reviewPendingFriendRequest: privateGroupSignal && positiveId(cardOwner) ? (user: number, approve: boolean) =>
         reviewCurrentFriendRequest(cardOwner, user, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
+      reviewAllPendingFriendRequests: privateGroupSignal && positiveId(cardOwner) ? (approve: boolean) =>
+        reviewAllCurrentFriendRequests(cardOwner, approve, AbortSignal.any([signal, privateGroupSignal])) : undefined,
       sendOwnerFriendReply: ownerFriendReply,
       sendQuotedOwnerFriendReply: friendNoticeReceipts && ownerSignal && ownerFriendReply && positiveId(cardOwner) && lookupReply && hasMessageSequence(quoted)
         ? bindQuotedOwnerFriendReply(friendNoticeReceipts, { adapter: "milky", account, owner: cardOwner, message: quoted },

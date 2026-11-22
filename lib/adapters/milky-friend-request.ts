@@ -27,7 +27,7 @@ function friendRequestFlag(selfId: number, userId: number, uid: string, time: nu
 export const milkyFriendRequestLimit = 50;
 const friendStates = new Set(["pending", "accepted", "rejected", "ignored"]);
 
-interface MilkyFriendRequestIdentity {
+export interface MilkyFriendRequestIdentity {
   readonly userId: number;
   readonly uid: string;
   readonly time: number;
@@ -36,6 +36,24 @@ interface MilkyFriendRequestIdentity {
 
 function friendWindow(value: unknown): readonly unknown[] | undefined {
   return isRecord(value) && Array.isArray(value.requests) ? value.requests : undefined;
+}
+
+export function milkyFriendRequestBatchUsers(selfId: number, ordinary: unknown, filtered: unknown): readonly number[] | undefined {
+  const normal = friendWindow(ordinary);
+  const risk = friendWindow(filtered);
+  if (!normal || !risk || normal.length >= milkyFriendRequestLimit || risk.length >= milkyFriendRequestLimit) return;
+  const users = new Set<number>();
+  for (const [rows, isFiltered] of [[normal, false], [risk, true]] as const) {
+    for (const row of rows) {
+      if (!isRecord(row) || !isId(row.target_user_id)) return;
+      if (row.target_user_id !== selfId) continue;
+      if (row.is_filtered !== isFiltered || typeof row.state !== "string" || !friendStates.has(row.state)) return;
+      if (row.state !== "pending") continue;
+      if (!isId(row.initiator_id) || row.initiator_id === selfId || !isOpaqueUid(row.initiator_uid) || !isId(row.time)) return;
+      users.add(row.initiator_id);
+    }
+  }
+  return [...users];
 }
 
 export function selectCurrentMilkyFriendRequest(selfId: number, userId: number, ordinary: unknown, filtered: unknown):
