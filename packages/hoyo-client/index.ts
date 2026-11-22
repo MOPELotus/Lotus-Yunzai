@@ -12,7 +12,7 @@ import { openHoYoLabNxxCheckin } from "./hoyolab-nxx-checkin.ts";
 import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
-import { GameRecordRequestError, isGameRecordCookieExpired } from "./game-record.ts";
+import { GameRecordRequestError, isGameRecordCookieExpired, readGameRecordPayload } from "./game-record.ts";
 import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
@@ -46,6 +46,7 @@ import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type Z
 
 export { readGenshinTeamDamage, type TeamDamagePayload, type TeamDamageRole, type TeamDamageArtifact } from "./genshin-team-damage.ts";
 export { createCredentialExchange };
+export { needsLegacyCookieRepair } from "./credentials.ts";
 export { CloudGenshinWalletError, normalizeCloudGenshinComboToken, readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 export { CloudZzzWalletError, normalizeCloudZzzComboToken, readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 export { HoyoRequestError };
@@ -121,22 +122,34 @@ function isGenshinPersonalRecordCookieExpired(error: unknown) {
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">;
   readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
+  readonly scope?: () => Promise<string>;
+  readonly syncRoles?: boolean;
+}
+
+interface RefreshedProfile {
+  readonly profile: ProfileAccountContext;
+  readonly rolesSynced: boolean;
 }
 
 interface CookieRevision {
   requests: number;
   refreshing: boolean;
-  refreshed?: Promise<ProfileAccountContext>;
+  refreshed?: Promise<RefreshedProfile>;
 }
+
+const sharedRevisions = new Map<string, CookieRevision>();
 
 export function createHoyoClient(
   transport: HoyoTransport = fetch,
   recovery?: CookieRecovery,
 ) {
-  const revisions = new Map<string, CookieRevision>();
+  const revisions = recovery?.scope ? sharedRevisions : new Map<string, CookieRevision>();
 
-  function keyFor({ qq, profileId, revision }: ProfileAccountContext): string {
-    return JSON.stringify([qq, profileId, revision]);
+  async function keyFor({ qq, profileId, revision }: ProfileAccountContext): Promise<string> {
+    const scope = await recovery?.scope?.().catch(() => {
+      throw new HoyoRequestError("profile-changed", "游戏档案目录已变更，请重新发起请求。");
+    });
+    return JSON.stringify([scope, qq, profileId, revision]);
   }
 
   function track(key: string): CookieRevision {
@@ -151,10 +164,10 @@ export function createHoyoClient(
     if (entry.requests === 0 && !entry.refreshing) revisions.delete(key);
   }
 
-  function recover(context: ProfileAccountContext): Promise<ProfileAccountContext> {
+  async function recover(context: ProfileAccountContext, requestKey?: string): Promise<RefreshedProfile> {
     if (!recovery) throw new HoyoRequestError("refresh", "未配置登录凭据刷新服务。");
 
-    const key = keyFor(context);
+    const key = requestKey ?? await keyFor(context);
     const entry = track(key);
     if (entry.refreshed) return entry.refreshed;
 
@@ -165,7 +178,10 @@ export function createHoyoClient(
         throw new HoyoRequestError("refresh", "档案已变更，请重新发起请求。");
       }
       const credentials = await recovery.exchange(latest, { verifyProfile: () => ensureCurrentProfile(latest) });
-      return recovery.profiles.saveRefreshedCredentials(latest.qq, latest.profileId, latest.revision, credentials);
+      const roles = recovery.syncRoles ? await list({ ...latest, account: { ...latest.account, ...credentials } })
+        .then(roleCatalog).catch(() => undefined) : undefined;
+      const profile = await recovery.profiles.saveRefreshedCredentials(latest.qq, latest.profileId, latest.revision, credentials, roles);
+      return { profile, rolesSynced: roles !== undefined };
     })();
     entry.refreshed = operation;
     const settle = (success: boolean) => {
@@ -189,7 +205,8 @@ export function createHoyoClient(
 
     const endpoint = new URL("https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie");
     if (game !== undefined) endpoint.searchParams.set("game_biz", checkinGameBiz[game]);
-    const deadline = AbortSignal.timeout(15_000);
+    const timeout = AbortSignal.timeout(15_000);
+    const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
     let response: Response;
     try {
@@ -199,28 +216,32 @@ export function createHoyoClient(
       response = await transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
         redirect: "error",
-        signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+        signal: deadline,
       });
     } catch (error) {
       if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
       throw new HoyoRequestError("transport", "米游社角色请求未完成。");
     }
-    if (!response.ok) {
+    if (!response.ok && response.status !== 401) {
       await response.body?.cancel().catch(() => undefined);
       throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
     }
 
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new HoyoRequestError("response", "米游社返回了无效的 JSON。");
+    const payload = await readGameRecordPayload(response, 256 * 1024, deadline);
+    signal?.throwIfAborted();
+    const code = payload?.retcode;
+    const retcode = typeof code === "string" && /^-?\d{1,10}$/u.test(code) ? Number(code) : code;
+    const challenge = response.headers.get("x-rpc-aigis")?.trim();
+    const risk = (challenge && challenge !== "{}") || [payload?.message, payload?.msg].some(value =>
+      typeof value === "string" && /验证码|captcha|geetest|challenge|风控|频繁/iu.test(value));
+    if (!response.ok && (risk || typeof retcode !== "number" || !expired.has(retcode))) {
+      throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
     }
-    if (!isRecord(payload) || typeof payload.retcode !== "number" || !Number.isSafeInteger(payload.retcode)) {
+    if (!payload || typeof retcode !== "number" || !Number.isSafeInteger(retcode)) {
       throw new HoyoRequestError("response", "米游社角色响应格式有误。");
     }
-    if (payload.retcode !== 0) {
-      throw new HoyoRequestError("api", "米游社角色查询失败。", response.status, payload.retcode);
+    if (risk || retcode !== 0) {
+      throw new HoyoRequestError("api", "米游社角色查询失败。", response.status, risk && expired.has(retcode) ? undefined : retcode);
     }
     if (!isRecord(payload.data) || !Array.isArray(payload.data.list)) {
       throw new HoyoRequestError("response", "米游社角色列表格式有误。");
@@ -242,7 +263,7 @@ export function createHoyoClient(
   ) {
     verifyCookieIdentity(context);
     if (!recovery) return { context, data: await attempt(context) };
-    const key = keyFor(context);
+    const key = await keyFor(context);
     const entry = track(key);
     entry.requests++;
     try {
@@ -254,12 +275,13 @@ export function createHoyoClient(
 
       let refreshed: ProfileAccountContext;
       try {
-        const saved = await recover(context);
+        const { profile: saved } = await recover(context, key);
         refreshed = await recovery.profiles.accountContext(context.qq, context.profileId);
         if (refreshed.revision !== saved.revision) throw new Error("档案在刷新后已变更。");
       } catch {
         throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
       }
+      signal?.throwIfAborted();
       return { context: refreshed, data: await attempt(refreshed) };
     } finally {
       entry.requests--;
@@ -347,7 +369,9 @@ export function createHoyoClient(
   }
 
   return {
-    refreshCredentials: recover,
+    async refreshCredentials(context: ProfileAccountContext) {
+      return (await recover(context)).profile;
+    },
     fetchMiyousheShopAddresses(source: ProfileAccountContext, options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
       return readForShop(source, options, (profile, guard) => readMiyousheShopAddresses(transport, profile, options.signal, guard));
     },
@@ -366,9 +390,11 @@ export function createHoyoClient(
         await ensureCurrentProfile(source);
       }, manual);
     },
-    async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal) {
+    async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal): Promise<{ rolesSynced: boolean; revision?: string }> {
       signal?.throwIfAborted();
-      const refreshed = await recover(context);
+      const { profile: refreshed, rolesSynced } = await recover(context);
+      signal?.throwIfAborted();
+      if (recovery?.syncRoles) return { rolesSynced, revision: refreshed.revision };
       try {
         signal?.throwIfAborted();
         await ensureCurrentProfile(refreshed);
@@ -377,7 +403,7 @@ export function createHoyoClient(
         await saveRoles(refreshed, roles);
         return { rolesSynced: true };
       } catch {
-        return { rolesSynced: false };
+        return { rolesSynced: false, revision: refreshed.revision };
       }
     },
     async syncRoles(context: ProfileAccountContext, allowRefresh = true) {
@@ -655,5 +681,6 @@ export function createProfileHoyoClient(
   profiles = createProfileStore(),
   transport: HoyoTransport = fetch,
 ) {
-  return createHoyoClient(transport, { profiles, exchange: createCredentialExchange(transport) });
+  return createHoyoClient(transport, { profiles, exchange: createCredentialExchange(transport),
+    scope: profiles.credentialRefreshScope, syncRoles: true });
 }

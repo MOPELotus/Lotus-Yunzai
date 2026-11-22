@@ -496,7 +496,7 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
     const response = await web.handle(request(targets, { headers: { Cookie: cookie } }));
     expect(response?.status).toBe(200);
     expect(await response?.json()).toEqual({ type: "role", items: [{ uid, region: "cn_gf01", regionName: "天空岛" }] });
-    expect(paths).toEqual(["角色", "登录令牌", "会话凭据", "角色"]);
+    expect(paths).toEqual(["角色", "登录令牌", "会话凭据", "角色", "角色"]);
     expect((await profiles.accountContext("42", 2)).account.cookie).toBe(refreshed);
     const detail = await web.handle(request("api/goods/27", { headers: { Cookie: cookie } }));
     expect(detail?.status).toBe(200);
@@ -504,7 +504,7 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
       { uid, region: "cn_gf01", regionName: "天空岛" },
       { uid: "1000043", region: "cn_qd01", regionName: "世界树" },
     ] });
-    expect(paths.slice(4)).toEqual(["商品", "角色"]);
+    expect(paths.slice(5)).toEqual(["商品", "角色"]);
     expect(await readFile(other, "utf8")).toBe(std);
 
     await writeFile(filename, profile(2, "71", expired));

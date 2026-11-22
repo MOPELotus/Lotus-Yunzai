@@ -636,6 +636,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   }
 
   return {
+    credentialRefreshScope: () => realpath(root),
     async openLoginSlot(qq: string, profileId = 1): Promise<ProfileLoginSlot> {
       const filename = profileFilename(qq, profileId);
       const snapshot = await optionalSnapshot(join(root, filename));
@@ -681,9 +682,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
             name: device.name, model: device.model, android_version: device.androidVersion,
           },
         };
-        await writeProfileDocument(path, updated, slot.revision, signal);
+        const revision = await writeProfileDocument(path, updated, slot.revision, signal);
         loginSlots.delete(slot);
-        return { rolesSynced: result.roles !== undefined };
+        return { rolesSynced: result.roles !== undefined, revision };
       });
     },
     async saveBoundDevice(qq: string, profileId: number, expected: string, binding: DeviceBinding, signal?: AbortSignal) {
@@ -1076,7 +1077,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return updateCloudGame(document, game, { token, enable: true });
       }, signal);
     },
-    async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials) {
+    async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials, roles?: GameRoles) {
       const name = profileFilename(qq, id);
       if (!credentials.cookie.trim() || !credentials.ltoken.trim() ||
           [credentials.cookie, credentials.ltoken, credentials.stokenCookie ?? ""].some((value) => /[\r\n\0]/u.test(value))) {
@@ -1092,6 +1093,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return {
           ...account, cookie: credentials.cookie, ltoken: credentials.ltoken,
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
+          ...(roles && { ...rolesForStorage(roles, current), roles_updated_at: new Date().toISOString(), role_sync_error: "" }),
         };
       }, revision);
     },

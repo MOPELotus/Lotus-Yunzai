@@ -99,6 +99,9 @@ test.skipIf(!valkey)("隔离定时轮询尊重本人撤回、窗口和换绑，�
       calls.push(action);
       if (action === "getLTokenBySToken") return response({ uid: "43", ltoken: "fixture-fresh" });
       if (action === "getCookieAccountInfoBySToken") return response({ uid: "43", cookie_token: "fixture-fresh" });
+      if (action === "getUserGameRolesByCookie") {
+        return response({ list: [{ game_biz: "nap_cn", game_uid: "12345678", region: "prod_gf_cn" }] });
+      }
       expect(action).toBe("hadal_mem_detail_v2");
       expect(url.searchParams.get("uid")).toBe("12345678");
       expect(url.searchParams.get("schedule_type")).toBe("1");
@@ -127,13 +130,13 @@ test.skipIf(!valkey)("隔离定时轮询尊重本人撤回、窗口和换绑，�
     }
     const first = service(), second = service();
     await Promise.all([first.run(), second.run()]);
-    expect(calls).toEqual(["hadal_mem_detail_v2", "getLTokenBySToken", "getCookieAccountInfoBySToken", "hadal_mem_detail_v2"]);
+    expect(calls).toEqual(["hadal_mem_detail_v2", "getLTokenBySToken", "getCookieAccountInfoBySToken", "getUserGameRolesByCookie", "hadal_mem_detail_v2"]);
     expect(delivery).toEqual(["【式舆/危局挑战提醒】\n危局强袭战星数: 0/9"]);
     await first.stop();
     const restarted = service();
     await restarted.run();
     expect(delivery).toHaveLength(1);
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
     for (const [index, reason] of (["close-window", "pause", "not-friend", "changed-role"] as const).entries()) {
       now = start + (index + 1) * 86_400_000;
       await writeFile(roleArchive, profile("12345678", "fixture-fresh"), { mode: 0o600 });

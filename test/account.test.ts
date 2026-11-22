@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { accountCommands } from "../lib/account-commands.ts";
+import { repairLegacyPassportCookies } from "../lib/passport-cookie-repair.ts";
 import { CommandRegistry } from "../lib/commands.ts";
 import { readAccountRefreshPermission } from "../lib/permissions.ts";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
@@ -287,7 +288,7 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
     await expect(profiles.verifyLoginSlot({ ...first })).rejects.toMatchObject({ code: "changed" });
     await expect(profiles.saveLogin(first, credentials("8001"), AbortSignal.abort("cancelled"))).rejects.toBe("cancelled");
     await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await profiles.saveLogin(first, { ...credentials("8001"), roles })).toEqual({ rolesSynced: true });
+    expect(await profiles.saveLogin(first, { ...credentials("8001"), roles })).toMatchObject({ rolesSynced: true, revision: expect.any(String) });
     await expect(profiles.saveLogin(competing, credentials("8002"))).rejects.toMatchObject({ code: "changed" });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await profiles.requestContext("42", 2, "gs")).toMatchObject({
@@ -296,7 +297,7 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
 
     const same = await profiles.openLoginSlot("42", 2);
     expect(same.device.id).toBe(first.device.id);
-    expect(await profiles.saveLogin(same, credentials("8001"))).toEqual({ rolesSynced: false });
+    expect(await profiles.saveLogin(same, credentials("8001"))).toMatchObject({ rolesSynced: false, revision: expect.any(String) });
     expect(await profiles.savedRole("42", 2, "gs")).toMatchObject({ uid: "123456789" });
     const inFlight = await profiles.openLoginSlot("42", 2);
     const latest = await profiles.accountContext("42", 2);
@@ -314,7 +315,7 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
       credentials: { ...inconsistent.credentials, cookie: credentials("8003").credentials.cookie },
     })).rejects.toMatchObject({ code: "invalid" });
     expect((await profiles.accountContext("42", 2)).account.stuid).toBe("8001");
-    expect(await profiles.saveLogin(next, credentials("8002"))).toEqual({ rolesSynced: false });
+    expect(await profiles.saveLogin(next, credentials("8002"))).toMatchObject({ rolesSynced: false, revision: expect.any(String) });
     await expect(profiles.savedRole("42", 2, "gs")).rejects.toMatchObject({ code: "role-missing" });
     expect((await profiles.accountContext("42", 2)).device.id).toBe("fixture-bound-device");
 
@@ -464,22 +465,28 @@ test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业�
       expect(headers.get("x-rpc-device_id")).toBe("device-one");
       expect(headers.get("x-rpc-device_fp")).toBe("fp-one");
       expect(headers.get("x-rpc-sdk_version")).toBe("2.44.0");
-      expect(headers.get("x-rpc-app_version")).toBe("2.119.0");
+      expect(headers.get("x-rpc-app_version")).toBe("2.102.1");
+      expect(headers.get("x-rpc-account_version")).toBe("2.44.0");
+      expect(headers.get("x-rpc-channel")).toBe("appstore");
+      expect(headers.get("User-Agent")).toBe("okhttp/4.8.0");
       lifecycleIds.add(headers.get("x-rpc-lifecycle_id")!);
       const [time, nonce, signature] = headers.get("ds")!.split(",");
+      expect(Number(nonce)).toBeGreaterThan(100000);
+      expect(Number(nonce)).toBeLessThan(200000);
       expect(signature).toBe(createHash("md5").update(`salt=JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS&t=${time}&r=${nonce}&b=${body}&q=`).digest("hex"));
       return input.dst_token_type === 2
         ? Response.json({ retcode: 0, data: { token: { token: "v2_new" }, user_info: { aid: "71" } } })
-        : Response.json({ retcode: 0, data: { token: { token: "v2_cookie" } } });
+        : Response.json({ retcode: 0, data: { cookie_token: "v2_cookie", user_info: { aid: "71" } } });
     });
     expect(await client.listRoles(await profiles.accountContext("42"), "gs")).toMatchObject([{ uid: "81" }]);
     expect(requests).toEqual([
       "/binding/api/getUserGameRolesByCookie", "/account/ma-cn-session/app/exchange",
-      "/account/ma-cn-session/app/exchange", "/binding/api/getUserGameRolesByCookie",
+      "/account/ma-cn-session/app/exchange", "/binding/api/getUserGameRolesByCookie", "/binding/api/getUserGameRolesByCookie",
     ]);
     expect(targets).toEqual([2, 4]);
     expect(lifecycleIds.size).toBe(1);
     expect([...lifecycleIds][0]).toMatch(/^[\da-f-]{36}$/u);
+    expect((await profiles.requestContext("42", 1, "gs")).role.uid).toBe("81");
 
     const refreshed = await profiles.accountContext("42");
     let denied = 0;
@@ -492,6 +499,13 @@ test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业�
     const wrongOwner = createCredentialExchange(async () =>
       Response.json({ retcode: 0, data: { token: { token: "v2_wrong" }, user_info: { aid: "99" } } }));
     await expect(wrongOwner(refreshed)).rejects.toThrow("账号身份与档案不一致");
+    const unidentifiedCookie = createCredentialExchange(async (_url, init) => {
+      const { dst_token_type } = JSON.parse(String(init.body));
+      return dst_token_type === 2
+        ? Response.json({ retcode: 0, data: { ltoken: "v2_new", aid: "71" } })
+        : Response.json({ retcode: 0, data: { token: { token: "v2_cookie" } } });
+    });
+    await expect(unidentifiedCookie(refreshed)).rejects.toThrow("账号身份与档案不一致");
 
     const second = await profiles.accountContext("42", 2);
     const paths: string[] = [];
@@ -556,6 +570,88 @@ test("角色同步挡住串档 Cookie，显式续期仍能用该档原 STOKEN �
     expect(requests).toEqual(["/account/ma-cn-session/app/exchange", "/account/ma-cn-session/app/exchange",
       "/binding/api/getUserGameRolesByCookie"]);
     expect((await createProfileStore(root).requestContext("42", 2, "gs")).role.uid).toBe("100000031");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("多个客户端从同一档案及目录别名读到失效，只换票一次并分别重试", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-shared-cn-refresh-"));
+  const directory = join(root, "users");
+  const alias = join(root, "alias");
+  await mkdir(directory);
+  await symlink(directory, alias);
+  try {
+    await writeFile(join(directory, "42.yaml"), "account: { stuid: '71', stoken: old-token, cookie: 'ltoken=expired' }\n");
+    const firstStore = createProfileStore(directory);
+    const secondStore = createProfileStore(alias);
+    const bothExpired = Promise.withResolvers<void>();
+    const requestLog: string[] = [];
+    let expiredReads = 0;
+    const transport: Parameters<typeof createProfileHoyoClient>[1] = async (url, init) => {
+      if (url.pathname.endsWith("BySToken")) {
+        requestLog.push(url.pathname.split("/").at(-1)!);
+        return Response.json({ retcode: 0, data: url.pathname.endsWith("getLTokenBySToken")
+          ? { ltoken: "fresh" } : { token: { token: "fresh-cookie" }, uid: "71" } });
+      }
+      const game = url.searchParams.get("game_biz");
+      const cookie = new Headers(init.headers).get("cookie");
+      if (cookie === "ltoken=expired") {
+        if (++expiredReads === 2) bothExpired.resolve();
+        await bothExpired.promise;
+        return Response.json({ retcode: "-100" }, { status: 401 });
+      }
+      expect(cookie).toInclude("cookie_token=fresh-cookie");
+      requestLog.push(game ?? "sync");
+      return Response.json({ retcode: 0, data: { list: [
+        { game_biz: "hk4e_cn", game_uid: "81", region: "cn_gf01" },
+        { game_biz: "hkrpg_cn", game_uid: "82", region: "prod_gf_cn" },
+      ] } });
+    };
+    const first = createProfileHoyoClient(firstStore, transport);
+    const second = createProfileHoyoClient(secondStore, transport);
+    const [gs, sr] = await Promise.all([first.listRoles(await firstStore.accountContext("42"), "gs"),
+      second.listRoles(await secondStore.accountContext("42"), "sr")]);
+    expect(gs).toMatchObject([{ uid: "81" }]);
+    expect(sr).toMatchObject([{ uid: "82" }]);
+    expect(requestLog.slice(0, 3)).toEqual(["getLTokenBySToken", "getCookieAccountInfoBySToken", "sync"]);
+    expect(requestLog.slice(3).sort()).toEqual(["hk4e_cn", "hkrpg_cn"]);
+    expect((await secondStore.requestContext("42", 1, "sr")).role.uid).toBe("82");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("旧 Cookie 自检只换掉异常的可续期档案并保留失败档", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-old-cn-cookie-"));
+  try {
+    const content = (uid: string, stoken: string, cookie: string) => Bun.YAML.stringify({ account: { stuid: uid, stoken, mid: "fixture-mid", cookie } });
+    const bad = (uid: string) => `ltoken=v2_legacy;ltuid=${uid};cookie_token=legacy;account_id=${uid};`;
+    const stranded = content("71", "", bad("71"));
+    const rejected = content("72", "v2_expired", bad("72"));
+    const healthy = content("73", "v2_healthy", "ltoken=legacy;ltuid=73;cookie_token_v2=v2_new;account_id_v2=73;account_mid_v2=fixture-mid;");
+    await Promise.all([writeFile(join(root, "41.yaml"), stranded), writeFile(join(root, "42.yaml"), rejected),
+      writeFile(join(root, "43.yaml"), healthy), writeFile(join(root, "44.yaml"), content("74", "v2_valid", bad("74")))]);
+    const profiles = createProfileStore(root);
+    const seen: string[] = [];
+    const client = createProfileHoyoClient(profiles, async (url, init) => {
+      if (url.pathname.endsWith("/exchange")) {
+        const { src_token, dst_token_type } = JSON.parse(String(init.body));
+        seen.push(src_token.token);
+        if (src_token.token === "v2_expired") return Response.json({ retcode: -100 });
+        return Response.json({ retcode: 0, data: dst_token_type === 2
+          ? { ltoken: "legacy" } : { cookie_token: "v2_new", aid: "74" } });
+      }
+      expect(url.pathname).toEndWith("getUserGameRolesByCookie");
+      return Response.json({ retcode: 0, data: { list: [] } });
+    });
+    expect(await repairLegacyPassportCookies(profiles, client, new AbortController().signal)).toEqual({ repaired: 1, failed: 1 });
+    expect(seen).toEqual(["v2_expired", "v2_valid", "v2_valid"]);
+    expect(await Bun.file(join(root, "41.yaml")).text()).toBe(stranded);
+    expect(await Bun.file(join(root, "42.yaml")).text()).toBe(rejected);
+    expect(await Bun.file(join(root, "43.yaml")).text()).toBe(healthy);
+    expect((await profiles.accountContext("44")).account.cookie).toBe("ltoken=legacy;ltuid=74;cookie_token_v2=v2_new;account_id_v2=74;account_mid_v2=fixture-mid;");
+    expect(await repairLegacyPassportCookies(profiles, client, AbortSignal.abort())).toEqual({ repaired: 0, failed: 0 });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

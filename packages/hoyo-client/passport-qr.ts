@@ -73,20 +73,21 @@ function checkedDevice({ id, fp, name, model, androidVersion }: PassportQrDevice
   return { id, fp: headerValue(fp), name: headerValue(name), model: headerValue(model), androidVersion: headerValue(androidVersion) };
 }
 
-function requestHeaders(device: PassportQrDevice, body: string): Headers {
+export function passportAppHeaders(device: PassportQrDevice, body: string, sdkVersion = protocol.sdk): Headers {
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = randomInt(100001, 200000);
   const hash = createHash("md5").update(`salt=${protocol.salt}&t=${timestamp}&r=${nonce}&b=${body}&q=`).digest("hex");
   const headers = new Headers({
     Accept: "application/json", "Content-Type": "application/json",
     "User-Agent": "okhttp/4.8.0", "x-rpc-app_id": protocol.appId, "x-rpc-client_type": "2",
-    "x-rpc-game_biz": "bbs_cn", "x-rpc-app_version": protocol.version, "x-rpc-sdk_version": protocol.sdk,
+    "x-rpc-game_biz": "bbs_cn", "x-rpc-app_version": protocol.version, "x-rpc-sdk_version": sdkVersion, "x-rpc-aigis": "",
     "x-rpc-channel": "appstore", "x-rpc-device_id": device.id, "x-rpc-sys_version": device.androidVersion || "11",
     DS: `${timestamp},${nonce},${hash}`,
   });
-  if (device.fp) headers.set("x-rpc-device_fp", device.fp);
-  if (device.name) headers.set("x-rpc-device_name", device.name);
-  if (device.model) headers.set("x-rpc-device_model", device.model);
+  const deviceHeader = (value: string) => /^[\x20-\x7E]+$/u.test(value) ? value : encodeURIComponent(value.toWellFormed());
+  if (device.fp) headers.set("x-rpc-device_fp", deviceHeader(device.fp));
+  if (device.name) headers.set("x-rpc-device_name", deviceHeader(device.name));
+  if (device.model) headers.set("x-rpc-device_model", deviceHeader(device.model));
   return headers;
 }
 
@@ -202,7 +203,7 @@ export function createPassportQr(transport: HoyoTransport) {
     try {
       response = await transport(new URL(passportPath + path, passportOrigin), {
         method: "POST", redirect: "error", credentials: "omit", body,
-        headers: requestHeaders(device, body), signal: deadline,
+        headers: passportAppHeaders(device, body), signal: deadline,
       });
     } catch {
       if (signal?.aborted) aborted();

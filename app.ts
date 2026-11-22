@@ -139,6 +139,7 @@ import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
+import { repairLegacyPassportCookies, scheduleLegacyPassportCookieRepair } from "./lib/passport-cookie-repair.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
 import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import type { LegacyExitReason } from "./lib/plugins/exit-hooks.ts";
@@ -2820,7 +2821,24 @@ if (import.meta.main) {
         console.warn("[签到计划] 全局 scheduler 配置无效。");
       }
     }
-    commands.registerModule(passportLoginCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
+    commands.registerModule(passportLoginCommands(profileDirectory, lifecycle.signal, async (qq, profileId, revision) => {
+      if (!checkinRuntime || lifecycle.signal.aborted) return;
+      const current = await checkinProfiles.checkinSettings(qq, profileId);
+      if (lifecycle.signal.aborted || !current.enabled || current.revision !== revision) return;
+      await checkinRuntime.addRegisteredProfile({ qq, profileId, name: current.displayName, enabled: true, schedule: current.schedule });
+    }));
+    if (!probingUpdate) whenModuleTasksActive(() => {
+      const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
+      const client = createProfileHoyoClient(checkinProfiles);
+      scheduleLegacyPassportCookieRepair(active, async () => {
+        const sweep = repairLegacyPassportCookies(checkinProfiles, client, nativeOperationSignal()).then(({ repaired, failed }) => {
+          if (repaired || failed) console.info(`[account] 旧 Cookie 检查完成，续期 ${repaired} 档，失败 ${failed} 档。`);
+        }, () => console.warn("[account] 无法检查旧 Cookie，原档案已保留。"));
+        pending.add(sweep);
+        try { await sweep; }
+        finally { pending.delete(sweep); }
+      });
+    });
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
     }, "[gacha] 抽卡记录");

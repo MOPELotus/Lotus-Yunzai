@@ -54,6 +54,12 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ retcode: 0, data: { token: { token: "v2_fixture-renewed-" + kind },
       user_info: { aid: "8202", mid: "fixture-mid-8202" } } });
   }
+  if (url.hostname === "api-takumi.mihoyo.com" && url.pathname === "/binding/api/getUserGameRolesByCookie") {
+    assert.equal(account, "8202");
+    assert.equal(cookie.cookie_token_v2, "v2_fixture-renewed-cookie_token");
+    await log("roles");
+    return Response.json({ retcode: 0, data: { list: [] } });
+  }
   if (url.hostname !== "bbs-api.miyoushe.com") {
     await log("blocked");
     throw Error("Offline fixture");
@@ -137,12 +143,13 @@ globalThis.fetch = async (input, init) => {
     stale.respond({ message_id: 502 });
 
     const calls = await readTrace();
-    expect(calls.filter(row => row.account === "8202").map(row => row.kind).sort()).toEqual(["balance", "balance", "cookie_token", "ltoken"]);
+    expect(calls.filter(row => row.account === "8202").map(row => row.kind).sort()).toEqual(["balance", "balance", "cookie_token", "ltoken", "roles"]);
     expect(calls.filter(row => row.account === "8301").map(row => row.kind)).toEqual(["balance"]);
     expect(calls.filter(row => row.account === "8203").map(row => row.kind)).toEqual(["balance"]);
     expect(calls.filter(row => row.account === "8204").map(row => row.kind)).toEqual(["balance"]);
     expect(calls.filter(row => row.method === "POST").map(row => row.kind)).toEqual(["ltoken", "cookie_token"]);
-    expect(calls.every(row => row.kind === "balance" ? row.method === "GET" : ["ltoken", "cookie_token"].includes(row.kind))).toBe(true);
+    expect(calls.every(row => ["ltoken", "cookie_token"].includes(row.kind) ? row.method === "POST" :
+      row.kind === "roles" ? row.method === undefined : row.kind === "balance" && row.method === "GET")).toBe(true);
     for (const name of ["42.yaml", "43.yaml", "42-3.yaml"]) expect(await readFile(path(root, name), "utf8")).toBe(frozen(name));
     const renewed = await readFile(path(root, "42-2.yaml"), "utf8");
     expect(renewed).toContain("v2_fixture-renewed-cookie_token");

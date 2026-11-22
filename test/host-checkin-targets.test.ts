@@ -35,6 +35,10 @@ test("单游戏和单分区在实际两协议共享同档回执，保留其它�
       if (path === "/binding/api/getUserGameRolesByCookie") {
         requests.push("roles:" + url.searchParams.get("game_biz"));
         expect(request.headers.get("cookie")).toContain("account_id_v2=" + accountId);
+        if (!url.searchParams.has("game_biz")) return ok({ list: [
+          { game_biz: "hk4e_cn", game_uid: uid, region: "cn_gf01" },
+          { game_biz: "nap_cn", game_uid: "12345678", region: "prod_gf_cn" },
+        ] });
         if (url.searchParams.get("game_biz") === "nap_cn") {
           roleReadStarted.resolve();
           await releaseRoleRead.promise;
@@ -107,7 +111,7 @@ test("单游戏和单分区在实际两协议共享同档回执，保留其它�
         message: expect.stringContaining("原神 · 游戏 未确认 · 社区 不在本轮") });
       unknown.respond({ message_id: 130 });
       expect(queriedRoles).toBe(2);
-      expect(requests).toEqual(["login:2", "login:4", "roles:hk4e_cn", "roles:hk4e_cn", "status:genshin", "write:genshin", "status:genshin"]);
+      expect(requests).toEqual(["login:2", "login:4", "roles:null", "roles:hk4e_cn", "roles:hk4e_cn", "status:genshin", "write:genshin", "status:genshin"]);
       expect(await read()).toMatchObject({ done: false, communityRetry: pending,
         gameWrites: { [otherGame]: "confirmed", [genshin]: "unconfirmed" }, communityWrites: { "8": "accepted" } });
 

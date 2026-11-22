@@ -1,6 +1,7 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountContext } from "@lotus-yunzai/account";
-import { createCredentialExchange, createHoyoClient, createPassportQr, HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { createCredentialExchange, createHoyoClient, createPassportQr, createProfileHoyoClient, HoyoRequestError,
+  isCookieExpired } from "@lotus-yunzai/hoyo-client";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import type { CommandModule } from "./commands.ts";
 
@@ -22,11 +23,14 @@ interface LoginSession {
   saving: boolean;
 }
 
-export function passportLoginCommands(directory: string | undefined, signal: AbortSignal): CommandModule {
+export function passportLoginCommands(directory: string | undefined, signal: AbortSignal,
+  addLateSchedule?: (qq: string, profileId: number, revision: string) => Promise<void>,
+): CommandModule {
   const profiles = createProfileStore(directory);
   const qr = createPassportQr(fetch);
   const exchange = createCredentialExchange(fetch);
   const roles = createHoyoClient(fetch);
+  const signedIn = createProfileHoyoClient(profiles);
   const active = new Map<string, LoginSession>();
 
   return {
@@ -107,14 +111,39 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
             account: { stuid, ltuid: stuid, stoken, mid, cookie: "", stokenCookie: "", ltoken: "" },
           };
           const credentials = await exchange(temporary, { signal: deadlineSignal, verifyProfile });
-          const directory = await roles.fetchRoleCatalog(
+          const first = await roles.fetchRoleCatalog(
             { ...temporary, account: { ...temporary.account, cookie: credentials.cookie } }, deadlineSignal,
-          ).catch(() => undefined);
+          ).then(roles => ({ roles, retry: undefined }), (error: unknown) => ({
+            roles: undefined,
+            retry: isCookieExpired(error) ? "refresh" : error instanceof HoyoRequestError &&
+              (error.code === "transport" || error.code === "response" ||
+                (error.code === "http" && (error.status === 410 || (error.status ?? 0) >= 500))) ? "read" : undefined,
+          }));
           await verifyProfile();
           session.saving = true;
-          const saved = await profiles.saveLogin(slot, { stuid, stoken, mid, credentials, roles: directory }, deadlineSignal);
+          const saved = await profiles.saveLogin(slot, { stuid, stoken, mid, credentials, roles: first.roles }, deadlineSignal);
+          let { rolesSynced, revision } = saved;
+          if (first.retry && !deadlineSignal.aborted) {
+            try {
+              const current = await profiles.accountContext(qq, profileId);
+              if (current.revision !== revision) throw new HoyoRequestError("profile-changed", "登录档案已变更。");
+              if (first.retry === "refresh") {
+                const refreshed = await signedIn.refreshProfile(current, deadlineSignal);
+                rolesSynced = refreshed.rolesSynced;
+                if (refreshed.revision !== undefined) revision = refreshed.revision;
+              } else {
+                const directory = await roles.fetchRoleCatalog(current, deadlineSignal);
+                deadlineSignal.throwIfAborted();
+                revision = (await profiles.saveRoles(qq, profileId, revision, directory)).revision;
+                rolesSynced = true;
+              }
+            } catch {
+              // The confirmed login remains usable even when its roles cannot be synchronized.
+            }
+          }
+          if (!deadlineSignal.aborted) await addLateSchedule?.(qq, profileId, revision).catch(() => undefined);
           if (deadlineSignal.aborted) return [];
-          return saved.rolesSynced ? `[account] profile ${profileId} 扫码登录完成，已保存登录信息。`
+          return rolesSynced ? `[account] profile ${profileId} 扫码登录完成，已保存登录信息。`
             : `[account] profile ${profileId} 登录信息已保存，角色暂未同步，可用 #同步角色${profileId === 1 ? "" : profileId} 重试。`;
         }
         return "登录二维码已过期，请重新发送扫码指令。";
