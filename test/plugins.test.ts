@@ -92,7 +92,7 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n模块完成清理\n");
     expect(stdout).toContain("失败模块完成清理");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
-    expect(stdout).toContain("#状态 查看宿主运行状态");
+    expect(stdout).toContain("https://www.lotusshared.cn/yunzai/");
     expect(stdout).not.toContain("拒载入口已执行");
     expect(stderr).toContain("拒绝加载 b-duplicate：与 a-hello 重复");
     expect(stderr).toContain("拒绝加载 c-renamed");
