@@ -1,5 +1,5 @@
 import { configuredIds } from "./config.ts";
-import { otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./request-other-policies.ts";
+import { otherPolicySetting, readRequestOtherPolicies, requestAutomationSettings, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { GroupNotice } from "./messages.ts";
 import { readOwnerSnapshot } from "./permissions.ts";
 
@@ -7,17 +7,11 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function configuredNumber(value: unknown): number | undefined {
-  const parsed = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
-  return isPositiveInteger(parsed) ? parsed : undefined;
-}
-
 function quitPolicy(files: ReturnType<RequestOtherPolicies["current"]>) {
   const config = otherPolicySetting(files, "autoQuit");
-  const primary = config && "primary" in config ? config.primary : undefined;
   const legacy = config && "legacy" in config ? config.legacy : undefined;
-  const threshold = configuredNumber(legacy ? (Object.hasOwn(legacy, "autoQuit") ? legacy.autoQuit : 50) : primary);
-  if (threshold === undefined) return;
+  const { autoQuit: threshold } = requestAutomationSettings(files);
+  if (!threshold) return;
   let owners: ReturnType<typeof readOwnerSnapshot> | undefined;
   try {
     const ownerConfig = legacy ?? files[0] ?? files[1];

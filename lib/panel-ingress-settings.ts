@@ -1,9 +1,9 @@
-import { readLocalConfig } from "./config.ts";
 import {
   hostIngressKeys, hostIngressListKeys, hostIngressSettings, HostIngressSettingsError, saveHostIngressSettings,
   type HostIngressSettings,
 } from "./master-config.ts";
 import { readPanelJson } from "./panel.ts";
+import { readRequestOtherPolicyFiles } from "./request-other-policies.ts";
 
 const fields = [
   { key: "whiteUser", label: "用户白名单", type: "list", hint: "每行一个 QQ 号。留空时允许名单外的用户。" },
@@ -12,7 +12,16 @@ const fields = [
   { key: "blackGroup", label: "群黑名单", type: "list" },
   { key: "disablePrivate", label: "限制普通用户私聊", type: "boolean" },
   { key: "disableMsg", label: "私聊限制提示", type: "text", hint: "留空时不回复限制提示。" },
+  { key: "autoFriend", label: "自动同意好友申请", type: "boolean" },
+  { key: "autoQuit", label: "新入群自动退出人数阈值", type: "number", min: 0,
+    hint: "填 0 关闭。实际成员数不超过阈值时检查退出条件，主人所在的群仍受保护。" },
 ] as const;
+
+function fieldsFor(legacy: boolean) {
+  return [...fields, { key: "autoGroup", label: "自动同意群邀请", type: "select",
+    options: [...(legacy ? [] : [{ label: "关闭", value: "off" }]),
+      { label: "仅限主人", value: "owners" }, { label: "所有允许的邀请者", value: "all" }] }];
+}
 
 function record(input: unknown): Record<string, unknown> | undefined {
   if (typeof input === "object" && input !== null && !Array.isArray(input)) return input as Record<string, unknown>;
@@ -28,7 +37,9 @@ function validValues(value: unknown): value is HostIngressSettings {
   return !!input && Object.keys(input).length === hostIngressKeys.length &&
     hostIngressKeys.every(key => Object.hasOwn(input, key)) &&
     hostIngressListKeys.every(key => validIds(input[key])) &&
-    typeof input.disablePrivate === "boolean" && typeof input.disableMsg === "string" && !input.disableMsg.includes("\0");
+    typeof input.disablePrivate === "boolean" && typeof input.disableMsg === "string" && !input.disableMsg.includes("\0") &&
+    typeof input.autoFriend === "boolean" && (input.autoGroup === "all" || input.autoGroup === "owners" || input.autoGroup === "off") &&
+    typeof input.autoQuit === "number" && Number.isSafeInteger(input.autoQuit) && input.autoQuit >= 0;
 }
 
 export function panelIngressSettings(root: URL, onSaved?: () => Promise<unknown>) {
@@ -40,8 +51,10 @@ export function panelIngressSettings(root: URL, onSaved?: () => Promise<unknown>
     if (!active()) return new Response(null, { status: 401 });
     if (request.method === "GET") {
       try {
-        const values = hostIngressSettings(await readLocalConfig(root, "other"));
-        return active() ? Response.json({ fields, values }) : new Response(null, { status: 401 });
+        const files = await readRequestOtherPolicyFiles(root);
+        const values = hostIngressSettings(files);
+        return active() ? Response.json({ fields: fieldsFor(files[0] === undefined && files[1] !== undefined), values })
+          : new Response(null, { status: 401 });
       } catch {
         return new Response(null, { status: 500 });
       }
@@ -54,7 +67,8 @@ export function panelIngressSettings(root: URL, onSaved?: () => Promise<unknown>
       return new Response(null, { status: 400 });
     }
     try {
-      const values = await saveHostIngressSettings(root, input.previous, input.values, active);
+      const { values, legacy } = await saveHostIngressSettings(root, input.previous, input.values, active);
+      const fields = fieldsFor(legacy);
       try { await onSaved?.(); }
       catch {
         return Response.json({ fields, values, warning: "配置已保存，运行时重载失败，请检查宿主日志或重启。" });

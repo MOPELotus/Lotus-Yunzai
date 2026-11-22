@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { configuredIds } from "./config.ts";
-import { otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./request-other-policies.ts";
+import { otherPolicySetting, readRequestOtherPolicies, requestAutomationSettings, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { FriendRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -27,17 +27,10 @@ type FriendAutoResult = "confirmed" | "rejected" | "unknown" | "duplicate" | und
 
 function approvalPolicy(files: ReturnType<RequestOtherPolicies["current"]>): ((userId: number) => boolean) | undefined {
   const config = otherPolicySetting(files, "autoFriend");
-  if (!config) return;
-  if ("primary" in config) {
-    if (config.primary === 1 || config.primary === "1") return () => true;
-    return;
-  }
-  const { legacy } = config;
-  // The TRSS runtime overlay inherited autoFriend: 1 from its bundled defaults.
-  const setting = Object.hasOwn(legacy, "autoFriend") ? legacy.autoFriend : 1;
-  if (setting !== 1 && setting !== "1" && setting !== true) return;
-  const black = configuredIds(legacy.blackUser);
-  const white = configuredIds(legacy.whiteUser);
+  if (!requestAutomationSettings(files).autoFriend) return;
+  if (!config || "primary" in config) return () => true;
+  const black = configuredIds(config.legacy.blackUser);
+  const white = configuredIds(config.legacy.whiteUser);
   return userId => !black.has(userId) && (white.size === 0 || white.has(userId));
 }
 

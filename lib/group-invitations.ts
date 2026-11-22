@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { configuredIds } from "./config.ts";
-import { otherPolicySetting, readRequestOtherPolicies, type RequestOtherPolicies } from "./request-other-policies.ts";
+import { otherPolicySetting, readRequestOtherPolicies, requestAutomationSettings, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { GroupRequest } from "./messages.ts";
 import type { RequestDecisionOutcome } from "./request-claim.ts";
 
@@ -31,11 +31,10 @@ export interface QuotedGroupInvitationDecision {
 
 function invitationPolicy(files: ReturnType<RequestOtherPolicies["current"]>) {
   const config = otherPolicySetting(files, "autoGroup");
-  const primary = config && "primary" in config ? config.primary : undefined;
   const legacy = config && "legacy" in config ? config.legacy : undefined;
-  // The legacy invite plugin recognized only numeric 1 as approval for everyone.
-  const allInviters = legacy ? legacy.autoGroup === 1 : primary === 1 || primary === "1";
-  const masterOnly = legacy ? !allInviters : primary === 0 || primary === "0";
+  const { autoGroup } = requestAutomationSettings(files);
+  const allInviters = autoGroup === "all";
+  const masterOnly = autoGroup === "owners";
   const whiteUser = configuredIds(legacy?.whiteUser);
   const blackUser = configuredIds(legacy?.blackUser);
   const whiteGroup = configuredIds(legacy?.whiteGroup);

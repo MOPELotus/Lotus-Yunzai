@@ -7,6 +7,7 @@ import { isMap, isNode, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { lockFile } from "./file-lock.ts";
 import { configuredIds } from "./config.ts";
 import { defaultPrivateAccessMessage, privateAccessPolicy } from "./private-access.ts";
+import { readRequestOtherPolicyFiles, requestAutomationSettings, type OtherPolicyFiles } from "./request-other-policies.ts";
 
 const ownerFields = new Set(["master", "masterQQ"]);
 const ownerPair = /^(?:stdin:stdin|[1-9]\d*:[1-9]\d*)$/u;
@@ -88,7 +89,7 @@ function unknownFields(values: Map<unknown, unknown>) {
 
 async function editOtherConfig<T>(
   root: URL,
-  mutate: (current: ReturnType<typeof readDocument>) => { result: T; yaml?: string },
+  mutate: (current: ReturnType<typeof readDocument>) => { result: T; yaml?: string } | Promise<{ result: T; yaml?: string }>,
   isCurrent?: () => boolean,
 ): Promise<T> {
   const file = await effectiveFile(root);
@@ -97,7 +98,7 @@ async function editOtherConfig<T>(
     if (await effectiveFile(root) !== file) throw new Error("other.yaml 的配置位置已变更。");
     const current = await readSnapshot(file);
     if (isCurrent && !isCurrent()) throw new Error("配置写入会话已失效。");
-    const edit = mutate(readDocument(current.bytes.toString("utf8")));
+    const edit = await mutate(readDocument(current.bytes.toString("utf8")));
     const { yaml } = edit;
     if (yaml === undefined) return edit.result;
     const directory = await mkdtemp(join(dirname(file), ".lotus-master-"));
@@ -284,14 +285,16 @@ export function updateHostAccessList(root: URL, key: HostAccessList, target: num
 }
 
 export const hostIngressListKeys = ["whiteUser", "blackUser", "whiteGroup", "blackGroup"] as const;
-export const hostIngressKeys = [...hostIngressListKeys, "disablePrivate", "disableMsg"] as const;
+export const hostIngressKeys = [...hostIngressListKeys, "disablePrivate", "disableMsg", "autoFriend", "autoGroup", "autoQuit"] as const;
 
-export function hostIngressSettings(config: Readonly<Record<string, unknown>>) {
+export function hostIngressSettings(files: OtherPolicyFiles) {
+  const config = files[0] ?? files[1] ?? {};
   const ids = (key: HostAccessList) => [...configuredIds(config[key])].map(String);
   return {
     whiteUser: ids("whiteUser"), blackUser: ids("blackUser"), whiteGroup: ids("whiteGroup"), blackGroup: ids("blackGroup"),
     disablePrivate: Boolean(config.disablePrivate),
     disableMsg: typeof config.disableMsg === "string" ? config.disableMsg : defaultPrivateAccessMessage,
+    ...requestAutomationSettings(files),
   };
 }
 
@@ -302,9 +305,17 @@ export class HostIngressSettingsError extends Error {
 }
 
 export function saveHostIngressSettings(root: URL, previous: HostIngressSettings, next: HostIngressSettings, isCurrent: () => boolean) {
-  return editOtherConfig(root, ({ document, values, config, text }) => {
-    const current = hostIngressSettings(config);
+  return editOtherConfig(root, async ({ document, values, config, text }) => {
+    const files = await readRequestOtherPolicyFiles(root);
+    const legacy = files[0] === undefined && files[1] !== undefined;
+    const withEditedConfig = (changed: Readonly<Record<string, unknown>>): OtherPolicyFiles =>
+      legacy ? [undefined, changed] : [changed, files[1]];
+    if (!isDeepStrictEqual(files[0] ?? files[1], config)) throw new HostIngressSettingsError("conflict", "配置已变更，请重新载入。");
+    const current = hostIngressSettings(files);
     if (!isDeepStrictEqual(current, previous)) throw new HostIngressSettingsError("conflict", "配置已变更，请重新载入。");
+    if (legacy && next.autoGroup === "off") {
+      throw new HostIngressSettingsError("invalid", "旧配置的自动群邀请支持仅同意主人或同意所有人。");
+    }
     const blocked = next.blackUser.filter(id => !current.blackUser.includes(id));
     if (blocked.length && (
       [...configuredIds(config.masterQQ)].some(id => blocked.includes(String(id))) ||
@@ -313,9 +324,10 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
     )) throw new HostIngressSettingsError("invalid", "不能把已配置的主人加入用户黑名单。");
 
     const changed = hostIngressKeys.filter(key => !isDeepStrictEqual(current[key], next[key]));
-    if (!changed.length) return { result: current };
+    if (!changed.length) return { result: { values: current, legacy } };
     for (const key of changed) {
-      const value = next[key];
+      const value = key === "autoFriend" ? Number(next.autoFriend) :
+        key === "autoGroup" ? { all: 1, owners: 0, off: false }[next.autoGroup] : next[key];
       const original = document.get(key, true);
       const replacement = document.createNode(Array.isArray(value) ? value.map(Number) : value);
       if (isNode(original)) {
@@ -334,13 +346,13 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
     const runtime = (input: Record<string, unknown>) => Object.fromEntries(Object.entries(input).filter(([key]) => belongsToOtherFields(key)));
     if (!isDeepStrictEqual(untouched(values), untouched(saved.values)) ||
         !isDeepStrictEqual(runtime(config), runtime(saved.config)) ||
-        !isDeepStrictEqual(hostIngressSettings(saved.config), next)) {
+        !isDeepStrictEqual(hostIngressSettings(withEditedConfig(saved.config)), next)) {
       throw new Error("配置保存会改变其它 YAML 字段或引用。");
     }
     if (changed.includes("disablePrivate")) {
       try { privateAccessPolicy(saved.config); }
       catch { throw new HostIngressSettingsError("invalid", "现有私聊放行规则无法解析，请先修正配置。"); }
     }
-    return { result: next, yaml };
+    return { result: { values: next, legacy }, yaml };
   }, isCurrent);
 }

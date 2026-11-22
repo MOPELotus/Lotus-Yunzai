@@ -3,10 +3,15 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readAutoQuit } from "../lib/auto-quit.ts";
+import { readFriendRequests } from "../lib/friend-requests.ts";
 import { readGroupDispatch } from "../lib/group-dispatch.ts";
+import { readGroupInvitations } from "../lib/group-invitations.ts";
 import { persistMaster } from "../lib/master-config.ts";
+import type { FriendRequest, GroupNotice, GroupRequest } from "../lib/messages.ts";
 import { panelIngressSettings } from "../lib/panel-ingress-settings.ts";
 import { defaultPrivateAccessMessage, readPrivateAccess } from "../lib/private-access.ts";
+import { readRequestOtherPolicies } from "../lib/request-other-policies.ts";
 
 const url = "http://localhost/panel/api/settings/native/ingress";
 const get = () => new Request(url);
@@ -37,6 +42,7 @@ test("宿主入口设置按旧层保存，和新增主人共用锁，浏览器�
   expect(previous).toEqual({
     whiteUser: ["42", "55"], blackUser: [], whiteGroup: [], blackGroup: ["333"],
     disablePrivate: false, disableMsg: defaultPrivateAccessMessage,
+    autoFriend: true, autoGroup: "owners", autoQuit: 50,
   });
   const values = { ...previous, blackUser: ["800"], disablePrivate: true, disableMsg: "稍后再试。" };
   const [saved] = await Promise.all([
@@ -62,9 +68,66 @@ test("宿主入口设置按旧层保存，和新增主人共用锁，浏览器�
   const preferred = (await (await handler(get(), () => true)).json()).values;
   expect(preferred.whiteGroup).toEqual(["101"]);
   expect(preferred.blackUser).toEqual([]);
+  expect(preferred).toMatchObject({ autoFriend: true, autoGroup: "owners", autoQuit: 50 });
   expect((await handler(put(preferred, { ...preferred, whiteGroup: [] }), () => true)).status).toBe(200);
   expect(await readFile(modern, "utf8")).toMatch(/disablePrivate: false\r\n/u);
   expect(await readFile(legacy, "utf8")).toBe(raw);
+}));
+
+test("面板修改自动审批及退群设置，兼容旧语义并立即作用于现连宿主", () => withConfig(async (root, legacy, modern) => {
+  await writeFile(legacy, "master: ['100:42']\nautoGroup: '1' # 旧字符串只认主人\n");
+  const policies = await readRequestOtherPolicies(root);
+  const handler = panelIngressSettings(root, () => policies.refresh(true));
+  const before = await (await handler(get(), () => true)).json();
+  expect(before.values).toMatchObject({ autoFriend: true, autoGroup: "owners", autoQuit: 50 });
+  expect(before.fields.find((field: { key: string }) => field.key === "autoGroup").options.map((option: { value: string }) => option.value))
+    .toEqual(["owners", "all"]);
+  const legacyRaw = await readFile(legacy, "utf8");
+  expect((await handler(put(before.values, { ...before.values, autoGroup: "off" }), () => true)).status).toBe(400);
+  expect(await readFile(legacy, "utf8")).toBe(legacyRaw);
+
+  const friend = await readFriendRequests(root, 0, policies);
+  const group = await readGroupInvitations(root, policies);
+  const quit = await readAutoQuit(root, () => [42], undefined, policies);
+  const reply = async () => true;
+  const notifyMasters = async () => 0;
+  const approve = async () => true;
+  const friendRequest: FriendRequest = { post_type: "request", request_type: "friend", sub_type: "add", self_id: 100, user_id: 99,
+    flag: "auto-friend", isGroup: false, isPrivate: true, isMaster: false, reply, notifyMasters, approve };
+  const invitation: GroupRequest = { ...friendRequest, request_type: "group", sub_type: "invite", group_id: 70100,
+    flag: "invitation", isGroup: true, isPrivate: false };
+  let inspected = 0;
+  const joinNotice: GroupNotice = { post_type: "notice", notice_type: "group", sub_type: "increase", time: 1,
+    self_id: 100, user_id: 100, group_id: 70101, isGroup: true, isPrivate: false, isMaster: false, reply,
+    inspectAutoQuit: async threshold => {
+      inspected = threshold;
+      return { memberIds: [100, 99], botRole: "admin" };
+    }, leaveGroup: async () => true };
+  expect(await group.review(invitation)).toBe("skip");
+
+  const values = { ...before.values, autoFriend: false, autoGroup: "all", autoQuit: 2 };
+  expect((await handler(put(before.values, values), () => true)).status).toBe(200);
+  expect(await friend(friendRequest)).toBeUndefined();
+  expect(await group.review(invitation)).toBe("confirmed");
+  expect(await quit(joinNotice)).toBe(true);
+  expect(inspected).toBe(2);
+  expect(await quit({ ...joinNotice, group_id: 70102,
+    inspectAutoQuit: async () => ({ memberIds: [100, 42], botRole: "admin" }) })).toBe(false);
+  const changedLegacy = await readFile(legacy, "utf8");
+  expect(changedLegacy).toContain("# 旧字符串只认主人");
+  expect(Bun.YAML.parse(changedLegacy)).toEqual({ master: ["100:42"], autoFriend: 0, autoGroup: 1, autoQuit: 2 });
+
+  await writeFile(modern, "master: ['100:42']\n");
+  const modernBefore = await (await handler(get(), () => true)).json();
+  expect(modernBefore.values).toEqual(values);
+  expect(modernBefore.fields.find((field: { key: string }) => field.key === "autoGroup").options[0].value).toBe("off");
+  const modernValues = { ...modernBefore.values, autoFriend: true, autoGroup: "off", autoQuit: 0 };
+  expect((await handler(put(modernBefore.values, modernValues), () => true)).status).toBe(200);
+  expect(await friend(friendRequest)).toBe("confirmed");
+  expect(await group.review({ ...invitation, flag: "new-invitation", isMaster: true })).toBe("skip");
+  expect(await quit({ ...joinNotice, group_id: 70103 })).toBe(false);
+  expect(Bun.YAML.parse(await readFile(modern, "utf8"))).toEqual({ master: ["100:42"], autoFriend: 1, autoGroup: false, autoQuit: 0 });
+  expect(await readFile(legacy, "utf8")).toBe(changedLegacy);
 }));
 
 test("宿主业务设置提交前重验授权，关闭文件监听也能刷新现行策略", () => withConfig(async (root, _legacy, modern) => {
