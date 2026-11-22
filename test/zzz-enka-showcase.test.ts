@@ -69,6 +69,33 @@ test("公开展柜只发固定 HTTPS URL 和识别 UA，尊重 UID TTL、跨 UID
   expect(requests).toBe(3);
 });
 
+test("群榜实时读跳过本地 UID TTL，与手动展柜共用 Enka 站级冷却和退避", async () => {
+  let now = 1_000_000;
+  let count = 0;
+  const read = createZzzShowcaseClient(async (url, options) => {
+    const uid = url.pathname.split("/").at(-1)!;
+    expect(options.credentials).toBe("omit");
+    expect(new Headers(options.headers).has("Cookie")).toBe(false);
+    count++;
+    if (count === 3) return new Response(null, { status: 404 });
+    if (count === 4) return new Response(null, { status: 429, headers: { "retry-after": "90" } });
+    return Response.json(provide(uid, [{ Id: 1011 }]));
+  }, () => now);
+  const verify = async () => {};
+  expect((await read(source, signal)).rows).toHaveLength(1);
+  now += 1000;
+  await expect(read(source, signal)).rejects.toThrow(/缓存期/u);
+  expect((await read.forGroupRank(source, signal, verify))?.rows).toHaveLength(1);
+  now += 1000;
+  expect(await read.forGroupRank(sibling, signal, verify)).toBeUndefined();
+  now += 1000;
+  await expect(read.forGroupRank(source, signal, verify)).rejects.toThrow(/90 秒/u);
+  now += 1000;
+  await expect(read.forGroupRank(sibling, signal, verify)).rejects.toThrow(/89 秒/u);
+  await expect(read({ uid: "1700000004", region: "prod_gf_sg" }, signal)).rejects.toThrow(/89 秒/u);
+  expect(count).toBe(4);
+});
+
 const tables = {
   partners: { 1011: { name: "安比", full_name: "安比·德玛拉", WeaponType: "2", Rarity: "A", ElementType: "203",
     HpMax: 603, Attack: 95, Defence: 49, HpGrowth: 818426, AttackGrowth: 54230, DefenceGrowth: 66882,

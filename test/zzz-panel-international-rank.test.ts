@@ -58,10 +58,19 @@ test("四国际区只接受已核验 HoYoLAB 同档案目录，本地公开选�
       expect((await profiles.internationalCheckin("42", 1, "zzz")).status).toBe("disabled");
       const resolve = reader();
       const selected = await resolve("42", 1);
-      expect(selected).toMatchObject({ uid, region, value: expect.stringMatching(new RegExp(`^selected:${region}:${uid}:[a-f0-9]{64}$`)) });
+      expect(selected?.uid).toBe(uid);
+      expect(selected?.region).toBe(region);
+      expect(selected?.value).toMatch(new RegExp(`^selected:${region}:${uid}:[a-f0-9]{64}$`));
       const chosen = await resolve("42", 1, "international");
       expect(chosen?.value).toMatch(new RegExp(`^international:${region}:${uid}:[a-f0-9]{64}$`));
       expect((await resolve("42", 1, "selected", selected!.revision))?.uid).toBe(uid);
+      const count = requests.length;
+      const saved = reader();
+      expect(await saved.registered("42", 1, selected!.value, selected!.revision)).toEqual(selected);
+      expect(await saved.registered("42", 1, chosen!.value)).toEqual(chosen);
+      const wrongRegion = region === "prod_gf_eu" ? "prod_gf_jp" : "prod_gf_eu";
+      expect(await saved.registered("42", 1, selected!.value.replace(region, wrongRegion))).toBeUndefined();
+      expect(requests).toHaveLength(count);
     }
     expect(requests).toHaveLength(4);
     rows = [item(...regions[1])];
@@ -90,6 +99,16 @@ test("四国际区只接受已核验 HoYoLAB 同档案目录，本地公开选�
     const after = await reader()("42", 1, "selected");
     expect(after?.uid).toBe(before?.uid);
     expect(after?.value).not.toBe(before?.value);
+
+    const countAfterAuthorization = requests.length;
+    const offline = reader();
+    expect(await offline.registered("42", 1, before!.value)).toBeUndefined();
+    expect(await offline.registered("42", 1, after!.value, before!.revision)).toBeUndefined();
+    expect(await offline.registered("42", 1, after!.value)).toEqual(after);
+    await writeFile(filename, profile(regions[0][0], "82"), { mode: 0o600 });
+    expect(await offline.registered("42", 1, after!.value)).toBeUndefined();
+    expect(await offline.registered("42", 1, after!.value.replace(/^selected:/u, "international:"))).toMatchObject({ uid: regions[1][0] });
+    expect(requests).toHaveLength(countAfterAuthorization);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
