@@ -8,7 +8,7 @@ import type { ChallengeReminderDefaults } from "../plugins/zzz/challenge-reminde
 type Document = Readonly<Record<string, unknown>>;
 type SwitchState = Awaited<ReturnType<typeof readRankGroupSwitch>>;
 type RankValues = { allow_group: boolean; white_list: string[]; black_list: string[]; max_display: number };
-type PanelValues = { interval: number; roleInterval: number };
+type PanelValues = { roleInterval: number };
 
 const rankFields = [
   { key: "allow_group", label: "绝区零群排行总开关", type: "boolean", hint: "开启时使用黑名单，关闭时只在白名单群开放。适用于挑战榜和角色面板榜。" },
@@ -17,8 +17,8 @@ const rankFields = [
   { key: "max_display", label: "每页最多显示人数", type: "number", min: 1, max: 15 },
 ] as const;
 const panelFields = [
-  { key: "interval", label: "米游社面板刷新冷却（秒）", type: "number", min: 0, max: Math.floor(Number.MAX_SAFE_INTEGER / 1000) },
-  { key: "roleInterval", label: "逐角色请求间隔（毫秒）", type: "number", min: 0, max: 2_147_483_647, hint: "运行时最低按 100 毫秒执行。" },
+  { key: "roleInterval", label: "逐角色请求间隔（毫秒）", type: "number", min: 0, max: 2_147_483_647,
+    hint: "只控制一次更新中连续两个角色请求之间的间隔，最低按 100 毫秒执行。面板更新命令没有整次冷却。" },
 ] as const;
 const reminderFields = [
   { key: "enable", label: "挑战提醒总开关", type: "boolean", hint: "只向本人已订阅的好友私聊发送。" },
@@ -66,13 +66,12 @@ function requestedRank(value: unknown): RankValues {
 function requestedPanel(value: unknown): PanelValues {
   const values = object(value);
   if (!values || Object.keys(values).length !== panelFields.length) throw new Error("无效的面板刷新设置");
-  for (const field of panelFields) {
-    const current = values[field.key];
-    if (typeof current !== "number" || !Number.isSafeInteger(current) || current < field.min || current > field.max) {
-      throw new Error("无效的面板刷新间隔");
-    }
+  const { roleInterval } = values;
+  if (typeof roleInterval !== "number" || !Number.isSafeInteger(roleInterval) ||
+      roleInterval < panelFields[0].min || roleInterval > panelFields[0].max) {
+    throw new Error("无效的逐角色请求间隔");
   }
-  return { interval: values.interval as number, roleInterval: values.roleInterval as number };
+  return { roleInterval };
 }
 
 function edit(text: string, local: Document, changes: Document) {
@@ -85,12 +84,12 @@ function edit(text: string, local: Document, changes: Document) {
   return yaml;
 }
 
-function fieldsChanged<T extends RankValues | PanelValues>(before: T, after: T): Document {
+function fieldsChanged(before: RankValues, after: RankValues): Document {
   return Object.fromEntries(Object.entries(after).filter(([key, value]) =>
-    !isDeepStrictEqual(value, before[key as keyof T])));
+    !isDeepStrictEqual(value, before[key as keyof RankValues])));
 }
 
-export async function updateZzzPanelIntervals(root: URL, values: Readonly<Partial<PanelValues>>,
+export async function updateZzzPanelIntervals(root: URL, values: PanelValues,
   active: () => boolean, signal: AbortSignal, previous?: PanelValues) {
   const { parseZzzPanelConfig, readZzzPanelConfigDocument, zzzPanelConfigFile } = await import("../plugins/zzz/panel-command.ts");
   const load = () => readZzzPanelConfigDocument(undefined, root);
@@ -99,10 +98,9 @@ export async function updateZzzPanelIntervals(root: URL, values: Readonly<Partia
     prepare(text, local, effective) {
       const current = parseZzzPanelConfig(effective);
       if (previous && !isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
-      const next = requestedPanel({ ...current, ...values });
-      const changes = fieldsChanged(current, next);
-      if (!Object.keys(changes).length) return { value: current };
-      const saved = { ...(text.trim() ? {} : effective), ...changes };
+      const next = requestedPanel(values);
+      if (current.roleInterval === next.roleInterval) return { value: current };
+      const saved = { ...(text.trim() ? {} : effective), ...next };
       return { yaml: edit(text, local, saved), value: next };
     },
   });

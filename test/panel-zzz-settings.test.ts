@@ -88,13 +88,17 @@ test("绝区零面板更新间隔与热读共用字段，旧资源目录回退�
     Bun.env.LOTUS_ZZZ_LEGACY_RESOURCES_DIR = resources;
     const panel = panelZzzSettings(root, "panel");
     const initial = await (await panel(new Request(api), () => true)).json();
-    expect(initial.values).toEqual({ interval: 170, roleInterval: 1400 });
-    const next = { ...initial.values, interval: 20 };
+    expect(initial.fields.map(({ key }: { key: string }) => key)).toEqual(["roleInterval"]);
+    expect(initial.fields[0].hint).toContain("没有整次冷却");
+    expect(initial.values).toEqual({ roleInterval: 1400 });
+    expect(parseZzzPanelConfig({ interval: "obsolete", roleInterval: 1400 })).toEqual(initial.values);
+    const next = { roleInterval: 180 };
     expect((await panel(save({ ...next, roleInterval: -1 }, initial.values), () => true)).status).toBe(400);
+    expect((await panel(save({ ...next, interval: 20 }, initial.values), () => true)).status).toBe(400);
     expect((await panel(save(next, initial.values), () => true)).status).toBe(200);
     const effective = await readZzzPanelConfigDocument(undefined, root);
-    expect(parseZzzPanelConfig(effective)).toEqual({ interval: 20, roleInterval: 1400 });
-    expect(effective.feature).toBe("retained");
+    expect(parseZzzPanelConfig(effective)).toEqual(next);
+    expect(effective).toMatchObject({ interval: 170, feature: "retained" });
     expect(await readFile(inherited, "utf8")).toBe(yaml);
   } finally {
     restore(panelEnv, previous);
@@ -120,22 +124,22 @@ test("绝区零旧聊天设置及网页共用原子写入，检测权限变化�
     const panel = panelZzzSettings(root, "panel");
     const { values: stale } = await (await panel(new Request(api), () => true)).json();
     expect(await run("%刷新角色间隔99")).toContain("100 到 10000 毫秒");
-    expect(await run("#绝区零刷新面板间隔1001")).toContain("0 到 1000 秒");
+    expect(await run("#绝区零刷新面板间隔1001")).toContain("没有整次冷却");
     expect(await run("#刷新角色间隔480")).toBeUndefined();
-    expect(await run("%刷新面板间隔12", { ...owner, user_id: 51 })).toContain("仅限当前机器人的主人");
+    expect(await run("%刷新角色间隔160", { ...owner, user_id: 51 })).toContain("仅限当前机器人的主人");
     let checks = 0;
-    expect(await run("%刷新面板间隔12", { ...owner, isBotMaster: () => ++checks < 3 })).toContain("仅限当前机器人的主人");
+    expect(await run("%刷新角色间隔160", { ...owner, isBotMaster: () => ++checks < 3 })).toContain("仅限当前机器人的主人");
     expect(await readFile(file, "utf8")).toBe(lexical);
 
-    const changed = await Promise.all([run("%刷新面板间隔0"), run("#绝区零刷新角色间隔 180")]);
-    expect(changed).toEqual(["绝区零刷新面板间隔已设置为 0 秒。", "绝区零刷新角色间隔已设置为 180 毫秒。"]);
-    const active = { interval: 0, roleInterval: 180 };
+    expect(await run("#绝区零刷新角色间隔 180")).toContain("绝区零刷新角色间隔已设置为 180 毫秒");
+    const active = { roleInterval: 180 };
     expect((await (await panel(new Request(api), () => true)).json()).values).toEqual(active);
-    expect((await panel(save({ ...stale, interval: 50 }, stale), () => true)).status).toBe(409);
-    expect((await panel(save({ ...active, interval: 50 }, active), () => true)).status).toBe(200);
-    expect(parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root))).toEqual({ interval: 50, roleInterval: 180 });
+    expect((await panel(save({ roleInterval: 210 }, stale), () => true)).status).toBe(409);
+    expect((await panel(save({ roleInterval: 210 }, active), () => true)).status).toBe(200);
+    expect(parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root))).toEqual({ roleInterval: 210 });
     expect(await readFile(file, "utf8")).toContain("# 保留部署方注释");
     expect(await readFile(file, "utf8")).toContain("extra: on");
+    expect(await readFile(file, "utf8")).toContain("interval: 60");
   } finally {
     restore(panelEnv, previousPath);
     await rm(directory, { recursive: true, force: true });
