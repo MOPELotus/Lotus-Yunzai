@@ -26,7 +26,7 @@ test("只向官方绝区零钱包发送现成云会话凭据与已核对的 Andr
     });
     return wallet({ free_time: { free_time: 0, send_freetime: 15, free_time_limit: 600 }, debug: token });
   }, { verifyProfile: async () => { steps.push("guard"); } });
-  expect(result).toEqual({ freeTimeMinutes: 0 });
+  expect(result).toEqual({ freeTimeMinutes: 0, grantedMinutes: 15 });
   expect(steps).toEqual(["guard", "wallet", "guard"]);
   expect(normalizeCloudZzzComboToken(token)).toBe(token);
 });
@@ -49,6 +49,8 @@ test("非完整云绝区零会话、其它 realm 及头注入在请求前拒绝"
 });
 
 test("剩余时长保留分钟单位，并区分真实零、缺字段和无效值", async () => {
+  await expect(readCloudZzzWallet(token, async () => wallet({ free_time: { free_time: 50, send_freetime: "0" } })))
+    .resolves.toEqual({ freeTimeMinutes: 50, grantedMinutes: 0 });
   for (const freeTime of [0, "0", 597, "597"]) {
     await expect(readCloudZzzWallet(token, async () => wallet({ free_time: { free_time: freeTime } })))
       .resolves.toEqual({ freeTimeMinutes: Number(freeTime) });

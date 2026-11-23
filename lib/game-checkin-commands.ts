@@ -646,14 +646,13 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         await verifyCurrent();
         if (walletRevision !== revision) throw new ProfileError("changed", changed);
         const balances: string[] = [];
+        const minutes = (value?: number) => value === undefined ? "未知" : `${value} 分钟`;
         for (const wallet of wallets) {
           const { game, token } = wallet;
           const name = game === "genshin-os" ? "云原神国际服" : game === "genshin" ? "云原神" : "云绝区零";
           if (!token) {
-            if (game === "genshin-os") {
-              count("failed");
-              notes.push("请检查当前档案中的云原神国际服凭据。");
-            } else balances.push(`请先在私聊绑定${name}凭据。`);
+            count("failed");
+            notes.push(game === "genshin-os" ? "请检查当前档案中的云原神国际服凭据。" : `请先在私聊绑定${name}凭据。`);
             continue;
           }
           try {
@@ -662,14 +661,13 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               const { language, deviceId, deviceModel, androidVersion } = wallet;
               const state = await client.readInternationalCloudGenshinWallet(token, { ...options, language, deviceId, deviceModel, androidVersion });
               await verifyCurrent();
-              const minutes = (value?: number) => value === undefined ? "未知" : `${value} 分钟`;
               balances.push(`${name}剩余免费时长：${minutes(state.freeTimeMinutes)}，本次赠送：${minutes(state.grantedMinutes)}`);
             } else {
               const state = game === "genshin"
                 ? await client.readCloudGenshinWallet(token, { ...options, browserDeviceId: cloudDeviceId })
                 : await client.readCloudZzzWallet(token, options);
               await verifyCurrent();
-              balances.push(`${name}剩余免费时长：${state.freeTimeMinutes} 分钟`);
+              balances.push(`${name}剩余免费时长：${minutes(state.freeTimeMinutes)}，本次赠送：${minutes(state.grantedMinutes)}`);
             }
           } catch (error) {
             await verifyCurrent();

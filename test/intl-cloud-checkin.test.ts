@@ -17,12 +17,14 @@ const domesticToken = "fixture-domestic-token";
 const qq = "42";
 const profileId = 2;
 
-function fixtureProfile({ enable, token, language, uid = "123" }: { enable?: boolean; token?: string; language?: string; uid?: string } = {}) {
+function fixtureProfile({ enable, token, language, uid = "123", domesticEnabled, domesticCredential = domesticToken }: {
+  enable?: boolean; token?: string; language?: string; uid?: string; domesticEnabled?: boolean; domesticCredential?: string;
+} = {}) {
   return Bun.YAML.stringify({ enabled: true, user: { qq }, profile: { id: profileId },
     games: { cn: { enable: false }, os: { enable: false, cookie: "ltuid=943;cookie_token=other-realm-fixture" } },
     account: { stuid: uid, ltuid: uid, cookie: `account_id=${uid};cookie_token=domestic-fixture`, stoken: "fixture-main-stoken" },
     device: { id: "fixture-device-id", fp: "fixture-fp", model: "Fixture Model", android_version: "13", bound: true },
-    cloud_games: { cn: { genshin: { enable: true, token: domesticToken } },
+    cloud_games: { cn: { enable: domesticEnabled, genshin: { enable: true, token: domesticCredential } },
       os: { enable, lang: language, genshin: { enable: true, token: token ?? globalToken } } },
   });
 }
@@ -58,7 +60,7 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
       if (rebind) await writeFile(file, fixtureProfile({ uid: "987" }));
       if (expired) return Response.json({ retcode: -100, data: null });
     } else expect(request.headers.get("x-rpc-client_type")).toBe("19");
-    return Response.json({ retcode: 0, data: { free_time: international ? response : { free_time: 200 } } });
+    return Response.json({ retcode: 0, data: { free_time: international ? response : { free_time: 200, send_freetime: "0" } } });
   } });
   const controller = new AbortController();
   const store = createCheckinScheduleStore(join(staged, "data/schedules"));
@@ -95,7 +97,7 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
     const result = await web();
     expect(result.status).toBe("completed");
     expect(result.message).toContain("云原神国际服剩余免费时长：0 分钟，本次赠送：15 分钟");
-    expect(result.message).toContain("云原神剩余免费时长：200 分钟");
+    expect(result.message).toContain("云原神剩余免费时长：200 分钟，本次赠送：0 分钟");
     expect(result.message).not.toMatch(/opaque|fixture|token/u);
     expect(calls.splice(0)).toEqual([domesticCloud, globalCloud]);
     const progress: unknown[] = [];
@@ -127,6 +129,14 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
     await writeFile(file, fixtureProfile({ enable: false }));
     expect((await web()).message).not.toContain("云原神国际服");
     expect(calls.splice(0)).toEqual([domesticCloud]);
+    await writeFile(file, fixtureProfile({ enable: false, domesticEnabled: false }));
+    const disabled = await web();
+    expect(disabled.status).toBe("completed");
+    expect(disabled.message).not.toContain("云原神");
+    expect(calls).toEqual([]);
+    await writeFile(file, fixtureProfile({ enable: false, domesticCredential: " " }));
+    expect(await web()).toMatchObject({ status: "failed", message: expect.stringContaining("请先在私聊绑定云原神凭据。") });
+    expect(calls).toEqual([]);
     await writeFile(file, fixtureProfile({ token: globalToken.replace("hk4e_global", "hk4e_cn") }));
     expect(await web()).toMatchObject({ status: "failed" });
     expect(calls.splice(0)).toEqual([domesticCloud]);

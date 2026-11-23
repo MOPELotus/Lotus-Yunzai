@@ -31,7 +31,7 @@ test("只向国内官方云钱包 GET 发送不透明凭据与独立浏览器设
       play_card: { remaining_sec: 3600 }, uid: "fixture-game-uid", aid: "fixture-mihoyo-aid", debug: token,
     } });
   }, { browserDeviceId, verifyProfile: async () => { steps.push("guard"); } });
-  expect(result).toEqual({ freeTimeMinutes: 0 });
+  expect(result).toEqual({ freeTimeMinutes: 0, grantedMinutes: 15 });
   expect(steps).toEqual(["guard", "read", "guard"]);
 });
 

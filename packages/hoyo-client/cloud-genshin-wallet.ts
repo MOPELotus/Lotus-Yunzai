@@ -5,6 +5,7 @@ import { readGameRecordPayload } from "./game-record.ts";
 
 export interface CloudGenshinWallet {
   readonly freeTimeMinutes: number;
+  readonly grantedMinutes?: number;
   readonly cloudCoins?: number;
   readonly totalTimeMinutes?: number;
 }
@@ -107,8 +108,11 @@ export async function readCloudGenshinWallet(comboToken: string, transport: Hoyo
   }, { signal, verifyProfile });
   const cloudCoins = readQuantity(object(wallet?.coin)?.coin_num);
   const totalTimeMinutes = readQuantity(wallet?.total_time);
+  const freeTime = object(wallet?.free_time);
+  const grantedMinutes = readQuantity(freeTime?.send_freetime);
   return {
-    freeTimeMinutes: readMinutes(object(wallet?.free_time)?.free_time),
+    freeTimeMinutes: readMinutes(freeTime?.free_time),
+    ...(grantedMinutes !== undefined && { grantedMinutes }),
     ...(cloudCoins !== undefined && { cloudCoins }),
     ...(totalTimeMinutes !== undefined && { totalTimeMinutes }),
   };

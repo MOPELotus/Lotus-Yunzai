@@ -1005,9 +1005,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { document, state, revision } = await readDocument(qq, id);
       const settings = record(document.cloud_games);
       const domestic = record(settings.cn);
-      const wallets = (["genshin", "zzz"] as const).flatMap(game => {
+      const wallets = domestic.enable === false ? [] : (["genshin", "zzz"] as const).flatMap(game => {
         const { enable, token } = record(domestic[game]);
-        return enable === true ? [{ game, token: typeof token === "string" ? token : "" }] : [];
+        return enable === true ? [{ game, token: typeof token === "string" ? token.trim() : "" }] : [];
       });
       const overseas = record(settings.os);
       const genshin = record(overseas.genshin);

@@ -4,6 +4,7 @@ import { readGameRecordPayload } from "./game-record.ts";
 
 export interface CloudZzzWallet {
   readonly freeTimeMinutes: number;
+  readonly grantedMinutes?: number;
 }
 
 interface CloudZzzWalletOptions {
@@ -42,7 +43,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
 }
 
-function readBalance(data: unknown, status: number): number {
+function minutes(value: unknown) {
+  const count = typeof value === "string" && /^\d{1,16}$/u.test(value) ? Number(value) : value;
+  if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0) return count === 0 ? 0 : count;
+}
+
+function readBalance(data: unknown, status: number): CloudZzzWallet {
   if (data == null) throw new CloudZzzWalletError("missing-balance", status);
   const wallet = object(data);
   const time = wallet?.free_time;
@@ -50,11 +56,10 @@ function readBalance(data: unknown, status: number): number {
   const freeTime = object(time);
   const value = freeTime?.free_time;
   if (freeTime && value == null) throw new CloudZzzWalletError("missing-balance", status);
-  const count = typeof value === "string" && /^\d{1,16}$/u.test(value) ? Number(value) : value;
-  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
-    throw new CloudZzzWalletError("invalid-balance", status);
-  }
-  return count === 0 ? 0 : count;
+  const freeTimeMinutes = minutes(value);
+  if (freeTimeMinutes === undefined) throw new CloudZzzWalletError("invalid-balance", status);
+  const grantedMinutes = minutes(freeTime?.send_freetime);
+  return { freeTimeMinutes, ...(grantedMinutes !== undefined && { grantedMinutes }) };
 }
 
 /** Queries the authorized CN cloud session's balance using the Android client's wallet defaults. */
@@ -111,5 +116,5 @@ export async function readCloudZzzWallet(comboToken: string, transport: HoyoTran
     throw new HoyoRequestError("response", "云绝区零钱包返回了无效响应。");
   }
   if (retcode !== 0) throw new HoyoRequestError("api", "云绝区零钱包拒绝请求。", status, retcode);
-  return { freeTimeMinutes: readBalance(payload?.data, status) };
+  return readBalance(payload?.data, status);
 }
