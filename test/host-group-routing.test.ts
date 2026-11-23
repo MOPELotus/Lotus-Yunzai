@@ -451,9 +451,8 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   }
 }), 12_000);
 
-test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用回复", async () => {
+test("本机表情经真实 OneBot 保留群禁用与引用行为，戳一戳不发图", async () => {
   const { encodeBandedPng } = await import("../packages/skia/banded-png.ts");
-  const { builtinMemeTemplates } = await import("../plugins/meme/templates/index.ts");
   const proofDirectory = Bun.env.LOTUS_MEME_GROUP_PROOF;
   const skia = join(import.meta.dir, "../packages/skia/node_modules/skia-canvas/lib/index.js");
 
@@ -467,11 +466,6 @@ test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用
   }
   const inline = await picture(32, 16);
   const quoted = await picture(48, 24);
-  const avatar = await picture(24, 12);
-  const otherPokeTemplates = builtinMemeTemplates.filter(({ info: { key, params_type: p } }) =>
-    key !== "symmetric" && p.min_images === 1 && p.max_images === 1 && p.min_texts === 0 && p.max_texts === 0)
-    .map(({ info }) => info.key);
-
   let serviceCalls = 0;
   const service = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
     serviceCalls++;
@@ -504,8 +498,7 @@ test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用
       await writeFile(join(config, "group.yaml"), 'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"81": { disable: ["清语表情:表情包生成"] }\n');
       await writeFile(join(memeConfig, "server.yaml"), Bun.YAML.stringify({ backend: "remote", url: service.url.href }));
       await writeFile(join(memeConfig, "meme.yaml"), "reply: true\npokeEnable: true\npokeProbability: 100\npokeLimit: 20\n");
-      await writeFile(join(memeConfig, "access.yaml"), Bun.YAML.stringify({ blackListEnable: true, blackList: otherPokeTemplates }));
-      await writeFile(join(root, "avatar-fixture.ts"), `
+      await writeFile(join(root, "meme-network-fixture.ts"), `
         ${proofDirectory ? `
           Bun.env.VK_DRIVER_FILES = "/usr/share/vulkan/icd.d/nvidia_icd.json";
           const { Canvas } = await import(${JSON.stringify(skia)});
@@ -522,16 +515,10 @@ test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用
         Bun.env.LOTUS_MEME_SERVER_URL = ${JSON.stringify(service.url.href)};
         const original = fetch;
         const requests = [];
-        const record = async (request) => {
-          requests.push(request);
-          await Bun.write("./meme-requests.json", JSON.stringify(requests));
-        };
         globalThis.fetch = Object.assign(async (input, init) => {
           const url = new URL(input instanceof Request ? input.url : String(input));
-          await record(url.href);
-          if (url.hostname === "q1.qlogo.cn" && url.searchParams.get("nk") === "42") {
-            return new Response(Uint8Array.fromBase64(${JSON.stringify(avatar)}), { headers: { "content-type": "image/png" } });
-          }
+          requests.push(url.href);
+          await Bun.write("./meme-requests.json", JSON.stringify(requests));
           if (url.origin === ${JSON.stringify(service.url.origin)}) return original(input, init);
           throw new Error("未登记的隔离请求：" + url.href);
         }, { preconnect: original.preconnect });
@@ -561,10 +548,10 @@ test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用
 
       const poke = { post_type: "notice", notice_type: "notify", sub_type: "poke", user_id: 42, target_id: 99, group_id: 77 };
       bot.sendFrame(poke);
-      const notice = await bot.action();
-      const fromPoke = await checkImage(notice, 77, { type: "text", data: { text: expect.stringContaining("[对称]") } }, 24, 12);
-      expect(notice.echo).toBeDefined();
-      bot.sendFrame({ echo: notice.echo, status: "ok", retcode: 0, data: { message_id: 101 } });
+      bot.sendFrame({ ...poke, group_id: 81 });
+      bot.sendFrame({ ...poke, target_id: 51 });
+      bot.send("#状态", 77);
+      await bot.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 77);
 
       const usage = join(root, "data/meme/data.db.usage.sqlite");
       const until = performance.now() + 2_000;
@@ -578,24 +565,20 @@ test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用
         } finally {
           db.close();
         }
-        if (counts[0]?.all === 3) break;
+        if (counts[0]?.all === 2) break;
         await Bun.sleep(10);
       }
-      expect(counts).toEqual([{ key: "symmetric", all: 3 }]);
-      bot.sendFrame({ ...poke, group_id: 81 });
-      bot.sendFrame({ ...poke, target_id: 51 });
-      bot.sendFrame(poke);
+      expect(counts).toEqual([{ key: "symmetric", all: 2 }]);
       await Bun.sleep(100);
       bot.assertNoPendingFrames();
-      expect(await Bun.file(join(root, "meme-requests.json")).json()).toEqual(["https://q1.qlogo.cn/g?b=qq&s=0&nk=42"]);
+      expect(await Bun.file(join(root, "meme-requests.json")).exists()).toBe(false);
       expect(serviceCalls).toBe(0);
       if (proofDirectory) {
         await Bun.write(join(proofDirectory, "inline.jpg"), direct);
         await Bun.write(join(proofDirectory, "quote.jpg"), fromQuote);
-        await Bun.write(join(proofDirectory, "poke.jpg"), fromPoke);
         await Bun.write(join(proofDirectory, "engine.json"), Bun.file(join(root, "engine.json")));
       }
-    }, ["./avatar-fixture.ts"]);
+    }, ["./meme-network-fixture.ts"]);
   } finally {
     await service.stop(true);
   }

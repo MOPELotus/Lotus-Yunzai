@@ -270,8 +270,6 @@ export async function loadPlugins(
       };
     };
     readonly memeRuntime?: import("../../plugins/meme/catalog-runtime.ts").MemeRuntime;
-    registerMemePoke?(run: (input: import("../../plugins/meme/lotus.ts").MemePokeContext) => Promise<void>,
-      signal: AbortSignal): () => void;
     readonly mediaRuntime?: {
       readonly disconnect: AbortSignal;
       whenReady(start: () => void): () => void;
@@ -482,7 +480,7 @@ export async function loadPlugins(
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, panelRebuild, atlasSchedule,
-          handlePoke, nativeEvents } = record(module);
+          nativeEvents } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -502,15 +500,6 @@ export async function loadPlugins(
           fallback: fallback as CommandModule["fallback"],
           fallbackFeatures: fallbackFeatures as CommandModule["fallbackFeatures"],
         }, label);
-        if (memeRuntime && options.registerMemePoke && handlePoke !== undefined) {
-          if (typeof handlePoke !== "function") throw new Error("表情戳一戳须提供处理函数。");
-          const removePoke = options.registerMemePoke(input => handlePoke.call(module, input), signal);
-          const dispose = cleanup;
-          cleanup = async () => {
-            removePoke();
-            await dispose?.();
-          };
-        }
         if (builtIn && moduleName === "@lotus-yunzai/meme" && options.profileLikeImages &&
             typeof published.createProfileLikeImageRenderer === "function") {
           const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory, options.profileLikeImages.rasterScale);

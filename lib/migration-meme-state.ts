@@ -5,15 +5,14 @@ import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 import { rejectionReason } from "./plugins/policy.ts";
 import { keepMemeCatalogDenials, scanMemeCatalogExclusions } from "../plugins/meme/catalog-exclusions.ts";
-import { maxPokeCooldown, maxPokeProbability, safeCatalogKey } from "../plugins/meme/catalog-policy.ts";
+import { safeCatalogKey } from "../plugins/meme/catalog-policy.ts";
 import { isExcludedMemeTemplate } from "../plugins/meme/template-policy.ts";
 
 const mergedMemePlugin = rejectionReason(["meme-plugin"], []);
 const databaseLimit = 32 * 1024 * 1024;
 const yamlLimit = 256 * 1024;
 const localFields = {
-  meme: ["enable", "forceSharp", "cache", "reply", "userName", "imagesInMessage", "quotedImages", "errorReply",
-    "pokeEnable", "pokeProbability", "pokeLimit"],
+  meme: ["enable", "forceSharp", "cache", "reply", "userName", "imagesInMessage", "quotedImages", "errorReply"],
   access: ["enable", "mode", "userWhiteList", "userBlackList", "blackListEnable", "blackList"],
   protect: ["list", "user", "enable", "master", "userEnable"],
   stat: ["enable"],
@@ -30,10 +29,6 @@ function text(value: unknown, max = 1024): value is string {
 function allowedSetting(key: string, value: unknown) {
   if (key === "managedTimeout") return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 120;
   if (key === "mode") return value === 0 || value === 1;
-  if (key === "pokeProbability" || key === "pokeLimit") {
-    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 &&
-      value <= (key === "pokeProbability" ? maxPokeProbability : maxPokeCooldown);
-  }
   if (["userWhiteList", "userBlackList", "blackList", "user", "list"].includes(key)) {
     const valid = (item: unknown) => text(item, 512) || typeof item === "number" && Number.isSafeInteger(item) && item > 0;
     return Array.isArray(value) ? value.every(valid) : key === "user" && valid(value);

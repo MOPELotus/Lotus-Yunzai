@@ -257,13 +257,6 @@ export interface FriendRequest {
   readonly reply: MessageEvent["reply"];
 }
 
-export const pokeDeliverySession = Symbol("pokeDeliverySession");
-
-export interface PokeDeliverySession {
-  readonly signal: AbortSignal;
-  send(reply: MessageReply, active: AbortSignal): Promise<boolean>;
-}
-
 export interface FriendPoke {
   readonly post_type: "notice";
   readonly notice_type: "friend";
@@ -275,7 +268,6 @@ export interface FriendPoke {
   readonly target_id: number;
   readonly time?: number;
   readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
-  readonly [pokeDeliverySession]?: PokeDeliverySession;
   readonly isGroup: false;
   readonly isPrivate: true;
   readonly isMaster: boolean;
@@ -293,7 +285,6 @@ export interface GroupPoke {
   readonly operator_id: number;
   readonly target_id: number;
   readonly time?: number;
-  readonly [pokeDeliverySession]?: PokeDeliverySession;
   readonly isGroup: true;
   readonly isPrivate: false;
   readonly isMaster: boolean;

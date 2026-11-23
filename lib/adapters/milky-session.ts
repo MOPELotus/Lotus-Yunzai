@@ -7,7 +7,7 @@ import { ownerContactListSession, type OwnerContactListSession } from "../owner-
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "../manual-group-leave.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
   type FriendMessageNoticeSession, type FriendMessageReceipts } from "../friend-message-notice.ts";
-import { notifyReplyDelivery, pokeDeliverySession, type BotEvent, type MessageEvent, type MessageReply, type PokeDeliverySession,
+import { notifyReplyDelivery, type BotEvent, type MessageEvent, type MessageReply,
   type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { confirmJoinReview, type JoinRequestOrigin, type PendingGroupJoinBatch, type PendingGroupJoinDecision, type PendingGroupJoinEntry } from "../group-join-review.ts";
 import type { PendingFriendRequestDecision } from "../friend-requests.ts";
@@ -165,14 +165,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       }
     } else if (event.post_type === "notice" && event.sub_type === "poke") {
       const userId = event.user_id;
-      const target = event.notice_type === "group" ? { group_id: event.group_id } : { user_id: userId };
-      const delivery: PokeDeliverySession = {
-        signal,
-        async send(reply, active) {
-          return await sendConfirmed(target, reply, undefined, AbortSignal.any([signal, active])) === "confirmed";
-        },
-      };
-      const identity = { adapter: "milky" as const, isMaster: isMaster(userId), [pokeDeliverySession]: delivery };
+      const identity = { adapter: "milky" as const, isMaster: isMaster(userId) };
       event = event.notice_type === "group" ? { ...event, ...identity } : {
         ...event, ...identity, [friendMessageNoticeSession]: {
           signal,

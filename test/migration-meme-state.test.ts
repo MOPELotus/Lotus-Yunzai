@@ -11,7 +11,7 @@ async function put(root: string, path: string, contents: string) {
   await writeFile(filename, contents, { mode: 0o600 });
 }
 
-test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统计，原服务地址与目录仅归档", async () => {
+test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统计，原服务、戳图设置与目录仅归档", async () => {
   const folder = await mkdtemp(join(tmpdir(), "lotus-meme-migration-"));
   try {
     const source = join(folder, "old"), target = join(folder, "new");
@@ -22,7 +22,8 @@ test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统
     await put(source, `${settings}/server.yaml`, server);
     await put(source, `${settings}/other.yaml`, "autoUpdateRes: true\nautoUpdateResCron: '0 0 1 * * *'\n");
     await put(source, `${settings}/access.yaml`, "enable: true\nblackList: [smile]\nuserBlackList: ['9988']\n");
-    await put(source, `${settings}/meme.yaml`, "pokeEnable: true\ncache: false\n");
+    const legacyMeme = "pokeEnable: true\npokeProbability: 100\npokeLimit: 20\ncache: false\n";
+    await put(source, `${settings}/meme.yaml`, legacyMeme);
     await put(source, `${settings}/stat.yaml`, "enable: false\n");
     await mkdir(join(source, plugin, "data"), { recursive: true });
     const originalDB = join(source, plugin, "data/data.db");
@@ -53,10 +54,11 @@ test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统
     expect(Bun.YAML.parse(await readFile(join(active, "access.yaml"), "utf8"))).toEqual({
       enable: true, userBlackList: ["9988"], blackList: ["smile"],
     });
-    expect(Bun.YAML.parse(await readFile(join(active, "meme.yaml"), "utf8"))).toEqual({ pokeEnable: true, cache: false });
+    expect(Bun.YAML.parse(await readFile(join(active, "meme.yaml"), "utf8"))).toEqual({ cache: false });
     expect(Bun.YAML.parse(await readFile(join(active, "stat.yaml"), "utf8"))).toEqual({ enable: false });
     expect(await Bun.file(join(active, "other.yaml")).exists()).toBe(false);
     expect(await readFile(join(target, "backup", settings, "server.yaml"), "utf8")).toBe(server);
+    expect(await readFile(join(target, "backup", settings, "meme.yaml"), "utf8")).toBe(legacyMeme);
     expect(await readFile(join(target, "backup", plugin, "data/data.db"))).toEqual(originalBytes);
     expect(await readFile(originalDB)).toEqual(originalBytes);
     {
@@ -93,9 +95,9 @@ test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统
       if (oldConfig === undefined) delete Bun.env.LOTUS_MEME_CONFIG_DIR;
       else Bun.env.LOTUS_MEME_CONFIG_DIR = oldConfig;
     }
-    await writeFile(join(active, "meme.yaml"), "pokeEnable: false\n");
+    await writeFile(join(active, "meme.yaml"), "cache: true\n");
     expect(await migrateInstallation(source, target)).toMatchObject({ status: "already-published" });
-    expect(await readFile(join(active, "meme.yaml"), "utf8")).toBe("pokeEnable: false\n");
+    expect(await readFile(join(active, "meme.yaml"), "utf8")).toBe("cache: true\n");
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
