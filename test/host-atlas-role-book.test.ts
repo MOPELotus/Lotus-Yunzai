@@ -117,7 +117,7 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     `);
     // Exercise host delivery without launching a renderer in the copied project.
     await writeFile(join(atlas, "role-render.ts"), `
-      export async function renderRoleBook(role, { assetRoot }) {
+      export async function renderRoleBook(role, { assetRoot }, view) {
         if (assetRoot !== process.env.LOTUS_ATLAS_DATA_DIR) throw new Error("fixture: wrong asset root");
         const ranks = { gi: "命座", hsr: "星魂", zzz: "影画" };
         const pages = ["角色总览"];
@@ -126,7 +126,7 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
         if (role.materials.some(({ items }) => items.length)) pages.push("养成材料");
         return pages.map((section, index) => ({ section, engine: "fixture",
           png: new Uint8Array([Number(role.id), index + 1]),
-        }));
+        })).filter(({ section }) => !view || section === (view === "ranks" ? ranks[role.game] : "技能与天赋"));
       }
     `);
     host = Bun.spawn([process.execPath, "--preload", "./offline.ts", "app.ts"], {
@@ -179,6 +179,14 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
       expect(typeof frame.echo).toBe("string");
       client.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode, data: { message_id: 800 + messageId } }));
     }
+    async function section(command: string, id: number, page: number) {
+      send(command);
+      const frame = await next(command);
+      expect(frame).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
+        { type: "image", data: { file: `base64://${Buffer.from([id, page]).toString("base64")}` } },
+      ] } });
+      if (frame.echo) client.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 800 + messageId } }));
+    }
 
     const furina = ["gi", 101, "芙宁娜"] as const;
     const kafka = ["hsr", 102, "卡芙卡"] as const;
@@ -186,10 +194,13 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     await book("#图鉴 原神 芙宁娜", furina);
     await book("#芙宁娜图鉴", furina);
     await book("#芙宁图鉴", furina);
-    await book("#芙宁娜命座", furina);
-    await book("*卡芙卡星魂", kafka);
-    await book("*卡芙星魂", kafka);
-    await book("#星穹铁道卡芙卡星魂图鉴", kafka);
+    await section("#芙宁娜命座", 101, 3);
+    await section("#芙宁娜命之座", 101, 3);
+    await section("#芙宁娜技能", 101, 2);
+    await section("*卡芙卡行迹", 102, 2);
+    await section("*卡芙卡星魂", 102, 3);
+    await section("*卡芙星魂", 102, 3);
+    await section("#星穹铁道卡芙卡星魂图鉴", 102, 3);
     await book("%艾莲影画", ellen);
     await book("#绝区零艾莲影画", ellen);
     await book("图鉴 绝区零 艾莲", ellen, false);
@@ -202,7 +213,7 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
       } });
       if (frame.echo) client.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 800 + messageId } }));
     }
-    await book("*卡芙卡星魂", kafka, true, 1);
+    await book("*卡芙卡图鉴", kafka, true, 1);
     expect(await next("未确认回执")).toMatchObject({ action: "send_msg", params: {
       group_id: 77, message: "合并转发结果未确认，请在聊天中核对。",
     } });
