@@ -1,7 +1,9 @@
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { genshinGachaPools } from "../packages/hoyo-client/genshin-gacha.ts";
+import { resolveZzzGachaLinkRole } from "../packages/hoyo-client/zzz-gacha-link.ts";
+import { normalizeZzzMonthly } from "../packages/hoyo-client/zzz-monthly.ts";
 import { readPanel, type PanelCatalog } from "../plugins/genshin/panel/model.ts";
 import { genshinStrategySource } from "../plugins/guides/genshin-strategy.ts";
 import { guideCollectionKeys } from "../plugins/guides/guide-configuration.ts";
@@ -11,13 +13,18 @@ import { isGuideImage, roleImageLimit } from "../plugins/guides/role-image-files
 import { zzzStrategyOptions } from "../plugins/guides/zzz-strategy.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
-import { withinInstallation } from "./plugins/migration-plan.ts";
+import { decodeZzzPanelRows, zzzPanelRegion } from "../plugins/zzz/panel-storage.ts";
+import { withinInstallation, type LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
+import { rejectionReason } from "./plugins/policy.ts";
 
 const numeric = /^[1-9]\d{0,18}$/u;
 const panelUid = /^[1-9]\d{8,9}\.json$/u;
 const zzzUid = /^[1-9]\d{7,9}\.json$/u;
 const genshinPools = new Set(["100.json", ...genshinGachaPools.map(({ type }) => `${type}.json`)]);
 const panelCatalog: PanelCatalog = { characters: {}, artifacts: new Map(), artifactSets: new Map() };
+const zzzHistoryRoot = "data/ZZZ-Plugin";
+const zzzLegacyName = "plugins/ZZZ-Plugin";
+const mergedZzz = rejectionReason(["zzz-plugin"], []);
 const legacyRoleMaterials = ["gs/友人A", "gs/other", "sr/小橙子啊", "sr/other"] as const;
 
 const scopes = [
@@ -91,7 +98,8 @@ async function validateActive(scope: Scope, name: string, bytes: Buffer, destina
 }
 
 /** Adds verified legacy gameplay data to the migration's private state directory. */
-export async function stageLegacyGameData(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
+export async function stageLegacyGameData(sourcePath: string, stateDirectory: string, signal?: AbortSignal,
+  plugins: readonly LegacyPluginPlanEntry[] = []) {
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
   const stageInfo = await lstat(stage);
   if (withinInstallation(source, stage) || withinInstallation(stage, source) ||
@@ -166,6 +174,84 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
         throw new Error("原神抽卡目录含未恢复的写入，请在副本中恢复事务后再迁移。");
       } else if (!name.startsWith(".") && name.endsWith(".json")) {
         await save(scope, folders, name);
+      }
+    }
+  }
+
+  async function stageZzzArchives() {
+    const pluginDirectories = new Set([zzzLegacyName]);
+    for (const plugin of plugins) {
+      const name = basename(plugin.path);
+      if (plugin.status === "archive" && plugin.kind === "directory" && plugin.reason === mergedZzz &&
+          plugin.path === join("plugins", name)) pluginDirectories.add(plugin.path);
+    }
+    const roots = [...new Set([
+      zzzHistoryRoot,
+      ...[...pluginDirectories].map(path => join("data", basename(path))),
+      ...[...pluginDirectories].map(path => join(path, "data")),
+      ...[...pluginDirectories].map(path => join("backup", path, "data")),
+    ])];
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    for (const scope of ["monthly", "panel"] as const) {
+      const limit = (scope === "monthly" ? 4 : 12) * 1024 * 1024;
+      const destination = join(zzzHistoryRoot, scope);
+      const candidates = new Map<string, string[]>();
+      for (const base of roots) {
+        signal?.throwIfAborted();
+        const directory = join(source, base, scope);
+        if (!await sourceDirectory(directory)) continue;
+        for (const name of (await readdir(directory)).sort()) {
+          signal?.throwIfAborted();
+          if (!zzzUid.test(name)) continue;
+          const paths = candidates.get(name) ?? [];
+          // Panel rows have no ownership envelope or timestamps. Keep the preferred whole file.
+          if (scope === "monthly" || !paths.length) paths.push(join(directory, name));
+          candidates.set(name, paths);
+        }
+      }
+      for (const [name, paths] of candidates) {
+        signal?.throwIfAborted();
+        const uid = name.slice(0, -5);
+        const snapshots: Buffer[] = [];
+        const months: unknown[] = [];
+        let region: string | undefined;
+        for (const path of paths) {
+          const info = await named(path);
+          if (!info) throw sourceChanged();
+          if (!info.isFile() || info.nlink !== 1 || info.size > limit) {
+            throw new Error(`旧游戏数据 ${destination} 须为大小有效且无硬链接的普通文件。`);
+          }
+          const bytes = await readSnapshot(path, info, signal);
+          files.set(path, info);
+          if (snapshots.some(snapshot => snapshot.equals(bytes))) continue;
+          snapshots.push(bytes);
+          try {
+            const value: unknown = JSON.parse(decoder.decode(bytes));
+            if (scope === "panel") {
+              if (!zzzPanelRegion(uid, "", "")) throw new Error("Unknown region");
+              decodeZzzPanelRows(value);
+            } else {
+              if (!Array.isArray(value)) throw new Error("Expected monthly array");
+              for (const item of value as unknown[]) {
+                if (item && typeof item === "object" && !Array.isArray(item) && !Object.keys(item).length) continue;
+                if (!item || typeof item !== "object" || !("region" in item) || typeof item.region !== "string") {
+                  throw new Error("Missing region");
+                }
+                const identity = resolveZzzGachaLinkRole({ uid, region: item.region });
+                if (region && region !== identity.region) throw new Error("Conflicting archive regions");
+                region = identity.region;
+                normalizeZzzMonthly(item, identity);
+              }
+              for (const item of value as unknown[]) months.push(item);
+            }
+          } catch {
+            throw new Error(`旧游戏数据 ${destination} 含无法由当前版本读取或归属不符的文件。`);
+          }
+        }
+        // The current reader gives earlier rows priority when their month overlaps.
+        const bytes = snapshots.length === 1 ? snapshots[0]! : Buffer.from(JSON.stringify(months) + "\n");
+        if (bytes.length > limit) throw new Error(`合并后的旧游戏数据 ${destination} 超出读取大小。`);
+        await publishFile(destination, [], name, bytes, active);
       }
     }
   }
@@ -276,6 +362,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
   }
 
   for (const scope of scopes) await scan(scope);
+  await stageZzzArchives();
   await stageRoleMaterials();
   await stageNumberedGuides();
   await stageGuideSettings();
