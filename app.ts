@@ -25,6 +25,7 @@ import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-cont
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
 import { groupMemberExportCommands } from "./lib/group-member-export-command.ts";
+import { permissionCommands } from "./lib/permission-commands.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
@@ -2549,6 +2550,9 @@ if (import.meta.main) {
     if (!probingUpdate) commands.registerModule(groupMemberExportCommands({
       readConfig: () => readLotusGlobalConfig(root), isMaster: permissions.isMaster, activeSignal: nativeOperationSignal,
     }), "@lotus-yunzai/group");
+    if (!probingUpdate) commands.registerModule(permissionCommands({
+      root, terminalOwner: () => permissions.terminal, activeSignal: nativeOperationSignal,
+    }));
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);

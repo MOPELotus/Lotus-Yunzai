@@ -157,17 +157,19 @@ function editPermissions(text: string, current: Config, tree: Tree) {
 
 class LegacyPermissionAlias extends Error {}
 
+export async function readGlobalPermissions(root: URL) {
+  const local = await readOptionalLocalConfig(root, "global") ?? {};
+  const effective = await inheritLotusGlobalConfig(root, local);
+  return { current: snapshot(local, effective), effective };
+}
+
 export function panelGlobalPermissions(root: URL) {
-  async function read() {
-    const local = await readOptionalLocalConfig(root, "global") ?? {};
-    return snapshot(local, await inheritLotusGlobalConfig(root, local));
-  }
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const active = () => !request.signal.aborted && stillAuthorized();
     if (!active()) return new Response(null, { status: 401 });
     if (request.method === "GET") {
       try {
-        const current = await read();
+        const { current } = await readGlobalPermissions(root);
         return active() ? Response.json(current) : new Response(null, { status: 401 });
       } catch { return new Response(null, { status: 500 }); }
     }
@@ -204,7 +206,7 @@ export function panelGlobalPermissions(root: URL) {
           return { yaml, value: undefined };
         },
       });
-      const updated = await read();
+      const { current: updated } = await readGlobalPermissions(root);
       return active() ? Response.json(updated) : new Response(null, { status: 401 });
     } catch (error) {
       if (error instanceof LegacyPermissionAlias) return Response.json({ reason: "legacy_alias" }, { status: 422 });
