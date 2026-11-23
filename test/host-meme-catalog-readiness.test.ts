@@ -1,10 +1,12 @@
 import { Database, SQLiteError } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnManagedWorker } from "../lib/managed-worker.ts";
 import { pluginProbeTokenEnvironment } from "../lib/plugin-load-progress.ts";
+import { nativeCatalogTable } from "../plugins/meme/catalog-file.ts";
 import { copyHost } from "./host-fixture.ts";
 
 async function waitFor<T>(read: () => T | Promise<T>) {
@@ -19,25 +21,20 @@ async function waitFor<T>(read: () => T | Promise<T>) {
 
 const git = Bun.which("git");
 
-test.skipIf(!git || process.platform === "win32")("表情安装和定时同步只在受管宿主接管后运行", async () => {
+test.skipIf(!git || process.platform === "win32")("受管宿主接管后才建立本机表情目录，旧定时配置不访问远端", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-host-meme-"));
   const config = join(root, "config", "meme");
   const file = join(root, "data", "meme", "data.db");
   const requests: string[] = [];
-  let keys = ["ba_say"];
-  let broken = false;
   const service = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
-    const path = new URL(request.url).pathname;
-    requests.push(path);
-    if (path === "/memes/keys") return Response.json(keys);
-    const key = /^\/memes\/([^/]+)\/info$/u.exec(path)?.[1];
-    if (!key || (broken && key === "new")) return new Response(null, { status: 503 });
-    return Response.json({ key, keywords: [key], params_type: { min_texts: 0, max_texts: 0, min_images: 0, max_images: 0 } });
+    requests.push(new URL(request.url).pathname);
+    return new Response(null, { status: 503 });
   } });
   function catalog() {
     const db = new Database(file, { readonly: true });
     try {
-      return db.query<{ key: string }, []>("SELECT key FROM meme ORDER BY key").all().map(({ key }) => key);
+      if (!db.query("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(nativeCatalogTable)) return;
+      return db.query<{ key: string }, []>(`SELECT key FROM ${nativeCatalogTable} ORDER BY key`).all().map(({ key }) => key);
     } catch (error) {
       // The worker can hold an exclusive lock while committing a catalog refresh.
       if (error instanceof SQLiteError && error.code === "SQLITE_BUSY") return;
@@ -48,9 +45,15 @@ test.skipIf(!git || process.platform === "win32")("表情安装和定时同步�
   }
   try {
     await copyHost(root);
-    await cp(new URL("../plugins/meme", import.meta.url), join(root, "plugins", "meme"), {
-      recursive: true, filter: path => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
+    await symlink(fileURLToPath(new URL("../packages", import.meta.url)), join(root, "packages"), "dir");
+    const source = fileURLToPath(new URL("../plugins/meme", import.meta.url));
+    const destination = join(root, "plugins", "meme");
+    const linked = ["node_modules", "resources/builtin"];
+    await cp(source, destination, {
+      recursive: true,
+      filter: path => path !== join(source, ".git") && !linked.some(relative => path === join(source, relative)),
     });
+    await Promise.all(linked.map(relative => symlink(join(source, relative), join(destination, relative), "dir")));
     function gitRun(...args: string[]) {
       const result = Bun.spawnSync([git!, ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
       if (result.exitCode !== 0) throw new Error(result.stderr.toString());
@@ -61,6 +64,7 @@ test.skipIf(!git || process.platform === "win32")("表情安装和定时同步�
     const revision = gitRun("rev-parse", "HEAD");
     await mkdir(config, { recursive: true });
     await writeFile(join(config, "other.yaml"), 'autoUpdateRes: true\nautoUpdateResCron: "* * * * * ?"\n');
+    await writeFile(join(config, "server.yaml"), `backend: remote\nurl: ${service.url.href}\n`);
     const fixtureEnv = { PATH: process.env.PATH, LOTUS_MEME_DB: file, LOTUS_MEME_CONFIG_DIR: config,
       LOTUS_MEME_SERVER_URL: service.url.href };
     const probe = Bun.spawn([process.execPath, "app.ts"], { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
@@ -79,20 +83,11 @@ test.skipIf(!git || process.platform === "win32")("表情安装和定时同步�
       expect(await Bun.file(file).exists()).toBe(false);
       worker.activate();
       const installed = await waitFor(async () => await Bun.file(file).exists() ? catalog() : undefined);
-      expect(installed).toEqual(["ba_say"]);
-      expect(requests.filter(path => path === "/memes/ba_say/info")).toHaveLength(1);
-
-      keys = ["ba_say", "new"];
-      broken = true;
-      await waitFor(() => requests.includes("/memes/new/info"));
-      expect(await waitFor(catalog)).toEqual(["ba_say"]);
-      broken = false;
-      const updated = await waitFor(() => {
-        const rows = catalog();
-        if (rows?.includes("new")) return rows;
-      });
-      expect(updated).toEqual(["ba_say", "new"]);
-      expect(requests.filter(path => path === "/memes/ba_say/info")).toHaveLength(1);
+      expect(installed).toContain("petpet");
+      expect(installed).toContain("flush");
+      await Bun.sleep(1_050);
+      expect(await waitFor(catalog)).toEqual(installed);
+      expect(requests).toEqual([]);
     } finally {
       await worker.stop();
     }
