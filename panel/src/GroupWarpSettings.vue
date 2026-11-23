@@ -3,8 +3,8 @@ import { computed, ref } from "vue";
 import { ElButton } from "element-plus";
 
 const fields = [
-  { key: "special", label: "群每日专票数", min: 1, max: 10_000 },
-  { key: "regular", label: "群每日通票数", min: 1, max: 10_000 },
+  { key: "special", label: "群每日专票数", min: 0, max: 10_000 },
+  { key: "regular", label: "群每日通票数", min: 0, max: 10_000 },
   { key: "recallSeconds", label: "群结果图撤回延时（秒）", min: 0, max: 120 },
 ] as const;
 type AllowanceKey = typeof fields[number]["key"];
@@ -53,7 +53,7 @@ function clearGroup() {
       </label>
       <ElButton :disabled="!canSelect || props.disabled" @click="scope = other">编辑群</ElButton>
     </div>
-    <p class="warp-hint">留空时继承全局设置。票数覆盖在首次领票时使用，当前已有余额不会重发。</p>
+    <p class="warp-hint">留空时继承全局设置。票数填 0 时停发该种票，已领余额保留。撤回填 0 时保留消息。</p>
     <div v-if="scope" class="warp-fields">
       <label v-for="field in fields" :key="field.key">{{ field.label }}
         <input :value="current?.[field.key]" type="number" :min="field.min" :max="field.max" step="1"

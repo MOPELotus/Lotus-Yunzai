@@ -36,18 +36,18 @@ test("真实跃迁设置存储回读全局、群覆盖、撤销和概率恢复",
     expect(values).toEqual(defaults);
     const altered = {
       ...values, special: 151, recallSeconds: 0, characterFour: 777, featuredFive: 80, automaticPools: false,
-      groups: { "20101": { special: 82 }, "20202": { regular: 23, recallSeconds: 5 } },
+      groups: { "20101": { special: 82 }, "20202": { regular: 0, recallSeconds: 5 } },
       poolCharacterFive: ["昔涟", "遐蝶"],
     };
     expect((await panel(send(values, altered)))?.status).toBe(200);
     const current = await store.read();
     expect(readWarpAllowance(current)).toEqual({ special: 151, regular: 10, recallSeconds: 0 });
     expect(readWarpAllowance(current, "20101")).toEqual({ special: 82, regular: 10, recallSeconds: 0 });
-    expect(readWarpAllowance(current, "20202")).toEqual({ special: 151, regular: 23, recallSeconds: 5 });
+    expect(readWarpAllowance(current, "20202")).toEqual({ special: 151, regular: 0, recallSeconds: 5 });
     expect(current).toMatchObject({ automaticPools: false, rates: { characterFour: 777, featuredFive: 80 },
       poolNames: { characterFive: ["昔涟", "遐蝶"] } });
     expect(await simulate("#星铁我的星轨票", { user_id: 55, group_id: 20101 })).toContain("82 张星轨专票");
-    expect(await simulate("#星铁我的星轨票", { user_id: 56, group_id: 20202 })).toBe("今日你还有 151 张星轨专票和 23 张星轨通票。");
+    expect(await simulate("#星铁我的星轨票", { user_id: 56, group_id: 20202 })).toBe("今日你还有 151 张星轨专票和 0 张星轨通票。");
     expect((await panel(send(values, altered)))?.status).toBe(409);
 
     const reset = { ...altered, characterFour: defaults.characterFour, featuredFive: defaults.featuredFive,
