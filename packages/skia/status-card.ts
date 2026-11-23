@@ -132,5 +132,5 @@ export async function renderStatusCard(title: string, lead: string, contents: re
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     paintText(ctx, [`Lotus-Yunzai · ${localTime(at, timeZone)}`], 300, 20 + panelHeight + 25, 12, 18, "#fff");
-  }, mode, { allowHalfScale: scale === 4 });
+  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

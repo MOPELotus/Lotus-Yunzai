@@ -109,5 +109,5 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     print(`Lotus-Yunzai · ${shanghaiTime.format(at)}`, width / 2, panelTop + panelHeight + 35, 12, bodyFont, "#fff", "center");
-  }, mode, { allowHalfScale: scale === 4 });
+  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

@@ -185,11 +185,14 @@ export function renderExactPng(width: number, height: number, draw: Draw, mode: 
   return renderByMode(width, height, draw, mode);
 }
 
-/** 绘制回调应可重试。只有按 4× 请求的业务调用方才应允许减半。 */
+/** renderScale 声明画布尺寸与绘制回调已应用的倍率，默认按 4× 请求处理。 */
 export async function renderPng(width: number, height: number, draw: Draw, mode: RenderMode = "auto",
-  { allowHalfScale = false }: { readonly allowHalfScale?: boolean } = {}): Promise<PngRender> {
+  { allowHalfScale = false, renderScale = 4 }: { readonly allowHalfScale?: boolean; readonly renderScale?: number } = {}): Promise<PngRender> {
   requirePositivePixels(width, height);
-  const initialScale = nativeImageRasterScale() / 4;
+  if (!Number.isFinite(renderScale) || renderScale < 1 || renderScale > 4) {
+    throw new RangeError("画布缩放比例须在 1 至 4 之间。");
+  }
+  const initialScale = Math.min(1, nativeImageRasterScale() / renderScale);
   const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(height * scale),
     scale === 1 ? draw : context => {
       context.scale(scale, scale);
@@ -198,7 +201,8 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
   try {
     return await renderAt(initialScale);
   } catch (error) {
-    if (!allowHalfScale || !(error instanceof BackendError || error instanceof ImageSizeLimitError)) throw error;
+    if (!allowHalfScale || renderScale !== 4 || initialScale !== 1 ||
+        !(error instanceof BackendError || error instanceof ImageSizeLimitError)) throw error;
     const reduced = await renderAt(initialScale / 2);
     return { ...reduced, reducedScaleReason: error.message };
   }

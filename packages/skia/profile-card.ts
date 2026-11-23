@@ -274,5 +274,5 @@ export async function renderProfileCard(model: ProfileCardModel,
     fillRect(ctx, 0, 0, width, 100000, "#243344", 0);
     ctx.drawImage(theme.background, 0, 0, width, height);
     for (const draw of layout.commands) draw(ctx);
-  }, mode, { allowHalfScale: scale === 4 });
+  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

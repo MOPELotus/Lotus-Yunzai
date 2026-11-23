@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
-import { renderPng, type PngRender } from "./index.ts";
+import { nativeImageRasterScale, renderPng, type PngRender } from "./index.ts";
 
 export interface DailyNoteReminderCardModel {
   readonly game: "gs" | "sr" | "zzz";
@@ -170,7 +170,7 @@ function paintZenless(ctx: Context, model: DailyNoteReminderCardModel, theme: Th
 
 export async function renderDailyNoteReminderCard(model: DailyNoteReminderCardModel,
   { resourceDirectory, inlineImageByteLimit = Infinity, mode = "auto" }: DailyNoteReminderCardOptions = {},
-): Promise<(PngRender & { readonly scale: 4 | 2 }) | undefined> {
+): Promise<(PngRender & { readonly scale: 4 | 2 | 1 }) | undefined> {
   const { game, current, max } = model;
   if (!resourceDirectory || !(inlineImageByteLimit > 0) || !Object.hasOwn(designs, game)
     || !Number.isSafeInteger(current) || current < 0 || !Number.isSafeInteger(max) || max < 1) return;
@@ -180,11 +180,12 @@ export async function renderDailyNoteReminderCard(model: DailyNoteReminderCardMo
     if (!(await lstat(directory)).isDirectory() || await realpath(directory) !== directory) return;
     const design = designs[game];
     const theme = await themeAt(directory, game);
-    for (const scale of [4, 2] as const) {
+    const scales = nativeImageRasterScale() === 4 ? [4, 2] as const : [1] as const;
+    for (const scale of scales) {
       const result = await renderPng(design.width * scale, design.height * scale, context => {
         context.scale(scale, scale);
         design.paint(context, model, theme);
-      }, mode);
+      }, mode, { renderScale: scale });
       if (result.png.byteLength <= inlineImageByteLimit) return { ...result, scale };
     }
   } catch {

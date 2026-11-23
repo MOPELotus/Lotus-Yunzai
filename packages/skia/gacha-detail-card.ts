@@ -538,5 +538,5 @@ export async function renderGachaDetail(
       { value: "Lotus-Yunzai", color: "#90ee90", size: 14, bold: true },
     ], 375, bottom + 19, true);
     ctx.restore();
-  }, mode, { allowHalfScale: scale === 4 });
+  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

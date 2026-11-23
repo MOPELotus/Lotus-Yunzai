@@ -203,7 +203,7 @@ export async function renderInfoCardPages(header: InfoCardHeader, buildBody: (la
       ctx.scale(scale, scale);
       ctx.translate(0, -top);
       await draw(ctx, { top, bottom });
-    }, mode, { allowHalfScale: scale === 4 && allowHalfScale && pages === 1 }));
+    }, mode, { renderScale: scale, allowHalfScale: scale === 4 && allowHalfScale && pages === 1 }));
   }
   return renders;
 }

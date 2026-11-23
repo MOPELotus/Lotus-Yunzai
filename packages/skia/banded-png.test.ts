@@ -58,6 +58,12 @@ test("低配档在分配画布前按 1× 直接绘制，旧设置仍是标准档
     const result = await renderPng(404, 283, draw, "auto", { allowHalfScale: true });
     expect(size(result.png)).toEqual([101, 71]);
     expect(result.reducedScaleReason).toBeUndefined();
+    const drawAt = (scale: number) => (context: CanvasRenderingContext2D) => {
+      context.scale(scale, scale);
+      context.fillRect(4, 6, 80, 48);
+    };
+    expect(size((await renderPng(202, 142, drawAt(2), "auto", { renderScale: 2 })).png)).toEqual([101, 71]);
+    expect(size((await renderPng(101, 71, drawAt(1), "auto", { renderScale: 1 })).png)).toEqual([101, 71]);
     expect(size((await renderExactPng(404, 283, draw)).png)).toEqual([404, 283]);
     const frame = await renderRgba(2, 2, (context) => {
       context.fillStyle = "rgba(50, 80, 120, 0.5)";
