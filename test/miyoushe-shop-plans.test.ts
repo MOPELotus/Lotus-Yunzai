@@ -49,17 +49,28 @@ test("超过最近三十条记录的预约和待确认结果仍归原档案操�
     const second = await shop.reserve(target, { ...body, goodsId: "28" });
     const data = JSON.parse(await readFile(file, "utf8"));
     Object.assign(data.plans[0], { status: "unknown", finishedAt: startTime, attempts: 1 });
-    const history = Array.from({ length: 40 }, (_, index) => ({ ...data.plans[0],
-      id: String(100 + index).padStart(12, "0"), status: "succeeded", createdAt: startTime + index + 1,
+    const history = Array.from({ length: 70 }, (_, index) => ({ ...data.plans[0],
+      id: String(100 + index).padStart(12, "0"), status: "succeeded", createdAt: startTime + Math.floor(index / 3) + 1,
     }));
     await writeFile(file, JSON.stringify({ ...data, plans: [...data.plans, ...history] }));
-    const visible = (await shop.list(target)).plans;
+    const latest = await shop.list(target);
+    const visible = latest.plans;
     expect(visible).toHaveLength(32);
     expect(visible).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: first.id, status: "unknown" }), expect.objectContaining({ id: second.id, status: "scheduled" }),
     ]));
     expect(visible.some(plan => plan.id === history[0]!.id)).toBe(false);
-    expect((await shop.list(other)).plans).toEqual([]);
+    expect(latest.older).toBeString();
+    await expect(shop.list(target, undefined, undefined, "invalid")).rejects.toMatchObject({ status: 400 });
+    const older = await shop.list(target, undefined, undefined, latest.older);
+    expect(older.plans).toHaveLength(30);
+    expect(older.older).toBeString();
+    const oldest = await shop.list(target, undefined, undefined, older.older);
+    expect(oldest.plans).toHaveLength(10);
+    expect(oldest.older).toBeUndefined();
+    const returned = [...visible.filter(plan => plan.status === "succeeded"), ...older.plans, ...oldest.plans].map(plan => plan.id);
+    expect(returned.sort()).toEqual(history.map(plan => plan.id));
+    expect((await shop.list(other, undefined, undefined, latest.older)).plans).toEqual([]);
     await expect(shop.resolve(other, first.id, false)).rejects.toMatchObject({ status: 404 });
     expect(await shop.resolve(target, first.id, false)).toMatchObject({ status: "failed" });
     expect(await shop.cancel(target, second.id)).toMatchObject({ status: "cancelled" });

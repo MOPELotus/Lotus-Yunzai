@@ -67,6 +67,13 @@ test("网页登录票据在重启后保留签发机器人及协议，浏览器�
       const login = await web.handle(claim(ticket!));
       expect(login?.status).toBe(204);
       const cookie = login!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+      if (index === 0) {
+        const history = (search: string) => web.handle(request(`api/plans?${search}`, { headers: { Cookie: cookie } }));
+        expect((await history("before=broken"))?.status).toBe(400);
+        expect((await history("before=1.111111111111&before=2.222222222222"))?.status).toBe(400);
+        expect((await history("before=1.111111111111&qq=9"))?.status).toBe(400);
+        expect(await (await history("before=1.111111111111"))?.json()).toMatchObject({ plans: [] });
+      }
       const order = { ...role, confirmed: true, goodsId: String(271 + index), immediate: true, expectedPrice: 300 };
       const post = (body: object) => web.handle(request("api/plans", { method: "POST",
         headers: { Origin: origin.origin, Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));

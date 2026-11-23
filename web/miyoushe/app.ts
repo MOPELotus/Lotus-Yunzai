@@ -114,9 +114,11 @@ const shop: {
 } = { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null };
 const plans: {
   data: PlanData | null; loading: Promise<void> | null; timer: Timer | undefined; scope: number; revision: number;
+  older: Map<string, Plan>; olderCursor: string | null | undefined; loadingOlder: boolean;
   activeForm: { readonly id: string; update(): void; reject(problem: string): void } | null;
   actions: Set<string>; intents: Map<string, ReservationIntent>;
-} = { data: null, loading: null, timer: undefined, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map() };
+} = { data: null, loading: null, timer: undefined, scope: 0, revision: 0, activeForm: null, actions: new Set(), intents: new Map(),
+  older: new Map(), olderCursor: undefined, loadingOlder: false };
 const preview: ProfileEditor<"preview"> = { key: "preview", data: null, active: null, patch: previewPatch, buttons: previewSettingsButtons, render: renderPreviewSettings };
 const checkin: ProfileEditor<"checkin"> = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
 const profileEditors = [checkin, preview];
@@ -456,6 +458,9 @@ function resetShop() {
   clearTimeout(plans.timer);
   plans.data = null;
   plans.loading = null;
+  plans.older.clear();
+  plans.olderCursor = undefined;
+  plans.loadingOlder = false;
   plans.activeForm = null;
   plans.actions.clear();
   plans.intents.clear();
@@ -715,8 +720,46 @@ function planRow(plan: Plan) {
 
 function renderPlans() {
   if (!plans.data) return;
-  const rows = plans.data.plans.map(planRow);
+  const combined = new Map(plans.older);
+  for (const plan of plans.data.plans) combined.set(plan.id, plan);
+  const rows: HTMLElement[] = [...combined.values()]
+    .sort((a, b) => b.createdAt - a.createdAt).map(planRow);
+  const cursor = plans.olderCursor === undefined ? plans.data.older : plans.olderCursor;
+  if (cursor) {
+    const more = add("button", "secondary", plans.loadingOlder ? "正在读取…" : "查看较早的兑换记录");
+    more.type = "button";
+    more.disabled = plans.loadingOlder;
+    more.addEventListener("click", () => void loadOlderPlans(cursor));
+    rows.push(more);
+  }
   get("shop-plans").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无兑换记录。")]));
+}
+
+async function loadOlderPlans(cursor: string) {
+  if (plans.loadingOlder) return;
+  const scope = plans.scope;
+  plans.loadingOlder = true;
+  renderPlans();
+  try {
+    const response = await request("api/plans?" + new URLSearchParams({ before: cursor }));
+    if (scope !== plans.scope) return;
+    if (response.status === 401 || response.status === 403) {
+      showLogin(loginHelp, true);
+      return;
+    }
+    if (!response.ok) throw new Error("读取失败");
+    const data = await response.json() as PlanData;
+    if (scope !== plans.scope) return;
+    for (const plan of data.plans) plans.older.set(plan.id, plan);
+    plans.olderCursor = data.older ?? null;
+  } catch {
+    if (scope === plans.scope) planNote("无法读取较早的兑换记录，请重试。", true);
+  } finally {
+    if (scope === plans.scope) {
+      plans.loadingOlder = false;
+      renderPlans();
+    }
+  }
 }
 
 function loadPlans(background = false) {
@@ -736,7 +779,13 @@ function loadPlans(background = false) {
       if (!response.ok) throw new Error("读取失败");
       const data = await response.json() as PlanData;
       if (scope !== plans.scope || revision !== plans.revision) return;
-      const rowsChanged = !plans.data || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
+      const rowsChanged = !plans.data || plans.data.older !== data.older || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
+      if (plans.loadingOlder || plans.olderCursor !== undefined) {
+        const current = new Set(data.plans.map(plan => plan.id));
+        for (const plan of plans.data?.plans ?? []) {
+          if (!current.has(plan.id) && ["succeeded", "failed", "cancelled", "missed"].includes(plan.status)) plans.older.set(plan.id, plan);
+        }
+      }
       plans.data = data;
       if (rowsChanged) renderPlans();
       const messages = [];

@@ -316,7 +316,8 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
     const { pathname, search, searchParams } = new URL(request.url);
     if (pathname !== mount && !pathname.startsWith(prefix)) return;
     const page = publicPage();
-    if (!page || (search && pathname !== `${prefix}api/catalog` && pathname !== `${prefix}api/tracking-targets`) || signal.aborted) return error(404);
+    const historyRequest = request.method === "GET" && pathname === `${prefix}api/plans`;
+    if (!page || (search && !historyRequest && pathname !== `${prefix}api/catalog` && pathname !== `${prefix}api/tracking-targets`) || signal.aborted) return error(404);
     const method = request.method;
     const isRead = method === "GET" || method === "HEAD";
     if (pathname === mount) return isRead ? new Response(null, { status: 308, headers: { ...headers, Location: page.pathname } }) : error(405);
@@ -514,7 +515,8 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       }
       if (plans && part === "api/plans") {
         const sessionId = digest(currentToken);
-        const result = method === "GET" ? await plans.list(target, verifyLogin, sessionId) : await plans.reserve(target,
+        if (search && (searchParams.getAll("before").length !== 1 || [...searchParams.keys()].some(key => key !== "before"))) return error(400);
+        const result = method === "GET" ? await plans.list(target, verifyLogin, sessionId, searchParams.get("before") ?? undefined) : await plans.reserve(target,
           await readPanelJson(request).catch(() => undefined), deadline, verifyLogin, { sessionId, signal: shopSignal, verify: verifySession },
           row.receiptRoute ?? undefined);
         await verifyLogin();

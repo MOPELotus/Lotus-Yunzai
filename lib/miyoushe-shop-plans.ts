@@ -14,6 +14,8 @@ import { asTrackerRecord, confirmedTracker, matchesTrackingGood, readTrackingInp
   trackingProfileGames, trackingRule, trackingSection, type ShopTracker, type TrackingGood, type TrackingRole } from "./miyoushe-shop-tracking.ts";
 
 const planId = /^[a-f0-9]{12}$/u;
+const historyCursor = /^(\d{1,16})\.([a-f0-9]{12})$/u;
+const shopHistoryPageSize = 30;
 const numericId = /^[1-9]\d{0,19}$/u;
 const code = /^[a-zA-Z0-9_]{1,32}$/u;
 const intentPattern = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u;
@@ -1019,18 +1021,26 @@ export function createMiyousheShopPlans({
         return publicTracker(trackingRule(raw)!, data);
       });
     },
-    async list(target: MiyousheOverviewTarget, verifyLogin?: Verify, sessionId?: string) {
+    async list(target: MiyousheOverviewTarget, verifyLogin?: Verify, sessionId?: string, before?: string) {
       const matches = (plan: MiyousheShopPlan) => plan.qq === target.qq && plan.profileId === target.profileId;
+      const cursor = before === undefined ? undefined : historyCursor.exec(before);
+      const cursorAt = Number(cursor?.[1]);
+      if (before !== undefined && (!cursor || !natural(cursorAt))) bad("兑换记录页码无效。");
       await verifyLogin?.();
-      await recover(matches);
-      const plans = (await store.read()).plans.filter(matches);
+      if (!cursor) await recover(matches);
+      const plans = (await store.read()).plans.filter(matches)
+        .sort((a, b) => b.createdAt - a.createdAt);
       await verifyLogin?.();
-      let settled = 0;
-      const visible = plans.sort((a, b) => b.createdAt - a.createdAt).filter(plan => {
-        if (active(plan.status) || plan.status === "unknown") return true;
-        return settled++ < 30;
-      });
-      return { now: now(), canSubmit: Boolean(submit), plans: visible.map(plan => {
+      const actionable = (plan: MiyousheShopPlan) => active(plan.status) || plan.status === "unknown";
+      const history = plans.filter(plan => {
+        if (actionable(plan)) return false;
+        return !cursor || plan.createdAt < cursorAt || plan.createdAt === cursorAt && plan.id < cursor[2]!;
+      }).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
+      const page = history.slice(0, shopHistoryPageSize);
+      const recent = new Set(page.map(plan => plan.id));
+      const older = history.length > shopHistoryPageSize ? history[shopHistoryPageSize - 1] : undefined;
+      const visible = cursor ? page : plans.filter(plan => actionable(plan) || recent.has(plan.id));
+      return { now: now(), canSubmit: Boolean(submit), ...(older && { older: `${older.createdAt}.${older.id}` }), plans: visible.map(plan => {
         const immediate = immediateVerification.get(plan.id);
         const scoped = immediate && immediate.session.sessionId === sessionId && !immediate.cancel.signal.aborted &&
           !immediate.session.signal.aborted ? immediate : undefined;
