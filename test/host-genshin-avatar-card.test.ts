@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { renderPng } from "@lotus-yunzai/skia";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { normalizeOriginalPictureCommand } from "../lib/command-prefix.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 async function prepare(root: string) {
@@ -47,6 +48,19 @@ function assertImage(params: unknown) {
   return bytes;
 }
 
+test("旧原图口语只归一整条指令，保留游戏前缀", () => {
+  for (const prefix of ["", "#", "#原神", "#星铁", "*", "#绝区零", "%", "％"]) {
+    for (const verb of ["", "获取", "给我", "我要", "求", "发", "发下", "发个", "发一下"]) {
+      for (const ending of ["", "吧", "呗"]) {
+        expect(normalizeOriginalPictureCommand(`${prefix}${verb}原图${ending}`)).toBe(`${prefix}原图`);
+      }
+    }
+  }
+  for (const input of ["#求原图2", "#给我原图吧！", "#帮我发原图", "#发 原图", "#某人的原图", "#发一下原图吧 附言"]) {
+    expect(normalizeOriginalPictureCommand(input)).toBe(input);
+  }
+});
+
 test("本机两协议可使用原神角色卡命令，戳一戳不触发原神出图", async () => {
   await withDualGatewayFixture("genshin-avatar-fixture", "disablePrivate: false\n",
     async ({ ws, milky, onebot, sendOneBot, sendMilky, sendMilkyEvent }) => {
@@ -73,7 +87,7 @@ test("本机两协议可使用原神角色卡命令，戳一戳不触发原神�
     }, 8000, preload, prepare);
 }, 20_000);
 
-test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用原始图片", async () => {
+test("群 OneBot 和私聊 Milky 能用旧口语引用实际角色卡并取回原图", async () => {
   const image = (color: string) => renderPng(24, 17, context => {
     context.fillStyle = color;
     context.fillRect(0, 0, 24, 17);
@@ -100,9 +114,12 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       await Bun.sleep(60);
       await writeFile(join(root, gallery, "另一张.png"), replacement);
 
-      const source = [key("reply", { id: "-871" }), key("text", { text: "#原图" })];
-      sendOneBot("#原图", { ...group, message: source, user_id: 43 });
-      sendOneBot("#原图", { ...group, message: source });
+      const phrase = "#给我原图吧";
+      const quotedText = (text: string) => [key("reply", { id: "-871" }), key("text", { text })];
+      sendOneBot(phrase, group);
+      sendOneBot("#给我原图2", { ...group, message: quotedText("#给我原图2") });
+      sendOneBot(phrase, { ...group, message: quotedText(phrase), user_id: 43 });
+      sendOneBot(phrase, { ...group, message: quotedText(phrase) });
       const groupQuote = await onebot.next("get_msg");
       expect(groupQuote.params).toMatchObject({ message_id: -871 });
       groupQuote.respond({ message_type: "group", message_id: -871, group_id: 81, sender: { user_id: 99 },
@@ -112,7 +129,8 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       expect(assertImage(recovered.params)).toEqual(original);
       recovered.respond({ message_id: 872 });
 
-      await sendMilky("#原神原图", { segments: [key("reply", { message_seq: 0 }), key("text", { text: "#原神原图" })] });
+      const milkyPhrase = "#原神发一下原图呗";
+      await sendMilky(milkyPhrase, { segments: [key("reply", { message_seq: 0 }), key("text", { text: milkyPhrase })] });
       const myQuote = await milky.next("get_message");
       expect(myQuote.params).toMatchObject({ message_scene: "friend", peer_id: 43, message_seq: 0 });
       myQuote.respond({ message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 0,
@@ -121,8 +139,8 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       expect(assertImage(privateOriginal.params)).toEqual(original);
       privateOriginal.respond({ message_seq: 873 });
 
-      const privateSource = [key("reply", { id: "881" }), key("text", { text: "#原神原图" })];
-      sendOneBot("#原神原图", { message: privateSource });
+      const privateSource = [key("reply", { id: "881" }), key("text", { text: "求原图" })];
+      sendOneBot("求原图", { message: privateSource });
       const info = { message_type: "private", sub_type: "friend", message_id: 881, sender: { user_id: 99 },
         message: [key("image", { file: "verified.png" })] };
       (await onebot.next("get_msg")).respond(info);
@@ -134,7 +152,7 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       napcat.respond({ message_id: 882 });
 
       await writeFile(join(root, gallery, "当时所用.png"), replacement);
-      sendOneBot("#原图", { ...group, message: source });
+      sendOneBot("#原图", { ...group, message: quotedText("#原图") });
       (await onebot.next("get_msg")).respond({ message_type: "group", message_id: -871, group_id: 81, sender: { user_id: 99 },
         message: [key("image", { file: "verified.png" })] });
       await Bun.sleep(100);

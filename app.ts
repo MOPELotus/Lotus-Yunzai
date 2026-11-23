@@ -72,7 +72,7 @@ import { bindGroupVerificationSubject, groupModerationSession, isMemberMuteDurat
 import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
-import { normalizeGameCommand } from "./lib/command-prefix.ts";
+import { normalizeGameCommand, normalizeOriginalPictureCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
 import { arkRankCredentialsPath, containsArkRankTokenInput, createArkRankCredentialSettings, isArkRankTokenCommand } from "./lib/ark-rank-credentials.ts";
@@ -2119,7 +2119,9 @@ if (import.meta.main) {
     const statusCard = /^#状态(?:[Pp]ro)?$/u.test(event.msg);
     const bareStatus = /^状态(?:[Pp]ro)?$/u.test(event.msg);
     const statusMonitor = event.msg === "#监控";
-    const statusPhoto = /^#?(?:原神)?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
+    const originalPictureCommand = event.lookupReply !== undefined && event.reply_id !== undefined && !event.isDelegated
+      ? normalizeOriginalPictureCommand(event.msg) : event.msg;
+    const statusPhoto = /^#?(?:原神)?原图$/u.test(originalPictureCommand) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
     const atlasMaintenance = atlasCommand && canManagePackages(event) && (event.adapter !== "milky" || milky) ? true as const : undefined;
@@ -2458,7 +2460,7 @@ if (import.meta.main) {
     const groupRules = allowed(groupBannedWordsNames), screenedWords = allowed(groupScreenedWordsNames);
     if ((groupRules || screenedWords) && await handleGroupBannedWords(incoming, event.msg, alias, groupRules, screenedWords)) return;
 
-    const command = normalizeGameCommand(event);
+    const command = normalizeGameCommand(originalPictureCommand === event.msg ? event : { ...event, msg: originalPictureCommand });
     const namedCheckin = namedCheckinCommand(command.msg);
     if (namedCheckin) {
       const features = ["@lotus-yunzai/checkin"];
