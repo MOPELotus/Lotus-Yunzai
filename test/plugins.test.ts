@@ -109,7 +109,7 @@ test("宿主导入正常模块，并在执行入口前拒载库洛游戏插件�
     expect(stderr).toContain("拒绝加载 c-renamed");
     expect(stderr).toContain("拒绝加载 d-mixed（mixed-games）：包含鸣潮功能");
     expect(stderr).toContain("拒绝加载 d-pgr（renamed-pgr）：包含战双帕弥什功能");
-    expect(stderr).toContain("拒绝加载 d-kuro（renamed-mixed）：包含库洛游戏功能");
+    expect(stderr).toContain("拒绝加载 d-kuro（renamed-mixed）：包含鸣潮、战双帕弥什功能");
     expect(stderr).toContain("拒绝加载 d-twintail（twintail）：包含战双帕弥什、战场双马尾功能");
     expect(stderr).toContain("拒绝加载 d-replaced（xhh-tl）：旧插件功能已归并");
     expect(stderr).toContain("拒绝加载 e-legacy");

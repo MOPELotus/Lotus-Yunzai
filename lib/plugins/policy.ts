@@ -23,18 +23,22 @@ const merged: readonly Rule[] = [
   { names: ["lotus-plugin", "lotus-refactor"], replacement: "Lotus-Yunzai 的各功能模块" },
 ];
 
+const kuroSignInNames = ["a-game_checkin", "a-game-checkin", "yoshino-xiao7/a-game_checkin", "yunzai-kuro-plugin",
+  "tomyjan/yunzai-kuro-plugin"] as const;
+
 const kuroGames = [
   {
     title: "鸣潮",
     games: ["鸣潮", "鳴潮", "wutheringwaves", "wuwa"],
     names: ["waves-plugin", "erzaozi/waves-plugin", "kagura-wei/waves-plugin", "ams-plugin", "tyql688/ams-plugin",
       "kuromc-plugin", "loneyclown/kuromc-plugin", "wuwa-panel", "syasaki77/wuwa-panel", "gamepush-plugin",
-      "a-game_checkin", "liulian-plugin", "wutheringwavesuid", "xutheringwavesuid", "wavesgachasim", "gutools"],
+      "liulian-plugin", "wutheringwavesuid", "xutheringwavesuid", "wavesgachasim", "gutools",
+      "mcbq-plugin", "mingchaobq-plugin", "xh2580/mingchaobq-plugin", ...kuroSignInNames],
   },
   {
     title: "战双帕弥什",
-    games: ["战双", "戰雙", "战双帕弥什", "戰雙帕彌什", "punishinggrayraven", "pgr"],
-    names: ["pgruid", "loping151/pgruid", "pgrgachasim", "xbaiyz12/pgrgachasim"],
+    games: ["战双", "戰雙", "战双帕弥什", "戰雙帕彌什", "punishinggrayraven", "pgr", "pns"],
+    names: ["pgruid", "loping151/pgruid", "pgrgachasim", "xbaiyz12/pgrgachasim", ...kuroSignInNames],
   },
   {
     title: "战场双马尾",
@@ -44,7 +48,7 @@ const kuroGames = [
   {
     title: "库洛游戏",
     games: ["库洛游戏", "庫洛遊戲", "kurogames"],
-    names: ["yunzai-kuro-plugin", "tomyjan/yunzai-kuro-plugin", "gs_kuro_cos", "mimokit/gs_kuro_cos", "concywee/nonebot-plugin-kurogames"],
+    names: ["gs_kuro_cos", "mimokit/gs_kuro_cos", "concywee/nonebot-plugin-kurogames"],
   },
 ] as const;
 

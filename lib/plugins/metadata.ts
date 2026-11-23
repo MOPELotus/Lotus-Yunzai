@@ -3,9 +3,14 @@ import { builtInDirectories } from "../builtin-modules.ts";
 import { rejectionReason, repositoryKey } from "./policy.ts";
 
 export const pluginScriptExtensions: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".ts"]);
+const retiredGalleryManager = {
+  name: "图库管理器",
+  reason: "Atlas 提供三款支持游戏的图库和原图。独立图库管理后台需要适配 Lotus-Yunzai。",
+  module: "@lotus-yunzai/atlas",
+};
 const retiredScripts = new Map([
-  ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98",
-    { name: "图库管理器", reason: "Atlas 提供三款支持游戏的图库和原图。独立图库管理后台需要适配 Lotus-Yunzai。", module: "@lotus-yunzai/atlas" }],
+  ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98", retiredGalleryManager],
+  ["9cf87bee119f580ae7ce93756f187ff2eb8766ef3308cd1136f42ae60e541124", retiredGalleryManager],
   ["bded3f9693c4f5b8a63e54c8b1e7bd6d2294974533cc31011fe34161dae0b9ca",
     { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
   ["9d03582599fff6214732f963fceccde151a1307169c956e28c2f52327734180f",
