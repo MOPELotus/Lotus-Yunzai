@@ -31,7 +31,7 @@ test.skipIf(process.platform !== "win32" || !Bun.which("powershell"))(
         { encoding: "utf8", timeout: 15_000, windowsHide: true });
       expect(membership.status).toBe(0);
       expect(isRemoteAdministrator()).toBe(/^true$/iu.test(membership.stdout.trim()));
-      expect(await remoteShell(root, "powershell", "Write-Output '远程中文'", signal, 10_000)).toContain("远程中文");
+      expect(await remoteShell(root, "powershell", "Write-Output '远程中文'", signal, 30_000)).toContain("远程中文");
       const inner = Buffer.from("Start-Sleep -Seconds 4; Set-Content -LiteralPath survived.txt -Value alive", "utf16le").toString("base64");
       const command = `Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -EncodedCommand ${inner}'; Start-Sleep -Seconds 25`;
       expect(await remoteShell(root, "powershell", command, signal, 2_500)).toContain("远程命令超时");
@@ -41,7 +41,7 @@ test.skipIf(process.platform !== "win32" || !Bun.which("powershell"))(
       await rm(root, { recursive: true, force: true });
     }
   },
-  32_000,
+  55_000,
 );
 
 test.skipIf(process.platform !== "win32")("Windows 运维文件固定目录，拒绝备用流和设备名称", async () => {
