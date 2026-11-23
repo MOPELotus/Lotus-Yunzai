@@ -68,7 +68,11 @@ test.each([
     send("#help", 6);
     send("*help", 7);
     send("#自动签到帮助", 8);
-    const expected = enabled ? 8 : 7;
+    send("/  帮助", 9);
+    send("/自动签到帮助", 10);
+    // The old Miao help rule accepts a literal slash even without the TRSS rewrite.
+    // The spaced slash and the separate check-in help still require the rewrite.
+    const expected = enabled ? 10 : limited ? 7 : 8;
     const deadline = performance.now() + 500;
     while (replies.length < expected && performance.now() < deadline) await Bun.sleep(10);
     if (!enabled) await Bun.sleep(80);
