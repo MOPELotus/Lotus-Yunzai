@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { isMap, isNode, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { lockFile } from "./file-lock.ts";
 import { configuredIds } from "./config.ts";
-import { defaultPrivateAccessMessage, privateAccessPolicy } from "./private-access.ts";
+import { defaultPrivateAccessMessage, privateAccessPatterns, privateAccessPolicy } from "./private-access.ts";
 import { readRequestOtherPolicyFiles, requestAutomationSettings, type OtherPolicyFiles } from "./request-other-policies.ts";
 
 const ownerFields = new Set(["master", "masterQQ"]);
@@ -285,7 +285,7 @@ export function updateHostAccessList(root: URL, key: HostAccessList, target: num
 }
 
 export const hostIngressListKeys = ["whiteUser", "blackUser", "whiteGroup", "blackGroup"] as const;
-export const hostIngressKeys = [...hostIngressListKeys, "disablePrivate", "disableMsg", "autoFriend", "autoGroup", "autoQuit"] as const;
+export const hostIngressKeys = [...hostIngressListKeys, "disablePrivate", "disableMsg", "disableAdopt", "autoFriend", "autoGroup", "autoQuit"] as const;
 
 export function hostIngressSettings(files: OtherPolicyFiles) {
   const config = files[0] ?? files[1] ?? {};
@@ -294,6 +294,7 @@ export function hostIngressSettings(files: OtherPolicyFiles) {
     whiteUser: ids("whiteUser"), blackUser: ids("blackUser"), whiteGroup: ids("whiteGroup"), blackGroup: ids("blackGroup"),
     disablePrivate: Boolean(config.disablePrivate),
     disableMsg: typeof config.disableMsg === "string" ? config.disableMsg : defaultPrivateAccessMessage,
+    disableAdopt: privateAccessPatterns(config),
     ...requestAutomationSettings(files),
   };
 }
@@ -329,7 +330,7 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
       const value = key === "autoFriend" ? Number(next.autoFriend) :
         key === "autoGroup" ? { all: 1, owners: 0, off: false }[next.autoGroup] : next[key];
       const original = document.get(key, true);
-      const replacement = document.createNode(Array.isArray(value) ? value.map(Number) : value);
+      const replacement = document.createNode(Array.isArray(value) && key !== "disableAdopt" ? value.map(Number) : value);
       if (isNode(original)) {
         replacement.comment = original.comment;
         replacement.commentBefore = original.commentBefore;
@@ -349,8 +350,9 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
         !isDeepStrictEqual(hostIngressSettings(withEditedConfig(saved.config)), next)) {
       throw new Error("配置保存会改变其它 YAML 字段或引用。");
     }
-    if (changed.includes("disablePrivate")) {
-      try { privateAccessPolicy(saved.config); }
+    const changedPatterns = changed.includes("disableAdopt");
+    if (changedPatterns || changed.includes("disablePrivate")) {
+      try { privateAccessPolicy(changedPatterns ? { ...saved.config, disablePrivate: true } : saved.config); }
       catch { throw new HostIngressSettingsError("invalid", "现有私聊放行规则无法解析，请先修正配置。"); }
     }
     return { result: { values: next, legacy }, yaml };

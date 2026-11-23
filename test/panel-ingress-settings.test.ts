@@ -41,7 +41,7 @@ test("宿主入口设置按旧层保存，和新增主人共用锁，浏览器�
   const previous = JSON.parse(visible).values;
   expect(previous).toEqual({
     whiteUser: ["42", "55"], blackUser: [], whiteGroup: [], blackGroup: ["333"],
-    disablePrivate: false, disableMsg: defaultPrivateAccessMessage,
+    disablePrivate: false, disableMsg: defaultPrivateAccessMessage, disableAdopt: ["stoken"],
     autoFriend: true, autoGroup: "owners", autoQuit: 50,
   });
   const values = { ...previous, blackUser: ["800"], disablePrivate: true, disableMsg: "稍后再试。" };
@@ -153,8 +153,57 @@ test("宿主业务设置提交前重验授权，关闭文件监听也能刷新�
   const validFile = await readFile(modern, "utf8");
   const invalidPolicy = validFile + "disableAdopt: ['[']\n";
   await writeFile(modern, invalidPolicy);
-  const out = await handler(put({ ...values, disablePrivate: false }, values), () => true);
+  const withInvalidPatterns = (await (await handler(get(), () => true)).json()).values;
+  const out = await handler(put(withInvalidPatterns, { ...withInvalidPatterns, disablePrivate: true }), () => true);
   expect(out.status).toBe(400);
   expect(await readFile(modern, "utf8")).toBe(invalidPolicy);
   expect(privateAccess.disabled).toBe(false);
+}));
+
+test("私聊放行规则按旧优先级原样编辑，关闭监听仍即时采用并保留内置入口", () => withConfig(async (root, legacy, modern) => {
+  const source = "# 保留\ndisablePrivate: true\ndisableAdopt: ['^旧入口$'] # 自定义\ndisableMsg: ''\nmaster: ['100:42']\n";
+  await writeFile(legacy, source);
+  const privateAccess = await readPrivateAccess(root);
+  const handler = panelIngressSettings(root, () => privateAccess.refresh(true) ?? Promise.resolve());
+  const blocked = (msg: string) => privateAccess.blocked({ msg, raw_message: msg, message: msg,
+    post_type: "message", message_type: "private", isGroup: false, isPrivate: true, self_id: 100, user_id: 41,
+    isMaster: false, reply: async () => true });
+  expect(await blocked("旧入口")).toBe(false);
+  expect(await blocked("新入口")).toBe(true);
+  const { fields, values: previous } = await (await handler(get(), () => true)).json();
+  expect(fields.find((field: { key: string }) => field.key === "disableAdopt")).toMatchObject({
+    type: "list", separator: "line", keepWhitespace: true,
+  });
+  expect(previous.disableAdopt).toEqual(["^旧入口$"]);
+  const invalid = await handler(put(previous, { ...previous, disablePrivate: false, disableAdopt: ["["] }), () => true);
+  expect(invalid.status).toBe(400);
+  expect(await readFile(legacy, "utf8")).toBe(source);
+
+  const next = { ...previous, disableAdopt: ["^ 头,尾 $", "^新入口$"] };
+  expect((await handler(put(previous, next), () => true)).status).toBe(200);
+  expect(await Bun.file(modern).exists()).toBe(false);
+  const written = await readFile(legacy, "utf8");
+  expect(written).toContain("# 自定义");
+  expect(written).toContain("# 保留");
+  expect(Bun.YAML.parse(written)).toMatchObject({ disableAdopt: next.disableAdopt, master: ["100:42"] });
+  expect(await blocked("旧入口")).toBe(true);
+  expect(await blocked("新入口")).toBe(false);
+  expect(await blocked(" 头,尾 ")).toBe(false);
+  expect(await blocked("头,尾")).toBe(true);
+
+  expect((await handler(put(next, { ...next, disableAdopt: [] }), () => true)).status).toBe(200);
+  expect(await blocked("新入口")).toBe(true);
+  expect(await blocked("#帮助")).toBe(false);
+  expect(await blocked("stoken")).toBe(true);
+  const reset = await readFile(legacy, "utf8");
+
+  await writeFile(modern, "disablePrivate: true\ndisableMsg: ''\n");
+  const current = (await (await handler(get(), () => true)).json()).values;
+  expect(current.disableAdopt).toEqual(["stoken"]);
+  const multiline = { ...current, disableAdopt: ["^第一行\n第二行$"] };
+  const saved = await handler(put(current, multiline), () => true);
+  expect(saved.status).toBe(200);
+  expect((await saved.json()).fields.find((field: { key: string }) => field.key === "disableAdopt")).toMatchObject({ type: "json" });
+  expect(await blocked("第一行\n第二行")).toBe(false);
+  expect(await readFile(legacy, "utf8")).toBe(reset);
 }));

@@ -26,12 +26,16 @@ const maxCooldownEntries = 10_000;
 
 type ClaimTip = (userId: number) => Promise<boolean>;
 
+export function privateAccessPatterns(config: Readonly<Record<string, unknown>>): string[] {
+  const configured = Object.hasOwn(config, "disableAdopt") ? config.disableAdopt : ["stoken"];
+  return Array.isArray(configured)
+    ? configured.filter((entry): entry is string => typeof entry === "string" && entry !== "") : [];
+}
+
 export function privateAccessPolicy(config: Readonly<Record<string, unknown>>) {
   const enabled = Boolean(config.disablePrivate);
   const tip = typeof config.disableMsg === "string" ? config.disableMsg : defaultPrivateAccessMessage;
-  const configured = Object.hasOwn(config, "disableAdopt") ? config.disableAdopt : ["stoken"];
-  const patterns = Array.isArray(configured)
-    ? configured.filter((entry): entry is string => typeof entry === "string" && entry !== "") : [];
+  const patterns = privateAccessPatterns(config);
   let custom: RegExp | undefined;
   if (enabled && patterns.length > 0) {
     try {

@@ -17,6 +17,7 @@ interface Field {
   rows?: number;
   itemType?: "number" | "string";
   separator?: "line";
+  keepWhitespace?: boolean;
   multiline?: boolean;
 }
 type Values = Record<string, unknown>;
@@ -80,7 +81,8 @@ function decode(field: Field) {
     catch { throw new Error(`${field.label}的 JSON 格式有误。`); }
   }
   if (field.type === "list") {
-    const items = text.split(field.separator === "line" ? /\r?\n/u : /[\n,，]+/u).map(item => item.trim()).filter(Boolean);
+    const items = text.split(field.separator === "line" ? /\r?\n/u : /[\n,，]+/u)
+      .map(item => field.keepWhitespace ? item : item.trim()).filter(Boolean);
     return field.itemType === "number" ? items.map(item => {
       const number = Number(item);
       if (!Number.isSafeInteger(number)) throw new Error(`${field.label}须填写有效数字。`);
