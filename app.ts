@@ -2732,10 +2732,11 @@ if (import.meta.main) {
     // 旧角色卡的 accept 先改写原神裸名，再由 Atlas 检查公开图鉴。
     if (!command.isDelegated && command.game !== "sr" && command.game !== "zzz" &&
         command.msg.startsWith("#") && commands.hasModule("@lotus-yunzai/genshin")) {
-      const { matchLegacyGenshinAvatarCard } = await import("./plugins/genshin/panel/avatar-card.ts");
-      if (matchLegacyGenshinAvatarCard(command.msg)) {
-        const card = await commands.dispatchFallback(event,
-          names => names[0] === "@lotus-yunzai/genshin" && allowed(names), isBotMaster, command.msg);
+      const { resolveLegacyGenshinAvatarMessage } = await import("./plugins/genshin/panel/avatar-card.ts");
+      const avatarMessage = await resolveLegacyGenshinAvatarMessage(command.msg);
+      if (avatarMessage) {
+        const card = await commands.dispatchFallback(event, allowed, isBotMaster, avatarMessage,
+          undefined, "@lotus-yunzai/genshin");
         if (card !== undefined) {
           handled?.();
           await sendCommandReply(event, card);

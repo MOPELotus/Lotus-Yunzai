@@ -39,9 +39,10 @@ async function prepare(root: string) {
   await mkdir(join(root, "config", "config"), { recursive: true });
   await writeFile(join(root, "config/config/group.yaml"),
     'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"79": { disable: ["[genshin] 角色卡片"] }\n');
-  for (const directory of ["profiles", "catalog/items", "gallery/gs-character/胡桃", "theme/meta-gs/character"]) {
+  for (const directory of ["profiles", "catalog/items", "gallery/gs-character/胡桃", "theme/meta-gs/character", "config/character-aliases"]) {
     await mkdir(join(root, directory), { recursive: true });
   }
+  await writeFile(join(root, "config/character-aliases/alias_gs.cfg"), "胡桃：核核苗\n");
   await Bun.write(join(root, "gallery/gs-character/胡桃/原图.png"),
     Uint8Array.fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVQIW2P8/x8AAwMCAO+a2e8AAAAASUVORK5CYII="));
   await writeFile(join(root, "theme/meta-gs/character/data.json"), JSON.stringify({ 10000046: { name: "胡桃", elem: "pyro" } }));
@@ -95,11 +96,15 @@ test("原神旧裸名优先角色卡，星铁裸名与明确图鉴走公开 Atla
     const bare = await onebot.next("send_msg");
     await picture(bare.params, "onebot-role-card");
     bare.respond({ message_id: 62 });
-    sendOneBot("#100008042胡桃卡片", group);
+    sendOneBot("#核核苗", group);
+    const alias = await onebot.next("send_msg");
+    await picture(alias.params, "onebot-custom-alias");
+    alias.respond({ message_id: 69 });
+    sendOneBot("#100008042核核苗卡片", group);
     const owned = await onebot.next("send_msg");
     await picture(owned.params, "onebot-explicit-uid");
     owned.respond({ message_id: 63 });
-    sendOneBot("#胡桃卡片100004043", group);
+    sendOneBot("#核核苗卡片100004043", group);
     const foreign = await onebot.next("send_msg");
     expect(JSON.stringify(foreign.params)).toContain("只可查询本人");
     foreign.respond({ message_id: 64 });
@@ -114,7 +119,8 @@ test("原神旧裸名优先角色卡，星铁裸名与明确图鉴走公开 Atla
     expect(JSON.stringify(permittedPublic.params)).toContain("胡桃完整图鉴");
     permittedPublic.respond({ message_id: 66, forward_id: "fixture-restricted" });
 
-    await sendMilky("#胡桃100004043");
+    await writeFile(join(root, "config/character-aliases/alias_gs.cfg"), "胡桃：新核核苗\n");
+    await sendMilky("#新核核苗100004043");
     const ownMilky = await milky.next("send_private_message");
     await picture(ownMilky.params, "milky-role-card");
     ownMilky.respond({ message_seq: 67 });
