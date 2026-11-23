@@ -5,7 +5,7 @@ import { HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { gachaAuthHeaders, starRailLedgerStokenCookie } from "./gacha-auth-request.ts";
 
-const types = { dreams: "Dreams", stellar: "Stellar", power: "Power", relic: "Relic" } as const;
+const types = { dreams: "Dreams", stellar: "Stellar", power: "Power", relic: "Relic", cone: "Cone" } as const;
 const origin = "https://api-takumi.mihoyo.com";
 const gameBiz = "hkrpg_cn", authAppid = "csc", pageSize = 10;
 const expired = new Set([-100, -101, -105, 10001, 10101, 10102, 10103]);

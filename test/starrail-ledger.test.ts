@@ -50,7 +50,9 @@ test("星铁流水以同档 SToken 获取 csc 短票，一页十项，第二步�
   expect((await client.fetchStarRailLedger(source, { kind: "power", page: 3 })).rows).toEqual([expected, expected]);
   await client.fetchStarRailLedger(source, { kind: "stellar", page: 3 });
   await client.fetchStarRailLedger(source, { kind: "relic", page: 3 });
-  expect(requested).toEqual(["Dreams", "Power", "Stellar", "Relic"]);
+  expect((await client.fetchStarRailLedger(source, { kind: "cone", page: 3 })).rows)
+    .toEqual([{ ...expected, count: 1 }, expected, expected]);
+  expect(requested).toEqual(["Dreams", "Power", "Stellar", "Relic", "Cone"]);
 });
 
 test("流水显式核对国服区服和凭据身份，错归属或失效中止相应阶段", async () => {
