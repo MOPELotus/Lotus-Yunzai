@@ -102,15 +102,16 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
       }
       if (!approved || signal?.aborted || latest.get(key) !== time) return false;
       const noticeWait = Promise.withResolvers<void>();
-      const timer = setTimeout(noticeWait.resolve, quitNoticeTimeoutMs);
-      signal?.addEventListener("abort", noticeWait.resolve, { once: true });
+      const finishNotice = () => noticeWait.resolve();
+      const timer = setTimeout(finishNotice, quitNoticeTimeoutMs);
+      signal?.addEventListener("abort", finishNotice, { once: true });
       try {
         await Promise.race([event.reply("禁止拉群，已自动退出"), noticeWait.promise]);
       } catch {
         // The notification may fail independently of the permitted departure.
       } finally {
         clearTimeout(timer);
-        signal?.removeEventListener("abort", noticeWait.resolve);
+        signal?.removeEventListener("abort", finishNotice);
       }
       if (signal?.aborted || latest.get(key) !== time) return false;
       await source.refresh();
