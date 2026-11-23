@@ -1190,12 +1190,15 @@ function updateBusy(value: boolean) {
   }
 }
 
-async function refresh() {
+async function refresh(allViews = false) {
   if (busy) return;
   updateBusy(true);
   showNotice("正在刷新数据…");
+  const scope = plans.scope;
+  const otherReads = allViews ? Promise.all([loadCatalog(), loadTrackers(), loadPlans()]) : undefined;
   try {
     const response = await request("api/overview");
+    if (scope !== plans.scope) return;
     if (response.status === 401 || response.status === 403) {
       showLogin(loginHelp, true);
       return;
@@ -1206,6 +1209,7 @@ async function refresh() {
     }
     if (!response.ok) throw new Error("无法读取档案和任务。");
     const data = await response.json() as Overview;
+    if (scope !== plans.scope) return;
     showOverview(data);
     showNotice("");
     if (!get("dashboard").hidden) {
@@ -1216,11 +1220,13 @@ async function refresh() {
         if (tab === "overview") void updateProfileSettings(editor);
       }
     }
-    if (!get("dashboard").hidden && tab === "shop") await loadCatalog();
+    if (!allViews && !get("dashboard").hidden && tab === "shop") await loadCatalog();
   } catch {
+    if (scope !== plans.scope) return;
     if (get("dashboard").hidden) showLogin("暂时无法读取档案和任务。", false, true);
     else showNotice("刷新失败，当前显示上次读取的结果。", true);
   } finally {
+    await otherReads;
     updateBusy(false);
   }
 }
@@ -1239,13 +1245,8 @@ async function logout() {
   }
 }
 
-get("refresh").addEventListener("click", () => {
-  if (tab === "shop") void loadCatalog();
-  else if (tab === "trackers") void loadTrackers();
-  else if (tab === "plans") void loadPlans();
-  else void refresh();
-});
-get("login-retry").addEventListener("click", refresh);
+get("refresh").addEventListener("click", () => void refresh(true));
+get("login-retry").addEventListener("click", () => void refresh());
 get("logout").addEventListener("click", logout);
 get("tab-overview").addEventListener("click", () => {
   switchTab("overview");
