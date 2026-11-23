@@ -41,6 +41,7 @@ const labels: Record<Scope, string> = {
   "wxchannels.preview": "视频号预览",
   "xigua.preview": "西瓜视频预览",
   "xhs.preview": "小红书预览",
+  "xhh.preview": "小黑盒游戏预览",
   "bilibili.login": "B 站扫码登录",
   "tools.install": "初始化及按需安装媒体工具",
   "netease.partner": "合伙人手动操作及 TuneWeave 指令",

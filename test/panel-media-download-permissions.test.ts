@@ -118,9 +118,9 @@ test("媒体预览权限从原配置读写并立即用于媒体解析", async ()
     expect((await call("GET", undefined, false))?.status).toBe(401);
     const before = await (await call())!.json();
     expect(before.settings).toEqual({ "acfun.preview": "inherit", "weishi.preview": "inherit", "zuiyou.preview": "inherit",
-      "wxchannels.preview": "deny", "xigua.preview": "inherit", "xhs.preview": "inherit" });
+      "wxchannels.preview": "deny", "xigua.preview": "inherit", "xhs.preview": "inherit", "xhh.preview": "inherit" });
     const patch = { "acfun.preview": "deny", "weishi.preview": "master_only", "zuiyou.preview": "allow",
-      "wxchannels.preview": "inherit", "xigua.preview": "deny", "xhs.preview": "master_only" };
+      "wxchannels.preview": "inherit", "xigua.preview": "deny", "xhs.preview": "master_only", "xhh.preview": "master_only" };
     const saved = await call("PUT", { revision: before.revision, patch });
     expect(saved?.status).toBe(200);
     expect((await saved!.json()).settings).toEqual(patch);
@@ -134,6 +134,8 @@ test("媒体预览权限从原配置读写并立即用于媒体解析", async ()
     expect(service.can({ ...peer, isMaster: true }, "weishi.preview")).toBe(true);
     expect(service.can(peer, "xhs.preview")).toBe(false);
     expect(service.can({ ...peer, isMaster: true }, "xhs.preview")).toBe(true);
+    expect(service.can(peer, "xhh.preview")).toBe(false);
+    expect(service.can({ ...peer, isMaster: true }, "xhh.preview")).toBe(true);
     expect(service.can(peer, "zuiyou.preview")).toBe(true);
     expect(service.can({ ...peer, group_id: 123 }, "zuiyou.preview")).toBe(false);
     expect((await readFile(file, "utf8"))).toContain("weishi.play: {policy: master_only}");
