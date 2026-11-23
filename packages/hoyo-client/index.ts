@@ -1,11 +1,11 @@
 import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";
-import { hasConflictingProfileCookieIdentity, normalizeGameRoles, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
+import { hasConflictingProfileCookieIdentity, normalizeGameRoles, profileCookieAccountId, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";
 import { readCloudGenshinWallet, readInternationalCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 import { readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, readHoYoLabZzzDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
-import { HoyoRequestError } from "./errors.ts";
+import { HoyoRequestError, requiresServiceVerification } from "./errors.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
 import { openHoYoLabBh3Checkin } from "./hoyolab-bh3-checkin.ts";
 import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
@@ -199,7 +199,8 @@ export function createHoyoClient(
     return operation;
   }
 
-  async function list(context: ProfileAccountContext, game?: keyof typeof checkinGameBiz, signal?: AbortSignal): Promise<unknown[]> {
+  async function list(context: ProfileAccountContext, game?: keyof typeof checkinGameBiz, signal?: AbortSignal,
+    verify = () => ensureCurrentProfile(context)): Promise<unknown[]> {
     if (game !== undefined && !Object.hasOwn(checkinGameBiz, game)) {
       throw new HoyoRequestError("invalid-input", "游戏类型无效。");
     }
@@ -219,7 +220,7 @@ export function createHoyoClient(
     let response: Response;
     try {
       signal?.throwIfAborted();
-      await ensureCurrentProfile(context);
+      await verify();
       signal?.throwIfAborted();
       response = await diagnostics.read(() => transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
@@ -240,9 +241,7 @@ export function createHoyoClient(
     signal?.throwIfAborted();
     const code = payload?.retcode;
     const retcode = typeof code === "string" && /^-?\d{1,10}$/u.test(code) ? Number(code) : code;
-    const challenge = response.headers.get("x-rpc-aigis")?.trim();
-    const risk = (challenge && challenge !== "{}") || [payload?.message, payload?.msg].some(value =>
-      typeof value === "string" && /验证码|captcha|geetest|challenge|风控|频繁/iu.test(value));
+    const risk = requiresServiceVerification(payload ?? {}, response.headers.get("x-rpc-aigis"));
     if (!response.ok && (risk || typeof retcode !== "number" || !expired.has(retcode))) {
       throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
     }
@@ -256,7 +255,7 @@ export function createHoyoClient(
       throw new HoyoRequestError("response", "米游社角色列表格式有误。");
     }
 
-    await ensureCurrentProfile(context);
+    await verify();
     return payload.data.list;
   }
 
@@ -287,8 +286,8 @@ export function createHoyoClient(
         const { profile: saved } = await recover(context, key);
         refreshed = await recovery.profiles.accountContext(context.qq, context.profileId);
         if (refreshed.revision !== saved.revision) throw new Error("档案在刷新后已变更。");
-      } catch {
-        throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。");
+      } catch (cause) {
+        throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。", undefined, undefined, { cause });
       }
       signal?.throwIfAborted();
       return { context: refreshed, data: await attempt(refreshed) };
@@ -380,6 +379,28 @@ export function createHoyoClient(
   return {
     async refreshCredentials(context: ProfileAccountContext) {
       return (await recover(context)).profile;
+    },
+    async checkLoginCookie(context: ProfileAccountContext, options: {
+      readonly signal: AbortSignal;
+      readonly verifyReadOnly?: () => Promise<void>;
+    }) {
+      let revision = context.revision;
+      if (!profileCookieAccountId(context.account)) return { state: "unknown" as const, revision };
+      const attempt = (profile: ProfileAccountContext) => {
+        revision = profile.revision;
+        return list(profile, undefined, options.signal, options.verifyReadOnly);
+      };
+      try {
+        const data = options.verifyReadOnly ? await attempt(context) : (await retrieve(context, attempt, options.signal)).data;
+        roleCatalog(data);
+        const state = revision === context.revision ? "valid" : "recovered";
+        return { state, revision } as const;
+      } catch (error) {
+        options.signal.throwIfAborted();
+        const exchangeFailure = error instanceof HoyoRequestError && error.code === "refresh" && error.cause;
+        const state = isCookieExpired(error) || isCookieExpired(exchangeFailure) ? "expired" : "unknown";
+        return { state, revision } as const;
+      }
     },
     fetchMiyousheShopAccountQuota(source: ProfileAccountContext, goodsId: string,
       options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {},

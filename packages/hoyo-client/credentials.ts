@@ -1,6 +1,6 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import type { ProfileAccountContext, RefreshedCredentials } from "@lotus-yunzai/account";
-import { HoyoRequestError } from "./errors.ts";
+import { HoyoRequestError, requiresServiceVerification } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { passportAppHeaders } from "./passport-qr.ts";
 
@@ -150,6 +150,9 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
       signal?.throwIfAborted();
       if (timeout.aborted) throw new HoyoRequestError("transport", `${target} 换票超时。`);
       if (!payload) throw new HoyoRequestError("response", `${target} 换票响应无法读取。`, response.status);
+      if (requiresServiceVerification(payload)) {
+        throw new HoyoRequestError("api", `${target} 换票暂时无法核验。`, response.status);
+      }
       const rawCode = payload.retcode;
       const retcode = typeof rawCode === "string" && /^-?\d{1,10}$/u.test(rawCode) ? Number(rawCode) : rawCode;
       if (retcode !== 0) {

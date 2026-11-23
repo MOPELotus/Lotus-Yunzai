@@ -893,6 +893,15 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { account, device, revision } = await readLoggedIn(qq, id);
       return { qq, profileId: id, account, device, revision };
     },
+    async cookieCheckContext(qq: string, id: number) {
+      const { account, device, revision, summary } = await read(qq, id);
+      const context = { qq, profileId: id, account, device, revision };
+      if (hasLegacyGameCookie(account) && profileCookieAccountId(account)) {
+        return { kind: summary.loggedIn ? "logged-in" : "read-only", context } as const;
+      }
+      const kind = account.cookie || account.stoken ? "unverifiable" : "not-logged-in";
+      return { kind, context } as const;
+    },
     async loginIdentity(qq: string, id: number) {
       const { document, state } = await readDocument(qq, id);
       const { stuid, ltuid, stoken } = state.account;

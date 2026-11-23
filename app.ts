@@ -13,6 +13,7 @@ import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
+import { accountCookieStatusFeatures, createAccountCookieStatus, matchesAccountCookieStatus } from "./lib/account-cookie-status.ts";
 import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-profile-defaults.ts";
 import { createOwnRoleLegacyArtwork } from "./lib/own-role-legacy-artwork.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
@@ -384,6 +385,7 @@ if (import.meta.main) {
     },
   });
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
+  const accountCookieStatus = createAccountCookieStatus(roleProfiles);
   const gameProfileDefaults = createGameProfileDefaults(fileURLToPath(new URL(gameProfileDefaultsPath + "/", import.meta.url)), roleProfiles, lockFile);
   const publicRoleReferences = createPublicRoleReferences(lockFile);
   const publicRoleRegistration = createPublicRoleRegistration();
@@ -2152,7 +2154,8 @@ if (import.meta.main) {
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         atlasCommand || updateCheck || updateNoticeChange || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
-        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || isManualRedeemCommand(event.msg) ||
+        isAccountLoginMutation(event.msg) || matchesAccountCookieStatus(event.msg) ||
+        isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || isManualRedeemCommand(event.msg) ||
         zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
@@ -2298,6 +2301,14 @@ if (import.meta.main) {
       return;
     }
     const gameAccountCommand = normalizeGameCommand(event).msg;
+    if (matchesAccountCookieStatus(gameAccountCommand)) {
+      const features = accountCookieStatusFeatures;
+      const scope = allowNew && allowed(features) ? ownCheckinSession(event, features) : undefined;
+      if (!scope?.privateFriend) return;
+      const reply = await accountCookieStatus(scope);
+      if (reply !== undefined && scope.isCurrent()) await event.reply(reply);
+      return;
+    }
     const publicRoleReference = matchPublicRoleReferenceCommand(gameAccountCommand);
     const publicRoleFollowup = !publicRoleReference && event.isPrivate && matchPublicRoleRegistrationFollowup(event.msg);
     if (publicRoleReference || publicRoleFollowup) {
