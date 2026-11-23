@@ -734,7 +734,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
 
     const groupReplyWith = (value: string) => waitUntil(() => oneBotReplies().find(({ params }) =>
       JSON.stringify(params.message).includes(value)), `OneBot 未回复预期的群管理结果：${value}`);
-    send(oneBotMessage("#申请头衔旅人", 42, 82));
+    send(oneBotMessage("#设置头衔 旅人", 42, 82));
     await groupReplyWith("已将你的头衔更换为「旅人」");
     send(oneBotMessage("#申请头衔不能设置", 42, 79));
     await groupReplyWith("请核对群成员和群主权限");
@@ -753,7 +753,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     expect(JSON.stringify((await milkyReply(16)).params.message)).toContain("云游");
     await webhook("message_receive", milkyTitle("#我要头衔云游", 42));
     expect(JSON.stringify((await milkyReply(17)).params.message)).toContain("头衔包含屏蔽词");
-    await webhook("message_receive", milkyTitle("#我要头衔云游者", 42));
+    await webhook("message_receive", milkyTitle("#设置头衔 云游者", 42));
     expect(JSON.stringify((await milkyReply(18)).params.message)).toContain("云游者");
     await webhook("message_receive", milkyTitle("#切换头衔屏蔽词匹配模式"));
     expect(JSON.stringify((await milkyReply(19)).params.message)).toContain("模糊");
