@@ -9,7 +9,7 @@ import { panelApi } from "../lib/panel.ts";
 import { readGenshinShowcaseServer } from "../plugins/genshin/panel/showcase-config.ts";
 import { readGridFightRecentCount } from "../plugins/starrail/grid-fight-config.ts";
 import { readShowcaseServer } from "../plugins/starrail/panel-showcase-config.ts";
-import { readStarRailOriginalSettings } from "../plugins/starrail/panel-original-config.ts";
+import { readStarRailOriginalSettings, starRailUsesBuiltInPortrait } from "../plugins/starrail/panel-original-config.ts";
 
 const path = "/panel/api/settings/business/games";
 const headers = { Authorization: "Bearer game-panel-test", "Content-Type": "application/json" };
@@ -41,7 +41,7 @@ test("游戏展柜和货币战争面板复用真实旧设置，并即刻由现�
     const original = await panel(new Request(endpoint, { headers }));
     const result = await original!.json() as Result;
     expect(result.values).toEqual({ genshinSource: "0", starrailSource: "442", gridFightRecentCount: 3,
-      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false });
+      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false, starrailBuiltInPortraitGroups: "" });
 
     const values = { ...result.values, genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1, legacyPanelRecovery: true };
     expect((await panel(send(result.values, { ...values, genshinSource: "3" })))?.status).toBe(400);
@@ -131,19 +131,29 @@ test("星铁原图设置继承归档，保存覆盖旧值并保留 0 秒", async
   try {
     const legacyFolder = join(directory, "backup/plugins/StarRail-plugin/config");
     await mkdir(legacyFolder, { recursive: true });
-    await writeFile(join(legacyFolder, "PanelSetting.yaml"), "originalPic: false\nbackCalloriginalPic: false\nbackCalloriginalPicTime: 56\n");
+    await writeFile(join(legacyFolder, "PanelSetting.yaml"), "originalPic: false\nbackCalloriginalPic: false\nbackCalloriginalPicTime: 56\nno_profile: [77, \"88\"]\n");
     const route = panelGameSettings(root, "showcase");
     const { values, fields } = await (await route(new Request(endpoint), () => true)).json() as Result;
-    expect(values).toMatchObject({ starrailOriginalEnabled: false, starrailOriginalRecall: false, starrailOriginalRecallSeconds: 56 });
+    expect(values).toMatchObject({ starrailOriginalEnabled: false, starrailOriginalRecall: false, starrailOriginalRecallSeconds: 56,
+      starrailBuiltInPortraitGroups: "77, 88" });
     expect(fields.find(field => field.key === "starrailOriginalRecallSeconds")).toMatchObject({ type: "number", min: 0, max: 120 });
-    const next = { ...values, starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 0 };
+    expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 77 }, root)).toBe(true);
+    expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 89 }, root)).toBe(false);
+    expect(await starRailUsesBuiltInPortrait({ message_type: "private", group_id: 77 }, root)).toBe(false);
+    const next = { ...values, starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 0,
+      starrailBuiltInPortraitGroups: "" };
+    expect((await route(send(values, { ...next, starrailBuiltInPortraitGroups: "77, -1" }), () => true)).status).toBe(400);
     expect((await route(send(values, { ...next, starrailOriginalEnabled: 1 }), () => true)).status).toBe(400);
     expect((await route(send(values, { ...next, starrailOriginalRecallSeconds: 121 }), () => true)).status).toBe(400);
     expect((await route(send(values, next), () => true)).status).toBe(200);
     expect(await readStarRailOriginalSettings(root)).toEqual({ starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 0 });
     expect(Bun.YAML.parse(await readFile(join(directory, "config/global.yaml"), "utf8"))).toEqual({
-      starrail: { original_pic: true, back_call_original_pic: true, back_call_original_pic_time: 0 },
+      starrail: { original_pic: true, back_call_original_pic: true, back_call_original_pic_time: 0, built_in_portrait_groups: [] },
     });
+    expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 77 }, root)).toBe(false);
+    expect((await route(send(next, { ...next, starrailBuiltInPortraitGroups: "90，91, 90" }), () => true)).status).toBe(200);
+    expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 90 }, root)).toBe(true);
+    expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 88 }, root)).toBe(false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

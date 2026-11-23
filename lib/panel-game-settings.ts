@@ -17,7 +17,7 @@ type SettingField = {
   readonly hint?: string;
   readonly readonly?: boolean;
 };
-type Edit = { readonly path: readonly [string] | readonly [string, string]; readonly value: Primitive };
+type Edit = { readonly path: readonly [string] | readonly [string, string]; readonly value: Primitive | readonly string[] };
 class InvalidGameSettings extends Error {}
 
 function object(value: unknown): Config | undefined {
@@ -98,6 +98,8 @@ async function showcasePanel(root: URL) {
       key: "gridFightRecentCount", label: "星铁货币战争默认展示场数", type: "number", min: 1, max: 3,
       hint: "影响货币战争简写查询；编号战报仍按所选场次查询。",
     },
+    { key: "starrailBuiltInPortraitGroups", label: "星铁仅使用内置立绘的群", type: "text",
+      hint: "群号用逗号分隔。留空时所有群都按通常方式选图。" },
     { key: "starrailOriginalEnabled", label: "允许成员引用星铁面板取原图", type: "boolean", hint: "机器人主人仍可引用自己的有效面板取图。" },
     { key: "starrailOriginalRecall", label: "星铁面板原图自动撤回", type: "boolean" },
     {
@@ -106,11 +108,12 @@ async function showcasePanel(root: URL) {
     },
   ];
   async function read() {
-    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery] = await Promise.all([
+    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery, portraitGroups] = await Promise.all([
       readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root), originals.readStarRailOriginalSettings(root),
-      readLegacyPanelRecoveryEnabled(root),
+      readLegacyPanelRecoveryEnabled(root), originals.readStarRailBuiltInPortraitGroups(root),
     ]);
-    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery };
+    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery,
+      starrailBuiltInPortraitGroups: portraitGroups.join(", ") };
   }
   return {
     fields,
@@ -145,6 +148,12 @@ async function showcasePanel(root: URL) {
             const value = values[field];
             if (typeof value !== "boolean") throw new InvalidGameSettings();
             if (value !== current[field]) edits.push({ path: ["starrail", key], value });
+          }
+          const requestedGroups = values.starrailBuiltInPortraitGroups;
+          if (requestedGroups !== current.starrailBuiltInPortraitGroups) {
+            const groups = originals.parseStarRailPortraitGroups(requestedGroups);
+            if (!groups) throw new InvalidGameSettings();
+            edits.push({ path: ["starrail", "built_in_portrait_groups"], value: groups });
           }
           const seconds = values.starrailOriginalRecallSeconds;
           if (!originals.validStarRailOriginalRecallSeconds(seconds)) throw new InvalidGameSettings();
