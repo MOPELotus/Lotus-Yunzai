@@ -13,6 +13,7 @@ import { readGroupLeaveBlacklist } from "../plugins/group/group-leave-blacklist.
 import { readLikeSettings } from "../plugins/group/like-settings.ts";
 import { createManagedBlacklist } from "../plugins/group/managed-blacklist.ts";
 import { configuredPrivateNotice, createPrivateNoticeReader, privateNoticeSetting } from "../plugins/group/private-notice-config.ts";
+import { createGroupScreenedWords } from "../plugins/group/screened-words.ts";
 import { configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
@@ -105,6 +106,36 @@ test("current full-scope settings win, while ambiguous schedule aliases and link
   expect(await readFile(join(state, "config/group-notice.yaml"), "utf8")).not.toContain("friendRequest");
   expect(await readFile(join(state, archive, `${yenai}notice.yaml`), "utf8")).toBe("obsolete: [bad YAML\n");
   expect(configuredNoticeSchedule(pathToFileURL(state + sep), "")).toEqual({ start: 555, end: 575 });
+}));
+
+test("旧屏蔽规则停用时仍迁移，暂存后的群管无需加载旧插件", () => fixture(async (source, state) => {
+  const old = "plugins/flower-plugin/";
+  const original = "- 跨群旧词\n- 100\n";
+  await file(source, old + "defSet/wordListener.yaml", "enable: false\ntime: 60\nreplyText: 默认回执\n");
+  await file(source, old + "config/wordListener.yaml", "enable: true\ntime: 82\nreplyText: 当前回执\n");
+  await file(source, "config/group-screened-words.yaml", "enable: false\n");
+  await file(source, old + "resources/blackword/global/2024-01.yaml", original);
+  await file(source, old + "resources/blackword/global/2024-02.yaml", "- 跨群旧词\n- 最近新增\n");
+  await file(source, old + "resources/blackword/77/2024-01.yaml", "- 仅限群七七\n");
+  await file(source, old + "resources/blackword/78/2024-01.yaml", "- 已从群八移除\n");
+  await file(source, "data/group/screened-words/78.yaml", "[]\n");
+  const { active, archived } = await stageLegacyGroupConfig(source, state);
+  expect([...active].sort()).toEqual(["config/group-screened-words.yaml", "data/group/screened-words/77.yaml",
+    "data/group/screened-words/78.yaml", "data/group/screened-words/global.yaml"]);
+  expect(archived).toContain(archive + old + "resources/blackword/global/2024-01.yaml");
+  expect(await readFile(join(state, archive + old + "resources/blackword/global/2024-01.yaml"), "utf8")).toBe(original);
+  expect(await readFile(join(source, old + "resources/blackword/global/2024-01.yaml"), "utf8")).toBe(original);
+  expect(Bun.YAML.parse(await readFile(join(state, "config/group-screened-words.yaml"), "utf8"))).toEqual({ enable: false, time: 82, replyText: "当前回执" });
+  expect(Bun.YAML.parse(await readFile(join(state, "data/group/screened-words/78.yaml"), "utf8"))).toEqual([]);
+  expect(await Bun.file(join(state, old + "config/wordListener.yaml")).exists()).toBe(false);
+  const signal = new AbortController().signal;
+  const words = createGroupScreenedWords(pathToFileURL(state + sep), async () => ({ close() {} }), signal);
+  expect(await words.match(77, "最近新增", signal)).toBeUndefined();
+  await words.command({ message_type: "private", self_id: 99, user_id: 42, isBotMaster: user => user === 42,
+    privateCredentialSignal: signal, message_id: 1, normalizedMessage: "#抽卡设置屏蔽词开启" });
+  expect(await words.match(79, "当前含跨群旧词", signal)).toMatchObject({ seconds: 82, screenedReply: "当前回执" });
+  expect(await words.match(77, "仅限群七七", signal)).toBeDefined();
+  expect(await words.match(78, "仅限群七七 已从群八移除", signal)).toBeUndefined();
 }));
 
 test("旧安装的顶层群配置迁移后，实际 OneBot 词条保留主人限制和触发者提及", () => fixture(async (source, state) => {

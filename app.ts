@@ -212,6 +212,7 @@ const leaveBlacklistManageNames = ["退群黑名单管理", "group", "@lotus-yun
 const managedBlacklistNames = ["[group] 群管黑名单", "group", "@lotus-yunzai/group"];
 const managedWhitelistNames = ["[group] 群管白名单", "group", "@lotus-yunzai/group"];
 const groupBannedWordsNames = ["[group] 违禁词", "group", "@lotus-yunzai/group"];
+const groupScreenedWordsNames = ["[group] 屏蔽词", "group", "@lotus-yunzai/group"];
 const timedGroupMuteNames = ["[group] 定时群禁言", "group", "@lotus-yunzai/group"];
 const groupAddNoticeNames = ["[group] 加群申请通知", "group", "@lotus-yunzai/group"];
 const friendRequestNoticeNames = ["[group] 好友申请通知", "group", "@lotus-yunzai/group"];
@@ -1134,7 +1135,8 @@ if (import.meta.main) {
     }
   }
 
-  async function handleGroupBannedWords(source: MessageEvent, text: string, alias?: string): Promise<boolean> {
+  async function handleGroupBannedWords(source: MessageEvent, text: string, alias: string | undefined,
+    groupRules: boolean, screenedWords: boolean): Promise<boolean> {
     const registration = groupBannedWords;
     if (!registration || source.message_type !== "group" || source.isDelegated) return false;
     const { self_id: bot, group_id: group, user_id: user, message_id } = source;
@@ -1142,7 +1144,9 @@ if (import.meta.main) {
     const transport = groupModerationSession(source);
     if (!transport?.memberMessage || !transport.act) return false;
     const { memberMessage, act } = transport;
-    if (!text && !memberMessage.readImageMd5 && !memberMessage.mixedImageParts) return false;
+    const screenedText = screenedWords ? typeof source.message === "string" ? source.message : source.message
+      .map(segment => segment.type === "text" ? segment.text : "").join("") : undefined;
+    if (!text && !screenedText && !memberMessage.readImageMd5 && !memberMessage.mixedImageParts) return false;
     const signal = nativeOperationSignal(registration.signal, transport.signal);
     const active = () => !signal.aborted && bot !== user &&
       !masterPermissions.isMaster(bot, user) && !masterPermissions.legacyMasterIds().includes(user);
@@ -1167,7 +1171,7 @@ if (import.meta.main) {
     const afterAlias = !text && alias ? mixed?.filter(part => part.type !== "text" || part.text.trim()) : undefined;
     const singleImage = afterAlias?.length === 1 && afterAlias[0]?.type === "image" ? afterAlias[0].readMd5 : undefined;
     const readImage = !text && memberMessage.readImageMd5 ? protectImage(memberMessage.readImageMd5) : singleImage;
-    const match = () => registration.policy.match(group, user, text, signal, readImage, mixed).catch(() => undefined);
+    const match = () => registration.policy.match(group, user, text, signal, readImage, mixed, { groupRules, screenedText }).catch(() => undefined);
     if (!await match() || !active() || !await memberMessage.canAct(signal).catch(() => false) || !active()) return false;
     const rule = await match();
     if (!rule || !active()) return false;
@@ -1181,6 +1185,9 @@ if (import.meta.main) {
       receipts.push(result === "confirmed" ? label : `${label}${result === "unknown" ? "结果未确认" : "未执行"}`);
       return result === "confirmed";
     }
+    const recall = () => apply("撤回消息", () => memberMessage.recall(signal));
+    const screened = rule.screenedReply !== undefined;
+    const recalled = screened && await recall();
     if (rule.action === "kick" || rule.action === "kick-recall" || rule.action === "kick-blacklist") {
       if (await apply("踢出群聊", () => act(signal)) && rule.action === "kick-blacklist" && active()) {
         try {
@@ -1191,11 +1198,15 @@ if (import.meta.main) {
         }
       }
     }
-    if ((rule.action === "mute" || rule.action === "mute-recall") && isMemberMuteDuration(rule.seconds) && rule.seconds > 0) {
+    const muted = (rule.action === "mute" || rule.action === "mute-recall") && isMemberMuteDuration(rule.seconds) && rule.seconds > 0 &&
       await apply(`禁言${rule.seconds}秒`, () => memberMessage.mute(rule.seconds, signal));
-    }
-    if (rule.action === "recall" || rule.action === "kick-recall" || rule.action === "mute-recall") {
-      await apply("撤回消息", () => memberMessage.recall(signal));
+    if (!screened && (rule.action === "recall" || rule.action === "kick-recall" || rule.action === "mute-recall")) await recall();
+    if (screened && recalled && muted) {
+      if (active() && rule.screenedReply) {
+        const reply = rule.screenedReply;
+        await Promise.resolve().then(() => active() && source.reply(reply, false)).catch(() => {});
+      }
+      return true;
     }
     if (active() && receipts.length) {
       const nickname = source.sender?.card || source.sender?.nickname;
@@ -2121,7 +2132,8 @@ if (import.meta.main) {
       }
     }
     if (!allowNew) return;
-    if (allowed(groupBannedWordsNames) && await handleGroupBannedWords(incoming, event.msg, alias)) return;
+    const groupRules = allowed(groupBannedWordsNames), screenedWords = allowed(groupScreenedWordsNames);
+    if ((groupRules || screenedWords) && await handleGroupBannedWords(incoming, event.msg, alias, groupRules, screenedWords)) return;
 
     const command = normalizeGameCommand(event);
     const namedCheckin = namedCheckinCommand(command.msg);

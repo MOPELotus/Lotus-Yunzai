@@ -1,19 +1,24 @@
 import { constants, type Stats } from "node:fs";
-import { lstat, mkdir, open, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
 import { parseNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
 
 type Mapping = Map<unknown, unknown>;
 const yenai = "plugins/yenai-plugin/config/config/";
 const noticeDirectories = ["plugins/Notice-plugin/config/", "plugins/notice-plugin/config/"] as const;
+const screenedConfigPaths = ["plugins/flower-plugin/defSet/wordListener.yaml", "plugins/flower-plugin/config/wordListener.yaml", "config/group-screened-words.yaml"] as const;
+const screenedLegacyWords = "plugins/flower-plugin/resources/blackword";
+const screenedCurrentWords = "data/group/screened-words";
 const sourcePaths = [
   "config/auto-group-card.yaml", "config/config/auto-group-card.yaml",
   "config/group-leave-blacklist.yaml", "config/config/group-leave-blacklist.yaml",
   "config/group.yaml", `${yenai}thumbUp.yaml`,
   "config/groupAdmin.yaml", `${yenai}groupAdmin.yaml`,
   "config/group-notice.yaml", `${yenai}notice.yaml`, "config/notice.yaml",
+  ...screenedConfigPaths,
   ...noticeDirectories.flatMap(path => [path + "config_default.yaml", path + "config.yaml"]),
 ];
 const likeFields = ["enable", "cloneAllThumbUp", "strangeThumbUp", "count", "recall", "closeTips", "successMsg", "failsMsg", "noFriendMsg"];
@@ -61,12 +66,17 @@ async function readSnapshot(path: string, signal?: AbortSignal): Promise<ConfigS
   } finally { await handle.close(); }
 }
 
-function decode(bytes: Buffer): Mapping {
+function decodedYaml(bytes: Buffer): unknown {
   try {
     const doc = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(bytes), { merge: true, strict: true, uniqueKeys: true });
-    const parsed: unknown = doc.errors.length ? undefined : doc.toJS({ mapAsMap: true, maxAliasCount: 50 });
-    if (parsed === null || parsed instanceof Map) return parsed ?? new Map();
+    if (!doc.errors.length) return doc.toJS({ mapAsMap: true, maxAliasCount: 50 });
   } catch {}
+  throw invalid("旧群管和通知 YAML");
+}
+
+function decode(bytes: Buffer): Mapping {
+  const parsed = decodedYaml(bytes);
+  if (parsed === null || parsed instanceof Map) return parsed ?? new Map();
   throw invalid("旧群管和通知 YAML");
 }
 
@@ -187,6 +197,57 @@ function project(load: (path: string) => Mapping | undefined) {
   return active;
 }
 
+async function screenedWordSources(source: string) {
+  async function entries(relative: string) {
+    const path = join(source, relative);
+    const info = await named(path);
+    if (!info) return [];
+    if (!info.isDirectory() || await realpath(path) !== path) throw invalid("旧屏蔽词目录");
+    return (await readdir(path, { withFileTypes: true })).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+  }
+  const validScope = (value: string) => value === "global" || /^[1-9]\d*$/u.test(value) && Number.isSafeInteger(Number(value));
+  const modern = new Map((await entries(screenedCurrentWords)).flatMap(entry => {
+    const name = entry.name.endsWith(".yaml") ? entry.name.slice(0, -5) : "";
+    return entry.isFile() && validScope(name) ? [[name, join(screenedCurrentWords, entry.name)] as const] : [];
+  }));
+  const legacy = new Map<string, string[]>();
+  for (const entry of await entries(screenedLegacyWords)) {
+    if (!entry.isDirectory() || !validScope(entry.name)) continue;
+    const folder = join(screenedLegacyWords, entry.name);
+    const files = (await entries(folder)).filter(file => file.isFile() && file.name.endsWith(".yaml"));
+    if (files.length > screenedWordLimits.files) throw invalid("屏蔽词词表数量");
+    if (files.length) legacy.set(entry.name, files.reverse().map(file => join(folder, file.name)));
+  }
+  return [...new Set([...modern.keys(), ...legacy.keys()])].map(scope => ({ scope, modern: modern.get(scope), legacy: legacy.get(scope) ?? [] }));
+}
+
+function projectScreenedWords(load: (path: string) => Mapping | undefined, scopes: Awaited<ReturnType<typeof screenedWordSources>>,
+  snapshots: ReadonlyMap<string, ConfigSnapshot>) {
+  const files = new Map<string, string>();
+  const settings = screenedConfigPaths.map(path => load(path));
+  if (settings.some(Boolean)) {
+    const combined = new Map(settings.flatMap(value => [...value ?? []]));
+    const supported = Object.fromEntries(fields(combined, ["enable", "time", "replyText"]));
+    files.set(screenedConfigPaths[2], stringify(readScreenedWordSettings(supported)));
+  }
+  for (const scope of scopes) {
+    const paths = scope.modern ? [scope.modern] : scope.legacy;
+    const words = new Set<string>();
+    let size = 0;
+    for (const path of paths) {
+      const bytes = snapshots.get(path)!.bytes;
+      size += bytes.length;
+      if (size > screenedWordLimits.bytes) throw invalid("屏蔽词词表大小");
+      for (const text of readScreenedWordList(decodedYaml(bytes), !scope.modern)) words.add(text);
+      if (words.size > screenedWordLimits.words) throw invalid("屏蔽词数量");
+    }
+    const content = stringify([...words]);
+    if (Buffer.byteLength(content) > screenedWordLimits.bytes) throw invalid("屏蔽词词表大小");
+    files.set(join(screenedCurrentWords, scope.scope + ".yaml"), content);
+  }
+  return files;
+}
+
 /** Stage runtime configurations after rejected legacy plugins leave the plugin tree. Keep source YAML in a private rollback copy. */
 export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
@@ -197,9 +258,12 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
     throw new Error("群管和通知配置须暂存到独立私有实体目录。");
   }
   const inputs = new Map<string, ConfigSnapshot>();
-  for (const path of sourcePaths) {
+  const screenedScopes = await screenedWordSources(source);
+  const screenedInputs = new Set(screenedScopes.flatMap(scope => [...scope.legacy, ...(scope.modern ? [scope.modern] : [])]));
+  for (const path of [...sourcePaths, ...screenedInputs]) {
     const result = await readSnapshot(join(source, path), signal);
     if (result) inputs.set(path, result);
+    else if (screenedInputs.has(path)) throw invalid("并发变动的屏蔽词");
   }
   const decoded = new Map<string, Mapping>();
   const load = (path: string) => {
@@ -212,8 +276,10 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
     return settings;
   };
   const active = project(load);
+  const screened = projectScreenedWords(load, screenedScopes, inputs);
   const archives = new Map([...inputs].map(([path, config]) => [join("backup", "legacy-group-config", path), config.bytes]));
-  const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...archives];
+  const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...screened, ...archives];
+  if (JSON.stringify(screenedScopes) !== JSON.stringify(await screenedWordSources(source))) throw invalid("并发变动的屏蔽词目录");
   for (const [path, config] of inputs) {
     const absolute = join(source, path);
     if (!unchanged(config.info, await named(absolute)) || await realpath(absolute) !== absolute) throw invalid("并发变动的旧群管和通知");
@@ -235,5 +301,5 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
     try { return load(path) ?? []; } catch { return []; }
   });
   const deferred = ["logger", "multiAccount", "pushSettings"].filter(key => scopes.some(config => config.has(key))).map(key => `notice.${key}`);
-  return { active: [...active.keys()], archived: [...archives.keys()], deferred };
+  return { active: [...active.keys(), ...screened.keys()], archived: [...archives.keys()], deferred };
 }
