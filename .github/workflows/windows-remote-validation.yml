@@ -1,0 +1,27 @@
+name: Windows remote operations verification
+
+on:
+  push:
+    branches:
+      - codex/windows-remote-validation
+
+permissions:
+  contents: read
+
+jobs:
+  win32:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Validate Windows shell, NTFS paths, and token permissions
+        shell: pwsh
+        run: |
+          bun --version
+          Get-Command powershell.exe
+          bun test test/remote-win32.test.ts
