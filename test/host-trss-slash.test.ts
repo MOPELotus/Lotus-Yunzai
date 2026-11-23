@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeGameCommand } from "../lib/command-prefix.ts";
+import type { MessageEvent } from "../lib/messages.ts";
 import { copyHost } from "./host-fixture.ts";
 
 test.each([
@@ -70,12 +72,23 @@ test.each([
     send("#自动签到帮助", 8);
     send("/  帮助", 9);
     send("/自动签到帮助", 10);
+    send("sr帮助", 11);
+    send("#srhelp", 12);
+    send("*sr帮助", 13);
+    send("＊帮助", 14);
+    send("sr help", 15);
+    send("srocket", 16);
+    send("srhelp me", 17);
+    for (const [offset, message] of ["＊帮助", "sr帮助"].entries()) {
+      gateway.send(JSON.stringify({ post_type: "message", message_type: "group", sub_type: "normal",
+        self_id: 99, group_id: 100, user_id: 42, message_id: 18 + offset, message }));
+    }
     // The old Miao help rule accepts a literal slash even without the TRSS rewrite.
     // The spaced slash and the separate check-in help still require the rewrite.
-    const expected = enabled ? 10 : limited ? 7 : 8;
+    const expected = enabled ? 16 : limited ? 13 : 14;
     const deadline = performance.now() + 500;
     while (replies.length < expected && performance.now() < deadline) await Bun.sleep(10);
-    if (!enabled) await Bun.sleep(80);
+    await Bun.sleep(80);
     expect(replies).toHaveLength(expected);
     for (const reply of replies) expect(reply).toEqual(expect.stringContaining("https://www.lotusshared.cn/yunzai/"));
   } finally {
@@ -83,5 +96,21 @@ test.each([
     host?.kill("SIGTERM");
     await host?.exited;
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("独立星铁 sr 前缀只处理明确的旧星铁指令", () => {
+  for (const [msg, normalized] of [
+    ["*sr更新日志", "#星铁更新日志"],
+    ["srAPI列表", "#星铁API列表"],
+    ["srSeele面板", "#星铁Seele面板"],
+    ["sr help", "sr help"],
+    ["srocket", "srocket"],
+    ["srhelp me", "srhelp me"],
+    ["SR帮助", "SR帮助"],
+  ] as const) {
+    const event = normalizeGameCommand({ msg } as MessageEvent);
+    expect(event.msg).toBe(normalized);
+    expect(event.game).toBe(normalized.startsWith("#星铁") ? "sr" : undefined);
   }
 });
