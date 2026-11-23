@@ -3,13 +3,13 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { MessageEvent } from "../lib/messages.ts";
+import type { MessageEvent as BotMessageEvent } from "../lib/messages.ts";
 import { PluginContexts } from "../lib/plugins/contexts.ts";
 import { copyHost } from "./host-fixture.ts";
 
 test("V3 等待输入和群上下文按接入协议隔离", async () => {
   const contexts = new PluginContexts();
-  const onebot: MessageEvent = {
+  const onebot: BotMessageEvent = {
     msg: "#接续", raw_message: "#接续", message: "#接续", post_type: "message",
     message_type: "group", self_id: 99, group_id: 77, user_id: 42,
     isGroup: true, isPrivate: false, isMaster: false, reply: () => true,
