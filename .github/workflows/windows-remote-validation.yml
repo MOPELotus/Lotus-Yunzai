@@ -10,7 +10,15 @@ permissions:
 
 jobs:
   win32:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            architecture: x64
+          - runner: windows-11-arm
+            architecture: arm64
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +29,10 @@ jobs:
           bun-version: '1.4.4'
       - name: Validate Windows shell, NTFS paths, and token permissions
         shell: pwsh
+        env:
+          LOTUS_EXPECTED_ARCH: ${{ matrix.architecture }}
         run: |
           bun --version
+          bun --no-env-file -e 'if (process.arch !== Bun.env.LOTUS_EXPECTED_ARCH) throw Error(process.arch)'
           Get-Command powershell.exe
           bun test test/remote-win32.test.ts
