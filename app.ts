@@ -133,6 +133,7 @@ import { panelAtlasGallery } from "./lib/panel-atlas-gallery.ts";
 import { panelGroupRankSettings } from "./lib/group-panel-rank-settings.ts";
 import { panelStatusSettings } from "./lib/panel-status-settings.ts";
 import { panelGameSettings } from "./lib/panel-game-settings.ts";
+import { panelStarRailIndependentWarp } from "./lib/panel-starrail-independent-warp.ts";
 import { panelStarRailWarpSettings } from "./lib/panel-starrail-warp-settings.ts";
 import { panelGachaSettings } from "./lib/panel-gacha-settings.ts";
 import { panelGenshinWishSettings } from "./lib/panel-genshin-wish-settings.ts";
@@ -3995,6 +3996,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],
         ["/panel/api/settings/native/genshin-damage", panelGameSettings(root, "genshin-damage")],
         ["/panel/api/settings/native/starrail-warp", panelStarRailWarpSettings(root)],
+        ["/panel/api/settings/native/starrail-independent-warp", panelStarRailIndependentWarp(root)],
         ["/panel/api/settings/native/gacha-display", panelGachaSettings(root)],
         ["/panel/api/settings/native/genshin-wish", panelGenshinWishSettings(root)],
         ["/panel/api/settings/native/zzz-rank", panelZzzSettings(root)],

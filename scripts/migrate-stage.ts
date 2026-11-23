@@ -18,6 +18,7 @@ import { stageLegacyOfficialBindings } from "../lib/migration-official-bindings.
 import { stageLegacyPanelRankConfig } from "../lib/migration-panel-rank.ts";
 import { stageLegacyGachaDisplayConfig } from "../lib/migration-gacha-display.ts";
 import { stageLegacyGenshinWishConfig } from "../lib/migration-genshin-wish.ts";
+import { stageLegacyStarRailIndependentWarp } from "../lib/migration-starrail-independent-warp.ts";
 import { stageLegacyStarRailPersonalPools, stageLegacyStarRailWarpSettings } from "../lib/migration-starrail-warp-settings.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
@@ -64,6 +65,8 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       state.directory, plan.plugins, signal);
     const starRailWarp = await stageLegacyStarRailWarpSettings(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
+    const starRailIndependentWarp = await stageLegacyStarRailIndependentWarp(backup.status === "empty" ? undefined : backup.directory,
+      state.directory, plan.plugins, signal);
     const starRailPersonalPools = await stageLegacyStarRailPersonalPools(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
     const zzzRecall = await stageLegacyZzzRecallConfig(backup.status === "empty" ? undefined : backup.directory,
@@ -94,7 +97,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, starRailWarp, starRailPersonalPools,
+      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, starRailWarp, starRailIndependentWarp, starRailPersonalPools,
       zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas,
       starRailTheme, starRailReincarnationTheme,
       shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;

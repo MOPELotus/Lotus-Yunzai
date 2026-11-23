@@ -64,6 +64,7 @@ const nativeSections = computed(() => [
   { key: "showcase", label: "游戏展柜与战绩" },
   { key: "genshin-damage", label: "原神伤害计算" },
   { key: "starrail-warp", label: "星铁模拟跃迁" },
+  { key: "starrail-independent-warp", label: "星铁旧十连规则" },
   { key: "gacha-display", label: "原神与星铁抽卡显示" },
   { key: "genshin-wish", label: "原神模拟祈愿" },
   { key: "zzz-rank", label: "绝区零群榜" },
