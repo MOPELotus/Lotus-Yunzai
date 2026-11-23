@@ -3,7 +3,34 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "@lotus-yunzai/account";
-import { passportLoginCommands } from "../lib/passport-login.ts";
+import { isPassportLoginInput, passportLoginCommands } from "../lib/passport-login.ts";
+import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
+
+test("旧米游社登录紧连凭据仍由登录入口处理，合法档号保留扫码", async () => {
+  const command = passportLoginCommands(undefined, new AbortController().signal).fallback!;
+  const context = { user_id: 42, self_id: 51, message_type: "group", isMaster: false,
+    isBotMaster: () => false, reply: async () => true } as const;
+  for (const normalizedMessage of ["#米游社登录fixture-password", "登录米游社 fixture-password", "#账号密码登录fixture-password"]) {
+    expect(isPassportLoginInput(normalizedMessage)).toBe(true);
+    expect(await command("", { ...context, normalizedMessage })).toBe("请使用 #扫码登录，账号密码登录已停用。");
+  }
+  expect(await command("", { ...context, normalizedMessage: "#米游社登录2" })).toBe("请私聊发送 #扫码登录2。");
+});
+
+test("两协议宿主直接处理旧的紧连登录写法，只回复扫码入口", async () => {
+  const message = "#米游社登录fixture-password";
+  const response = "请使用 #扫码登录，账号密码登录已停用。";
+  await withDualGatewayFixture("passport-compact", 'master: ["99:91", "100:92"]\n', async gateway => {
+    gateway.sendOneBot(message);
+    const onebot = await gateway.onebot.next("send_msg");
+    expect(onebot.params.message).toBe(response);
+    onebot.respond({ message_id: 100 });
+    expect((await gateway.sendMilky(message)).status).toBe(200);
+    const milky = await gateway.milky.next("send_private_message");
+    expect(milky.params.message).toEqual([{ type: "text", data: { text: response } }]);
+    milky.respond({ message_seq: 101 });
+  });
+});
 
 test("扫码入口只使用当前的好友会话，断开会取消尚在创建的二维码", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-passport-command-"));

@@ -7,7 +7,7 @@ import type { CommandModule } from "./commands.ts";
 
 const start = /^(?:#(?:扫码|二维码|辅助)(?:登录|绑定|登陆)|#?(?:米哈?游社?登[录陆入]|登[录陆入]米哈?游社?))([1-9]\d{0,2})?$/u;
 const cancel = /^#取消(?:扫码|二维码)(?:登录|绑定|登陆)([1-9]\d{0,2})?$/u;
-const password = /^#?(?:(?:账号密码|密码)登[录陆](?:[1-9]\d{0,2})?(?:$|\s)|(?:米哈?游社?登[录陆入]|登[录陆入]米哈?游社?)\s+\S)/u;
+const password = /^#?(?:(?:账号密码|密码)登[录陆][\s\S]*|(?:米哈?游社?登[录陆入]|登[录陆入]米哈?游社?)[\s\S]+)$/u;
 const pollIntervalMs = 5_000;
 const lifetimeMs = 5 * 60_000;
 
@@ -39,10 +39,9 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
     async fallback(_message, context) {
       const command = context.normalizedMessage;
       if (signal.aborted) return;
-      if (password.test(command)) return "请使用 #扫码登录，账号密码登录已停用。";
       const cancellation = cancel.exec(command);
       const matched = cancellation ?? start.exec(command);
-      if (!matched) return;
+      if (!matched) return password.test(command) ? "请使用 #扫码登录，账号密码登录已停用。" : undefined;
       const profileId = Number(matched[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       const { user_id, self_id, adapter, privateCredentialSignal: connection } = context;
