@@ -33,7 +33,8 @@ test("原神旧天赋统计选择日期、星级和档案并避开攻略与图�
   });
   expect(matchGenshinPanel("#明日技能汇总2")?.talentStatistics?.day).toBe("tomorrow");
   expect(matchGenshinPanel("#周六4星天赋列表")?.talentStatistics).toEqual({ day: 6, star: 4 });
-  expect(matchGenshinPanel("#周天天赋")?.talentStatistics?.day).toBe(7);
+  expect(matchGenshinPanel("#周天天赋")).toMatchObject({ type: "daily-materials", materialDay: 7 });
+  expect(matchGenshinPanel("#周天天赋统计")?.talentStatistics?.day).toBe(7);
   expect(matchGenshinPanel("#天赋统计100123456")?.uid).toBe("100123456");
   for (const message of ["#芙宁娜天赋图鉴", "#原神养成计算 芙芙 天赋10 10 10", "#星铁天赋统计", "#天赋统计256"]) {
     expect(matchGenshinPanel(message)).toBeUndefined();
