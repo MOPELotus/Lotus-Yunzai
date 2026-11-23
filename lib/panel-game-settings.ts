@@ -74,10 +74,11 @@ export async function saveStarRailShowcaseServer(root: URL, value: string, signa
 }
 
 async function showcasePanel(root: URL) {
-  const [{ readGenshinShowcaseServer }, { readShowcaseServer }, { readGridFightRecentCount }] = await Promise.all([
+  const [{ readGenshinShowcaseServer }, { readShowcaseServer }, { readGridFightRecentCount }, originals] = await Promise.all([
     import("../plugins/genshin/panel/showcase-config.ts"),
     import("../plugins/starrail/panel-showcase-config.ts"),
     import("../plugins/starrail/grid-fight-config.ts"),
+    import("../plugins/starrail/panel-original-config.ts"),
   ]);
   const fields: readonly SettingField[] = [
     {
@@ -94,12 +95,18 @@ async function showcasePanel(root: URL) {
       key: "gridFightRecentCount", label: "星铁货币战争默认展示场数", type: "number", min: 1, max: 3,
       hint: "影响货币战争简写查询；编号战报仍按所选场次查询。",
     },
+    { key: "starrailOriginalEnabled", label: "允许成员引用星铁面板取原图", type: "boolean", hint: "机器人主人仍可引用自己的有效面板取图。" },
+    { key: "starrailOriginalRecall", label: "星铁面板原图自动撤回", type: "boolean" },
+    {
+      key: "starrailOriginalRecallSeconds", label: "星铁面板原图撤回时间（秒）", type: "number", min: 0,
+      max: originals.maxStarRailOriginalRecallSeconds, hint: "设为 0 时保留已发送的原图。",
+    },
   ];
   async function read() {
-    const [genshinSource, starrailSource, gridFightRecentCount] = await Promise.all([
-      readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root),
+    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings] = await Promise.all([
+      readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root), originals.readStarRailOriginalSettings(root),
     ]);
-    return { genshinSource, starrailSource, gridFightRecentCount };
+    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings };
   }
   return {
     fields,
@@ -124,6 +131,16 @@ async function showcasePanel(root: URL) {
           const recent = values.gridFightRecentCount;
           if (recent !== 1 && recent !== 2 && recent !== 3) throw new InvalidGameSettings();
           if (recent !== current.gridFightRecentCount) edits.push({ path: ["starrail", "grid_fight_recent_count"], value: recent });
+          for (const [field, key] of [
+            ["starrailOriginalEnabled", "original_pic"], ["starrailOriginalRecall", "back_call_original_pic"],
+          ] as const) {
+            const value = values[field];
+            if (typeof value !== "boolean") throw new InvalidGameSettings();
+            if (value !== current[field]) edits.push({ path: ["starrail", key], value });
+          }
+          const seconds = values.starrailOriginalRecallSeconds;
+          if (!originals.validStarRailOriginalRecallSeconds(seconds)) throw new InvalidGameSettings();
+          if (seconds !== current.starrailOriginalRecallSeconds) edits.push({ path: ["starrail", "back_call_original_pic_time"], value: seconds });
           return { value: values, yaml: edits.length ? editYaml(content, local, edits) : undefined };
         },
       });

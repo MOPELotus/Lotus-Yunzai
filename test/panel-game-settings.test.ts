@@ -8,6 +8,7 @@ import { panelApi } from "../lib/panel.ts";
 import { readGenshinShowcaseServer } from "../plugins/genshin/panel/showcase-config.ts";
 import { readGridFightRecentCount } from "../plugins/starrail/grid-fight-config.ts";
 import { readShowcaseServer } from "../plugins/starrail/panel-showcase-config.ts";
+import { readStarRailOriginalSettings } from "../plugins/starrail/panel-original-config.ts";
 
 const path = "/panel/api/settings/business/games";
 const headers = { Authorization: "Bearer game-panel-test", "Content-Type": "application/json" };
@@ -38,9 +39,10 @@ test("游戏展柜和货币战争面板复用真实旧设置，并即刻由现�
     expect((await panel(new Request(endpoint)))?.status).toBe(401);
     const original = await panel(new Request(endpoint, { headers }));
     const result = await original!.json() as Result;
-    expect(result.values).toEqual({ genshinSource: "0", starrailSource: "442", gridFightRecentCount: 3 });
+    expect(result.values).toEqual({ genshinSource: "0", starrailSource: "442", gridFightRecentCount: 3,
+      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30 });
 
-    const values = { genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1 };
+    const values = { ...result.values, genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1 };
     expect((await panel(send(result.values, { ...values, genshinSource: "3" })))?.status).toBe(400);
     expect((await panel(send(result.values, { ...values, starrailSource: "1" })))?.status).toBe(400);
     expect((await panel(send(result.values, { ...values, gridFightRecentCount: 4 })))?.status).toBe(400);
@@ -113,6 +115,31 @@ test("面板伤害设置保留原字段和注释，拒绝授权丢失、旧页�
     expect(saved).toContain("# 命座对比");
     expect(Bun.YAML.parse(saved)).toEqual({
       engineMode: "lolomi", extra: { keep: true }, lolomiartis: false, templateteam: true, conscompare: false,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("星铁原图设置继承归档，保存覆盖旧值并保留 0 秒", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-panel-starrail-original-"));
+  const root = pathToFileURL(directory + "/");
+  try {
+    const legacyFolder = join(directory, "backup/plugins/StarRail-plugin/config");
+    await mkdir(legacyFolder, { recursive: true });
+    await writeFile(join(legacyFolder, "PanelSetting.yaml"), "originalPic: false\nbackCalloriginalPic: false\nbackCalloriginalPicTime: 56\n");
+    const route = panelGameSettings(root, "showcase");
+    const { values, fields } = await (await route(new Request(endpoint), () => true)).json() as Result;
+    expect(values).toMatchObject({ starrailOriginalEnabled: false, starrailOriginalRecall: false, starrailOriginalRecallSeconds: 56 });
+    expect(fields.find(field => field.key === "starrailOriginalRecallSeconds")).toMatchObject({ type: "number", min: 0, max: 120 });
+    const next = { ...values, starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 0 };
+    expect((await route(send(values, { ...next, starrailOriginalEnabled: 1 }), () => true)).status).toBe(400);
+    expect((await route(send(values, { ...next, starrailOriginalRecallSeconds: 121 }), () => true)).status).toBe(400);
+    expect((await route(send(values, next), () => true)).status).toBe(200);
+    expect(await readStarRailOriginalSettings(root)).toEqual({ starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 0 });
+    expect(Bun.YAML.parse(await readFile(join(directory, "config/global.yaml"), "utf8"))).toEqual({
+      starrail: { original_pic: true, back_call_original_pic: true, back_call_original_pic_time: 0 },
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
