@@ -19,6 +19,7 @@ import { weatherCommands } from "./lib/weather-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
+import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner-account-command.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -397,6 +398,7 @@ if (import.meta.main) {
   let otherPolicies: Awaited<ReturnType<typeof readRequestOtherPolicies>>;
   const imageOcr = createImageOcr();
   const groupAvatar = createGroupAvatarCommand();
+  const ownerAccount = createOwnerAccountCommand();
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
     policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
@@ -2084,6 +2086,11 @@ if (import.meta.main) {
     }
     const useKeywords = allowed(keywordFeatureNames);
     if (!event.isDelegated && useKeywords && await keywords.continue(event)) {
+      handled?.();
+      return;
+    }
+    if (allowNew && allowed(ownerAccountFeatureNames) && await ownerAccount(event, nativeOperationSignal(),
+      () => groupDispatch.allowsInbound(event) && allowed(ownerAccountFeatureNames))) {
       handled?.();
       return;
     }

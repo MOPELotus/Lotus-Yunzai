@@ -13,6 +13,7 @@ import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
 import { bindGroupAvatar, groupAvatarSession } from "./group-avatar.ts";
+import { bindOwnerAccount, ownerAccountSession } from "./owner-account.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
@@ -739,6 +740,11 @@ async function dispatchMessage(
     [groupAvatarSession]: groupSettings ? bindGroupAvatar({
       ...groupSettings, available: signal => calls.isNapCat(send, signal),
       write: (groupId, file, signal) => calls.setGroupPortrait(send, groupId, file, signal),
+    }) : undefined,
+    [ownerAccountSession]: boundAccount && leaveSignal && selfId !== undefined ? bindOwnerAccount({
+      signal: leaveSignal, actor: userId, privateChat: messageType === "private", isOwner: () => isMaster(selfId, userId),
+      supported: active => calls.isNapCat(send, active), friends: active => calls.readCurrentFriendIds(send, active),
+      write: (operation, active) => calls.updateOwnerAccount(send, operation, active),
     }) : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&

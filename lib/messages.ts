@@ -6,6 +6,7 @@ import { ownerContactListSession, type OwnerContactListSession } from "./owner-c
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "./manual-group-leave.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import { groupAvatarSession, type GroupAvatarSession } from "./adapters/group-avatar.ts";
+import { ownerAccountSession, type OwnerAccountSession } from "./adapters/owner-account.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
@@ -114,6 +115,7 @@ export interface MessageEvent {
   readonly setGroupName?: (name: string, groupId?: number) => Promise<"confirmed" | "rejected" | "unknown" | "unavailable">;
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;
   readonly [groupAvatarSession]?: GroupAvatarSession;
+  readonly [ownerAccountSession]?: OwnerAccountSession;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
   readonly forward?: (nodes: readonly MessageReply[], senderName?: string) => Promise<boolean>;

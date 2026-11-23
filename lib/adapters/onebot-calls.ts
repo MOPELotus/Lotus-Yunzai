@@ -7,6 +7,7 @@ import type { PendingGroupInvitation, PendingGroupInvitationList } from "../grou
 import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-requests.ts";
 import type { RequestDecisionOutcome } from "../request-claim.ts";
 import { reviewObservedBatch } from "./owner-request-batch.ts";
+import type { OwnerAccountOperation } from "./owner-account.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 interface ObservedRequest<T> {
@@ -100,7 +101,7 @@ export class OneBotCalls {
     return (await this.listFriendProfiles(send, signal)).some(friend => String(friend.user_id) === String(userId));
   }
 
-  async friendship(send: Send, userId: number, signal?: AbortSignal) {
+  async readCurrentFriendIds(send: Send, signal?: AbortSignal): Promise<ReadonlySet<number> | undefined> {
     const friends = await this.#request(send, "get_friend_list", {}, signal);
     if (!Array.isArray(friends) || friends.some(friend => {
       if (!isRecord(friend)) return true;
@@ -108,7 +109,11 @@ export class OneBotCalls {
       return (typeof id !== "number" && typeof id !== "string") ||
         !/^[1-9]\d*$/u.test(String(id)) || !Number.isSafeInteger(Number(id));
     })) return;
-    return friends.some(friend => Number(friend.user_id) === userId);
+    return new Set(friends.map(friend => Number(friend.user_id)));
+  }
+
+  async friendship(send: Send, userId: number, signal?: AbortSignal) {
+    return (await this.readCurrentFriendIds(send, signal))?.has(userId);
   }
 
   async getMessage(send: Send, messageId: number, signal?: AbortSignal) {
@@ -192,6 +197,12 @@ export class OneBotCalls {
 
   setGroupName(send: Send, group_id: number, group_name: string, signal: AbortSignal) {
     return this.#moderateGroup(send, "set_group_name", { group_id, group_name }, signal);
+  }
+
+  updateOwnerAccount(send: Send, operation: OwnerAccountOperation, signal: AbortSignal) {
+    if (operation.kind === "deleteFriend") return this.#moderateGroup(send, "delete_friend", { user_id: operation.userId }, signal);
+    if (operation.kind === "nickname") return this.#moderateGroup(send, "set_qq_profile", { nickname: operation.text }, signal);
+    return this.#moderateGroup(send, "set_self_longnick", { longNick: operation.text }, signal);
   }
 
   async setGroupPortrait(send: Send, groupId: number, file: string, signal: AbortSignal): Promise<GroupModerationResult> {

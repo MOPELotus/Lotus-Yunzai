@@ -25,7 +25,7 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Music", ["[media] 点歌"]],
   ["[Lotus-Plugin] Bilibili", ["[media] B 站解析"]],
   ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
-  ["椰奶小助手", ["[group] 群名片", "回复撤回"]],
+  ["椰奶小助手", ["[group] 群名片", "[group] 机器人账号资料", "回复撤回"]],
   ["椰奶点赞", ["[group] 资料卡点赞"]],
   ["椰奶助手-其他", ["[group] 图片文字识别", "头像", "群头像", "取face", "取直链", "日志等级"]],
   ["椰奶助手-发消息", ["[group] 消息代发"]],

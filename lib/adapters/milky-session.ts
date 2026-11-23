@@ -16,6 +16,7 @@ import { hashPrivateNotice, privateNoticeText } from "../private-notice-receipts
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
 import { bindGroupAvatar, groupAvatarSession } from "./group-avatar.ts";
+import { bindOwnerAccount, ownerAccountSession } from "./owner-account.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject,
   groupMayReadPendingJoins, groupOperatorAuthority, isMemberMuteDuration, readGroupActivity, readGroupAnnouncements,
@@ -1093,6 +1094,22 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         ...groupSettings,
         async write(group_id, image_uri, active) {
           return (await call.confirmed("set_group_avatar", { group_id, image_uri }, active)).status;
+        },
+      }) : undefined,
+      [ownerAccountSession]: message && !message.attachmentOnly && positiveId(cardOwner) &&
+          (positiveId(groupId) || message.sub_type === "friend") ? bindOwnerAccount({
+        signal, actor: cardOwner, privateChat: !positiveId(groupId), isOwner: () => isMaster(cardOwner),
+        async supported(active) {
+          const version = await call.confirmed("get_impl_info", {}, active);
+          const raw = version.status === "confirmed" ? version.data.milky_version : undefined;
+          const parsed = typeof raw === "string" ? /^(\d+)\.(\d+)(?:\.\d+)?$/u.exec(raw) : undefined;
+          return !!parsed && (Number(parsed[1]) > 1 || (Number(parsed[1]) === 1 && Number(parsed[2]) >= 1));
+        },
+        friends: listCurrentFriends,
+        async write(operation, active) {
+          if (operation.kind === "deleteFriend") return (await call.confirmed("delete_friend", { user_id: operation.userId }, active)).status;
+          if (operation.kind === "nickname") return (await call.confirmed("set_nickname", { new_nickname: operation.text }, active)).status;
+          return (await call.confirmed("set_bio", { new_bio: operation.text }, active)).status;
         },
       }) : undefined,
       groupActivityRoster: positiveId(groupId) && positiveId(cardOwner)
