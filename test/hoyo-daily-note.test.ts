@@ -390,6 +390,7 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
   const queries: string[][] = [];
   const destinations: string[][] = [];
   let exchanges = 0;
+  const signQueries: string[] = [];
   const registry = new CommandRegistry();
 
   const replies: unknown[] = [];
@@ -419,6 +420,10 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
       if (path.endsWith("/getUserGameRolesByCookie")) return ok({ list: roles.map(role => ({ ...role, game_uid: role.uid })) });
       const headers = new Headers(options?.headers);
       const cookie = headers.get("cookie") ?? "";
+      if (path.endsWith("/hkrpg/info")) {
+        signQueries.push(url.searchParams.get("uid") ?? "");
+        return ok({ is_sign: true, uid: sr.uid, region: sr.region });
+      }
       destinations.push([url.origin, path, headers.get("x-rpc-device_id") ?? ""]);
       const game = path.endsWith("/hkrpg/api/note") ? "sr" : path.endsWith("/zzz/note") ? "zzz" : "unexpected";
       expect(["sr", "zzz"]).toContain(game);
@@ -434,7 +439,7 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
       ["zzz", nap, "%树脂", ["%查询体力", "#绝区树脂", "#绝区零查询体力", "##绝区查询体力", "％树脂2"]],
     ] as const) {
       await writeFile(profile, JSON.stringify(data));
-      queries.length = destinations.length = 0;
+      queries.length = destinations.length = signQueries.length = 0;
       exchanges = 0;
       expect(await dispatch(trigger)).toEqual([]);
       expect(destinations).toEqual(Array.from({ length: 2 }, () => ["https://api-takumi-record.mihoyo.com",
@@ -444,6 +449,7 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
       queries.length = 0;
       for (const alias of aliases) expect(await dispatch(alias, privateFriend)).toEqual([]);
       expect(queries).toEqual(aliases.map(() => [game, role.uid, "fresh"]));
+      expect(signQueries).toEqual(game === "sr" ? Array(aliases.length + 1).fill(role.uid) : []);
       expect(exchanges).toBe(2);
     }
     queries.length = 0;
@@ -459,3 +465,77 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
     await rm(directory, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("星铁委托按真实字段逐条归一化，仅保留公开官方头像并保留未确认的槽位", async () => {
+  const url = "https://act-webstatic.mihoyo.com/note-fixture.png";
+  const response = { current_stamina: 42, max_stamina: 300, accepted_epedition_num: 3, total_expedition_num: 4,
+    expeditions: [
+      { name: "日常收集", remaining_time: "32400", avatars: [`${url}?signed=strip#fragment`, "https://127.0.0.1/a.png"] },
+      { name: "资源调度", remaining_time: 0, avatars: [url] },
+      { name: "时间待核", avatars: [] },
+      { status: "idle", name: "空槽", remaining_time: 10 },
+    ] };
+  const note = await readDailyNote(starRail, async () => Response.json({ retcode: 0, data: response }));
+  expect(note.expeditions).toEqual({ current: 3, max: 4, remainingSeconds: 0, entries: [
+    { name: "日常收集", remainingSeconds: 32_400, avatars: [url, undefined] },
+    { name: "资源调度", remainingSeconds: 0, avatars: [url] },
+    { name: "时间待核", remainingSeconds: undefined, avatars: [] },
+  ] });
+});
+
+test("星铁便笺与签到共用本人档案一次续期，签到未知不抹掉体力，换绑抑制出站结果", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-sr-note-checkin-"));
+  const file = join(directory, "42-2.yaml");
+  const profile = `profile: { id: 2 }
+user: { qq: 42 }
+account:
+  cookie: ltoken=old
+  stoken: fixture-stoken
+  game_roles: { sr: [{ uid: '523456789', region: prod_qd_cn }] }
+device: { id: note-device, fp: note-fp }
+`;
+  const history: string[] = [];
+  let exchanges = 0, mode = "expired";
+  try {
+    await writeFile(file, profile);
+    const profiles = createProfileStore(directory);
+    const client = createHoyoClient(async (url, init) => {
+      const headers = new Headers(init.headers);
+      expect(init).toMatchObject({ method: "GET", redirect: "error", credentials: "omit" });
+      expect(headers.get("x-rpc-device_id")).toBe("note-device");
+      expect(headers.get("x-rpc-device_fp")).toBe("note-fp");
+      const cookie = headers.get("cookie");
+      if (url.pathname.endsWith("/hkrpg/api/note")) {
+        history.push(`note:${cookie}`);
+        expect(url.searchParams.get("role_id")).toBe("523456789");
+        return Response.json({ retcode: 0, data: { current_stamina: 12, max_stamina: 300 } });
+      }
+      history.push(`sign:${cookie}`);
+      expect(url.origin + url.pathname).toBe("https://api-takumi.mihoyo.com/event/luna/hkrpg/info");
+      expect(Object.fromEntries(url.searchParams)).toEqual({ act_id: "e202304121516551",
+        uid: "523456789", region: "prod_qd_cn", lang: "zh-cn" });
+      if (cookie === "ltoken=old") return Response.json({ retcode: -100 });
+      if (mode === "unavailable") return Response.json({ retcode: 0, data: { is_sign: false, uid: "123456789" } });
+      if (mode === "changed") await writeFile(file, profile.replace("fixture-stoken", "other-secret"));
+      return Response.json({ retcode: 0, data: { is_sign: mode === "expired", uid: "523456789", region: "prod_qd_cn" } });
+    }, { profiles, async exchange(context) {
+      expect(context.account.stoken).toBe("fixture-stoken");
+      exchanges++;
+      return { cookie: "ltoken=new", ltoken: "new" };
+    } });
+    const request = async () => client.fetchDailyNotes(await profiles.requestContexts("42", 2, ["sr"]), { includeStarRailCheckin: true });
+    expect(await request()).toMatchObject([{ status: "fulfilled", value: { starRailCheckin: "signed",
+      stamina: { current: 12, max: 300 } } }]);
+    expect(history).toEqual(["note:ltoken=old", "sign:ltoken=old", "sign:ltoken=new"]);
+    mode = "unsigned";
+    expect(await request()).toMatchObject([{ status: "fulfilled", value: { starRailCheckin: "unsigned" } }]);
+    mode = "unavailable";
+    expect(await request()).toMatchObject([{ status: "fulfilled", value: { starRailCheckin: "unavailable",
+      stamina: { current: 12, max: 300 } } }]);
+    mode = "changed";
+    await expect(request()).rejects.toMatchObject({ code: "profile-changed" });
+    expect(exchanges).toBe(1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

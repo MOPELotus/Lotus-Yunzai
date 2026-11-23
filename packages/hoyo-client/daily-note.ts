@@ -1,4 +1,4 @@
-import type { Game, ProfileRequestContext } from "@lotus-yunzai/account";
+import { normalizeProfileRoleArtworkUrl, type Game, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readCnGameRecord } from "./game-record.ts";
@@ -14,6 +14,12 @@ export interface DailyNoteRecovery extends DailyNoteProgress {
   readonly recoverySeconds?: number;
 }
 
+export interface DailyNoteExpedition {
+  readonly name: string;
+  readonly remainingSeconds?: number;
+  readonly avatars: readonly (string | undefined)[];
+}
+
 export interface DailyNoteSnapshot {
   readonly game: Game;
   readonly uid: string;
@@ -21,7 +27,9 @@ export interface DailyNoteSnapshot {
   readonly stamina: DailyNoteRecovery;
   readonly homeCoin?: DailyNoteRecovery;
   readonly commissionRewardReceived?: boolean;
-  readonly expeditions?: { readonly current?: number; readonly max?: number; readonly remainingSeconds?: number };
+  readonly expeditions?: { readonly current?: number; readonly max?: number; readonly remainingSeconds?: number;
+    readonly entries?: readonly DailyNoteExpedition[] };
+  readonly starRailCheckin?: "signed" | "unsigned" | "unavailable";
   readonly weeklyDiscount?: DailyNoteProgress;
   readonly transformer?: { readonly ready?: boolean; readonly remainingSeconds?: number };
   readonly training?: DailyNoteProgress;
@@ -74,13 +82,17 @@ function recovery(current: unknown, max: unknown, duration?: unknown): DailyNote
   return { ...value, ...(recoverySeconds === undefined ? {} : { recoverySeconds }) };
 }
 
+function expeditionRemaining(row: Json) {
+  return uint(row.remaining_time ?? row.remained_time ?? row.remain_time ?? row.left_time);
+}
+
 function parseExpeditions(data: Json, game: "gs" | "sr"): DailyNoteSnapshot["expeditions"] {
-  const list = Array.isArray(data.expeditions) ? data.expeditions.map(object).filter((row) => row !== undefined) : undefined;
-  const active = list?.filter((row) => {
+  const list = Array.isArray(data.expeditions) ? data.expeditions.map(object).filter(row => row !== undefined) : undefined;
+  const active = list?.filter(row => {
     const status = row.status ?? row.state;
     if (typeof status === "string" && /^(?:none|idle|empty|未派遣)$/iu.test(status)) return false;
-    return uint(row.remaining_time ?? row.remained_time ?? row.remain_time ?? row.left_time) !== undefined ||
-      (typeof status === "string" && status.length > 0) || (Array.isArray(row.avatars) && row.avatars.length > 0);
+    return expeditionRemaining(row) !== undefined || (typeof status === "string" && status.length > 0) ||
+      (Array.isArray(row.avatars) && row.avatars.length > 0) || (game === "sr" && typeof row.name === "string" && !!row.name.trim());
   });
   const inferred = list?.length ? active?.length : undefined;
   const current = uint(game === "sr" ? data.accepted_expedition_num ?? data.accepted_epedition_num ?? data.current_expedition_num
@@ -89,12 +101,17 @@ function parseExpeditions(data: Json, game: "gs" | "sr"): DailyNoteSnapshot["exp
     ?? (list?.length || undefined);
   let remainingSeconds: number | undefined;
   for (const row of active ?? []) {
-    const left = uint(row.remaining_time ?? row.remained_time ?? row.remain_time ?? row.left_time);
+    const left = expeditionRemaining(row);
     if (left !== undefined) remainingSeconds = Math.min(remainingSeconds ?? left, left);
   }
-  if (current !== undefined || max !== undefined || remainingSeconds !== undefined) return {
+  const entries = game === "sr" && active?.slice(0, 8).map((row, index) => {
+    const name = typeof row.name === "string" ? row.name.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 80) : "";
+    return { name: name || `委托 ${index + 1}`, remainingSeconds: expeditionRemaining(row),
+      avatars: Array.isArray(row.avatars) ? row.avatars.slice(0, 4).map(normalizeProfileRoleArtworkUrl) : [] };
+  });
+  if (current !== undefined || max !== undefined || remainingSeconds !== undefined || (entries && entries.length)) return {
     ...(current === undefined ? {} : { current }), ...(max === undefined ? {} : { max }),
-    ...(remainingSeconds === undefined ? {} : { remainingSeconds }),
+    ...(remainingSeconds === undefined ? {} : { remainingSeconds }), ...(entries && { entries }),
   };
 }
 

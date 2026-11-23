@@ -1,4 +1,4 @@
-import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
+import { createProfileStore, loadOfficialArtwork, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { createProfileHoyoClient, DailyNoteRequestError, HoyoRequestError, type DailyNoteSnapshot } from "@lotus-yunzai/hoyo-client";
 import type { DailyNoteCardItem, DailyNoteCardModel } from "@lotus-yunzai/skia/daily-note";
 import type { CommandModule } from "./commands.ts";
@@ -16,6 +16,14 @@ const videoStates = {
   doing: "营业中", done: "营业已结束", ready: "可以开始营业", idle: "未营业", unknown: "状态待确认",
 } as const;
 const sectionsPerPage = 6;
+const signLabels = { signed: "已签到", unsigned: "未签到", unavailable: "暂时无法核验" } as const;
+const expeditionDuration = 20 * 60 * 60;
+
+function expeditionTime(seconds: number | undefined) {
+  if (seconds === undefined) return "剩余时间未知";
+  if (seconds === 0) return "已完成";
+  return `${String(Math.floor(seconds / 3600)).padStart(2, "0")}时${String(Math.floor(seconds % 3600 / 60)).padStart(2, "0")}分`;
+}
 
 function parseCommand(message: string) {
   for (const [pattern, games] of matches) {
@@ -82,7 +90,13 @@ function noteCardItem(snapshot: DailyNoteSnapshot): DailyNoteCardItem {
   const detail = [
     `${resources[game]} ${pair(stamina)}`, homeCoin && `洞天宝钱 ${pair(homeCoin)}`, recovery,
   ].filter(Boolean).join(" · ");
-  return { game, gameName: names[game], uid, ok: true, data, detail, details };
+  const checkin = snapshot.starRailCheckin && signLabels[snapshot.starRailCheckin];
+  const entries = expeditions?.entries?.map(({ name, remainingSeconds, avatars }) => ({
+    name, remaining: expeditionTime(remainingSeconds), avatars,
+    progress: remainingSeconds === undefined ? undefined : Math.max(0, 1 - remainingSeconds / expeditionDuration),
+  }));
+  return { game, gameName: names[game], uid, ok: true, data, detail, details, checkin,
+    expeditions: game === "sr" && (entries?.length || (expeditions?.current ?? 0) > 0) ? entries ?? [] : undefined };
 }
 
 function failure(error: unknown): string {
@@ -115,7 +129,11 @@ function textReply(groups: DailyNoteCardModel["groups"]) {
   return groups.flatMap(({ name, items }) => items.map((item) => {
     const title = [name, item.gameName, item.uid && `UID ${item.uid}`].filter(Boolean).join(" · ");
     const details = [item.ok ? item.detail : item.error,
-      ...(item.details ?? []).map(({ label, value }) => `${label} ${value}`)];
+      ...(item.details ?? []).map(({ label, value }) => `${label} ${value}`),
+      item.checkin && `今日米游社 ${item.checkin}`,
+      ...(item.expeditions?.map(({ name, remaining, progress }) =>
+        `${name} · ${remaining}${progress === undefined ? "" : ` · ${Math.round(progress * 100)}%`}`) ?? []),
+      item.expeditions?.length === 0 && "委托明细暂未返回"];
     return [title, ...details.filter(Boolean)].join("\n");
   })).join("\n\n");
 }
@@ -159,6 +177,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
           const results = await client.fetchDailyNotes(sources, {
             signal: active,
             verifyReadOnly,
+            includeStarRailCheckin: true,
             onCredentialRefresh(refreshed) { revision = refreshed.revision; },
           });
           if (revision && results.some(result => result.status === "fulfilled")) {
@@ -219,7 +238,10 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
         if (active.aborted) return [];
         let reply: MessageReply;
         try {
-          const image = await renderer?.renderDailyNoteCard(page, { resourceDirectory: Bun.env.LOTUS_DAILY_NOTE_RESOURCES || undefined });
+          const avatarArtwork = renderer && await loadOfficialArtwork(page.groups.flatMap(({ items }) =>
+            items.flatMap(({ expeditions }) => expeditions?.flatMap(({ avatars }) => avatars) ?? [])), { signal: active });
+          const image = await renderer?.renderDailyNoteCard(page, { resourceDirectory: Bun.env.LOTUS_DAILY_NOTE_RESOURCES || undefined,
+            avatarArtwork, signal: active, inlineImageByteLimit: context.inlineImageByteLimit });
           reply = image ? { type: "image", file: image.png } : textReply(page.groups);
         } catch {
           reply = textReply(page.groups);

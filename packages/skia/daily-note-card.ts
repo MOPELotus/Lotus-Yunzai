@@ -3,7 +3,7 @@ import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
-import { renderPng, type PngRender } from "./index.ts";
+import { nativeImageRasterScale, renderPng, type PngRender } from "./index.ts";
 
 type Game = "gs" | "sr" | "zzz";
 type TextValue = string | number | null;
@@ -14,6 +14,13 @@ export interface DailyNoteCardDetail {
   readonly note?: string;
 }
 
+export interface DailyNoteCardExpedition {
+  readonly name: string;
+  readonly remaining: string;
+  readonly progress?: number;
+  readonly avatars: readonly (string | undefined)[];
+}
+
 export interface DailyNoteCardItem {
   readonly game?: Game | "";
   readonly gameName?: string;
@@ -21,6 +28,8 @@ export interface DailyNoteCardItem {
   readonly ok: boolean;
   readonly detail?: string;
   readonly details?: readonly DailyNoteCardDetail[];
+  readonly checkin?: "已签到" | "未签到" | "暂时无法核验";
+  readonly expeditions?: readonly DailyNoteCardExpedition[];
   readonly error?: string;
   readonly data?: {
     readonly current_resin?: TextValue;
@@ -46,6 +55,9 @@ export interface DailyNoteCardOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly resourceDirectory?: string;
+  readonly avatarArtwork?: ReadonlyMap<string, Uint8Array>;
+  readonly inlineImageByteLimit?: number;
+  readonly signal?: AbortSignal;
 }
 
 // Lotus-ReFactor daily-note-summary, drawn from the original Genshin daily-note template.
@@ -200,17 +212,78 @@ function paintIcon(ctx: Context, image: Image, x: number, y: number) {
   ctx.drawImage(image, x + (25 - w) / 2, y + (25 - h) / 2, w, h);
 }
 
+// StarRail-plugin 308a83d new_note uses a grey row, centered status, trailing portraits and a gold progress edge.
+const expeditionHeight = 40;
+const expeditionHeading = 34;
+function paintExpeditions(ctx: Context, y: number, rows: readonly DailyNoteCardExpedition[], font: string,
+  numberFont: string, avatars: ReadonlyMap<string, Image>) {
+  const height = expeditionHeading + Math.max(1, rows.length) * (expeditionHeight + 5) + 4;
+  rect(ctx, inset, y, panelWidth, height, "#e8e7e7", 5);
+  textAt(ctx, ["委托状态"], inset + 10, y + 8, font, "#504c49", 16, 22);
+  y += expeditionHeading;
+  if (!rows.length) textAt(ctx, ["委托明细暂未返回"], width / 2, y + 5, font, "#5f5f5d", 14, 22, "center");
+  for (const row of rows) {
+    const x = inset + 7;
+    const rowWidth = panelWidth - 14;
+    rect(ctx, x, y, rowWidth, expeditionHeight, "#ccc");
+    const name = singleLine(ctx, row.name, 151, font, 15, 12);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 8, y, 151, 35);
+    ctx.clip();
+    textAt(ctx, [name.text], x + 8, y + 9, font, "#504c49", name.size, 22);
+    ctx.restore();
+    const completed = row.progress === 1;
+    const color = completed ? "#9c8d5c" : "#504c49";
+    const status = singleLine(ctx, row.remaining, 111, numberFont, 13, 11);
+    const badgeWidth = Math.ceil(ctx.measureText(status.text).width) + 10;
+    shape(ctx, x + 213 - badgeWidth / 2, y + 7, badgeWidth, 21, 3);
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    textAt(ctx, [status.text], x + 213, y + 9, numberFont, color, status.size, 21, "center");
+    row.avatars.forEach((url, index) => {
+      const dx = x + rowWidth - 6 - (row.avatars.length - index) * 34;
+      ctx.save();
+      shape(ctx, dx, y + 3, 30, 30, 15);
+      ctx.clip();
+      const avatar = url ? avatars.get(url) : undefined;
+      if (avatar) {
+        const factor = Math.max(30 / avatar.width, 30 / avatar.height);
+        const w = avatar.width * factor, h = avatar.height * factor;
+        ctx.drawImage(avatar, dx + (30 - w) / 2, y + 3 + (30 - h) / 2, w, h);
+      } else rect(ctx, dx, y + 3, 30, 30, "#e8e7e7");
+      ctx.restore();
+      shape(ctx, dx, y + 3, 30, 30, 15);
+      ctx.strokeStyle = "#9c8d5c";
+      ctx.stroke();
+    });
+    if (row.progress !== undefined) {
+      rect(ctx, x, y + 35, rowWidth, 5, "#b8b8b8");
+      rect(ctx, x, y + 35, rowWidth * row.progress, 5, "#ac9854");
+    }
+    y += expeditionHeight + 5;
+  }
+}
+
 export async function renderDailyNoteCard(model: DailyNoteCardModel,
-  { mode = "auto", scale = 4, resourceDirectory = defaultResources }: DailyNoteCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, resourceDirectory = defaultResources, avatarArtwork, inlineImageByteLimit, signal }: DailyNoteCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("体力卡缩放比例须在 1 至 4 之间。");
 
   const { images, textFont, numberFont } = await themeAt(await realpath(resourceDirectory));
+  const avatars = new Map<string, Image>();
+  await Promise.all([...(avatarArtwork ?? [])].map(async ([url, bytes]) => {
+    const image = await loadImage(Buffer.from(bytes)).catch(() => undefined);
+    if (image?.width && image.height) avatars.set(url, image);
+  }));
+  signal?.throwIfAborted();
   const ctx = new Canvas(1, 1).getContext("2d");
   let bottom = 12;
   const sections = model.groups.flatMap(({ name, items }) => items.map((item) => {
     const game = item.gameName || item.game;
     const heading = game ? `${name} · ${game} · UID ${item.uid || "未同步"}` : name;
-    const title = singleLine(ctx, heading, width - 42, numberFont, 16, 12);
+    const checkin = item.game === "sr" ? item.checkin : undefined;
+    const expeditions = item.game === "sr" ? item.expeditions : undefined;
+    const title = singleLine(ctx, heading, width - (checkin ? 196 : 42), numberFont, 16, 12);
     const headingY = bottom;
     bottom += title.size * 1.5 + 9;
     const rows = makeRows(item).map((row) => {
@@ -226,20 +299,27 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
     const panelY = bottom;
     const panelHeight = rows.reduce((sum, row) => sum + row.height, 0);
     bottom += panelHeight + 21;
-    return { title, headingY, panelY, panelHeight, rows };
+    if (expeditions) bottom += expeditionHeading + Math.max(1, expeditions.length) * (expeditionHeight + 5) + 11;
+    return { title, headingY, panelY, panelHeight, rows, checkin, expeditions };
   }));
   const footer = lines(ctx, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
   const height = Math.max(240, bottom + 50);
-  const zoom = 1.5 * scale;
-
-  return renderPng(Math.round(width * zoom), Math.ceil(height * zoom), (drawing) => {
+  function paint(drawing: Context, zoom: number) {
     drawing.scale(zoom, zoom);
     drawing.imageSmoothingEnabled = true;
     drawing.imageSmoothingQuality = "high";
     rect(drawing, 0, 0, width, 100000, "#f0eae3");
-    for (const { title, headingY, panelY, panelHeight, rows } of sections) {
+    for (const { title, headingY, panelY, panelHeight, rows, checkin, expeditions } of sections) {
       rect(drawing, inset, headingY - 3, 5, 24, "#d3bc8d", 1);
       textAt(drawing, [title.text], 26, headingY, numberFont, "#504c49", title.size, title.size * 1.5);
+      if (checkin) {
+        const color = checkin === "已签到" ? "#9c8d5c" : "#767676";
+        shape(drawing, width - 146, headingY, 130, 21, 3);
+        drawing.strokeStyle = color;
+        drawing.stroke();
+        const badge = singleLine(drawing, `今日米游社 ${checkin}`, 118, textFont, 12, 10);
+        textAt(drawing, [badge.text], width - 81, headingY + 3, textFont, color, badge.size, 20, "center");
+      }
       rect(drawing, inset, panelY, panelWidth, panelHeight, "#dfd8d1", 9);
       drawing.save();
       shape(drawing, inset + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 8);
@@ -259,7 +339,24 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
         if (index < rows.length - 1) rect(drawing, inset + 1, y - 1, panelWidth - 2, 1, "#dfd8d1");
       }
       drawing.restore();
+      if (expeditions) paintExpeditions(drawing, panelY + panelHeight + 7, expeditions, textFont, numberFont, avatars);
     }
     textAt(drawing, footer, width / 2, bottom + 15, textFont, "#597487", 12, 18, "center");
-  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
+  }
+
+  function render(renderScale: number) {
+    const zoom = 1.5 * renderScale;
+    return renderPng(Math.round(width * zoom), Math.ceil(height * zoom), drawing => paint(drawing, zoom),
+      mode, { renderScale, allowHalfScale: renderScale === 4 });
+  }
+  const fits = (image: PngRender) => inlineImageByteLimit === undefined || image.png.byteLength <= inlineImageByteLimit;
+  const image = await render(scale);
+  signal?.throwIfAborted();
+  if (fits(image)) return image;
+  if (scale === 4 && nativeImageRasterScale() === 4 && !image.reducedScaleReason) {
+    const half = await render(2);
+    signal?.throwIfAborted();
+    if (fits(half)) return half;
+  }
+  throw new RangeError("体力卡超过当前会话的单图大小上限。");
 }

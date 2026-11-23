@@ -440,6 +440,7 @@ export function createHoyoClient(
     async fetchDailyNotes(sources: readonly ProfileRequestContext[], options: DailyNoteOptions & {
       readonly verifyReadOnly?: () => Promise<void>;
       readonly onCredentialRefresh?: (profile: ProfileAccountContext) => void;
+      readonly includeStarRailCheckin?: boolean;
     } = {}) {
       const first = sources[0];
       const results: PromiseSettledResult<DailyNoteSnapshot>[] = [];
@@ -455,18 +456,31 @@ export function createHoyoClient(
         refreshAttempted = true;
         return true;
       }
+      function onAttempt(attempt: ProfileAccountContext) {
+        if (attempt.revision !== current.revision) options.onCredentialRefresh?.(attempt);
+        current = attempt;
+      }
       for (const source of sources) {
         const { game, role } = source;
         options.signal?.throwIfAborted();
         try {
           verifyCookieIdentity(source);
-          const value = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
-            : await readForProfile({ ...current, game, role }, options, readDailyNote,
-            canRefresh, (attempt) => {
-              if (attempt.revision !== current.revision) options.onCredentialRefresh?.(attempt);
-              current = attempt;
-            });
-          results.push({ status: "fulfilled", value });
+          const note = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
+            : await readForProfile({ ...current, game, role }, options, readDailyNote, canRefresh, onAttempt);
+          let starRailCheckin: DailyNoteSnapshot["starRailCheckin"];
+          if (game === "sr" && options.includeStarRailCheckin) {
+            try {
+              const signRole = { ...role, region: note.region };
+              const status = options.verifyReadOnly ? await readCnGameCheckinInfo({ ...source, role: signRole }, transport, options, verify)
+                : await readForProfile({ ...current, game, role: signRole }, options, readCnGameCheckinInfo, canRefresh, onAttempt);
+              starRailCheckin = status.signed ? "signed" : "unsigned";
+            } catch {
+              options.signal?.throwIfAborted();
+              await verify();
+              starRailCheckin = "unavailable";
+            }
+          }
+          results.push({ status: "fulfilled", value: { ...note, ...(starRailCheckin && { starRailCheckin }) } });
         } catch (reason) {
           options.signal?.throwIfAborted();
           await verify();
