@@ -1,5 +1,6 @@
 import type { PublicRoleReferenceCatalogue } from "./public-role-references.ts";
 import { gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
+import type { createOwnRoleLegacyArtwork } from "./own-role-legacy-artwork.ts";
 import type { createGameProfileDefaults } from "./game-profile-defaults.ts";
 import { segment } from "./messages.ts";
 import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
@@ -48,7 +49,8 @@ function collectRoles(profiles: Catalogs, game: Game) {
 }
 
 export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, scope: Scope,
-  readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>, defaults?: ReturnType<typeof createGameProfileDefaults>) {
+  readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>, defaults?: ReturnType<typeof createGameProfileDefaults>,
+  legacyArtwork?: ReturnType<typeof createOwnRoleLegacyArtwork>) {
   const { user, signal, isCurrent } = scope;
   if (!isCurrent() || signal.aborted) return;
   if (profileId !== undefined && profileId > MAX_PROFILE_ID) return `档案编号须在 1 到 ${MAX_PROFILE_ID} 之间。`;
@@ -107,7 +109,7 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
         ? ` · 默认档案 ${gameDefault}` : " · 未选默认档案") : "";
       lines.push(label + defaultLabel);
       if (!roles.length) lines.push("  暂无已同步角色");
-      const rows: (ProfileCardRole & { readonly avatar?: string })[] = [];
+      const rows: (ProfileCardRole & { readonly avatar?: string; readonly profile?: number })[] = [];
       for (const [index, { profileId: source, role, activeIn }] of roles.entries()) {
         const reference = references?.data.indexOf(role.uid) ?? -1;
         const marker = reference >= 0 ? `（${references?.uid === role.uid ? "公开当前" : "另有公开引用"} ${reference + 1}）` : "";
@@ -118,7 +120,7 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
         const cardOrigin = profileId === undefined && activeIn.includes(source) ? `档案 ${activeIn.join("、")} 当前` :
           [origin, current].filter(Boolean).join(" ");
         rows.push({ uid: role.uid, name: [cardOrigin, detail, marker].filter(Boolean).join(" · "), active: !!activeIn.length,
-          slot: String(index + 1), badge: "档案角色", avatar: role.avatar });
+          slot: String(index + 1), badge: "档案角色", avatar: role.avatar, profile: source });
       }
       const listedUids = new Set(roles.map(({ role }) => role.uid));
       const uniqueReferences = references?.data.flatMap((uid, index) => {
@@ -137,14 +139,26 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
     if (hasReferences) instructions.push("公开引用独立编号。查询或切换请用 #、* 或 % 加 查询公开UID2、切换公开UID2。");
     const fallback = [confirmation, ...lines, ...instructions].filter(Boolean).join("\n");
     try {
-      const [{ loadProfileRoleArtwork }, { renderProfileCard }] = await Promise.all([
+      const [{ loadProfileRoleArtwork }, { openProfileCardTheme, renderProfileCard }] = await Promise.all([
         import("./profile-role-artwork.ts"), import("@lotus-yunzai/skia/profile"),
       ]);
       const options = { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined };
-      const artwork = await loadProfileRoleArtwork(cardGroups.flatMap(({ rows }) => rows.map(row => row.avatar)), { signal });
+      await openProfileCardTheme(options.resourceDirectory);
+      const groups = await Promise.all(cardGroups.map(async ({ rows, ...group }) => {
+        const prepared = [];
+        for (const { avatar, profile, ...row } of rows) {
+          if (!isCurrent() || signal.aborted) break;
+          const old = profile !== undefined && row.uid !== undefined
+            ? await legacyArtwork?.(qq, profile, group.game, String(row.uid), signal) : undefined;
+          prepared.push({ ...row, avatar: old?.image ? undefined : avatar, ...old });
+        }
+        return { ...group, rows: prepared };
+      }));
       if (!isCurrent() || signal.aborted) return;
-      const { png } = await renderProfileCard({ title, subtitle, warnings: instructions, roleGroups: cardGroups.map(({ rows, ...group }) => ({
-        ...group, rows: rows.map(({ avatar, ...row }) => ({ ...row, image: avatar ? artwork.get(avatar) : undefined })),
+      const artwork = await loadProfileRoleArtwork(groups.flatMap(({ rows }) => rows.map(row => row.avatar)), { signal });
+      if (!isCurrent() || signal.aborted) return;
+      const { png } = await renderProfileCard({ title, subtitle, warnings: instructions, roleGroups: groups.map(({ rows, ...group }) => ({
+        ...group, rows: rows.map(({ avatar, ...row }) => ({ ...row, image: row.image ?? (avatar ? artwork.get(avatar) : undefined) })),
       })), uidList: true }, options);
       if (!isCurrent() || signal.aborted) return;
       if (png.byteLength) return [segment.image(png), [confirmation, ...instructions].filter(Boolean).join("\n")];

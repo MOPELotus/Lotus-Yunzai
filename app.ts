@@ -14,6 +14,7 @@ import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-remin
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
 import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-profile-defaults.ts";
+import { createOwnRoleLegacyArtwork } from "./lib/own-role-legacy-artwork.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
 import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "./lib/public-role-registration.ts";
@@ -2366,7 +2367,8 @@ if (import.meta.main) {
         return;
       }
       const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
-      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic, gameProfileDefaults);
+      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic, gameProfileDefaults,
+        createOwnRoleLegacyArtwork(roleProfiles, lockFile));
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }

@@ -258,14 +258,21 @@ export async function renderProfileCard(model: ProfileCardModel,
       layout.rect(42, y, panelWidth - 43, 64, "#f0ece4", 33);
       const banner = row.banner ? await images.get(row.banner) : group.game === "zzz" ? artwork?.zzzBanner : undefined;
       if (row.uid && banner) {
-        layout.image(banner, 42, y, panelWidth - 43, 64, 33);
         if (model.uidList) layout.commands.push(ctx => {
-          const fade = ctx.createLinearGradient(42, y, 423, y);
+          const right = 42 + panelWidth - 43;
+          const wide = 64 * banner.width / banner.height;
+          ctx.save();
+          rectPath(ctx, 42, y, panelWidth - 43, 64, 33);
+          ctx.clip();
+          ctx.drawImage(banner, right - wide, y, wide, 64);
+          const fade = ctx.createLinearGradient(42, y, right, y);
           fade.addColorStop(0, "rgba(240,236,228,.94)");
           fade.addColorStop(.51, "rgba(240,236,228,.88)");
           fade.addColorStop(1, "rgba(240,236,228,0)");
           fillRect(ctx, 42, y, panelWidth - 43, 64, fade, 33);
+          ctx.restore();
         });
+        else layout.image(banner, 42, y, panelWidth - 43, 64, 33);
       }
       const avatar = (row.image ? await images.get(row.image) : undefined) ?? (row.uid ? artwork?.defaultFace : undefined);
       if (avatar || (model.uidList && row.uid)) {
