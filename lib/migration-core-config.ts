@@ -117,8 +117,8 @@ async function physicalDirectory(path: string) {
   }
 }
 
-async function readConfig(root: string, name: ConfigName, deferred: DeferredOwners) {
-  const path = join(root, "config", "config", `${name}.yaml`);
+async function readConfig(directory: string, name: ConfigName): Promise<Config | undefined> {
+  const path = join(directory, `${name}.yaml`);
   const original = await lstat(path).catch((error: unknown) => {
     if (!missing(error)) throw error;
   });
@@ -145,7 +145,7 @@ async function readConfig(root: string, name: ConfigName, deferred: DeferredOwne
     if (decoded != null && (typeof decoded !== "object" || Array.isArray(decoded))) {
       throw new Error(`无法读取旧 ${name}.yaml。`);
     }
-    return projectConfig((decoded ?? {}) as Config, name, deferred);
+    return (decoded ?? {}) as Config;
   } finally {
     await file.close();
   }
@@ -171,13 +171,19 @@ export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: 
     throw new Error("核心配置暂存须位于旧安装副本之外。");
   }
   const result = { files: 0, deferredOwners: { master: 0, masterQQ: 0 } };
-  const hasCoreConfig = await physicalDirectory(join(source, "config")) &&
-    await physicalDirectory(join(source, "config", "config"));
+  const sourceConfig = join(source, "config");
+  const defaultConfig = join(sourceConfig, "default_config");
+  const userConfig = join(sourceConfig, "config");
+  const hasConfig = await physicalDirectory(sourceConfig);
+  const hasDefaults = hasConfig && await physicalDirectory(defaultConfig);
+  const hasOverrides = hasConfig && await physicalDirectory(userConfig);
   const deferred: DeferredOwners = { master: [], masterQQ: [] };
   const entries = new Map<ConfigName, Config>();
   for (const key of ["other", "bot"] as const) {
     signal?.throwIfAborted();
-    const config = hasCoreConfig ? await readConfig(source, key, deferred) : undefined;
+    const defaults = hasDefaults ? await readConfig(defaultConfig, key) : undefined;
+    const overrides = hasOverrides ? await readConfig(userConfig, key) : undefined;
+    const config = defaults === undefined && overrides === undefined ? undefined : projectConfig({ ...defaults, ...overrides }, key, deferred);
     if (key === "bot" && updateNotice) entries.set(key, { ...(config ?? { update_time: 0 }), ...updateNotice, ...config });
     else if (config !== undefined) entries.set(key, config);
   }

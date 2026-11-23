@@ -137,6 +137,28 @@ test("只筛选可迁字段，保留明确禁用、旧邀请字符串语义和�
   expect(await readFile(previous(source, "bot"), "utf8")).toBe(bot);
 }));
 
+test("迁入旧核心配置时沿用默认文件，用户配置按顶层键覆盖", () => fixture(async (source, stage) => {
+  const directory = join(source, "config", "default_config");
+  await mkdir(directory, { recursive: true });
+  const defaults = '"/→#": false\nupdate_time: 133\nlog_object: {depth: 4, sorted: true}\nsecret: fixture-ignored\n';
+  await writeFile(join(directory, "bot.yaml"), defaults);
+  await writeFile(join(directory, "other.yaml"), 'master: ["99:42"]\nautoFriend: 0\nblackGroup: [81]\n');
+  await write(source, "bot", "log_object: {length: 51}\n");
+
+  expect(await stageLegacyCoreConfig(source, stage)).toEqual({ files: 2, deferredOwners: { master: 0, masterQQ: 0 } });
+  expect(await readLocalConfig(url(stage), "bot", { update_time: 1440 })).toEqual({
+    "/→#": false, update_time: 133, log_object: { length: 51 },
+  });
+  const dispatch = await readGroupDispatch(url(stage));
+  expect(dispatch.prepare(message("/版本")).event.msg).toBe("/版本");
+  expect(dispatch.allowsInbound({ user_id: 42, group_id: 81 })).toBe(false);
+  expect(dispatch.allowsInbound({ user_id: 42, group_id: 82 })).toBe(true);
+  const requests = await readFriendRequests(url(stage), 0);
+  expect(await requests(friend(54, async () => { throw new Error("关闭自动加好友时不调用网关"); }))).toBeUndefined();
+  expect(await readFile(join(directory, "bot.yaml"), "utf8")).toBe(defaults);
+  expect(await Bun.file(previous(source, "other")).exists()).toBe(false);
+}));
+
 test("只激活明确的数字和终端主人，旧适配器绑定原样留在私有备份", () => fixture(async (source, stage) => {
   const provider = ["legacy-bot:legacy-user", "legacy-bot:99:51", "99:legacy-user", " 99:51 "];
   const globalProvider = ["legacy-user", "legacy-user:51"];
