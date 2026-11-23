@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { cp } from "node:fs/promises";
+import { join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const sample = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -38,6 +40,34 @@ async function readImage(link: string) {
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(Buffer.from(await response.arrayBuffer()).toString("base64")).toBe(sample);
 }
+
+test("自动复读从原 OneBot 图片 file 链接和续期后的 Milky 资源取得原字节", async () => {
+  await withDualGatewayFixture("auto-repeat-image-fixture", "", async ({ onebot, milky, sendOneBot, sendMilky }) => {
+    for (const user_id of [61, 62]) sendOneBot("", {
+      message_type: "group", sub_type: "normal", group_id: 707, user_id,
+      message: [{ type: "image", data: { file: image } }],
+    });
+    const one = await onebot.next("send_msg");
+    expect(one.params).toMatchObject({ group_id: 707, message: [{ type: "image", data: { file: `base64://${sample}` } }] });
+    one.respond({ message_id: 321 });
+
+    for (const sender_id of [63, 64]) {
+      expect((await sendMilky("", { message_scene: "group", peer_id: 708, sender_id,
+        segments: [{ type: "image", data: { temp_url: expired, resource_id: "repeat-image-fixture" } }],
+      })).status).toBe(200);
+    }
+    const renew = await milky.next("get_resource_temp_url");
+    expect(renew.params).toEqual({ resource_id: "repeat-image-fixture" });
+    renew.respond({ url: renewed });
+    const mk = await milky.next("send_group_message");
+    expect(mk.params).toMatchObject({ group_id: 708, message: [{ type: "image", data: { uri: `base64://${sample}` } }] });
+    mk.respond({ message_seq: 322 });
+    expect(onebot.calls).toEqual([]);
+    expect(milky.calls).toEqual([]);
+  }, 3_000, preload, root => cp(new URL("../plugins/group", import.meta.url), join(root, "plugins", "group"), {
+    recursive: true, filter: path => !path.endsWith("/.git"),
+  }));
+}, 10_000);
 
 test("取直链以当前或同会话图片和附件生成公开 HTTP 临时字节副本", async () => {
   await withDualGatewayFixture("chat-links-fixture", "disablePrivate: false\n",
