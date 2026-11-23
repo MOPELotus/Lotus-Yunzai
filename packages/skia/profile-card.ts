@@ -18,14 +18,17 @@ export interface ProfileCardRole {
   readonly active?: boolean;
   readonly image?: Uint8Array;
   readonly banner?: Uint8Array;
+  readonly slot?: string;
+  readonly badge?: string;
 }
 
 export interface ProfileCardModel {
+  readonly uidList?: boolean;
   readonly title?: string;
   readonly subtitle?: string;
   readonly summary?: string;
   readonly generatedAt?: string;
-  readonly roleGroups?: readonly { readonly label: string; readonly rows?: readonly ProfileCardRole[] }[];
+  readonly roleGroups?: readonly { readonly label: string; readonly command?: string; readonly game?: string; readonly rows?: readonly ProfileCardRole[] }[];
   readonly roles?: readonly ProfileCardField[];
   readonly account?: readonly ProfileCardField[];
   readonly settings?: readonly ProfileCardField[];
@@ -113,7 +116,7 @@ function rectPath(ctx: Context, x: number, y: number, w: number, h: number, radi
   ctx.roundRect(x, y, w, h, radius);
 }
 
-function fillRect(ctx: Context, x: number, y: number, w: number, h: number, fill: string, radius: number) {
+function fillRect(ctx: Context, x: number, y: number, w: number, h: number, fill: Context["fillStyle"], radius: number) {
   rectPath(ctx, x, y, w, h, radius);
   ctx.fillStyle = fill;
   ctx.fill();
@@ -158,8 +161,9 @@ class ProfileLayout {
   }
 
   text(value: string | number | undefined, x: number, y: number, w: number, size: number, color: string,
-    { font = this.theme.text, leading = size * 1.5, center = false, shadow = false } = {}) {
-    const rows = lines(this.#measure, value, w, size, font);
+    { font = this.theme.text, leading = size * 1.5, center = false, shadow = false, singleLine = false } = {}) {
+    let rows = lines(this.#measure, value, w, size, font);
+    if (singleLine && rows.length > 1) rows = [`${rows[0]!.slice(0, -2)}…`];
     this.commands.push((ctx) => {
       ctx.save();
       ctx.font = `${size}px ${font}`;
@@ -208,6 +212,12 @@ class ProfileLayout {
   }
 }
 
+function loadUidListImage(file: string) {
+  return loadImage(new URL(`./resources/uid-list/${file}`, import.meta.url));
+}
+
+let uidListArt: Promise<{ checked: Image; defaultFace: Image; zzzBanner: Image }> | undefined;
+
 function fieldTexts(fields: readonly ProfileCardField[] | undefined): string[] {
   return (fields ?? []).map(({ label, value }) => `${label}：${value}`);
 }
@@ -228,6 +238,9 @@ export async function renderProfileCard(model: ProfileCardModel,
     }
   }
 
+  const artwork = model.uidList ? await (uidListArt ??= Promise.all([
+    loadUidListImage("check.webp"), loadUidListImage("face.webp"), loadUidListImage("zzz-banner.png"),
+  ]).then(([checked, defaultFace, zzzBanner]) => ({ checked, defaultFace, zzzBanner }))) : undefined;
   layout.heading(model.title || "账号资料卡", model.subtitle);
   for (const group of groups) {
     const top = layout.y;
@@ -237,30 +250,54 @@ export async function renderProfileCard(model: ProfileCardModel,
     layout.rect(10, top, panelWidth, height, "rgba(255,255,255,.65)");
     layout.rect(10, top, panelWidth, 34, "rgba(255,255,255,.8)");
     layout.text(group.label, 25, top + 8, panelWidth - 30, 16, "#333");
+    if (group.command) layout.text(`使用 ${group.command} 切换`, 226, top + 10, 184, 12, "#666", { center: true });
     for (const [index, row] of rows.entries()) {
       const y = top + 42 + index * 76;
       layout.rect(19, y + 20, 18, 22, row.active ? gold : white, 6);
-      layout.text(index + 1, 19, y + 23, 18, 14, "#3a2702", { center: true });
+      layout.text(row.slot ?? index + 1, 19, y + 23, 18, row.slot?.length === 3 ? 8 : row.slot?.startsWith("公") ? 10 : 14, "#3a2702", { center: true });
       layout.rect(42, y, panelWidth - 43, 64, "#f0ece4", 33);
-      if (row.banner) layout.image(await images.get(row.banner), 42, y, panelWidth - 43, 64, 33);
-      const avatar = row.image ? await images.get(row.image) : undefined;
-      if (avatar) {
-        layout.rect(46, y + 4, 56, 56, white, 30);
-        layout.image(avatar, 48, y + 6, 52, 52, 30);
+      const banner = row.banner ? await images.get(row.banner) : group.game === "zzz" ? artwork?.zzzBanner : undefined;
+      if (row.uid && banner) {
+        layout.image(banner, 42, y, panelWidth - 43, 64, 33);
+        if (model.uidList) layout.commands.push(ctx => {
+          const fade = ctx.createLinearGradient(42, y, 423, y);
+          fade.addColorStop(0, "rgba(240,236,228,.94)");
+          fade.addColorStop(.51, "rgba(240,236,228,.88)");
+          fade.addColorStop(1, "rgba(240,236,228,0)");
+          fillRect(ctx, 42, y, panelWidth - 43, 64, fade, 33);
+        });
       }
-      const indent = avatar ? 104 : 48;
+      const avatar = (row.image ? await images.get(row.image) : undefined) ?? (row.uid ? artwork?.defaultFace : undefined);
+      if (avatar || (model.uidList && row.uid)) {
+        layout.rect(46, y + 4, 56, 56, white, 28);
+        if (avatar) layout.image(avatar, 48, y + 6, 52, 52, 26);
+        else layout.rect(48, y + 6, 52, 52, "#c6c4bc", 26);
+      }
+      if (row.active && artwork) {
+        layout.rect(363, y + 13, 38, 38, "#ece5d8", 19);
+        layout.rect(365, y + 15, 34, 34, "#4a5366", 17);
+        layout.image(artwork.checked, 370, y + 20, 24, 24, 0);
+      }
+      const indent = avatar || (model.uidList && row.uid) ? 104 : 48;
       layout.text(row.uid || row.name, 10 + indent, y + 9, panelWidth - indent - 22, row.uid ? 24 : 16, ink,
         { font: row.uid ? theme.number : theme.text, leading: 21 });
       if (row.uid) {
-        const caption = [row.name, row.level ? `Lv.${row.level}` : "", row.active ? "当前 UID" : ""].filter(Boolean).join(" · ");
-        layout.text(caption, 10 + indent, y + 38, panelWidth - indent - 22, 12, ink);
+        const caption = [row.name, row.level ? `Lv.${row.level}` : "", row.active && !model.uidList ? "当前 UID" : ""].filter(Boolean).join(" · ");
+        if (row.badge) {
+          layout.rect(292, y + 11, 56, 19, row.active ? gold : "#4a5366", 4);
+          layout.text(row.badge, 292, y + 14, 56, 11, row.active ? "#3a2702" : white, { center: true });
+        }
+        layout.text(caption, 10 + indent, y + 38, panelWidth - indent - (model.uidList ? 87 : 22), 12, ink,
+          { singleLine: model.uidList });
       }
     }
     layout.restore();
     layout.y += height + 10;
   }
-  layout.log("账号状态", [model.summary ?? "", ...fieldTexts(model.account)]);
-  layout.log("签到设置", fieldTexts(model.settings));
+  if (!model.uidList) {
+    layout.log("账号状态", [model.summary ?? "", ...fieldTexts(model.account)]);
+    layout.log("签到设置", fieldTexts(model.settings));
+  }
   if (model.warnings?.length) layout.log("提示", model.warnings);
   layout.text(`Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, 15, layout.y + 15, width - 30, 12, white,
     { center: true, shadow: true, leading: 18 });

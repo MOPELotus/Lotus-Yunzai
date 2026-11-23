@@ -94,6 +94,8 @@ const preload = `
 const native = globalThis.fetch;
 const calls = [];
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
+// The graphics fixture covers successful UID cards separately; exercise text recovery here.
+Bun.env.LOTUS_PASSPORT_QR_RESOURCES = "./unavailable-profile-card-theme";
 globalThis.fetch = async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : input);
   if (url.hostname === "127.0.0.1") return native(input, init);

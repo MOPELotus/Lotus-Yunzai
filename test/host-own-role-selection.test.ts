@@ -27,7 +27,7 @@ function document(qq: string, id: number, own: Readonly<Record<keyof typeof game
 }
 
 test("UID 只接旧序号和明确档案，签名验证有独立命令", () => {
-  expect(matchOwnRoleSelection("#UID")).toEqual({ game: "gs", slot: undefined, profileId: 1 });
+  expect(matchOwnRoleSelection("#UID")).toEqual({ game: "gs", slot: undefined, profileId: undefined });
   expect(matchOwnRoleSelection("#星铁我的UID02 档案 17")).toEqual({ game: "sr", slot: 2, profileId: 17 });
   expect(matchOwnRoleSelection("#绝区零UID0")?.slot).toBe(0);
   expect(matchOwnRoleSelection("#UID999")?.slot).toBe(999);
@@ -109,6 +109,7 @@ test("OneBot 与 Milky 宿主实际派发三游 UID 列表与选槽，群内没�
   const preload = `
 const fetchInHost = globalThis.fetch;
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
+Bun.env.LOTUS_PASSPORT_QR_RESOURCES = "./missing-render-fixture";
 globalThis.fetch = async (input, options) => {
   const url = new URL(input instanceof Request ? input.url : input);
   if (url.hostname === "127.0.0.1") return fetchInHost(input, options);
@@ -137,6 +138,15 @@ globalThis.fetch = async (input, options) => {
     });
     expect(group).toMatchObject({ message_type: "group", group_id: 701 });
     expect(JSON.stringify(group)).not.toContain(games.gs[1]!);
+    const all = JSON.stringify(await replies("#UID", "本人游戏角色 · 全部档案"));
+    for (const uid of ["100000041", games.gs[0], games.gs[1], games.sr[0], games.zzz[0]]) expect(all).toContain(uid);
+    expect(all.match(/800000042/gu)).toHaveLength(1);
+    expect(all).toContain("档案 1、2 当前");
+    expect(all).not.toContain("100000099");
+    await replies("#UID3", "档案 2 · 原神当前角色已选为 100000044");
+    const ownProfiles = createProfileStore(join(root, "profiles"));
+    expect((await ownProfiles.requestContext("42", 2, "gs")).role.uid).toBe(games.gs[1]);
+    expect((await ownProfiles.requestContext("42", 1, "gs")).role.uid).toBe("100000041");
     await replies("#UID02 档案2", games.gs[1]!);
     await replies("*UID2 档案2", games.sr[1]!);
     await replies("％UID2 档案2", games.zzz[1]!);
