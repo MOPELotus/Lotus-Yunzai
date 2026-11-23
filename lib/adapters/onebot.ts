@@ -9,7 +9,7 @@ import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
-  type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
+  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
@@ -522,6 +522,57 @@ async function dispatchGroupPoke(
       });
     },
   });
+}
+
+async function dispatchGroupCompatibilityNotice(
+  dispatch: (event: OneBotGroupCompatibilityNotice) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, group_id, time, notice_type, sub_type, target_id } = event;
+  if (!isId(self_id) || !isId(group_id)) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  const operator_id = event.operator_id === 0 || isId(event.operator_id) ? event.operator_id : undefined;
+  const user_id = event.user_id ?? (notice_type === "notify" ? operator_id || target_id : undefined);
+  const base = {
+    post_type: "notice" as const, adapter: "onebot" as const, self_id, group_id, operator_id,
+    time: isId(time) ? time : undefined, user_id: isId(user_id) ? user_id : undefined,
+    isGroup: true as const, isPrivate: false as const, isMaster: isId(user_id) && isMaster(self_id, user_id),
+    reply(reply: MessageReply) {
+      if (signal.aborted) return false;
+      const message = encodeOneBotReply(reply);
+      return message !== undefined && send({
+        action: "send_msg", params: { message_type: "group", group_id, message, auto_escape: true },
+      });
+    },
+  };
+  if (notice_type === "group_card") {
+    const { card_old, card_new } = event;
+    if (!isId(user_id) || typeof card_new !== "string") return;
+    connection.display?.remember(group_id, user_id, { card: card_new });
+    await dispatch({ ...base, notice_type, card_old: stringField(card_old), card_new });
+  } else if (notice_type === "notify" && sub_type === "group_name" && typeof event.name_new === "string") {
+    await dispatch({ ...base, notice_type: "group", sub_type, name_new: event.name_new,
+      target_id: isId(target_id) ? target_id : undefined });
+  } else if (notice_type === "essence" && (sub_type === "add" || sub_type === "delete")) {
+    const message_id = oneBotMessageId(event.message_id);
+    if (message_id === undefined || operator_id === undefined || !isId(event.sender_id)) return;
+    await dispatch({ ...base, notice_type: "group_essence", sub_type, message_id, sender_id: event.sender_id });
+  } else if (notice_type === "group_msg_emoji_like") {
+    const message_id = oneBotMessageId(event.message_id);
+    if (message_id === undefined || (user_id != null && user_id !== 0 && !isId(user_id)) || !Array.isArray(event.likes)) return;
+    const likes: { emoji_id: string; count: number }[] = [];
+    for (const like of event.likes) {
+      if (!isRecord(like) || typeof like.emoji_id !== "string" || typeof like.count !== "number" ||
+          !Number.isSafeInteger(like.count) || like.count < 0) return;
+      likes.push({ emoji_id: like.emoji_id, count: like.count });
+    }
+    const { message_seq, is_add } = event;
+    await dispatch({ ...base, notice_type, user_id: user_id === 0 ? 0 : base.user_id, message_id, likes,
+      message_seq: message_seq === 0 || isId(message_seq) ||
+        (typeof message_seq === "string" && /^\d{1,20}$/u.test(message_seq)) ? message_seq : undefined,
+      is_add: typeof is_add === "boolean" ? is_add : undefined });
+  }
 }
 
 async function dispatchMessage(
@@ -1269,9 +1320,9 @@ export function startOneBot(
                   return notifyOwnerReplies(calls, send, self_id, owners, reply, active);
                 },
               });
-            } else if (message.notice_type === "group_card" && botId !== undefined && message.self_id === botId &&
-                isId(message.group_id) && isId(message.user_id) && typeof message.card_new === "string") {
-              socket.data.display?.remember(message.group_id, message.user_id, { card: message.card_new });
+            } else if (message.notice_type === "group_card" || message.notice_type === "essence" ||
+                message.notice_type === "group_msg_emoji_like" || (message.notice_type === "notify" && message.sub_type === "group_name")) {
+              await dispatchGroupCompatibilityNotice(dispatch, send, message, socket.data, options.isMaster);
             } else if (message.notice_type === "group_ban" && (options.onMemberMute || options.onGroupOwnerBanNotice)) {
               const { self_id, group_id, user_id, operator_id, time, duration, sub_type } = message;
               if (!isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(operator_id) ||

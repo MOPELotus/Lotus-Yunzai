@@ -35,7 +35,7 @@ import { createMilkyGroupMute } from "./milky-group-mute.ts";
 import { createMilkyFileDelivery } from "./milky-file-delivery.ts";
 import { decodeMilkyTemporaryMessage, encodeMilkyForward, encodeMilkyReply, getMilkyFileCorrelation, milkyFriendFileUpload, milkyGroupFileUpload, milkyMessage,
   uploadMilkyChatFile } from "./milky-message.ts";
-import { milkyNotice } from "./milky-notice.ts";
+import { milkyGroupCompatibilityNotice, milkyNotice } from "./milky-notice.ts";
 import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
@@ -1293,6 +1293,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           } };
         },
       }));
+    }
+    const compatibilityNotice = milkyGroupCompatibilityNotice(body, account, sendReply, isMaster);
+    if (compatibilityNotice) {
+      deliver(compatibilityNotice);
+      return "accepted";
     }
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
       const status = await leaveGroup(group_id);

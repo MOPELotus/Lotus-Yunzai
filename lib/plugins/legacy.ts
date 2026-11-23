@@ -15,7 +15,7 @@ import { LegacyTasks } from "./tasks.ts";
 import type { NativePluginEvent } from "./native-events.ts";
 
 type PluginInstance = InstanceType<typeof Plugin> & Record<string, unknown>;
-type PluginEvent = BotEvent;
+type PluginEvent = ReturnType<typeof legacyNotice>;
 type PluginClass = new (event?: PluginEvent) => PluginInstance;
 const legacyRuntime = Object.freeze({
   common, handler: Object.freeze({ has: Handler.has, call: Handler.call, callAll: Handler.callAll }),
@@ -100,6 +100,21 @@ function nativeMessage(event: MessageEvent): MessageEvent {
   }) as MessageEvent;
 }
 
+function legacyNotice(event: BotEvent) {
+  if (event.post_type !== "notice" || !("adapter" in event) || event.adapter !== "milky") return event;
+  if (event.notice_type === "group_msg_emoji_like") {
+    return { ...event, group_id: String(event.group_id), user_id: String(event.user_id), message_id: String(event.message_id) };
+  }
+  if (event.notice_type === "group_card") {
+    return { ...event, group_id: String(event.group_id), user_id: String(event.user_id) };
+  }
+  if (event.notice_type === "group_essence") {
+    return { ...event, group_id: String(event.group_id), message_id: String(event.message_id),
+      operator_id: event.operator_id === undefined ? undefined : String(event.operator_id) };
+  }
+  return event;
+}
+
 type Registration = "loaded" | "skipped" | "empty";
 
 function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
@@ -115,7 +130,7 @@ function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
   });
 }
 
-function matches(pattern: string, event: PluginEvent): boolean {
+function matches(pattern: string, event: BotEvent | PluginEvent): boolean {
   const subtype = event.post_type === "message" ? event.message_type
     : event.post_type === "notice" ? event.notice_type : event.request_type;
   const parts = [event.post_type, subtype, event.sub_type];
@@ -465,7 +480,7 @@ export class LegacyPlugins {
     })();
   }
 
-  async dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
+  async dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
     try {
       return await this.#dispatch(incoming, allowed, onDenied);
     } catch (error) {
@@ -476,11 +491,11 @@ export class LegacyPlugins {
     }
   }
 
-  async #dispatch(incoming: PluginEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
+  async #dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
     const matching = this.#ordered.filter((app) => matches(app.event, incoming) && (!allowed || allowed(app.names)));
     const native = incoming.post_type === "message" && matching.some(app => "native" in app) ? nativeMessage(incoming) : incoming;
     let legacy: PluginEvent | undefined;
-    const compatible = () => legacy ??= incoming.post_type === "message" ? this.#message(incoming) : incoming;
+    const compatible = () => legacy ??= incoming.post_type === "message" ? this.#message(incoming) : legacyNotice(incoming);
     for (const app of matching) {
       if (!app.published) continue;
       let result: unknown;

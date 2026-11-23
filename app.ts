@@ -1383,7 +1383,8 @@ if (import.meta.main) {
   }
 
   async function handleLeaveBlacklist(event: Exclude<BotEvent, MessageEvent>): Promise<boolean> {
-    if (event.post_type === "notice" && event.sub_type === "poke") return false;
+    if (event.post_type === "notice" &&
+        (event.notice_type !== "group" || (event.sub_type !== "increase" && event.sub_type !== "decrease"))) return false;
     const registration = leaveBlacklist;
     const notice = event.post_type === "notice" && event.notice_type === "group";
     if (!registration || (!notice && (event.post_type !== "request" || event.request_type !== "group" || event.sub_type !== "add")) ||

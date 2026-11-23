@@ -306,7 +306,49 @@ export interface GroupPoke {
   readonly reply: MessageEvent["reply"];
 }
 
-export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke;
+interface GroupCompatibilityNoticeBase {
+  readonly post_type: "notice";
+  readonly self_id: number;
+  readonly group_id: number;
+  readonly user_id?: number;
+  readonly operator_id?: number;
+  readonly time?: number;
+  readonly isGroup: true;
+  readonly isPrivate: false;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
+
+interface GroupReaction {
+  readonly notice_type: "group_msg_emoji_like";
+  readonly sub_type?: never;
+  readonly message_id: number;
+  readonly likes: readonly { readonly emoji_id: string; readonly count: number }[];
+  readonly message_seq?: number | string;
+  readonly is_add?: boolean;
+}
+
+interface GroupEssence {
+  readonly notice_type: "group_essence";
+  readonly sub_type: "add" | "delete";
+  readonly message_id: number;
+}
+
+export type OneBotGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "onebot" } & (
+  GroupReaction | (GroupEssence & { readonly sender_id: number }) |
+  { readonly notice_type: "group_card"; readonly sub_type?: never; readonly card_old?: string; readonly card_new: string } |
+  { readonly notice_type: "group"; readonly sub_type: "group_name"; readonly target_id?: number; readonly name_new: string }
+);
+
+export type MilkyGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "milky" } & (
+  (GroupReaction & { readonly face_id: string; readonly reaction_type?: "face" | "emoji" }) |
+  (GroupEssence & { readonly message_seq: number; readonly is_set: boolean }) |
+  { readonly notice_type: "group_card"; readonly sub_type?: never; readonly new_group_name: string;
+    readonly old_name?: string; readonly new_name?: string }
+);
+
+export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
+  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;
