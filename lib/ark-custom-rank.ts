@@ -1,5 +1,6 @@
 // Ark request and response shapes follow e81b5ef. See rank-statistics.LICENSE.
 import type { MessageEvent } from "./messages.ts";
+import { arkRankTokenEnvironment, arkRankTokenKey, isArkRankToken } from "./ark-rank-credentials.ts";
 import { postArkQuery, type RankStatsTransport } from "./rank-statistics.ts";
 
 const uidPattern = /^[1-9]\d{8,9}$/u;
@@ -10,7 +11,6 @@ const columns = new Set([
   "weapon_promote", "weapon_affix", "dmg_avg", "mark_score", "data_time", "artis_sets",
   "pos1", "pos2", "pos3", "pos4", "pos5", "pos6",
 ]);
-const tokenPattern = /^[\x21-\x7e]{1,2048}$/u;
 const lifetime = 300_000;
 
 type RankGame = "gs" | "sr";
@@ -94,7 +94,7 @@ export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: Abor
   const { game, characterId, metric, filters, count } = query;
   if ((game !== "gs" && game !== "sr") || !positiveId(characterId) || !positiveId(count) || count > 50 ||
       (metric !== "damage" && metric !== "artifacts") || filters.length > 20 ||
-      (token !== undefined && !tokenPattern.test(token))) return { message: "无效的排行查询条件。" };
+      (token !== undefined && !isArkRankToken(token))) return { message: "无效的排行查询条件。" };
   if (filters.some(({ field, operator, value }) => !columns.has(field) || (!token && field !== "cons") ||
       (field.startsWith("pos") && game !== "sr") || !Number.isInteger(operator) || operator < 0 || operator > 5 ||
       (field === "artis_sets" && typeof value === "string" ? !label(value) : number(value) === undefined))) {
@@ -126,7 +126,7 @@ export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: Abor
 export async function queryArkCustomPanel(queryId: string, index: number, signal: AbortSignal, token?: string,
   transport: RankStatsTransport = fetch): Promise<{ readonly snapshot: unknown } | Failure> {
   if (!queryIdPattern.test(queryId) || !Number.isInteger(index) || index < 0 || index >= 20 ||
-      (token !== undefined && !tokenPattern.test(token))) return { message: "排行面板编号无效。" };
+      (token !== undefined && !isArkRankToken(token))) return { message: "排行面板编号无效。" };
   const result = await postArkQuery("rank/custom/specific", { query_id: queryId, index }, signal, transport,
     { token, maximum: 2 * 1024 * 1024 });
   if ("message" in result) return result;
@@ -142,8 +142,8 @@ export async function queryArkCustomPanel(queryId: string, index: number, signal
 }
 
 export async function readArkCustomRankToken(): Promise<string | undefined> {
-  const token = Bun.env.LOTUS_ARK_CUSTOM_RANK_TOKEN ?? await globalThis.redis?.get("ark-plugin:customRank:token").catch(() => undefined);
-  return typeof token === "string" && tokenPattern.test(token) ? token : undefined;
+  const token = Bun.env[arkRankTokenEnvironment] ?? await globalThis.redis?.get(arkRankTokenKey).catch(() => undefined);
+  return isArkRankToken(token) ? token : undefined;
 }
 
 type RankContext = Partial<Pick<MessageEvent, "self_id" | "user_id" | "group_id" | "reply_id" | "isDelegated">> & {

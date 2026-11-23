@@ -70,6 +70,7 @@ import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
+import { arkRankCredentialsPath, containsArkRankTokenInput, createArkRankCredentialSettings, isArkRankTokenCommand } from "./lib/ark-rank-credentials.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
@@ -1009,6 +1010,10 @@ if (import.meta.main) {
   }
 
   async function routeEvent(event: BotEvent) {
+    if (event.post_type === "message" && containsArkRankTokenInput(event.message)) {
+      if (groupDispatch.admit(event)) await dispatchMessage(event);
+      return;
+    }
     if (event.post_type !== "message") {
       if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "decrease") {
         await handleGroupVerificationNotice(event);
@@ -1279,6 +1284,9 @@ if (import.meta.main) {
 
   async function handleEvent(event: BotEvent) {
     if (event.post_type === "message") {
+      if ([event.msg, event.raw_message].some(isArkRankTokenCommand) || containsArkRankTokenInput(event.message)) {
+        return dispatchMessage(event);
+      }
       const transport = event[friendMessageNoticeSession];
       if (transport && friendRecallNotice) {
         const capture = rememberFriendRecall(event, transport);
@@ -1826,10 +1834,25 @@ if (import.meta.main) {
   }
 
   const remoteControl = createRemoteControl(fileURLToPath(root));
+  const arkRankCredentials = createArkRankCredentialSettings({ signal: lifecycle.signal });
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    const rankCredentialCommand = [event.msg, event.raw_message].find(isArkRankTokenCommand);
+    if (rankCredentialCommand !== undefined) {
+      if (!allowNew || dispatchPower.paused || event.isDelegated || event.attachmentOnly ||
+          !allowed(["排行凭据", "@lotus-yunzai/genshin", "@lotus-yunzai/starrail"])) return;
+      const connection = event.privateCredentialSignal;
+      const isBotMaster = (userId: number) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId);
+      const reply = await arkRankCredentials.command(rankCredentialCommand, {
+        ...event, normalizedMessage: event.msg, isBotMaster,
+        privateCredentialSignal: connection && nativeOperationSignal(connection),
+      });
+      if (reply !== undefined && !connection?.aborted) await sendCommandReply(event, reply);
+      return;
+    }
+    if (containsArkRankTokenInput(event.message)) return;
     if ([event.msg, event.raw_message].some(isRemoteControlCommand)) {
       const transport = event.privateCredentialSignal;
       const { self_id: botId, user_id: actorId, sender } = event;
@@ -3011,6 +3034,7 @@ if (import.meta.main) {
         void handling.then(() => pending.delete(handling));
       },
       onGroupMessageSource(source: NativeGroupMessageSource) {
+        if (containsArkRankTokenInput(source.message)) return;
         const capture = rememberGroupRecall(source);
         if (capture) {
           pending.add(capture);
@@ -3644,6 +3668,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/status", panelStatusSettings(root)],
         ["/panel/api/settings/native/runtime", panelRuntimeSettings(root)],
         ["/panel/api/settings/native/remote", panelRemoteSettings(root)],
+        [arkRankCredentialsPath, arkRankCredentials.panel],
         ["/panel/api/settings/native/process-schedule", panelProcessScheduleSettings(root, validateModuleCron)],
         ["/panel/api/settings/native/daily-note", panelDailyNoteSettings(root, validateModuleCron)],
         ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],

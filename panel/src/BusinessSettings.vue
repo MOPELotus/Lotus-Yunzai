@@ -4,6 +4,7 @@ import { ElButton } from "element-plus";
 import { panelFetch, type PanelAuth } from "./api";
 import GroupRoutingSettings from "./GroupRoutingSettings.vue";
 import GroupWarpSettings from "./GroupWarpSettings.vue";
+import ArkRankCredentialSettings from "./ArkRankCredentialSettings.vue";
 
 interface Field {
   key: string;
@@ -32,6 +33,7 @@ const stored = ref<Values>({});
 const defaults = ref<Values>();
 const draft = ref<Record<string, string | boolean>>({});
 const busy = ref(false);
+const credentialDirty = ref(false);
 const feedback = ref("");
 const problem = ref("");
 let active: AbortController | undefined;
@@ -75,7 +77,8 @@ function changeText(key: string, event: Event) {
   draft.value[key] = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
 }
 
-const dirty = computed(() => fields.value.some(field => draft.value[field.key] !== formatted(field, stored.value[field.key])));
+const dirty = computed(() => credentialDirty.value ||
+  fields.value.some(field => draft.value[field.key] !== formatted(field, stored.value[field.key])));
 watch(dirty, value => emit("dirty-change", value));
 
 function decode(field: Field) {
@@ -152,11 +155,13 @@ async function update(save = false) {
 }
 
 watch(current, () => {
+  active?.abort();
+  busy.value = false;
   fields.value = [];
   stored.value = {};
   defaults.value = undefined;
   draft.value = {};
-  void update();
+  if (current.value !== "ark-rank-credentials") void update();
 }, { immediate: true });
 onBeforeUnmount(() => {
   active?.abort();
@@ -172,7 +177,9 @@ onBeforeUnmount(() => {
         :type="current === section.key ? 'primary' : 'default'" :aria-current="current === section.key ? 'page' : undefined"
         @click="current = section.key">{{ section.label }}</ElButton>
     </nav>
-    <form class="native-form" @submit.prevent="update(true)">
+    <ArkRankCredentialSettings v-if="current === 'ark-rank-credentials'" :auth="auth" @unauthorized="emit('unauthorized')"
+      @dirty-change="credentialDirty = $event" />
+    <form v-else class="native-form" @submit.prevent="update(true)">
       <template v-for="field in fields" :key="field.key">
         <GroupRoutingSettings v-if="current === 'group-routing' && field.key === 'rules'"
           v-model="groupRules" :disabled="busy" :legacy="stored.file === 'config/config/group.yaml'" />

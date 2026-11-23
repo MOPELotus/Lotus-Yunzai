@@ -56,6 +56,7 @@ const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
 
 const nativeSections = computed(() => [
   { key: "rank", label: "原神与星铁列表和群榜" },
+  { key: "ark-rank-credentials", label: "自定义排行榜" },
   { key: "status", label: "状态与监控" },
   { key: "runtime", label: "宿主运行" },
   { key: "remote", label: "远程运维" },
