@@ -33,6 +33,7 @@ const zzzCardPaths = {
   "zzz-avatar": "avatar/basic",
   "zzz-panel-detail": "avatar/info",
   "zzz-buddy": "buddy/info",
+  "zzz-owned-buddy": "buddy/info",
   "zzz-hadal": "hadal_info_v2",
   "zzz-deadly": "hadal_mem_detail_v2",
   "zzz-holo-boss": "holo_boss_detail",
@@ -180,7 +181,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const forZzz = zzzMonthly || Object.hasOwn(zzzCardPaths, kind);
   const label = forNote ? "体力" : genshinMonthly ? "原石札记" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
-    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
+    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : kind === "zzz-owned-buddy" ? "绝区零邦布" : forZzz ? "绝区零战绩" :
     starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : hardChallenge ? "幽境危战" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
@@ -240,7 +241,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     endpoint.searchParams.set("bind_uid", uid);
     endpoint.searchParams.set("bind_region", region);
   } else {
-    if ((forZzz && !exploration && !zzzMonthly) || starRailMonthly) endpoint.searchParams.set("lang", "zh-cn");
+    if ((forZzz && !exploration && !zzzMonthly && kind !== "zzz-owned-buddy") || starRailMonthly) endpoint.searchParams.set("lang", "zh-cn");
     if (starRailPanel) endpoint.searchParams.set("need_wiki", "true");
     if (options.kind === "genshin-gcg-cards") {
       endpoint.searchParams.set("limit", "999");

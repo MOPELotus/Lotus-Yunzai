@@ -17,14 +17,17 @@ export interface ZzzGameRecordItem {
 
 const trackedStats = ["active_days", "avatar_num", "buddy_num", "cur_period_zone_layer_count"] as const;
 
-export interface ZzzGameRecordSnapshot {
+export interface ZzzOwnedBuddyRoster {
   readonly uid: string;
   readonly region: string;
+  readonly buddies: readonly ZzzGameRecordItem[];
+}
+
+export interface ZzzGameRecordSnapshot extends ZzzOwnedBuddyRoster {
   readonly worldLevel?: string;
   readonly avatar?: string;
   readonly stats: Readonly<Record<typeof trackedStats[number], number | string | undefined>>;
   readonly avatars: readonly ZzzGameRecordItem[];
-  readonly buddies: readonly ZzzGameRecordItem[];
 }
 
 type Json = Record<string, unknown>;
@@ -109,6 +112,14 @@ export async function readZzzGameRecord(source: ProfileRequestContext, transport
     verifyRecordRole(data, uid, region, "nap_cn");
     return data;
   });
+}
+
+export async function readZzzOwnedBuddyRoster(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzOwnedBuddyRoster> {
+  const { uid } = source.role;
+  const { data, region } = await readCnGameRecord(source, transport, { kind: "zzz-owned-buddy", signal }, verifyProfile);
+  verifyRecordRole(data, uid, region, "nap_cn");
+  return { uid, region, buddies: entries(data.list, "buddy") };
 }
 
 export interface HoYoLabZzzRecordAccount extends HoYoLabCheckinAccount {

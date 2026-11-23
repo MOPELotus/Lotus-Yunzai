@@ -162,3 +162,34 @@ test("绝区零国际服战绩拒绝异人、错区、重复角色、错账号�
   })).rejects.toMatchObject({ code: "profile-changed" });
   expect(queries).toBe(1);
 });
+
+test("独立邦布只查一次旧国服接口，沿用所选档案的区服与设备", async () => {
+  const sent: string[] = [];
+  const client = createHoyoClient(async (url, init) => {
+    sent.push(url.href);
+    expect(init).toMatchObject({ method: "GET", redirect: "error", credentials: "omit" });
+    const headers = new Headers(init.headers);
+    expect(headers.get("cookie")).toBe(source.account.cookie);
+    expect(headers.get("x-rpc-device_fp")).toBe(source.device.fp!);
+    return payload({ role_id: source.role.uid, server: source.role.region, list: [buddy] });
+  });
+  expect(await client.fetchZzzOwnedBuddyRoster(source)).toMatchObject({
+    uid: source.role.uid, region: source.role.region,
+    buddies: [{ itemId: "54001", rarity: "S", level: 50, rank: 2, name: "鲨牙布" }],
+  });
+  expect(sent).toEqual([`${endpoint}buddy/info?role_id=${source.role.uid}&server=${source.role.region}`]);
+});
+
+test("独立邦布拒绝海外档案所携带的国服凭据和错区回包", async () => {
+  let queries = 0;
+  const client = createHoyoClient(async () => {
+    queries++;
+    return payload({ role: { ...source.role, region: "prod_gf_cn" }, list: [] });
+  });
+  await expect(client.fetchZzzOwnedBuddyRoster({ ...source, role: {
+    ...source.role, uid: "1300000002", region: "prod_gf_jp", gameBiz: "nap_global",
+  } })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(queries).toBe(0);
+  await expect(client.fetchZzzOwnedBuddyRoster(source)).rejects.toMatchObject({ code: "response" });
+  expect(queries).toBe(1);
+});

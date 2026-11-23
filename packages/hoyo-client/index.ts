@@ -35,7 +35,7 @@ import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, typ
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
-import { readHoYoLabZzzGameRecord, readZzzGameRecord } from "./zzz-game-record.ts";
+import { readHoYoLabZzzGameRecord, readZzzGameRecord, readZzzOwnedBuddyRoster } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
 import { openHoYoLabZzzMonthly, readZzzMonthly } from "./zzz-monthly.ts";
 import { readZzzExploration } from "./zzz-exploration.ts";
@@ -58,7 +58,7 @@ export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type Bb
 export { readBbsForumPosts, type BbsForumPost } from "./bbs-forum-posts.ts";
 export { normalizeGenshinMonthly, type GenshinMonthlySnapshot } from "./genshin-monthly.ts";
 export { GameRecordRequestError, genshinCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
-export type { ZzzGameRecordItem, ZzzGameRecordSnapshot } from "./zzz-game-record.ts";
+export type { ZzzGameRecordItem, ZzzGameRecordSnapshot, ZzzOwnedBuddyRoster } from "./zzz-game-record.ts";
 export { normalizeZzzPanelAvatar, type ZzzPanelAvatar, type ZzzPanelSnapshot } from "./zzz-panel.ts";
 export { normalizeZzzDeadly, type ZzzDeadlyRoom, type ZzzDeadlySnapshot } from "./zzz-deadly.ts";
 export { normalizeZzzHoloBoss } from "./zzz-holo-boss.ts";
@@ -621,6 +621,9 @@ export function createHoyoClient(
     },
     fetchZzzGameRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGameRecord, isGameRecordCookieExpired);
+    },
+    fetchZzzOwnedBuddyRoster(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readZzzOwnedBuddyRoster, isGameRecordCookieExpired);
     },
     fetchHoYoLabZzzGameRecord(source: Parameters<typeof readHoYoLabZzzGameRecord>[0],
       options: Parameters<typeof readHoYoLabZzzGameRecord>[2]) {
