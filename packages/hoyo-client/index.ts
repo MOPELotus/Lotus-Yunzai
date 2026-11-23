@@ -326,6 +326,25 @@ export function createHoyoClient(
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
   }
 
+  function readForGenshinGacha<Options extends { readonly signal?: AbortSignal }, Data extends object>(
+    source: ProfileRequestContext, options: Options,
+    reader: (source: ProfileRequestContext, transport: HoyoTransport, options: Options,
+      guard?: () => Promise<void>) => Promise<Data>,
+  ) {
+    return readForProfile(source, options, async (current, request, sameOptions, guard) => {
+      const profiles = recovery?.profiles;
+      if (current.revision !== source.revision && profiles?.requestSelectedContext) {
+        const changed = new HoyoRequestError("profile-changed", "续期后原神档案的角色已变更，请重新发起请求。");
+        const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "gs").catch(() => { throw changed; });
+        if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
+            (source.role.region && selected.role.region !== source.role.region) ||
+            (source.role.gameBiz && selected.role.gameBiz !== source.role.gameBiz)) throw changed;
+        return reader(selected, request, sameOptions, guard);
+      }
+      return reader(current, request, sameOptions, guard);
+    }, isGenshinAuthExpired);
+  }
+
   function sameTuningRegion(previous: ProfileRequestContext, current: ProfileRequestContext) {
     try {
       return resolveZzzTuningRegion(previous) === resolveZzzTuningRegion(current);
@@ -550,7 +569,7 @@ export function createHoyoClient(
       return readHoYoLabZzzDailyNote(source, transport, options);
     },
     fetchGenshinGacha(source: ProfileRequestContext, options: GenshinGachaOptions = {}) {
-      return readForProfile(source, options, readGenshinGacha, isGenshinAuthExpired);
+      return readForGenshinGacha(source, options, readGenshinGacha);
     },
     fetchGenshinWorldBoss(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readGenshinWorldBoss, isGameRecordCookieExpired);
@@ -614,7 +633,7 @@ export function createHoyoClient(
       return readCloudZzzWallet(token, transport, options);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
-      return readForProfile(source, options, readGenshinMiniapp, isGenshinAuthExpired);
+      return readForGenshinGacha(source, options, readGenshinMiniapp);
     },
     fetchGenshinMonthly(source: ProfileRequestContext, options: GenshinMonthlyOptions) {
       return readForProfile(source, options, readGenshinMonthly, isGameRecordCookieExpired);
