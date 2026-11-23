@@ -165,6 +165,12 @@ async function snapshotMembers(gateway: Gateway, groupId: number, botId: number,
   await groupCount(gateway, groupId, lastCount);
 }
 
+async function notice(gateway: Gateway, groupId: number) {
+  return gateway.request("send_msg", {
+    message_type: "group", group_id: groupId, message: "禁止拉群，已自动退出", auto_escape: true,
+  });
+}
+
 test("自动退群按真实入群和临界人数判断，并保护主人、群主和异常快照", () => withHost(async (open) => {
   const gateway = await open(99);
   const unbound = await open();
@@ -216,6 +222,9 @@ test("自动退群按真实入群和临界人数判断，并保护主人、群�
   const eligible = joined(72008, now);
   gateway.send(eligible);
   await snapshotMembers(gateway, eligible.group_id, 99, [99, 53, ...Array.from({ length: 48 }, (_, index) => 1000 + index)]);
+  const warning = await notice(gateway, eligible.group_id);
+  gateway.assertNoPendingFrames();
+  gateway.receipt(warning, { message_id: 805 });
   const leave = await gateway.request("set_group_leave", { group_id: eligible.group_id, is_dismiss: false });
   gateway.send(eligible);
   gateway.receipt(leave);
@@ -242,23 +251,25 @@ test("退群回执未知时不重发，后续真实重新入群可重新判断",
   const diagnostics = await withHost(async (open) => {
     let gateway = await open(99);
     const time = Math.floor(Date.now() / 1000) - 2;
-    const notice = joined(72101, time);
-    gateway.send(notice);
-    await snapshot(gateway, notice.group_id, 99, 42);
-    await gateway.request("set_group_leave", { group_id: notice.group_id, is_dismiss: false });
+    const event = joined(72101, time);
+    gateway.send(event);
+    await snapshot(gateway, event.group_id, 99, 42);
+    gateway.receipt(await notice(gateway, event.group_id), null, "failed", 100);
+    await gateway.request("set_group_leave", { group_id: event.group_id, is_dismiss: false });
     gateway.close();
     await deadline(gateway.closed, "退群提交后未检测到旧连接关闭。");
     gateway = await open(99);
-    gateway.send(notice);
+    gateway.send(event);
     await gateway.expectNoLeave();
 
-    gateway.send({ ...notice, time: time + 1, notice_type: "group_decrease", sub_type: "leave" });
-    gateway.send(notice);
+    gateway.send({ ...event, time: time + 1, notice_type: "group_decrease", sub_type: "leave" });
+    gateway.send(event);
     await gateway.expectNoLeave();
 
-    gateway.send({ ...notice, time: time + 2 });
-    await snapshot(gateway, notice.group_id, 99, 42);
-    const second = await gateway.request("set_group_leave", { group_id: notice.group_id, is_dismiss: false });
+    gateway.send({ ...event, time: time + 2 });
+    await snapshot(gateway, event.group_id, 99, 42);
+    gateway.receipt(await notice(gateway, event.group_id), { message_id: 806 });
+    const second = await gateway.request("set_group_leave", { group_id: event.group_id, is_dismiss: false });
     gateway.receipt(second);
     await gateway.expectNoLeave();
   });

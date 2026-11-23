@@ -145,6 +145,10 @@ async function snapshotMembers(mock: Gateway, groupId: number, ids: readonly num
   await groupCount(mock, groupId, lastCount);
 }
 
+function notice(mock: Gateway, groupId: number) {
+  return mock.next("send_group_message", { group_id: groupId, message: [{ type: "text", data: { text: "禁止拉群，已自动退出" } }] });
+}
+
 async function expectNoLeave(endpoint: URL, mock: Gateway, time: number) {
   const seq = mock.nextMessageId();
   expect((await webhook(endpoint, "message_receive", {
@@ -236,6 +240,7 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
       const eligible = 72010;
       await joined(eligible);
       await snapshotMembers(mock, eligible, [botId, 53, ...Array.from({ length: 48 }, (_, index) => 1000 + index)], time);
+      (await notice(mock, eligible)).respond(accepted({ message_seq: 805, time }));
       const first = await mock.next("quit_group", { group_id: eligible });
       await joined(eligible);
       await expectNoLeave(endpoint, mock, time);
@@ -247,6 +252,7 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
 
       await joined(eligible, time + 2);
       await snapshot(mock, eligible, 53, time + 2);
+      (await notice(mock, eligible)).respond(new Response(null, { status: 503 }));
       (await mock.next("quit_group", { group_id: eligible })).respond(accepted());
       await joined(eligible, time + 2);
       await expectNoLeave(endpoint, mock, time + 2);

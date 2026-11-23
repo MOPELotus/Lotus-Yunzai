@@ -30,7 +30,7 @@ function joinNotice(fields: Partial<GroupNotice> = {}): GroupNotice {
     post_type: "notice", notice_type: "group", sub_type: "increase", self_id: 10, user_id: 10, group_id: 20,
     time: 1_700_000_000, isMaster: false, isGroup: true, isPrivate: false,
     inspectAutoQuit: async () => ({ memberIds: [10, 30], botRole: "member" }),
-    leaveGroup: async () => true, reply: () => { throw new Error("unexpected group reply"); },
+    leaveGroup: async () => true, reply: () => true,
     ...fields,
   };
 }
@@ -96,7 +96,7 @@ test("群内主人无论是否邀请都豁免，其他机器人的主人不自�
   expect(await handle(inGroup(32, 21))).toBe(false);
   expect(await handle(inGroup(33, 22))).toBe(false);
   expect(await handle({ ...inGroup(34, 23), isMaster: true })).toBe(true);
-  expect(inspected).toEqual([10, 10]);
+  expect(inspected).toEqual([10, 10, 10]);
 });
 
 test("仅接受含机器人自身且无重复的名单，阈值包含边界，机器人为群主时跳过", async () => {
@@ -174,4 +174,25 @@ test("较新的入群事件让旧查询失效，再按本次入群重新判断",
   fetched.resolve(snapshot);
   expect(await old).toBe(false);
   expect(await newer).toBe(true);
+});
+
+test("等待群提示回执时停止任务可取消尚未提交的退群", async () => {
+  const handle = await policy("autoQuit: 2");
+  const active = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const receipt = Promise.withResolvers<boolean>();
+  let leaves = 0;
+  const pending = handle(joinNotice({
+    reply(message) {
+      expect(message).toBe("禁止拉群，已自动退出");
+      started.resolve();
+      return receipt.promise;
+    },
+    async leaveGroup() { leaves++; return true; },
+  }), active.signal);
+  await started.promise;
+  active.abort();
+  expect(await pending).toBe(false);
+  receipt.resolve(true);
+  expect(leaves).toBe(0);
 });

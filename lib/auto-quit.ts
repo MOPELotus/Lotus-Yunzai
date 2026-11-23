@@ -3,6 +3,8 @@ import { otherPolicySetting, readRequestOtherPolicies, requestAutomationSettings
 import type { GroupNotice } from "./messages.ts";
 import { readOwnerSnapshot } from "./permissions.ts";
 
+const quitNoticeTimeoutMs = 5_000;
+
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
@@ -69,9 +71,16 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
 
     const { promise, resolve } = Promise.withResolvers<void>();
     inFlight.set(key, promise);
+    function canLeave(current: ReturnType<typeof quitPolicy>, members: ReadonlySet<number>) {
+      if (!current?.admits(self_id, group_id) || members.size > current.threshold) return false;
+      const botOwners = current.owners?.owners.get(String(self_id));
+      return !current.owners?.globalMasters.some(id => members.has(id)) &&
+        ![...members].some(id => botOwners?.has(String(id))) &&
+        !legacyMasterIds?.().some(id => members.has(id)) && !masterIds(self_id).some(id => members.has(id));
+    }
     try {
       // The adapter may have skipped member lookup when the group exceeded the previous threshold.
-      let approved = false;
+      let approved: ReadonlySet<number> | undefined;
       for (let attempt = 0; attempt < 3; attempt++) {
         const before = currentPolicy();
         if (!before?.admits(self_id, group_id)) return false;
@@ -84,16 +93,28 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
         if (!snapshot || (snapshot.botRole !== "member" && snapshot.botRole !== "admin")) return false;
 
         const { memberIds } = snapshot;
-        if (!Array.isArray(memberIds) || memberIds.length > after.threshold) return false;
+        if (!Array.isArray(memberIds)) return false;
         const members = new Set(memberIds);
-        const botOwners = after.owners?.owners.get(String(self_id));
         if (members.size !== memberIds.length || !members.has(self_id) || ![...members].every(isPositiveInteger) ||
-            after.owners?.globalMasters.some(id => members.has(id)) || memberIds.some(id => botOwners?.has(String(id))) ||
-            legacyMasterIds?.().some(id => members.has(id)) || masterIds(self_id).some(id => members.has(id))) return false;
-        approved = true;
+            !canLeave(after, members)) return false;
+        approved = members;
         break;
       }
       if (!approved || signal?.aborted || latest.get(key) !== time) return false;
+      const noticeWait = Promise.withResolvers<void>();
+      const timer = setTimeout(noticeWait.resolve, quitNoticeTimeoutMs);
+      signal?.addEventListener("abort", noticeWait.resolve, { once: true });
+      try {
+        await Promise.race([event.reply("禁止拉群，已自动退出"), noticeWait.promise]);
+      } catch {
+        // The notification may fail independently of the permitted departure.
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", noticeWait.resolve);
+      }
+      if (signal?.aborted || latest.get(key) !== time) return false;
+      await source.refresh();
+      if (signal?.aborted || latest.get(key) !== time || !canLeave(currentPolicy(), approved)) return false;
       try {
         return await leaveGroup() === true;
       } catch (error) {

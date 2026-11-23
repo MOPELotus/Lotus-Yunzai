@@ -101,4 +101,17 @@ test("自动退群在查询中改变阈值或主人时需要最新完整的成�
   await source.refresh();
   expect(await handle({ ...event, time: event.time! + 1 })).toBe(true);
   expect(leaves).toBe(1);
+
+  const warned = Promise.withResolvers<void>();
+  const receipt = Promise.withResolvers<boolean>();
+  const waitingForNotice = handle({
+    ...event,
+    time: event.time! + 2,
+    reply() { warned.resolve(); return receipt.promise; },
+  });
+  await warned.promise;
+  await writeFile(file, 'autoQuit: 3\nmaster: ["10:31"]\n');
+  receipt.resolve(true);
+  expect(await waitingForNotice).toBe(false);
+  expect(leaves).toBe(1);
 }));

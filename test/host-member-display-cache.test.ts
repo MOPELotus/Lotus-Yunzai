@@ -372,6 +372,8 @@ test("开启显示缓存时自动退群仍核验实时名单，成功退出后�
     gateway.receipt(await gateway.take("get_group_member_list", { group_id: groupId }), [bot]);
     gateway.receipt(await gateway.take("get_group_member_info", { group_id: groupId, user_id: 99, no_cache: true }), bot);
     gateway.receipt(await gateway.take("get_group_info", { group_id: groupId, no_cache: true }), group);
+    gateway.receipt(await gateway.take("send_msg", { message_type: "group", group_id: groupId, message: "禁止拉群，已自动退出" }),
+      { message_id: 8723 });
     gateway.receipt(await gateway.take("set_group_leave", { group_id: groupId, is_dismiss: false }));
     await depart(gateway, groupId, 42, null, null);
   }, 1);
