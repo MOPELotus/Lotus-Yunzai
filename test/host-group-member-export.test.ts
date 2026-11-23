@@ -60,6 +60,22 @@ test("旧群成员命令经两协议查完整群成员，按原会话送 CSV 并
       const unknown = await milky.next("send_private_message");
       expect(unknown.params).toMatchObject({ user_id: 43, message: [{ data: { text: "群成员 CSV 发送结果未确认，请在当前会话核对。" } }] });
       unknown.respond({ message_seq: 4 });
+
+      sendOneBot("#群成员701", group);
+      (await onebot.next("get_group_info")).respond({ group_id: 701, member_count: 3 });
+      (await onebot.next("get_group_member_list")).respond(memberRows(701, 99, 42).slice(0, 2));
+      (await onebot.next("get_group_info")).respond({ group_id: 701, member_count: 3 });
+      const incompleteOneBot = await onebot.next("send_msg");
+      expect(incompleteOneBot.params).toMatchObject({ group_id: 701, message: expect.stringContaining("无法读取完整") });
+      incompleteOneBot.respond({ message_id: 5 });
+
+      await sendMilky("#群成员702");
+      (await milky.next("get_group_info")).respond({ group: { group_id: 702, member_count: 3 } });
+      (await milky.next("get_group_member_list")).respond({ members: memberRows(702, 100, 43).slice(0, 2) });
+      (await milky.next("get_group_info")).respond({ group: { group_id: 702, member_count: 3 } });
+      const incompleteMilky = await milky.next("send_private_message");
+      expect(incompleteMilky.params).toMatchObject({ user_id: 43, message: [{ data: { text: expect.stringContaining("无法读取完整") } }] });
+      incompleteMilky.respond({ message_seq: 6 });
       await Bun.sleep(60);
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);

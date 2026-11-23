@@ -502,8 +502,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (count === undefined || count > maxGroupMembers || active.aborted) return;
     const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true }, active);
     const members = result.status === "confirmed" ? result.data.members : undefined;
-    if (!Array.isArray(members) || members.length !== count || active.aborted ||
-        await readCount() !== count || active.aborted) return;
+    if (result.status !== "confirmed" || active.aborted || await readCount() !== count || active.aborted ||
+        !Array.isArray(members) || members.length !== count) return;
     return { count, members };
   }
 

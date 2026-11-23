@@ -557,8 +557,8 @@ export class OneBotCalls {
       const count = await this.#getGroupSize(send, group, signal);
       if (count === undefined || count > 10_000 || signal.aborted) return;
       const members = await this.#request(send, "get_group_member_list", { group_id: group, no_cache: true }, signal);
-      if (!Array.isArray(members) || members.length !== count || signal.aborted ||
-          await this.#getGroupSize(send, group, signal) !== count || signal.aborted) return;
+      if (signal.aborted || await this.#getGroupSize(send, group, signal) !== count || signal.aborted ||
+          !Array.isArray(members) || members.length !== count) return;
       return { count, members };
     } catch {
       return undefined;
