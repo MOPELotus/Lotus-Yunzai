@@ -21,7 +21,7 @@ const windowsShellWorker = `
     stdio: ["ignore", "inherit", "inherit"], windowsHide: true, windowsVerbatimArguments: verbatim,
   });
   child.on("error", () => process.exit(127));
-  child.on("close", code => process.exit(code ?? 1));
+  child.on("exit", code => process.exit(code ?? 1));
 `;
 
 export async function remoteShell(root: string, shell: RemoteShell, command: string, signal: AbortSignal, timeout: number) {
@@ -34,11 +34,12 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
     "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " + command, "utf16le",
   ).toString("base64") : undefined;
   const args = shell === "cmd" ? ["/d", "/q", "/c", windows ? `chcp 65001>nul & ${command}` : command]
-    : powershell ? ["-NoProfile", "-NonInteractive", ...(script ? ["-EncodedCommand", script] : ["-Command", command])] : ["-c", command];
+    : powershell ? ["-NoLogo", "-NoProfile", "-NonInteractive", ...(script ? ["-EncodedCommand", script] : ["-Command", command])] : ["-c", command];
   const child = spawn(windows ? process.execPath : executable,
     windows ? ["--no-env-file", "--no-install", "-e", windowsShellWorker] : args, {
       cwd: root, stdio: [windows ? "pipe" : "ignore", "pipe", "pipe"], detached: !windows,
-      env: Object.fromEntries(["PATH", "LANG", "LC_ALL", "TMPDIR", "TEMP", "USERPROFILE", "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT"]
+      env: Object.fromEntries(["PATH", "LANG", "LC_ALL", "TMPDIR", "TEMP", "USERPROFILE", "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA", "ProgramData",
+        "ProgramFiles", "ProgramFiles(x86)", "windir", "PSModulePath"]
         .flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]]])),
       windowsHide: true,
     });
@@ -90,6 +91,7 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
   try {
     const result = await new Promise<{ code: number | null } | undefined>((resolve) => {
       child.once("error", () => resolve(undefined));
+      if (windows) child.once("exit", () => terminateWindowsJob?.());
       child.once("close", code => resolve({ code }));
     });
     if (!result) return "无法启动所选 Shell。";

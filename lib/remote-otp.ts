@@ -25,7 +25,8 @@ function state(root: string, create: boolean): Database | undefined {
   }
   if (windows && !create) protectWindowsRemoteAuth(directory, false, true);
   const path = join(directory, "otp.sqlite");
-  if (create) {
+  if (create && windows) protectWindowsRemoteAuth(path, true, false);
+  else if (create) {
     try { closeSync(openSync(path, "wx", 0o600)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
   }
@@ -35,7 +36,7 @@ function state(root: string, create: boolean): Database | undefined {
     throw new Error("远程身份验证数据库必须是当前系统用户专用的普通文件。");
   }
 
-  if (windows) protectWindowsRemoteAuth(path, false, false);
+  if (windows && !create) protectWindowsRemoteAuth(path, false, false);
   const database = new Database(path, { create: false, strict: true });
   try {
     database.run("PRAGMA busy_timeout = 1000");

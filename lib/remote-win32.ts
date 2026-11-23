@@ -183,16 +183,24 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
 
     const descriptor = Buffer.alloc(8);
     if (!security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-      wideString(`O:${sid}D:${directory ? "P" : "AI"}(A;${directory ? "OICI" : "ID"};FA;;;${sid})`), 1, descriptor, null,
+      wideString(`O:${sid}D:P(A;${directory ? "OICI" : ""};FA;;;${sid})`), 1, descriptor, null,
     )) throw new Error("无法准备 Windows 运维配对权限。");
     const expected = descriptor.readBigUInt64LE();
     try {
-      if (create && directory) {
+      if (create) {
         const attributes = Buffer.alloc(24);
         attributes.writeUInt32LE(24);
         attributes.writeBigUInt64LE(expected, 8);
         // Only the running Windows account can access this directory and files it creates.
-        if (native.CreateDirectoryW(target, attributes)) {
+        let created = false;
+        if (directory) {
+          created = native.CreateDirectoryW(target, attributes) !== 0;
+        } else {
+          const file = native.CreateFileW(target, 0x0080, 0x00000001, attributes, 1, 0x80, 0n);
+          created = file !== 0xffffffffffffffffn && file !== 0n;
+          if (created) native.CloseHandle(file);
+        }
+        if (created) {
           const acl = Buffer.alloc(8);
           const exists = Buffer.alloc(4);
           if (!security.GetSecurityDescriptorDacl(expected, exists, acl, Buffer.alloc(4)) ||
@@ -201,7 +209,7 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
             throw new Error("无法设置 Windows 运维配对权限。");
           }
         } else if (native.GetLastError() !== 183) {
-          throw new Error("无法建立 Windows 运维配对目录。");
+          throw new Error(directory ? "无法建立 Windows 运维配对目录。" : "无法建立 Windows 运维配对数据库。");
         }
       }
       const actual = Buffer.alloc(8);
@@ -214,8 +222,8 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
         try {
           const normalized = (text: string) => text.replace(/D:[A-Z]*/u, "D:");
           const value = descriptorString(current);
-          if (directory && !/D:P/u.test(value) || normalized(value) !== normalized(descriptorString(expected))) {
-            throw new Error("Windows 运维配对目录或凭据的权限过宽。");
+          if (!/D:P/u.test(value) || normalized(value) !== normalized(descriptorString(expected))) {
+            throw new Error(directory ? "Windows 运维配对目录的权限过宽。" : "Windows 运维配对数据库的权限过宽。");
           }
         } finally {
           native.LocalFree(current);
