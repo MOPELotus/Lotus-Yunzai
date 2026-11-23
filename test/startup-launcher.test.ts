@@ -458,10 +458,11 @@ async function fixture() {
   await Promise.all(["lib", "plugins/atlas", "scripts", "config"].map((path) => mkdir(join(cwd, path), { recursive: true })));
   await Promise.all([
     ...["package.json", "scripts/launcher.ts", "scripts/startup.ts", "scripts/managed-entry.ts",
-      "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts",
+      "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts", "plugins/atlas/locale.ts",
+      "plugins/atlas/source-values.ts",
       "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
-    ...["atlas-channel", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
+    ...["atlas-channel", "lotus-global-config", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
       "migration-publication", "startup-render-preset", "update-activation"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),

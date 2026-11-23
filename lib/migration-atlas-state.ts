@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promis
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stringify } from "yaml";
+import { parseAtlasLocale } from "../plugins/atlas/locale.ts";
 import { copyAtlasCandidate } from "../plugins/atlas/assemble-candidate.ts";
 import { isAtlasSourceWebp } from "../plugins/atlas/source-transport.ts";
 import { prepareAtlasTheme } from "../plugins/atlas/prepare-theme.ts";
@@ -110,6 +111,8 @@ function safeArgs(selections: readonly string[]) {
 
 function stageConfig(atlas: Record<string, unknown>) {
   const value: Record<string, unknown> = {};
+  const locale = parseAtlasLocale(atlas.locale);
+  if (locale) value.locale = locale;
   if (isAtlasChannel(atlas.version_channel)) value.version_channel = atlas.version_channel;
   if (typeof atlas.sync_after_update === "boolean") value.sync_after_update = atlas.sync_after_update;
   if (typeof atlas.sync_gallery === "boolean") value.sync_gallery = atlas.sync_gallery;

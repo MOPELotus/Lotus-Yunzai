@@ -2,6 +2,7 @@
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AtlasScopeField, AtlasScopePatch, AtlasScopeSelections } from "../../lib/panel-atlas-scope-schema.ts";
+import { atlasLocales, defaultAtlasLocale, parseAtlasLocale, type AtlasLocale } from "../../plugins/atlas/locale.ts";
 import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
@@ -9,6 +10,7 @@ interface Settings { enable: boolean; check_cron: string; challenge_cron: string
 interface Snapshot {
   settings: Settings;
   revision: string;
+  locale: AtlasLocale;
   syncAfterUpdate: boolean;
   syncGallery: boolean;
   syncCharacterGallery: boolean;
@@ -36,6 +38,7 @@ const saved = ref<Snapshot>();
 const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
 const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
+const locale = ref<AtlasLocale>(defaultAtlasLocale);
 const syncAfterUpdate = ref(true);
 const syncGallery = ref(true);
 const syncCharacterGallery = ref(true);
@@ -55,7 +58,8 @@ const searchDirty = computed(() => saved.value?.searchLimit !== searchLimit.valu
 const syncDirty = computed(() => saved.value?.syncAfterUpdate !== syncAfterUpdate.value);
 const galleryDirty = computed(() => saved.value?.syncGallery !== syncGallery.value);
 const characterGalleryDirty = computed(() => saved.value?.syncCharacterGallery !== syncCharacterGallery.value);
-const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || galleryDirty.value || characterGalleryDirty.value ||
+const localeDirty = computed(() => saved.value?.locale !== locale.value);
+const dirty = computed(() => !!saved.value && (localeDirty.value || searchDirty.value || syncDirty.value || galleryDirty.value || characterGalleryDirty.value ||
   Object.keys(scopePatch.value).length > 0 || JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
@@ -74,6 +78,7 @@ async function sync(mode: "load" | "save") {
       method: mode === "load" ? "GET" : "PUT",
       headers: mode === "save" ? { "Content-Type": "application/json" } : undefined,
       body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision,
+        ...(localeDirty.value && { locale: locale.value }),
         ...(searchDirty.value && { searchLimit: searchLimit.value }),
         ...(syncDirty.value && { syncAfterUpdate: syncAfterUpdate.value }),
         ...(galleryDirty.value && { syncGallery: syncGallery.value }),
@@ -99,7 +104,7 @@ async function sync(mode: "load" | "save") {
       if (active !== controller) return;
       error.value = field === "check_cron" ? "版本检查的 Cron 表达式无效。" : field === "challenge_cron"
         ? "挑战刷新的 Cron 表达式无效。" : field === "searchLimit"
-          ? "查询条数须为有效的正整数。" : "请检查图鉴设置。";
+          ? "查询条数须为有效的正整数。" : field === "locale" ? "请选择图鉴语言。" : "请检查图鉴设置。";
       return;
     }
     if (!response.ok) {
@@ -108,7 +113,7 @@ async function sync(mode: "load" | "save") {
     }
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
-    if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
+    if (typeof result?.revision !== "string" || parseAtlasLocale(result.locale) === undefined || typeof result?.settings?.enable !== "boolean" ||
         typeof result.syncAfterUpdate !== "boolean" || typeof result.syncGallery !== "boolean" || typeof result.syncCharacterGallery !== "boolean" ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
@@ -119,6 +124,7 @@ async function sync(mode: "load" | "save") {
     saved.value = result;
     draft.value = { ...result.settings };
     searchLimit.value = result.searchLimit;
+    locale.value = result.locale;
     syncAfterUpdate.value = result.syncAfterUpdate;
     syncGallery.value = result.syncGallery;
     syncCharacterGallery.value = result.syncCharacterGallery;
@@ -154,6 +160,13 @@ onBeforeUnmount(() => {
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <form v-if="saved" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
+        <label for="atlas-locale">图鉴语言</label>
+        <select id="atlas-locale" v-model="locale" aria-describedby="atlas-locale-note">
+          <option v-for="(language, id) in atlasLocales" :key="id" :value="id">{{ language.folder }}</option>
+        </select>
+        <p id="atlas-locale-note" class="subtitle toggle-note">
+          重启后生效。更换语言后可发送 #更新图鉴 下载对应资料。繁體中文使用自备图鉴目录。
+        </p>
         <template v-if="saved.searchLimit !== undefined">
           <label for="atlas-search-limit">每次查询最多返回</label>
           <input id="atlas-search-limit" v-model.number="searchLimit" type="number" min="1" step="1" required

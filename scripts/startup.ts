@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import type { AtlasLocale } from "../plugins/atlas/locale.ts";
 import type { AtlasChannel } from "../lib/atlas-channel.ts";
 import type { ImageRenderPreset } from "../lib/startup-render-preset.ts";
 
@@ -45,7 +46,7 @@ function missing(error: unknown) {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
-async function atlasReady(directory: string): Promise<boolean> {
+async function atlasReady(directory: string, locale: AtlasLocale): Promise<boolean> {
   const override = Bun.env.LOTUS_ATLAS_DATA_DIR;
   if (!override) {
     const { discoverRuntimeAtlasDataDirectory } = await import("../plugins/atlas/legacy-atlas-directory.ts");
@@ -61,7 +62,14 @@ async function atlasReady(directory: string): Promise<boolean> {
   const { createAtlasRuntimeCatalog } = await import("../plugins/atlas/catalog.ts");
   const data = override ? resolve(directory, "../..", override) : undefined;
   try {
-    await createAtlasRuntimeCatalog(directory, data).read();
+    const { atlasLocales } = await import("../plugins/atlas/locale.ts");
+    try {
+      await createAtlasRuntimeCatalog(directory, data, locale).read();
+    } catch (error) {
+      if (override) throw error;
+      const others = (Object.keys(atlasLocales) as AtlasLocale[]).filter(language => language !== locale);
+      await Promise.any(others.map(language => createAtlasRuntimeCatalog(directory, data, language).read()));
+    }
   } catch (cause) {
     throw new Error(override ? "LOTUS_ATLAS_DATA_DIR 指定的图鉴索引不可用，请检查该目录的 map.json。"
       : "图鉴索引不可用，请检查 data/atlas 或旧部署中的 map.json。", { cause });
@@ -121,7 +129,11 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   }
   const previous = await readAtlasChannel(root);
   const directory = fileURLToPath(new URL("data/atlas/", root));
-  const ready = await atlasReady(directory);
+  const { readLotusGlobalConfig } = await import("../lib/lotus-global-config.ts");
+  const { defaultAtlasLocale, parseAtlasLocale } = await import("../plugins/atlas/locale.ts");
+  const config = await readLotusGlobalConfig(root);
+  const locale = parseAtlasLocale((config.atlas as { locale?: unknown } | undefined)?.locale) ?? defaultAtlasLocale;
+  const ready = await atlasReady(directory, locale);
   signal.throwIfAborted();
   const { needsInitialRenderPreset, persistInitialRenderPreset } = await import("../lib/startup-render-preset.ts");
   const options = await askStartupOptions(!ready && requested === undefined && previous === null,
@@ -133,7 +145,7 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
       await persistAtlasChannel(root, channel, previous, { signal, canWrite: () => true });
     }
     signal.throwIfAborted();
-    if (!ready) await initializePublicAtlas(root, directory, channel, signal);
+    if (!ready) await initializePublicAtlas(root, directory, channel, signal, locale);
   }
   await prepareThemes(root, signal, !ready || initialize);
 }
@@ -160,12 +172,12 @@ if (import.meta.main) {
   }
 }
 
-async function initializePublicAtlas(root: URL, directory: string, channel: AtlasChannel, signal: AbortSignal) {
+async function initializePublicAtlas(root: URL, directory: string, channel: AtlasChannel, signal: AbortSignal, locale: AtlasLocale) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
   const download = Bun.spawn([
     process.execPath, "plugins/atlas/initialize-atlas.ts", directory,
-    "--public", fileURLToPath(new URL("data/atlas-download/", root)), "--channel", channel,
+    "--public", fileURLToPath(new URL("data/atlas-download/", root)), "--channel", channel, ...(locale === "zh" ? [] : ["--locale", locale]),
   ], {
     cwd: fileURLToPath(root), stdin: "ignore", stdout: "inherit", stderr: "inherit",
   });
@@ -175,7 +187,7 @@ async function initializePublicAtlas(root: URL, directory: string, channel: Atla
   try {
     const exit = await download.exited;
     signal.throwIfAborted();
-    if (exit !== 0 || !await atlasReady(directory)) {
+    if (exit !== 0 || !await atlasReady(directory, locale)) {
       throw new Error("图鉴初始化失败。下载记录已保留，可重新运行 bun run init。");
     }
   } finally {

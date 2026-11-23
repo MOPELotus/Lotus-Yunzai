@@ -138,6 +138,31 @@ test("图鉴搜索上限可保存并回读，独立于定时任务并拒绝过�
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("图鉴语言读取旧目录名，保存独立语言并拒绝无效值及过期写入", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-locale-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    const config = join(directory, "config");
+    await mkdir(config);
+    const file = join(config, "global.yaml");
+    const source = "atlas:\n  locale: 日本語 # 旧目录名\n  version_channel: latest\n  auto_update: { enable: false }\n";
+    await writeFile(file, source);
+    const route = panelAtlasUpdate(root, validTask);
+    const before = await (await route(request(), () => true)).json();
+    expect(before.locale).toBe("ja");
+    const put = (locale: unknown) => route(request("PUT", { settings: before.settings, revision: before.revision, locale }), () => true);
+    const invalid = await put("../English");
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ field: "locale" });
+    expect(await readFile(file, "utf8")).toBe(source);
+    const changed = await put("ko");
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({ locale: "ko", settings: before.settings });
+    expect(await readFile(file, "utf8")).toBe(source.replace("日本語", '"ko"'));
+    expect((await put("en")).status).toBe(409);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("图鉴同步默认发布，页面关闭后只修改候选发布配置", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-prepare-"));
   try {
