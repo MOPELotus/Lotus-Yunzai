@@ -61,9 +61,9 @@ export function readRankStatsPayload(input: unknown): RankStatsResult {
   return { stats: { title, total, scores } };
 }
 
-async function responsePayload(response: Response) {
+async function responsePayload(response: Response, maximum: number) {
   if (!response.body) return;
-  if (Number(response.headers.get("content-length")) > maxBytes) {
+  if (Number(response.headers.get("content-length")) > maximum) {
     await response.body.cancel().catch(() => undefined);
     return;
   }
@@ -76,7 +76,7 @@ async function responsePayload(response: Response) {
       const { value, done } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > maxBytes) return;
+      if (bytes > maximum) return;
       content += decoder.decode(value, { stream: true });
     }
     return JSON.parse(content + decoder.decode()) as unknown;
@@ -88,11 +88,15 @@ async function responsePayload(response: Response) {
 
 type RankResponse = { readonly payload: unknown } | { readonly message: string };
 
-async function postRankQuery(route: "rank/specific" | "rank/data", query: object, signal: AbortSignal,
-  transport: RankStatsTransport): Promise<RankResponse> {
+export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/custom" | "rank/custom/specific", query: object,
+  signal: AbortSignal, transport: RankStatsTransport, { maximum = maxBytes, token }: {
+    readonly maximum?: number; readonly token?: string;
+  } = {}): Promise<RankResponse> {
   try {
+    signal.throwIfAborted();
     const response = await transport(`${endpoint}/${route}`, {
-      method: "POST", credentials: "omit", redirect: "error", headers: { "Content-Type": "application/json" },
+      method: "POST", credentials: "omit", redirect: "error",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ ...query, version: legacyVersion }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
     });
@@ -100,7 +104,7 @@ async function postRankQuery(route: "rank/specific" | "rank/data", query: object
       void response.body?.cancel().catch(() => undefined);
       return { message: response.status === 429 ? messages[104]! : "排名服务暂时无法连接。" };
     }
-    return { payload: await responsePayload(response) };
+    return { payload: await responsePayload(response, maximum) };
   } catch {
     return { message: "排名服务暂时无法连接。" };
   }
@@ -108,7 +112,7 @@ async function postRankQuery(route: "rank/specific" | "rank/data", query: object
 
 export async function fetchRankStats(id: number, signal: AbortSignal, transport: RankStatsTransport = fetch): Promise<RankStatsResult> {
   if (!Number.isSafeInteger(id) || id < 1) return { message: "此角色没有有效的排名统计编号。" };
-  const result = await postRankQuery("rank/specific", { id, percent: 0 }, signal, transport);
+  const result = await postArkQuery("rank/specific", { id, percent: 0 }, signal, transport);
   return "message" in result ? result : readRankStatsPayload(result.payload);
 }
 
@@ -134,7 +138,7 @@ export function matchPublicDamageRank(message: string, game: RankGame) {
 export async function fetchPublicDamageRank(uid: string, id: number, signal: AbortSignal,
   transport: RankStatsTransport = fetch): Promise<{ readonly rank: number; readonly score: number } | { readonly message: string }> {
   if (!uidPattern.test(uid) || !Number.isSafeInteger(id) || id < 1) return { message: "角色或 UID 无效。" };
-  const result = await postRankQuery("rank/data", { uid, id, update: 0 }, signal, transport);
+  const result = await postArkQuery("rank/data", { uid, id, update: 0 }, signal, transport);
   if ("message" in result) return result;
   const row = object(result.payload);
   if (row?.retcode !== 100) {
