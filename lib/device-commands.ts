@@ -9,6 +9,7 @@ const zzzHelp = /^(?:[#/]?(?:zzz|绝区零)(?:zzz|绝区零)?|#?[%％](?:zzz|绝
 const timeout = 120_000;
 const apkName = "copy_device_info_1.2.apk";
 const oldApk = new URL(`../data/passport/resources/apk/${apkName}`, import.meta.url);
+const apkFallback = "可继续发送设备 JSON，或联系机器人主人获取设备信息工具。";
 
 function containsDeviceInput(message: string) {
   const id = /(?:device[_-]?id|bbs_device_id)\s*["']?\s*[:=：]/iu.test(message);
@@ -27,7 +28,9 @@ interface BindingRequest {
 }
 
 export function deviceCommands(directory: string | undefined, signal: AbortSignal,
-  showProfile: (profileId: number, context: MessageFallbackContext) => Promise<CommandReply> | CommandReply): CommandModule {
+  showProfile: (profileId: number, context: MessageFallbackContext) => Promise<CommandReply> | CommandReply,
+  apk = Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk,
+): CommandModule {
   const profiles = createProfileStore(directory);
   const pending = new Map<string, BindingRequest>();
   const opening = new Map<string, { readonly profileId: number }>();
@@ -120,14 +123,22 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
           }
-          const file = Bun.file(Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk);
-          if (context.uploadFile && await file.exists() && file.size > 0 && file.size <= maxChatFileBytes) {
-            const bytes = await file.bytes().catch(() => undefined);
-            if (!signal.aborted && bytes && pending.get(scope) === current) {
-              await context.uploadFile({ name: apkName, bytes }).catch(() => undefined);
+          const isCurrent = () => !signal.aborted && !context.privateCredentialSignal?.aborted && pending.get(scope) === current;
+          if (!isCurrent()) return [];
+          if (!context.uploadFile) return `当前连接无法发送附件。${apkFallback}`;
+          const file = Bun.file(apk);
+          let bytes: Uint8Array | undefined;
+          try {
+            if (await file.exists() && file.size > 0 && file.size <= maxChatFileBytes) {
+              bytes = await file.slice(0, maxChatFileBytes + 1).bytes();
             }
+          } catch {
+            // Keep the JSON binding attempt usable if the optional attachment cannot be read.
           }
-          return [];
+          if (!isCurrent()) return [];
+          if (!bytes?.byteLength || bytes.byteLength > maxChatFileBytes) return `设备信息工具文件暂不可用。${apkFallback}`;
+          const outcome = await context.uploadFile({ name: apkName, bytes }).catch(() => "unknown");
+          return isCurrent() && outcome === "rejected" ? `设备信息工具未能发送。${apkFallback}` : [];
         }
       }
       if (!request) return "请先私聊发送 #绑定设备。";

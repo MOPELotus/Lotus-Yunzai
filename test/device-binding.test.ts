@@ -149,3 +149,53 @@ test("设备绑定只返回可用于展示和请求头的有限字段", () => {
     deviceFingerprint: "fixture firmware identity", raw: { cookie: "ignored" },
   }))).toEqual({ id, fp });
 });
+
+test("设备 APK 缺失、不支持或发送未确认时保持同档 JSON 绑定", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-device-apk-boundary-"));
+  const lifecycle = new AbortController();
+  const path = join(root, "fixture.apk");
+  const command = "#绑定设备2", cancel = "#取消绑定设备2";
+  try {
+    await writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({
+      account: { cookie: "fixture-cookie", stoken: "fixture-token" },
+    }));
+    const module = deviceCommands(root, lifecycle.signal, id => `档案 ${id} 已绑定`, path);
+    const dispatch = module.fallback!;
+    const context = {
+      message_type: "private" as const, self_id: 99, user_id: 42,
+      isMaster: false, isBotMaster: () => false, reply: () => true,
+      privateCredentialSignal: new AbortController().signal,
+    };
+    const device = (text: string, extra = {}) => dispatch(text, { ...context, normalizedMessage: text, ...extra });
+
+    const unsupported = await device(command);
+    expect(unsupported).toContain("当前连接无法发送附件");
+    expect(unsupported).toContain("可继续发送设备 JSON");
+    const unavailable = await device(command, { uploadFile: () => { throw Error("不存在的文件不得上传"); } });
+    expect(unavailable).toContain("设备信息工具文件暂不可用");
+    expect(unavailable).not.toContain(path);
+
+    await writeFile(path, "synthetic file, never installed");
+    let attempts = 0;
+    expect(await device(command, { uploadFile: async () => { attempts++; return "unknown"; } })).toEqual([]);
+    expect(attempts).toBe(1);
+
+    const entered = Promise.withResolvers<void>();
+    const result = Promise.withResolvers<"rejected">();
+    const inFlight = device(command, { uploadFile: async () => { entered.resolve(); return result.promise; } });
+    await entered.promise;
+    expect(await device(cancel)).toBe("已取消绑定设备。");
+    result.resolve("rejected");
+    expect(await inFlight).toEqual([]);
+
+    expect(await device(command, { uploadFile: async () => "rejected" })).toContain("设备信息工具未能发送");
+    const payload = JSON.stringify({ device_id: id, device_fp: fp });
+    expect(await device(payload)).toBe("档案 2 已绑定");
+    expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).toMatchObject({
+      account: { cookie: "fixture-cookie", stoken: "fixture-token" }, device: { bound: true, id, fp },
+    });
+  } finally {
+    lifecycle.abort();
+    await rm(root, { recursive: true, force: true });
+  }
+});
