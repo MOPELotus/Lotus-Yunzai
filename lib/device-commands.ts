@@ -1,4 +1,4 @@
-import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding } from "@lotus-yunzai/account";
+import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { maxChatFileBytes } from "./chat-files.ts";
 import type { CommandModule, MessageFallbackContext, CommandReply } from "./commands.ts";
 
@@ -32,7 +32,7 @@ interface BindingRequest {
   readonly profileId: number;
   readonly connection: AbortSignal;
   readonly operation: AbortController;
-  snapshot?: { readonly revision: string; readonly expires: number };
+  snapshot?: { readonly account: ProfileAccountContext; readonly expires: number };
   writing?: true;
 }
 
@@ -122,7 +122,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
             cancelRequest(scope, current);
             return [];
           }
-          current.snapshot = { revision: account.revision, expires: performance.now() + timeout };
+          current.snapshot = { account, expires: performance.now() + timeout };
         } catch {
           const report = isCurrent();
           cancelRequest(scope, current);
@@ -164,7 +164,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       try {
         const device = parseDeviceBinding(opened?.[2] ?? text);
         request.writing = true;
-        await profiles.saveBoundDevice(qq, request.profileId, request.snapshot.revision, device, writeSignal);
+        await profiles.saveBoundDevice(qq, request.profileId, request.snapshot.account, device, writeSignal);
         if (writeSignal.aborted) return [];
       } catch (error) {
         if (writeSignal.aborted) return [];

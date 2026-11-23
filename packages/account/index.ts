@@ -442,6 +442,25 @@ export function profileCookieAccountId(account: ProfileAccountContext["account"]
   if (ids.size === 1 && id && /^[1-9]\d{0,19}$/u.test(id) && !conflictingMids) return id;
 }
 
+type DeviceBindingSnapshot = Pick<ReturnType<typeof readIdentity>, "account" | "device"> &
+  { readonly qq: string; readonly profileId: number; readonly revision: string };
+
+function sameDeviceBindingLogin(before: DeviceBindingSnapshot["account"], after: DeviceBindingSnapshot["account"]) {
+  if (isDeepStrictEqual(before, after)) return true;
+  const id = profileCookieAccountId(before);
+  if (!id || id !== profileCookieAccountId(after)) return false;
+  function login(account: DeviceBindingSnapshot["account"]) {
+    const stored = new Map(cookieFields(account.stokenCookie));
+    const token = account.stoken || stored.get("stoken");
+    const mid = account.mid || cookieFields(account.stokenCookie).concat(cookieFields(account.cookie))
+      .find(([key]) => cookieMidFields.has(key))?.[1] || "";
+    return { token, mid };
+  }
+  const original = login(before);
+  const current = login(after);
+  return !!original.token && original.token === current.token && original.mid === current.mid;
+}
+
 function loginFields(result: ProfileLoginResult) {
   const { stuid, stoken, mid = "", credentials: { cookie, ltoken, stokenCookie } } = result;
   const safeField = (value: string) => /^[!#-:<-~]+$/u.test(value);
@@ -688,15 +707,20 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return { rolesSynced: result.roles !== undefined, revision };
       });
     },
-    async saveBoundDevice(qq: string, profileId: number, expected: string, binding: DeviceBinding, signal?: AbortSignal) {
+    async saveBoundDevice(qq: string, profileId: number, expected: string | DeviceBindingSnapshot, binding: DeviceBinding,
+      signal?: AbortSignal) {
       const filename = profileFilename(qq, profileId);
       const path = join(await realpath(root), filename);
       return serializeWrite(path, async () => {
         signal?.throwIfAborted();
         const snapshot = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
-        if (revisionOf(snapshot) !== expected) throw changedProfile();
+        const revision = revisionOf(snapshot);
+        const strict = typeof expected === "string";
+        if (strict ? revision !== expected : expected.qq !== qq || expected.profileId !== profileId) throw changedProfile();
         const value: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
         const { account, device: previous, summary } = readIdentity(value, qq, profileId);
+        if (!strict && revision !== expected.revision &&
+            (!sameDeviceBindingLogin(expected.account, account) || !isDeepStrictEqual(expected.device, previous))) throw changedProfile();
         if (!summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         if (hasConflictingProfileCookieIdentity(account)) throw new ProfileError("invalid", "档案账号不一致，请重新扫码后绑定。");
         const { id, fp, name, model, androidVersion } = binding;
@@ -707,7 +731,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const device = { bound: true, generated: false, id, fp,
           name: name ?? sameDevice?.name ?? "", model: model ?? sameDevice?.model ?? "",
           android_version: androidVersion ?? sameDevice?.androidVersion ?? "", updated_at: new Date().toISOString() };
-        await writeProfileDocument(path, { ...record(value), device }, expected, signal);
+        await writeProfileDocument(path, { ...record(value), device }, revision, signal);
       });
     },
     async removeBoundDevice(qq: string, profileId: number, expected: string, signal?: AbortSignal) {

@@ -270,3 +270,52 @@ test("扫码只使用临时设备，不覆盖未完整的旧设备档案", async
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("设备等待只可跨同一登录的 Cookie 更新和无关配置改动", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-device-refresh-while-binding-"));
+  const lifetime = new AbortController();
+  try {
+    const file = join(root, "42-2.yaml");
+    const profiles = createProfileStore(root);
+    const account = { stuid: "77", ltuid: "77", stoken: "fixture-stoken",
+      cookie: "ltoken=before;ltuid=77;cookie_token=fixture;account_id=77;" };
+    const stored = { account, device: { bound: true, id, fp }, profile: { id: 2 } };
+    const module = deviceCommands(root, lifetime.signal, () => "设备已绑定");
+    const context = { message_type: "private" as const, self_id: 99, user_id: 42,
+      isMaster: false, isBotMaster: () => false, reply: () => true, privateCredentialSignal: lifetime.signal };
+    const send = (text: string) => module.fallback!(text, { ...context, normalizedMessage: text });
+    const input = JSON.stringify({ device_id: otherId, device_fp: otherFp });
+    const renewed = "ltoken=renewed;ltuid=77;cookie_token=fixture-renewed;account_id=77;";
+    for (const change of ["renewed", "settings", "login-replaced", "device-replaced", "logout"] as const) {
+      await writeFile(file, Bun.YAML.stringify(stored));
+      await send("#绑定设备2");
+      const source = await profiles.accountContext("42", 2);
+      if (change === "renewed") {
+        await profiles.saveRefreshedCredentials("42", 2, source.revision, { ltoken: "renewed", cookie: renewed });
+      } else if (change === "settings") {
+        await writeFile(file, Bun.YAML.stringify({ ...stored, schedule: { fixed_time: "08:45" } }));
+      } else if (change === "login-replaced") {
+        await writeFile(file, Bun.YAML.stringify({ ...stored, account: { ...account, stoken: "another-login" } }));
+      } else if (change === "device-replaced") {
+        await profiles.saveBoundDevice("42", 2, source.revision, { id: otherId, fp });
+      } else {
+        await profiles.clearLogin("42", 2);
+      }
+      const before = await readFile(file, "utf8");
+      const result = await send(input);
+      if (change === "renewed" || change === "settings") {
+        expect(result).toBe("设备已绑定");
+        expect((await profiles.accountContext("42", 2)).device).toMatchObject({ id: otherId, fp: otherFp });
+        if (change === "renewed") expect((await profiles.accountContext("42", 2)).account.cookie).toBe(renewed);
+        else expect(await readFile(file, "utf8")).toContain("08:45");
+      } else {
+        expect(result).toBe("档案已变化，请重新发起设备绑定。");
+        expect(await readFile(file, "utf8")).toBe(before);
+      }
+    }
+  } finally {
+    lifetime.abort();
+    await rm(root, { recursive: true, force: true });
+  }
+});
