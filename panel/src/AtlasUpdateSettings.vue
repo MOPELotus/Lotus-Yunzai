@@ -6,7 +6,7 @@ import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
-interface Snapshot { settings: Settings; revision: string; syncAfterUpdate: boolean; scopes?: AtlasScopeSelections; searchLimit?: number }
+interface Snapshot { settings: Settings; revision: string; syncAfterUpdate: boolean; syncGallery: boolean; scopes?: AtlasScopeSelections; searchLimit?: number }
 
 const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
 const scopeFields = ["update_args", "challenge_args"] as const;
@@ -29,6 +29,7 @@ const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "",
 const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
 const syncAfterUpdate = ref(true);
+const syncGallery = ref(true);
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
@@ -43,7 +44,8 @@ const searchInvalid = computed(() => saved.value?.searchLimit !== undefined &&
   (typeof searchLimit.value !== "number" || parseAtlasSearchLimit(searchLimit.value) === undefined));
 const searchDirty = computed(() => saved.value?.searchLimit !== searchLimit.value);
 const syncDirty = computed(() => saved.value?.syncAfterUpdate !== syncAfterUpdate.value);
-const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || Object.keys(scopePatch.value).length > 0 ||
+const galleryDirty = computed(() => saved.value?.syncGallery !== syncGallery.value);
+const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || galleryDirty.value || Object.keys(scopePatch.value).length > 0 ||
   JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
@@ -64,6 +66,7 @@ async function sync(mode: "load" | "save") {
       body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision,
         ...(searchDirty.value && { searchLimit: searchLimit.value }),
         ...(syncDirty.value && { syncAfterUpdate: syncAfterUpdate.value }),
+        ...(galleryDirty.value && { syncGallery: syncGallery.value }),
         ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
@@ -95,7 +98,7 @@ async function sync(mode: "load" | "save") {
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
-        typeof result.syncAfterUpdate !== "boolean" ||
+        typeof result.syncAfterUpdate !== "boolean" || typeof result.syncGallery !== "boolean" ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
         (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
@@ -106,6 +109,7 @@ async function sync(mode: "load" | "save") {
     draft.value = { ...result.settings };
     searchLimit.value = result.searchLimit;
     syncAfterUpdate.value = result.syncAfterUpdate;
+    syncGallery.value = result.syncGallery;
     scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
@@ -151,6 +155,13 @@ onBeforeUnmount(() => {
         </label>
         <p id="atlas-sync-after-update-note" class="subtitle toggle-note">
           关闭后，手动和定时更新仅保存已校验的候选，当前查询继续使用现有资料。
+        </p>
+        <label class="update-toggle">
+          <input id="atlas-sync-gallery" v-model="syncGallery" type="checkbox" aria-describedby="atlas-sync-gallery-note" />
+          发布时同步新图库
+        </label>
+        <p id="atlas-sync-gallery-note" class="subtitle toggle-note">
+          关闭后，发布新条目时沿用当前图库。恢复后可发送 #全量更新图鉴 补齐图片。
         </p>
         <label for="atlas-check-cron">版本检查 Cron</label>
         <input id="atlas-check-cron" v-model="draft.check_cron" type="text" maxlength="160" autocomplete="off"

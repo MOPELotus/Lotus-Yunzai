@@ -112,6 +112,7 @@ function stageConfig(atlas: Record<string, unknown>) {
   const value: Record<string, unknown> = {};
   if (isAtlasChannel(atlas.version_channel)) value.version_channel = atlas.version_channel;
   if (typeof atlas.sync_after_update === "boolean") value.sync_after_update = atlas.sync_after_update;
+  if (typeof atlas.sync_gallery === "boolean") value.sync_gallery = atlas.sync_gallery;
   const searchLimit = parseAtlasSearchLimit(atlas.max_results);
   if (searchLimit !== undefined) value.max_results = searchLimit;
   const auto = record(atlas.auto_update);

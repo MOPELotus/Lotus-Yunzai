@@ -34,7 +34,7 @@ test("保留固定旧宿主的定时语义和分类范围，只迁现行 Atlas �
       "  data_root: data/atlas",
       "  initial_command: /tmp/untrusted",
       "  update_command: /tmp/untrusted",
-      "  sync_gallery: true",
+      "  sync_gallery: false",
       "  sync_after_update: false",
       "  max_results: '6e1'",
       "  version_channel: live",
@@ -53,7 +53,8 @@ test("保留固定旧宿主的定时语义和分类范围，只迁现行 Atlas �
     const result = Bun.YAML.parse(await readFile(staged, "utf8")) as Record<string, unknown>;
     expect(result).toEqual({
       scheduler: { mode: "fixed" },
-      atlas: { version_channel: "live", sync_after_update: false, max_results: 60, update_args: ["--page", "hsr=lightcone"], challenge_args: ["--page", "zzz=shiyu"],
+      atlas: { version_channel: "live", sync_after_update: false, sync_gallery: false, max_results: 60,
+        update_args: ["--page", "hsr=lightcone"], challenge_args: ["--page", "zzz=shiyu"],
         auto_update: { enable: true, check_cron: "0 0 */6 * * *", run_on_missing_data: false } },
     });
     const policy = parseAtlasUpdatePolicy(result.atlas);

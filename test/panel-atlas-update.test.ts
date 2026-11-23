@@ -150,6 +150,7 @@ test("图鉴同步默认发布，页面关闭后只修改候选发布配置", as
     const get = async () => (await route(request(), () => true)).json();
     const before = await get();
     expect(before.syncAfterUpdate).toBeTrue();
+    expect(before.syncGallery).toBeTrue();
     const put = (syncAfterUpdate: unknown) => route(request("PUT", { settings: before.settings,
       revision: before.revision, syncAfterUpdate }), () => true);
     const invalid = await put("false");
@@ -162,6 +163,12 @@ test("图鉴同步默认发布，页面关闭后只修改候选发布配置", as
     expect((await get()).syncAfterUpdate).toBeFalse();
     expect((await readLotusGlobalConfig(root)).atlas).toEqual({ version_channel: "live", sync_after_update: false, auto_update: { enable: false } });
     expect((await put(true)).status).toBe(409);
+    const after = await get();
+    const gallery = (syncGallery: unknown) => route(request("PUT", { settings: after.settings,
+      revision: after.revision, syncGallery }), () => true);
+    expect((await gallery("false")).status).toBe(400);
+    expect(await (await gallery(false)).json()).toMatchObject({ syncGallery: false, syncAfterUpdate: false });
+    expect((await readLotusGlobalConfig(root)).atlas).toMatchObject({ sync_gallery: false, sync_after_update: false });
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
