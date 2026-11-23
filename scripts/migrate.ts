@@ -26,6 +26,7 @@ interface PreparedMigration {
     readonly networkConfig: Staged["networkConfig"];
     readonly globalConfig: Staged["globalConfig"];
     readonly mediaState: Staged["mediaState"];
+    readonly memeState?: Staged["memeState"];
     readonly atlas: Staged["atlas"];
     readonly starRailTheme: Staged["starRailTheme"];
     readonly shopAudit: Staged["shopAudit"];
@@ -85,6 +86,7 @@ async function prepare(source: string, target: string, directory: string, signal
         networkConfig: staged.networkConfig,
         globalConfig: staged.globalConfig,
         mediaState: staged.mediaState,
+        memeState: staged.memeState,
         atlas: staged.atlas,
         starRailTheme: staged.starRailTheme,
         shopAudit: staged.shopAudit,

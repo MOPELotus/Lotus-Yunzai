@@ -83,11 +83,11 @@ const sqliteSidecars = ["-wal", "-shm", "-journal"];
 async function configuredRuntimePaths(root: string, source: string, env: RuntimePaths): Promise<string[]> {
   const theme = env.LOTUS_ATLAS_THEME_DIR?.trim();
   const adjacentFont = theme ? join(dirname(resolve(root, theme)), "fonts", "MiSans-VF.ttf") : undefined;
-  const db = env.LOTUS_MEME_DB;
+  const db = env.LOTUS_MEME_DB || "data/meme/data.db";
   // The usage database is named from the configured catalog spelling. SQLite's own
   // companions are named from the resolved file for each of these two databases.
   const usage = db ? `${db}.usage.sqlite` : undefined;
-  const configured = [...pathKeys.map(key => env[key]), ...trimmedPathKeys.map(key => env[key]?.trim()), adjacentFont, usage];
+  const configured = [...pathKeys.map(key => env[key]), ...trimmedPathKeys.map(key => env[key]?.trim()), adjacentFont, db, usage];
   const paths: string[] = [];
   const add = (absolute: string) => {
     if (!within(root, absolute)) return;
@@ -137,7 +137,7 @@ async function configuredRuntimePaths(root: string, source: string, env: Runtime
     // The runtime follows configuration links even when the editable form rejects them.
     const directory = resolve(root, memeConfig);
     if (await resolveState(directory)) {
-      for (const name of ["meme", "access", "protect", "server", "stat", "other"]) {
+      for (const name of ["meme", "access", "protect", "server", "stat"]) {
         await resolveState(join(directory, `${name}.yaml`));
       }
     }

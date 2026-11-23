@@ -10,6 +10,7 @@ import { stageLegacyGameData } from "../lib/migration-game-data.ts";
 import { stageLegacyGlobalConfig } from "../lib/migration-global-config.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
 import { stageLegacyKeywords } from "../lib/migration-keywords.ts";
+import { stageLegacyMemeState } from "../lib/migration-meme-state.ts";
 import { stageLegacyMediaState } from "../lib/migration-media-state.ts";
 import { stageLegacyNetworkConfig } from "../lib/migration-network-config.ts";
 import { stageLegacyOfficialBindings } from "../lib/migration-official-bindings.ts";
@@ -47,6 +48,8 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
     const panelRank = await stageLegacyPanelRankConfig(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
+    const memeState = await stageLegacyMemeState(backup.status === "empty" ? undefined : backup.directory,
+      state.directory, plan.plugins, signal);
     const keywords = await stageLegacyKeywords(plan.source, state.directory, signal);
     const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
     const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal, stagedReminders.settings);
@@ -63,7 +66,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, panelRank, keywords, networkConfig, globalConfig, mediaState, atlas, starRailTheme,
+      sharedGameHistory, coreConfig, groupConfig, panelRank, keywords, networkConfig, globalConfig, mediaState, memeState, atlas, starRailTheme,
       shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });

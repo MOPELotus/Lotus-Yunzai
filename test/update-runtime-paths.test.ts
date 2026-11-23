@@ -150,12 +150,21 @@ test.skipIf(process.platform === "win32")("受管更新保留表情配置实际�
       await mkdir(join(active, config), { recursive: true });
       await mkdir(join(active, "policy"), { recursive: true });
       await writeFile(join(active, "policy/meme.yaml"), "enable: false\n");
+      await writeFile(join(active, "policy/obsolete.yaml"), "autoUpdateRes: true\n");
       await writeFile(join(active, "policy/unrelated.txt"), "不移交");
       await symlink(custom ? "../../policy/meme.yaml" : "../../../policy/meme.yaml", join(active, config, "meme.yaml"));
+      await symlink(custom ? "../../policy/obsolete.yaml" : "../../../policy/obsolete.yaml", join(active, config, "other.yaml"));
+      await mkdir(join(active, "data/meme"), { recursive: true });
+      await writeFile(join(active, "policy/meme-catalog.db"), "保留预设");
+      await writeFile(join(active, "policy/meme-usage.db"), "保留统计");
+      await symlink("../../policy/meme-catalog.db", join(active, "data/meme/data.db"));
+      await symlink("../../policy/meme-usage.db", join(active, "data/meme/data.db.usage.sqlite"));
       if (custom) await symlink(config, join(active, entry), "dir");
 
       const paths = await readUpdateRuntimePaths(active, AbortSignal.timeout(2_000), { PATH: process.env.PATH, ...env });
-      expect(paths).toEqual(custom ? ["local/meme", entry, "policy/meme.yaml"] : ["policy/meme.yaml"]);
+      expect([...paths].sort()).toEqual([
+        ...(custom ? ["local/meme", entry] : []), "policy/meme.yaml", "policy/meme-catalog.db", "policy/meme-usage.db",
+      ].sort());
       async function verify(root: string) {
         const previous = await previousUpdateDirectory(root);
         expect(previous).toBeDefined();
@@ -166,6 +175,9 @@ test.skipIf(process.platform === "win32")("受管更新保留表情配置实际�
       await activateUpdate(active, candidate, verify, paths);
       expect(await readFile(join(active, entry, "meme.yaml"), "utf8")).toBe("enable: false\n");
       expect(await Bun.file(join(active, "policy/unrelated.txt")).exists()).toBe(false);
+      expect(await Bun.file(join(active, "policy/obsolete.yaml")).exists()).toBe(false);
+      expect(await readFile(join(active, "data/meme/data.db"), "utf8")).toBe("保留预设");
+      expect(await readFile(join(active, "data/meme/data.db.usage.sqlite"), "utf8")).toBe("保留统计");
     }
   } finally {
     await rm(dir, { force: true, recursive: true });

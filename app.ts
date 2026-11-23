@@ -3509,7 +3509,6 @@ if (import.meta.main) {
       },
       memeRuntime: probingUpdate ? undefined : {
         whenReady: whenModuleTasksActive,
-        registerTask: (cron, run) => registerModuleTask("[meme] 自动更新表情包数据", cron, run),
         async loadInfoCard() {
           const info = await import("@lotus-yunzai/skia/info-card");
           const configured = Bun.env.LOTUS_SKIA_MODE;
