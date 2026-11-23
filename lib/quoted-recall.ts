@@ -34,6 +34,7 @@ export async function readGroupRecallPermissions(root: URL): Promise<GroupRecall
 
 type Recall = (policy: {
   active(): boolean;
+  imageMessageOnly?: boolean;
   authorize(isBotMessage: boolean, role: () => Promise<GroupRecallRole | undefined>): Promise<true | string | undefined>;
 }) => Promise<readonly RecallResult[] | string | undefined>;
 
@@ -74,7 +75,7 @@ export function createQuotedRecall() {
     recall(id: number): Promise<RecallResult>;
     groupFile?(source: QuotedMessage): QuotedGroupFileRemoval | undefined;
   }): QuotedRecall => ({ account: scope.account, actor: scope.actor, group: scope.group ? scope.peer : undefined,
-    async run({ active, authorize }) {
+    async run({ active, authorize, imageMessageOnly }) {
       const { account, peer, group, command, quoted, signal } = scope;
       const chat = `${account}:${group ? "group" : "friend"}:${peer}`;
       const commandKey = `${chat}:${command}`;
@@ -92,6 +93,7 @@ export function createQuotedRecall() {
         const source = await scope.readQuote();
         if (!permitted()) return;
         if (!source) return "无法核实当前会话的引用消息。";
+        if (imageMessageOnly && (!source.message.length || !source.message.every(part => part.type === "image"))) return;
         const bot = source.user_id === account;
         if (!group && !bot) return;
         const authorized = await authorize(bot, scope.readRole);

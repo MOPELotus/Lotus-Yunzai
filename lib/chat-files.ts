@@ -85,15 +85,22 @@ function qqImageSource(value: unknown): value is string {
 }
 
 export async function readQqMessageImage(part: Readonly<Record<string, unknown>>, signal: AbortSignal, options?: { maxBytes: number; fallback?: unknown }) {
+  return (await readQqMessageImageSource(part, signal, options))?.data;
+}
+
+export async function readQqMessageImageSource(part: Readonly<Record<string, unknown>>, signal: AbortSignal, options?: { maxBytes: number; fallback?: unknown }) {
   const url = part.url ?? options?.fallback;
   if (qqImageSource(url)) {
     const image = await readQqMessageMedia(url, signal, options?.maxBytes);
-    if (image) return image;
+    if (image) return { data: image, url };
   }
   const download = part.getDownloadUrl;
   if (signal.aborted || typeof download !== "function") return;
   const renewed: unknown = await Promise.resolve().then(() => download()).catch(() => undefined);
-  if (qqImageSource(renewed) && renewed !== url) return readQqMessageMedia(renewed, signal, options?.maxBytes);
+  if (qqImageSource(renewed) && renewed !== url) {
+    const data = await readQqMessageMedia(renewed, signal, options?.maxBytes);
+    if (data) return { data, url: renewed };
+  }
 }
 
 export async function readQqMessageSegmentMedia(part: Readonly<Record<string, unknown>>, signal: AbortSignal) {

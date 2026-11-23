@@ -35,6 +35,7 @@ import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-grou
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
 import { createChatMediaLinks } from "./lib/chat-media-links.ts";
+import { createQuotedImageTools } from "./lib/quoted-image-tools.ts";
 import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-list.ts";
 import { cloudProfileCommands, cloudWalletProfile, createCloudGenshinWalletQuery, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
@@ -297,6 +298,7 @@ if (import.meta.main) {
   let fileBase: URL | undefined;
   const chatMediaLinks = createChatMediaLinks(createFileToUrl(publicFiles, {}, () => stopping ? undefined : fileBase),
     () => fileBase !== undefined && !stopping);
+  const quotedImageTools = createQuotedImageTools();
   const groups = new OneBotGroups();
   const leaveGroup = createManualGroupLeave();
   const pending = new Set<Promise<void>>();
@@ -1910,6 +1912,24 @@ if (import.meta.main) {
   const arkRankCredentials = createArkRankCredentialSettings({ signal: lifecycle.signal });
   let panelTransfer: PanelTransferAccess | undefined;
 
+  function runQuotedRecall(incoming: MessageEvent, active: () => boolean, imageMessageOnly = false) {
+    const quoted = quotedRecallSessions.get(incoming);
+    if (!quoted) return;
+    const route = { self_id: quoted.account, user_id: quoted.actor, group_id: quoted.group };
+    return quoted.run({
+      imageMessageOnly,
+      active: () => active() && groupDispatch.allowsInbound(route) && groupDispatch.allows(route, recallFeatureNames),
+      async authorize(botMessage, readRole) {
+        if (quoted.group === undefined) return true;
+        const isMaster = () => masterPermissions.isMaster(quoted.account, quoted.actor);
+        const role = isMaster() ? undefined : await readRole();
+        const settings = await readGroupRecallPermissions(root);
+        if (!settings) return "群聊撤回权限配置无效。";
+        return groupRecallPermission(settings[botMessage ? "bot" : "member"], isMaster(), role);
+      },
+    });
+  }
+
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
@@ -2208,8 +2228,10 @@ if (import.meta.main) {
       }
       return;
     }
-    if (await chatMediaLinks(event, nativeOperationSignal, allowNew,
-      () => groupDispatch.allowsInbound(event) && allowed(["取直链", "group", "@lotus-yunzai/group"]))) return;
+    const canReadChatImages = () => groupDispatch.allowsInbound(event) && allowed(["取直链", "group", "@lotus-yunzai/group"]);
+    if (allowNew && await quotedImageTools(event, nativeOperationSignal, canReadChatImages,
+      active => runQuotedRecall(incoming, active, true) ?? Promise.resolve(undefined))) return;
+    if (await chatMediaLinks(event, nativeOperationSignal, allowNew, canReadChatImages)) return;
     const groupToLeave = manualGroupLeaveInput(event.msg);
     if (groupToLeave !== undefined) {
       const allowedToLeave = () => groupDispatch.allowsInbound(event) && allowed(["退群", "group", "@lotus-yunzai/group"]);
@@ -2490,23 +2512,10 @@ if (import.meta.main) {
     }
 
     if (isRecallCommand(command) && !command.isDelegated && allowed(recallFeatureNames)) {
-      const quotedRecall = quotedRecallSessions.get(incoming);
       const recallSignal = nativeOperationSignal();
-      const route = quotedRecall && { self_id: quotedRecall.account, user_id: quotedRecall.actor, group_id: quotedRecall.group };
-      const active = () => !recallSignal.aborted && !stopping && handoff.accepting && !dispatchPower.paused &&
-        (!route || groupDispatch.allowsInbound(route) && groupDispatch.allows(route, recallFeatureNames));
-      const results = quotedRecall ? await quotedRecall.run({
-        active,
-        async authorize(botMessage, readRole) {
-          if (quotedRecall.group === undefined) return true;
-          const isMaster = () => masterPermissions.isMaster(quotedRecall.account, quotedRecall.actor);
-          const wasMaster = isMaster();
-          const role = wasMaster ? undefined : await readRole();
-          const settings = await readGroupRecallPermissions(root);
-          if (!settings) return "群聊撤回权限配置无效。";
-          return groupRecallPermission(settings[botMessage ? "bot" : "member"], isMaster(), role);
-        },
-      }) : isProcessMaster(command) && active() ? await command.recallReply?.() : undefined;
+      const active = () => !recallSignal.aborted && !stopping && handoff.accepting && !dispatchPower.paused;
+      const recalled = runQuotedRecall(incoming, active);
+      const results = recalled ? await recalled : isProcessMaster(command) && active() ? await command.recallReply?.() : undefined;
       if (results === undefined) return;
       if (typeof results === "string") {
         await command.reply(results, true);

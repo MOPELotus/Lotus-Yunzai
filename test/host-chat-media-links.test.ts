@@ -161,3 +161,88 @@ test("取直链以当前或同会话图片和附件生成公开 HTTP 临时字�
       expect(milky.calls).toEqual([]);
     }, 3_000, preload);
 }, 12_000);
+
+test("引用图片按原次序显示可用链接和字节，过期重发确认后才按原会话权限撤回", async () => {
+  await withDualGatewayFixture("quoted-image-tools-fixture", "disablePrivate: false\n",
+    async ({ milky, onebot, sendOneBot, sendMilky }) => {
+      const group = { message_type: "group", sub_type: "normal", group_id: 707 };
+      const photo = { type: "image", data: { url: image, file_size: "1" } };
+      const quote = (id: number, text: string, message_id: number) => sendOneBot(text, { ...group, message_id, message: [
+        { type: "reply", data: { id } }, { type: "text", data: { text } },
+      ] });
+      const source = async (message_id: number, message: object[] = [photo, photo]) => {
+        const get = await onebot.next("get_msg");
+        expect(get.params).toEqual({ message_id });
+        get.respond({ self_id: 99, message_type: "group", message_id, group_id: 707, sender: { user_id: 99 }, message });
+      };
+      quote(900, "大小", 101);
+      await source(900);
+      const details = await onebot.next("send_group_forward_msg");
+      expect(details.params).toMatchObject({ group_id: 707 });
+      const encoded = JSON.stringify(details.params);
+      for (const item of [1, 2]) expect(encoded).toContain(`第 ${item} 张 · ${Buffer.from(sample, "base64").length} 字节`);
+      expect(encoded).toContain(image);
+      expect(encoded).toContain(sample);
+      details.respond({ message_id: 310 });
+
+      quote(901, "#过期", 102);
+      await source(901);
+      const resent = await onebot.next("send_msg");
+      expect(resent.params).toMatchObject({ group_id: 707, message: [
+        { type: "image", data: { file: `base64://${sample}` } }, { type: "image", data: { file: `base64://${sample}` } },
+      ] });
+      expect(onebot.calls).toEqual([]);
+      resent.respond({ message_id: 311 });
+      await source(901);
+      const role = await onebot.next("get_group_member_info");
+      role.respond({ group_id: 707, user_id: 42, role: "member" });
+      for (const id of [901, 102]) {
+        const remove = await onebot.next("delete_msg");
+        expect(remove.params).toEqual({ message_id: id });
+        remove.respond({});
+      }
+
+      quote(902, "过期", 103);
+      await source(902);
+      (await onebot.next("send_msg")).respond({});
+      expect(JSON.stringify((await onebot.next("send_msg")).params)).toContain("原消息已保留");
+
+      quote(903, "过期", 104);
+      const originalWithText = [photo, { type: "text", data: { text: "保留正文" } }];
+      await source(903, originalWithText);
+      (await onebot.next("send_msg")).respond({ message_id: 313 });
+      await source(903, originalWithText);
+      expect(JSON.stringify((await onebot.next("send_msg")).params)).toContain("原消息未撤回");
+
+      await sendMilky("#链接", { segments: [
+        { type: "reply", data: { message_seq: 870 } }, { type: "text", data: { text: "#链接" } },
+      ] });
+      (await milky.next("get_message")).respond({ message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 870,
+        segments: [{ type: "image", data: { temp_url: expired, resource_id: "image-fixture" } }],
+      } });
+      (await milky.next("get_resource_temp_url")).respond({ url: renewed });
+      const link = await milky.next("send_private_message");
+      expect(JSON.stringify(link.params)).toContain(renewed);
+      expect(JSON.stringify(link.params)).not.toContain(expired);
+      link.respond({ message_seq: 312 });
+
+      await sendMilky("过期", { segments: [
+        { type: "reply", data: { message_seq: 872 } }, { type: "text", data: { text: "过期" } },
+      ] });
+      const milkyPhoto = { message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 872,
+        segments: [{ type: "image", data: { temp_url: image, resource_id: "image-fixture" } }],
+      } };
+      (await milky.next("get_message")).respond(milkyPhoto);
+      const privateResent = await milky.next("send_private_message");
+      expect(JSON.stringify(privateResent.params)).toContain(sample);
+      expect(milky.calls).toEqual([]);
+      privateResent.respond({ message_seq: 314 });
+      (await milky.next("get_message")).respond(milkyPhoto);
+      const privateRecall = await milky.next("recall_private_message");
+      expect(privateRecall.params).toEqual({ user_id: 43, message_seq: 872 });
+      privateRecall.respond({});
+      await Bun.sleep(40);
+      expect(onebot.calls).toEqual([]);
+      expect(milky.calls).toEqual([]);
+    }, 3_000, preload);
+}, 12_000);
