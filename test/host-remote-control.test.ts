@@ -165,10 +165,19 @@ test.skipIf(process.platform !== "linux")("旧远程命令只接真实好友私�
       });
       await sendResult("文件发送结果未确认，请先核对当前私聊。");
       delivery.respond(null);
+
+      uri = rotateRemoteOtp(root, true);
+      await sendMilky(`#远程spawn ${otp(uri)} sh printf milky-remote-test`);
+      const milkyResult = await milky.next("send_private_message");
+      expect(milkyResult.params).toMatchObject({
+        user_id: 43, message: [{ type: "text", data: { text: "命令已结束，退出码 0。\nmilky-remote-test" } }],
+      });
+      milkyResult.respond({ message_seq: 411 });
       const journal = await readFile(join(root, "data", "remote-auth", "operations.jsonl"), "utf8");
       expect(journal.trim().split("\n").map(line => JSON.parse(line))).toEqual([
         { at: expect.any(String), action: "remote.spawn", adapter: "onebot", bot: 99, owner: 42 },
         { at: expect.any(String), action: "remote.download", adapter: "onebot", bot: 99, owner: 42 },
+        { at: expect.any(String), action: "remote.spawn", adapter: "milky", bot: 100, owner: 43 },
       ]);
       expect(journal).not.toContain("remote-test");
       expect(journal).not.toContain("report.txt");
