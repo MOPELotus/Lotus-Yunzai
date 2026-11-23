@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { copyHost } from "./host-fixture.ts";
 
-test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插件和重复插件", async () => {
+test("宿主导入正常模块，并在执行入口前拒载库洛游戏插件和重复插件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugins-"));
   const installed = join(root, "plugins");
 
@@ -59,6 +59,16 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     await install("d-mixed", "mixed-games", {
       lotusYunzai: { entry: "./index.ts", games: ["genshin", "Wuthering-Waves"] },
     });
+    await install("d-pgr", "renamed-pgr", { repository: "https://github.com/Loping151/PGRUID.git" });
+    await install("d-kuro", "renamed-mixed", { repository: "https://github.com/TomyJan/Yunzai-Kuro-Plugin.git" });
+    await install("d-twintail", "twintail", {
+      lotusYunzai: { entry: "./index.ts", games: ["Twin Tails Battleground", "Punishing: Gray Raven"] },
+    });
+    await install("d-replaced", "xhh-tl", {
+      lotusYunzai: { entry: "./index.ts", games: ["戦場ツインテール", "PGR"] },
+    });
+    const unrelated = await install("d-kuro-sandbox", "kuro-sandbox", {}, true);
+    await writeFile(join(unrelated, "index.ts"), 'export default { commands: { "#正常插件": () => "普通插件正常加载" } };');
     await install("e-legacy", "@example/yenai-plugin", {});
     await install("f-escape", "escaped-entry", { lotusYunzai: { entry: "../a-hello/index.ts" } });
 
@@ -79,7 +89,7 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
-      stdin: new Blob(["#问候 Lotus\n#等待\nLotus\n#状态\n#帮助\n#等待\n"]),
+      stdin: new Blob(["#问候 Lotus\n#正常插件\n#等待\nLotus\n#状态\n#帮助\n#等待\n"]),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -88,6 +98,7 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     ]);
     expect(exit).toBe(0);
     expect(stdout).toContain("你好，Lotus");
+    expect(stdout).toContain("普通插件正常加载");
     expect(stdout).toContain("请输入内容\n收到 Lotus\n");
     expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n模块完成清理\n");
     expect(stdout).toContain("失败模块完成清理");
@@ -97,6 +108,10 @@ test("宿主导入正常模块，并在执行入口前拒载旧包、鸣潮插�
     expect(stderr).toContain("拒绝加载 b-duplicate：与 a-hello 重复");
     expect(stderr).toContain("拒绝加载 c-renamed");
     expect(stderr).toContain("拒绝加载 d-mixed（mixed-games）：包含鸣潮功能");
+    expect(stderr).toContain("拒绝加载 d-pgr（renamed-pgr）：包含战双帕弥什功能");
+    expect(stderr).toContain("拒绝加载 d-kuro（renamed-mixed）：包含库洛游戏功能");
+    expect(stderr).toContain("拒绝加载 d-twintail（twintail）：包含战双帕弥什、战场双马尾功能");
+    expect(stderr).toContain("拒绝加载 d-replaced（xhh-tl）：旧插件功能已归并");
     expect(stderr).toContain("拒绝加载 e-legacy");
     expect(stderr).toContain("拒绝加载 f-escape");
     expect(stderr).toContain("拒绝加载 g-system：@lotus-yunzai/system 的内置目录为 plugins/system");

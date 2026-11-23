@@ -9,7 +9,7 @@ const merged: readonly Rule[] = [
   { names: ["zzz-plugin"], replacement: "zzz" },
   { names: ["ark-plugin"], replacement: "genshin 和 starrail" },
   { names: ["lolomi-calc"], replacement: "genshin" },
-  { names: ["fansky_qs", "tianru-plugin", "nwflower/atlas", "atlas-plugin", "achievements-plugin"],
+  { names: ["fansky_qs", "tianru-plugin", "nwflower/atlas", "atlas-plugin", "achievements-plugin", "liangshi-calc"],
     replacement: "atlas" },
   { names: ["mora-plugin"], replacement: "guides 和游戏模块" },
   { names: ["xiaoyao-cvs-plugin", "device-plugin", "lovemys", "axiu-plugin", "bujidao",
@@ -23,11 +23,34 @@ const merged: readonly Rule[] = [
   { names: ["lotus-plugin", "lotus-refactor"], replacement: "Lotus-Yunzai 的各功能模块" },
 ];
 
-const wuwaNames = new Set([
-  "waves-plugin", "yunzai-kuro-plugin", "tyql688/ams-plugin", "kuromc-plugin", "wuwa-panel",
-  "liangshi-calc", "gamepush-plugin", "a-game_checkin", "liulian-plugin",
-]);
-const wuwaGames = new Set(["wuthering-waves", "wutheringwaves", "wuwa", "鸣潮"]);
+const kuroGames = [
+  {
+    title: "鸣潮",
+    games: ["鸣潮", "鳴潮", "wutheringwaves", "wuwa"],
+    names: ["waves-plugin", "erzaozi/waves-plugin", "kagura-wei/waves-plugin", "ams-plugin", "tyql688/ams-plugin",
+      "kuromc-plugin", "loneyclown/kuromc-plugin", "wuwa-panel", "syasaki77/wuwa-panel", "gamepush-plugin",
+      "a-game_checkin", "liulian-plugin", "wutheringwavesuid", "xutheringwavesuid", "wavesgachasim", "gutools"],
+  },
+  {
+    title: "战双帕弥什",
+    games: ["战双", "戰雙", "战双帕弥什", "戰雙帕彌什", "punishinggrayraven", "pgr"],
+    names: ["pgruid", "loping151/pgruid", "pgrgachasim", "xbaiyz12/pgrgachasim"],
+  },
+  {
+    title: "战场双马尾",
+    games: ["战场双马尾", "戰場雙馬尾", "戦場ツインテール", "twintailsbattleground", "twintailbattleground"],
+    names: [],
+  },
+  {
+    title: "库洛游戏",
+    games: ["库洛游戏", "庫洛遊戲", "kurogames"],
+    names: ["yunzai-kuro-plugin", "tomyjan/yunzai-kuro-plugin", "gs_kuro_cos", "mimokit/gs_kuro_cos", "concywee/nonebot-plugin-kurogames"],
+  },
+] as const;
+
+function gameKey(value: string) {
+  return value.normalize("NFKC").toLowerCase().replace(/[\s_.:·\-]+/gu, "");
+}
 
 export function repositoryKey(value: string): string | undefined {
   const input = value.trim().replace(/^git\+/i, "");
@@ -55,8 +78,10 @@ export function rejectionReason(names: readonly string[], games: readonly string
   if (rule) {
     return `旧插件功能已归并，请使用 ${rule.replacement}。`;
   }
-  if (names.some((name) => wuwaNames.has(name)) ||
-      games.some((game) => wuwaGames.has(game.trim().toLowerCase()))) {
-    return "包含鸣潮功能，Lotus-Yunzai 不加载该插件。";
+  const declaredGames = games.map(gameKey);
+  const matched = kuroGames.filter(game =>
+    game.names.some(name => names.includes(name)) || game.games.some(name => declaredGames.includes(name)));
+  if (matched.length) {
+    return `包含${matched.map(({ title }) => title).join("、")}功能，Lotus-Yunzai 不加载该插件。`;
   }
 }
