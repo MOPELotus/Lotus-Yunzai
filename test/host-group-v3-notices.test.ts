@@ -80,10 +80,12 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
             action_sub_type, target_id, peer_id, self_id, message_scene, event_type, file, file_name, file_size, file_id, file_hash, is_self } = e;
           if (e.post_type === "message" && !e.attachment) return false;
           const fileNotice = sub_type === "file" || sub_type === "upload";
+          const legacyMilkyGroup = e.adapter === "milky" && ["msg_emoji_like", "card", "essence"].includes(sub_type);
           const payload = { key, group_id, user_id, operator_id, message_id, message_seq,
             likes, face_id, reaction_type, is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member,
             notice_type: notice_type ?? e.message_type, sub_type, action_sub_type, target_id, peer_id,
             ...(sub_type === "recall" && { self_id, message_scene, event_type }),
+            ...(legacyMilkyGroup && { self_id }),
             ...(fileNotice && { self_id, event_type, file, file_name, file_size, file_id, file_hash, is_self }),
             ...(e.post_type === "message" && { name: e.attachment.name, size: e.attachment.size,
               ...(e.adapter !== "milky" && { raw_message: e.raw_message }) }) };
@@ -122,7 +124,7 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
       const milky = await waitFor(() => milkySocket, "Milky WebSocket 未连接。");
       const one = (notice_type: string, data: object, self_id = oneBotId) =>
         socket.send(JSON.stringify({ post_type: "notice", notice_type, self_id, group_id: groupId, time: stamp, ...data }));
-      const mk = (event_type: string, data: object, self_id = milkyId) =>
+      const mk = (event_type: string, data: object, self_id: number | string = milkyId) =>
         milky.send(JSON.stringify({ event_type, self_id, time: stamp, data: { group_id: groupId, ...data } }));
       let nextReply = 0;
       async function verify(payload: { key: string; [field: string]: unknown },
@@ -159,21 +161,23 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
 
       const group_id = String(groupId);
       const user_id = String(userId);
+      const milkyGroupIdentity = { group_id, self_id: String(milkyId) };
       const reaction = { user_id: userId, message_seq: 0, face_id: "66", is_add: false, reaction_type: "emoji" };
       mk("group_message_reaction", reaction, milkyId + 9);
+      mk("group_message_reaction", reaction, String(milkyId));
       mk("group_message_reaction", { ...reaction, is_add: "false" });
       mk("group_message_reaction", reaction);
-      await verify({ key: "notice.group.msg_emoji_like", group_id, user_id, message_id: "0", message_seq: 0,
+      await verify({ key: "notice.group.msg_emoji_like", ...milkyGroupIdentity, user_id, message_id: "0", message_seq: 0,
         face_id: "66", is_add: false, reaction_type: "emoji", likes: [{ emoji_id: "66", count: 0 }] });
       mk("group_message_reaction", { ...reaction, message_seq: 14, is_add: true, reaction_type: "face" });
-      await verify({ key: "notice.group.msg_emoji_like", group_id, user_id, message_id: "14", message_seq: 14,
+      await verify({ key: "notice.group.msg_emoji_like", ...milkyGroupIdentity, user_id, message_id: "14", message_seq: 14,
         face_id: "66", is_add: true, reaction_type: "face", likes: [{ emoji_id: "66", count: 1 }] });
       mk("group_name_change", { operator_id: userId, new_group_name: "Milky 新群名" });
-      await verify({ key: "notice.group.card", group_id, user_id, operator_id: userId, new_group_name: "Milky 新群名" });
+      await verify({ key: "notice.group.card", ...milkyGroupIdentity, user_id, operator_id: userId, new_group_name: "Milky 新群名" });
       mk("group_essence_message_change", { message_seq: 15, is_set: true, operator_id: userId });
-      await verify({ key: "notice.group.essence", action_sub_type: "add", group_id, operator_id: user_id, message_id: "15", message_seq: 15, is_set: true });
+      await verify({ key: "notice.group.essence", action_sub_type: "add", ...milkyGroupIdentity, operator_id: user_id, message_id: "15", message_seq: 15, is_set: true });
       mk("group_essence_message_change", { message_seq: 15, is_set: false });
-      await verify({ key: "notice.group.essence", action_sub_type: "delete", group_id, message_id: "15", message_seq: 15, is_set: false });
+      await verify({ key: "notice.group.essence", action_sub_type: "delete", ...milkyGroupIdentity, message_id: "15", message_seq: 15, is_set: false });
       const pokeRecall = { sub_type: "poke_recall", operator_id: userId, target_id: 702 };
       one("notify", pokeRecall, oneBotId + 9);
       one("notify", { ...pokeRecall, group_id: "801" });
@@ -208,6 +212,7 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
       const milkyRecall = { message_scene: "friend", peer_id: userId, sender_id: userId, operator_id: userId, message_seq: 19 };
       const milkyRecallFields = { self_id: String(milkyId), event_type: "message_recall" };
       mk("message_recall", milkyRecall, milkyId + 9);
+      mk("message_recall", milkyRecall, String(milkyId));
       mk("message_recall", { ...milkyRecall, sender_id: 702, operator_id: 702 });
       mk("message_recall", milkyRecall);
       await verify({ ...milkyRecall, ...milkyRecallFields, key: "notice.friend.recall",
@@ -239,6 +244,7 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
       const milkyFileNotice = { ...uploaded, key: "notice.offline.file", self_id: String(milkyId), user_id,
         event_type: "friend_file_upload", file: { name, size, url: uploaded.file_id } };
       mk("friend_file_upload", { ...uploaded, user_id: userId }, milkyId + 9);
+      mk("friend_file_upload", { ...uploaded, user_id: userId }, String(milkyId));
       mk("friend_file_upload", { ...uploaded, user_id: userId });
       await verify(milkyFileNotice, { user_id: userId });
       mk("message_receive", { message_scene: "friend", peer_id: userId, sender_id: userId, message_seq: 37,

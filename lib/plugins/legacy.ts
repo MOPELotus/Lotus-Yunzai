@@ -103,27 +103,31 @@ function nativeMessage(event: MessageEvent): MessageEvent {
 function legacyNotice(event: BotEvent) {
   if (event.post_type !== "notice" || !("adapter" in event)) return event;
   const milky = event.adapter === "milky";
+  const self_id = milky ? String(event.self_id) : event.self_id;
   if (milky && event.sub_type === "recall") {
-    const recall = { ...event, self_id: String(event.self_id), user_id: String(event.user_id), message_id: String(event.message_id),
+    const recall = { ...event, self_id, user_id: String(event.user_id), message_id: String(event.message_id),
       operator_id: event.operator_id === undefined ? undefined : String(event.operator_id) };
     return event.notice_type === "group" ? { ...recall, group_id: String(event.group_id) } : recall;
   }
   if (milky && event.notice_type === "offline") {
-    return { ...event, self_id: String(event.self_id), user_id: String(event.user_id) };
+    return { ...event, self_id, user_id: String(event.user_id) };
   }
   // TRSS splits on the first underscore before Bot.em and uses the remainder as the subtype.
   if (event.notice_type === "group_msg_emoji_like") {
     return { ...event, notice_type: "group" as const, sub_type: "msg_emoji_like" as const,
+      self_id,
       group_id: milky ? String(event.group_id) : event.group_id,
       user_id: milky ? String(event.user_id) : event.user_id,
       message_id: milky ? String(event.message_id) : event.message_id };
   }
   if (event.notice_type === "group_card") {
     return { ...event, notice_type: "group" as const, sub_type: "card" as const,
+      self_id,
       group_id: milky ? String(event.group_id) : event.group_id, user_id: milky ? String(event.user_id) : event.user_id };
   }
   if (event.notice_type === "group_essence") {
     return { ...event, notice_type: "group" as const, sub_type: "essence" as const, action_sub_type: event.sub_type,
+      self_id,
       group_id: milky ? String(event.group_id) : event.group_id,
       message_id: milky ? String(event.message_id) : event.message_id,
       operator_id: milky && event.operator_id !== undefined ? String(event.operator_id) : event.operator_id };

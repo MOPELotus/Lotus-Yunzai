@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { MessageEvent } from "../lib/messages.ts";
+import type { MessageEvent, MilkyGroupCompatibilityNotice } from "../lib/messages.ts";
 import Handler from "../lib/plugins/handler.ts";
 import { LegacyPlugins } from "../lib/plugins/legacy.ts";
 import Plugin from "../lib/plugins/plugin.js";
@@ -10,6 +10,32 @@ function message(msg: string): MessageEvent {
     isGroup: false, isPrivate: false, isMaster: true, reply: () => true,
   };
 }
+
+test("Milky 旧群通知只对 V3 投影字符串机器人账号", async () => {
+  const legacy = new LegacyPlugins();
+  const ids: unknown[] = [];
+  class External extends Plugin {
+    constructor() { super({ event: "notice.group.msg_emoji_like", priority: 5000 }); }
+    accept(event: { self_id: unknown }) { ids.push(event.self_id); }
+  }
+  try {
+    legacy.registerNative([{
+      name: "原生回应通知", event: "notice.group_msg_emoji_like", priority: 5000,
+      observe(event) { ids.push(event.self_id); },
+    }], "fixture", "@fixture/milky");
+    await legacy.register({ External }, "external");
+    const event: MilkyGroupCompatibilityNotice = {
+      post_type: "notice", notice_type: "group_msg_emoji_like", adapter: "milky",
+      self_id: 99, group_id: 77, user_id: 42, message_id: 1, likes: [{ emoji_id: "1", count: 1 }],
+      face_id: "1", isGroup: true, isPrivate: false, isMaster: false, reply: () => true,
+    };
+    await legacy.dispatch(event);
+    expect(ids).toEqual([99, "99"]);
+    expect(event.self_id).toBe(99);
+  } finally {
+    await legacy.dispose();
+  }
+});
 
 test("候选在最终验证前不可见，发布保留入口和 Handler 的同优先级位置", async () => {
   const legacy = new LegacyPlugins();
