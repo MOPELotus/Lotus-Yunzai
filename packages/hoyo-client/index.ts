@@ -6,6 +6,7 @@ import { readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 import { createCredentialExchange, type HoyoTransport } from "./credentials.ts";
 import { isDailyNoteCookieExpired, readDailyNote, readHoYoLabZzzDailyNote, type DailyNoteOptions, type DailyNoteSnapshot } from "./daily-note.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { observeCnRead } from "./cn-read-diagnostics.ts";
 import { openHoYoLabBh3Checkin } from "./hoyolab-bh3-checkin.ts";
 import { openHoYoLabGenshinCheckin, type HoYoLabGenshinCheckinSource } from "./hoyolab-genshin-checkin.ts";
 import { openHoYoLabNxxCheckin } from "./hoyolab-nxx-checkin.ts";
@@ -208,22 +209,24 @@ export function createHoyoClient(
       throw new HoyoRequestError("invalid-input", "档案 Cookie 无效。");
     }
 
-    const endpoint = new URL("https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie");
+    const path = "/binding/api/getUserGameRolesByCookie";
+    const endpoint = new URL(path, "https://api-takumi.mihoyo.com");
     if (game !== undefined) endpoint.searchParams.set("game_biz", checkinGameBiz[game]);
     const timeout = AbortSignal.timeout(15_000);
     const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
+    const diagnostics = observeCnRead(path, "GET", signal, timeout);
     let response: Response;
     try {
       signal?.throwIfAborted();
       await ensureCurrentProfile(context);
       signal?.throwIfAborted();
-      response = await transport(endpoint, {
+      response = await diagnostics.read(() => transport(endpoint, {
         headers: { Cookie: cookie, Accept: "application/json" },
         redirect: "error",
         proxy: false,
         signal: deadline,
-      });
+      }));
     } catch (error) {
       if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
       throw new HoyoRequestError("transport", "米游社角色请求未完成。");
@@ -233,7 +236,7 @@ export function createHoyoClient(
       throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
     }
 
-    const payload = await readGameRecordPayload(response, 256 * 1024, deadline);
+    const payload = await readGameRecordPayload(response, 256 * 1024, deadline, error => diagnostics.stream(response, error));
     signal?.throwIfAborted();
     const code = payload?.retcode;
     const retcode = typeof code === "string" && /^-?\d{1,10}$/u.test(code) ? Number(code) : code;

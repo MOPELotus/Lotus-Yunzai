@@ -1,0 +1,152 @@
+import { expect, spyOn, test } from "bun:test";
+import type { ProfileRequestContext } from "@lotus-yunzai/account";
+import { createHoyoClient, HoyoRequestError, readGameRecordPayload } from "../packages/hoyo-client/index.ts";
+
+const base = {
+  qq: "42", profileId: 2, revision: "fixture-revision",
+  account: {
+    cookie: "ltuid=12; ltoken=fixture-cookie", stuid: "", ltuid: "12", stoken: "",
+    ltoken: "fixture-cookie", stokenCookie: "", mid: "",
+  },
+  device: { id: "fixture-device", fp: "fixture-fp", name: "Test", model: "fixture-UA", androidVersion: "13", raw: {} },
+};
+
+function profile(game: ProfileRequestContext["game"], uid: string, region: string, gameBiz: string): ProfileRequestContext {
+  return { ...base, game, role: { uid, nickname: "fixture-nickname", region, gameBiz, chosen: false } };
+}
+
+const gs = profile("gs", "100000123", "cn_gf01", "hk4e_cn");
+const sr = profile("sr", "100000124", "prod_gf_cn", "hkrpg_cn");
+const zzz = profile("zzz", "12345678", "prod_gf_cn", "nap_cn");
+
+function failureStream(code: string) {
+  return new Response(new ReadableStream({
+    pull(controller) {
+      controller.error(Object.assign(new Error("https://other.invalid/fixture-error"), { code }));
+    },
+  }), { headers: { "content-type": "application/json; charset=UTF-8" } });
+}
+
+test("国服三游战绩、星铁独立挑战和签到角色读取共享脱敏 HTTP 诊断", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    const client = createHoyoClient(async () => new Response("fixture-remote-body", {
+      status: 410,
+      headers: {
+        "content-type": "Text/Html; profile=fixture-header",
+        "x-request-id": "request-Abc123",
+        "x-trace-id": "100000123",
+        "x-rpc-request_id": "account100000123",
+        "cf-ray": "fixture-ray-NRT",
+        "x-rpc-device-id": "fixture-device",
+        "set-cookie": "fixture-response-cookie",
+      },
+    }));
+    const outcome = await Promise.allSettled([
+      client.fetchGenshinPersonalRecord(gs, { includeRoster: false }),
+      client.fetchGenshinCharacterList(gs),
+      client.fetchStarRailPersonalRecord(sr),
+      client.fetchStarRailChallenge(sr, { kinds: ["hall"], period: "current", simple: false }),
+      client.fetchZzzGameRecord(zzz),
+      client.fetchCheckinRoles(gs, "gs"),
+      client.fetchCheckinRoles(sr, "sr"),
+      client.fetchCheckinRoles(zzz, "zzz"),
+      client.fetchRoleCatalog(gs),
+    ]);
+    expect(outcome).toHaveLength(9);
+    for (const item of outcome) {
+      expect(item.status).toBe("rejected");
+      if (item.status !== "rejected") continue;
+      expect(item.reason).toBeInstanceOf(HoyoRequestError);
+      expect(item.reason).toMatchObject({ code: "http", status: 410 });
+    }
+
+    expect(warn.mock.calls.map(([, event]) => (event as { route: string }).route).sort()).toEqual([
+      "/binding/api/getUserGameRolesByCookie",
+      "/binding/api/getUserGameRolesByCookie",
+      "/binding/api/getUserGameRolesByCookie",
+      "/binding/api/getUserGameRolesByCookie",
+      "/event/game_record_zzz/api/zzz/index",
+      "/game_record/app/genshin/api/character/list",
+      "/game_record/app/genshin/api/index",
+      "/game_record/app/hkrpg/api/challenge",
+      "/game_record/app/hkrpg/api/index",
+    ]);
+    for (const [prefix, event] of warn.mock.calls) {
+      expect(prefix).toBe("[米游社 HTTP]");
+      const { route } = event as { route: string };
+      expect(event).toEqual({
+        route, method: route === "/game_record/app/genshin/api/character/list" ? "POST" : "GET", stage: "http", elapsedMs: expect.any(Number), status: 410,
+        contentType: "text/html", requestIds: { "x-request-id": "request-Abc123", "cf-ray": "fixture-ray-NRT" },
+      });
+    }
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test("连接失败、流断开和无效 JSON 保留各自原返回", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    const connection = createHoyoClient(async () => {
+      throw new Error("fixture-error", { cause: { code: "ECONNRESET", message: "fixture-cause" } });
+    });
+    const stream = createHoyoClient(async () => failureStream("fixture-secret-code"));
+    const invalid = createHoyoClient(async () => new Response("fixture-invalid-json"));
+    await expect(connection.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "transport" });
+    await expect(stream.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "response" });
+    await expect(invalid.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "response" });
+    expect(warn.mock.calls.map(([, event]) => event)).toEqual([
+      { route: "/binding/api/getUserGameRolesByCookie", method: "GET", stage: "connection",
+        status: null, networkCode: "ECONNRESET", elapsedMs: expect.any(Number) },
+      { route: "/binding/api/getUserGameRolesByCookie", method: "GET", stage: "stream",
+        status: 200, contentType: "application/json", networkCode: "NETWORK_ERROR", elapsedMs: expect.any(Number) },
+    ]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test("取消不记网络异常，已报告 HTTP 错误不重复记录流异常", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    const stop = new AbortController();
+    const cancelled = createHoyoClient(async (_url, init) => {
+      stop.abort();
+      init.signal?.throwIfAborted();
+      throw new Error("expected cancellation");
+    });
+    await expect(cancelled.fetchCheckinRoles(gs, "gs", stop.signal)).rejects.toMatchObject({ code: "transport" });
+    expect(warn).not.toHaveBeenCalled();
+
+    const unauthorized = createHoyoClient(async () => new Response(failureStream("ECONNRESET").body, { status: 401 }));
+    await expect(unauthorized.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "http", status: 401 });
+    expect(warn.mock.calls.map(([, event]) => event)).toEqual([
+      { route: "/binding/api/getUserGameRolesByCookie", method: "GET", stage: "http", status: 401, elapsedMs: expect.any(Number) },
+    ]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test("诊断日志同步或异步失败不改变返回，流诊断回调失败仍返回原解析结果", async () => {
+  const warn = spyOn(console, "warn").mockImplementationOnce(() => {
+    throw new Error("sync");
+  }).mockImplementationOnce(() => Promise.reject(new Error("async")));
+  try {
+    const failed = createHoyoClient(async () => new Response("", { status: 410 }));
+    await expect(failed.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "http", status: 410 });
+    await expect(failed.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "http", status: 410 });
+    expect(warn).toHaveBeenCalledTimes(2);
+
+    const signal = new AbortController().signal;
+    expect(await readGameRecordPayload(failureStream("ECONNRESET"), 1024, signal, () => {
+      throw new Error("sync");
+    })).toBeUndefined();
+    expect(await readGameRecordPayload(failureStream("ECONNRESET"), 1024, signal, async () => {
+      throw new Error("async");
+    })).toBeUndefined();
+  } finally {
+    warn.mockRestore();
+  }
+});

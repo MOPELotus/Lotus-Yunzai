@@ -2,6 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { observeCnRead } from "./cn-read-diagnostics.ts";
 
 export class GameRecordRequestError extends HoyoRequestError {
   constructor(subject: string, readonly reason: "expired" | "risk" | "rate-limited",
@@ -100,7 +101,8 @@ function requestHeaders(source: ProfileRequestContext, query: string, body?: str
   return headers;
 }
 
-export async function readGameRecordPayload(response: Response, limit: number, signal: AbortSignal): Promise<Json | undefined> {
+export async function readGameRecordPayload(response: Response, limit: number, signal: AbortSignal,
+  onStreamFailure?: (reason: unknown) => unknown): Promise<Json | undefined> {
   if (!response.body) return;
   if (Number(response.headers.get("Content-Length")) > limit) {
     await response.body.cancel().catch(() => undefined);
@@ -115,7 +117,14 @@ export async function readGameRecordPayload(response: Response, limit: number, s
   try {
     for (;;) {
       signal.throwIfAborted();
-      const next = await reader.read();
+      const next = await reader.read().catch((error: unknown) => {
+        try {
+          void Promise.resolve(onStreamFailure?.(error)).catch(() => undefined);
+        } catch {
+          // Only the existing response error is visible to the caller.
+        }
+        throw error;
+      });
       if (next.done) break;
       size += next.value.byteLength;
       if (size > limit) return;
@@ -281,12 +290,13 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const method = body === undefined ? "GET" : "POST";
+  const diagnostics = observeCnRead(path, method, signal, timeout);
   let response: Response;
   try {
-    response = await transport(endpoint, {
-      method: body === undefined ? "GET" : "POST", body, headers, credentials: "omit", redirect: "error",
-      signal: deadline,
-    });
+    response = await diagnostics.read(() => transport(endpoint, {
+      method, body, headers, credentials: "omit", redirect: "error", signal: deadline,
+    }));
   } catch {
     throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   }
@@ -308,7 +318,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     }
   }
   const payload = await readGameRecordPayload(response,
-    forNote ? 64 * 1024 : starRailPanel || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024, deadline);
+    forNote ? 64 * 1024 : starRailPanel || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024,
+    deadline, error => diagnostics.stream(response, error));
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   const retcode = whole(payload?.retcode);

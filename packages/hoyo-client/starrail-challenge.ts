@@ -4,6 +4,7 @@ import { createHash, randomInt } from "node:crypto";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
+import { observeCnRead } from "./cn-read-diagnostics.ts";
 import { GameRecordRequestError, readGameRecordPayload } from "./game-record.ts";
 
 const routes = { hall: "challenge", story: "challenge_story", boss: "challenge_boss", peak: "challenge_peak" } as const;
@@ -121,7 +122,8 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
     if (deadline.aborted) throw interrupted();
   }
   async function request(kind: StarRailChallengeKind, schedule: StarRailChallengePeriod, detailed: boolean) {
-    const endpoint = new URL(`/game_record/app/hkrpg/api/${routes[kind]}`, origin);
+    const path = `/game_record/app/hkrpg/api/${routes[kind]}`;
+    const endpoint = new URL(path, origin);
     endpoint.searchParams.set("role_id", source.role.uid);
     endpoint.searchParams.set("schedule_type", schedule);
     endpoint.searchParams.set("server", region);
@@ -131,9 +133,11 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
     }
     const headers = requestHeaders(source, source.account.cookie, endpoint.searchParams);
     await guard();
+    const diagnostics = observeCnRead(path, "GET", signal, timeout);
     let response: Response;
     try {
-      response = await transport(endpoint, { method: "GET", headers, credentials: "omit", redirect: "error", signal: deadline });
+      response = await diagnostics.read(() =>
+        transport(endpoint, { method: "GET", headers, credentials: "omit", redirect: "error", signal: deadline }));
     } catch {
       await guard();
       throw interrupted();
@@ -151,7 +155,7 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
       await guard();
       throw apiError(response.status, undefined, challenge);
     }
-    const payload = await readGameRecordPayload(response, 2 * 1024 * 1024, deadline);
+    const payload = await readGameRecordPayload(response, 2 * 1024 * 1024, deadline, error => diagnostics.stream(response, error));
     await guard();
     const retcode = retcodeOf(payload?.retcode);
     if (response.status === 401) throw apiError(response.status, retcode, false);
