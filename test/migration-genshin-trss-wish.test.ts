@@ -29,7 +29,7 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
 
     const source = join(root, "source");
     const oldConfig = "plugins/genshin/config/gacha.set.yaml";
-    const oldSettings = "default: { count: 2, LimitSeparate: 0, delMsg: 0 }\n";
+    const oldSettings = "default: { count: 2, LimitSeparate: 0, delMsg: 1 }\n";
     await mkdir(dirname(join(source, oldConfig)), { recursive: true });
     await writeFile(join(source, oldConfig), oldSettings);
     await mkdir(join(source, "config"));
@@ -74,8 +74,16 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
     if (lastSaved >= midnight && lastSaved < midnight + hour) lastSaved = midnight - 1_000;
     const expire = (start + wishDayMs) / 1000 - Number(lastSaved < midnight + hour);
     const ttlAt = lastSaved + wishRetentionDays * wishDayMs;
-    const oldValue = JSON.stringify({ today: { expire, num: 20, weaponNum: 0 }, role: { num5: 89 } });
-    await Promise.all(keys.map(key => admin!.send("SET", [key, oldValue, "PXAT", String(ttlAt)])));
+    const localSaved = new Date(lastSaved + 8 * hour);
+    const legacyWeekEnd = Date.UTC(localSaved.getUTCFullYear(), localSaved.getUTCMonth(),
+      localSaved.getUTCDate() + 7 - localSaved.getUTCDay(), 23, 59, 59) - 8 * hour;
+    const stars = [
+      [{ name: "隔离原神角色甲", num: 77 }, { name: "隔离原神角色乙", num: 3 }],
+      Array.from({ length: 4 }, (_, index) => ({ name: `隔离另一账号角色${index}`, num: 1 })),
+    ];
+    const oldValues = stars.map(star => JSON.stringify({ today: { expire, num: 20, weaponNum: 0, star },
+      week: { expire: legacyWeekEnd / 1000, num: star.length + 2 }, role: { num5: 89 } }));
+    await Promise.all(keys.map((key, index) => admin!.send("SET", [key, oldValues[index]!, "PXAT", String(ttlAt)])));
     const authText = JSON.stringify({ source: "trss-genshin-0290a17", timeZone: "Asia/Shanghai", capturedAt,
       accounts: [{ qq: "42", conversations: ["50"] }, { qq: "43", conversations: ["50"] }] });
     await writeFile(authorizationFile, authText, { mode: 0o600 });
@@ -116,9 +124,9 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
     expect(await readFile(authorizationFile, "utf8")).toBe(authText);
     for (const [index, qq] of ["42", "43"].entries()) {
       const file = join(target, archive, qq, "1.json");
-      expect(await Bun.file(file).json()).toEqual({ balance: { day: 0, blue: 0, pink: 0 }, conversations: {},
+      expect(await Bun.file(file).json()).toMatchObject({ balance: { day: 0, blue: 0, pink: 0 }, conversations: {},
         trssLimits: { 50: { day, normalDraws: 20, weaponDraws: 0 } } });
-      expect(await admin.get(keys[index]!)).toBe(oldValue);
+      expect(await admin.get(keys[index]!)).toBe(oldValues[index]!);
       expect(await admin.send("PEXPIRETIME", [keys[index]!])).toBe(ttlAt);
     }
     const receipt = await readFile(join(root, ".selected.lotus-migration-prepared/plan.json"), "utf8");
@@ -133,7 +141,7 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
       status: "already-published", trssWish: preview.trssWish,
     });
 
-    await withDualGatewayFixture("isolated-trss-wish", "disablePrivate: false\n", async ({ sendOneBot, sendMilky, onebot, milky }) => {
+    await withDualGatewayFixture("isolated-trss-wish", "disablePrivate: false\n", async ({ root: host, sendOneBot, sendMilky, onebot, milky }) => {
       sendOneBot("#十连", { message_type: "group", sub_type: "normal", group_id: 50, sender: { user_id: 42 } });
       const oneAllowance = await onebot.next("send_msg");
       expect(oneAllowance.params).toMatchObject({ group_id: 50, message: "今日成功领取100个纠缠之缘和10个相遇之缘。" });
@@ -141,7 +149,11 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
       const first = await onebot.next("send_msg");
       expect(first.params.group_id).toBe(50);
       expect(JSON.stringify(first.params.message)).toContain("已达到 20 抽上限");
+      expect(first.params.message).toMatch(/隔离原神角色甲\(77\)[\s\S]*隔离原神角色乙\(3\)[\s\S]*本周：4个五星/u);
       first.respond({ message_id: 901 });
+      const oneRecall = await onebot.next("delete_msg");
+      expect(oneRecall.params).toEqual({ message_id: 901 });
+      oneRecall.respond({});
       const sent = await sendMilky("#十连", { message_scene: "group", peer_id: 50 });
       expect(sent.status).toBe(200);
       const milkyAllowance = await milky.next("send_group_message");
@@ -151,7 +163,25 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
       const second = await milky.next("send_group_message");
       expect(second.params.group_id).toBe(50);
       expect(JSON.stringify(second.params.message)).toContain("已达到 20 抽上限");
+      expect(JSON.stringify(second.params.message)).toContain("今日五星：4个");
+      expect(JSON.stringify(second.params.message)).toContain("本周：6个五星");
+      expect(JSON.stringify(second.params.message)).not.toContain("隔离原神角色甲");
       second.respond({ message_seq: 902 });
+      const milkyRecall = await milky.next("recall_group_message");
+      expect(milkyRecall.params).toEqual({ group_id: 50, message_seq: 902 });
+      milkyRecall.respond({});
+
+      const config = join(host, "config/genshin-wish.yaml");
+      const values = Bun.YAML.parse(await readFile(config, "utf8")) as Record<string, unknown>;
+      await writeFile(config, Bun.YAML.stringify({
+        ...values, recallSeconds: 0, dailyDrawLimits: { default: { count: 0, separate: true } },
+      }));
+      sendOneBot("#武器单抽", { message_type: "group", sub_type: "normal", group_id: 50, sender: { user_id: 42 } });
+      const hot = await onebot.next("send_msg");
+      expect(hot.params.message).toContain("武器池已达到 0 抽上限");
+      hot.respond({ message_id: 911 });
+      await Bun.sleep(1_100);
+      expect(onebot.calls).toHaveLength(0);
     }, 2_000, `
 const actualFetch = globalThis.fetch;
 globalThis.fetch = (input, options) => {

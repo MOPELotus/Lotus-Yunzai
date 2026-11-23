@@ -8,7 +8,7 @@ import { parseWishSettings } from "../lib/genshin-wish-settings-model.ts";
 import { createWishCommands } from "../plugins/genshin/wish-sim/commands.ts";
 import { emptySession } from "../plugins/genshin/wish-sim/draw.ts";
 import { createWishPoolSource } from "../plugins/genshin/wish-sim/pools.ts";
-import { createLegacyWishImport, wishDailyKey, wishDayMs, wishDayStart, wishRetentionDays,
+import { createLegacyWishImport, createTrssWishLimitImport, wishDailyKey, wishDayMs, wishDayStart, wishRetentionDays,
   wishWeeklyKey } from "../plugins/genshin/wish-sim/store.ts";
 import { importTrssWishLimits } from "../plugins/genshin/wish-sim/trss-daily-import.ts";
 
@@ -44,7 +44,7 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     let now = start + 6 * hour;
     const capturedAt = now - 30_000, saved = now - 60_000;
     const payload = (num: number, weaponNum: number, expire = expiry) => ({
-      today: { num, weaponNum, expire, star: [{ name: "不导入的旧五星", num: 90 }] },
+      today: { num, weaponNum, expire, star: [{ name: "旧五星", num: 90 }] },
       savedPity: { num5: 89 }, balance: { pink: 2, blue: 1 },
     });
     const set = (scope: string, body: unknown, ttlAt = saved + retention, qq = "42") =>
@@ -101,11 +101,14 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     expect(applied.map(item => item.existing).sort()).toEqual([1, 2]);
     const after = await account();
     expect(after.conversations).toEqual({ 51: native });
-    expect(after.trssLimits).toEqual({ 50: { day, normalDraws: 10, weaponDraws: 0 } });
+    const stars = { five: 1, preview: [{ name: "旧五星", pity: 90 }] };
+    expect(after.trssLimits).toEqual({ 50: { day, normalDraws: 10, weaponDraws: 0, stars } });
     expect(after.balance).toEqual({ day, pink: 99, blue: 10 });
 
     const group = { user_id: 42, group_id: 50 };
-    expect(await run("#十连", group)).toContain("已达到 10 抽上限");
+    const limit = await run("#十连", group);
+    expect(limit).toContain("已达到 10 抽上限");
+    expect(limit).toContain("旧五星(90)");
     const blocked = await account();
     expect(blocked.conversations["50"].today).toMatchObject({ normalDraws: 0, weaponDraws: 0, five: 0, preview: [] });
     expect(blocked.conversations["50"].session.role.num5).toBe(0);
@@ -122,7 +125,7 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     expect(await importLimits(true)).toMatchObject({ carried: 1 });
     const beforeFlower = await account("43");
     expect(beforeFlower).toEqual({ balance: { day: 0, pink: 0, blue: 0 }, conversations: {},
-      trssLimits: { private: { day, normalDraws: 20, weaponDraws: 0 } } });
+      trssLimits: { private: { day, normalDraws: 20, weaponDraws: 0, stars } } });
     const flower = createLegacyWishImport(destination, lockFile, signal);
     const flowerToday = { day, normalDraws: 2, weaponDraws: 0, five: 0, preview: [] };
     expect(await flower.mergeAccount("43", { conversations: {
@@ -143,6 +146,16 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     const conflict = JSON.parse(await readFile(join(conflictDest, "42/1.json"), "utf8"));
     expect(conflict.trssLimits["50"].normalDraws).toBe(20);
     expect(await account()).toEqual(firstSnapshot);
+
+    // A historical counts-only file remains valid, reports uncertainty, and can be enriched from the same snapshot.
+    const countsOnly = { ...firstSnapshot, trssLimits: { 50: { day, normalDraws: 10, weaponDraws: 0 } } };
+    await writeFile(join(destination, "42/1.json"), JSON.stringify(countsOnly));
+    const countsReply = await run("#单抽", group);
+    expect(countsReply).toContain("旧五星未能核验");
+    expect(countsReply).not.toContain("无五星");
+    await set("50", payload(10, 0));
+    expect(await importLimits(true)).toMatchObject({ carried: 1 });
+    expect((await account()).trssLimits["50"]).toMatchObject({ stars });
 
     // Midnight produces k=24 in the frozen source, and advertises the next calendar day's 03:59:59.
     now = start + 21 * hour;
@@ -216,7 +229,7 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
       if (!apply) await expect(stat(cliDestination)).rejects.toMatchObject({ code: "ENOENT" });
     }
     const cliSaved = JSON.parse(await readFile(join(cliDestination, "42/1.json"), "utf8"));
-    expect(cliSaved.trssLimits).toEqual({ 50: { day: realDay, normalDraws: 10, weaponDraws: 0 } });
+    expect(cliSaved.trssLimits).toEqual({ 50: { day: realDay, normalDraws: 10, weaponDraws: 0, stars } });
   } finally {
     admin?.close();
     server.kill();
@@ -224,3 +237,56 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     await rm(root, { recursive: true, force: true });
   }
 }, 8_000);
+
+
+test("旧周五星跨日只合并显示，确切过期后清除且不参与现代概率或保底", async () => {
+  const root = await mkdtemp(join(tmpdir(), "wish-trss-week-"));
+  try {
+    let now = Date.parse("2026-09-08T03:59:59+08:00");
+    const day = wishDailyKey(now);
+    const weekExpires = now + 7_000;
+    const signal = new AbortController().signal;
+    const carry = createTrssWishLimitImport(root, lockFile, signal);
+    expect(await carry("42", new Map([["50", {
+      day, normalDraws: 10, weaponDraws: 0, stars: { five: 1, preview: [{ name: "旧日角色", pity: 71 }] },
+      week: { five: 5, expiresAt: weekExpires },
+    }]]), () => now, true)).toMatchObject({ carried: 1 });
+
+    let rate = 10_000;
+    const run = createWishCommands({ lockFile, signal, storeDirectory: root, now: () => now, random: () => 0.009,
+      poolSource: createWishPoolSource({ themeDirectory: "/unavailable", legacyDirectory: "" }),
+      readSettings: async () => parseWishSettings({ recallSeconds: 0, characterFive: rate,
+        dailyDrawLimits: { default: { count: 1, separate: false } } }),
+      render: async () => { throw new Error("只验文字与存档"); } });
+    const group = { user_id: 42, group_id: 50 };
+    const owner = { ...group, isMaster: true, isBotMaster: () => true };
+    const read = async () => JSON.parse(await readFile(join(root, "42/1.json"), "utf8"));
+    expect(await run("#十连", group)).toContain("旧日角色(71)\n本周：5个五星");
+    expect((await read()).conversations["50"].session.week.five).toBe(0);
+
+    now += 1000;
+    expect(wishDailyKey(now)).toBe(day + 1);
+    expect(await run("#单抽", owner)).toContain("5★");
+    expect((await read()).conversations["50"].session.week.five).toBe(1);
+    rate = 60;
+    // First modern weekly five doubles 60 to 120. An old carry used in probability would yield only 60.
+    expect(await run("#单抽", owner)).toContain("5★");
+    expect((await read()).conversations["50"].session.week.five).toBe(2);
+    rate = 0;
+    expect(await run("#十连", group)).toContain("10抽未出五星");
+    const next = await run("#十连", group);
+    expect(next).not.toContain("旧日角色");
+    expect(next).toContain("本周：7个五星");
+    expect(next).toContain("已抽 12 抽");
+
+    now = weekExpires;
+    expect(await run("#十连", group)).toContain("本周：7个五星");
+    now = weekExpires + 1;
+    const expired = await run("#十连", group);
+    expect(expired).toContain("本周：2个五星");
+    expect(expired).not.toContain("本周：7个五星");
+    expect((await read()).trssLimits).toEqual({});
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -194,3 +194,27 @@ test("面板可回读、写入或覆盖每个会话限制，0 秒撤回保持现
     expect((await put(values)).status).toBe(409);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
+
+test("十连结果只在一金或四紫以下按当前会话撤回，0 秒保留结果", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "wish-legacy-recall-rank-"));
+  try {
+    const png = Buffer.from("fixture");
+    let settings = parseWishSettings({ recallSeconds: 9, characterFive: 0, characterFour: 0 });
+    const run = createWishCommands({
+      lockFile, signal: new AbortController().signal, storeDirectory: temp, random: () => 0.99,
+      poolSource: createWishPoolSource({ themeDirectory: "/unavailable", legacyDirectory: "" }),
+      readSettings: async () => settings,
+      render: async () => ({ png }) as Awaited<ReturnType<typeof import("../plugins/genshin/wish-sim/card.ts").renderWishCard>>,
+    });
+    const request = (id: number) => run("#十连", { user_id: id, group_id: 50, reply() {} });
+    expect(await request(61)).toEqual({ type: "recallable", seconds: 9, message: { type: "image", file: png } });
+    settings = parseWishSettings({ ...settings, characterFive: 10_000 });
+    expect(await request(62)).toEqual({ type: "image", file: png });
+    settings = parseWishSettings({ ...settings, characterFive: 0, characterFour: 10_000 });
+    expect(await request(63)).toEqual({ type: "image", file: png });
+    settings = parseWishSettings({ ...settings, characterFour: 0, recallSeconds: 0 });
+    expect(await request(64)).toEqual({ type: "image", file: png });
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
