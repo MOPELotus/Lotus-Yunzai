@@ -184,3 +184,106 @@ test("公开目标不读档案，当前角色练度只读自己的已绑 UID，�
   moveOnRender = true;
   expect(await query("#养成计算 刻晴 等级80 档案2", { user_id: 42 })).toBe("原神档案角色已变化，请重新计算。");
 });
+
+test("旧角色后缀用第二位表示武器且补全尾部默认值，现用指令保留自己的参数顺序", () => {
+  const old = parse("#刻晴养成81 90 9 9 9");
+  expect(old.legacy).toEqual({ weaponLevel: 90 });
+  expect(characterTarget(old)).toMatchObject({ level: { level: 81 }, talent: { a: 9, e: 9, q: 9 } });
+  const capped = parse("##原神刻晴养成计算100,79，12");
+  expect(capped.legacy).toEqual({ weaponLevel: 79 });
+  expect(characterTarget(capped)).toMatchObject({ level: { level: 90 }, talent: { a: 10, e: 10, q: 10 } });
+  expect(characterTarget(parse("刻晴计算40"))).toMatchObject({ level: { level: 40 }, talent: { a: 10, e: 10, q: 10 } });
+  expect(characterTarget(parse("#刻晴养成90 90 9 9 9 1"))).toBeUndefined();
+  expect(matchGrowthCommand("#角色计算")).toBe("help");
+  expect(matchGrowthCommand("#星铁克拉拉养成75 80 6 9 9 9")).toBeUndefined();
+  const modern = parse("#养成计算 刻晴 81 9 8 7");
+  expect(modern.legacy).toBeUndefined();
+  expect(characterTarget(modern)).toMatchObject({ level: { level: 81 }, talent: { a: 9, e: 8, q: 7 } });
+});
+
+test("旧角色后缀可算未拥有角色，且仅为本人确有的现用武器算材料", async () => {
+  const uid = "100123456";
+  const role = { uid, region: "cn_gf01", gameBiz: "hk4e_cn", chosen: true, nickname: "" };
+  const catalogue = { characters: new Map([["刻晴", { id: 10000042, name: "刻晴", abbr: "刻晴", rank: 5 as const,
+    img: "meta-gs/character/刻晴/imgs/face.webp" }]]), weapons: new Map([["雾切之回光", { id: 11509, name: "雾切之回光",
+    abbr: "雾切", rank: 5 as const, img: "meta-gs/weapon/sword/雾切之回光/icon.webp" }]]),
+    characterAliases: undefined, weaponAliases: undefined };
+  const materialData = Object.fromEntries(Object.entries(materials).map(([kind, name]) => [name, { name, star: 5,
+    type: kind, items: Object.fromEntries([1, 2, 3, 4].map(star => [star, { name: `${name}${star}`, type: kind, star }])) }]));
+  let hasAccount = false, owns = false, officialAvailable = true, moveOnRender = false;
+  let revision = "fixture-first", verified = 0, reads = 0, visible: GrowthCard | undefined;
+  const officialAvatar = { base: { id: 10000042, name: "刻晴", element: "Electro", level: 80, promote_level: 5 },
+    skills: [1, 2, 3].map(skill_id => ({ skill_id, skill_type: 1, level: 7 })),
+    weapon: { name: "雾切之回光", level: 80, promote_level: 5 } };
+  const query = createGenshinGrowQuery({
+    async savedRole() {
+      if (!hasAccount) throw new ProfileError("missing", "模拟无档案");
+      return role;
+    },
+    async requestContext(qq, profileId, game) {
+      return { qq, profileId, game, revision, role, account: { cookie: "cookie=fixture-only" },
+        device: { id: "fixture-id", fp: "fixture-fp" } } as ProfileRequestContext;
+    },
+  }, lockFile, new AbortController().signal, {
+    async loadCatalogue() { return catalogue; },
+    async loadTheme() {
+      return { artifacts: new Map(), artifactSets: new Map(), characters: {}, async picture() { return undefined; },
+        async metadata(_game, type) { return type === "material" ? materialData : { materials }; } };
+    },
+    archive: { async readPanel() {
+      reads++;
+      return { uid, avatars: { 10000042: { id: 10000042, name: "刻晴", elem: "electro", level: 80, promote: 5,
+        talent: { a: 7, e: 7, q: 7 }, artis: {}, weapon: { name: "雾切之回光", level: 80, promote: 5 }, _source: "mysPanel" } } };
+    } },
+    client: {
+      async fetchGenshinGrowth() { throw new Error("旧命令只计算总需求"); },
+      async fetchGenshinTalents(source, { characterIds }) {
+        verified++;
+        expect(source).toMatchObject({ qq: "42", profileId: 1, role });
+        expect(characterIds).toEqual([10000042]);
+        if (!officialAvailable) throw new Error("模拟暂时无法获取当前数据");
+        revision = "fixture-refreshed";
+        return { avatars: owns ? [officialAvatar] : [], revision, refreshedCookie: true };
+      },
+    },
+    async render(model) {
+      visible = model;
+      if (moveOnRender) revision = "fixture-moved";
+      return { png: new Uint8Array([1]) };
+    },
+  });
+  const context = { user_id: 42, message_type: "private" };
+  const command = "#刻晴养成81 90 9 9 9";
+  expect(await query(command, context)).toMatchObject({ type: "image" });
+  const publicRows = visible?.rows;
+  expect(publicRows).toContainEqual({ title: "等级", from: "Lv.1", to: "Lv.81" });
+  expect(publicRows).toContainEqual({ title: "普攻", from: 1, to: 9 });
+  expect(publicRows).toHaveLength(5);
+  expect(verified + reads).toBe(0);
+
+  hasAccount = true;
+  expect(await query(command, context)).toMatchObject({ type: "image" });
+  expect(visible?.rows).toEqual(publicRows);
+  expect(verified).toBe(1);
+  expect(reads).toBe(0);
+  expect(await query(command, { ...context, isDelegated: true })).toMatchObject({ type: "image" });
+  expect(verified).toBe(1);
+  expect(visible?.rows).toEqual(publicRows);
+  expect(await query("刻晴计算81", context)).toMatchObject({ type: "image" });
+  expect(await query("#雾切计算", context)).toBeUndefined();
+  expect(await query("#未知角色计算", context)).toBeUndefined();
+
+  owns = true;
+  expect(await query(command, context)).toMatchObject({ type: "image" });
+  expect(visible?.rows).toContainEqual({ title: "等级", from: "Lv.80", to: "Lv.81" });
+  expect(visible?.rows).toContainEqual({ title: "武器等级", from: "Lv.80", to: "Lv.90" });
+  expect(visible?.groups[2]?.items.some(item => item.label === "精锻用魔矿")).toBeTrue();
+  expect(visible?.notice).toContain("武器按当前装备「雾切之回光」计算。");
+  moveOnRender = true;
+  expect(await query(command, context)).toBe("原神档案角色已变化，请重新计算。");
+  moveOnRender = false;
+  officialAvailable = false;
+  expect(await query(command, context)).toMatchObject({ type: "image" });
+  expect(visible?.rows).toContainEqual({ title: "武器等级", from: "Lv.80", to: "Lv.90" });
+  expect(reads).toBe(1);
+});
