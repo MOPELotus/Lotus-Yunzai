@@ -1,6 +1,6 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { parseArtifactListLimit } from "./group-panel-rank-settings.ts";
+import { parseArtifactListLimit, parsePanelCommaGroup } from "./group-panel-rank-settings.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 import { rejectionReason } from "./plugins/policy.ts";
@@ -15,7 +15,7 @@ function legacySettings(text: string) {
   const source = text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/gu,
     token => token.startsWith("/") ? token.replace(/[^\r\n]/gu, " ") : token.replace(/[^\r\n]/gu, "?"));
   const fields = new Map<string, string>();
-  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber|groupRankLimit|artisNumber)[ \t]*=([^\r\n]*)$/gmu)) {
+  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber|groupRankLimit|artisNumber|commaGroup)[ \t]*=([^\r\n]*)$/gmu)) {
     if (key !== undefined && value !== undefined) fields.set(key, fields.has(key) ? "" : value.trim().replace(/;$/u, "").trim());
   }
   if (!fields.size) return;
@@ -41,6 +41,12 @@ function legacySettings(text: string) {
     const limit = /^\d+$/u.test(artifactSize) ? parseArtifactListLimit(Number(artifactSize)) : undefined;
     if (limit === undefined) deferred = true;
     else config.artifactListLimit = limit;
+  }
+  const commaSize = fields.get("commaGroup");
+  if (commaSize !== undefined) {
+    const grouping = /^\d+$/u.test(commaSize) ? parsePanelCommaGroup(Number(commaSize)) : undefined;
+    if (grouping === undefined) deferred = true;
+    else config.commaGroup = grouping;
   }
   return { config, deferred };
 }

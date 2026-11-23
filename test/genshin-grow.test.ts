@@ -25,6 +25,9 @@ test("旧原神角色成长等级、突破、经验与天赋保留实际旧样�
   const result = calculateCharacterGrowth(materials, publicCharacterGrowth, max, resolve);
   expect(result?.moraTotal).toBe(7_050_030);
   expect(result?.groups[0]?.desc).toBe("Lv.1 → Lv.90，需经验 8,362,650");
+  const grouped = calculateCharacterGrowth(materials, publicCharacterGrowth, max, resolve, 4);
+  expect(grouped?.groups[0]?.desc).toBe("Lv.1 → Lv.90，需经验 836,2650");
+  expect(grouped?.moraTotal).toBe(result?.moraTotal);
   expect(result?.groups[1]?.items.find(item => item.label === "智识之冕")?.num).toBe(3);
   const talents = characterTarget(parse("#原神培养计算 刻晴 天赋 10/9/10 档案2"))!;
   const leveling = calculateCharacterGrowth(materials, publicCharacterGrowth, talents, resolve);

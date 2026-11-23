@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { panelGroupRankSettings, readArtifactListLimit, readGroupPanelRankEnabled, readGroupPanelRankLimit } from "../lib/group-panel-rank-settings.ts";
+import { groupPanelNumber, panelGroupRankSettings, readArtifactListLimit, readGroupPanelRankEnabled, readGroupPanelRankLimit,
+  readPanelCommaGroup } from "../lib/group-panel-rank-settings.ts";
 import { panelApi } from "../lib/panel.ts";
 
 test("群榜面板有效列表保留旧环境默认，支持即时保存、冲突及撤权", async () => {
@@ -28,11 +29,12 @@ test("群榜面板有效列表保留旧环境默认，支持即时保存、冲�
     expect(legacyRank.hint).toContain("目前只收录主动登记且已登录核验的角色");
     expect(initialSnapshot.fields).toContainEqual(expect.objectContaining({ key: "artifactListLimit", min: 4, max: 100 }));
     expect(previous).toEqual({ gs: ["123", "789"], sr: ["456"], gsDisabled: [], srDisabled: [],
-      gsDefault: false, srDefault: false, gsLimit: 15, srLimit: 15, artifactListLimit: 28 });
+      gsDefault: false, srDefault: false, gsLimit: 15, srLimit: 15, artifactListLimit: 28, commaGroup: 3 });
     expect(await readArtifactListLimit(root)).toBe(28);
+    expect(await readPanelCommaGroup(root)).toBeUndefined();
     expect(await readGroupPanelRankEnabled("gs", 123, true, root)).toBe(true);
     expect(await readGroupPanelRankEnabled("sr", 456, false, root)).toBe(true);
-    const values = { ...previous, gs: ["789"], sr: ["456", "999"], srLimit: 30, artifactListLimit: 100 };
+    const values = { ...previous, gs: ["789"], sr: ["456", "999"], srLimit: 30, artifactListLimit: 100, commaGroup: 4 };
     const req = (next: unknown, withAuth = true) =>
       new Request(url, { method: "PUT", headers: withAuth ? headers : { "Content-Type": "application/json" },
         body: JSON.stringify({ previous, values: next }) });
@@ -42,12 +44,15 @@ test("群榜面板有效列表保留旧环境默认，支持即时保存、冲�
     for (const artifactListLimit of [3, 101, 4.5, "4"]) {
       expect((await handle(req({ ...values, artifactListLimit })))?.status).toBe(400);
     }
+    for (const commaGroup of [0, 17, 3.5, "4"]) {
+      expect((await handle(req({ ...values, commaGroup })))?.status).toBe(400);
+    }
     expect((await handle(req({ ...values, legacyGroupRankLimit: 1 })))?.status).toBe(400);
     const changed = await handle(req(values));
     expect(changed?.status).toBe(200);
     expect((await changed?.json()).fields).toEqual(initialSnapshot.fields);
     expect(Bun.YAML.parse(await Bun.file(file).text())).toEqual({
-      other: true, gs: values.gs, sr: values.sr, srLimit: 30, legacyGroupRankLimit: 5, artifactListLimit: 100,
+      other: true, gs: values.gs, sr: values.sr, srLimit: 30, legacyGroupRankLimit: 5, artifactListLimit: 100, commaGroup: 4,
     });
     expect((await (await handle(new Request(url, { headers })))?.json()).values).toEqual(values);
     expect(await Bun.file(file).text()).toContain("# separate game options");
@@ -55,12 +60,21 @@ test("群榜面板有效列表保留旧环境默认，支持即时保存、冲�
     expect(await readGroupPanelRankEnabled("sr", 999, false, root)).toBe(true);
     expect(await readGroupPanelRankLimit("sr", 15, root)).toBe(30);
     expect(await readArtifactListLimit(root)).toBe(100);
+    expect(await readPanelCommaGroup(root)).toBe(4);
     expect((await handle(req(previous)))?.status).toBe(409);
   } finally {
     if (saved === undefined) delete process.env.LOTUS_GENSHIN_PANEL_RANK_GROUPS;
     else process.env.LOTUS_GENSHIN_PANEL_RANK_GROUPS = saved;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("数字分组只改变整数部分，保留既有小数、符号、百分号和说明文字", () => {
+  expect(groupPanelNumber("12345678.20", undefined)).toBe("12345678.20");
+  expect(groupPanelNumber("12,345,678.20", 4)).toBe("1234,5678.20");
+  expect(groupPanelNumber("-123456.00", 3)).toBe("-123,456.00");
+  expect(groupPanelNumber("+12345.60%", 4)).toBe("+1,2345.60%");
+  expect(groupPanelNumber("不适用 12345", 4)).toBe("不适用 12345");
 });
 
 test("迁入的旧群榜逐群状态服从面板覆盖，并只读取原状态键", async () => {

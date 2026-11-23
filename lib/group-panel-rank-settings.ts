@@ -10,7 +10,7 @@ type ListKey = Game | `${Game}Disabled`;
 type LimitKey = `${Game}Limit`;
 type DefaultKey = `${Game}Default`;
 type RankSettings = Record<ListKey, string[]> & Record<LimitKey, number> & Record<DefaultKey, boolean> &
-  { artifactListLimit: number };
+  { artifactListLimit: number; commaGroup: number };
 
 const defaultGroupPanelRankLimit = 15;
 export const maxGroupPanelRankLimit = 30;
@@ -19,6 +19,10 @@ export const defaultArtifactListLimit = 28;
 const artifactListField = {
   key: "artifactListLimit", label: "原神圣遗物与星铁遗器列表条数", type: "number", min: 4, max: 100,
   hint: "共用上限，默认 28 件。实际条数取决于已收录角色中符合筛选规则的装备。",
+} as const;
+const commaGroupField = {
+  key: "commaGroup", label: "原铁面板数字逗号分组", type: "number", min: 1, max: 16,
+  hint: "只影响显示。默认 3 为千位分组，4 为万位分组，小数位数不变。",
 } as const;
 
 const rankFields = games.flatMap(game => {
@@ -32,7 +36,7 @@ const rankFields = games.flatMap(game => {
       min: minGroupPanelRankLimit, max: maxGroupPanelRankLimit },
   ] as const;
 });
-const fields = [artifactListField, ...rankFields];
+const fields = [artifactListField, commaGroupField, ...rankFields];
 
 const legacyRankPolicies = [
   "不限",
@@ -62,6 +66,24 @@ function list(value: unknown): string[] | undefined {
 export function parseArtifactListLimit(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isInteger(value) &&
       value >= artifactListField.min && value <= artifactListField.max) return value;
+}
+
+export function parsePanelCommaGroup(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= commaGroupField.min && value <= commaGroupField.max) {
+    return value;
+  }
+}
+
+export function groupPanelNumber(text: string, grouping: number | undefined): string {
+  const size = parsePanelCommaGroup(grouping);
+  if (!size) return text;
+  const parts = /^([+-]?)(\d+(?:,\d+)*)(\.\d+)?([%％])?$/u.exec(text);
+  if (!parts) return text;
+  const digits = parts[2]!.replaceAll(",", "");
+  const first = digits.length % size || size;
+  const groups = [digits.slice(0, first)];
+  for (let start = first; start < digits.length; start += size) groups.push(digits.slice(start, start + size));
+  return parts[1] + groups.join(",") + (parts[3] ?? "") + (parts[4] ?? "");
 }
 
 function configured(record: Readonly<Record<string, unknown>>): Partial<RankSettings> {
@@ -103,6 +125,7 @@ function effective(config: Partial<RankSettings>): RankSettings {
     gsLimit: config.gsLimit ?? defaultGroupPanelRankLimit,
     srLimit: config.srLimit ?? defaultGroupPanelRankLimit,
     artifactListLimit: config.artifactListLimit ?? defaultArtifactListLimit,
+    commaGroup: config.commaGroup ?? 3,
   };
 }
 
@@ -140,6 +163,11 @@ export async function readGroupPanelRankLimit(game: Game, defaultLimit: number, 
 export async function readArtifactListLimit(root = installation) {
   const raw = await readConfiguration(root).catch(() => undefined);
   return parseArtifactListLimit(raw?.artifactListLimit) ?? defaultArtifactListLimit;
+}
+
+export async function readPanelCommaGroup(root = installation) {
+  const raw = await readConfiguration(root).catch(() => undefined);
+  return parsePanelCommaGroup(raw?.commaGroup);
 }
 
 function input(value: unknown): RankSettings | undefined {
