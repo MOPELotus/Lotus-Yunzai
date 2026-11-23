@@ -498,6 +498,7 @@ test("配置的设备绑定附件在受管切换后仍由私聊指令发送", as
     await commands.fallback!(message, {
       normalizedMessage: message, message_type: "private", self_id: 99, user_id: 51,
       isMaster: false, isBotMaster: () => false,
+      privateCredentialSignal: new AbortController().signal,
       reply(value) { replies.push(value); return true; },
       async uploadFile(file) { files.push(file); return "confirmed"; },
     });
