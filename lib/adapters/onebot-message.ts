@@ -76,11 +76,14 @@ export function encodeOneBotReply(value: unknown, quoteId?: number): string | Ou
 
   const segments: OutboundSegment[] = [];
   for (const part of parts) {
+    // The legacy OneBot bridge ignores buttons while delivering the other segments.
+    if (isRecord(part) && part.type === "button") continue;
     const encoded = encodeSegment(part);
     if (!encoded) return;
     segments.push(encoded);
   }
 
+  if (!segments.length) return;
   if (quoteId !== undefined && !segments.some((part) => part.type === "reply")) {
     segments.unshift({ type: "reply", data: { id: String(quoteId) } });
   }
