@@ -2,7 +2,10 @@ import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding } 
 import { maxChatFileBytes } from "./chat-files.ts";
 import type { CommandModule, MessageFallbackContext, CommandReply } from "./commands.ts";
 
-const bind = /^(?:#(?:原神|星铁|绝区零)?|[#/]?zzz|#?[%％](?:绝区零|zzz)?|绝区零)绑定设备(?:信息)?([1-9]\d{0,2})?(?:\s+([\s\S]*))?$/iu;
+const zzzDevicePrefix = "(?:#?[%％](?:绝区零|zzz)?|[#/](?:绝区零|zzz)(?:绝区零|zzz)?|绝区零|zzz)";
+const bindPrefix = "(?:#(?:原神|星铁)?|" + zzzDevicePrefix + ")";
+const bind = new RegExp(`^${bindPrefix}绑定设备(?:信息)?([1-9]\\d{0,2})?(?:\\s+([\\s\\S]*))?$`, "iu");
+const view = new RegExp(`^${bindPrefix}(设备信息(?:[1-9]\\d{0,2})?)$`, "iu");
 const cancel = /^#取消绑定设备(?:信息)?([1-9]\d{0,2})?$/u;
 const unbind = /^(?:#(?:绝区零)?|[#/]?zzz|#?[%％](?:绝区零|zzz)?|绝区零)解绑设备(?:信息)?([1-9]\d{0,2})?$/iu;
 const zzzHelp = /^(?:[#/]?(?:zzz|绝区零)(?:zzz|绝区零)?|#?[%％](?:zzz|绝区零)?)绑定设备帮助([1-9]\d{0,2})?$/iu;
@@ -17,15 +20,20 @@ function containsDeviceInput(message: string) {
   return (id && fp) || (/^\s*(?:\{|\x60{3}|(?:device|bbs_device|x-rpc-device|fp)\b)/iu.test(message) && (id || fp));
 }
 
+export function normalizeDeviceInfoCommand(message: string) {
+  return message.replace(view, "#$1");
+}
+
 export function isDeviceBindingInput(message: string) {
   return bind.test(message) || cancel.test(message) || unbind.test(message) || zzzHelp.test(message) || containsDeviceInput(message);
 }
 
 interface BindingRequest {
   readonly profileId: number;
-  readonly revision: string;
-  readonly expires: number;
   readonly connection: AbortSignal;
+  readonly operation: AbortController;
+  snapshot?: { readonly revision: string; readonly expires: number };
+  writing?: true;
 }
 
 export function deviceCommands(directory: string | undefined, signal: AbortSignal,
@@ -34,11 +42,13 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
 ): CommandModule {
   const profiles = createProfileStore(directory);
   const pending = new Map<string, BindingRequest>();
-  const opening = new Map<string, Pick<BindingRequest, "profileId" | "connection">>();
-  signal.addEventListener("abort", () => {
-    pending.clear();
-    opening.clear();
-  }, { once: true });
+  signal.addEventListener("abort", () => pending.clear(), { once: true });
+
+  function cancelRequest(scope: string, request: BindingRequest) {
+    if (pending.get(scope) !== request) return;
+    pending.delete(scope);
+    request.operation.abort();
+  }
   return {
     name: "@lotus-yunzai/device",
     commands: {},
@@ -76,8 +86,8 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       if (context.isDelegated || !connection || connection.aborted) return;
       const active = AbortSignal.any([signal, connection]);
       if (unbound) {
-        if (pending.get(scope)?.profileId === id) pending.delete(scope);
-        if (opening.get(scope)?.profileId === id) opening.delete(scope);
+        const waiting = pending.get(scope);
+        if (waiting?.profileId === id) cancelRequest(scope, waiting);
         try {
           const current = await profiles.accountContext(qq, id);
           const removed = await profiles.removeBoundDevice(qq, id, current.revision, active);
@@ -90,44 +100,45 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         }
       }
       if (cancelled || text === "取消") {
-        const waiting = pending.get(scope) ?? opening.get(scope);
+        const waiting = pending.get(scope);
         if (!waiting || waiting.connection !== connection || (cancelled?.[1] !== undefined && waiting.profileId !== id)) {
           return cancelled ? "当前私聊没有该档案的设备绑定等待。" : undefined;
         }
-        pending.delete(scope);
-        opening.delete(scope);
+        cancelRequest(scope, waiting);
         return "已取消绑定设备。";
       }
 
       const waiting = pending.get(scope);
       let request = waiting?.connection === connection ? waiting : undefined;
       if (opened) {
-        pending.delete(scope);
-        const attempt = { profileId: id, connection };
-        opening.set(scope, attempt);
+        if (waiting) cancelRequest(scope, waiting);
+        const current: BindingRequest = { profileId: id, connection, operation: new AbortController() };
+        request = current;
+        pending.set(scope, current);
+        const isCurrent = () => !active.aborted && pending.get(scope) === current;
         try {
           const account = await profiles.accountContext(qq, id);
-          if (active.aborted || opening.get(scope) !== attempt) return [];
-          request = { profileId: id, revision: account.revision, expires: performance.now() + timeout, connection };
+          if (!isCurrent()) {
+            cancelRequest(scope, current);
+            return [];
+          }
+          current.snapshot = { revision: account.revision, expires: performance.now() + timeout };
         } catch {
-          if (active.aborted || opening.get(scope) !== attempt) return [];
+          const report = isCurrent();
+          cancelRequest(scope, current);
+          if (!report) return [];
           return `[account] 请先扫码登录 profile ${id}。`;
-        } finally {
-          if (opening.get(scope) === attempt) opening.delete(scope);
         }
         if (!opened[2]?.trim()) {
-          const current = request;
-          pending.set(scope, current);
           setTimeout(() => {
-            if (pending.get(scope) === current) pending.delete(scope);
+            if (!current.writing) cancelRequest(scope, current);
           }, timeout).unref();
           const prompt = `请发送 profile ${id} 的设备 JSON，或同一份 device_id 和 device_fp。发送「取消」可退出，两分钟内有效。`;
           if (await context.reply(prompt) === false || active.aborted) {
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
           }
-          const isCurrent = () => !active.aborted && pending.get(scope) === current;
-          if (!isCurrent()) return [];
+          if (!isCurrent() || current.writing) return [];
           if (!context.uploadFile) return `当前连接无法发送附件。${apkFallback}`;
           const file = Bun.file(apk ?? (Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk));
           let bytes: Uint8Array | undefined;
@@ -138,26 +149,30 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           } catch {
             // Keep the JSON binding attempt usable if the optional attachment cannot be read.
           }
-          if (!isCurrent()) return [];
+          if (!isCurrent() || current.writing) return [];
           if (!bytes?.byteLength || bytes.byteLength > maxChatFileBytes) return `设备信息工具文件暂不可用。${apkFallback}`;
           const outcome = await context.uploadFile({ name: apkName, bytes }).catch(() => "unknown");
           return isCurrent() && outcome === "rejected" ? `设备信息工具未能发送。${apkFallback}` : [];
         }
       }
-      if (!request) return "请先私聊发送 #绑定设备。";
-      if (request.expires <= performance.now()) {
-        pending.delete(scope);
+      if (!request?.snapshot || request.writing) return "请先私聊发送 #绑定设备。";
+      if (request.snapshot.expires <= performance.now()) {
+        cancelRequest(scope, request);
         return "设备绑定等待已超时，请重新发送 #绑定设备。";
       }
+      const writeSignal = AbortSignal.any([active, request.operation.signal]);
       try {
         const device = parseDeviceBinding(opened?.[2] ?? text);
-        pending.delete(scope);
-        await profiles.saveBoundDevice(qq, request.profileId, request.revision, device, active);
-        if (active.aborted) return [];
+        request.writing = true;
+        await profiles.saveBoundDevice(qq, request.profileId, request.snapshot.revision, device, writeSignal);
+        if (writeSignal.aborted) return [];
       } catch (error) {
-        if (active.aborted) return [];
+        if (writeSignal.aborted) return [];
         if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发起设备绑定。";
+        if (error instanceof ProfileError && error.code === "invalid") return error.message;
         return "设备绑定未完成，请在同一份信息中提供匹配的设备 ID 和 FP。";
+      } finally {
+        if ((opened || request.writing) && pending.get(scope) === request) pending.delete(scope);
       }
       try {
         return await showProfile(request.profileId, context);

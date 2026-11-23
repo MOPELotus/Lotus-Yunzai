@@ -101,7 +101,10 @@ export function parseDeviceBinding(input: string): DeviceBinding {
   if (typeof input !== "string" || Buffer.byteLength(input) > maxInputBytes) formatError();
   const text = input.trim();
   const fenced = /^\x60{3}(?:json)?\r?\n([\s\S]*)\r?\n\x60{3}$/iu.exec(text);
-  const root = fenced ? readJson(fenced[1]!) : text.startsWith("{") ? readJson(text) : readText(text);
+  const firstLabel = /^([\w-]+)\s*[:=：]/u.exec(text)?.[1]?.toLowerCase();
+  const embedded = firstLabel && labels.has(firstLabel) ? undefined : /\{[\s\S]*\}/u.exec(text)?.[0];
+  const json = fenced?.[1] ?? embedded;
+  const root = json === undefined ? readText(text) : readJson(json);
   const nested = object(root.data);
   const source = nested ?? root;
   for (const candidate of [root, source]) {

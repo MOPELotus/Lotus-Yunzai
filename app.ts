@@ -91,7 +91,7 @@ import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
 import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { createDailyNoteReminders, dailyNoteReminderFeatureNames } from "./lib/daily-note-reminders.ts";
-import { deviceCommands, isDeviceBindingInput } from "./lib/device-commands.ts";
+import { deviceCommands, isDeviceBindingInput, normalizeDeviceInfoCommand } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster, readLegacyDispatchPause } from "./lib/dispatch-power.ts";
 import { groupRecallPermission, quotedRecallSessions, readGroupRecallPermissions } from "./lib/quoted-recall.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
@@ -2225,15 +2225,17 @@ if (import.meta.main) {
     const runtimeStatusScope = (statusCard || bareStatus || statusPhoto || statusMonitor) && !event.isDelegated ?
       event.message_type === "terminal" && event.isMaster ? "terminal" : milky ? "milky" : event.boundAccount ? "onebot" : undefined : undefined;
     const originalMessage = [event.msg, event.raw_message];
+    const gameAccountCommand = normalizeGameCommand(event).msg;
     const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
       : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
-      : isDeviceBindingInput(event.msg) ? "@lotus-yunzai/device" : undefined;
+      : isDeviceBindingInput(event.msg) || isDeviceBindingInput(gameAccountCommand) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
         const connection = protectedModule === "@lotus-yunzai/passport-login" ? event.privateCredentialSignal : undefined;
         const protectedEvent = connection ? { ...event, privateCredentialSignal: nativeOperationSignal(connection) } : event;
+        const protectedCommand = protectedModule === "@lotus-yunzai/device" ? gameAccountCommand : event.msg;
         const reply = await commands.dispatchFallback(protectedEvent, (names) => names[0] === protectedModule && allowed(names),
-          (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId));
+          (userId) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId), protectedCommand);
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
       return;
@@ -2300,7 +2302,6 @@ if (import.meta.main) {
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }
-    const gameAccountCommand = normalizeGameCommand(event).msg;
     if (matchesAccountCookieStatus(gameAccountCommand)) {
       const features = accountCookieStatusFeatures;
       const scope = allowNew && allowed(features) ? ownCheckinSession(event, features) : undefined;
@@ -2641,7 +2642,8 @@ if (import.meta.main) {
     const groupRules = allowed(groupBannedWordsNames), screenedWords = allowed(groupScreenedWordsNames);
     if ((groupRules || screenedWords) && await handleGroupBannedWords(incoming, event.msg, alias, groupRules, screenedWords)) return;
 
-    const command = normalizeGameCommand(originalPictureCommand === event.msg ? event : { ...event, msg: originalPictureCommand });
+    const commandMessage = normalizeDeviceInfoCommand(originalPictureCommand);
+    const command = normalizeGameCommand(commandMessage === event.msg ? event : { ...event, msg: commandMessage });
     const namedCheckin = namedCheckinCommand(command.msg);
     if (namedCheckin) {
       const features = ["@lotus-yunzai/checkin"];

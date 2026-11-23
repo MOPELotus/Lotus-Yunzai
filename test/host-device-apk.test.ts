@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { Database } from "bun:sqlite";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
@@ -69,3 +70,58 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       }
     });
 }, 15_000);
+
+
+test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑定提交", async () => {
+  const device = { bound: true, id: "fixture-original-device", fp: "0123456789abc", android_version: "13" };
+  const original = Bun.YAML.stringify({ device, account: {
+    stuid: "77", cookie: "ltuid=77;cookie_token=fixture", stoken: "fixture-stoken",
+  } });
+  await withDualGatewayFixture("device-active-cancel", "disablePrivate: false\n",
+    async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+      sendOneBot("/绝区零绑定设备2");
+      const prompt = await onebot.next("send_msg");
+      expect(prompt.params.message).toContain("profile 2 的设备 JSON");
+      prompt.respond({ message_id: 21 });
+      const apk = await onebot.next("send_msg");
+      expect(apk.params.message).toContain("设备信息工具文件暂不可用");
+      apk.respond({ message_id: 22 });
+      sendOneBot("#绝区零zzz设备信息3");
+      const viewer = await onebot.next("send_msg");
+      expect(viewer.params.message).toBe("[account] 请先扫码登录 profile 3。");
+      viewer.respond({ message_id: 24 });
+
+      const directory = join(root, "data/users");
+      const lock = new Database(join(directory, ".43-2.yaml.lotus-profile.sqlite"));
+      lock.exec("BEGIN IMMEDIATE");
+      try {
+        const payload = JSON.stringify({ device_id: "fixture-replacement", device_fp: "dc00112233445" });
+        expect((await sendMilky("#绝区零zzz绑定设备2 设备信息：" + payload)).status).toBe(200);
+        const waiting = async () => (await readdir(directory)).some(name => name.startsWith(".profile-write-"));
+        for (let attempt = 0; attempt < 60 && !await waiting(); attempt++) await Bun.sleep(10);
+        expect(await waiting()).toBe(true);
+        expect((await sendMilky("#取消绑定设备2")).status).toBe(200);
+        const stopped = await milky.next("send_private_message");
+        expect(stopped.params.message).toEqual([{ type: "text", data: { text: "已取消绑定设备。" } }]);
+        stopped.respond({ message_seq: 23 });
+        lock.exec("ROLLBACK");
+        for (let attempt = 0; attempt < 60 && await waiting(); attempt++) await Bun.sleep(10);
+        expect(await waiting()).toBe(false);
+        expect(await readFile(join(directory, "43-2.yaml"), "utf8")).toBe(original);
+        expect(milky.calls).toHaveLength(0);
+        expect((await sendMilky("*绑定设备2 " + payload)).status).toBe(200);
+        const bound = await milky.next("send_private_message");
+        expect(bound.params.user_id).toBe(43);
+        bound.respond({ message_seq: 25 });
+        expect(Bun.YAML.parse(await readFile(join(directory, "43-2.yaml"), "utf8")))
+          .toMatchObject({ device: { id: "fixture-replacement", fp: "dc00112233445", bound: true } });
+      } finally {
+        lock.close();
+      }
+    }, 3_000, undefined, async root => {
+      const profiles = join(root, "data/users");
+      await mkdir(profiles, { recursive: true });
+      await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${profiles}\n`);
+      for (const qq of [42, 43]) await writeFile(join(profiles, qq + "-2.yaml"), original);
+    });
+}, 12_000);

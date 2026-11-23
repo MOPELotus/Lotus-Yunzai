@@ -666,6 +666,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const original: unknown = snapshot ? Bun.YAML.parse(snapshot.toString("utf8")) : initial;
         const document = record(original);
         const previous = readIdentity(original, qq, profileId);
+        const savedDevice = record(document.device);
         const sameAccount = matchesStoredLogin(previous.account, result.stuid);
         const roles = sameAccount ? previous : { roles: {}, selected: {} };
         const emptyRoles = { gs: [], sr: [], zzz: [] } as const;
@@ -677,8 +678,8 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           account: { ...record(document.account), ...account, ...nextRoles, updated_at: now,
             roles_updated_at: result.roles ? now : sameAccount ? text(record(document.account).roles_updated_at) : "",
             role_sync_error: result.roles ? "" : "登录成功，角色暂未同步。" },
-          device: previous.device.id ? document.device : {
-            ...record(document.device), bound: false, id: device.id, fp: "",
+          device: previous.device.id || text(savedDevice.fp) || savedDevice.bound === true ? document.device : {
+            ...savedDevice, bound: false, id: device.id, fp: "",
             name: device.name, model: device.model, android_version: device.androidVersion,
           },
         };
@@ -695,15 +696,17 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const snapshot = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
         if (revisionOf(snapshot) !== expected) throw changedProfile();
         const value: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
-        if (!readIdentity(value, qq, profileId).summary.loggedIn) {
-          throw new ProfileError("login-required", "档案尚未登录。");
-        }
+        const { account, device: previous, summary } = readIdentity(value, qq, profileId);
+        if (!summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (hasConflictingProfileCookieIdentity(account)) throw new ProfileError("invalid", "档案账号不一致，请重新扫码后绑定。");
         const { id, fp, name, model, androidVersion } = binding;
         if (!/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u.test(id) || !/^[0-9a-f]{13}$/iu.test(fp)) {
           throw new ProfileError("invalid", "请在同一份设备信息中提供设备 ID 和 FP。");
         }
-        const device = { bound: true, generated: false, id, fp, name: name ?? "", model: model ?? "",
-          android_version: androidVersion ?? "", updated_at: new Date().toISOString() };
+        const sameDevice = previous.id === id ? previous : undefined;
+        const device = { bound: true, generated: false, id, fp,
+          name: name ?? sameDevice?.name ?? "", model: model ?? sameDevice?.model ?? "",
+          android_version: androidVersion ?? sameDevice?.androidVersion ?? "", updated_at: new Date().toISOString() };
         await writeProfileDocument(path, { ...record(value), device }, expected, signal);
       });
     },

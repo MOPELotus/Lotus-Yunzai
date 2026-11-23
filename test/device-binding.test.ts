@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { accountCommands } from "../lib/account-commands.ts";
-import { deviceCommands, isDeviceBindingInput } from "../lib/device-commands.ts";
+import { deviceCommands, isDeviceBindingInput, normalizeDeviceInfoCommand } from "../lib/device-commands.ts";
 import { createProfileStore } from "../packages/account/index.ts";
 import { parseDeviceBinding } from "../packages/account/device-binding.ts";
 
@@ -34,6 +34,10 @@ test("绝区零设备帮助保留档号，不打开设备绑定窗口", async ()
     const payload = JSON.stringify({ device_id: id, device_fp: fp });
     expect(await module.fallback!(payload, { ...context, normalizedMessage: payload })).toBe("请先私聊发送 #绑定设备。");
     expect(isDeviceBindingInput("%解绑设备")).toBe(true);
+    for (const prefix of ["/绝区零", "#绝区零zzz", "#ZzzZZZ", "％绝区零"]) {
+      expect(isDeviceBindingInput(prefix + "绑定设备信息2")).toBe(true);
+      expect(normalizeDeviceInfoCommand(prefix + "设备信息2")).toBe("#设备信息2");
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -205,6 +209,64 @@ test("设备 APK 缺失、不支持或发送未确认时保持同档 JSON 绑定
     });
   } finally {
     lifecycle.abort();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test("旧设备 JSON 可携带复制说明，仍拒绝拼接的设备对象", () => {
+  const json = JSON.stringify({ device_id: id, device_fp: fp });
+  expect(parseDeviceBinding("设备信息：" + json + "，已复制")).toEqual({ id, fp });
+  expect(() => parseDeviceBinding("设备信息：" + json + json)).toThrow();
+});
+
+test("同设备只换 FP 时保留已有名称及 Android，冲突登录档不会写入", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-device-metadata-"));
+  try {
+    const profiles = createProfileStore(root);
+    const file = join(root, "42.yaml");
+    const account = { stuid: "77", stoken: "fixture-stoken", cookie: "ltuid=77;cookie_token=fixture" };
+    const oldDevice = { bound: true, id, fp, name: "Fixture Pixel", model: "Fixture Model", raw: { osVersion: 13 } };
+    await writeFile(file, Bun.YAML.stringify({ account, device: oldDevice }));
+    const first = await profiles.accountContext("42");
+    await profiles.saveBoundDevice("42", 1, first.revision, { id, fp: otherFp });
+    expect((await profiles.accountContext("42")).device).toMatchObject({
+      id, fp: otherFp, name: oldDevice.name, model: oldDevice.model, androidVersion: "13",
+    });
+    const second = await profiles.accountContext("42");
+    await profiles.saveBoundDevice("42", 1, second.revision, { id: otherId, fp });
+    expect((await profiles.accountContext("42")).device).toMatchObject({
+      id: otherId, fp, name: "", model: "", androidVersion: "",
+    });
+
+    const conflicting = Bun.YAML.stringify({ account: { ...account, cookie: "ltuid=78;cookie_token=fixture" }, device: oldDevice });
+    await writeFile(file, conflicting);
+    const third = await profiles.accountContext("42");
+    await expect(profiles.saveBoundDevice("42", 1, third.revision, { id, fp: otherFp })).rejects.toMatchObject({ code: "invalid" });
+    expect(await readFile(file, "utf8")).toBe(conflicting);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("扫码只使用临时设备，不覆盖未完整的旧设备档案", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-device-half-profile-"));
+  try {
+    const profiles = createProfileStore(root);
+    const file = join(root, "42.yaml");
+    for (const device of [{ bound: false, fp, model: "Fixture" }, { bound: true, model: "Fixture Model" }]) {
+      await writeFile(file, Bun.YAML.stringify({ device }));
+      const slot = await profiles.openLoginSlot("42");
+      expect(slot.device.id).toMatch(/^[A-F0-9]{32}$/u);
+      expect(slot.device.fp).toBe("");
+      await profiles.saveLogin(slot, { stuid: "77", stoken: "fixture-stoken", credentials: {
+        ltoken: "fixture-ltoken", cookie: "ltoken=fixture-ltoken;ltuid=77;cookie_token=fixture;account_id=77;",
+        stokenCookie: "stuid=77;stoken=fixture-stoken;",
+      } });
+      expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ device });
+      expect((await profiles.accountContext("42")).device.fp).toBe("");
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
