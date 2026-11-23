@@ -40,6 +40,33 @@ async function inspection(good: MiyousheShopInspection["good"] = mockGood) {
 
 function gate() { return Promise.withResolvers<void>(); }
 
+test("超过最近三十条记录的预约和待确认结果仍归原档案操作", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    const shop = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime,
+      inspect: (_target, id) => inspection({ ...mockGood, id }), async submit() { throw new Error("无真实兑换"); },
+    });
+    const first = await shop.reserve(target, body);
+    const second = await shop.reserve(target, { ...body, goodsId: "28" });
+    const data = JSON.parse(await readFile(file, "utf8"));
+    Object.assign(data.plans[0], { status: "unknown", finishedAt: startTime, attempts: 1 });
+    const history = Array.from({ length: 40 }, (_, index) => ({ ...data.plans[0],
+      id: String(100 + index).padStart(12, "0"), status: "succeeded", createdAt: startTime + index + 1,
+    }));
+    await writeFile(file, JSON.stringify({ ...data, plans: [...data.plans, ...history] }));
+    const visible = (await shop.list(target)).plans;
+    expect(visible).toHaveLength(32);
+    expect(visible).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first.id, status: "unknown" }), expect.objectContaining({ id: second.id, status: "scheduled" }),
+    ]));
+    expect(visible.some(plan => plan.id === history[0]!.id)).toBe(false);
+    expect((await shop.list(other)).plans).toEqual([]);
+    await expect(shop.resolve(other, first.id, false)).rejects.toMatchObject({ status: 404 });
+    expect(await shop.resolve(target, first.id, false)).toMatchObject({ status: "failed" });
+    expect(await shop.cancel(target, second.id)).toMatchObject({ status: "cancelled" });
+    expect((await shop.list(target)).plans).toHaveLength(30);
+  });
+});
+
 test("终态回执等待原机器人渠道，持久认领后并行扫描和重启均不中途重发", async () => {
   await fixture(async ({ file, profileDirectory, profile }) => {
     let posts = 0, lookups = 0, online = false;

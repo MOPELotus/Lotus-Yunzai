@@ -1025,7 +1025,12 @@ export function createMiyousheShopPlans({
       await recover(matches);
       const plans = (await store.read()).plans.filter(matches);
       await verifyLogin?.();
-      return { now: now(), canSubmit: Boolean(submit), plans: plans.sort((a, b) => b.createdAt - a.createdAt).slice(0, 30).map(plan => {
+      let settled = 0;
+      const visible = plans.sort((a, b) => b.createdAt - a.createdAt).filter(plan => {
+        if (active(plan.status) || plan.status === "unknown") return true;
+        return settled++ < 30;
+      });
+      return { now: now(), canSubmit: Boolean(submit), plans: visible.map(plan => {
         const immediate = immediateVerification.get(plan.id);
         const scoped = immediate && immediate.session.sessionId === sessionId && !immediate.cancel.signal.aborted &&
           !immediate.session.signal.aborted ? immediate : undefined;
