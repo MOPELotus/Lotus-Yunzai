@@ -1,7 +1,7 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
-import { inheritWishSettings, legacyWishReincarnationMinutes } from "./genshin-wish-settings-model.ts";
+import { inheritWishSettings, legacyWishPools, legacyWishReincarnationMinutes, legacyWishRules } from "./genshin-wish-settings-model.ts";
 import { wishConfigMaxBytes, wishConfigName } from "./genshin-wish-settings.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
@@ -15,6 +15,12 @@ function decode(bytes: Uint8Array): Record<string, unknown> {
   throw new TypeError("旧祈愿设置需为 YAML 映射。");
 }
 
+function decodeOptionalPool(bytes: Uint8Array | undefined) {
+  if (bytes) {
+    try { return decode(bytes); } catch { return; }
+  }
+}
+
 export async function stageLegacyGenshinWishConfig(source: string, archive: string | undefined, stage: string,
   plugins: readonly LegacyPluginPlanEntry[], signal?: AbortSignal) {
   const reason = rejectionReason(["flower-plugin"], []);
@@ -23,14 +29,15 @@ export async function stageLegacyGenshinWishConfig(source: string, archive: stri
   async function read(root: string, relative: string) {
     return (await readMigrationSourceFile(root, join(root, relative), wishConfigMaxBytes, signal))?.bytes;
   }
-  const [stock, tickets, fallbackRecall, stockRules, customRules] = await Promise.all([
+  const [stock, tickets, fallbackRecall, stockRules, customRules, customPool] = await Promise.all([
     archive && flower ? read(archive, join(basename(flower.path), "GachaMOD/Genshin/def/coin.yaml")) : undefined,
     archive && flower ? read(archive, join(basename(flower.path), "GachaMOD/Genshin/config/coin.yaml")) : undefined,
     read(source, "plugins/genshin/config/gacha.set.yaml"),
     archive && flower ? read(archive, join(basename(flower.path), "GachaMOD/Genshin/def/gacha.yaml")) : undefined,
     archive && flower ? read(archive, join(basename(flower.path), "GachaMOD/Genshin/config/gacha.yaml")) : undefined,
+    archive && flower ? read(archive, join(basename(flower.path), "GachaMOD/Genshin/config/pool.yaml")) : undefined,
   ]);
-  if (!tickets && !stock && !fallbackRecall && !customRules && !stockRules) return { active: false, deferred: false };
+  if (!tickets && !stock && !fallbackRecall && !customRules && !stockRules && !customPool) return { active: false, deferred: false };
   let settings;
   try {
     const coins = { ...(stock ? decode(stock) : {}), ...(tickets ? decode(tickets) : {}) };
@@ -38,10 +45,11 @@ export async function stageLegacyGenshinWishConfig(source: string, archive: stri
     const defaults = stockRules && decode(stockRules);
     const privateSingle = customization?.delMsg ?? defaults?.delMsg;
     const cooldown = legacyWishReincarnationMinutes(customization?.relifeCD, defaults?.relifeCD);
-    if (!tickets && !stock && !fallbackRecall && privateSingle === undefined && cooldown === undefined) {
+    const rules = { ...legacyWishRules(customization, defaults), ...legacyWishPools(decodeOptionalPool(customPool), customization, defaults) };
+    if (!tickets && !stock && !fallbackRecall && privateSingle === undefined && cooldown === undefined && !Object.keys(rules).length) {
       return { active: false, deferred: false };
     }
-    settings = inheritWishSettings(coins, fallbackRecall && decode(fallbackRecall), privateSingle, cooldown);
+    settings = inheritWishSettings(coins, fallbackRecall && decode(fallbackRecall), privateSingle, cooldown, rules);
   } catch {
     return { active: false, deferred: true };
   }

@@ -5,6 +5,24 @@ import { readGenshinWishSettings, updateGenshinWishSettings, wishConfigMaxBytes 
 import { readPanelJson } from "./panel.ts";
 
 const fields = [
+  { key: "enabled", label: "启用原神模拟祈愿", type: "boolean" },
+  { key: "multiple", label: "允许单次超过十连", type: "boolean" },
+  { key: "characterFive", label: "角色池五星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
+  { key: "characterFour", label: "角色池四星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
+  { key: "weaponFive", label: "武器池五星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
+  { key: "weaponFour", label: "武器池四星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
+  { key: "featuredFive", label: "五星小保底命中率（百分比）", type: "number", min: 0, max: 100, nullable: true,
+    hint: "留空使用角色 50%、武器 75%。保底和定轨仍然生效。" },
+  { key: "automaticPools", label: "使用自动轮换卡池", type: "boolean",
+    hint: "手工名单会保留，关闭自动轮换后用于公共模拟祈愿。" },
+  { key: "poolCharacterFive", label: "手工五星角色名单", type: "list", separator: "line",
+    hint: "每行一名。填一名时两个角色池共用，填两名时按顺序使用。" },
+  { key: "poolCharacterFour", label: "手工四星角色名单", type: "list", separator: "line",
+    hint: "每行一名，留空沿用默认名单。" },
+  { key: "poolWeaponFive", label: "手工五星武器名单", type: "list", separator: "line",
+    hint: "每行一件，填写两件或留空沿用默认名单。" },
+  { key: "poolWeaponFour", label: "手工四星武器名单", type: "list", separator: "line",
+    hint: "每行一件，留空沿用默认名单。" },
   { key: "pink", label: "每日纠缠之缘", type: "number", min: 0, max: 10_000,
     hint: "下一次每日发放时生效。个人票数跨群共用，以当天首次领取会话的设置发放。" },
   { key: "blue", label: "每日相遇之缘", type: "number", min: 0, max: 10_000 },
@@ -47,9 +65,17 @@ export function panelGenshinWishSettings(root: URL) {
         return Response.json({ message: (error as Error).message }, { status: 400 });
       }
       if (!previous || !next) return new Response(null, { status: 400 });
+      let normalized;
+      try {
+        const { normalizeWishManualPoolChanges } = await import("../plugins/genshin/wish-sim/admin-pools.ts");
+        normalized = await normalizeWishManualPoolChanges(previous, next);
+      } catch (error) {
+        if (error instanceof TypeError) return Response.json({ message: error.message }, { status: 400 });
+        throw error;
+      }
       const values = await updateGenshinWishSettings(root, current => {
         if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
-        return next;
+        return normalized;
       }, active, request.signal);
       return Response.json({ fields, values });
     } catch (error) {
