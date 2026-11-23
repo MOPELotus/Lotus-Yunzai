@@ -14,6 +14,7 @@ import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-remin
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
+import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
 import { donationCommands } from "./lib/donation-command.ts";
 import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
@@ -378,6 +379,7 @@ if (import.meta.main) {
     },
   });
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
+  const publicRoleReferences = createPublicRoleReferences(lockFile);
   const gachaBatch = createGachaBatch({
     listIds: roleProfiles.listIds,
     signal: lifecycle.signal,
@@ -2256,6 +2258,18 @@ if (import.meta.main) {
       return;
     }
     const gameAccountCommand = normalizeGameCommand(event).msg;
+    const publicRoleReference = matchPublicRoleReferenceCommand(gameAccountCommand);
+    if (publicRoleReference) {
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(publicRoleReferenceFeatures)) return;
+      const scope = ownCheckinSession(event, publicRoleReferenceFeatures);
+      if (!scope?.privateFriend) {
+        if (event.message_type === "group" && scope) await event.reply("请私聊机器人管理或查询本人公开 UID 引用。");
+        return;
+      }
+      const reply = await publicRoleReferences(publicRoleReference, scope);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
     const gameLoginRemoval = matchGameLoginRemoval(gameAccountCommand);
     if (gameLoginRemoval) {
       const features = ["@lotus-yunzai/account"];
