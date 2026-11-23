@@ -30,7 +30,7 @@ export function describeUpdateProgress(status: ManagedUpdateProgress): string {
 
 function updatePrefix(message: string): RegExpExecArray | undefined {
   // 旧业务命令停用后仍不应触发仓库更新。
-  if (/^#(?:强制)?更新(?:配队|摩拉)资源(?:\s|$)/u.test(message)) return;
+  if (/^#(?:强制)?更新(?:配队|攻略|摩拉)资源(?:\s|$)/u.test(message)) return;
   if (/^#更新\S+(?:攻略[1-7]?|一图流)$/u.test(message.trimEnd())) return;
   if (/^#(?:原神)?更新\S+(?:突破|材料|素材|培养)$/u.test(message.trimEnd())) return;
   if (/^#更新群名片(?:\s|$)/u.test(message)) return;
