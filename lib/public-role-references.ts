@@ -10,7 +10,8 @@ const prompts = { gs: "#", sr: "*", zzz: "%" } as const;
 const command = /^#(原神|星铁|绝区零)?(登记(?:公开)?uid|公开uid列表|切换公开uid|删除公开uid|查询公开uid|(?:删除|解绑)uid)(.*)$/iu;
 const selector = /^[1-9]\d?$/u;
 const uidPattern = /^[1-9]\d{7,9}$/u;
-const roleLimit = 99;
+export const publicRoleReferenceLimit = 99;
+export const publicRoleReferencePath = "data/public-role-references";
 export const publicRoleReferenceFeatures = ["[account] 公开角色引用", "account", "@lotus-yunzai/account"] as const;
 
 export function matchPublicRoleReferenceCommand(input: string) {
@@ -26,20 +27,20 @@ export function matchPublicRoleReferenceCommand(input: string) {
 type Command = NonNullable<ReturnType<typeof matchPublicRoleReferenceCommand>>;
 type Scope = { readonly user: number; readonly signal: AbortSignal; readonly isCurrent: () => boolean };
 type References = { readonly uid: string; readonly data: readonly string[] };
-type Catalogue = Readonly<Record<Game, References>>;
+export type PublicRoleReferenceCatalogue = Readonly<Record<Game, References>>;
 const empty: References = { uid: "", data: [] };
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
-function decode(value: unknown): Catalogue {
+function decode(value: unknown): PublicRoleReferenceCatalogue {
   if (value === null) return { gs: empty, sr: empty, zzz: empty };
   const document = record(value);
   if (!document || document.version !== 1) throw new TypeError("公开 UID 引用格式不正确。");
   const forGame = (game: Game): References => {
     const refs = record(document[game]);
-    if (!refs || typeof refs.uid !== "string" || !Array.isArray(refs.data) || refs.data.length > roleLimit ||
+    if (!refs || typeof refs.uid !== "string" || !Array.isArray(refs.data) || refs.data.length > publicRoleReferenceLimit ||
         refs.data.some((value: unknown) => typeof value !== "string" || !uidPattern.test(value)) ||
         new Set(refs.data).size !== refs.data.length || (refs.data.length ? !refs.data.includes(refs.uid) : refs.uid !== "")) {
       throw new TypeError("公开 UID 引用列表无效。");
@@ -49,7 +50,7 @@ function decode(value: unknown): Catalogue {
   return { gs: forGame("gs"), sr: forGame("sr"), zzz: forGame("zzz") };
 }
 
-function createPublicReaders() {
+export function createPublicRoleReferenceTarget() {
   let genshin: Promise<Awaited<ReturnType<typeof bindGenshin>>> | undefined;
   let zzz: Promise<Awaited<ReturnType<typeof bindZzz>>> | undefined;
   async function bindGenshin() {
@@ -86,7 +87,7 @@ function createPublicReaders() {
 }
 
 export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, directory = fileURLToPath(
-  new URL("../data/public-role-references/", import.meta.url)), publicTarget = createPublicReaders()) {
+  new URL("../" + publicRoleReferencePath + "/", import.meta.url)), publicTarget = createPublicRoleReferenceTarget()) {
   const archive = createRoleJsonArchive(directory, lockFile, {
     subject: "本人公开 UID 引用", lockSuffix: "public-role-reference", maxBytes: 8192, rejectNull: true,
   });
@@ -148,7 +149,7 @@ export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, dir
         const currentGame = entries[game];
         const uid = register ? value : currentGame.data[index!];
         if (!uid) return { result: `没有这个${label}公开 UID 序号。请用 ${prefix}公开UID列表 查看。` };
-        if (register && !currentGame.data.includes(uid) && currentGame.data.length >= roleLimit) return { result: "公开 UID 列表已满，请先删除一个引用。" };
+        if (register && !currentGame.data.includes(uid) && currentGame.data.length >= publicRoleReferenceLimit) return { result: "公开 UID 列表已满，请先删除一个引用。" };
         const remove = action === "删除公开uid";
         const data = remove ? currentGame.data.filter(entry => entry !== uid)
           : register && !currentGame.data.includes(uid) ? [...currentGame.data, uid] : currentGame.data;
