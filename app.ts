@@ -13,6 +13,7 @@ import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
+import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { donationCommands } from "./lib/donation-command.ts";
 import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
@@ -2251,6 +2252,18 @@ if (import.meta.main) {
       }
       const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
       const reply = await legacyPanelRecovery.confirm(recoveryConfirmation, session);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
+    const ownRoleSelection = matchOwnRoleSelection(normalizeGameCommand(event).msg);
+    if (ownRoleSelection) {
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
+      const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
+      if (!scope?.privateFriend) {
+        if (event.message_type === "group" && scope) await event.reply("请私聊机器人查看或切换本人游戏角色。");
+        return;
+      }
+      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope);
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }

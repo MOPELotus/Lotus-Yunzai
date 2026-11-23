@@ -776,6 +776,27 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         rolesPending: Boolean(text(record(document.account).role_sync_error)),
       };
     },
+    async roleCatalog(qq: string, id: number) {
+      const { roles, selected, revision } = await read(qq, id);
+      const catalog = {
+        gs: normalizeGameRoles(roles.gs), sr: normalizeGameRoles(roles.sr), zzz: normalizeGameRoles(roles.zzz),
+      };
+      const active = { gs: accountId(selected.gs), sr: accountId(selected.sr), zzz: accountId(selected.zzz) };
+      return { revision, catalog, active };
+    },
+    async selectCatalogRole(qq: string, id: number, game: Game, uid: string, expected: string,
+      signal: AbortSignal, canCommit: () => boolean) {
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      return updateCheckinProfile(qq, id, expected, (document, state) => {
+        if (!canCommit()) throw new DOMException("角色选择授权已失效。", "AbortError");
+        if (!normalizeGameRoles(state.roles[game]).some(role => role.uid === uid)) {
+          throw new ProfileError("role-missing", "档案没有该游戏角色。");
+        }
+        if (accountId(state.selected[game]) === uid) return document;
+        const account = record(document.account);
+        return { ...document, account: { ...account, current_uid: { ...state.selected, [game]: uid } } };
+      }, signal, undefined, canCommit);
+    },
     async savedRole(qq: string, id: number, game: Game): Promise<GameRole> {
       if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
       const { roles, selected } = await read(qq, id);
