@@ -41,6 +41,7 @@ export interface CommandForward {
   readonly nodes: readonly MessageReply[];
   readonly batchSize?: number;
   readonly senderName?: string;
+  readonly recallSeconds?: number;
   readonly onDelivered?: () => void | Promise<void>;
 }
 
@@ -56,7 +57,13 @@ export interface DeliveryCommandReply {
   readonly onDelivered: NonNullable<ReplyOptions["onDelivered"]>;
 }
 
-export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply | BatchedImageForward;
+export interface RecallableCommandReply {
+  readonly type: "recallable";
+  readonly message: MessageReply;
+  readonly seconds: number;
+}
+
+export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply | RecallableCommandReply | BatchedImageForward;
 export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
 export type MessageFallback = (
   message: string,
@@ -78,6 +85,10 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
     await event.reply(reply.message, false, { onDelivered: reply.onDelivered });
     return;
   }
+  if (reply.type === "recallable") {
+    await event.reply(reply.message, false, { recallMsg: reply.seconds, recallOriginal: false });
+    return;
+  }
   if (reply.type === "forward-image-batches") {
     const notice = await sendBatchedImageForward(reply, event.forward?.bind(event));
     if (notice) await event.reply(notice);
@@ -92,18 +103,22 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
     ? reply.batchSize
     : reply.nodes.length;
   let confirmed = true;
+  const recall = reply.recallSeconds === undefined ? undefined : { recallMsg: reply.recallSeconds, recallOriginal: false };
   for (let start = 0; start < reply.nodes.length; start += count) {
     const nodes = reply.nodes.slice(start, start + count);
     if (event.forward) {
       try {
-        if (await event.forward(nodes, reply.senderName)) continue;
+        if (await (recall ? event.forward(nodes, reply.senderName, recall) : event.forward(nodes, reply.senderName))) continue;
       } catch {
         await event.reply("合并转发结果未确认，请在聊天中核对。");
         return;
       }
     }
     confirmed = false;
-    for (const node of nodes) await event.reply(node);
+    for (const node of nodes) {
+      if (recall) await event.reply(node, false, recall);
+      else await event.reply(node);
+    }
   }
   if (confirmed) await reply.onDelivered?.();
 }

@@ -623,11 +623,16 @@ export class OneBotCalls {
     }
   }
 
-  async sendForwardConfirmed(send: Send, target: { group_id: number } | { user_id: number }, messages: readonly object[], signal?: AbortSignal): Promise<ChatFileResult> {
+  async sendForwardConfirmed(send: Send, target: { group_id: number } | { user_id: number }, messages: readonly object[],
+    signal?: AbortSignal, recallSeconds?: number): Promise<ChatFileResult> {
     const action = "group_id" in target ? "send_group_forward_msg" : "send_private_forward_msg";
     try {
       const result = await this.#request(send, action, { ...target, messages }, signal);
-      return this.#messageId(result) !== undefined || (isRecord(result) && typeof result.forward_id === "string" && result.forward_id.trim())
+      const messageId = this.#messageId(result);
+      if (!this.#closed && !signal?.aborted && messageId !== undefined && recallSeconds !== undefined) {
+        this.#scheduleRecall(send, messageId, recallSeconds);
+      }
+      return messageId !== undefined || (isRecord(result) && typeof result.forward_id === "string" && result.forward_id.trim())
         ? "confirmed" : "unknown";
     } catch (error) {
       return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" : "unknown";

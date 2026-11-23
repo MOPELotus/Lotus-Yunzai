@@ -118,7 +118,7 @@ export interface MessageEvent {
   readonly [ownerAccountSession]?: OwnerAccountSession;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
-  readonly forward?: (nodes: readonly MessageReply[], senderName?: string) => Promise<boolean>;
+  readonly forward?: (nodes: readonly MessageReply[], senderName?: string, options?: Pick<ReplyOptions, "recallMsg">) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;
   readonly deliverMedia?: (file: MediaDelivery) => Promise<ChatFileResult>;
   readonly sendMusicCard?: (card: MusicCard) => Promise<ChatFileResult>;
@@ -157,7 +157,12 @@ export type GroupCardResult = RecallResult | "missing-group" | "insufficient-rol
 export interface ReplyOptions {
   readonly at?: boolean | string | number;
   readonly recallMsg?: number;
+  readonly recallOriginal?: boolean;
   readonly onDelivered?: (messageId: number) => void | Promise<void>;
+}
+
+export function replyRecallSeconds(seconds: unknown): number | undefined {
+  if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) return seconds;
 }
 
 export async function notifyReplyDelivery(callback: ReplyOptions["onDelivered"], messageId: number): Promise<void> {

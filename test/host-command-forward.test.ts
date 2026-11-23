@@ -23,7 +23,10 @@ interface Frame {
 }
 
 interface MilkyFixtureBody {
-  readonly message: readonly { type: string; data: object }[];
+  readonly message?: readonly { type: string; data: object }[];
+  readonly group_id?: number;
+  readonly user_id?: number;
+  readonly message_seq?: number;
 }
 
 function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
@@ -81,6 +84,11 @@ async function writePlugin(root: string) {
           { type: "image", file: new Uint8Array([1, 2, 3]) },
           { type: "image", file: new Uint8Array([4, 5, 6]) },
         ] }),
+        "#定时撤回转发": () => ({ type: "forward", nodes: [${JSON.stringify(title)},
+          { type: "image", file: new Uint8Array([1, 2, 3]) },
+          { type: "image", file: new Uint8Array([4, 5, 6]) },
+        ], recallSeconds: 0.05 }),
+        "#定时撤回回复": () => ({ type: "recallable", message: ${JSON.stringify(plain)}, seconds: 0.05 }),
         "#文字夹具": () => ${JSON.stringify(plain)},
       } };
     `),
@@ -133,10 +141,10 @@ function openGateway(endpoint: string) {
           : { sub_type: "friend" }),
       }));
     },
-    receipt(frame: Frame, status: string, retcode: number) {
+    receipt(frame: Frame, status: string, retcode: number, data = { message_id: 100 } as Record<string, unknown>) {
       expect(typeof frame.echo).toBe("string");
       socket.send(JSON.stringify({ echo: frame.echo, status, retcode,
-        data: status === "ok" && retcode === 0 ? { message_id: 100 } : undefined,
+        data: status === "ok" && retcode === 0 ? data : undefined,
       }));
     },
   };
@@ -193,6 +201,20 @@ test("宿主通过当前 OneBot 会话按顺序发送现代与 V3 指令的合�
 
     bot.command("#文字夹具", "private");
     expect(await bot.next()).toMatchObject({ action: "send_msg", params: { user_id: 42, message: plain } });
+    bot.receipt(await forward("group", "#定时撤回转发"), "ok", 0, { message_id: 505 });
+    const groupRecall = await bot.next();
+    expect(groupRecall).toMatchObject({ action: "delete_msg", params: { message_id: 505 } });
+    bot.receipt(groupRecall, "ok", 0);
+    bot.command("#定时撤回回复", "private");
+    const reply = await bot.next();
+    expect(reply).toMatchObject({ action: "send_msg", params: { user_id: 42, message: plain } });
+    bot.receipt(reply, "ok", 0, { message_id: 506 });
+    const replyRecall = await bot.next();
+    expect(replyRecall).toMatchObject({ action: "delete_msg", params: { message_id: 506 } });
+    bot.receipt(replyRecall, "ok", 0);
+    await Bun.sleep(1_050);
+    bot.receipt(await forward("private", "#定时撤回转发"), "ok", 0, { forward_id: "not-a-message-id" });
+    await Bun.sleep(100);
     expect(bot.frames).toEqual([]);
     host.kill();
     await deadline(host.exited, "合并转发测试宿主退出超时。");
@@ -295,6 +317,22 @@ test("宿主通过 Milky 在群聊和私聊发送现代与 V3 指令的合并转
     await next(false, [text(unconfirmed)]);
     await command("#文字夹具", false);
     await next(false, [text(plain)]);
+    mode = "accepted";
+    await forward(true, "#定时撤回转发");
+    const groupSeq = outboundSeq;
+    expect(await calls.next()).toEqual({
+      action: "/api/recall_group_message", body: { group_id: 77, message_seq: groupSeq },
+    });
+    await command("#定时撤回回复", false);
+    await next(false, [text(plain)]);
+    const privateSeq = outboundSeq;
+    expect(await calls.next()).toEqual({
+      action: "/api/recall_private_message", body: { user_id: 42, message_seq: privateSeq },
+    });
+    mode = "unknown";
+    await forward(false, "#定时撤回转发");
+    await next(false, [text(unconfirmed)]);
+    await Bun.sleep(100);
     expect(calls.frames).toEqual([]);
     host.kill();
     await deadline(host.exited, "Milky 合并转发测试宿主退出超时。");

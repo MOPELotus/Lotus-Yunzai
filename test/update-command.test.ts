@@ -104,6 +104,25 @@ test("外部抽卡同步和已停用的旧同步指令都不会触发仓库更�
   expect(calls).toEqual([]);
 });
 
+test("旧星铁模拟插件更新走有权限的模块托管更新，真实抽卡更新保持原路由", async () => {
+  const { dispatch, calls, replies } = fixture();
+  for (const text of ["*抽卡更新", "#星铁抽卡插件更新", "#崩坏星穹铁道抽卡插件强制更新"]) {
+    expect(isUpdateCommand(text)).toBe(true);
+    expect(hasValidUpdateTarget(text)).toBe(true);
+    await dispatch(text);
+  }
+  for (const text of ["#星铁更新抽卡记录", "*抽卡记录", "*抽卡插件更新 加料"]) {
+    expect(isUpdateCommand(text)).toBe(false);
+    expect(hasValidUpdateTarget(text)).toBe(false);
+    await dispatch(text);
+  }
+  await dispatch("#星铁抽卡插件更新", { isMaster: false });
+  expect(calls.map(({ target, force }) => ({ target, force }))).toEqual([
+    { target: "starrail", force: false }, { target: "starrail", force: false }, { target: "starrail", force: true },
+  ]);
+  expect(replies).toEqual(["暂无权限，只有主人才能操作"]);
+});
+
 test("全量更新传递 all 标志并拒绝插件后缀", async () => {
   const { dispatch, calls, replies } = fixture();
   for (const command of ["#全部更新", "#全部静更新", " #全部安静更新 "]) {

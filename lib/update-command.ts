@@ -7,6 +7,7 @@ type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet:
   report: (status: ManagedUpdateProgress) => void, all: boolean, force: boolean) => boolean | Promise<boolean>;
 
 const command = /^#(全部)?(安?静)?(强制)?更新/u;
+const legacyStarRailWarpUpdate = /^#?(?:\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)抽卡(?:插件)?(强制)?更新$/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
 const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
   checking: "开始更新，正在检查上游。",
@@ -42,12 +43,18 @@ function updatePrefix(message: string): RegExpExecArray | undefined {
   return match;
 }
 
+function updateInput(text: string) {
+  const message = text.trimStart();
+  const legacy = legacyStarRailWarpUpdate.exec(message.trimEnd());
+  return legacy ? `#${legacy[1] ?? ""}更新 starrail` : message;
+}
+
 export function isUpdateCommand(text: string): boolean {
-  return updatePrefix(text.trimStart()) !== undefined;
+  return updatePrefix(updateInput(text)) !== undefined;
 }
 
 export function hasValidUpdateTarget(text: string): boolean {
-  const message = text.trimStart();
+  const message = updateInput(text);
   const match = updatePrefix(message);
   if (!match) return false;
   const requested = parseUpdateTarget(message.slice(match[0].length));
@@ -56,7 +63,7 @@ export function hasValidUpdateTarget(text: string): boolean {
 
 export function createUpdateCommand(request: RequestUpdate) {
   return async (event: MessageEvent): Promise<void> => {
-    const message = event.msg.trimStart();
+    const message = updateInput(event.msg);
     const match = updatePrefix(message);
     if (!match) return;
     if (!canManagePackages(event)) {

@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
-import { generatedImagePreview, notifyReplyDelivery, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
+import { generatedImagePreview, notifyReplyDelivery, replyRecallSeconds, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
 
@@ -416,8 +416,8 @@ function replyToMilky(target: Target, call: MilkyCall, {
     try {
       const sequence = (await call(action, { ...target, message }))?.message_seq;
       if (!isSequence(sequence)) return false;
-      const seconds = options.recallMsg;
-      if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120) {
+      const seconds = replyRecallSeconds(options.recallMsg);
+      if (seconds !== undefined) {
         scheduleRecall?.(group ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
       }
       await notifyReplyDelivery(options.onDelivered, sequence);
@@ -553,12 +553,14 @@ export function milkyMessage(
       const result = await call("send_profile_like", { user_id: userId, count });
       return result === undefined ? 0 : count;
     },
-    forward: forwardCall && (async (nodes, senderName) => {
+    forward: forwardCall && (async (nodes, senderName, options) => {
       const messages = encodeMilkyForward(nodes, selfId, senderName);
       if (!messages) return false;
       const result = await forwardCall(action, { ...target, message: [{ type: "forward", data: { messages } }] });
       if (result === undefined) return false;
       if (!isSequence(result?.message_seq)) throw new Error("Milky 合并转发结果未确认。");
+      const seconds = replyRecallSeconds(options?.recallMsg);
+      if (seconds !== undefined) scheduleRecall?.(isGroup ? "recall_group_message" : "recall_private_message", { ...target, message_seq: result.message_seq }, seconds);
       return true;
     }),
     uploadFile: uploadCall && uploadToMilky(target, uploadCall),

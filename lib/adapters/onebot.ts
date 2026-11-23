@@ -7,7 +7,7 @@ import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
-import { pokeDeliverySession, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
+import { pokeDeliverySession, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type PokeDeliverySession, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
@@ -891,11 +891,12 @@ async function dispatchMessage(
     listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
     [ownGroupCardSession]: boundAccount && owner && !noticeAttachment && (messageType === "group" || event.sub_type === "friend")
       ? () => connection?.ownGroupCardAccount?.(() => isMaster(selfId, userId)) : undefined,
-    forward: selfId === undefined ? undefined : async (nodes, senderName) => {
+    forward: selfId === undefined ? undefined : async (nodes, senderName, options) => {
       const messages = encodeOneBotForward(nodes, selfId, senderName);
       if (!messages) return false;
-      if (senderName === undefined) return calls.sendForward(send, target, messages);
-      const result = await calls.sendForwardConfirmed(send, target, messages, attachmentSession?.signal);
+      const recall = replyRecallSeconds(options?.recallMsg);
+      if (senderName === undefined && recall === undefined) return calls.sendForward(send, target, messages);
+      const result = await calls.sendForwardConfirmed(send, target, messages, attachmentSession?.signal, recall);
       if (result === "unknown") throw new Error("OneBot 合并转发结果未确认。");
       return result === "confirmed";
     },
@@ -971,14 +972,13 @@ async function dispatchMessage(
       if (message === undefined) return false;
 
       const params = { message_type: messageType, ...target, message, auto_escape: true };
-      const seconds = options.recallMsg;
-      const recall = typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds <= 120 ? seconds : undefined;
+      const recall = replyRecallSeconds(options.recallMsg);
       const onDelivered = options.onDelivered;
       const report = onDelivered && boundAccount && attachmentSession && !attachmentSession.signal.aborted
         ? (id: number) => oneBotMessageId(id) !== undefined && !attachmentSession.signal.aborted ? onDelivered(id) : undefined
         : undefined;
       if (recall !== undefined || report) {
-        return calls.replyWithReceipt(send, params, recall, messageId, report);
+        return calls.replyWithReceipt(send, params, recall, options.recallOriginal === false ? undefined : messageId, report);
       }
       return send({ action: "send_msg", params });
     },
