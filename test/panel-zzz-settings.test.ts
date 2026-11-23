@@ -7,6 +7,7 @@ import { panelZzzSettings } from "../lib/panel-zzz-settings.ts";
 import { readRankConfig } from "../plugins/zzz/challenge-rank-store.ts";
 import { parseZzzPanelConfig, readZzzPanelConfigDocument } from "../plugins/zzz/panel-command.ts";
 import { zzzPanelIntervalCommand } from "../plugins/zzz/panel-interval-command.ts";
+import { createZzzRecallSettings } from "../plugins/zzz/recall-settings.ts";
 
 const api = "http://127.0.0.1/panel/api/settings/games/zzz-rank";
 const rankEnv = "LOTUS_ZZZ_RANK_CONFIG";
@@ -84,22 +85,30 @@ test("绝区零面板更新间隔与热读共用字段，旧资源目录回退�
     const inherited = join(config, "panel.yaml");
     const yaml = "# 历史设置\ninterval: 170\nroleInterval: 1400\nfeature: retained\n";
     await writeFile(inherited, yaml);
+    const inheritedRecall = "recallMsg: '48.5'\nextra: retained\n";
+    await writeFile(join(config, "config.yaml"), inheritedRecall);
     delete Bun.env[panelEnv];
     Bun.env.LOTUS_ZZZ_LEGACY_RESOURCES_DIR = resources;
     const panel = panelZzzSettings(root, "panel");
     const initial = await (await panel(new Request(api), () => true)).json();
-    expect(initial.fields.map(({ key }: { key: string }) => key)).toEqual(["roleInterval"]);
+    expect(initial.fields.map(({ key }: { key: string }) => key)).toEqual(["roleInterval", "recallMsg"]);
     expect(initial.fields[0].hint).toContain("没有整次冷却");
-    expect(initial.values).toEqual({ roleInterval: 1400 });
-    expect(parseZzzPanelConfig({ interval: "obsolete", roleInterval: 1400 })).toEqual(initial.values);
-    const next = { roleInterval: 180 };
+    expect(initial.fields[1]).toMatchObject({ label: "提示撤回时间（秒）", min: 0, max: 120 });
+    expect(initial.values).toEqual({ roleInterval: 1400, recallMsg: 48 });
+    expect(parseZzzPanelConfig({ interval: "obsolete", roleInterval: 1400 })).toEqual({ roleInterval: 1400 });
+    const next = { roleInterval: 180, recallMsg: 0 };
     expect((await panel(save({ ...next, roleInterval: -1 }, initial.values), () => true)).status).toBe(400);
     expect((await panel(save({ ...next, interval: 20 }, initial.values), () => true)).status).toBe(400);
+    for (const recallMsg of [-1, 121, 0.25, "50"]) {
+      expect((await panel(save({ ...next, recallMsg }, initial.values), () => true)).status).toBe(400);
+    }
     expect((await panel(save(next, initial.values), () => true)).status).toBe(200);
     const effective = await readZzzPanelConfigDocument(undefined, root);
-    expect(parseZzzPanelConfig(effective)).toEqual(next);
-    expect(effective).toMatchObject({ interval: 170, feature: "retained" });
+    expect(parseZzzPanelConfig(effective)).toEqual({ roleInterval: 180 });
+    expect(effective).toMatchObject({ interval: 170, feature: "retained", recallMsg: 0 });
+    expect(await createZzzRecallSettings(new AbortController().signal, root).transient("保留提示")).toBe("保留提示");
     expect(await readFile(inherited, "utf8")).toBe(yaml);
+    expect(await readFile(join(config, "config.yaml"), "utf8")).toBe(inheritedRecall);
   } finally {
     restore(panelEnv, previous);
     restore("LOTUS_ZZZ_LEGACY_RESOURCES_DIR", legacy);
@@ -132,11 +141,15 @@ test("绝区零旧聊天设置及网页共用原子写入，检测权限变化�
     expect(await readFile(file, "utf8")).toBe(lexical);
 
     expect(await run("#绝区零刷新角色间隔 180")).toContain("绝区零刷新角色间隔已设置为 180 毫秒");
-    const active = { roleInterval: 180 };
+    const active = { roleInterval: 180, recallMsg: 100 };
     expect((await (await panel(new Request(api), () => true)).json()).values).toEqual(active);
-    expect((await panel(save({ roleInterval: 210 }, stale), () => true)).status).toBe(409);
-    expect((await panel(save({ roleInterval: 210 }, active), () => true)).status).toBe(200);
+    const chat = createZzzRecallSettings(session, root);
+    expect(await chat.setting("%设置撤回时间60", owner)).toContain("60 秒");
+    expect((await panel(save({ roleInterval: 210, recallMsg: 100 }, stale), () => true)).status).toBe(409);
+    expect((await panel(save({ roleInterval: 210, recallMsg: 100 }, active), () => true)).status).toBe(409);
+    expect((await panel(save({ roleInterval: 210, recallMsg: 120 }, { ...active, recallMsg: 60 }), () => true)).status).toBe(200);
     expect(parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root))).toEqual({ roleInterval: 210 });
+    expect(await chat.transient("临时回执")).toMatchObject({ type: "recallable", seconds: 120 });
     expect(await readFile(file, "utf8")).toContain("# 保留部署方注释");
     expect(await readFile(file, "utf8")).toContain("extra: on");
     expect(await readFile(file, "utf8")).toContain("interval: 60");

@@ -63,7 +63,7 @@ const nativeSections = computed(() => [
   { key: "genshin-damage", label: "原神伤害计算" },
   { key: "starrail-warp", label: "星铁模拟跃迁" },
   { key: "zzz-rank", label: "绝区零群榜" },
-  { key: "zzz-panel", label: "绝区零面板刷新" },
+  { key: "zzz-panel", label: "绝区零面板与提示" },
   { key: "zzz-reminders", label: "绝区零挑战提醒" },
   { key: "daily-note", label: "游戏体力提醒" },
   { key: "ingress", label: "消息接收与私聊" },

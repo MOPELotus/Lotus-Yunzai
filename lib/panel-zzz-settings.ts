@@ -2,13 +2,14 @@ import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
+import { maxZzzRecallSeconds, readZzzRecallSeconds } from "./zzz-recall-config.ts";
 import type { readRankGroupSwitch } from "../plugins/zzz/challenge-rank-store.ts";
 import type { ChallengeReminderDefaults } from "../plugins/zzz/challenge-reminder-store.ts";
 
 type Document = Readonly<Record<string, unknown>>;
 type SwitchState = Awaited<ReturnType<typeof readRankGroupSwitch>>;
 type RankValues = { allow_group: boolean; white_list: string[]; black_list: string[]; max_display: number };
-type PanelValues = { roleInterval: number };
+type PanelValues = { roleInterval: number; recallMsg: number };
 
 const rankFields = [
   { key: "allow_group", label: "绝区零群排行总开关", type: "boolean", hint: "开启时使用黑名单，关闭时只在白名单群开放。适用于挑战榜和角色面板榜。" },
@@ -19,6 +20,8 @@ const rankFields = [
 const panelFields = [
   { key: "roleInterval", label: "逐角色请求间隔（毫秒）", type: "number", min: 0, max: 2_147_483_647,
     hint: "只控制一次更新中连续两个角色请求之间的间隔，最低按 100 毫秒执行。面板更新命令没有整次冷却。" },
+  { key: "recallMsg", label: "提示撤回时间（秒）", type: "number", min: 0, max: maxZzzRecallSeconds,
+    hint: "适用于绝区零临时提示和管理回执。填 0 可关闭自动撤回。" },
 ] as const;
 const reminderFields = [
   { key: "enable", label: "挑战提醒总开关", type: "boolean", hint: "只向本人已订阅的好友私聊发送。" },
@@ -66,12 +69,15 @@ function requestedRank(value: unknown): RankValues {
 function requestedPanel(value: unknown): PanelValues {
   const values = object(value);
   if (!values || Object.keys(values).length !== panelFields.length) throw new Error("无效的面板刷新设置");
-  const { roleInterval } = values;
+  const { roleInterval, recallMsg } = values;
   if (typeof roleInterval !== "number" || !Number.isSafeInteger(roleInterval) ||
       roleInterval < panelFields[0].min || roleInterval > panelFields[0].max) {
     throw new Error("无效的逐角色请求间隔");
   }
-  return { roleInterval };
+  if (typeof recallMsg !== "number" || !Number.isInteger(recallMsg) || recallMsg < 0 || recallMsg > maxZzzRecallSeconds) {
+    throw new Error("无效的提示撤回时间");
+  }
+  return { roleInterval, recallMsg };
 }
 
 function edit(text: string, local: Document, changes: Document) {
@@ -89,18 +95,29 @@ function fieldsChanged(before: RankValues, after: RankValues): Document {
     !isDeepStrictEqual(value, before[key as keyof RankValues])));
 }
 
-export async function updateZzzPanelIntervals(root: URL, values: PanelValues,
-  active: () => boolean, signal: AbortSignal, previous?: PanelValues) {
+async function readPanelSettings(root: URL, legacyResources = Bun.env.LOTUS_ZZZ_LEGACY_RESOURCES_DIR) {
   const { parseZzzPanelConfig, readZzzPanelConfigDocument, zzzPanelConfigFile } = await import("../plugins/zzz/panel-command.ts");
-  const load = () => readZzzPanelConfigDocument(undefined, root);
+  const [panel, recallMsg] = await Promise.all([
+    readZzzPanelConfigDocument(legacyResources, root),
+    readZzzRecallSeconds(zzzPanelConfigFile(root), legacyResources?.trim()),
+  ]);
+  return { panel, values: { ...parseZzzPanelConfig(panel), recallMsg } };
+}
+
+export async function updateZzzPanelIntervals(root: URL, values: Partial<PanelValues>,
+  active: () => boolean, signal: AbortSignal, previous?: PanelValues, legacyResources?: string) {
+  const { zzzPanelConfigFile } = await import("../plugins/zzz/panel-command.ts");
   return updateLocalConfiguration(root, "zzz-panel", {
-    override: zzzPanelConfigFile(root), canWrite: active, canCommit: active, signal, resolveEffective: load,
+    override: zzzPanelConfigFile(root), canWrite: active, canCommit: active, signal,
+    resolveEffective: () => readPanelSettings(root, legacyResources),
     prepare(text, local, effective) {
-      const current = parseZzzPanelConfig(effective);
+      const { panel, values: current } = effective as Awaited<ReturnType<typeof readPanelSettings>>;
       if (previous && !isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
-      const next = requestedPanel(values);
-      if (current.roleInterval === next.roleInterval) return { value: current };
-      const saved = { ...(text.trim() ? {} : effective), ...next };
+      const next = requestedPanel({ ...current, ...values });
+      const changes = Object.fromEntries(Object.entries(next).filter(([key, value]) => value !== current[key as keyof PanelValues] ||
+        (key === "recallMsg" && !previous && values.recallMsg !== undefined && local.recallMsg !== value)));
+      if (!Object.keys(changes).length) return { value: current };
+      const saved = { ...(text.trim() ? {} : panel), ...changes };
       return { yaml: edit(text, local, saved), value: next };
     },
   });
@@ -191,8 +208,7 @@ export function panelZzzSettings(root: URL, section: "rank" | "panel" | "reminde
       }
 
       if (!body) {
-        const { parseZzzPanelConfig, readZzzPanelConfigDocument } = await import("../plugins/zzz/panel-command.ts");
-        const values = parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root));
+        const { values } = await readPanelSettings(root);
         return active() ? Response.json({ fields: panelFields, values }) : new Response(null, { status: 401 });
       }
       let previous: PanelValues, values: PanelValues;
