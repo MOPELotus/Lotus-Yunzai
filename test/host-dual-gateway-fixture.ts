@@ -58,6 +58,7 @@ interface Gateways {
   readonly onebot: ReturnType<typeof queue>;
   readonly sendOneBot: (text: string, fields?: object) => void;
   readonly sendMilky: (text: string, fields?: object, selfId?: number) => Promise<Response>;
+  readonly sendMilkyEvent: (eventType: string, data: object, selfId?: number) => Promise<Response>;
 }
 
 export async function withDualGatewayFixture(token: string, ownerConfig: string, run: (gateway: Gateways) => Promise<void>,
@@ -135,7 +136,8 @@ export async function withDualGatewayFixture(token: string, ownerConfig: string,
         } });
       }
 
-      await run({ root, ws, milky, onebot, sendOneBot, sendMilky });
+      await run({ root, ws, milky, onebot, sendOneBot, sendMilky,
+        sendMilkyEvent: (eventType, data, selfId = 100) => webhook({ event_type: eventType, self_id: selfId, time, data }) });
     } finally {
       for (const socket of sockets) socket.close();
       host.kill();

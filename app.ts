@@ -150,7 +150,7 @@ import { LegacyPlugins } from "./lib/plugins/legacy.ts";
 import type { LegacyExitReason } from "./lib/plugins/exit-hooks.ts";
 import { HandlerScope } from "./lib/plugins/handler.ts";
 import { LegacyTasks, legacyHostCronTimeZone } from "./lib/plugins/tasks.ts";
-import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plugins/loader.ts";
+import { loadPlugins, systemModuleName, type GenshinAvatarPoke, type PluginLoadReport } from "./lib/plugins/loader.ts";
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
 import { isStarRailGachaLinkMessage, readPrivateAccess, starRailLinkEntry, zzzLinkEntry } from "./lib/private-access.ts";
@@ -225,6 +225,7 @@ const friendMessageNoticeNames = ["[group] 好友消息通知", "group", "@lotus
 const temporaryMessageNoticeNames = ["[group] 群临时消息通知", "group", "@lotus-yunzai/group"];
 const friendRelationshipNoticeNames = ["[group] 好友增减通知", "group", "@lotus-yunzai/group"];
 const friendPokeNoticeNames = ["[group] 好友戳一戳通知", "group", "@lotus-yunzai/group"];
+const genshinAvatarPokeNames = ["[genshin] 戳一戳角色卡", "genshin", "@lotus-yunzai/genshin"];
 const friendRecallNoticeNames = ["[group] 好友撤回通知", "group", "@lotus-yunzai/group"];
 const groupRecallNoticeNames = ["[group] 群撤回通知", "group", "@lotus-yunzai/group"];
 const groupMessageNoticeNames = ["[group] 群消息通知", "group", "@lotus-yunzai/group"];
@@ -418,6 +419,7 @@ if (import.meta.main) {
   let temporaryMessageNotice: { policy: TemporaryMessageNotice; signal: AbortSignal } | undefined;
   let friendRelationshipNotice: { policy: FriendRelationshipNotice; signal: AbortSignal } | undefined;
   let friendPokeNotice: { policy: FriendPokeNotice; signal: AbortSignal } | undefined;
+  let genshinAvatarPoke: { run: GenshinAvatarPoke; signal: AbortSignal } | undefined;
   let memePoke: {
     run: (input: import("./plugins/meme/lotus.ts").MemePokeContext) => Promise<void>;
     signal: AbortSignal;
@@ -1349,10 +1351,26 @@ if (import.meta.main) {
     const dispatchedEvent = event.post_type === "request" && event.request_type === "group" && event.sub_type === "add"
       ? withGroupOwnerJoinNotice(event) : event;
     const consumed = await legacy.dispatch(dispatchedEvent, allowed);
-    if (!consumed && event.post_type === "notice" && event.sub_type === "poke" && memePoke &&
+    if (!consumed && event.post_type === "notice" && event.sub_type === "poke" &&
         event.target_id === event.self_id && event.user_id !== event.self_id) {
       const delivery = event[pokeDeliverySession];
-      if (delivery) {
+      const characterCard = genshinAvatarPoke;
+      if (delivery && characterCard) {
+        const signal = nativeOperationSignal(characterCard.signal, delivery.signal);
+        const active = () => !signal.aborted && !stopping && handoff.accepting &&
+          groupDispatch.allowsInbound(event) && groupDispatch.allows(event, genshinAvatarPokeNames);
+        let attempted = false;
+        const handled = active() && await characterCard.run({
+          actorId: event.user_id, signal, allowed: active,
+          async reply(reply) {
+            if (!active()) return false;
+            attempted = true;
+            return delivery.send(reply, signal);
+          },
+        }).catch(() => false);
+        if (handled || attempted) return;
+      }
+      if (delivery && memePoke) {
         const { run, signal: moduleSignal } = memePoke;
         const signal = nativeOperationSignal(moduleSignal, delivery.signal);
         const active = () => !signal.aborted && !stopping && handoff.accepting &&
@@ -3484,6 +3502,11 @@ if (import.meta.main) {
         const registration = { run, signal };
         memePoke = registration;
         return () => { if (memePoke === registration) memePoke = undefined; };
+      },
+      registerGenshinAvatarPoke(run, signal) {
+        const registration = { run, signal };
+        genshinAvatarPoke = registration;
+        return () => { if (genshinAvatarPoke === registration) genshinAvatarPoke = undefined; };
       },
       mediaRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
