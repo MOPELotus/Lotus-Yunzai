@@ -61,7 +61,7 @@ export function readRankStatsPayload(input: unknown): RankStatsResult {
   return { stats: { title, total, scores } };
 }
 
-async function responsePayload(response: Response, maximum: number) {
+export async function readBoundedRankPayload(response: Response, maximum: number) {
   if (!response.body) return;
   if (Number(response.headers.get("content-length")) > maximum) {
     await response.body.cancel().catch(() => undefined);
@@ -88,7 +88,7 @@ async function responsePayload(response: Response, maximum: number) {
 
 type RankResponse = { readonly payload: unknown } | { readonly message: string };
 
-export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/self" | "rank/custom" | "rank/custom/specific", query: object,
+export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/self" | "rank/custom" | "rank/custom/specific" | "rank/stygian", query: object,
   signal: AbortSignal, transport: RankStatsTransport, { maximum = maxBytes, token }: {
     readonly maximum?: number; readonly token?: string;
   } = {}): Promise<RankResponse> {
@@ -104,7 +104,7 @@ export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/
       void response.body?.cancel().catch(() => undefined);
       return { message: response.status === 429 ? messages[104]! : "排名服务暂时无法连接。" };
     }
-    return { payload: await responsePayload(response, maximum) };
+    return { payload: await readBoundedRankPayload(response, maximum) };
   } catch {
     return { message: "排名服务暂时无法连接。" };
   }
