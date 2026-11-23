@@ -719,12 +719,12 @@ function renderPlans() {
   get("shop-plans").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无兑换记录。")]));
 }
 
-function loadPlans() {
+function loadPlans(background = false) {
   if (plans.loading) return plans.loading;
   clearTimeout(plans.timer);
   const scope = plans.scope;
   const revision = plans.revision;
-  planNote("正在读取兑换记录…");
+  if (!background) planNote("正在读取兑换记录…");
   plans.loading = (async () => {
     try {
       const response = await request("api/plans");
@@ -739,7 +739,6 @@ function loadPlans() {
       const rowsChanged = !plans.data || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
       plans.data = data;
       if (rowsChanged) renderPlans();
-      if (tab === "plans" && data.plans.some(plan => plan.verificationPending)) plans.timer = setTimeout(loadPlans, 1_000);
       const messages = [];
       if (!data.canSubmit) messages.push("预约兑换服务暂未启用。");
       if (plans.intents.size) messages.push("另有提交待确认，可返回商品详情重试原请求。");
@@ -749,7 +748,15 @@ function loadPlans() {
       if (plans.data) plans.data = { ...plans.data, canSubmit: false };
       planNote(plans.data ? "刷新失败，当前显示上次读取的兑换记录。" : "暂时无法读取兑换记录。", true);
     } finally {
-      if (scope === plans.scope) plans.loading = null;
+      if (scope === plans.scope) {
+        plans.loading = null;
+        if (tab === "plans" && !document.hidden && !get("dashboard").hidden) {
+          const delay = plans.data?.plans.some(plan => plan.verificationPending) ? 1_000 : 3_000;
+          plans.timer = setTimeout(() => {
+            if (tab === "plans" && !document.hidden) void loadPlans(true);
+          }, delay);
+        }
+      }
     }
   })();
   return plans.loading;
@@ -1194,6 +1201,11 @@ get("tracker-form").addEventListener("submit", event => void saveTracker(event))
 get("tab-plans").addEventListener("click", () => {
   switchTab("plans");
   void loadPlans();
+});
+document.addEventListener("visibilitychange", () => {
+  if (tab !== "plans" || get("dashboard").hidden) return;
+  if (document.hidden) clearTimeout(plans.timer);
+  else void loadPlans(true);
 });
 get("shop-game").addEventListener("change", event => void loadCatalog(1, (event.target as HTMLSelectElement).value));
 get("shop-status").addEventListener("change", renderGoods);
