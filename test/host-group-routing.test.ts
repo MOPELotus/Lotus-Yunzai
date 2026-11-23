@@ -180,6 +180,45 @@ default: { groupCD: 0, singleCD: 0, onlyReplyAt: 1, botAlias: 默认 }
   `);
 }
 
+test.each([["关闭", false], ["开启", true]] as const)("%s斜杠全局归一化时，无品牌帮助兼容旧入口和群分派优先级", (_label, slash) => withHost(async (root) => {
+  await mkdir(join(root, "config/config"), { recursive: true });
+  await writeFile(join(root, "config/config/bot.yaml"), `"/→#": ${slash}\n`);
+  await writeFile(join(root, "config/config/group.yaml"), `
+default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }
+"78": { onlyReplyAt: 1, botAlias: 专用 }
+"79": { disable: ["[system] 状态"] }
+"80": { disable: ["@lotus-yunzai/system"] }
+`);
+  await mkdir(join(root, "data/messageJson"), { recursive: true });
+  for (const group of [77, 80]) {
+    await writeFile(join(root, "data/messageJson", `${group}.json`), JSON.stringify(Object.fromEntries(
+      ["菜单", "/菜单", "#菜单", "菜单 自定义内容"].map((key) => [key, [[{ type: "text", text: `自定义：${key}` }]]]),
+    )));
+  }
+}, async (connect) => {
+  const gateway = await connect(99);
+  const helpUrl = "https://www.lotusshared.cn/yunzai/";
+  for (const prefix of ["", "#", "/", "#原神", "#星铁", "#绝区零", "*", "%"]) {
+    for (const name of ["命令", "帮助", "菜单", "help", "说明", "功能", "指令", "使用说明"]) {
+      gateway.send(prefix + name, 77);
+      await gateway.reply(helpUrl, 77);
+    }
+  }
+  for (const word of ["#喵喵帮助", "喵喵功能", "/喵喵菜单", "普通菜单", "HELP", "/使用说明 多余参数", "%功能 多余参数"]) {
+    gateway.send(word, 77);
+  }
+  gateway.send("菜单 自定义内容", 77);
+  await gateway.reply([{ type: "text", data: { text: "自定义：菜单 自定义内容" } }], 77);
+
+  gateway.send("帮助", 78);
+  gateway.send("专用功能", 78);
+  await gateway.reply(helpUrl, 78);
+  gateway.send("功能", 79);
+  await gateway.reply(helpUrl, 79);
+  gateway.send("菜单", 80);
+  await gateway.reply([{ type: "text", data: { text: "自定义：菜单" } }], 80);
+}));
+
 test("TRSS 群策略合并四层配置并约束同一宿主的现代指令和旧插件会话", () => withHost(installFixtures, async (connect) => {
   const a = await connect(99);
   const b = await connect(100);
