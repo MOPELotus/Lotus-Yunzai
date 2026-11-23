@@ -37,6 +37,7 @@ interface PreparedMigration {
     readonly memeState?: Staged["memeState"];
     readonly atlas: Staged["atlas"];
     readonly starRailTheme: Staged["starRailTheme"];
+    readonly starRailReincarnationTheme?: Staged["starRailReincarnationTheme"];
     readonly shopAudit: Staged["shopAudit"];
     readonly redeem: Staged["redeem"];
     readonly dailyNoteReminders?: Staged["dailyNoteReminders"];
@@ -105,6 +106,7 @@ async function prepare(source: string, target: string, directory: string, signal
         memeState: staged.memeState,
         atlas: staged.atlas,
         starRailTheme: staged.starRailTheme,
+        starRailReincarnationTheme: staged.starRailReincarnationTheme,
         shopAudit: staged.shopAudit,
         redeem: staged.redeem,
         dailyNoteReminders: staged.dailyNoteReminders,

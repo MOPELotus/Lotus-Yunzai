@@ -117,6 +117,14 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     }
     if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可运行 bun run init 补齐。`);
   }
+  if (await Bun.file(new URL("plugins/starrail/simulation/reincarnation-theme.ts", root)).exists()) {
+    const { prepareStarRailReincarnationTheme } = await import("../plugins/starrail/simulation/reincarnation-theme.ts");
+    const relife = await prepareStarRailReincarnationTheme(root, {
+      override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup,
+    });
+    if (relife.installed) console.log(`[星铁] 已恢复 ${relife.installed} 个原转生主题文件。`);
+    if (relife.missing.length && firstSetup) console.warn(`[星铁] 缺少 ${relife.missing.length} 个原转生主题文件，可运行 bun run init 补齐。`);
+  }
 }
 
 export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal, initialize = requested !== undefined) {

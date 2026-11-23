@@ -31,6 +31,7 @@ import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
 import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
 import { planMigration } from "../lib/plugins/migration-plan.ts";
 import { prepareStarRailChallengeTheme } from "../plugins/starrail/challenge-theme.ts";
+import { prepareStarRailReincarnationTheme } from "../plugins/starrail/simulation/reincarnation-theme.ts";
 
 export async function stageMigration(source: string, target: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
@@ -86,11 +87,16 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const starRailTheme = await prepareStarRailChallengeTheme(Bun.pathToFileURL(`${state.directory}/`), {
       source: Bun.pathToFileURL(`${plan.source}/`), signal,
     });
+    const starRailReincarnationTheme = await prepareStarRailReincarnationTheme(Bun.pathToFileURL(`${state.directory}/`), {
+      source: Bun.pathToFileURL(`${plan.source}/`), signal,
+    });
     signal?.throwIfAborted();
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, starRailWarp, starRailPersonalPools, zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas, starRailTheme,
+      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, starRailWarp, starRailPersonalPools,
+      zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas,
+      starRailTheme, starRailReincarnationTheme,
       shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
