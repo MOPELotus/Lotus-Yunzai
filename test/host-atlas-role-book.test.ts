@@ -35,7 +35,7 @@ async function writeCatalog(directory: string) {
       materials: { ascensions: [{ mats: [{ id: 11, name: "材料甲", count: 2 }] }] },
     } }),
     detail("hsr", "character", "102", { detail: {
-      desc: "星铁夹具简介", skills: { "10201": { name: "技能乙", desc: "技能描述" } },
+      desc: "星铁夹具简介", skills: { "10201": { name: "技能乙", type: "Normal", type_name: "普攻", desc: "技能描述" } },
       ranks: { "1": { name: "星魂甲", desc: "星魂效果" } },
     } }),
     detail("zzz", "character", "103", { list: { rank: 4 }, detail: {
