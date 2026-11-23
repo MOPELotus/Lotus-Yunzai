@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { renderPng } from "@lotus-yunzai/skia";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { normalizeOriginalPictureCommand } from "../lib/command-prefix.ts";
+import { normalizeGameCommand, normalizeOriginalPictureCommand } from "../lib/command-prefix.ts";
+import type { MessageEvent } from "../lib/messages.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 async function prepare(root: string) {
@@ -58,6 +59,11 @@ test("旧原图口语只归一整条指令，保留游戏前缀", () => {
   }
   for (const input of ["#求原图2", "#给我原图吧！", "#帮我发原图", "#发 原图", "#某人的原图", "#发一下原图吧 附言"]) {
     expect(normalizeOriginalPictureCommand(input)).toBe(input);
+  }
+  for (const [input, expected] of [["sr求原图", "#星铁原图"], ["#sr发下原图呗", "#星铁原图"],
+    ["#星穹铁道给我原图吧", "#星铁原图"], ["崩铁发一下原图", "#星铁原图"], ["绝区给我原图", "#绝区零原图"],
+    ["#绝区发一下原图吧", "#绝区零原图"], ["#sr求原图2", "#星铁求原图2"]] as const) {
+    expect(normalizeGameCommand({ msg: normalizeOriginalPictureCommand(input) } as MessageEvent).msg).toBe(expected);
   }
 });
 
