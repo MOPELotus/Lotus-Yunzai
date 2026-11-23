@@ -28,15 +28,19 @@ test("普通成员可查宿主、紧连插件名、中文目录名及 scoped 包
   const { queries, replies, dispatch } = fixture();
   expect(isUpdateLogCommand("#更新日志")).toBe(true);
   expect(isUpdateLogCommand(" #更新日志图鉴插件")).toBe(true);
+  expect(isUpdateLogCommand(" #星铁插件更新日志 ")).toBe(true);
   expect(isUpdateLogCommand("#更新")).toBe(false);
   expect(isUpdateLogCommand("请发#更新日志")).toBe(false);
+  expect(isUpdateLogCommand("#星铁更新日志system")).toBe(false);
   expect(await dispatch("#更新")).toBe(false);
 
   expect(await dispatch("#更新日志")).toBe(true);
   await dispatch("#更新日志system");
   await dispatch("#更新日志  图鉴插件-2.0  ");
   await dispatch("#更新日志 @lotus-yunzai/system");
-  expect(queries).toEqual([undefined, "system", "图鉴插件-2.0", "@lotus-yunzai/system"]);
+  await dispatch("#星铁更新日志");
+  await dispatch("#星铁插件更新日志");
+  expect(queries).toEqual([undefined, "system", "图鉴插件-2.0", "@lotus-yunzai/system", "starrail", "starrail"]);
   expect(replies[0]).toBe("Lotus-Yunzai 更新日志，共2条\n\n最新\n\n较旧");
 });
 

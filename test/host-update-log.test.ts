@@ -30,6 +30,7 @@ function git(root: string, ...args: string[]) {
     env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
   });
   if (result.exitCode !== 0) throw new Error(`Git 夹具命令失败（${args[0]}）。\n${result.stderr.toString()}`);
+  return result.stdout.toString();
 }
 
 function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
@@ -120,6 +121,18 @@ test("普通群用户可查询宿主和已加载插件的脱敏 Git 更新日志
       git(directory, "add", "package.json", "index.ts");
       git(directory, "commit", "--quiet", "-m", subject);
     }
+    const starRail = join(root, "plugins", "starrail");
+    await mkdir(starRail, { recursive: true });
+    await writeFile(join(starRail, "package.json"), JSON.stringify({
+      name: "@lotus-yunzai/starrail", type: "module", lotusYunzai: { entry: "./index.ts" },
+    }));
+    await writeFile(join(starRail, "index.ts"), "export default { commands: {} };");
+    git(starRail, "init", "--quiet");
+    git(starRail, "add", "package.json", "index.ts");
+    const starRailSubject = "核对星铁模块的锁定历史";
+    git(starRail, "commit", "--quiet", "-m", starRailSubject);
+    git(root, "update-index", "--add", "--cacheinfo", "160000", git(starRail, "rev-parse", "HEAD").trim(), "plugins/starrail");
+    git(root, "commit", "--amend", "--quiet", "--no-edit");
 
     disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
@@ -146,6 +159,12 @@ test("普通群用户可查询宿主和已加载插件的脱敏 Git 更新日志
     expect(rootHistory).toContain("兼容历史配置 Authorization: [已隐藏]");
     expect(rootHistory).not.toContain(credential);
     expect(rootHistory).not.toContain("fixture-commit-description-hidden");
+
+    for (const command of ["*更新日志", "*插件更新日志"]) {
+      const history = await forwarded(command);
+      expect(history).toContain(starRailSubject);
+      expect(history).not.toContain(rootSubject);
+    }
 
     const joinedHistory = await forwarded("#更新日志history-fixture");
     expect(joinedHistory).toContain(`${plugin} 更新日志，共1条`);

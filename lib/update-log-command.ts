@@ -4,18 +4,20 @@ import type { UpdateHistory } from "./update-history.ts";
 import { parseUpdateTarget } from "./update-target.ts";
 
 const command = "#更新日志";
+const starRailLog = /^#星铁(?:插件)?更新日志$/u;
 const mismatchNotice = "当前检出的插件版本与宿主锁定版本不同，以下日志按宿主锁定版本列出。";
 
 export function isUpdateLogCommand(message: string): boolean {
-  return message.trimStart().startsWith(command);
+  return message.trimStart().startsWith(command) || starRailLog.test(message.trim());
 }
 
 export function createUpdateLogCommand(read: (requested?: string) => Promise<UpdateHistory | undefined>) {
   return async (event: MessageEvent): Promise<boolean> => {
     const message = event.msg.trimStart();
-    if (!message.startsWith(command)) return false;
+    const starRail = starRailLog.test(message.trimEnd());
+    if (!starRail && !message.startsWith(command)) return false;
 
-    const requested = parseUpdateTarget(message.slice(command.length));
+    const requested = starRail ? "starrail" : parseUpdateTarget(message.slice(command.length));
     if (requested === undefined) {
       await event.reply("请输入有效的插件名，例如 #更新日志 system 或 #更新日志 @lotus-yunzai/system。");
       return true;
