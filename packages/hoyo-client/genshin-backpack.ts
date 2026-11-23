@@ -61,10 +61,14 @@ export interface GenshinGrowthSnapshot {
 }
 
 type Json = Record<string, unknown>;
-type Calculation = "原神背包" | "原神养成计算" | "尘歌壶模数";
+type GenshinCalculation = "原神背包" | "原神养成计算" | "尘歌壶模数";
+type Calculation = GenshinCalculation | "星铁养成计算";
 type Material = GenshinGrowthSnapshot["items"][number];
 const calculator = "https://api-takumi.mihoyo.com/event/e20200928calculate/";
 type CalculatorPath = "v3/batch_compute" | "v1/furniture/blueprint" | "v1/furniture/compute";
+type StarRailCalculatorPath = "avatar/detail" | "compute";
+type CalculatorOptions = { readonly query?: URLSearchParams; readonly body?: string; readonly signal?: AbortSignal;
+  readonly verifyProfile?: () => Promise<void> };
 const maxProbeItems = 128;
 const maxResponseItems = 1024;
 // The calculator includes per-character upgrade plans alongside the small inventory list.
@@ -246,15 +250,20 @@ function normalize(data: Json, uid: string, region: GenshinBackpackSnapshot["reg
   return { uid, region, items };
 }
 
-export async function requestGenshinCalculator(source: ProfileRequestContext, transport: HoyoTransport,
-  kind: Calculation, path: CalculatorPath, { query, body, signal, verifyProfile }: {
-    readonly query?: URLSearchParams;
-    readonly body?: string;
-    readonly signal?: AbortSignal;
-    readonly verifyProfile?: () => Promise<void>;
-  }): Promise<Json> {
+export function requestGenshinCalculator(source: ProfileRequestContext, transport: HoyoTransport,
+  kind: GenshinCalculation, path: CalculatorPath, options: CalculatorOptions): Promise<Json> {
+  return requestCalculator(source, transport, kind, new URL(path, calculator), options);
+}
+
+export function requestStarRailCalculator(source: ProfileRequestContext, transport: HoyoTransport,
+  path: StarRailCalculatorPath, options: CalculatorOptions): Promise<Json> {
+  return requestCalculator(source, transport, "星铁养成计算",
+    new URL(path, "https://api-takumi.mihoyo.com/event/rpgcalc/"), options);
+}
+
+async function requestCalculator(source: ProfileRequestContext, transport: HoyoTransport,
+  kind: Calculation, endpoint: URL, { query, body, signal, verifyProfile }: CalculatorOptions): Promise<Json> {
   const subject = kind === "原神背包" ? "原神背包查询" : kind;
-  const endpoint = new URL(path, calculator);
   if (query) endpoint.search = query.toString();
   const headers = requestHeaders(source, endpoint.search.slice(1), body, kind);
   const guard = async () => {
@@ -276,7 +285,8 @@ export async function requestGenshinCalculator(source: ProfileRequestContext, tr
   const apiCode = status === 401 || status === 429 ? "http" : "api";
   const challenge = response.headers.get("x-rpc-aigis")?.trim();
   const needsChallenge = Boolean(challenge && challenge !== "{}");
-  if (deadline.aborted || response.redirected || (!response.ok && status !== 401) || needsChallenge) {
+  if (deadline.aborted || response.redirected || (kind === "星铁养成计算" && response.url && response.url !== endpoint.href) ||
+      (!response.ok && status !== 401) || needsChallenge) {
     void response.body?.cancel().catch(() => undefined);
     await guard();
     if (deadline.aborted) transportError(kind);
@@ -308,7 +318,7 @@ export async function requestGenshinCalculator(source: ProfileRequestContext, tr
 }
 
 async function calculate(source: ProfileRequestContext, transport: HoyoTransport, items: () => readonly GenshinGrowthItem[],
-  kind: Calculation, signal?: AbortSignal, verifyProfile?: () => Promise<void>): Promise<GenshinGrowthSnapshot> {
+  kind: GenshinCalculation, signal?: AbortSignal, verifyProfile?: () => Promise<void>): Promise<GenshinGrowthSnapshot> {
   const uid = source.role.uid;
   const region = genshinCnRecordRegion(source.role);
   if (source.game !== "gs" || !region) {

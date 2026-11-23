@@ -25,6 +25,7 @@ import { readGenshinHardChallenge, type GenshinHardChallengeOptions } from "./ge
 import { createGenshinChallengeReader, createGenshinPersonalRecordReader, readGenshinCharacterList, readGenshinPanel,
   readGenshinTalents, readGenshinTarotCollection, type GenshinChallengeOptions, type GenshinPanelOptions } from "./genshin-panel.ts";
 import { readStarRailGridFight, type StarRailGridFightOptions } from "./starrail-grid-fight.ts";
+import { readStarRailGrowth, type StarRailGrowthOptions } from "./starrail-growth.ts";
 import { readStarRailRogue, type StarRailRogueOptions } from "./starrail-rogue.ts";
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
@@ -86,6 +87,7 @@ export { DailyNoteRequestError, type DailyNoteSnapshot, type DailyNoteOptions } 
 export { createPassportQr, PassportQrError, type PassportQrSession } from "./passport-qr.ts";
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
 export type { StarRailLedgerKind, StarRailLedgerRow, StarRailLedgerOptions, StarRailOnlineOptions, StarRailPowerRecovery } from "./starrail-ledger.ts";
+export { defaultStarRailGrowthLevels, type StarRailGrowthSnapshot, type StarRailGrowthOptions } from "./starrail-growth.ts";
 export type { StarRailMonthlySnapshot, StarRailMonthlyOptions } from "./starrail-monthly.ts";
 export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
@@ -581,6 +583,9 @@ export function createHoyoClient(
     },
     fetchGenshinTarotCollection(source: ProfileRequestContext, options: GenshinPanelOptions = {}) {
       return readForProfile(source, options, readGenshinTarotCollection, isGenshinPersonalRecordCookieExpired);
+    },
+    fetchStarRailGrowth(source: ProfileRequestContext, options: StarRailGrowthOptions) {
+      return readForProfile(source, options, readStarRailGrowth, isGameRecordCookieExpired);
     },
     fetchStarRailGridFight(source: ProfileRequestContext, options: StarRailGridFightOptions = {}) {
       return readForProfile(source, options, readStarRailGridFight, isGameRecordCookieExpired);
