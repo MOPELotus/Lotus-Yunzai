@@ -63,6 +63,7 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
   const jobs: Job[] = [];
   let config = structuredClone(initial);
   let planJob: ReturnType<typeof schedule> | undefined;
+  let startupCatchUp: ReturnType<typeof setTimeout> | undefined;
   let operation: Promise<RuntimeTick | undefined> | undefined;
   let preparation: Promise<TomorrowPlan | undefined> | undefined;
   let forcedPlan: Promise<TomorrowPlan | undefined> | undefined;
@@ -195,11 +196,13 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       if (finalRetry.job) jobs.push(finalRetry.job);
       immediateDue = due.rule === dueCron;
       schedulePlan();
-      void catchUp();
+      startupCatchUp = setTimeout(() => { void catchUp(); }, 60_000);
+      startupCatchUp.unref();
       if (immediateDue) void trigger();
     },
     async stop() {
       stopped = true;
+      clearTimeout(startupCatchUp);
       planJob?.job?.cancel();
       for (const job of jobs) job.cancel();
       jobs.length = 0;
@@ -231,19 +234,25 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       const at = now();
       const { tomorrow } = checkinScheduleClock(at);
       if (!await store.read(tomorrow)) return;
-      return store.update(tomorrow, previous => {
+      const updated = await store.update(tomorrow, previous => {
         if (!previous || signal.aborted) return { result: undefined };
         let plan = previous;
+        const added: CheckinScheduleEntry[] = [];
         if (canRun(snapshot)) {
           for (const profile of profiles) {
             if (profile.qq === qq && profile.enabled) {
-              plan = addLateCheckinScheduleProfile(plan, profile, { config: snapshot, now: at }).plan ?? plan;
+              const result = addLateCheckinScheduleProfile(plan, profile, { config: snapshot, now: at });
+              plan = result.plan ?? plan;
+              if ("entry" in result) added.push(result.entry);
             }
           }
         }
-        const result = { ...plan, entries: plan.entries.filter(entry => entry.qq === qq) };
-        return { plan, result };
+        return { plan, result: { personal: { ...plan, entries: plan.entries.filter(entry => entry.qq === qq) }, added } };
       });
+      if (updated?.added.length && snapshot.late_registration?.notify !== false) {
+        await notifyPlanned({ ...updated.personal, entries: updated.added }, snapshot, true);
+      }
+      return updated?.personal;
     },
     async reconcileExistingPlans() {
       const snapshot = config;

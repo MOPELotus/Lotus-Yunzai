@@ -113,6 +113,36 @@ test("签到权限只编辑六项现有作用域并继承其他原权限，撤�
   }
 });
 
+test("手工到期签到只在获准且启用时先发进度，再检查计划", async () => {
+  const lifecycle = new AbortController();
+  const outcomes: string[] = [];
+  const schedule = {
+    enabled: true,
+    async generateTomorrow() { throw new Error("unused"); },
+    async personalTomorrow() { throw new Error("unused"); },
+    async runDue() { outcomes.push("扫描"); return undefined; },
+  };
+  const profiles = {
+    async listIds() { throw new Error("unused"); },
+    async checkinSettings() { throw new Error("unused"); },
+  };
+  const command = checkinPlanCommands(profiles, schedule, lifecycle.signal, {
+    canGenerate: () => false, canRunDue: context => context.isMaster === true,
+  }).commands["#执行到期签到"]!;
+  const actor = { message_type: "private", user_id: 42, isMaster: true,
+    reply(message: unknown) { outcomes.push(String(message)); return true; },
+  } as const;
+  expect(await command("", { ...actor, isMaster: false })).toBe("当前会话无权执行到期签到。");
+  schedule.enabled = false;
+  expect(await command("", actor)).toBe("全局自动签到已关闭。");
+  expect(outcomes).toEqual([]);
+  schedule.enabled = true;
+  expect(await command("", actor)).toBe("当前没有到期且未完成的签到任务。");
+  expect(outcomes).toEqual(["正在检查并执行到期签到任务。", "扫描"]);
+  expect(await command("", { ...actor, reply() { lifecycle.abort(); return false; } })).toBe("");
+  expect(outcomes).toHaveLength(2);
+});
+
 test("保留作用域、父作用域和权限根的共享 YAML 锚点，仅覆盖选中字段", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-panel-scope-alias-"));
   try {

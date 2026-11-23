@@ -110,6 +110,8 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
         if (signal.aborted) return "";
         if (!permission.canRunDue(context)) return "当前会话无权执行到期签到。";
         if (!schedule.enabled) return "全局自动签到已关闭。";
+        try { await context.reply?.("正在检查并执行到期签到任务。"); } catch { /* Keep the authorized scan running. */ }
+        if (signal.aborted) return "";
         const result = await schedule.runDue();
         if (signal.aborted) return "";
         if (result?.status === "failed") return "本轮到期签到暂时无法执行。";

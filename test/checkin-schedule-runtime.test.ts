@@ -47,6 +47,85 @@ function observePlanWrites(directory: string) {
   };
 }
 
+test("启动补偿先给 QQ 网关一分钟上线，再补缺失明日计划和通知", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-startup-catchup-"));
+  const { store, nextCommit } = observePlanWrites(directory);
+  const at = Date.parse("2026-11-19T08:30:00+08:00");
+  const { tomorrow } = checkinScheduleClock(at);
+  const signal = new AbortController();
+  const notice = Promise.withResolvers<void>();
+  const result = { profileReads: 0, online: false };
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, now: () => at,
+    config: { run_due_cron: "0 0 0 2 1 *" },
+    async listProfiles() { result.profileReads++; return [{ qq: "10001", profileId: 1, enabled: true }]; },
+    async runProfile() { throw new Error("启动补偿仅补明日计划"); },
+    async onNotice(entry, date, late, isCurrent) {
+      expect([entry.qq, date, late, result.online, await isCurrent()]).toEqual(["10001", tomorrow, false, true, true]);
+      notice.resolve();
+      return { status: "confirmed" };
+    },
+  });
+  const timers = spyOn(globalThis, "setTimeout");
+  try {
+    const committed = nextCommit(tomorrow);
+    runtime.start();
+    const startup = timers.mock.calls.find(([, wait]) => wait === 60_000)?.[0];
+    expect(startup).toBeFunction();
+    expect(result.profileReads).toBe(0);
+    expect(await store.read(tomorrow)).toBeUndefined();
+    result.online = true;
+    startup!();
+    await committed;
+    await notice.promise;
+    expect(result.profileReads).toBe(1);
+    await runtime.stop();
+    expect((await store.read(tomorrow))?.entries[0]).toMatchObject({ notified: true });
+  } finally {
+    timers.mockRestore();
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("本人查询给新补入的明日档案送一次通知，遵守补登设置", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-personal-notice-"));
+  const store = createCheckinScheduleStore(directory);
+  const at = Date.parse("2026-11-19T08:30:00+08:00");
+  const { tomorrow } = checkinScheduleClock(at);
+  const signal = new AbortController();
+  const sent: number[] = [];
+  const slot = { qq: "10001", profileId: 1, enabled: true };
+  const runtime = createCheckinScheduleRuntime({
+    store, signal: signal.signal, config: {}, now: () => at,
+    async listProfiles() { return []; },
+    async runProfile() { throw new Error("查询只补明日计划"); },
+    async onNotice(entry, date, late, isCurrent) {
+      expect([entry.qq, date, late, await isCurrent()]).toEqual([slot.qq, tomorrow, true, true]);
+      sent.push(entry.profileId);
+      return { status: "confirmed" };
+    },
+  });
+  try {
+    const other = { ...slot, qq: "10002" };
+    await store.update(tomorrow, () => ({
+      plan: generateCheckinSchedulePlan({ config: {}, profiles: [other], now: at, date: tomorrow }), result: undefined,
+    }));
+    expect((await runtime.personalTomorrow(slot.qq, [slot, other]))?.entries.map(entry => entry.qq)).toEqual([slot.qq]);
+    expect(sent).toEqual([1]);
+    await runtime.personalTomorrow(slot.qq, [slot]);
+    expect(sent).toEqual([1]);
+    runtime.updateConfig({ late_registration: { notify: false } });
+    expect((await runtime.personalTomorrow(slot.qq, [{ ...slot, profileId: 2 }]))?.entries.map(entry => entry.profileId)).toEqual([1, 2]);
+    expect(sent).toEqual([1]);
+  } finally {
+    signal.abort();
+    await runtime.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("旧七段 cron 以中国时区执行，注册时只补计划而不提前跑定制时间", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-clock-"));
   const { store, nextCommit } = observePlanWrites(directory);

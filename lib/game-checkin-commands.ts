@@ -206,6 +206,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   async function runProfile(qq: string, profileId: number, input: {
     readonly source: CheckinAuditEntry["source"];
     readonly signal: AbortSignal;
+    readonly announceStart?: () => unknown;
     readonly notify?: (message: string) => unknown;
     readonly verifySession?: () => Promise<void>;
     readonly textOnly?: boolean;
@@ -353,6 +354,11 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       const gameRows = rows.filter(row => row.game === "未执行" && Object.hasOwn(targets, row.key) &&
         (!retrying || gameScope?.includes(row.key as CheckinScheduleGame)));
+      if (input.announceStart) {
+        await verifyCurrent();
+        try { await input.announceStart(); } catch { /* A failed progress reply does not cancel the request. */ }
+        await verifyCurrent();
+      }
       const retryForums: string[] = [];
       const retryGames: CheckinScheduleGame[] = [];
       const hna = rows.find(row => row.key === "hna");
@@ -708,7 +714,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   }
 
   async function runManual(qq: string, profileId: number, input: Pick<Parameters<typeof runProfile>[2],
-    "signal" | "verifySession" | "notify" | "textOnly" | "manualTarget">): Promise<CheckinRun> {
+    "signal" | "verifySession" | "announceStart" | "notify" | "textOnly" | "manualTarget">): Promise<CheckinRun> {
     if (!scheduleStore) return completedRun("precheck", false, "签到记录暂不可用。");
     try {
       const run = await withManualCheckinJournals(scheduleStore, qq, profileId, input.signal,
@@ -731,6 +737,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const connection = context.privateCredentialSignal;
       const result = await runManual(String(context.user_id), profileId, {
         signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
+        announceStart: () => context.reply(`开始执行档案 ${profileId} 签到。`),
         notify: context.message_type === "private" ? message => context.reply(message) : undefined,
       });
       return result.reply;

@@ -98,12 +98,23 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
     expect(result.message).toContain("云原神剩余免费时长：200 分钟");
     expect(result.message).not.toMatch(/opaque|fixture|token/u);
     expect(calls.splice(0)).toEqual([domesticCloud, globalCloud]);
+    const progress: unknown[] = [];
     const chat = await module.fallback!("#手动签到2", {
-      normalizedMessage: "#手动签到2", message_type: "private", user_id: 42, reply: () => true,
+      normalizedMessage: "#手动签到2", message_type: "private", user_id: 42, reply: message => {
+        progress.push([message, [...calls]]);
+        return true;
+      },
       isBotMaster: () => false, isMaster: false, privateCredentialSignal: controller.signal,
     });
+    expect(progress).toEqual([["开始执行档案 2 签到。", []]]);
     expect(chat).toContain("云原神国际服剩余免费时长：0 分钟，本次赠送：15 分钟");
     expect(calls.splice(0)).toEqual([domesticCloud, globalCloud]);
+    const missing = await module.fallback!("#手动签到3", {
+      normalizedMessage: "#手动签到3", message_type: "private", user_id: 42, reply: message => { progress.push(message); return true; },
+      isBotMaster: () => false, isMaster: false, privateCredentialSignal: controller.signal,
+    });
+    expect(missing).toContain("请先登录 profile 3");
+    expect(progress).toHaveLength(1);
     response = { free_time: "18", send_freetime: 0 };
     expect(await runtime.runDue()).toMatchObject({ completed: 1 });
     expect(receipt).toHaveLength(1);
