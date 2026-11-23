@@ -6,6 +6,7 @@ import { lockFile } from "../lib/file-lock.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
 import { createGenshinGachaHistoryStore } from "../plugins/genshin/gacha-store.ts";
 import { createGenshinPanelArchive } from "../plugins/genshin/panel/panel.ts";
+import { createRoleMaterials } from "../plugins/guides/role-materials.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
 
@@ -18,7 +19,7 @@ const srPanel = `data/PlayerData/sr/${uid}.json`;
 const zzzUid = "1300000002";
 const zzzGacha = `data/ZZZ-Plugin/gacha/${zzzUid}.json`;
 
-async function put(root: string, path: string, data: string) {
+async function put(root: string, path: string, data: string | Buffer) {
   const output = join(root, path);
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, data);
@@ -88,6 +89,39 @@ test("发布到游戏目前读取的旧目录，长记录编号和原 JSON 保�
   expect(readLegacyPanel(uid, await Bun.file(join(state, srPanel)).json())).toMatchObject({ uid, avatars: [] });
   const zzz = await readZzzFlatLegacyGacha([join(state, "data/ZZZ-Plugin/gacha")], zzzUid);
   expect(zzz?.pools.flatMap(pool => pool.records)).toMatchObject([{ id: longId, time: zzzRecord.time }]);
+}));
+
+test("复制四个固定素材缓存目录中的原图，迁移后无需访问原站", () => fixture(async (source, state) => {
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X9uoAAAAASUVORK5CYII=", "base64");
+  const paths = ["gs/友人A/刻晴.jpg", "gs/other/纳西妲.jpg", "sr/小橙子啊/符玄.jpg", "sr/other/希儿.jpg"];
+  for (const path of paths) await put(source, `temp/material/${path}`, image);
+  await put(source, "temp/material/gs/友人A/坏文件.jpg", "not an image");
+  await put(source, "temp/material/gs/友人A/无关.txt", "not an image");
+  await put(source, "temp/material/zzz/other/艾莲.jpg", image);
+  await put(source, "temp/material/gs/自定义/刻晴.jpg", image);
+  await symlink(join(source, "temp/material/gs/友人A/刻晴.jpg"), join(source, "temp/material/gs/友人A/链接.jpg"));
+  await link(join(source, "temp/material/gs/自定义/刻晴.jpg"), join(source, "temp/material/gs/友人A/硬链接.jpg"));
+  expect(await stageLegacyGameData(source, state)).toEqual({ active: [{ path: "data/guides/material", files: paths.length,
+    bytes: image.byteLength * paths.length }], archived: [] });
+  const directory = join(state, "data/guides/material");
+  for (const path of paths) {
+    expect(await readFile(join(directory, path))).toEqual(image);
+    expect(await readFile(join(source, "temp", "material", path))).toEqual(image);
+    expect((await lstat(join(directory, path))).mode & 0o777).toBe(0o600);
+  }
+  expect(await readdir(join(directory, "gs", "友人A"))).toEqual(["刻晴.jpg"]);
+  expect((await readdir(directory)).sort()).toEqual(["gs", "sr"]);
+  let requests = 0;
+  const command = createRoleMaterials({ cache: directory, async fetch() { requests++; return new Response(null, { status: 404 }); } });
+  for (const text of ["#刻晴素材", "#星铁符玄素材"]) expect(await command(text)).toEqual({ type: "image", file: image });
+  expect(requests).toBe(0);
+}));
+
+test("普通游戏迁移可跳过符号链接指向的旧临时缓存", () => fixture(async (source, state) => {
+  await symlink(state, join(source, "temp"));
+  await put(source, gsPanel, JSON.stringify({ uid, avatars: {} }));
+  expect((await stageLegacyGameData(source, state)).active.map(({ path }) => path)).toEqual(["data/PlayerData/gs"]);
+  expect(await Bun.file(join(state, "data/guides/material/gs/友人A/刻晴.jpg")).exists()).toBe(false);
 }));
 
 test("旧数据的文件或目录链接以及目标软链不会产生可加载拷贝", () => fixture(async (source, state) => {

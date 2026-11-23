@@ -3,6 +3,8 @@ import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promis
 import { dirname, join, resolve } from "node:path";
 import { genshinGachaPools } from "../packages/hoyo-client/genshin-gacha.ts";
 import { readPanel, type PanelCatalog } from "../plugins/genshin/panel/model.ts";
+import { safeGuideName } from "../plugins/guides/role-guide-input.ts";
+import { isGuideImage, roleImageLimit } from "../plugins/guides/role-image-files.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
@@ -12,6 +14,7 @@ const panelUid = /^[1-9]\d{8,9}\.json$/u;
 const zzzUid = /^[1-9]\d{7,9}\.json$/u;
 const genshinPools = new Set(["100.json", ...genshinGachaPools.map(({ type }) => `${type}.json`)]);
 const panelCatalog: PanelCatalog = { characters: {}, artifacts: new Map(), artifactSets: new Map() };
+const legacyRoleMaterials = ["gs/友人A", "gs/other", "sr/小橙子啊", "sr/other"] as const;
 
 const scopes = [
   { path: "data/gachaJson", nesting: 2, active: (name: string) => genshinPools.has(name), maxMiB: 64 },
@@ -96,12 +99,15 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
   const active = new Map<string, GameDataCount>();
   const archived = new Map<string, GameDataCount>();
 
-  async function sourceDirectory(path: string): Promise<boolean> {
+  async function sourceDirectory(path: string, optional = false): Promise<boolean> {
     if (dirs.has(path)) return true;
-    if (path !== source && !await sourceDirectory(dirname(path))) return false;
+    if (path !== source && !await sourceDirectory(dirname(path), optional)) return false;
     const info = await named(path);
     if (!info) return false;
-    if (!info.isDirectory() || await realpath(path) !== path) throw new Error("旧游戏数据须位于副本的实体目录内。");
+    if (!info.isDirectory() || await realpath(path) !== path) {
+      if (optional) return false;
+      throw new Error("旧游戏数据须位于副本的实体目录内。");
+    }
     dirs.set(path, info);
     return true;
   }
@@ -117,6 +123,18 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     }
   }
 
+  async function publishFile(root: string, folders: readonly string[], name: string, bytes: Buffer,
+    totals: Map<string, GameDataCount>) {
+    const destination = join(stage, root, ...folders, name);
+    await ensureStageDirectory(dirname(destination));
+    await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+    const count = totals.get(root) ?? { path: root, files: 0, bytes: 0 };
+    count.files++;
+    count.bytes += bytes.length;
+    totals.set(root, count);
+    return destination;
+  }
+
   async function save(scope: (typeof scopes)[number], folders: readonly string[], name: string) {
     const path = join(source, scope.path, ...folders, name);
     const info = await named(path);
@@ -127,16 +145,9 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     const bytes = await readSnapshot(path, info, signal);
     const isActive = scope.active(name);
     const root = isActive ? scope.path : archiveRoot(scope.path);
-    const destination = join(stage, root, ...folders, name);
-    await ensureStageDirectory(dirname(destination));
-    await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+    const destination = await publishFile(root, folders, name, bytes, isActive ? active : archived);
     if (isActive) await validateActive(scope.path, name, bytes, destination);
     files.set(path, info);
-    const totals = isActive ? active : archived;
-    const count = totals.get(root) ?? { path: root, files: 0, bytes: 0 };
-    count.files++;
-    count.bytes += bytes.length;
-    totals.set(root, count);
   }
 
   async function scan(scope: (typeof scopes)[number], folders: readonly string[] = []) {
@@ -155,7 +166,29 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     }
   }
 
+  async function stageRoleMaterials() {
+    const root = join("data", "guides", "material");
+    for (const author of legacyRoleMaterials) {
+      signal?.throwIfAborted();
+      const directory = join(source, "temp", "material", author);
+      if (!await sourceDirectory(directory, true)) continue;
+      for (const name of (await readdir(directory)).sort()) {
+        signal?.throwIfAborted();
+        if (!name.endsWith(".jpg") || !safeGuideName(name.slice(0, -4)) || name.startsWith(".")) continue;
+        const file = join(directory, name);
+        const info = await named(file);
+        if (!info) throw sourceChanged();
+        if (!info.isFile() || info.nlink !== 1 || !info.size || info.size > roleImageLimit) continue;
+        const bytes = await readSnapshot(file, info, signal);
+        if (!isGuideImage(bytes)) continue;
+        await publishFile(root, [author], name, bytes, active);
+        files.set(file, info);
+      }
+    }
+  }
+
   for (const scope of scopes) await scan(scope);
+  await stageRoleMaterials();
   for (const [path, info] of [...dirs, ...files]) {
     signal?.throwIfAborted();
     if (!unchanged(info, await named(path))) throw sourceChanged();
