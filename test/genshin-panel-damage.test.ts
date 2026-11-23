@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
-import { estimatePanelDamage, type DamageSummary } from "../plugins/genshin/panel/damage.ts";
+import { damageTrialLabel, estimatePanelDamage, estimateTrialDamage, type DamageSummary } from "../plugins/genshin/panel/damage.ts";
 import { createDamagePreferences, matchEnemyLevel } from "../plugins/genshin/panel/damage-preferences.ts";
 import { matchGenshinPanel, officialPanel, type Json, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import { createGenshinPanelQuery } from "../plugins/genshin/panel/panel.ts";
@@ -78,6 +78,33 @@ test("缺失倍率不会作为零伤害，已知零数值及其他完整情景�
   expect(await estimateMiaoDamage({ ...avatar, talent: { ...avatar.talent, e: undefined } }, theme()))
     .toEqual({ message: "天赋等级或旧版倍率表不完整，请先更新面板。" });
   expect(await estimateMiaoDamage(avatar, theme(actor(), {}))).toEqual({ message: "旧主题缺少当前武器的属性表。" });
+});
+
+test("换装试算按同名情景比较两类伤害，保留敌人、词条矩阵和零值边界", async () => {
+  const lowered = { ...avatar, artis: { 1: { ...avatar.artis[1]!, level: 4 } } };
+  const assets = theme();
+  const baseline = await estimateMiaoDamage(avatar, assets, 2, 95);
+  const current = await estimateMiaoDamage(lowered, assets, 2, 95);
+  const trial = await estimateTrialDamage(avatar, lowered, assets, 2, 95, { useMiao: true });
+  const reverse = await estimateTrialDamage(lowered, avatar, assets, 2, 95, { useMiao: true });
+  if (!("rows" in baseline) || !("rows" in current) || !("rows" in trial) || !("rows" in reverse)) {
+    throw Error(JSON.stringify([baseline, current, trial, reverse].flatMap(result => "message" in result ? [result.message] : [])));
+  }
+  expect(trial.enemyLevel).toBe(95);
+  expect(trial.selected).toBe(current.selected);
+  expect(trial.comparison).toEqual(current.comparison);
+  for (const [index, value] of trial.rows.entries()) {
+    const previous = baseline.rows.find(row => row.title === value.title)!;
+    expect(value.average).toBe(current.rows[index]?.average);
+    expect(value.trial?.average).toBe(Number(((Number(value.average) / Number(previous.average) - 1) * 100).toFixed(1)));
+    expect(damageTrialLabel(value.trial?.crit)).toMatch(/^↓ \d+\.\d%$/u);
+  }
+  expect(damageTrialLabel(reverse.rows[0]?.trial?.average)).toMatch(/^↑ \d+\.\d%$/u);
+  const equal = await estimateTrialDamage(avatar, avatar, assets, 1, 95, { useMiao: true });
+  const zero = await estimateTrialDamage(avatar, lowered, theme(actor({ attack: 0 })), 1, 95, { useMiao: true });
+  if (!("rows" in equal) || !("rows" in zero)) throw Error("缺少零值测试");
+  expect(damageTrialLabel(equal.rows[0]?.trial?.average)).toBe("0.0%");
+  expect(zero.rows[0]?.trial).toBeUndefined();
 });
 
 test("丝柯克的旧档战技加一级，官方面板中的实显等级不重复加成", async () => {
