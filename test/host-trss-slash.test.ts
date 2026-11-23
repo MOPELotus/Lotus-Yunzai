@@ -67,7 +67,8 @@ test.each([
     send("%help", 5);
     send("#help", 6);
     send("*help", 7);
-    const expected = enabled ? 7 : 6;
+    send("#自动签到帮助", 8);
+    const expected = enabled ? 8 : 7;
     const deadline = performance.now() + 500;
     while (replies.length < expected && performance.now() < deadline) await Bun.sleep(10);
     if (!enabled) await Bun.sleep(80);
