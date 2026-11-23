@@ -165,8 +165,8 @@ test("编号攻略保留 temp 优先级和各作者原字节，离线通过实�
   await put(source, "temp/strategy/3/钟离.jpg", "旧临时文件损坏");
   await put(source, "temp/strategy/8/钟离.jpg", png);
   await stageLegacyGameData(source, state);
-  const fetch = (async () => { throw new Error("不应访问原站"); }) as typeof globalThis.fetch;
-  const query = createRoleGuides({ cache: join(state, "data/guides/roleGuides"), guideAutomatic: false, fetch,
+  const offline = Object.assign(async () => { throw new Error("不应访问原站"); }, { preconnect: fetch.preconnect });
+  const query = createRoleGuides({ cache: join(state, "data/guides/roleGuides"), guideAutomatic: false, fetch: offline,
     legacyStrategies: [join(state, "data/strategy")] });
   expect(await query("#钟离攻略4")).toEqual({ type: "image", file: original });
   expect(await query("#钟离攻略3")).toEqual({ type: "image", file: png });
