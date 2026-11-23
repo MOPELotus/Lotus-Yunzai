@@ -2,6 +2,7 @@ import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { createCheckinAudit } from "./checkin-audit.ts";
 import type { CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const logTime = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
@@ -22,7 +23,7 @@ export function checkinAuditCommands(audit: Pick<ReturnType<typeof createCheckin
         if (argument) return "请直接发送 #自动签到日志。";
         if (signal.aborted) return "";
         const qq = context.user_id;
-        const owner = context.isMaster === true;
+        const owner = isCheckinCommandOwner(context);
         if (!owner && (!qq || !Number.isSafeInteger(qq) || qq < 1)) return "请在对应的 QQ 会话查看签到日志。";
         try {
           const rows = await audit.read(owner ? { owner: true } : { qq: String(qq) });

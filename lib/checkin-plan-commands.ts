@@ -4,6 +4,7 @@ import { legacyUnconfirmedStage, type CheckinScheduleEntry, type CheckinSchedule
 import type { createCheckinScheduleRuntime } from "./checkin-schedule-runtime.ts";
 import { CheckinScheduleSettingsError, persistCheckinScheduleSettings, type CheckinScheduleSettingsChange } from "./checkin-schedule-settings.ts";
 import type { CommandContext, CommandModule } from "./commands.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 import { segment } from "./messages.ts";
 import { accountScopePermission } from "./permissions.ts";
 
@@ -27,7 +28,9 @@ export function checkinScheduleSettingCommands(root: URL,
     if (signal.aborted) return "";
     const next = writing.then(async () => {
       const config = await persistCheckinScheduleSettings(root, change, {
-        signal, canWrite: document => accountScopePermission(document, "scheduler.manage")(context),
+        signal, canWrite: document => accountScopePermission(document, "scheduler.manage")({
+          ...context, isMaster: isCheckinCommandOwner(context),
+        }),
       });
       if (!signal.aborted) runtime.updateConfig(config);
       return config;
@@ -112,6 +115,7 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
         if (!schedule.enabled) return "全局自动签到已关闭。";
         try { await context.reply?.("正在检查并执行到期签到任务。"); } catch { /* Keep the authorized scan running. */ }
         if (signal.aborted) return "";
+        if (!permission.canRunDue(context)) return "当前会话无权执行到期签到。";
         const result = await schedule.runDue();
         if (signal.aborted) return "";
         if (result?.status === "failed") return "本轮到期签到暂时无法执行。";

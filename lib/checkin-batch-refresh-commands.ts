@@ -3,6 +3,7 @@ import { createProfileHoyoClient, HoyoRequestError } from "@lotus-yunzai/hoyo-cl
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 type Profiles = ReturnType<typeof createProfileStore>;
 
@@ -36,7 +37,7 @@ export function checkinBatchRefreshCommands({
     name: "@lotus-yunzai/checkin-batch-refresh", commands: {},
     async fallback(_message, context) {
       if (context.normalizedMessage !== "#批量刷新签到" || signal.aborted) return;
-      if (context.isMaster !== true) return "只有 bot 主人可以批量刷新签到账号。";
+      if (!isCheckinCommandOwner(context)) return "只有 bot 主人可以批量刷新签到账号。";
       if (running) return "签到账号正在批量刷新，请稍后。";
       running = true;
       try {

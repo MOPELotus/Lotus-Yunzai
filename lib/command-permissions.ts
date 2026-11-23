@@ -1,5 +1,5 @@
 import type { MessageEvent } from "./messages.ts";
-import type { MessageFallbackContext } from "./commands.ts";
+import type { CommandContext, MessageFallbackContext } from "./commands.ts";
 
 function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -11,9 +11,10 @@ export function isMilkyOwnerSession(event: MessageEvent): boolean {
       (event.message_type === "group" && positiveId(event.group_id)));
 }
 
-export function isCheckinCommandOwner(context: MessageFallbackContext): boolean {
+export function isCheckinCommandOwner(context: CommandContext & Partial<Pick<MessageFallbackContext, "isBotMaster">>): boolean {
+  if (context.authorizeCheckinOwner) return context.authorizeCheckinOwner();
   return context.isMaster || (context.adapter === "milky" && !context.isDelegated &&
-    positiveId(context.self_id) && positiveId(context.user_id) && context.isBotMaster(context.user_id));
+    positiveId(context.self_id) && positiveId(context.user_id) && context.isBotMaster?.(context.user_id) === true);
 }
 
 export function canManagePackages(event: MessageEvent): boolean {

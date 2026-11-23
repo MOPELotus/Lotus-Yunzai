@@ -2,6 +2,7 @@ import type { createProfileStore } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CommandContext, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 export interface CheckinRosterMember {
   readonly id: number;
@@ -107,7 +108,7 @@ export function checkinRosterCommands({ profiles, listMembers, signal, render = 
       async "#签到名单列表"(argument, context) {
         if (argument) return "请直接发送 #签到名单列表。";
         if (signal.aborted) return "";
-        const owner = context.isMaster === true;
+        const owner = isCheckinCommandOwner(context);
         try {
           if (!owner && context.message_type === "group") return await groupRoster(context);
           const qq = validId(context.user_id) ? String(context.user_id) : undefined;

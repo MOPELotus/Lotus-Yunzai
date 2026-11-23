@@ -28,6 +28,7 @@ export type CommandContext = Readonly<Pick<
   runtimeStatusScope?: "onebot" | "milky" | "terminal";
   calculationSignal?: AbortSignal;
   authorizeOfficialNoticePush?: () => boolean;
+  authorizeCheckinOwner?: () => boolean;
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
@@ -144,7 +145,12 @@ interface RegisteredCommand {
   readonly names: readonly string[];
 }
 
-function commandContext(context: CommandContext, officialNotice = false): CommandContext {
+const checkinAuthorityModules = new Set([
+  "@lotus-yunzai/account", "@lotus-yunzai/checkin-admin", "@lotus-yunzai/checkin-roster",
+  "@lotus-yunzai/checkin-plan", "@lotus-yunzai/checkin-schedule-settings",
+]);
+
+function commandContext(context: CommandContext, module?: string): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupKickInactive, groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
@@ -156,8 +162,9 @@ function commandContext(context: CommandContext, officialNotice = false): Comman
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile, deliverMedia, sendMusicCard,
     attachment, canReadAttachments, adapter, inlineImageByteLimit, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal,
-    authorizeOfficialNoticePush,
+    authorizeOfficialNoticePush, authorizeCheckinOwner,
     reply } = context;
+  const checkinOwner = module && checkinAuthorityModules.has(module) ? authorizeCheckinOwner : undefined;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
     reviewGroupRequest, groupRequestScope, canReviewGroupRequests, uploadFile, attachment, canReadAttachments, adapter, inlineImageByteLimit, listCheckinGroupMembers,
@@ -206,8 +213,10 @@ function commandContext(context: CommandContext, officialNotice = false): Comman
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
-    ...(officialNotice && authorizeOfficialNoticePush && !isDelegated ? { authorizeOfficialNoticePush } : {}),
-    ...(message_type !== "terminal" && !isDelegated && (isMaster || atlasMaintenance === true) && reply ? { reply } : {}),
+    ...(module === "@lotus-yunzai/notice" && authorizeOfficialNoticePush && !isDelegated ? { authorizeOfficialNoticePush } : {}),
+    ...(checkinOwner ? { authorizeCheckinOwner: checkinOwner } : {}),
+    ...(message_type !== "terminal" && !isDelegated &&
+      (isMaster || atlasMaintenance === true || (module === "@lotus-yunzai/checkin-plan" && checkinOwner?.())) && reply ? { reply } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
     ...(runtimeStatusScope ? { runtimeStatusScope } : {}),
@@ -332,8 +341,7 @@ export class CommandRegistry {
     }
     if (!command || (allowed && !allowed(command.names))) return;
 
-    const officialNotice = command.names[0] === "@lotus-yunzai/notice";
-    return forGameCommandSender(context.user_id, context.isDelegated, () => command.handler(argument, commandContext(context, officialNotice)));
+    return forGameCommandSender(context.user_id, context.isDelegated, () => command.handler(argument, commandContext(context, command.names[0])));
   }
 
   async dispatchFallback(
@@ -343,15 +351,17 @@ export class CommandRegistry {
     normalizedMessage = event.msg,
     capabilities?: Pick<MessageFallbackContext,
       "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages" |
-      "canManagePackages" | "panelTransfer" | "offerLegacyPanelRecovery">,
+      "canManagePackages" | "panelTransfer" | "offerLegacyPanelRecovery" | "authorizeCheckinOwner">,
     onlyModule?: string,
   ): Promise<CommandReply | undefined> {
-    const { offerLegacyPanelRecovery, ...sharedCapabilities } = capabilities ?? {};
+    const { offerLegacyPanelRecovery, authorizeCheckinOwner, ...sharedCapabilities } = capabilities ?? {};
     for (const { handler, names, features, trustedLegacyPanelRecovery } of this.#fallbacks.values()) {
       if (onlyModule !== undefined && names[0] !== onlyModule) continue;
       if (!features && !allowed(names)) continue;
       const context = {
-        ...commandContext(event), sender: event.sender, sub_type: event.sub_type, reply_id: event.reply_id, lookupReply: event.lookupReply,
+        ...commandContext(event),
+        ...(authorizeCheckinOwner && names[0] === "@lotus-yunzai/checkin-batch-refresh" ? { authorizeCheckinOwner } : {}),
+        sender: event.sender, sub_type: event.sub_type, reply_id: event.reply_id, lookupReply: event.lookupReply,
         lookupMediaReply: names[0] === "@lotus-yunzai/genshin" ? event.lookupMediaReply : undefined,
         verifyOwnGroupMembership: names[0] === "@lotus-yunzai/genshin" && !event.isDelegated && !event.attachmentOnly
           ? event.verifyOwnGroupMembership : undefined,

@@ -78,7 +78,7 @@ import type { ProfileLikeImage } from "./lib/adapters/mention-like.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/own-group-card.ts";
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand, normalizeOriginalPictureCommand } from "./lib/command-prefix.ts";
-import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
+import { canManagePackages, isCheckinCommandOwner, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { botOperationCommand, isBotVerificationInput } from "./lib/bot-operation.ts";
 import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
 import { arkRankCredentialsPath, containsArkRankTokenInput, createArkRankCredentialSettings, isArkRankTokenCommand } from "./lib/ark-rank-credentials.ts";
@@ -2687,10 +2687,19 @@ if (import.meta.main) {
           event[delegationSession]?.signal.aborted === false && masterPermissions.isMaster(event.self_id, event.user_id) &&
           (event.adapter !== "milky" || onlineMilkyBotId() === event.self_id))
       : undefined;
-    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount || atlasMaintenance || authorizeOfficialNoticePush ? {
+    const authorizeCheckinOwner = () => {
+      if (stopping || !handoff.accepting || event.isDelegated || event.attachmentOnly) return false;
+      if (event.message_type === "terminal") return event.isMaster && masterPermissions.terminal;
+      const { self_id, user_id } = event;
+      if (self_id === undefined || user_id === undefined || event[delegationSession]?.signal.aborted !== false) return false;
+      const currentBot = event.adapter === "milky" ? isMilkyOwnerSession(event) && onlineMilkyBotId() === self_id
+        : event.boundAccount === true;
+      return currentBot && masterPermissions.isMaster(self_id, user_id);
+    };
+    const context: CommandContext = {
       ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope, ownGroupCardAccount,
-      atlasMaintenance, deliverMedia, authorizeOfficialNoticePush,
-    } : command;
+      atlasMaintenance, deliverMedia, authorizeOfficialNoticePush, authorizeCheckinOwner,
+    };
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
       await sendCommandReply(event, reply);
@@ -2881,7 +2890,7 @@ if (import.meta.main) {
     }
     const fallback = await commands.dispatchFallback(deliveryEvent,
       (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg,
-      { ...packageManagement, offerLegacyPanelRecovery });
+      { ...packageManagement, offerLegacyPanelRecovery, authorizeCheckinOwner });
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
       return;
@@ -2948,11 +2957,15 @@ if (import.meta.main) {
       await verifyMovedHttpsPaths(directory, previous, network.https);
       await verifyMovedWebMount(directory, previous, network.webMount);
     }
-    const canRefresh = accountScopePermission(globalConfig, "checkin.refresh");
+    const checkinScope = (scope: "checkin.refresh" | "scheduler.generate" | "scheduler.run_due") => {
+      const allows = accountScopePermission(globalConfig, scope);
+      return (context: CommandContext) => allows({ ...context, isMaster: isCheckinCommandOwner(context) });
+    };
+    const canRefresh = checkinScope("checkin.refresh");
     const canRegisterCheckin = accountScopePermission(globalConfig, "checkin.register");
     const canRegisterGroup = accountScopePermission(globalConfig, "checkin.group_register");
-    const canGenerate = accountScopePermission(globalConfig, "scheduler.generate");
-    const canRunDue = accountScopePermission(globalConfig, "scheduler.run_due");
+    const canGenerate = checkinScope("scheduler.generate");
+    const canRunDue = checkinScope("scheduler.run_due");
     masterPermissions = permissions;
     privateAccess = access;
     try {
