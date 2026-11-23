@@ -111,6 +111,7 @@ function safeArgs(selections: readonly string[]) {
 function stageConfig(atlas: Record<string, unknown>) {
   const value: Record<string, unknown> = {};
   if (isAtlasChannel(atlas.version_channel)) value.version_channel = atlas.version_channel;
+  if (typeof atlas.sync_after_update === "boolean") value.sync_after_update = atlas.sync_after_update;
   const searchLimit = parseAtlasSearchLimit(atlas.max_results);
   if (searchLimit !== undefined) value.max_results = searchLimit;
   const auto = record(atlas.auto_update);

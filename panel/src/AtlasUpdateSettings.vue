@@ -6,7 +6,7 @@ import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
-interface Snapshot { settings: Settings; revision: string; scopes?: AtlasScopeSelections; searchLimit?: number }
+interface Snapshot { settings: Settings; revision: string; syncAfterUpdate: boolean; scopes?: AtlasScopeSelections; searchLimit?: number }
 
 const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
 const scopeFields = ["update_args", "challenge_args"] as const;
@@ -28,6 +28,7 @@ const saved = ref<Snapshot>();
 const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
 const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
+const syncAfterUpdate = ref(true);
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
@@ -41,7 +42,8 @@ const scopeInvalid = computed(() => Object.values(scopePatch.value).some(scope =
 const searchInvalid = computed(() => saved.value?.searchLimit !== undefined &&
   (typeof searchLimit.value !== "number" || parseAtlasSearchLimit(searchLimit.value) === undefined));
 const searchDirty = computed(() => saved.value?.searchLimit !== searchLimit.value);
-const dirty = computed(() => !!saved.value && (searchDirty.value || Object.keys(scopePatch.value).length > 0 ||
+const syncDirty = computed(() => saved.value?.syncAfterUpdate !== syncAfterUpdate.value);
+const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || Object.keys(scopePatch.value).length > 0 ||
   JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
@@ -61,6 +63,7 @@ async function sync(mode: "load" | "save") {
       headers: mode === "save" ? { "Content-Type": "application/json" } : undefined,
       body: mode === "save" ? JSON.stringify({ settings: draft.value, revision: saved.value?.revision,
         ...(searchDirty.value && { searchLimit: searchLimit.value }),
+        ...(syncDirty.value && { syncAfterUpdate: syncAfterUpdate.value }),
         ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
@@ -92,6 +95,7 @@ async function sync(mode: "load" | "save") {
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
+        typeof result.syncAfterUpdate !== "boolean" ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
         (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
@@ -101,6 +105,7 @@ async function sync(mode: "load" | "save") {
     saved.value = result;
     draft.value = { ...result.settings };
     searchLimit.value = result.searchLimit;
+    syncAfterUpdate.value = result.syncAfterUpdate;
     scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
@@ -140,6 +145,13 @@ onBeforeUnmount(() => {
           <p id="atlas-search-limit-note" class="subtitle toggle-note">控制同名或模糊查询返回的条目数。</p>
         </template>
         <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />启用图鉴定时更新</label>
+        <label class="update-toggle">
+          <input id="atlas-sync-after-update" v-model="syncAfterUpdate" type="checkbox" aria-describedby="atlas-sync-after-update-note" />
+          下载校验后发布图鉴
+        </label>
+        <p id="atlas-sync-after-update-note" class="subtitle toggle-note">
+          关闭后，手动和定时更新仅保存已校验的候选，当前查询继续使用现有资料。
+        </p>
         <label for="atlas-check-cron">版本检查 Cron</label>
         <input id="atlas-check-cron" v-model="draft.check_cron" type="text" maxlength="160" autocomplete="off"
           spellcheck="false" placeholder="0 0 */6 * * ? *" />

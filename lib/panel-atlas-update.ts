@@ -10,6 +10,7 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
 
 const defaults = { check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" };
 const cronFields = ["check_cron", "challenge_cron"] as const;
+type AtlasScalars = { readonly max_results?: number; readonly sync_after_update?: boolean };
 type Settings = typeof defaults & { enable: boolean; run_on_missing_data: boolean };
 type ProposedSettings = Omit<Settings, "run_on_missing_data"> & Partial<Pick<Settings, "run_on_missing_data">>;
 type Config = Readonly<Record<string, unknown>>;
@@ -34,12 +35,15 @@ function snapshot(document: Config, parsePolicy?: Parser, search?: SearchSetting
     challenge_cron: typeof auto?.challenge_cron === "string" ? auto.challenge_cron : defaults.challenge_cron,
     run_on_missing_data: auto?.run_on_missing_data === undefined || auto.run_on_missing_data === true,
   };
-  const revision = createHash("sha256").update(JSON.stringify([settings, atlas?.update_args, atlas?.challenge_args, atlas?.max_results])).digest("hex");
-  return { settings, revision, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
+  const syncAfterUpdate = atlas?.sync_after_update !== false;
+  const revision = createHash("sha256").update(JSON.stringify([
+    settings, atlas?.update_args, atlas?.challenge_args, atlas?.max_results, syncAfterUpdate,
+  ])).digest("hex");
+  return { settings, revision, syncAfterUpdate, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
     searchLimit: search && (search.parseAtlasSearchLimit(atlas?.max_results) ?? search.defaultAtlasSearchLimit) };
 }
 
-function writeSettings(text: string, local: Config, effective: Config, changes: Partial<Settings>, args: AtlasScopePatch, searchLimit?: number) {
+function writeSettings(text: string, local: Config, effective: Config, changes: Partial<Settings>, args: AtlasScopePatch, scalars: AtlasScalars) {
   const yaml = parseDocument(text, { strict: true, merge: true, uniqueKeys: true, keepSourceTokens: true });
   if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents))) throw new GlobalConfigWriteError("config");
   const prior = record(effective.atlas) ?? {};
@@ -49,8 +53,7 @@ function writeSettings(text: string, local: Config, effective: Config, changes: 
   // Atlas fields are inherited as a group. Preserve the effective old fields when first creating a local section.
   const scheduleChanged = Object.keys(changes).length > 0;
   const autoUpdate = { ...auto, ...changes };
-  const atlas = { ...prior, ...args, ...(searchLimit !== undefined && { max_results: searchLimit }),
-    ...(scheduleChanged && { auto_update: autoUpdate }) };
+  const atlas = { ...prior, ...args, ...scalars, ...(scheduleChanged && { auto_update: autoUpdate }) };
   const atlasNode = isMap(yaml.contents) ? yaml.contents.get("atlas", true) : undefined;
   const autoNode = isMap(atlasNode) ? atlasNode.get("auto_update", true) : undefined;
   const insert = (node: Node | undefined, pairs: Pair[]) => {
@@ -69,11 +72,11 @@ function writeSettings(text: string, local: Config, effective: Config, changes: 
       if (isNode(source)) edits.push(replaceAtlasScope(text, source, key, flow));
       else additions.push({ key, flow, block: [`${key}: ${flow}`] });
     }
-    if (searchLimit !== undefined) {
-      const source = isMap(atlasNode) ? atlasNode.get("max_results", true) : undefined;
-      const flow = String(searchLimit);
+    for (const [key, value] of Object.entries(scalars)) {
+      const source = isMap(atlasNode) ? atlasNode.get(key, true) : undefined;
+      const flow = JSON.stringify(value);
       if (isNode(source)) edits.push(replaceSourceScalar(text, source, flow));
-      else additions.push({ key: "max_results", flow, block: [`max_results: ${flow}`] });
+      else additions.push({ key, flow, block: [`${key}: ${flow}`] });
     }
     if (scheduleChanged && !isNode(autoNode)) additions.push(sourceMappingPair("auto_update", autoUpdate));
     if (additions.length) edits.push(insert(atlasNode, additions));
@@ -109,10 +112,11 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
     let proposed: ProposedSettings;
     let scopePatch: AtlasScopePatch;
     let proposedLimit: number | undefined;
+    let proposedSync: boolean | undefined;
     try {
       const body = record(await readPanelJson(request, 4096));
       const settings = record(body?.settings);
-      if (!body || Object.keys(body).some(key => !["revision", "settings", "scopePatch", "searchLimit"].includes(key)) ||
+      if (!body || Object.keys(body).some(key => !["revision", "settings", "scopePatch", "searchLimit", "syncAfterUpdate"].includes(key)) ||
           typeof body.revision !== "string" || !/^[a-f0-9]{64}$/u.test(body.revision) ||
           !settings || Object.keys(settings).length !== (Object.hasOwn(settings, "run_on_missing_data") ? 4 : 3) ||
           typeof settings.enable !== "boolean" ||
@@ -124,6 +128,10 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
       if (Object.hasOwn(body, "searchLimit")) {
         if (typeof body.searchLimit !== "number") return Response.json({ field: "searchLimit" }, { status: 400 });
         proposedLimit = body.searchLimit;
+      }
+      if (Object.hasOwn(body, "syncAfterUpdate")) {
+        if (typeof body.syncAfterUpdate !== "boolean") return Response.json({ field: "syncAfterUpdate" }, { status: 400 });
+        proposedSync = body.syncAfterUpdate;
       }
       proposed = { enable: settings.enable, check_cron: settings.check_cron, challenge_cron: settings.challenge_cron,
         run_on_missing_data: settings.run_on_missing_data as boolean | undefined };
@@ -159,8 +167,11 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
             if (normalized !== before.settings[key]) changes[key] = normalized;
           }
           const args = atlasScopeChanges(scopePatch, before.scopes!, parsePolicy);
-          const searchLimit = proposedLimit === before.searchLimit ? undefined : proposedLimit;
-          if (!Object.keys(changes).length && !Object.keys(args).length && searchLimit === undefined) return { value: before };
+          const scalars = {
+            ...(proposedLimit !== undefined && proposedLimit !== before.searchLimit && { max_results: proposedLimit }),
+            ...(proposedSync !== undefined && proposedSync !== before.syncAfterUpdate && { sync_after_update: proposedSync }),
+          };
+          if (!Object.keys(changes).length && !Object.keys(args).length && !Object.keys(scalars).length) return { value: before };
           // Creating the first Atlas mapping would otherwise enable its schedule implicitly.
           if (!record(effective.atlas)) changes.enable = proposed.enable;
           const next = { ...before.settings, ...changes };
@@ -170,7 +181,7 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
               throw new InvalidAtlasCron(key);
             }
           }
-          const { yaml, atlas } = writeSettings(text, local, effective, changes, args, searchLimit);
+          const { yaml, atlas } = writeSettings(text, local, effective, changes, args, scalars);
           return { yaml, value: snapshot({ atlas }, parsePolicy, search) };
         },
       }));

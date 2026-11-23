@@ -138,6 +138,33 @@ test("图鉴搜索上限可保存并回读，独立于定时任务并拒绝过�
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("图鉴同步默认发布，页面关闭后只修改候选发布配置", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-prepare-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const original = "# preserve\natlas: { version_channel: live, auto_update: { enable: false } }\n";
+    await writeFile(file, original);
+    const route = panelAtlasUpdate(root, validTask);
+    const get = async () => (await route(request(), () => true)).json();
+    const before = await get();
+    expect(before.syncAfterUpdate).toBeTrue();
+    const put = (syncAfterUpdate: unknown) => route(request("PUT", { settings: before.settings,
+      revision: before.revision, syncAfterUpdate }), () => true);
+    const invalid = await put("false");
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ field: "syncAfterUpdate" });
+    expect(await readFile(file, "utf8")).toBe(original);
+    const saved = await put(false);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ syncAfterUpdate: false, settings: before.settings });
+    expect((await get()).syncAfterUpdate).toBeFalse();
+    expect((await readLotusGlobalConfig(root)).atlas).toEqual({ version_channel: "live", sync_after_update: false, auto_update: { enable: false } });
+    expect((await put(true)).status).toBe(409);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("缺数据开关仅在重启后的版本任务读取，并保持原版本渠道和两条 Cron", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-empty-"));
   try {
