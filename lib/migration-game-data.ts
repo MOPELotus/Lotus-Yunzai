@@ -191,6 +191,30 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     }
   }
 
+  async function stageNumberedGuides() {
+    for (const number of ["1", "2", "3", "4", "5", "6", "7"]) {
+      const copied = new Set<string>();
+      for (const path of ["temp/strategy", "data/strategy"]) {
+        signal?.throwIfAborted();
+        const directory = join(source, path, number);
+        if (!await sourceDirectory(directory, true)) continue;
+        for (const name of (await readdir(directory)).sort()) {
+          signal?.throwIfAborted();
+          if (copied.has(name) || !name.endsWith(".jpg") || !safeGuideName(name.slice(0, -4)) || name.startsWith(".")) continue;
+          const file = join(directory, name);
+          const info = await named(file);
+          if (!info) throw sourceChanged();
+          if (!info.isFile() || info.nlink !== 1 || !info.size || info.size > roleImageLimit) continue;
+          const bytes = await readSnapshot(file, info, signal);
+          if (!isGuideImage(bytes)) continue;
+          await publishFile("data/strategy", [number], name, bytes, active);
+          files.set(file, info);
+          copied.add(name);
+        }
+      }
+    }
+  }
+
   async function oldGuideConfiguration(relative: string): Promise<unknown> {
     signal?.throwIfAborted();
     const path = join(source, relative);
@@ -253,6 +277,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
 
   for (const scope of scopes) await scan(scope);
   await stageRoleMaterials();
+  await stageNumberedGuides();
   await stageGuideSettings();
   for (const [path, info] of [...dirs, ...files]) {
     signal?.throwIfAborted();

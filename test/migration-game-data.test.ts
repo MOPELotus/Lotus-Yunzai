@@ -9,6 +9,7 @@ import { createGenshinGachaHistoryStore } from "../plugins/genshin/gacha-store.t
 import { createGenshinPanelArchive } from "../plugins/genshin/panel/panel.ts";
 import { createRoleMaterials } from "../plugins/guides/role-materials.ts";
 import { readGuideAuthors } from "../plugins/guides/role-guide-collections.ts";
+import { createRoleGuides } from "../plugins/guides/role-guides.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
 
@@ -153,6 +154,24 @@ test("拒载的旧攻略来源设置转成宿主与面板直接读取的配置",
     news: [{ source: "用户作者", collection_id: [32] }], olds: [],
   });
   for (const [path, value] of Object.entries(paths)) expect(await readFile(join(source, path), "utf8")).toBe(value);
+}));
+
+test("编号攻略保留 temp 优先级和各作者原字节，离线通过实际命令读取", () => fixture(async (source, state) => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X9uoAAAAASUVORK5CYII=", "base64");
+  const original = Buffer.concat([png, Buffer.from("temp")]);
+  await put(source, "temp/strategy/4/钟离.jpg", original);
+  await put(source, "data/strategy/4/钟离.jpg", png);
+  await put(source, "data/strategy/3/钟离.jpg", png);
+  await put(source, "temp/strategy/3/钟离.jpg", "旧临时文件损坏");
+  await put(source, "temp/strategy/8/钟离.jpg", png);
+  await stageLegacyGameData(source, state);
+  const fetch = (async () => { throw new Error("不应访问原站"); }) as typeof globalThis.fetch;
+  const query = createRoleGuides({ cache: join(state, "data/guides/roleGuides"), guideAutomatic: false, fetch,
+    legacyStrategies: [join(state, "data/strategy")] });
+  expect(await query("#钟离攻略4")).toEqual({ type: "image", file: original });
+  expect(await query("#钟离攻略3")).toEqual({ type: "image", file: png });
+  expect((await readdir(join(state, "data/strategy"))).sort()).toEqual(["3", "4"]);
+  expect(await readFile(join(source, "data/strategy/4/钟离.jpg"))).toEqual(png);
 }));
 
 test("普通游戏迁移可跳过符号链接指向的旧临时缓存", () => fixture(async (source, state) => {
