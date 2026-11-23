@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 type Inbound = string | { type: string; data: Record<string, string> }[];
@@ -451,102 +451,150 @@ test("原生消息回退可退让，沿用群权限并查询当前机器人的�
   }
 }), 12_000);
 
-test("旧表情触发从宿主提交生成请求，沿用旧群禁用名和引用回复", async () => {
-  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
-  const requests: FormData[] = [];
-  const service = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    if (request.method !== "POST" || !["/memes/sample/", "/memes/poke/"].includes(new URL(request.url).pathname)) {
-      return new Response(null, { status: 404 });
+test("本机表情经真实 OneBot 沿用旧群禁用名、引用图片和引用回复", async () => {
+  const { encodeBandedPng } = await import("../packages/skia/banded-png.ts");
+  const { builtinMemeTemplates } = await import("../plugins/meme/templates/index.ts");
+  const proofDirectory = Bun.env.LOTUS_MEME_GROUP_PROOF;
+  const skia = join(import.meta.dir, "../packages/skia/node_modules/skia-canvas/lib/index.js");
+
+  async function picture(width: number, height: number) {
+    const pixels = Buffer.alloc(width * height * 4);
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels.writeUInt32BE(index / 4 % width < width / 2 ? 0xc72e68ff : 0x127e92ff, index);
     }
-    requests.push(await request.formData());
-    return new Response(Uint8Array.fromBase64(png), { headers: { "content-type": "image/png" } });
+    const png = await encodeBandedPng(width, height, (async function* () { yield pixels; })());
+    return png.toString("base64");
+  }
+  const inline = await picture(32, 16);
+  const quoted = await picture(48, 24);
+  const avatar = await picture(24, 12);
+  const otherPokeTemplates = builtinMemeTemplates.filter(({ info: { key, params_type: p } }) =>
+    key !== "symmetric" && p.min_images === 1 && p.max_images === 1 && p.min_texts === 0 && p.max_texts === 0)
+    .map(({ info }) => info.key);
+
+  let serviceCalls = 0;
+  const service = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
+    serviceCalls++;
+    return new Response(null, { status: 503 });
   } });
+
+  async function checkImage(frame: Action, groupId: number, leading: object, width: number, height: number) {
+    const message = frame.params.message;
+    const file: unknown = Array.isArray(message) ? message[1]?.data?.file : undefined;
+    expect(frame).toMatchObject({ action: "send_msg", params: { group_id: groupId, message: [leading,
+      { type: "image", data: { file: expect.stringMatching(/^base64:\/\//u) } },
+    ] } });
+    if (typeof file !== "string") throw new Error("表情图片缺少 OneBot 内联数据。");
+    const bytes = Uint8Array.fromBase64(file.slice("base64://".length));
+    expect(await new Bun.Image(bytes).metadata()).toMatchObject({ width, height, format: "jpeg" });
+    return bytes;
+  }
+
   try {
     await withHost(async (root) => {
+      const source = join(import.meta.dir, "../plugins/meme");
       const plugin = join(root, "plugins/meme");
-      await mkdir(plugin);
-      const sources = new Bun.Glob("*.ts").scanSync(join(import.meta.dir, "../plugins/meme"));
-      for (const file of ["package.json", ...sources]) {
-        await cp(new URL(`../plugins/meme/${file}`, import.meta.url), join(plugin, file));
-      }
+      await cp(source, plugin, { recursive: true, filter: path => ![".git", "node_modules", "resources"].includes(basename(path)) });
+      await symlink(join(source, "node_modules"), join(plugin, "node_modules"), "dir");
+      await symlink(join(source, "resources"), join(plugin, "resources"), "dir");
+      await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
       const config = join(root, "config/config");
       const memeConfig = join(root, "data/meme/config");
-      await mkdir(config, { recursive: true });
-      await mkdir(memeConfig, { recursive: true });
+      await Promise.all([mkdir(config, { recursive: true }), mkdir(memeConfig, { recursive: true })]);
       await writeFile(join(config, "group.yaml"), 'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"81": { disable: ["清语表情:表情包生成"] }\n');
-      await writeFile(join(memeConfig, "server.yaml"), `url: "${service.url.href}"\n`);
+      await writeFile(join(memeConfig, "server.yaml"), Bun.YAML.stringify({ backend: "remote", url: service.url.href }));
       await writeFile(join(memeConfig, "meme.yaml"), "reply: true\npokeEnable: true\npokeProbability: 100\npokeLimit: 20\n");
+      await writeFile(join(memeConfig, "access.yaml"), Bun.YAML.stringify({ blackListEnable: true, blackList: otherPokeTemplates }));
       await writeFile(join(root, "avatar-fixture.ts"), `
+        ${proofDirectory ? `
+          Bun.env.VK_DRIVER_FILES = "/usr/share/vulkan/icd.d/nvidia_icd.json";
+          const { Canvas } = await import(${JSON.stringify(skia)});
+          const render = Canvas.prototype.toBuffer;
+          Canvas.prototype.toBuffer = async function (...args) {
+            const output = await render.call(this, ...args);
+            if (this.engine.renderer !== "GPU" || this.engine.api !== "Vulkan" || !this.engine.device?.includes("RTX A4000")) {
+              throw new Error("缺少物理显卡验证");
+            }
+            await Bun.write("./engine.json", JSON.stringify(this.engine));
+            return output;
+          };
+        ` : ""}
+        Bun.env.LOTUS_MEME_SERVER_URL = ${JSON.stringify(service.url.href)};
         const original = fetch;
-        globalThis.fetch = Object.assign((input, init) => {
+        const requests = [];
+        const record = async (request) => {
+          requests.push(request);
+          await Bun.write("./meme-requests.json", JSON.stringify(requests));
+        };
+        globalThis.fetch = Object.assign(async (input, init) => {
           const url = new URL(input instanceof Request ? input.url : String(input));
+          await record(url.href);
           if (url.hostname === "q1.qlogo.cn" && url.searchParams.get("nk") === "42") {
-            return Promise.resolve(new Response(Uint8Array.fromBase64(${JSON.stringify(png)}), { headers: { "content-type": "image/png" } }));
+            return new Response(Uint8Array.fromBase64(${JSON.stringify(avatar)}), { headers: { "content-type": "image/png" } });
           }
-          return original(input, init);
+          if (url.origin === ${JSON.stringify(service.url.origin)}) return original(input, init);
+          throw new Error("未登记的隔离请求：" + url.href);
         }, { preconnect: original.preconnect });
       `);
-      const db = new Database(join(memeConfig, "../data.db"));
-      try {
-        db.run("CREATE TABLE meme (key TEXT PRIMARY KEY, keyWords TEXT, min_images INTEGER, max_images INTEGER, min_texts INTEGER, max_texts INTEGER, params TEXT)");
-        db.run("INSERT INTO meme VALUES ('sample', ?, 1, 1, 1, 1, ?)", [JSON.stringify(["表情夹具"]),
-          JSON.stringify({ min_images: 1, max_images: 1, min_texts: 1, max_texts: 1 })]);
-        db.run("INSERT INTO meme VALUES ('poke', ?, 1, 1, 0, 0, ?)", [JSON.stringify(["戳戳夹具"]),
-          JSON.stringify({ min_images: 1, max_images: 1, min_texts: 0, max_texts: 0 })]);
-      } finally {
-        db.close();
-      }
-    }, async (connect) => {
+    }, async (connect, root) => {
       const bot = await connect(99);
       const trigger: Inbound = [
-        { type: "text", data: { text: "表情夹具 晚安" } },
-        { type: "image", data: { file: `base64://${png}` } },
+        { type: "text", data: { text: "对称 --direction right" } },
+        { type: "image", data: { file: `base64://${inline}` } },
       ];
       bot.send(trigger, 77);
-      await bot.reply([
-        { type: "reply", data: { id: "1" } },
-        { type: "image", data: { file: `base64://${png}` } },
-      ], 77);
-      expect(requests).toHaveLength(1);
-      expect(requests[0]?.getAll("texts")).toEqual(["晚安"]);
-      expect(await (requests[0]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+      const direct = await checkImage(await bot.action(), 77, { type: "reply", data: { id: "1" } }, 32, 16);
       bot.send([
         { type: "reply", data: { id: "1" } },
-        { type: "text", data: { text: "表情夹具 用引用图" } },
+        { type: "text", data: { text: "对称 --direction top" } },
       ], 77);
       const lookup = await bot.action();
       expect(lookup).toMatchObject({ action: "get_msg", params: { message_id: 1 } });
       bot.sendFrame({ echo: lookup.echo, status: "ok", retcode: 0, data: {
-        message_type: "group", group_id: 77, message_id: 1, sender: { user_id: 51 }, message: trigger,
+        message_type: "group", group_id: 77, message_id: 1, sender: { user_id: 51 },
+        message: [{ type: "image", data: { file: `base64://${quoted}` } }],
       } });
-      await bot.reply([
-        { type: "reply", data: { id: "2" } },
-        { type: "image", data: { file: `base64://${png}` } },
-      ], 77);
-      expect(requests[1]?.getAll("texts")).toEqual(["用引用图"]);
-      expect(await (requests[1]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+      const fromQuote = await checkImage(await bot.action(), 77, { type: "reply", data: { id: "2" } }, 48, 24);
       bot.send(trigger, 81);
       bot.send("#状态", 81);
       await bot.reply(expect.stringContaining("Lotus-Yunzai 正在运行"), 81);
-      expect(requests).toHaveLength(2);
+
       const poke = { post_type: "notice", notice_type: "notify", sub_type: "poke", user_id: 42, target_id: 99, group_id: 77 };
       bot.sendFrame(poke);
       const notice = await bot.action();
-      expect(notice).toMatchObject({ action: "send_msg", params: { group_id: 77, message: [
-        { type: "text", data: { text: expect.stringContaining("戳戳夹具") } },
-        { type: "image", data: { file: `base64://${png}` } },
-      ] } });
+      const fromPoke = await checkImage(notice, 77, { type: "text", data: { text: expect.stringContaining("[对称]") } }, 24, 12);
       expect(notice.echo).toBeDefined();
       bot.sendFrame({ echo: notice.echo, status: "ok", retcode: 0, data: { message_id: 101 } });
-      expect(requests).toHaveLength(3);
-      expect(requests[2]?.getAll("texts")).toEqual([]);
-      expect(await (requests[2]?.get("images") as Blob).bytes()).toEqual(Uint8Array.fromBase64(png));
+
+      const usage = join(root, "data/meme/data.db.usage.sqlite");
+      const until = performance.now() + 2_000;
+      let counts: { key: string; all: number }[] = [];
+      while (performance.now() < until) {
+        const db = new Database(usage, { readonly: true });
+        try {
+          counts = db.query<{ key: string; all: number }, []>('SELECT key, "all" FROM stat').all();
+        } catch (error) {
+          if ((error as { code?: string }).code !== "SQLITE_BUSY") throw error;
+        } finally {
+          db.close();
+        }
+        if (counts[0]?.all === 3) break;
+        await Bun.sleep(10);
+      }
+      expect(counts).toEqual([{ key: "symmetric", all: 3 }]);
       bot.sendFrame({ ...poke, group_id: 81 });
       bot.sendFrame({ ...poke, target_id: 51 });
       bot.sendFrame(poke);
       await Bun.sleep(100);
       bot.assertNoPendingFrames();
-      expect(requests).toHaveLength(3);
+      expect(await Bun.file(join(root, "meme-requests.json")).json()).toEqual(["https://q1.qlogo.cn/g?b=qq&s=0&nk=42"]);
+      expect(serviceCalls).toBe(0);
+      if (proofDirectory) {
+        await Bun.write(join(proofDirectory, "inline.jpg"), direct);
+        await Bun.write(join(proofDirectory, "quote.jpg"), fromQuote);
+        await Bun.write(join(proofDirectory, "poke.jpg"), fromPoke);
+        await Bun.write(join(proofDirectory, "engine.json"), Bun.file(join(root, "engine.json")));
+      }
     }, ["./avatar-fixture.ts"]);
   } finally {
     await service.stop(true);
