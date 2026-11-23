@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { panelAccountPermissions, panelMediaDownloadPermissions } from "../lib/panel-account-permissions.ts";
+import { panelAccountPermissions, panelMediaDownloadPermissions, panelMediaPreviewPermissions } from "../lib/panel-account-permissions.ts";
 import { panelApi } from "../lib/panel.ts";
 import { loadGlobalConfig } from "../plugins/media/core/config/global.ts";
 import { PermissionService } from "../plugins/media/core/permissions/service.ts";
@@ -98,4 +98,44 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect((await admin(request("PUT", { revision, patch: before.settings })))?.status).toBe(200);
     expect(await read()).toEqual(before);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("五项媒体预览权限从原配置读写并立即用于媒体解析", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-panel-media-preview-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    const config = join(directory, "config");
+    await mkdir(config);
+    const file = join(config, "global.yaml");
+    await writeFile(file, "# 原策略\npermissions:\n  groups: {deny: [123]}\n  scopes:\n    wxchannels.preview: {policy: deny}\n    weishi.play: {policy: master_only}\n");
+    const route = panelMediaPreviewPermissions(root);
+    const path = "/panel/api/settings/media/preview-permissions";
+    const admin = panelApi(key, [], routePath => routePath === path ? route : undefined);
+    const call = (method = "GET", body?: unknown, authorized = true) => admin(new Request("http://localhost" + path, {
+      method, headers: { ...(authorized && { Authorization: `Bearer ${key}` }), "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }));
+    expect((await call("GET", undefined, false))?.status).toBe(401);
+    const before = await (await call())!.json();
+    expect(before.settings).toEqual({ "acfun.preview": "inherit", "weishi.preview": "inherit", "zuiyou.preview": "inherit",
+      "wxchannels.preview": "deny", "xigua.preview": "inherit" });
+    const patch = { "acfun.preview": "deny", "weishi.preview": "master_only", "zuiyou.preview": "allow",
+      "wxchannels.preview": "inherit", "xigua.preview": "deny" };
+    const saved = await call("PUT", { revision: before.revision, patch });
+    expect(saved?.status).toBe(200);
+    expect((await saved!.json()).settings).toEqual(patch);
+    expect((await call("PUT", { revision: before.revision, patch }))?.status).toBe(409);
+    const { permissions } = await loadGlobalConfig(root);
+    const service = new PermissionService({ permissions });
+    const peer = { user_id: 42, group_id: 456, isMaster: false };
+    expect(service.can(peer, "xigua.preview")).toBe(false);
+    expect(service.can(peer, "acfun.preview")).toBe(false);
+    expect(service.can(peer, "weishi.preview")).toBe(false);
+    expect(service.can({ ...peer, isMaster: true }, "weishi.preview")).toBe(true);
+    expect(service.can(peer, "zuiyou.preview")).toBe(true);
+    expect(service.can({ ...peer, group_id: 123 }, "zuiyou.preview")).toBe(false);
+    expect((await readFile(file, "utf8"))).toContain("weishi.play: {policy: master_only}");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

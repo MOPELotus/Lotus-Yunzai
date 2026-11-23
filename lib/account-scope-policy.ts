@@ -9,6 +9,11 @@ export const mediaDownloadScopes = [
 ] as const;
 export type MediaDownloadScope = typeof mediaDownloadScopes[number];
 
+export const mediaPreviewScopes = [
+  "acfun.preview", "weishi.preview", "zuiyou.preview", "wxchannels.preview", "xigua.preview",
+] as const;
+export type MediaPreviewScope = typeof mediaPreviewScopes[number];
+
 export const accountScopePolicies = ["inherit", "allow", "deny", "master_only"] as const;
 export type AccountScopePolicy = typeof accountScopePolicies[number];
 

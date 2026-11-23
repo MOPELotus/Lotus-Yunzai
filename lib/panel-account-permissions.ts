@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
-import { accountScopePolicies, accountScopePolicy, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
+import { accountScopePolicies, accountScopePolicy, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes, mediaPreviewScopes,
   type AccountScopePolicy, type ScopePolicySnapshot } from "./account-scope-policy.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
@@ -147,10 +147,17 @@ export function panelGroupExportPermissions(root: URL) {
   return panelScopePermissions(root, groupExportScopes, accountScopePolicy);
 }
 
+function mediaScopePolicy(_scope: string, configured: unknown): AccountScopePolicy {
+  // The media reader coerces legacy YAML policy values before falling back to inherit.
+  return accountScopePolicies.find(policy => policy === String(configured || "inherit")) ?? "inherit";
+}
+
 export function panelMediaDownloadPermissions(root: URL) {
-  // The media reader coerces legacy YAML policy values before applying its inherit fallback.
-  return panelScopePermissions(root, mediaDownloadScopes, (_scope, configured) =>
-    accountScopePolicies.find(policy => policy === String(configured || "inherit")) ?? "inherit");
+  return panelScopePermissions(root, mediaDownloadScopes, mediaScopePolicy);
+}
+
+export function panelMediaPreviewPermissions(root: URL) {
+  return panelScopePermissions(root, mediaPreviewScopes, mediaScopePolicy);
 }
 
 export function panelMediaOwnerPermissions(root: URL) {

@@ -149,7 +149,8 @@ import { panelPartner } from "./lib/panel-partner.ts";
 import { panelMediaEnvironment } from "./lib/panel-media-environment.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
-import { panelAccountPermissions, panelGroupExportPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
+import { panelAccountPermissions, panelGroupExportPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions,
+  panelMediaPreviewPermissions } from "./lib/panel-account-permissions.ts";
 import { panelGlobalPermissions } from "./lib/panel-global-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGroupManagement } from "./lib/panel-group-management.ts";
@@ -3871,6 +3872,7 @@ if (import.meta.main) {
         settingsRoutes.set("/panel/api/settings/media/partner", panelPartner(root, validateModuleCron));
         settingsRoutes.set("/panel/api/settings/media/environment", panelMediaEnvironment(root));
         settingsRoutes.set("/panel/api/settings/media/download-permissions", panelMediaDownloadPermissions(root));
+        settingsRoutes.set("/panel/api/settings/media/preview-permissions", panelMediaPreviewPermissions(root));
         settingsRoutes.set("/panel/api/settings/media/owner-permissions", panelMediaOwnerPermissions(root));
         for (const platform of ["bilibili", "weibo"] as const) {
           settingsRoutes.set(`/panel/api/settings/native/${platform}-subscriptions`, async (request, authorized) => {

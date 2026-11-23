@@ -23,8 +23,10 @@ const dirty = computed(() => Object.keys(changes.value).length > 0);
 let active: AbortController | undefined;
 
 const permissionsDirty = ref(false);
+const previewPermissionsDirty = ref(false);
 const ownerPermissionsDirty = ref(false);
-watch(() => dirty.value || permissionsDirty.value || ownerPermissionsDirty.value, value => emit("dirty-change", value));
+watch(() => dirty.value || permissionsDirty.value || previewPermissionsDirty.value || ownerPermissionsDirty.value,
+  value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
@@ -118,13 +120,15 @@ onBeforeUnmount(() => {
     </form>
     <AccountPermissionsSettings class="media-download-permissions" :auth="auth" section="media-download"
       @unauthorized="emit('unauthorized')" @dirty-change="permissionsDirty = $event" />
+    <AccountPermissionsSettings class="media-preview-permissions" :auth="auth" section="media-preview"
+      @unauthorized="emit('unauthorized')" @dirty-change="previewPermissionsDirty = $event" />
     <AccountPermissionsSettings class="media-owner-permissions" :auth="auth" section="media-owner"
       @unauthorized="emit('unauthorized')" @dirty-change="ownerPermissionsDirty = $event" />
   </section>
 </template>
 
 <style scoped>
-.media-download-permissions, .media-owner-permissions { margin-top: 26px; }
+.media-download-permissions, .media-preview-permissions, .media-owner-permissions { margin-top: 26px; }
 .media-environment-settings { max-width: 660px; margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 fieldset { display: grid; gap: 7px; padding: 0; border: 0; margin: 0; min-width: 0; }
 fieldset + fieldset { margin-top: 16px; }
