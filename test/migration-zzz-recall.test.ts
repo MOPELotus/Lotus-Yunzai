@@ -3,6 +3,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { stageLegacyZzzRecallConfig } from "../lib/migration-zzz-recall.ts";
+import { readLegacyZzzUpdateNotice } from "../lib/migration-zzz-update-notice.ts";
 import { rejectionReason } from "../lib/plugins/policy.ts";
 import { migrateInstallation } from "../scripts/migrate.ts";
 
@@ -16,7 +17,7 @@ test.skipIf(!Bun.which("git"))("迁移从旧绝区零配置保留显式关闭、
   const root = await mkdtemp(join(tmpdir(), "lotus-migration-zzz-recall-"));
   const source = join(root, "old"), target = join(root, "new");
   const plugin = "plugins/renamed-zzz";
-  const original = "# 用户覆盖\nrecallMsg: 0\nfeature: retained\n";
+  const original = "# 用户覆盖\nrecallMsg: 0\nfeature: retained\nupdate:\n  autoCheck: true\n  cron: 0 0/10 * * * ?\n";
   try {
     await put(source, `${plugin}/package.json`, '{"name":"zzz-plugin"}');
     await put(source, `${plugin}/defSet/config.yaml`, "recallMsg: 100\n");
@@ -31,7 +32,11 @@ test.skipIf(!Bun.which("git"))("迁移从旧绝区零配置保留显式关闭、
       expect(Bun.spawnSync(["git", ...args], { cwd: target }).exitCode).toBe(0);
     }
     const zzzRecall = { active: true, deferred: false };
-    expect(await migrateInstallation(source, target)).toMatchObject({ status: "published", zzzRecall });
+    const updateNotice = { settings: { update_notice: true, update_notice_cron: "0 0/10 * * * ?" }, deferred: false };
+    expect(await migrateInstallation(source, target)).toMatchObject({ status: "published", zzzRecall, updateNotice });
+    expect(Bun.YAML.parse(await readFile(join(target, "config/config/bot.yaml"), "utf8"))).toEqual({
+      update_time: 0, ...updateNotice.settings,
+    });
     const saved = join(target, "config/zzz-panel.yaml");
     expect(Bun.YAML.parse(await readFile(saved, "utf8"))).toEqual({ roleInterval: 310, buttons: false, interval: 60, recallMsg: 0 });
     expect((await lstat(saved)).mode & 0o777).toBe(0o600);
@@ -58,5 +63,19 @@ test("迁移继承旧绝区零 defSet 撤回时间并标记无法识别的值", 
     const deferred = join(root, "deferred");
     expect(await stageLegacyZzzRecallConfig(archive, deferred, entries)).toEqual({ active: false, deferred: true });
     await expect(lstat(join(deferred, "config/zzz-panel.yaml"))).rejects.toMatchObject({ code: "ENOENT" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("迁移更新通知尊重显式关闭并把无效周期留待复核", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-stage-zzz-update-notice-"));
+  const entries = [{ path: "plugins/ZZZ-Plugin", status: "archive", kind: "directory",
+    identity: "fixture", reason: rejectionReason(["zzz-plugin"], [])! }] as const;
+  try {
+    await put(root, "ZZZ-Plugin/defSet/config.yaml", "update: { autoCheck: true }\n");
+    expect(await readLegacyZzzUpdateNotice(root, entries)).toEqual({ deferred: false });
+    await put(root, "ZZZ-Plugin/config/config.yaml", "update: { autoCheck: false }\n");
+    expect(await readLegacyZzzUpdateNotice(root, entries)).toEqual({ settings: { update_notice: false }, deferred: false });
+    await put(root, "ZZZ-Plugin/config/config.yaml", 'update: { autoCheck: true, cron: "0 32 * * *" }\n');
+    expect(await readLegacyZzzUpdateNotice(root, entries)).toEqual({ deferred: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

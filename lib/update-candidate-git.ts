@@ -2,6 +2,7 @@ import { realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { resolve } from "node:path";
 import { runUpdateProcess } from "./update-build.ts";
+import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
 
 export type UpdateCandidateResult =
@@ -122,9 +123,25 @@ export interface UpdateAvailability {
   readonly candidate?: string;
   readonly ahead?: number;
   readonly behind?: number;
+  readonly changes?: readonly string[];
 }
 
-export async function readUpdateAvailability(directory: string, signal: AbortSignal): Promise<UpdateAvailability | undefined> {
+async function readUpdateChanges(git: LocalGit, directory: string, range: string) {
+  const output = await git(directory, ["log", "-z", "--no-decorate", "--no-show-signature", "--no-notes",
+    "--no-patch", "--no-merges", "--max-count=12", "--date=short", "--format=%h%x00%cd%x00%s", range, "--"]);
+  const columns = output?.split("\0") ?? [];
+  const changes: string[] = [];
+  for (let i = 0; i + 2 < columns.length; i += 3) {
+    const [sha, date, subject = ""] = columns.slice(i, i + 3);
+    const title = sanitizeRuntimeLog(subject, 130).trim();
+    if (sha && /^[a-f0-9]{4,64}$/u.test(sha) && date && /^\d{4}-\d{2}-\d{2}$/u.test(date) && title) {
+      changes.push(`[${sha} | ${date}] ${title}`);
+    }
+  }
+  return changes;
+}
+
+export async function readUpdateAvailability(directory: string, signal: AbortSignal, includeChanges = false): Promise<UpdateAvailability | undefined> {
   signal.throwIfAborted();
   const git = createLocalGit();
   if (!git) return;
@@ -148,10 +165,11 @@ export async function readUpdateAvailability(directory: string, signal: AbortSig
     if (!await fetchUpstream(checkout, upstream, temporary, signal)) return summary;
     const inspect = createLocalGit();
     if (!inspect || !await isGitCheckout(inspect, checkout)) return;
-    const [revision, comparison, latest, binding, latestDirty] = await Promise.all([
+    const [revision, comparison, latest, binding, latestDirty, changes] = await Promise.all([
       inspect(checkout, ["rev-parse", "--verify", `${temporary}^{commit}`]),
       inspect(checkout, ["rev-list", "--left-right", "--count", `${current}...${temporary}`]),
       gitHead(inspect, checkout), updateBindingFingerprint(inspect, checkout), isUpdateWorktreeDirty(inspect, checkout),
+      includeChanges ? readUpdateChanges(inspect, checkout, `${current}..${temporary}`) : undefined,
     ]);
     signal.throwIfAborted();
     if (latest !== current || latestDirty === undefined || binding !== upstreamFingerprint(upstream)) return;
@@ -160,7 +178,7 @@ export async function readUpdateAvailability(directory: string, signal: AbortSig
     if (!candidate || !isGitRevision(candidate) || !counts) return summary;
     const ahead = Number(counts[1]), behind = Number(counts[2]);
     if (!Number.isSafeInteger(ahead) || !Number.isSafeInteger(behind)) return summary;
-    return { ...summary, candidate, ahead, behind, dirty: latestDirty };
+    return { ...summary, candidate, ahead, behind, dirty: latestDirty, ...(changes?.length && { changes }) };
   } finally {
     await release();
   }

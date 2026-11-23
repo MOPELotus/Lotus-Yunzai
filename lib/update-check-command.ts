@@ -7,7 +7,7 @@ export function isUpdateCheckCommand(message: string): boolean {
   return message.trim() === "#检查更新";
 }
 
-function describe(result: UpdateAvailability): string {
+export function describeUpdateAvailability(result: UpdateAvailability): string {
   const { branch, current, upstream, candidate, ahead, behind, dirty } = result;
   const status = ahead === undefined || behind === undefined ? upstream ? "无法取得上游提交。" : "当前分支没有可用的上游。"
     : ahead && behind ? "本地分支与上游已分叉。"
@@ -40,6 +40,6 @@ export function createUpdateCheckCommand(read: (signal: AbortSignal) => Promise<
     } catch {
       // Git errors can contain credentials. The command only reports validated status fields.
     }
-    if (!signal.aborted) await event.reply(result ? describe(result) : "无法检查更新，请核对 Git 工作区后重试。");
+    if (!signal.aborted) await event.reply(result ? describeUpdateAvailability(result) : "无法检查更新，请核对 Git 工作区后重试。");
   };
 }

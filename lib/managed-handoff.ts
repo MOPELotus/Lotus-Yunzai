@@ -18,6 +18,7 @@ export interface ManagedEndpoints {
 interface ManagedHandoff {
   readonly managed: boolean;
   readonly accepting: boolean;
+  readonly updating: boolean;
   readonly supportsAdapterReceipts: boolean;
   readonly pausedAt?: number;
   ready(revision: string | undefined, signal: AbortSignal, loadedPlugins?: readonly string[], endpoints?: ManagedEndpoints,
@@ -76,6 +77,7 @@ export function createManagedHandoff(): ManagedHandoff {
     return {
       managed: false,
       accepting: true,
+      updating: false,
       supportsAdapterReceipts: false,
       async ready() {},
       async restoreStorage() { return undefined; },
@@ -99,6 +101,7 @@ export function createManagedHandoff(): ManagedHandoff {
   let readiness: Promise<void> | undefined;
   let activated = false;
   let cancelUpdate: (() => void) | undefined;
+  let switching = false;
 
   function connected() {
     return !disconnected && process.connected === true;
@@ -206,6 +209,7 @@ export function createManagedHandoff(): ManagedHandoff {
 
     function report(status: ManagedUpdateProgress) {
       if (cancelUpdate !== clear) return;
+      if (status === "switching") switching = true;
       if (isTerminalManagedUpdateProgress(status)) clear();
       void Promise.resolve().then(() => onProgress(status)).catch(() => {});
     }
@@ -231,6 +235,7 @@ export function createManagedHandoff(): ManagedHandoff {
     pausedAt: validPausedAt(pausedAt) ? pausedAt : undefined,
     powerState: powerPath && powerAttempt ? managedDispatchPause(powerPath, powerAttempt) : undefined,
     get accepting() { return accepting && connected(); },
+    get updating() { return switching || cancelUpdate !== undefined; },
     ready(revision, signal, loadedPlugins, endpoints, scripts, storage) {
       return readiness ??= reportReady(revision, signal, loadedPlugins, endpoints, scripts, storage);
     },

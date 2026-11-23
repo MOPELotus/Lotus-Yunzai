@@ -114,7 +114,7 @@ import { watchConfigFiles } from "./lib/config-watch.ts";
 import { createManagedHandoff, type ManagedTlsListener } from "./lib/managed-handoff.ts";
 import { installRejection, readInstallCatalog } from "./lib/install-catalog.ts";
 import { createInstallCommand, hasValidInstallTarget, isInstallCommand, parseInstallName } from "./lib/install-command.ts";
-import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress } from "./lib/managed-update-protocol.ts";
+import { isTerminalManagedUpdateProgress, managedUpdateScheduledBotLimit, type ManagedUpdateProgress, type ManagedUpdateRequest } from "./lib/managed-update-protocol.ts";
 import { createMasterEnrollment, matchesMasterEnrollment } from "./lib/master-enrollment.ts";
 import { appendBlackUser, updateHostAccessList } from "./lib/master-config.ts";
 import { createMessageCounts } from "./lib/message-counts.ts";
@@ -200,6 +200,7 @@ import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
 import { createUpdateCheckCommand, isUpdateCheckCommand } from "./lib/update-check-command.ts";
 import { readUpdateAvailability } from "./lib/update-candidate-git.ts";
+import { createUpdateNotices, normalizedUpdateNoticeCron, persistUpdateNoticeSettings, readUpdateNoticeSettings, updateNoticeSettingCommand } from "./lib/update-notice.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
@@ -670,11 +671,66 @@ if (import.meta.main) {
     const connection = event[delegationSession]?.signal;
     return updateCheckCommand(event, connection ? nativeOperationSignal(connection) : nativeOperationSignal());
   };
+  let pendingUpdateSubmissions = 0;
+  const updateNotices = createUpdateNotices({
+    signal: lifecycle.signal,
+    accepting: () => !stopping && !processAction && pendingUpdateSubmissions === 0 && handoff.accepting && !handoff.updating,
+    read: signal => readUpdateAvailability(fileURLToPath(root), signal, true),
+    async send(message, signal) {
+      const owners = processOwnerTargets().flatMap(({ botId, adapter }) => masterPermissions.masterIds(botId)
+        .filter(id => id !== botId)
+        .map(id => ({ type: "private" as const, botId, id, adapter })));
+      const target = masterPermissions.legacyMasterIds()
+        .map(id => owners.find(owner => owner.id === id)).find(owner => owner !== undefined) ?? owners[0];
+      if (!target || signal.aborted || !masterPermissions.isMaster(target.botId, target.id)) return "rejected";
+      const connection = target.adapter === "milky" ? milkyOnline?.signal : undefined;
+      const result = await sendReceipt(target, message, connection);
+      return result.confirmed ? "confirmed" : result.retry ? "rejected" : "unknown";
+    },
+  });
+
+  async function submitManagedUpdate(request: ManagedUpdateRequest, report: (status: ManagedUpdateProgress) => void) {
+    pendingUpdateSubmissions++;
+    try {
+      await updateNotices.interrupt();
+      return !stopping && handoff.update(request, report);
+    } finally {
+      pendingUpdateSubmissions--;
+    }
+  }
+
+  async function configureUpdateNotice(event: MessageEvent, change: NonNullable<ReturnType<typeof updateNoticeSettingCommand>>) {
+    const connection = event[delegationSession]?.signal;
+    const signal = connection ? nativeOperationSignal(connection) : nativeOperationSignal();
+    const authorize = () => !event.isDelegated && canManagePackages(event) &&
+      (event.message_type === "terminal" ? masterPermissions.terminal :
+        event.self_id !== undefined && event.user_id !== undefined && masterPermissions.isMaster(event.self_id, event.user_id) &&
+        (event.adapter !== "milky" || onlineMilkyBotId() === event.self_id));
+    if (signal.aborted) return;
+    if (!authorize()) {
+      await event.reply("暂无权限，只有主人才能操作");
+      return;
+    }
+    const cron = change.update_notice_cron === undefined ? undefined : normalizedUpdateNoticeCron(change.update_notice_cron);
+    if (change.update_notice_cron !== undefined && (!cron || !validateModuleCron(cron))) {
+      await event.reply("检查更新时间需要有效的五段或六段 Cron 表达式。");
+      return;
+    }
+    try {
+      const settings = await persistUpdateNoticeSettings(root, cron ? { update_notice_cron: cron } : change,
+        signal, authorize, updateNotices.apply, validateModuleCron);
+      if (!signal.aborted) await event.reply(cron ? `检查更新时间已设置为 ${settings.update_notice_cron}（北京时间）。` :
+        `更新推送已${settings.update_notice ? "开启" : "关闭"}。`);
+    } catch {
+      if (!signal.aborted) await event.reply("无法保存更新推送设置，请检查 bot.yaml 和检查时间。");
+    }
+  }
+
   const updateCommand = createUpdateCommand(async (event, requested, quiet, report, all, force) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
     if (await reportOldMilkySupervisor(event)) return true;
-    return handoff.update({
+    return submitManagedUpdate({
       requested, ...(all ? { all: true } : {}), ...(force ? { force: true } : {}), quiet, target,
       ...updatePluginSnapshot(),
     }, report);
@@ -705,7 +761,7 @@ if (import.meta.main) {
         return true;
       }
       if (await reportOldMilkySupervisor(event)) return true;
-      return handoff.update({ install: name, quiet: false, target, ...updatePluginSnapshot() }, (status) => {
+      return submitManagedUpdate({ install: name, quiet: false, target, ...updatePluginSnapshot() }, (status) => {
         if (status === "current") report("exists");
         else if (status !== "dirty" && status !== "ahead" && status !== "diverged") report(status);
         else report("failed");
@@ -738,7 +794,7 @@ if (import.meta.main) {
     const abort = () => progress.resolve(undefined);
     signal.addEventListener("abort", abort, { once: true });
     try {
-      if (!handoff.update({
+      if (!await submitManagedUpdate({
         all: true, quiet: true,
         target: { type: "scheduled", botIds, terminal, ...(milkyBotIds.length ? { milkyBotIds } : {}) },
         ...updatePluginSnapshot(),
@@ -767,6 +823,7 @@ if (import.meta.main) {
     void stopPowerSchedule?.();
     void stopRestartSchedule?.();
     void stopUpdateSchedule?.();
+    void updateNotices.stop();
     void moduleTasks.stop();
     void legacy.stopTasks();
     legacy.stopContexts();
@@ -1992,13 +2049,14 @@ if (import.meta.main) {
     }
     const atlasCommand = atlasMaintenanceCommand.test(event.msg);
     const updateCheck = isUpdateCheckCommand(event.msg);
+    const updateNoticeChange = updateNoticeSettingCommand(event.msg);
     if (event.msg === "#TodayEatPro20x" && (event.isDelegated || !canManagePackages(event) ||
         (event.message_type !== "terminal" && (event.message_type !== "private" || event.sub_type !== "friend" ||
           event[delegationSession]?.signal.aborted !== false)))) return;
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         (await import("./plugins/execute/index.ts")).isNestedExecution(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
-        atlasCommand || updateCheck || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
+        atlasCommand || updateCheck || updateNoticeChange || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) ||
         zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
@@ -2039,6 +2097,10 @@ if (import.meta.main) {
       if (privateAccess.disabled) {
         if (updateCheck) {
           if (allowNew && allowed(updateFeatureNames)) await checkForUpdate(event);
+          return;
+        }
+        if (updateNoticeChange) {
+          if (allowNew && allowed(updateFeatureNames)) await configureUpdateNotice(event, updateNoticeChange);
           return;
         }
         if (hasValidUpdateTarget(event.msg)) {
@@ -2413,6 +2475,10 @@ if (import.meta.main) {
     if (deliverMedia) Object.defineProperty(command, "deliverMedia", { value: deliverMedia });
     if (updateCheck) {
       if (allowed(updateFeatureNames)) await checkForUpdate(command);
+      return;
+    }
+    if (updateNoticeChange) {
+      if (allowed(updateFeatureNames)) await configureUpdateNotice(command, updateNoticeChange);
       return;
     }
     if (isUpdateLogCommand(command.msg)) {
@@ -3848,7 +3914,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/runtime", panelRuntimeSettings(root)],
         ["/panel/api/settings/native/remote", panelRemoteSettings(root)],
         [arkRankCredentialsPath, arkRankCredentials.panel],
-        ["/panel/api/settings/native/process-schedule", panelProcessScheduleSettings(root, validateModuleCron)],
+        ["/panel/api/settings/native/process-schedule", panelProcessScheduleSettings(root, validateModuleCron, updateNotices.apply)],
         ["/panel/api/settings/native/daily-note", panelDailyNoteSettings(root, validateModuleCron)],
         ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],
         ["/panel/api/settings/native/genshin-damage", panelGameSettings(root, "genshin-damage")],
@@ -3956,6 +4022,8 @@ if (import.meta.main) {
       } else if (botConfig.restart_time || botConfig.restart_cron) {
         console.warn("[进程管理] 当前运行环境不支持定时重启。");
       }
+      try { updateNotices.initialize(readUpdateNoticeSettings(botConfig)); }
+      catch { console.warn("[更新推送] 跳过 bot.yaml 中无效的检查时间。"); }
       if (handoff.managed) stopUpdateSchedule = scheduleUpdates(botConfig, requestScheduledUpdate);
       else if (botConfig.update_time || botConfig.update_cron) {
         console.warn("[更新] 定时更新需要通过 bun run start 启动宿主。");
@@ -4000,7 +4068,7 @@ if (import.meta.main) {
       if (legacyProcessReady && legacyBot) {
         legacyExitHooksRan = await legacy.exitHooks.run(legacyBot, exitReason);
       }
-      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(),
+      await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(), updateNotices.stop(),
         moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop(), dailyNoteReminders?.stop()]);
       miyousheWeb?.close();
       panelOwnerSession?.close();

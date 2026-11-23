@@ -2,6 +2,7 @@ import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { readOwnerSnapshot } from "./permissions.ts";
+import type { UpdateNoticeSettings } from "./update-notice.ts";
 
 type Config = Record<string, unknown>;
 type ConfigName = "other" | "bot";
@@ -13,7 +14,7 @@ const otherFields = [
   "autoFriend", "autoGroup", "autoQuit",
 ] as const;
 const botFields = [
-  "/→#", "update_time", "restart_time", "update_cron", "restart_cron", "stop_cron", "start_cron", "file_watch",
+  "/→#", "update_time", "restart_time", "update_cron", "update_notice", "update_notice_cron", "restart_cron", "stop_cron", "start_cron", "file_watch",
   "cache_group_member", "online_msg_exp", "plugin_load_timeout", "log_level", "log_length", "log_object", "log_align",
   "msg_type_count", "file_to_url_time", "file_to_url_times",
 ] as const;
@@ -162,7 +163,9 @@ async function stagingDirectory(target: string, segments: readonly string[]) {
   return parent;
 }
 
-export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
+export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal,
+  updateNotice?: Partial<UpdateNoticeSettings>,
+) {
   signal?.throwIfAborted();
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
   const local = relative(source, target);
@@ -170,14 +173,15 @@ export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: 
     throw new Error("核心配置暂存须位于旧安装副本之外。");
   }
   const result = { files: 0, deferredOwners: { master: 0, masterQQ: 0 } };
-  if (!(await physicalDirectory(join(source, "config"))) ||
-      !(await physicalDirectory(join(source, "config", "config")))) return result;
+  const hasCoreConfig = await physicalDirectory(join(source, "config")) &&
+    await physicalDirectory(join(source, "config", "config"));
   const deferred: DeferredOwners = { master: [], masterQQ: [] };
   const entries = new Map<ConfigName, Config>();
   for (const key of ["other", "bot"] as const) {
     signal?.throwIfAborted();
-    const config = await readConfig(source, key, deferred);
-    if (config !== undefined) entries.set(key, config);
+    const config = hasCoreConfig ? await readConfig(source, key, deferred) : undefined;
+    if (key === "bot" && updateNotice) entries.set(key, { ...(config ?? { update_time: 0 }), ...updateNotice, ...config });
+    else if (config !== undefined) entries.set(key, config);
   }
   if (!entries.size) return result;
   const parent = await stagingDirectory(target, ["config", "config"]);

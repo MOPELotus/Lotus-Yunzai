@@ -83,3 +83,91 @@ test("OneBot 和 Milky 主人检查实时上游，分支、索引和工作区保
     await rm(upstream, { recursive: true, force: true });
   }
 }, 12_000);
+
+test("只读定时检查向首位已授权主人发送，明确失败可补发且同一提交只发一次", async () => {
+  const upstream = await mkdtemp(join(tmpdir(), "lotus-update-notice-upstream-"));
+  let current = "", candidate = "";
+  try {
+    await withDualGatewayFixture("update-notice-fixture", 'master: ["99:42", "100:43", "100:44"]\nmasterQQ: [stdin, 71, 43, 42]\ndisablePrivate: true\n',
+      async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+        const refs = () => git(root, "for-each-ref", "--format=%(refname) %(objectname)");
+        const initialRefs = refs();
+        const index = await readFile(join(root, ".git", "index"));
+
+        await Bun.sleep(1_050);
+        expect(milky.calls).toHaveLength(0);
+        expect(onebot.calls).toHaveLength(0);
+        expect(Bun.spawnSync(["git", "cat-file", "-t", candidate], { cwd: root, stderr: "ignore" }).exitCode).not.toBe(0);
+
+        sendOneBot("#开启更新推送", { user_id: 71, message_type: "group", group_id: 77 });
+        const denied = await onebot.next("send_msg");
+        expect(denied.params.message).toBe("暂无权限，只有主人才能操作");
+        denied.respond({ message_id: 71 });
+
+        await sendMilky("#设置检查更新时间 0 32 * * *");
+        const invalid = await milky.next("send_private_message");
+        expect(invalid.params.message).toEqual([{ type: "text", data: { text: "检查更新时间需要有效的五段或六段 Cron 表达式。" } }]);
+        invalid.respond({ message_seq: 11 });
+
+        sendOneBot("#设置检查更新时间 */1 * * * * *");
+        const changed = await onebot.next("send_msg");
+        expect(changed.params.message).toBe("检查更新时间已设置为 */1 * * * * *（北京时间）。");
+        changed.respond({ message_id: 15 });
+
+        await sendMilky("#开启更新推送");
+        const enabled = await milky.next("send_private_message");
+        expect(enabled.params.message).toEqual([{ type: "text", data: { text: "更新推送已开启。" } }]);
+        enabled.respond({ message_seq: 12 });
+
+        const first = await milky.next("send_private_message");
+        expect(first.params.user_id).toBe(43);
+        const expected = [
+          "Lotus-Yunzai 更新检查", "检测到上游有 1 个新提交。", "分支：main", "上游：origin/main",
+          "领先 0 个提交 · 落后 1 个提交", `当前提交：${current}`, `上游提交：${candidate}`,
+        ].join("\n");
+        const commit = git(upstream, "show", "--no-patch", "--date=short", "--format=[%h | %cd] %s", candidate);
+        expect(first.params.message).toEqual([{ type: "text", data: { text: `${expected}\n${commit}` } }]);
+        first.respond({}, "failed");
+        const second = await milky.next("send_private_message");
+        expect(second.params).toEqual(first.params);
+        second.respond({ message_seq: 13 });
+        await Bun.sleep(1_050);
+        expect(milky.calls).toHaveLength(0);
+        expect(onebot.calls).toHaveLength(0);
+
+        sendOneBot("#关闭更新推送");
+        const disabled = await onebot.next("send_msg");
+        expect(disabled.params.message).toBe("更新推送已关闭。");
+        disabled.respond({ message_id: 14 });
+        git(upstream, "commit", "--quiet", "--allow-empty", "-m", "another candidate");
+        const next = git(upstream, "rev-parse", "HEAD");
+        await Bun.sleep(1_050);
+        expect(milky.calls).toHaveLength(0);
+        expect(onebot.calls).toHaveLength(0);
+        expect(Bun.spawnSync(["git", "cat-file", "-t", next], { cwd: root, stderr: "ignore" }).exitCode).not.toBe(0);
+        expect(git(root, "rev-parse", "HEAD")).toBe(current);
+        expect(refs()).toBe(initialRefs);
+        expect(await readFile(join(root, ".git", "index"))).toEqual(index);
+        expect(await Bun.file(join(root, ".git", "FETCH_HEAD")).exists()).toBe(false);
+        expect(Bun.YAML.parse(await readFile(join(root, "config", "bot.yaml"), "utf8"))).toMatchObject({
+          update_time: 0, update_notice: false, update_notice_cron: "*/1 * * * * *",
+        });
+      }, 4_000, undefined, async root => {
+        await writeFile(join(root, "config", "bot.yaml"),
+          'cache_group_member: false\nupdate_time: 0\nupdate_notice_cron: "* * * * * *"\n');
+        git(root, "init", "--quiet", "--initial-branch=main");
+        await writeFile(join(root, "version.txt"), "local content\n");
+        git(root, "add", "version.txt");
+        git(root, "commit", "--quiet", "-m", "local");
+        current = git(root, "rev-parse", "HEAD");
+        git(upstream, "clone", "--quiet", "--no-local", root, ".");
+        git(upstream, "commit", "--quiet", "--allow-empty", "-m", "upstream");
+        candidate = git(upstream, "rev-parse", "HEAD");
+        git(root, "remote", "add", "origin", upstream);
+        git(root, "update-ref", "refs/remotes/origin/main", current);
+        git(root, "branch", "--set-upstream-to=origin/main", "main");
+      });
+  } finally {
+    await rm(upstream, { recursive: true, force: true });
+  }
+}, 16_000);

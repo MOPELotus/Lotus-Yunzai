@@ -23,6 +23,7 @@ import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
 import { stageLegacyZzzChallengeReminder } from "../lib/migration-zzz-challenge-reminder.ts";
 import { stageLegacyZzzRecallConfig } from "../lib/migration-zzz-recall.ts";
+import { readLegacyZzzUpdateNotice } from "../lib/migration-zzz-update-notice.ts";
 import { stageLegacyPluginBackup } from "../lib/plugins/legacy-backup-stage.ts";
 import { stageRetainedLegacyPlugins } from "../lib/plugins/legacy-retained-stage.ts";
 import { planMigration } from "../lib/plugins/migration-plan.ts";
@@ -47,7 +48,9 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const schedules = await stageLegacyCheckinSchedules(plan.source, state.directory, signal);
     const gameData = await stageLegacyGameData(plan.source, state.directory, signal, plan.plugins);
     const sharedGameHistory = await stageLegacySharedGameHistory(plan.source, state.directory, signal);
-    const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal);
+    const updateNotice = await readLegacyZzzUpdateNotice(backup.status === "empty" ? undefined : backup.directory,
+      plan.plugins, signal);
+    const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal, updateNotice.settings);
     const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
     const panelRank = await stageLegacyPanelRankConfig(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
@@ -76,7 +79,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, panelRank, zzzRecall, zzzChallengeReminder, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas, starRailTheme,
+      sharedGameHistory, coreConfig, groupConfig, panelRank, zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas, starRailTheme,
       shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
