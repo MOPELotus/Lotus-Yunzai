@@ -101,6 +101,32 @@ test("预检期间关机时当前会话不能继续禁言", async () => {
   expect(sent).toBe(0);
 });
 
+test("管理员命令即使提及自己，设置头衔前也要复核主人权限", async () => {
+  const held = Promise.withResolvers<void>();
+  let master = true;
+  const writes: string[] = [];
+  const actions = bindMessageGroupActions({
+    bot: 99, actor: 51, signal: new AbortController().signal, isMaster: () => master, isProtected: () => false,
+    async role(id) {
+      if (id === 99) return "owner";
+      await held.promise;
+      return "member";
+    },
+    async mute() { return "confirmed"; },
+    async wholeMute() { return "confirmed"; },
+    async kick() { return "confirmed"; },
+    async title(_id, text) { writes.push(text); return "confirmed"; },
+    async setAdmin() { return "confirmed"; },
+  });
+  const altered = actions.groupSetSpecialTitle(51, "主人设置");
+  master = false;
+  held.resolve();
+  expect(await altered).toBe("unavailable");
+  expect(await actions.groupSetSpecialTitle(51, "含屏蔽词", async () => false)).toBe("protected");
+  expect(await actions.groupSetSpecialTitle(51, "正常自助申请", async () => true)).toBe("confirmed");
+  expect(writes).toEqual(["正常自助申请"]);
+});
+
 test("群投票终局复核当前角色、目标保护和暂停信号，网关确认的回复才可计时", async () => {
   const connection = new AbortController();
   const power = new AbortController();
@@ -199,6 +225,9 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const key = `${params.group_id}:${params.user_id}`;
     return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key),
       last_sent_time: memberLastSentTimes.get(key), ...(key === "88:55" ? { card: "合成私聊名片" } : {}),
+      ...(key === "82:42" ? { card: "合成管理名片", nickname: "未采用的旧昵称" } : {}),
+      ...(key === "79:53" ? { nickname: "合成管理员昵称" } : {}),
+      ...(key === "79:60044" ? { card: "未确认的管理名片" } : {}),
       ...(key === `${group}:42` ? { card: "合成踢出名片", nickname: "旧昵称" } : {}),
       ...(key === `${group}:55` ? { nickname: "合成踢黑昵称" } : {}),
       ...(key === `${group}:44` ? { nickname: "合成未确认昵称" } : {}),
@@ -676,7 +705,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     send(oneBotMessage([text("#修改头衔不能代改"), at(42)], 51, 82));
     await groupReplyWith("没有设置该群头衔的权限");
     send(oneBotMessage([text("#设置头衔同行者"), at(42)], 52, 82));
-    await groupReplyWith("同行者");
+    await groupReplyWith("合成管理名片（42） 的头衔设置为「同行者」");
     expect(oneBotCalls.filter(({ action }) => action === "set_group_special_title").map(({ params }) => params)).toEqual([
       { group_id: 82, user_id: 42, special_title: "旅人" }, { group_id: 82, user_id: 42, special_title: "同行者" },
     ]);
@@ -708,7 +737,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
 
     const promote = oneBotMessage([text("#设置管理"), at(42), at(60042), at(42)], 52, 82);
     send(promote);
-    await groupReplyWith("60042");
+    await groupReplyWith("合成管理名片（42）、60042 设置为群管理员");
     send(promote);
     const priorAdminReplies = oneBotReplies().length;
     send(oneBotMessage("#设置管理60042", 52, 82));
@@ -721,11 +750,13 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
 
     const unknownAdmin = milkyTitle("#设置管理60044");
     await webhook("message_receive", unknownAdmin);
-    expect(JSON.stringify((await milkyReply(23)).params.message)).toContain("未确认");
+    const unknownAdminReply = JSON.stringify((await milkyReply(23)).params.message);
+    expect(unknownAdminReply).toContain("未确认");
+    expect(unknownAdminReply).not.toContain("未确认的管理名片");
     await webhook("message_receive", unknownAdmin);
     const demote = milkyTitle("#取消管理");
     await webhook("message_receive", { ...demote, segments: [...demote.segments, { type: "mention", data: { user_id: 53 } }] });
-    expect(JSON.stringify((await milkyReply(24)).params.message)).toContain("53");
+    expect(JSON.stringify((await milkyReply(24)).params.message)).toContain("合成管理员昵称（53） 的群管理员权限");
     expect(milkyCalls.filter(({ action }) => action === "set_group_member_admin").map(({ params }) => params)).toEqual([
       { group_id: 79, user_id: 60044, is_set: true }, { group_id: 79, user_id: 53, is_set: false },
     ]);
