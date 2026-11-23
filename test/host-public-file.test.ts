@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { panelRuntimeSettings } from "../lib/panel-runtime-settings.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const oneBotToken = "public-file-onebot-fixture";
@@ -74,7 +76,7 @@ async function getLinks(origin: URL, command: "#文件链接" | "#文件到期" 
 }
 
 async function withHost(
-  config: { base?: string; defaultHits?: number; defaultMinutes?: number },
+  config: { base?: string; defaultHits?: number; panelFileSharing?: { minutes: number; times: number | null } },
   run: (origin: URL, terminalFile: () => Promise<URL>) => Promise<void>,
 ): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), "lotus-trss-public-file-"));
@@ -83,8 +85,17 @@ async function withHost(
     await mkdir(join(root, "config"), { recursive: true });
     const botConfig = ["online_msg_exp: 0"];
     if (config.defaultHits !== undefined) botConfig.push(`file_to_url_times: ${config.defaultHits}`);
-    if (config.defaultMinutes !== undefined) botConfig.push(`file_to_url_time: ${config.defaultMinutes}`);
     await writeFile(join(root, "config/bot.yaml"), botConfig.join("\n") + "\n");
+    if (config.panelFileSharing) {
+      const handler = panelRuntimeSettings(pathToFileURL(root + "/"));
+      const endpoint = "http://localhost/panel/api/settings/native/runtime";
+      const { values: previous } = await (await handler(new Request(endpoint), () => true)).json();
+      const response = await handler(new Request(endpoint, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previous, values: { ...previous,
+          file_to_url_time: config.panelFileSharing.minutes, file_to_url_times: config.panelFileSharing.times } }),
+      }), () => true);
+      expect(response.status).toBe(200);
+    }
     if (config.base) await writeFile(join(root, "config/server.yaml"), `url: ${JSON.stringify(config.base)}\n`);
     disableMemberPrewarm(root);
     await writeFile(join(root, "plugins", fixtureName), "本机文件内容");
@@ -219,8 +230,8 @@ test("TRSS 按实际监听端口发布 V3 文件，同端口保留 OneBot 与状
   });
 }, 12_000);
 
-test("TRSS 发布链接使用 server.url 的公开域名及反代前缀", async () => {
-  await withHost({ base: publicBase + "/", defaultMinutes: 0.02 }, async (origin) => {
+test("TRSS 发布链接使用 server.url 的反代前缀及面板保存的失效时间和不限次数", async () => {
+  await withHost({ base: publicBase + "/", defaultHits: 1, panelFileSharing: { minutes: 0.02, times: null } }, async (origin) => {
     const { binary } = await getLinks(origin, "#文件链接");
     const { startup } = await getLinks(origin, "#启动文件");
     expect(startup).toStartWith(publicBase + "/File/");

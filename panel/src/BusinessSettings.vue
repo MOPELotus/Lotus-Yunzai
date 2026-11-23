@@ -13,6 +13,7 @@ interface Field {
   max?: number;
   hint?: string;
   readonly?: boolean;
+  nullable?: boolean;
   rows?: number;
   itemType?: "number" | "string";
   separator?: "line";
@@ -62,6 +63,7 @@ function decode(field: Field) {
   if (field.type === "boolean") return value === true;
   const text = String(value ?? "");
   if (field.type === "number") {
+    if (field.nullable && !text.trim()) return null;
     const number = Number(text);
     if (!text.trim() || !Number.isFinite(number) || number < (field.min ?? -Infinity) || number > (field.max ?? Infinity)) {
       throw new Error(`${field.label}的数值无效。`);

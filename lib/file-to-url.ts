@@ -18,7 +18,7 @@ type FileInput = FileData | {
   readonly type?: { readonly mime?: string };
 };
 
-const defaultTimeMs = 60_000;
+const minuteMs = 60_000;
 const maxEncodedLength = Math.ceil(maxPublicFileBytes / 3) * 4;
 const maxImagePixels = 32_000_000;
 const numberText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/u;
@@ -29,11 +29,12 @@ function numeric(value: unknown): number | undefined {
   if (typeof input === "number" && Number.isFinite(input)) return input;
 }
 
-function defaultTime(value: unknown): number {
+function defaultMinutes(value: unknown): number {
   if (value === null || value === false || value === "") return 0;
   const minutes = numeric(value);
-  const timeMs = minutes === undefined ? defaultTimeMs : Math.ceil(minutes * 60_000);
-  return Number.isSafeInteger(timeMs) && timeMs >= 0 ? timeMs : defaultTimeMs;
+  if (minutes === undefined) return 1;
+  const timeMs = Math.ceil(minutes * minuteMs);
+  return Number.isSafeInteger(timeMs) && timeMs >= 0 ? Math.max(0, minutes) : 1;
 }
 
 function hitLimit(value: unknown): number | undefined {
@@ -41,6 +42,10 @@ function hitLimit(value: unknown): number | undefined {
   const limit = numeric(value);
   if (limit === undefined || !Number.isSafeInteger(Math.ceil(limit))) return 0;
   return Math.max(0, Math.ceil(limit));
+}
+
+export function fileShareDefaults(config: Record<string, unknown>) {
+  return { minutes: defaultMinutes(config.file_to_url_time), times: hitLimit(config.file_to_url_times) };
 }
 
 function isBytes(value: FileInput): value is Uint8Array | ArrayBuffer | Blob {
@@ -108,8 +113,8 @@ export async function isVerifiedRaster(bytes: Uint8Array, pixels?: number, side?
 export function createFileToUrl(
   files: ReturnType<typeof createPublicFiles>, config: Record<string, unknown>, baseUrl: () => URL | undefined,
 ) {
-  const timeMs = defaultTime(config.file_to_url_time);
-  const times = hitLimit(config.file_to_url_times);
+  const { minutes, times } = fileShareDefaults(config);
+  const timeMs = Math.ceil(minutes * minuteMs);
   return async (input: FileInput, options: FileOptions = {}): Promise<URL | string> => {
     const object = typeof input === "object" && input !== null && !isBytes(input) && !(input instanceof URL)
       ? input : undefined;

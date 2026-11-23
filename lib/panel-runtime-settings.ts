@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { readLocalConfig, readOptionalConfigFile } from "./config.ts";
+import { fileShareDefaults } from "./file-to-url.ts";
 import { isLogLevel, logLevels, type LogLevel } from "./log-level-command.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { onlineNoticeSeconds } from "./online-notice.ts";
@@ -28,6 +29,10 @@ const fields = [
   { key: "file_watch", label: "监听配置文件改动", type: "boolean", hint: restart },
   { key: "online_msg_exp", label: "主人上线通知冷却（分钟）", type: "number",
     min: 0, hint: "填 0 关闭上线通知。保存后重启宿主生效。" },
+  { key: "file_to_url_time", label: "文件分享有效期（分钟）", type: "number", min: 0,
+    hint: "默认 1 分钟，支持小数。填 0 时链接不随时间失效。保存后重启宿主生效。" },
+  { key: "file_to_url_times", label: "文件分享下载次数", type: "number", min: 0, nullable: true,
+    hint: "留空不限次数，填 0 时按默认策略生成的链接不可下载。HEAD 探测不计入。保存后重启宿主生效。" },
 ] as const;
 
 interface RuntimeValues {
@@ -42,6 +47,8 @@ interface RuntimeValues {
   msg_type_count: boolean;
   file_watch: boolean;
   online_msg_exp: number;
+  file_to_url_time: number;
+  file_to_url_times: number | null;
 }
 
 function enabled(value: unknown) {
@@ -80,6 +87,7 @@ async function readValues(root: URL): Promise<RuntimeValues> {
       slashEnabled = false;
     }
   }
+  const { minutes, times } = fileShareDefaults(config);
   return {
     imageRenderPreset: config.imageRenderPreset === "low" ? "low" : "standard",
     log_level: isLogLevel(level) ? level : "info",
@@ -94,6 +102,7 @@ async function readValues(root: URL): Promise<RuntimeValues> {
     file_watch: config.file_watch !== false,
     online_msg_exp: onlineNoticeSeconds(config.online_msg_exp) === undefined ? 0 :
       config.online_msg_exp === undefined ? 1440 : Number(config.online_msg_exp),
+    file_to_url_time: minutes, file_to_url_times: times ?? null,
   };
 }
 
@@ -109,7 +118,11 @@ function parseValues(input: unknown): RuntimeValues | undefined {
       typeof values.plugin_load_timeout !== "number" || parsePluginLoadMilliseconds(values.plugin_load_timeout) === undefined ||
       !([slash, "cache_group_member", "msg_type_count", "file_watch"] as const).every(key => typeof values[key] === "boolean") ||
       typeof values.online_msg_exp !== "number" ||
-      (values.online_msg_exp !== 0 && onlineNoticeSeconds(values.online_msg_exp) === undefined)) return;
+      (values.online_msg_exp !== 0 && onlineNoticeSeconds(values.online_msg_exp) === undefined) ||
+      typeof values.file_to_url_time !== "number" || values.file_to_url_time < 0 ||
+      values.file_to_url_time !== fileShareDefaults(values).minutes ||
+      (values.file_to_url_times !== null && (typeof values.file_to_url_times !== "number" ||
+        !Number.isSafeInteger(values.file_to_url_times) || values.file_to_url_times < 0))) return;
   return values as unknown as RuntimeValues;
 }
 
