@@ -25,6 +25,7 @@ interface BindingRequest {
   readonly profileId: number;
   readonly revision: string;
   readonly expires: number;
+  readonly connection: AbortSignal;
 }
 
 export function deviceCommands(directory: string | undefined, signal: AbortSignal,
@@ -33,7 +34,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
 ): CommandModule {
   const profiles = createProfileStore(directory);
   const pending = new Map<string, BindingRequest>();
-  const opening = new Map<string, { readonly profileId: number }>();
+  const opening = new Map<string, Pick<BindingRequest, "profileId" | "connection">>();
   signal.addEventListener("abort", () => {
     pending.clear();
     opening.clear();
@@ -71,9 +72,10 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       }
       const qq = String(user_id);
       const scope = `${adapter ?? "onebot"}:${self_id}:${qq}`;
+      const connection = context.privateCredentialSignal;
+      if (context.isDelegated || !connection || connection.aborted) return;
+      const active = AbortSignal.any([signal, connection]);
       if (unbound) {
-        if (context.isDelegated || !context.privateCredentialSignal || context.privateCredentialSignal.aborted) return;
-        const active = AbortSignal.any([signal, context.privateCredentialSignal]);
         if (pending.get(scope)?.profileId === id) pending.delete(scope);
         if (opening.get(scope)?.profileId === id) opening.delete(scope);
         try {
@@ -89,7 +91,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       }
       if (cancelled || text === "取消") {
         const waiting = pending.get(scope) ?? opening.get(scope);
-        if (!waiting || (cancelled?.[1] !== undefined && waiting.profileId !== id)) {
+        if (!waiting || waiting.connection !== connection || (cancelled?.[1] !== undefined && waiting.profileId !== id)) {
           return cancelled ? "当前私聊没有该档案的设备绑定等待。" : undefined;
         }
         pending.delete(scope);
@@ -97,17 +99,18 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         return "已取消绑定设备。";
       }
 
-      let request = pending.get(scope);
+      const waiting = pending.get(scope);
+      let request = waiting?.connection === connection ? waiting : undefined;
       if (opened) {
         pending.delete(scope);
-        const attempt = { profileId: id };
+        const attempt = { profileId: id, connection };
         opening.set(scope, attempt);
         try {
           const account = await profiles.accountContext(qq, id);
-          if (opening.get(scope) !== attempt) return [];
-          request = { profileId: id, revision: account.revision, expires: performance.now() + timeout };
+          if (active.aborted || opening.get(scope) !== attempt) return [];
+          request = { profileId: id, revision: account.revision, expires: performance.now() + timeout, connection };
         } catch {
-          if (opening.get(scope) !== attempt) return [];
+          if (active.aborted || opening.get(scope) !== attempt) return [];
           return `[account] 请先扫码登录 profile ${id}。`;
         } finally {
           if (opening.get(scope) === attempt) opening.delete(scope);
@@ -119,11 +122,11 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
             if (pending.get(scope) === current) pending.delete(scope);
           }, timeout).unref();
           const prompt = `请发送 profile ${id} 的设备 JSON，或同一份 device_id 和 device_fp。发送「取消」可退出，两分钟内有效。`;
-          if (await context.reply(prompt) === false || signal.aborted) {
+          if (await context.reply(prompt) === false || active.aborted) {
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
           }
-          const isCurrent = () => !signal.aborted && !context.privateCredentialSignal?.aborted && pending.get(scope) === current;
+          const isCurrent = () => !active.aborted && pending.get(scope) === current;
           if (!isCurrent()) return [];
           if (!context.uploadFile) return `当前连接无法发送附件。${apkFallback}`;
           const file = Bun.file(apk ?? (Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk));
@@ -149,10 +152,10 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       try {
         const device = parseDeviceBinding(opened?.[2] ?? text);
         pending.delete(scope);
-        await profiles.saveBoundDevice(qq, request.profileId, request.revision, device, signal);
-        if (signal.aborted) return [];
+        await profiles.saveBoundDevice(qq, request.profileId, request.revision, device, active);
+        if (active.aborted) return [];
       } catch (error) {
-        if (signal.aborted) return [];
+        if (active.aborted) return [];
         if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发起设备绑定。";
         return "设备绑定未完成，请在同一份信息中提供匹配的设备 ID 和 FP。";
       }

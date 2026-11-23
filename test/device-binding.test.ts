@@ -19,6 +19,7 @@ test("绝区零设备帮助保留档号，不打开设备绑定窗口", async ()
     const context = {
       message_type: "private" as const, self_id: 99, user_id: 42, isMaster: false, isBotMaster: () => false,
       reply: () => { throw new Error("帮助不应请求设备信息或发送文件"); },
+      privateCredentialSignal: new AbortController().signal,
     };
     for (const command of ["%绑定设备帮助2", "#绝区零绑定设备帮助2", "％绑定设备帮助2", "/ZZZ绑定设备帮助2"]) {
       expect(isDeviceBindingInput(command)).toBe(true);
@@ -161,12 +162,16 @@ test("设备 APK 缺失、不支持或发送未确认时保持同档 JSON 绑定
     }));
     const module = deviceCommands(root, lifecycle.signal, id => `档案 ${id} 已绑定`, path);
     const dispatch = module.fallback!;
+    const connection = new AbortController();
     const context = {
       message_type: "private" as const, self_id: 99, user_id: 42,
       isMaster: false, isBotMaster: () => false, reply: () => true,
-      privateCredentialSignal: new AbortController().signal,
+      privateCredentialSignal: connection.signal,
     };
     const device = (text: string, extra = {}) => dispatch(text, { ...context, normalizedMessage: text, ...extra });
+    const payload = JSON.stringify({ device_id: id, device_fp: fp });
+    expect(await device(`${command} ${payload}`, { privateCredentialSignal: undefined })).toBeUndefined();
+    expect(await device(`${command} ${payload}`, { isDelegated: true })).toBeUndefined();
 
     const unsupported = await device(command);
     expect(unsupported).toContain("当前连接无法发送附件");
@@ -189,8 +194,12 @@ test("设备 APK 缺失、不支持或发送未确认时保持同档 JSON 绑定
     expect(await inFlight).toEqual([]);
 
     expect(await device(command, { uploadFile: async () => "rejected" })).toContain("设备信息工具未能发送");
-    const payload = JSON.stringify({ device_id: id, device_fp: fp });
-    expect(await device(payload)).toBe("档案 2 已绑定");
+    const reconnected = { privateCredentialSignal: new AbortController().signal };
+    connection.abort();
+    expect(await device(payload)).toBeUndefined();
+    expect(await device(payload, reconnected)).toBe("请先私聊发送 #绑定设备。");
+    expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).not.toHaveProperty("device");
+    expect(await device(`${command} ${payload}`, reconnected)).toBe("档案 2 已绑定");
     expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).toMatchObject({
       account: { cookie: "fixture-cookie", stoken: "fixture-token" }, device: { bound: true, id, fp },
     });
