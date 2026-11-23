@@ -125,7 +125,9 @@ const preview: ProfileEditor<"preview"> = { key: "preview", data: null, active: 
 const checkin: ProfileEditor<"checkin"> = { key: "checkin", data: null, active: null, patch: checkinPatch, buttons: checkinSettingsButtons, render: renderCheckinSettings };
 const profileEditors = [checkin, preview];
 const manualCheckin: { active: AbortController | null; timer: Timer | undefined; status: ManualStatus } = { active: null, timer: undefined, status: "loading" };
-const trackers: { generation: number; targets: AbortController | null; loading: boolean } = { generation: 0, targets: null, loading: false };
+const trackers: {
+  generation: number; targets: AbortController | null; loading: AbortController | null; data: TrackerData | null;
+} = { generation: 0, targets: null, loading: null, data: null };
 const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
 const planStatus = {
   scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
@@ -149,6 +151,7 @@ function showLogin(message: string, help = false, retry = false) {
   get("login").hidden = false;
   get("login-message").textContent = message;
   get("login-command").hidden = !help;
+  get("login-profile-help").hidden = !help;
   get("login-retry").hidden = !retry;
   get("profile-name").textContent = "";
   get("profile").textContent = "";
@@ -470,7 +473,9 @@ function resetShop() {
   get("shop-plans").replaceChildren();
   trackers.generation++;
   trackers.targets?.abort();
-  trackers.loading = false;
+  trackers.loading?.abort();
+  trackers.loading = null;
+  trackers.data = null;
   get("tracker-dialog").close();
   get("tracker-open").disabled = true;
   get("trackers-note").textContent = "";
@@ -850,12 +855,18 @@ async function loadTrackers() {
   if (trackers.loading) return;
   const generation = trackers.generation;
   const note = get("trackers-note");
-  trackers.loading = true;
+  const active = new AbortController();
+  trackers.loading = active;
   try {
-    const data = await trackingResponse<TrackerData>(await request("api/trackers"));
+    const response = await request("api/trackers", { signal: AbortSignal.any([active.signal, AbortSignal.timeout(20_000)]) });
+    if (trackers.loading !== active) return;
+    const data = await trackingResponse<TrackerData>(response);
     if (trackers.generation !== generation) return;
     get("tracker-open").disabled = !data.canTrack;
     note.textContent = data.canTrack ? "" : "暂时无法启动追踪规则。";
+    const previous = trackers.data;
+    if (previous?.canTrack === data.canTrack && JSON.stringify(previous.trackers) === JSON.stringify(data.trackers)) return;
+    trackers.data = data;
     const rows = data.trackers.map(rule => {
       const row = add("article", "plan-row", "");
       const copy = add("div", "plan-copy", "");
@@ -899,7 +910,7 @@ async function loadTrackers() {
   } catch (error) {
     if (trackers.generation === generation) note.textContent = (error as Error).message;
   } finally {
-    if (trackers.generation === generation) trackers.loading = false;
+    if (trackers.loading === active) trackers.loading = null;
   }
 }
 
@@ -1311,8 +1322,8 @@ setInterval(() => {
   if (tab === "shop") tickShop();
 }, 1000);
 setInterval(() => {
-  if (tab === "trackers" && !document.hidden && !get("tracker-dialog").open) void loadTrackers();
-}, 15_000);
+  if (tab === "trackers" && !document.hidden && !get("dashboard").hidden && !get("tracker-dialog").open) void loadTrackers();
+}, 3_000);
 addEventListener("pageshow", event => {
   if ((event as PageTransitionEvent).persisted) {
     showLogin("正在读取当前档案…");
