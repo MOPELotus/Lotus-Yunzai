@@ -2,7 +2,7 @@ import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
-import { parseNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { isNoticeLogLevel, parseNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
 
@@ -146,23 +146,29 @@ function mergeManagement(current: Mapping, legacy?: Mapping) {
 }
 
 function scheduleSettings(load: (path: string) => Mapping | undefined) {
+  const supported = ["enableSchedule", "scheduleTime", "logger"];
+  const logLevel = (config: Mapping) => {
+    const value = config.get("logger");
+    return isNoticeLogLevel(value) ? value : "info";
+  };
   let selected = load("config/notice.yaml");
   if (!selected) {
     let expected: ReturnType<typeof parseNoticeSchedule>;
     for (const directory of noticeDirectories) {
       const defaults = load(directory + "config_default.yaml"), custom = load(directory + "config.yaml");
       if (!defaults && !custom) continue;
-      const candidate = fields(new Map([...defaults ?? [], ...custom ?? []]), ["enableSchedule", "scheduleTime"]);
+      const candidate = fields(new Map([...defaults ?? [], ...custom ?? []]), supported);
       const parsed = parseNoticeSchedule(stringify(candidate));
       if (selected && (parsed?.start !== expected?.start || parsed?.end !== expected?.end)) {
         throw new Error("两处旧公告定时窗口不一致，请先核对使用的公告配置。");
       }
+      if (selected && logLevel(selected) !== logLevel(candidate)) throw new Error("两处旧公告日志级别不一致，请先核对配置。");
       selected = candidate;
       expected = parsed;
     }
   }
   if (!selected) return;
-  const result = fields(selected, ["enableSchedule", "scheduleTime"]);
+  const result = fields(selected, supported);
   parseNoticeSchedule(stringify(result));
   return result;
 }
@@ -300,6 +306,6 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
   const scopes = noticeDirectories.flatMap(directory => [directory + "config_default.yaml", directory + "config.yaml"]).flatMap(path => {
     try { return load(path) ?? []; } catch { return []; }
   });
-  const deferred = ["logger", "multiAccount", "pushSettings"].filter(key => scopes.some(config => config.has(key))).map(key => `notice.${key}`);
+  const deferred = ["multiAccount", "pushSettings"].filter(key => scopes.some(config => config.has(key))).map(key => `notice.${key}`);
   return { active: [...active.keys(), ...screened.keys()], archived: [...archives.keys()], deferred };
 }

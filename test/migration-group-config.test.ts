@@ -14,7 +14,7 @@ import { readLikeSettings } from "../plugins/group/like-settings.ts";
 import { createManagedBlacklist } from "../plugins/group/managed-blacklist.ts";
 import { configuredPrivateNotice, createPrivateNoticeReader, privateNoticeSetting } from "../plugins/group/private-notice-config.ts";
 import { createGroupScreenedWords } from "../plugins/group/screened-words.ts";
-import { configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { configuredNoticeLogLevel, configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const yenai = "plugins/yenai-plugin/config/config/";
@@ -59,7 +59,7 @@ test("group and notice configs use the active paths with original defaults, scop
   expect(report.active).toEqual(["config/auto-group-card.yaml", "config/group-leave-blacklist.yaml", "config/group.yaml",
     "config/groupAdmin.yaml", "config/group-notice.yaml", "config/notice.yaml"]);
   expect(report.archived).toHaveLength(Object.keys(sample).length - 1);
-  expect(report.deferred).toEqual(["notice.logger", "notice.pushSettings"]);
+  expect(report.deferred).toEqual(["notice.pushSettings"]);
   for (const path of report.archived) {
     expect(await readFile(join(state, path), "utf8")).toBe(sample[path.slice(archive.length) as keyof typeof sample]);
     expect((await stat(join(state, path))).mode & 0o777).toBe(0o600);
@@ -84,7 +84,8 @@ test("group and notice configs use the active paths with original defaults, scop
   expect(privateNoticeSetting(notices, 9, "notificationsAll")).toBe(false);
   expect(privateNoticeSetting(notices, 9, "msgSaveDeltime")).toBe(420);
   expect(configuredNoticeSchedule(root, "")).toBeUndefined();
-  expect(Bun.YAML.parse(await readFile(new URL("config/notice.yaml", root), "utf8"))).toEqual({ enableSchedule: false, scheduleTime: "09:02-09:17" });
+  expect(configuredNoticeLogLevel(root, "")).toBe("debug");
+  expect(Bun.YAML.parse(await readFile(new URL("config/notice.yaml", root), "utf8"))).toEqual({ enableSchedule: false, scheduleTime: "09:02-09:17", logger: "debug" });
   expect(await readFile(new URL("config/group.yaml", root), "utf8")).not.toContain("opaque");
 }));
 

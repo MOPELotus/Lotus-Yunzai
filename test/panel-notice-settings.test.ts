@@ -8,7 +8,7 @@ import { panelNoticeMysSettings, panelNoticeSettings } from "../lib/panel-notice
 import { panelNoticeDeliverySettings } from "../lib/panel-notice-delivery-settings.ts";
 import { effectiveAnnouncementTargets } from "../plugins/notice/mys-announcement.ts";
 import { configuredAnnouncements } from "../plugins/notice/mys-announcement-config.ts";
-import { configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { configuredNoticeLogLevel, configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { createTargetStore } from "../plugins/notice/targets.ts";
 
 type Settings = ReturnType<typeof panelNoticeSettings>;
@@ -31,22 +31,24 @@ test("公告定时面板沿用旧覆盖，保存到现用配置并保持旧原�
     const legacy = join(directory, "plugins/Notice-plugin/config");
     await mkdir(legacy, { recursive: true });
     await writeFile(join(legacy, "config_default.yaml"), "enableSchedule: true\nscheduleTime: 8:00-8:30\nother: preserve\n");
-    const current = "scheduleTime: 9:10-10:00\n";
+    const current = "scheduleTime: 9:10-10:00\nlogger: warn\n";
     await writeFile(join(legacy, "config.yaml"), current);
     const settings = panelNoticeSettings(root);
     expect((await get(settings, () => false)).status).toBe(401);
     const values = (await (await get(settings)).json()).values;
-    expect(values).toEqual({ enableSchedule: true, scheduleTime: "9:10-10:00" });
+    expect(values).toEqual({ enableSchedule: true, scheduleTime: "9:10-10:00", logger: "warn" });
     expect((await put(settings, values, { scheduleTime: "25:30-32:00" })).status).toBe(400);
+    expect((await put(settings, values, { logger: "invalid" })).status).toBe(400);
     expect((await put(settings, values, { scheduleTime: "11:05-11:21" }, () => false)).status).toBe(401);
     expect(await Bun.file(join(directory, "config/notice.yaml")).exists()).toBe(false);
-    const response = await put(settings, values, { scheduleTime: "11:05-11:21" });
+    const response = await put(settings, values, { scheduleTime: "11:05-11:21", logger: "debug" });
     expect(response.status).toBe(200);
     expect((await response.json()).warning).toContain("重启");
     expect(configuredNoticeSchedule(root, "")).toEqual({ start: 665, end: 681 });
+    expect(configuredNoticeLogLevel(root, "")).toBe("debug");
     expect(await readFile(join(legacy, "config.yaml"), "utf8")).toBe(current);
     expect(Bun.YAML.parse(await readFile(join(directory, "config/notice.yaml"), "utf8"))).toEqual({
-      enableSchedule: true, scheduleTime: "11:05-11:21", other: "preserve",
+      enableSchedule: true, scheduleTime: "11:05-11:21", logger: "debug", other: "preserve",
     });
     expect((await put(settings, values, { enableSchedule: false })).status).toBe(409);
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -58,7 +60,7 @@ test("未配置定时推送时保存窗口不会顺带启用", async () => {
     const root = pathToFileURL(directory + "/");
     const settings = panelNoticeSettings(root);
     const values = (await (await get(settings)).json()).values;
-    expect(values).toEqual({ enableSchedule: false, scheduleTime: "8:00-8:30" });
+    expect(values).toEqual({ enableSchedule: false, scheduleTime: "8:00-8:30", logger: "info" });
     expect((await put(settings, values, { scheduleTime: "15:05-15:21" })).status).toBe(200);
     expect(configuredNoticeSchedule(root, "")).toBeUndefined();
   } finally { await rm(directory, { recursive: true, force: true }); }

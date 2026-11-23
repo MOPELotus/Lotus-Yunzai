@@ -10,7 +10,8 @@ type Values = Record<string, SettingValue>;
 type Field = {
   key: string;
   label: string;
-  type: "boolean" | "number" | "text" | "json";
+  type: "boolean" | "number" | "text" | "json" | "select";
+  options?: readonly { label: string; value: string }[];
   min?: number;
   hint?: string;
 };
@@ -20,9 +21,12 @@ type Game = keyof typeof games;
 const gameKeys = Object.keys(games) as Game[];
 const activityGames = ["gs", "sr"] as const;
 const targetHint = "以机器人 QQ 为键，值为群号数组。群内订阅命令产生的覆盖优先；下一轮生效。";
+const logLevels = ["debug", "info", "warn", "error"];
 const localFields: readonly Field[] = [
   { key: "enableSchedule", label: "自动投递当前公告", type: "boolean", hint: "保存后重启宿主生效。" },
   { key: "scheduleTime", label: "自动投递窗口（北京时间）", type: "text", hint: "格式如 08:00-08:30，每天在窗口内选一次。保存后重启宿主生效。" },
+  { key: "logger", label: "独立公告日志级别", type: "select", options: logLevels.map(value => ({ label: value, value })),
+    hint: "保存后重启宿主生效。" },
 ];
 const mysFields: readonly Field[] = [
   { key: "pushTime", label: "查询与推送 Cron", type: "text", hint: "修改 Cron 后重启宿主生效。" },
@@ -70,10 +74,16 @@ async function readSchedule(root: URL, override?: string) {
     if (!settings && !defaults) continue;
     const document = { ...defaults, ...settings };
     const window = parseNoticeSchedule(JSON.stringify(document));
-    if (legacy && !isDeepStrictEqual(legacy.window, window)) throw new GlobalConfigWriteError("config");
+    if (legacy && (!isDeepStrictEqual(legacy.window, window) || logLevel(legacy.document) !== logLevel(document))) {
+      throw new GlobalConfigWriteError("config");
+    }
     legacy = { document, window };
   }
   return legacy?.document ?? { enableSchedule: false };
+}
+
+function logLevel(config: Configuration) {
+  return typeof config.logger === "string" && logLevels.includes(config.logger) ? config.logger : "info";
 }
 
 async function readMysConfig(root: URL): Promise<Configuration> {
@@ -107,6 +117,9 @@ function changes(fields: readonly Field[], value: Configuration): Values {
     if (!field) throw new InvalidNoticeSettings();
     if (field.type === "json") validated[key] = targetMapping(supplied);
     else if (field.type === "boolean" && typeof supplied === "boolean") validated[key] = supplied;
+    else if (field.type === "select" && typeof supplied === "string" && field.options?.some(({ value }) => value === supplied)) {
+      validated[key] = supplied;
+    }
     else if (field.type === "number" && typeof supplied === "number" && Number.isSafeInteger(supplied) && supplied >= (field.min ?? 0)) {
       validated[key] = supplied;
     } else if (field.type === "text" && typeof supplied === "string" && supplied.length <= (key.endsWith("BanWord") ? 4096 : 160)) {
@@ -162,7 +175,7 @@ function endpoint(root: URL, settings: NoticeSettings) {
       await validate(next).catch(() => { throw new InvalidNoticeSettings(); });
       const values = await snapshot(next);
       const value = { fields, values, ...(restartKeys.some(key => Object.hasOwn(changed, key)) && {
-        warning: "设置已保存。重启宿主后启用新的定时计划。",
+        warning: "设置已保存。重启宿主后生效。",
       }) };
       return Response.json(await updateLocalConfiguration(root, name, {
         override, canWrite: active, canCommit: active, signal: request.signal, resolveEffective: read,
@@ -200,12 +213,13 @@ function endpoint(root: URL, settings: NoticeSettings) {
 export function panelNoticeSettings(root: URL) {
   const override = Bun.env.LOTUS_NOTICE_SCHEDULE_CONFIG || undefined;
   return endpoint(root, {
-    name: "notice", fields: localFields, override, restartKeys: ["enableSchedule", "scheduleTime"],
+    name: "notice", fields: localFields, override, restartKeys: ["enableSchedule", "scheduleTime", "logger"],
     read: () => readSchedule(root, override),
     snapshot(config) {
       return {
         enableSchedule: config.enableSchedule !== false,
         scheduleTime: typeof config.scheduleTime === "string" ? config.scheduleTime : "8:00-8:30",
+        logger: logLevel(config),
       };
     },
     patch: (changed, effective) => Object.hasOwn(changed, "scheduleTime") && !Object.hasOwn(changed, "enableSchedule")
