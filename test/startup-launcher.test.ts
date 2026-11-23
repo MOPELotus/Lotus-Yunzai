@@ -467,23 +467,33 @@ async function fixture() {
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
+    writeFile(join(cwd, "plugins/atlas/update-policy.ts"),
+      `export { atlasUpdatePublicationOptions } from ${JSON.stringify(join(source, "plugins/atlas/update-policy.ts"))};\n`),
+    writeFile(join(cwd, "lib/daily-note-theme.ts"), 'export async function prepareDailyNoteTheme() { return "available"; }\n'),
     writeFile(join(cwd, "scripts/run-managed.ts"),
       'export async function runManaged(_root, ready) { await ready?.(); console.log("fixture host ready"); return 0; }\n'),
     writeFile(join(cwd, "plugins/atlas/initialize-atlas.ts"), `
       import { appendFile, mkdir, symlink, writeFile } from "node:fs/promises";
       import { join } from "node:path";
-      const [root, mode, cache, option, channel, ...extra] = Bun.argv.slice(2);
-      if (!root || mode !== "--public" || !cache || option !== "--channel" ||
-          channel !== "live" && channel !== "latest" || extra.length) process.exit(9);
-      await mkdir(cache, { recursive: true });
-      await appendFile(join(cache, "attempts"), channel + "\\n");
-      if (Bun.env.FAIL_FIXTURE === "1") process.exit(8);
-      if (Bun.env.WAIT_FIXTURE === "1") {
-        while (!await Bun.file("allow-publication").exists()) await Bun.sleep(20);
+      export async function initializeAtlasFromPublic(root, cache, signal, channel, { locale, publication }) {
+        if (!root || !cache || channel !== "live" && channel !== "latest" || locale !== "zh" || !publication) {
+          throw new Error("unexpected public Atlas initialization options");
+        }
+        await mkdir(cache, { recursive: true });
+        await appendFile(join(cache, "attempts"), channel + "\\n");
+        if (Bun.env.FAIL_FIXTURE === "1") throw new Error("fixture download failure");
+        if (Bun.env.WAIT_FIXTURE === "1") {
+          while (!await Bun.file("allow-publication").exists()) {
+            signal.throwIfAborted();
+            await Bun.sleep(20);
+          }
+        }
+        const directory = join(root, "snapshots/52/data");
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "map.json"), ${JSON.stringify(index)});
+        await symlink("snapshots/52/data", join(root, "current"), "dir");
+        return { status: "published", version: 52, directory };
       }
-      await mkdir(join(root, "snapshots/52/data"), { recursive: true });
-      await writeFile(join(root, "snapshots/52/data/map.json"), ${JSON.stringify(index)});
-      await symlink("snapshots/52/data", join(root, "current"), "dir");
     `),
   ]);
   const config = join(cwd, "config/global.yaml");
