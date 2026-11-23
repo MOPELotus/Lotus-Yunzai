@@ -26,6 +26,7 @@ export type CommandContext = Readonly<Pick<
   runtimeDiagnosticsScope?: "milky";
   runtimeStatusScope?: "onebot" | "milky" | "terminal";
   calculationSignal?: AbortSignal;
+  authorizeOfficialNoticePush?: () => boolean;
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
@@ -154,6 +155,7 @@ function commandContext(context: CommandContext): CommandContext {
     groupRequestScope, canReviewGroupRequests, runtimeDiagnosticsScope, runtimeStatusScope, message, raw_message, uploadFile, deliverMedia, sendMusicCard,
     attachment, canReadAttachments, adapter, inlineImageByteLimit, isNapCat, listCurrentGroupMembers, listCheckinGroupMembers,
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, ownGroupCardAccount, atlasMaintenance, calculationSignal,
+    authorizeOfficialNoticePush,
     reply } = context;
   return {
     message_type, message_id, self_id, user_id, group_id, isMaster, likeSelf, isFriend, message, raw_message,
@@ -203,6 +205,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
+    ...(authorizeOfficialNoticePush && !isDelegated ? { authorizeOfficialNoticePush } : {}),
     ...(message_type !== "terminal" && !isDelegated && (isMaster || atlasMaintenance === true) && reply ? { reply } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),

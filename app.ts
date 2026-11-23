@@ -2578,9 +2578,16 @@ if (import.meta.main) {
       return;
     }
     const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
-    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount || atlasMaintenance ? {
+    const authorizeOfficialNoticePush = /^#推送米游社全部(?:\s|$)/u.test(command.msg)
+      ? () => !stopping && handoff.accepting && !dispatchPower.paused && !event.isDelegated && canManagePackages(event) &&
+        (event.message_type === "terminal" ? masterPermissions.terminal :
+          event.self_id !== undefined && event.user_id !== undefined &&
+          event[delegationSession]?.signal.aborted === false && masterPermissions.isMaster(event.self_id, event.user_id) &&
+          (event.adapter !== "milky" || onlineMilkyBotId() === event.self_id))
+      : undefined;
+    const context: CommandContext = milkyDiagnostics || runtimeStatusScope || ownGroupCardAccount || atlasMaintenance || authorizeOfficialNoticePush ? {
       ...command, runtimeDiagnosticsScope: milkyDiagnostics ? "milky" : undefined, runtimeStatusScope, ownGroupCardAccount,
-      atlasMaintenance, deliverMedia,
+      atlasMaintenance, deliverMedia, authorizeOfficialNoticePush,
     } : command;
     const reply = await commands.dispatch(command.msg, context, allowed);
     if (reply !== undefined) {
