@@ -25,6 +25,7 @@ export interface DailyNoteSnapshot {
   readonly uid: string;
   readonly region: string;
   readonly stamina: DailyNoteRecovery;
+  readonly recoveryText?: string;
   readonly homeCoin?: DailyNoteRecovery;
   readonly commissionRewardReceived?: boolean;
   readonly expeditions?: { readonly current?: number; readonly max?: number; readonly remainingSeconds?: number;
@@ -38,6 +39,7 @@ export interface DailyNoteSnapshot {
   readonly reserveStamina?: number;
   readonly vitality?: DailyNoteProgress;
   readonly videoStore?: "doing" | "done" | "ready" | "idle" | "unknown";
+  readonly videoStoreText?: string;
   readonly scratchCardDone?: boolean;
 }
 
@@ -82,16 +84,22 @@ function recovery(current: unknown, max: unknown, duration?: unknown): DailyNote
   return { ...value, ...(recoverySeconds === undefined ? {} : { recoverySeconds }) };
 }
 
-function expeditionRemaining(row: Json) {
-  return uint(row.remaining_time ?? row.remained_time ?? row.remain_time ?? row.left_time);
+function expeditionRemaining(row: Json, now: number) {
+  const remaining = uint(row.remaining_time ?? row.remained_time ?? row.remain_time ?? row.left_time);
+  if (remaining !== undefined) return remaining;
+  const finish = uint(row.finish_time);
+  if (finish === undefined || finish < 1_000_000_000) return finish;
+  const timestamp = finish >= 1_000_000_000_000 ? Math.floor(finish / 1000) : finish;
+  return Math.max(0, timestamp - now);
 }
 
 function parseExpeditions(data: Json, game: "gs" | "sr"): DailyNoteSnapshot["expeditions"] {
   const list = Array.isArray(data.expeditions) ? data.expeditions.map(object).filter(row => row !== undefined) : undefined;
+  const now = Math.floor(Date.now() / 1000);
   const active = list?.filter(row => {
     const status = row.status ?? row.state;
     if (typeof status === "string" && /^(?:none|idle|empty|未派遣)$/iu.test(status)) return false;
-    return expeditionRemaining(row) !== undefined || (typeof status === "string" && status.length > 0) ||
+    return expeditionRemaining(row, now) !== undefined || (typeof status === "string" && status.length > 0) ||
       (Array.isArray(row.avatars) && row.avatars.length > 0) || (game === "sr" && typeof row.name === "string" && !!row.name.trim());
   });
   const inferred = list?.length ? active?.length : undefined;
@@ -101,12 +109,12 @@ function parseExpeditions(data: Json, game: "gs" | "sr"): DailyNoteSnapshot["exp
     ?? (list?.length || undefined);
   let remainingSeconds: number | undefined;
   for (const row of active ?? []) {
-    const left = expeditionRemaining(row);
+    const left = expeditionRemaining(row, now);
     if (left !== undefined) remainingSeconds = Math.min(remainingSeconds ?? left, left);
   }
   const entries = game === "sr" && active?.slice(0, 8).map((row, index) => {
     const name = typeof row.name === "string" ? row.name.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 80) : "";
-    return { name: name || `委托 ${index + 1}`, remainingSeconds: expeditionRemaining(row),
+    return { name: name || `委托 ${index + 1}`, remainingSeconds: expeditionRemaining(row, now),
       avatars: Array.isArray(row.avatars) ? row.avatars.slice(0, 4).map(normalizeProfileRoleArtworkUrl) : [] };
   });
   if (current !== undefined || max !== undefined || remainingSeconds !== undefined || (entries && entries.length)) return {
@@ -137,8 +145,13 @@ function parseTransformer(value: unknown): DailyNoteSnapshot["transformer"] {
   return { ...(ready === undefined ? {} : { ready }), ...(hasDuration ? { remainingSeconds: duration } : {}) };
 }
 
-function parseVideoStore(value: unknown): DailyNoteSnapshot["videoStore"] {
-  const state = typeof value === "string" ? value : object(value)?.sale_state ?? object(value)?.status;
+function dailyNoteLabel(value: unknown) {
+  if (typeof value !== "string") return;
+  const label = value.trim();
+  if (/^[\p{Script=Han}\d\p{Zs}:：.,，。%+-]{1,48}$/u.test(label)) return label;
+}
+
+function parseVideoStore(state: unknown): DailyNoteSnapshot["videoStore"] {
   if (typeof state !== "string" || !state) return;
   switch (state) {
     case "SaleStateDoing": return "doing";
@@ -190,8 +203,14 @@ function normalize(data: Json, game: Game, uid: string, region: string, gameBiz:
     reserveStamina: uint(data.current_reserve_stamina),
   };
   const vitality = object(data.vitality);
-  return { ...base, vitality: progress(vitality?.current, vitality?.max),
-    videoStore: parseVideoStore(data.vhs_sale ?? data.vhs), scratchCardDone: parseScratchCard(data.card_sign),
+  const rawStore = data.vhs_sale ?? data.vhs;
+  const store = object(rawStore);
+  const state = typeof rawStore === "string" ? rawStore : store?.sale_state || store?.status || store?.text;
+  const videoStore = parseVideoStore(state);
+  return { ...base, recoveryText: dailyNoteLabel(energyProgress?.rest) ?? dailyNoteLabel(energy?.rest),
+    vitality: progress(vitality?.current, vitality?.max), videoStore,
+    videoStoreText: videoStore === undefined || videoStore === "unknown" ? dailyNoteLabel(store?.text ?? state) : undefined,
+    scratchCardDone: parseScratchCard(data.card_sign),
   };
 }
 

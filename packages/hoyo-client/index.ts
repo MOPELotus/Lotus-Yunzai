@@ -13,7 +13,7 @@ import { openHoYoLabNxxCheckin } from "./hoyolab-nxx-checkin.ts";
 import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
-import { GameRecordRequestError, isGameRecordCookieExpired, readGameRecordPayload } from "./game-record.ts";
+import { GameRecordRequestError, isGameRecordCookieExpired, isUnspecifiedCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
 import { MiyousheExchangeError, readMiyousheShopAccountQuota, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
@@ -127,7 +127,7 @@ function isGenshinPersonalRecordCookieExpired(error: unknown) {
 
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">
-    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext">>;
+    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext" | "requestContexts">>;
   readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
   readonly scope?: () => Promise<string>;
   readonly syncRoles?: boolean;
@@ -523,6 +523,11 @@ export function createHoyoClient(
       }
       let current: ProfileAccountContext = first;
       const verify = options.verifyReadOnly ?? (() => ensureCurrentProfile(current));
+      const initialRevision = first.revision;
+      const games = [...new Set(sources.map(({ game }) => game))];
+      const roleKey = ({ game, role }: ProfileRequestContext) => `${game}:${role.uid}`;
+      const removedRole = () => new HoyoRequestError("invalid-input", "该角色已不在续期后的档案中，请重新查询。");
+      let refreshedRoles: Map<string, ProfileRequestContext> | undefined;
       let refreshAttempted = false;
       function canRefresh(error: unknown) {
         if (refreshAttempted || !isDailyNoteCookieExpired(error)) return false;
@@ -533,19 +538,48 @@ export function createHoyoClient(
         if (attempt.revision !== current.revision) options.onCredentialRefresh?.(attempt);
         current = attempt;
       }
+      function retainedRole(source: ProfileRequestContext, region = source.role.region) {
+        const target = refreshedRoles?.get(roleKey(source));
+        return target && (!source.role.gameBiz || source.role.gameBiz === target.role.gameBiz) &&
+          (isUnspecifiedCnRecordRegion(region) || region.trim() === target.role.region.trim())
+          ? target : undefined;
+      }
+      async function retainedSource(candidate: ProfileRequestContext, original: ProfileRequestContext) {
+        const profiles = recovery?.profiles;
+        if (candidate.revision === initialRevision || !profiles?.requestContexts) return candidate;
+        if (!refreshedRoles) {
+          const changed = new HoyoRequestError("profile-changed", "换票后的档案角色无法确认，请重新发起请求。");
+          const bound = await profiles.requestContexts(candidate.qq, candidate.profileId, games).catch(() => { throw changed; });
+          if (bound.some(source => source.revision !== candidate.revision)) throw changed;
+          await verify();
+          refreshedRoles = new Map(bound.map(source => [roleKey(source), source]));
+        }
+        const target = retainedRole(original);
+        if (!target) throw removedRole();
+        return target;
+      }
+      function readWithCurrentRole<Data extends object>(source: ProfileRequestContext,
+        reader: (source: ProfileRequestContext, transport: HoyoTransport, options: DailyNoteOptions,
+          guard?: () => Promise<void>) => Promise<Data>) {
+        return readForProfile({ ...current, game: source.game, role: source.role }, options, async (candidate, request, opts, guard) =>
+          reader(await retainedSource(candidate, source), request, opts, guard), canRefresh, onAttempt);
+      }
       for (const source of sources) {
         const { game, role } = source;
         options.signal?.throwIfAborted();
         try {
           verifyCookieIdentity(source);
           const note = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
-            : await readForProfile({ ...current, game, role }, options, readDailyNote, canRefresh, onAttempt);
+            : await readWithCurrentRole(source, readDailyNote);
           let starRailCheckin: DailyNoteSnapshot["starRailCheckin"];
           if (game === "sr" && options.includeStarRailCheckin) {
             try {
               const signRole = { ...role, region: note.region };
               const status = options.verifyReadOnly ? await readCnGameCheckinInfo({ ...source, role: signRole }, transport, options, verify)
-                : await readForProfile({ ...current, game, role: signRole }, options, readCnGameCheckinInfo, canRefresh, onAttempt);
+                : await readWithCurrentRole(source, (candidate, request, opts, guard) => {
+                  if (!isUnspecifiedCnRecordRegion(candidate.role.region) && candidate.role.region.trim() !== note.region) throw removedRole();
+                  return readCnGameCheckinInfo({ ...candidate, role: { ...candidate.role, region: note.region } }, request, opts, guard);
+                });
               starRailCheckin = status.signed ? "signed" : "unsigned";
             } catch {
               options.signal?.throwIfAborted();
@@ -562,7 +596,10 @@ export function createHoyoClient(
         }
       }
       await verify();
-      return results;
+      return refreshedRoles ? results.map<PromiseSettledResult<DailyNoteSnapshot>>((result, index) =>
+        result.status === "fulfilled" && !retainedRole(sources[index]!, result.value.region)
+          ? { status: "rejected", reason: removedRole() }
+          : result) : results;
     },
     fetchHoYoLabZzzDailyNote(source: Parameters<typeof readHoYoLabZzzDailyNote>[0],
       options: Parameters<typeof readHoYoLabZzzDailyNote>[2]) {

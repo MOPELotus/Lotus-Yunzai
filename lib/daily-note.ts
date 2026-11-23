@@ -81,12 +81,12 @@ function noteCardItem(snapshot: DailyNoteSnapshot): DailyNoteCardItem {
     case "zzz":
       data = { energy: { progress: stamina } };
       if (snapshot.vitality) add("活跃度", pair(snapshot.vitality));
-      if (videoStore) add("录像店", videoStates[videoStore]);
+      add("录像店", snapshot.videoStoreText ?? (videoStore ? videoStates[videoStore] : undefined));
       if (scratchCardDone !== undefined) add("刮刮乐", scratchCardDone ? "已完成" : "未完成");
       break;
   }
   const recovery = stamina.current >= stamina.max ? "已回满"
-    : stamina.recoverySeconds && `回满 ${duration(stamina.recoverySeconds)}`;
+    : snapshot.recoveryText ?? (stamina.recoverySeconds ? `回满 ${duration(stamina.recoverySeconds)}` : undefined);
   const detail = [
     `${resources[game]} ${pair(stamina)}`, homeCoin && `洞天宝钱 ${pair(homeCoin)}`, recovery,
   ].filter(Boolean).join(" · ");
@@ -95,7 +95,7 @@ function noteCardItem(snapshot: DailyNoteSnapshot): DailyNoteCardItem {
     name, remaining: expeditionTime(remainingSeconds), avatars,
     progress: remainingSeconds === undefined ? undefined : Math.max(0, 1 - remainingSeconds / expeditionDuration),
   }));
-  return { game, gameName: names[game], uid, ok: true, data, detail, details, checkin,
+  return { game, gameName: names[game], uid, ok: true, data, detail, recovery, details, checkin,
     expeditions: game === "sr" && (entries?.length || (expeditions?.current ?? 0) > 0) ? entries ?? [] : undefined };
 }
 

@@ -27,6 +27,7 @@ export interface DailyNoteCardItem {
   readonly uid?: string | number;
   readonly ok: boolean;
   readonly detail?: string;
+  readonly recovery?: string;
   readonly details?: readonly DailyNoteCardDetail[];
   readonly checkin?: "已签到" | "未签到" | "暂时无法核验";
   readonly expeditions?: readonly DailyNoteCardExpedition[];
@@ -132,7 +133,7 @@ function primary(item: DailyNoteCardItem): Row {
 function makeRows(item: DailyNoteCardItem): Row[] {
   if (!item.ok) return [{ label: "查询失败", value: "失败", note: item.error || item.detail }];
   const first = primary(item);
-  const recovery = item.detail?.split(" · ").find((part) => /^(回满|已回满)/u.test(part));
+  const recovery = item.recovery ?? item.detail?.split(" · ").find((part) => /^(回满|已回满)/u.test(part));
   const rows: Row[] = [{
     ...first, value: first.value || "查询成功", note: first.value ? recovery : item.detail,
   }];

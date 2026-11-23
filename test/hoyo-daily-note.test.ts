@@ -150,6 +150,26 @@ const overseasNote = {
   cookie: "ltuid_v2=42; ltoken_v2=fixture-token; ltmid_v2=fixture-mid", accountId: "42", realm: "SG" as const,
   language: "zh-cn", selectedUid: "1300000002", revision: "test-overseas-note",
 };
+
+test("旧派遣结束字段接受剩余秒数及秒和毫秒时间戳，未派遣的行不计入最快完成", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const parse = (context: ProfileRequestContext, data: Record<string, unknown>) =>
+    readDailyNote(context, async () => Response.json({ retcode: 0, data }));
+  const genshin = await parse(source, { ...gsResponse,
+    expeditions: [{ status: "idle", finish_time: 0 }, { status: "Ongoing", finish_time: "120" },
+      { status: "Ongoing", finish_time: now + 240 }],
+  });
+  expect(genshin.expeditions?.remainingSeconds).toBe(120);
+  const sr = await parse(starRail, {
+    current_stamina: 0, max_stamina: 300,
+    expeditions: [{ name: "星槎巡查", finish_time: String((now + 240) * 1000) }, { name: "已完成", finish_time: now - 1 }],
+  });
+  const [next, finished] = sr.expeditions?.entries ?? [];
+  expect(next?.remainingSeconds).toBeGreaterThan(235);
+  expect(next?.remainingSeconds).toBeLessThanOrEqual(240);
+  expect(finished?.remainingSeconds).toBe(0);
+  expect(sr.expeditions?.remainingSeconds).toBe(0);
+});
 const overseasNoteRole = { game_uid: "1300000002", region: "prod_gf_jp", game_biz: "nap_global" };
 const zzzEnergy = { progress: { current: 0, max: "240" }, restore: 14_400 };
 
