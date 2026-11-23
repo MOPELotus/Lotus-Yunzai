@@ -210,16 +210,30 @@ test("海外、区服不明确、游戏不匹配及不安全 Cookie 都不会调
     .rejects.toMatchObject({ code: "invalid-input" });
 });
 
-test("旧档只保存国服 UID 时按已知 UID 区间恢复区服", async () => {
-  for (const context of [source, starRail, zzz]) {
+test("旧档缺省区服字符串仅按既有三游国服 UID 规则补齐", async () => {
+  const channelGenshin = { ...source, role: { ...source.role, uid: "523456789", region: "cn_qd01" } };
+  for (const context of [source, channelGenshin, starRail, zzz]) {
     const data = context.game === "gs" ? gsResponse : context.game === "sr"
       ? { current_stamina: 10, max_stamina: 240 } : { energy: { current: 10, max: 240 } };
-    const response = await readDailyNote({ ...context, role: { ...context.role, region: "", gameBiz: "" } },
-      async (endpoint) => {
-        expect(endpoint.searchParams.get("server")).toBe(context.role.region);
-        return Response.json({ retcode: 0, data });
-      });
-    expect(response.region).toBe(context.role.region);
+    for (const region of ["", "unknown", " UNDEFINED ", "null", "none", "-"]) {
+      const response = await readDailyNote({ ...context, role: { ...context.role, region, gameBiz: "" } },
+        async (endpoint) => {
+          expect(endpoint.searchParams.get("server")).toBe(context.role.region);
+          return Response.json({ retcode: 0, data });
+        });
+      expect(response.region).toBe(context.role.region);
+    }
+  }
+  for (const [context, overrides] of [
+    [source, { region: "cn_new_unknown" }], [source, { region: "cn_qd01" }],
+    [source, { uid: "423456789", region: "unknown" }], [source, { region: "null", gameBiz: "hk4e_global" }],
+    [starRail, { uid: "623456789", region: "none" }], [starRail, { region: "prod_gf_cn" }],
+    [zzz, { uid: "1300000002", region: "-" }], [zzz, { region: "prod_gf_jp" }],
+    [zzz, { region: "unknown", gameBiz: "nap_global" }],
+  ] as const) {
+    await expect(readDailyNote({ ...context, role: { ...context.role, ...overrides } }, async () => {
+      throw new Error("请求没有在验证前拦下");
+    })).rejects.toMatchObject({ code: "invalid-input" });
   }
 });
 

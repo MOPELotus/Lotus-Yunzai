@@ -27,6 +27,7 @@ const records = {
   sr: { path: "/game_record/app/hkrpg/api/note", gameBiz: "hkrpg_cn", regions: ["prod_gf_cn", "prod_qd_cn"], uid: /^[1-5]\d{8}$/u },
   zzz: { path: "/event/game_record_zzz/api/zzz/note", gameBiz: "nap_cn", regions: ["prod_gf_cn", "prod_qd_cn"], uid: /^[1-9]\d{7,8}$/u },
 };
+const unspecifiedRegion = new Set(["", "unknown", "undefined", "null", "none", "-"]);
 const expiredCodes = new Set([-100, 10001, 10101, 10102, 10103]);
 const riskCodes = new Set([1034, 10035, 10041]);
 const zzzCardPaths = {
@@ -154,11 +155,15 @@ function apiError(payload: Json | undefined, status: number, retcode: number | u
   return new HoyoRequestError("api", `官方${label}接口拒绝请求。`, status, retcode);
 }
 
+export function isUnspecifiedCnRecordRegion(region: string): boolean {
+  return unspecifiedRegion.has(region.trim().toLowerCase());
+}
+
 export function genshinCnRecordRegion({ uid, region, gameBiz }: ProfileRequestContext["role"]) {
   if (!records.gs.uid.test(uid) || (gameBiz && gameBiz !== records.gs.gameBiz)) return;
   const expected = uid.startsWith("5") ? "cn_qd01" : "cn_gf01";
   const savedRegion = region.trim();
-  if (savedRegion === expected || (!savedRegion && /^[125]\d{8}$/u.test(uid))) return expected;
+  if (savedRegion === expected || (isUnspecifiedCnRecordRegion(savedRegion) && /^[125]\d{8}$/u.test(uid))) return expected;
 }
 
 export async function readCnGameRecord(source: ProfileRequestContext, transport: HoyoTransport,
@@ -195,13 +200,14 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : hardChallenge ? "幽境危战" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
+  const savedRegion = isUnspecifiedCnRecordRegion(source.role.region) ? "" : source.role.region.trim();
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
-    source.role.region.trim() || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
+    savedRegion || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
   if ((!forNote && game !== (forZzz ? "zzz" : forStarRail ? "sr" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
   }
-  if ((starRailMonthly || starRailGridFight || starRailRogue) && (!source.role.region.trim() || !gameBiz.trim())) {
+  if ((starRailMonthly || starRailGridFight || starRailRogue) && (!savedRegion || !gameBiz.trim())) {
     throw new HoyoRequestError("invalid-input", `${label}需使用档案中已同步的国服角色。`);
   }
   if ((starRailMonthly || starRailGridFight || starRailRogue) && (!source.device.id?.trim() || !source.device.fp?.trim())) {

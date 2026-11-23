@@ -5,7 +5,7 @@ import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
-import { GameRecordRequestError, readGameRecordPayload } from "./game-record.ts";
+import { GameRecordRequestError, isUnspecifiedCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
 
 const routes = { hall: "challenge", story: "challenge_story", boss: "challenge_boss", peak: "challenge_peak" } as const;
 export type StarRailChallengeKind = keyof typeof routes;
@@ -23,7 +23,7 @@ type Source = Pick<ProfileRequestContext, "game" | "role" | "device">;
 function starRailChallengeRegion({ uid, region, gameBiz }: Source["role"]) {
   if (!/^[1-5]\d{8}$/u.test(uid) || (gameBiz && gameBiz !== "hkrpg_cn")) return;
   const inferred = uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn";
-  if (!region || region === inferred) return inferred;
+  if (isUnspecifiedCnRecordRegion(region) || region === inferred) return inferred;
 }
 
 function object(value: unknown): Json | undefined {

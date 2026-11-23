@@ -172,3 +172,26 @@ device: { id: "account-device-${id}" }
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("星铁旧档缺省标记仅复用已知国服挑战区服，明确错区和海外不出站", async () => {
+  const options = { kinds: ["hall"], simple: true, period: "current" } as const;
+  for (const marker of ["unknown", "undefined", "null", "none", "-"]) {
+    const source = { ...profile, role: { ...profile.role, region: marker, uid: "500000123" } };
+    await expect(readStarRailChallenge(source, async endpoint => {
+      expect(endpoint.searchParams.get("server")).toBe("prod_qd_cn");
+      expect(endpoint.searchParams.get("role_id")).toBe("500000123");
+      return Response.json({ retcode: 0, data: {} });
+    }, options)).resolves.toMatchObject({ records: [{ kind: "hall", simple: true }] });
+  }
+  for (const role of [
+    { ...profile.role, region: "prod_gf_unknown" },
+    { ...profile.role, region: "prod_qd_cn" },
+    { ...profile.role, region: "unknown", uid: "600000123" },
+    { ...profile.role, region: "-", gameBiz: "hkrpg_global" },
+  ]) {
+    await expect(readStarRailChallenge({ ...profile, role }, async () => {
+      throw new Error("请求没有在验证前拦下");
+    }, options)).rejects.toMatchObject({ code: "invalid-input" });
+  }
+});
