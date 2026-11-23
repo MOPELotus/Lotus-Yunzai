@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp } from "node:fs/promises";
+import { cp, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { bindGroupName } from "../lib/adapters/group-name.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
@@ -32,24 +32,33 @@ test("群改名使用两个协议各自的字段、实时群角色和原会话",
       expect(cardCheck.params).toMatchObject({ user_id: 42, message: "❎ 群号不能为空" });
       cardCheck.respond({ message_id: 103 });
 
-      await sendMilky("#改群昵称 702 夏日 会场");
-      const who = await milky.next("get_group_member_info");
-      expect(who.params).toEqual({ group_id: 702, user_id: 100, no_cache: true });
-      who.respond({ member: { group_id: 702, user_id: 100, role: "owner" } });
-      const write = await milky.next("set_group_name");
-      expect(write.params).toEqual({ group_id: 702, new_group_name: "夏日 会场" });
-      write.respond({});
-      const reply = await milky.next("send_private_message");
-      expect(reply.params).toMatchObject({ user_id: 43, message: [{ data: { text: "✅ 群昵称修改成功" } }] });
-      reply.respond({ message_seq: 104 });
+      sendOneBot("#改群名片测试名片", { ...groupEvent, group_id: 703 });
+      await Bun.sleep(60);
+      expect(onebot.calls).toEqual([]);
+
+      for (const [alias, name] of [["#改群昵称", "夏日 会场"], ["#改群名字", "冬日 会场"]]) {
+        await sendMilky(`${alias} 702 ${name}`);
+        const who = await milky.next("get_group_member_info");
+        expect(who.params).toEqual({ group_id: 702, user_id: 100, no_cache: true });
+        who.respond({ member: { group_id: 702, user_id: 100, role: "owner" } });
+        const write = await milky.next("set_group_name");
+        expect(write.params).toEqual({ group_id: 702, new_group_name: name });
+        write.respond({});
+        const reply = await milky.next("send_private_message");
+        expect(reply.params).toMatchObject({ user_id: 43, message: [{ data: { text: "✅ 群昵称修改成功" } }] });
+        reply.respond({ message_seq: 104 });
+      }
 
       await sendMilky("#改群名 702 他人会话", { sender_id: 42, peer_id: 42 });
       await Bun.sleep(60);
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);
-    }, 4_000, undefined, root => cp(new URL("../plugins/group", import.meta.url), join(root, "plugins/group"), {
-      recursive: true, filter: source => basename(source) !== ".git" && basename(source) !== "node_modules",
-    }));
+    }, 4_000, undefined, async root => {
+      await cp(new URL("../plugins/group", import.meta.url), join(root, "plugins/group"), {
+        recursive: true, filter: source => basename(source) !== ".git" && basename(source) !== "node_modules",
+      });
+      await writeFile(join(root, "config/group.yaml"), 'default: { groupCD: 0, singleCD: 0 }\n703: { disable: ["[group] 群名片"] }\n');
+    });
 }, 13_000);
 
 test("私聊群改名在查询期间失去主人权限即停止，且不能跨群或重试未知提交", async () => {
