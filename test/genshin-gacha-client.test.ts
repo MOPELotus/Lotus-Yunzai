@@ -187,3 +187,21 @@ test("登录过期码可交给客户端续期，传输与档案变更不会泄�
     .rejects.toMatchObject({ code: "transport" });
   expect(requests).toBe(1);
 }));
+
+test("官方逐抽临时票过期时仅补签一次并从头完整读取，不改账号 Cookie", () => profile(async (source, profiles) => {
+  let tickets = 0, exchanges = 0, repeatedExpiry = false;
+  const calls: string[] = [];
+  const client = createHoyoClient(async (url) => {
+    if (url.pathname === authPath) return success({ authkey: String(++tickets) });
+    const { gacha_type: type, authkey: key } = Object.fromEntries(url.searchParams);
+    calls.push(`${key}/${type}`);
+    if (type === "302" && (key === "1" || repeatedExpiry)) return Response.json({ retcode: -101 });
+    return success({ list: [] });
+  }, { profiles, async exchange() { exchanges++; throw new Error("短票续签无须重换 Cookie"); } });
+  const result = await client.fetchGenshinGacha(source, options);
+  expect(calls).toEqual(["1/301", "1/302", "2/301", "2/302", "2/500", "2/200"]);
+  expect(result).toMatchObject({ revision: source.revision, refreshedCookie: false });
+  repeatedExpiry = true;
+  await expect(client.fetchGenshinGacha(source, options)).rejects.toMatchObject({ code: "api", retcode: -101 });
+  expect([tickets, exchanges]).toEqual([4, 0]);
+}));

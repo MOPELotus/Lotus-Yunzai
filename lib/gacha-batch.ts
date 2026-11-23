@@ -4,7 +4,8 @@ import type { MessageFallback } from "./commands.ts";
 import { segment } from "./messages.ts";
 
 export type GachaGame = Game;
-export type GachaUpdater = (qq: string, profileId: number) => Promise<{ readonly uid: string } | undefined>;
+export type GachaUpdater = (qq: string, profileId: number, notify?: () => unknown,
+  isDelegated?: boolean) => Promise<{ readonly uid: string } | undefined>;
 
 type Render = (title: string, lead: string, rows: readonly string[], at: Date) => Promise<{ readonly png: Uint8Array }>;
 type Entry = { readonly updater: GachaUpdater };
@@ -45,10 +46,10 @@ function rejected(error: unknown, profileId: number): Outcome {
   return failed("更新未完成，请稍后再试");
 }
 
-async function update(entry: Entry | undefined, qq: string, profileId: number): Promise<Outcome> {
+async function update(entry: Entry | undefined, qq: string, profileId: number, isDelegated?: boolean): Promise<Outcome> {
   if (!entry) return skipped("游戏插件未加载，跳过");
   try {
-    const result = await entry.updater(qq, profileId);
+    const result = await entry.updater(qq, profileId, undefined, isDelegated);
     if (!result) return skipped("已在更新，跳过");
     if (!/^[1-9]\d*$/u.test(result.uid)) return failed("更新结果缺少有效 UID");
     return { status: "done", text: `UID ${result.uid} · 完成` };
@@ -99,7 +100,7 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
       for (const profileId of ids) {
         for (const game of profileGames) {
           if (signal.aborted) return;
-          const result = await update(providers.get(game), qq, profileId);
+          const result = await update(providers.get(game), qq, profileId, game === "gs" ? context.isDelegated : undefined);
           counts[result.status]++;
           rows.push(`P${profileId} ${names[game]}：${result.text}`);
         }

@@ -136,7 +136,7 @@ export async function readGenshinAuthKey(
   return { uid, region, url };
 }
 
-export async function readGenshinGacha(
+async function readGenshinGachaOnce(
   source: ProfileRequestContext,
   transport: HoyoTransport,
   { signal, intervalMs = 1_000, maxPages = 1_000 }: GenshinGachaOptions = {},
@@ -184,4 +184,20 @@ export async function readGenshinGacha(
   for (const pool of genshinGachaPools) pools.push({ ...pool, records: await readPool(pool.type) });
   await guard();
   return { uid, region, pools };
+}
+
+
+export async function readGenshinGacha(
+  source: ProfileRequestContext,
+  transport: HoyoTransport,
+  options: GenshinGachaOptions = {},
+  verifyProfile?: () => Promise<void>,
+) {
+  try {
+    return await readGenshinGachaOnce(source, transport, options, verifyProfile);
+  } catch (error) {
+    if (options.signal?.aborted || !(error instanceof HoyoRequestError) || error instanceof GenshinAuthKeyRequestError ||
+        error.code !== "api" || error.retcode !== -101) throw error;
+    return readGenshinGachaOnce(source, transport, options, verifyProfile);
+  }
 }

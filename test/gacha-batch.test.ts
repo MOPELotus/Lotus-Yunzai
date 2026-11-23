@@ -179,3 +179,18 @@ test("reports empty archives without starting work and stops on abort before lat
   expect(await batch.fallback(command, context(command))).toBeUndefined();
   expect(calls).toEqual(["gs"]);
 });
+
+test("批量代执行保留三游更新，仅原神接收跳过全量修复的信号", async () => {
+  const seen: [GachaGame, boolean | undefined][] = [];
+  const batch = createGachaBatch({
+    listIds: async () => [1], signal: new AbortController().signal, render: async () => ({ png: image }),
+  });
+  for (const game of ["gs", "sr", "zzz"] as const) {
+    batch.register(game, async (_qq, _profile, _notify, delegated) => {
+      seen.push([game, delegated]);
+      return { uid: "100000002" };
+    });
+  }
+  expect(await batch.fallback(command, { ...context(command), isDelegated: true })).toEqual({ type: "image", file: image });
+  expect(seen).toEqual([["gs", true], ["sr", undefined], ["zzz", undefined]]);
+});
