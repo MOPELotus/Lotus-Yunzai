@@ -1,15 +1,15 @@
 import { isDeepStrictEqual } from "node:util";
 import type { NoticeRedis } from "../plugins/notice/store.ts";
 import { readPanelJson } from "./panel.ts";
+import { panelMysActivityGames, panelMysNoticeGames } from "./panel-notice-settings.ts";
 
 type Redis = Pick<NoticeRedis, "eval">;
 type Document = Record<string, unknown>;
 type Channel = { key: string; label: string; storage: string };
 
-const gameNames = { gs: "原神", sr: "星铁", zzz: "绝区零" };
-const channels: Channel[] = Object.entries(gameNames).flatMap(([game, name]) =>
+const channels: Channel[] = Object.entries(panelMysNoticeGames).flatMap(([game, name]) =>
   [["announce", "公告", "targets"], ["info", "资讯", "info-targets"],
-    ...(game === "zzz" ? [] : [["activity", "活动到期", "activity-targets"]])].map(([kind, label, suffix]) => ({
+    ...(panelMysActivityGames.some(active => active === game) ? [["activity", "活动到期", "activity-targets"]] : [])].map(([kind, label, suffix]) => ({
     key: game + kind, label: name + label + "群内订阅覆盖", storage: `lotus-yunzai:notice:mys:${game}:${suffix}`,
   })));
 const fields = [

@@ -143,7 +143,7 @@ interface RegisteredCommand {
   readonly names: readonly string[];
 }
 
-function commandContext(context: CommandContext): CommandContext {
+function commandContext(context: CommandContext, officialNotice = false): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
     groupKickInactive, groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
@@ -205,7 +205,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(!isDelegated && profileLikeImageSignal ? { profileLikeImageSignal } : {}),
     ...(ownGroupCardAccount && !isDelegated ? { ownGroupCardAccount } : {}),
     ...(atlasMaintenance === true && !isDelegated ? { atlasMaintenance } : {}),
-    ...(authorizeOfficialNoticePush && !isDelegated ? { authorizeOfficialNoticePush } : {}),
+    ...(officialNotice && authorizeOfficialNoticePush && !isDelegated ? { authorizeOfficialNoticePush } : {}),
     ...(message_type !== "terminal" && !isDelegated && (isMaster || atlasMaintenance === true) && reply ? { reply } : {}),
     privateCredentialSignal, canDelegate, delegationSignal, isDelegated, calculationSignal,
     ...(runtimeDiagnosticsScope ? { runtimeDiagnosticsScope } : {}),
@@ -331,7 +331,7 @@ export class CommandRegistry {
     }
     if (!command || (allowed && !allowed(command.names))) return;
 
-    return command.handler(argument, commandContext(context));
+    return command.handler(argument, commandContext(context, command.names[0] === "@lotus-yunzai/notice"));
   }
 
   async dispatchFallback(

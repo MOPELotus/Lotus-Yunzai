@@ -3,6 +3,8 @@ import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promis
 import { dirname, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
 import { isNoticeLogLevel, parseNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { announcementConfigPaths, parseAnnouncementConfig } from "../plugins/notice/mys-announcement-config.ts";
+import { announcementGameKeys } from "../plugins/notice/mys-announcement-source.ts";
 import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
 import { groupRoutingScopePattern } from "./group-dispatch.ts";
 import { legacyAutoGroupCardScript } from "./plugins/metadata.ts";
@@ -11,6 +13,7 @@ import { withinInstallation, type LegacyPluginPlanEntry } from "./plugins/migrat
 type Mapping = Map<unknown, unknown>;
 const yenai = "plugins/yenai-plugin/config/config/";
 const noticeDirectories = ["plugins/Notice-plugin/config/", "plugins/notice-plugin/config/"] as const;
+const legacyMysNewsDefaults = "plugins/genshin/defSet/mys/pushNews.yaml";
 const legacyGroupDefaults = "config/default_config/group.yaml";
 const screenedConfigPaths = ["plugins/flower-plugin/defSet/wordListener.yaml", "plugins/flower-plugin/config/wordListener.yaml", "config/group-screened-words.yaml"] as const;
 const screenedLegacyWords = "plugins/flower-plugin/resources/blackword";
@@ -22,6 +25,8 @@ const sourcePaths = [
   "config/groupAdmin.yaml", `${yenai}groupAdmin.yaml`,
   "config/group-notice.yaml", `${yenai}notice.yaml`, "config/notice.yaml",
   ...screenedConfigPaths,
+  ...announcementConfigPaths,
+  legacyMysNewsDefaults,
   ...noticeDirectories.flatMap(path => [path + "config_default.yaml", path + "config.yaml"]),
 ];
 const likeFields = ["enable", "cloneAllThumbUp", "strangeThumbUp", "count", "recall", "closeTips", "successMsg", "failsMsg", "noFriendMsg"];
@@ -176,6 +181,26 @@ function scheduleSettings(load: (path: string) => Mapping | undefined) {
   return result;
 }
 
+function mysAnnouncementSettings(load: (path: string) => Mapping | undefined) {
+  const current = load(announcementConfigPaths[0]) ?? load(announcementConfigPaths[1]);
+  if (current) {
+    parseAnnouncementConfig(stringify(current));
+    return current;
+  }
+  const defaults = load(legacyMysNewsDefaults);
+  const legacy = load(announcementConfigPaths[2]);
+  if (!defaults && !legacy) return;
+  const settings = new Map([...defaults ?? [], ...legacy ?? []]);
+  if (settings.has("banWord")) {
+    const words = new Map(section(settings.get("banWord"), "米游社标题过滤"));
+    // An explicit old banWord mapping replaced the entire default mapping.
+    for (const game of announcementGameKeys) if (!words.has(game)) words.set(game, "");
+    settings.set("banWord", words);
+  }
+  parseAnnouncementConfig(stringify(settings));
+  return settings;
+}
+
 function project(load: (path: string) => Mapping | undefined) {
   const active = new Map<string, Mapping>();
   for (const [name, supported] of [
@@ -207,6 +232,8 @@ function project(load: (path: string) => Mapping | undefined) {
     /^(?:default|[1-9]\d*|bot:[1-9]\d*(?::[1-9]\d*)?)$/u, noticeFields, "群通知"));
   const schedule = scheduleSettings(load);
   if (schedule) active.set("config/notice.yaml", schedule);
+  const community = mysAnnouncementSettings(load);
+  if (community) active.set(announcementConfigPaths[0], community);
   return active;
 }
 

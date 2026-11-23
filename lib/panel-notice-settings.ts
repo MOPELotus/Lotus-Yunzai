@@ -16,10 +16,10 @@ type Field = {
   hint?: string;
 };
 
-const games = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
-type Game = keyof typeof games;
-const gameKeys = Object.keys(games) as Game[];
-const activityGames = ["gs", "sr"] as const;
+export const panelMysNoticeGames = { gs: "原神", sr: "星铁", zzz: "绝区零", bbb: "崩坏3", bb: "崩坏学园2", wd: "未定事件簿" } as const;
+export const panelMysActivityGames = ["gs", "sr"] as const;
+type Game = keyof typeof panelMysNoticeGames;
+const gameKeys = Object.keys(panelMysNoticeGames) as Game[];
 const targetHint = "以机器人 QQ 为键，值为群号数组。群内订阅命令产生的覆盖优先；下一轮生效。";
 const logLevels = ["debug", "info", "warn", "error"];
 const localFields: readonly Field[] = [
@@ -32,12 +32,12 @@ const mysFields: readonly Field[] = [
   { key: "pushTime", label: "查询与推送 Cron", type: "text", hint: "修改 Cron 后重启宿主生效。" },
   { key: "maxNum", label: "每轮推送上限", type: "number", min: 0, hint: "每个游戏的公告与资讯共用上限。0 表示不发送；下一轮生效。" },
   ...gameKeys.flatMap((game): Field[] => [
-    { key: `${game}announceGroup`, label: games[game] + "公告目标", type: "json", hint: targetHint },
-    { key: `${game}infoGroup`, label: games[game] + "资讯目标", type: "json", hint: targetHint },
-    { key: `${game}BanWord`, label: games[game] + "标题过滤", type: "text", hint: "正则表达式。留空则不过滤；下一轮生效。" },
+    { key: `${game}announceGroup`, label: panelMysNoticeGames[game] + "公告目标", type: "json", hint: targetHint },
+    { key: `${game}infoGroup`, label: panelMysNoticeGames[game] + "资讯目标", type: "json", hint: targetHint },
+    { key: `${game}BanWord`, label: panelMysNoticeGames[game] + "标题过滤", type: "text", hint: "正则表达式。留空则不过滤；下一轮生效。" },
   ]),
-  ...activityGames.map((game): Field => ({
-    key: `${game}ActivityPush`, label: games[game] + "活动到期目标", type: "json", hint: targetHint,
+  ...panelMysActivityGames.map((game): Field => ({
+    key: `${game}ActivityPush`, label: panelMysNoticeGames[game] + "活动到期目标", type: "json", hint: targetHint,
   })),
 ];
 
@@ -87,7 +87,8 @@ function logLevel(config: Configuration) {
 }
 
 async function readMysConfig(root: URL): Promise<Configuration> {
-  for (const path of ["config/mys.pushNews.yaml", "config/config/mys.pushNews.yaml", "plugins/genshin/config/mys.pushNews.yaml"]) {
+  const { announcementConfigPaths } = await import("../plugins/notice/mys-announcement-config.ts");
+  for (const path of announcementConfigPaths) {
     const document = await readYaml(new URL(path, root));
     if (document) return document;
   }
@@ -246,7 +247,7 @@ export function panelNoticeMysSettings(root: URL, validateCron: (cron: string) =
         values[`${game}announceGroup`] = targetMapping(config[`${game}announceGroup`] ?? {});
         values[`${game}infoGroup`] = targetMapping(config[`${game}infoGroup`] ?? {});
       }
-      for (const game of activityGames) values[`${game}ActivityPush`] = targetMapping(config[`${game}ActivityPush`] ?? {});
+      for (const game of panelMysActivityGames) values[`${game}ActivityPush`] = targetMapping(config[`${game}ActivityPush`] ?? {});
       return values;
     },
     patch(changed, effective) {

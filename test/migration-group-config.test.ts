@@ -16,6 +16,7 @@ import { createManagedBlacklist } from "../plugins/group/managed-blacklist.ts";
 import { configuredPrivateNotice, createPrivateNoticeReader, privateNoticeSetting } from "../plugins/group/private-notice-config.ts";
 import { createGroupScreenedWords } from "../plugins/group/screened-words.ts";
 import { configuredNoticeLogLevel, configuredNoticeSchedule } from "../plugins/notice/schedule.ts";
+import { configuredAnnouncements } from "../plugins/notice/mys-announcement-config.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const yenai = "plugins/yenai-plugin/config/config/";
@@ -37,6 +38,37 @@ async function file(root: string, name: string, content: string) {
 }
 
 const missing = () => { throw Error("The validation must not write runtime state."); };
+
+test("米游社旧板块的两类订阅和过滤从归档插件迁至当前配置，使用原默认覆盖规则", () => fixture(async (source, state) => {
+  const current = "config/mys.pushNews.yaml";
+  const legacy = "plugins/genshin/config/mys.pushNews.yaml";
+  const defaults = "plugins/genshin/defSet/mys/pushNews.yaml";
+  const inherited = "pushTime: '0 */6 * * * *'\nmaxNum: 4\nbbbannounceGroup: { 70: [90] }\nbbinfoGroup: { 71: [91] }\n";
+  const override = "# 原设定\nbanWord: { wd: '自定义未定过滤' }\nbbbannounceGroup: {}\nwdannounceGroup: { 71: [93] }\n";
+  await file(source, defaults, inherited);
+  await file(source, legacy, override);
+  const report = await stageLegacyGroupConfig(source, state);
+  expect(report.active).toEqual([current]);
+  expect(await readFile(join(state, archive, legacy), "utf8")).toBe(override);
+  expect(await readFile(join(state, archive, defaults), "utf8")).toBe(inherited);
+  expect(await Bun.file(join(state, legacy)).exists()).toBe(false);
+  const parsed = configuredAnnouncements(pathToFileURL(state + sep))();
+  expect(parsed).toMatchObject({ cron: "0 */6 * * * *", maxNum: 4,
+    targets: { bbb: [], wd: [{ botId: 71, groupId: 93 }] },
+    infoTargets: { bb: [{ botId: 71, groupId: 91 }] },
+  });
+  expect(parsed.ban.bb).toBeUndefined();
+  expect(parsed.ban.wd?.source).toBe("自定义未定过滤");
+  expect(await readFile(join(source, legacy), "utf8")).toBe(override);
+
+  const preferred = join(dirname(state), "preferred");
+  await mkdir(preferred, { mode: 0o700 });
+  await file(source, current, "maxNum: 0\n");
+  await stageLegacyGroupConfig(source, preferred);
+  const chosen = configuredAnnouncements(pathToFileURL(preferred + sep))();
+  expect(chosen.maxNum).toBe(0);
+  expect(chosen.targets.wd).toEqual([]);
+}));
 
 test("group and notice configs use the active paths with original defaults, scopes and independent source backups", () => fixture(async (source, state) => {
   const sample = {

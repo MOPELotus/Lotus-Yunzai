@@ -76,7 +76,10 @@ test("米游社面板编辑热读目标、筛选与限制，Cron 单独校验并
     const settings = panelNoticeMysSettings(root, (cron) => cron === "0 0/5 * * * ?" || cron === "0 */7 * * * *");
     const snapshot = await (await get(settings)).json();
     const { values, fields } = snapshot;
-    expect(fields).toHaveLength(13);
+    expect(fields).toHaveLength(22);
+    expect(fields.map(({ key }: { key: string }) => key)).toEqual(expect.arrayContaining([
+      "bbbannounceGroup", "bbinfoGroup", "wdBanWord", "gsActivityPush", "srActivityPush",
+    ]));
     expect(values.gsBanWord).toBe("旧过滤");
     expect(values).not.toHaveProperty("localExtension");
     expect((await put(settings, values, { pushTime: "bad cron" })).status).toBe(400);
@@ -84,13 +87,18 @@ test("米游社面板编辑热读目标、筛选与限制，Cron 单独校验并
     expect((await put(settings, values, { gsinfoGroup: { 4: ["9", 9] } }, () => false)).status).toBe(401);
     const runtime = configuredAnnouncements(root);
     expect(runtime().maxNum).toBe(1);
-    const update = { maxNum: 0, pushTime: "0 */7 * * * *", gsBanWord: "", gsinfoGroup: { 4: ["9", 9] }, srActivityPush: { 4: [10] } };
+    const update = { maxNum: 0, pushTime: "0 */7 * * * *", gsBanWord: "", gsinfoGroup: { 4: ["9", 9] }, srActivityPush: { 4: [10] },
+      bbbannounceGroup: { 4: [12] }, bbinfoGroup: { 4: [13] }, wdBanWord: "未定过滤" };
     const response = await put(settings, values, update);
     expect(response.status).toBe(200);
     expect((await response.json()).warning).toContain("重启");
     expect(runtime().cron).toBe("0 */7 * * * *");
     expect(runtime().infoTargets.gs).toEqual([{ botId: 4, groupId: 9 }]);
     expect(runtime().activityTargets.sr).toEqual([{ botId: 4, groupId: 10 }]);
+    expect(runtime().targets.bbb).toEqual([{ botId: 4, groupId: 12 }]);
+    expect(runtime().infoTargets.bb).toEqual([{ botId: 4, groupId: 13 }]);
+    expect(runtime().ban.wd?.source).toBe("未定过滤");
+    expect(runtime().activityTargets).not.toHaveProperty("wd");
     expect(runtime().maxNum).toBe(0);
     expect(runtime().ban.gs).toBeUndefined();
     expect(runtime().ban.sr?.source).toBe("星铁旧词");
@@ -130,16 +138,22 @@ test.skipIf(!valkeyServer)("公告面板的 Valkey 设置原子更新，与旧�
       },
     };
     const infoKey = "lotus-yunzai:notice:mys:gs:info-targets";
+    const bh3Key = "lotus-yunzai:notice:mys:bbb:targets";
+    const bh2Key = "lotus-yunzai:notice:mys:bb:info-targets";
+    const tearsKey = "lotus-yunzai:notice:mys:wd:targets";
     await client.hset(infoKey, "7:8", "off");
     await client.hset(infoKey, "bad", "legacy");
+    await client.hset(bh3Key, "7:15", "off");
     await client.hset("notice:account:7:config", "unknown", "kept");
     let bots = [7];
     const settings = panelNoticeDeliverySettings(() => redis, () => bots);
     const before = (await (await get(settings)).json()).values;
     expect(before.gsinfo).toEqual({ "7:8": "off" });
+    expect(before.bbbannounce).toEqual({ "7:15": "off" });
+    expect(before).not.toHaveProperty("wdactivity");
     expect(before.accounts["7"].retryCount).toBe(3);
     const edit = { whitelist: ["8", "12"], accounts: { 7: { enabled: false, retryCount: 0, blacklist: [12] } },
-      gsinfo: { "7:11": "on" } };
+      gsinfo: { "7:11": "on" }, bbbannounce: {}, bbinfo: { "7:16": "on" }, wdannounce: { "7:17": "off" } };
     expect((await put(settings, before, edit, () => false)).status).toBe(401);
     expect((await put(settings, before, { accounts: { 9: { pushInterval: 999 } } })).status).toBe(400);
     injectRace = true;
@@ -156,6 +170,9 @@ test.skipIf(!valkeyServer)("公告面板的 Valkey 设置原子更新，与旧�
     expect(await client.hget(infoKey, "bad")).toBe("legacy");
     expect(await effectiveAnnouncementTargets(redis, [{ botId: 7, groupId: 8 }], infoKey))
       .toEqual([{ botId: 7, groupId: 8 }, { botId: 7, groupId: 11 }]);
+    expect(await effectiveAnnouncementTargets(redis, [{ botId: 7, groupId: 15 }], bh3Key)).toEqual([{ botId: 7, groupId: 15 }]);
+    expect(await effectiveAnnouncementTargets(redis, [], bh2Key)).toEqual([{ botId: 7, groupId: 16 }]);
+    expect(await effectiveAnnouncementTargets(redis, [{ botId: 7, groupId: 17 }], tearsKey)).toEqual([]);
     bots = [9];
     expect((await put(settings, (await response.json()).values, edit)).status).toBe(409);
   } finally {

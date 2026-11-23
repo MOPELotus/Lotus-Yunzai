@@ -2646,7 +2646,7 @@ if (import.meta.main) {
       return;
     }
     const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
-    const authorizeOfficialNoticePush = /^#推送米游社全部(?:\s|$)/u.test(command.msg)
+    const authorizeOfficialNoticePush = /^#(?:推送米游社全部|推送资讯|[^\s#]+推送(?:公告|资讯))(?:\s|$)/u.test(command.msg)
       ? () => !stopping && handoff.accepting && !dispatchPower.paused && !event.isDelegated && canManagePackages(event) &&
         (event.message_type === "terminal" ? masterPermissions.terminal :
           event.self_id !== undefined && event.user_id !== undefined &&
