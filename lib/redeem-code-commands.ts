@@ -2,6 +2,7 @@ import { formatRedeemResult, parseRedeemCommand, planetLaunchMessages, RedeemCod
   type RedeemPreviewOptions } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { MAX_PROFILE_ID, ProfileError, profileGames, type createProfileStore } from "@lotus-yunzai/account";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
+import { isManualRedeemCommand, type createManualRedeemCommand } from "./redeem-code-manual.ts";
 
 const settingPattern = /^#(注册|关闭)自动兑换前瞻(?:兑换码|码|（兑换码）|\(兑换码\))?([1-9]\d{0,2})?$/u;
 
@@ -17,7 +18,8 @@ interface AutoRedeemCommands {
 }
 
 export function redeemCodeCommands(options: RedeemPreviewOptions = {},
-  service = new RedeemCodeService(options), automatic?: AutoRedeemCommands): CommandModule {
+  service = new RedeemCodeService(options), automatic?: AutoRedeemCommands,
+  manual?: ReturnType<typeof createManualRedeemCommand>): CommandModule {
 
   async function replyFor(gameId: string): Promise<CommandReply> {
     const result = await service.query(gameId);
@@ -25,7 +27,10 @@ export function redeemCodeCommands(options: RedeemPreviewOptions = {},
 
     const [title, ...details] = formatRedeemResult({ ...result, codes: [] }).split("\n").filter(Boolean);
     const codes = result.codes.flatMap(({ code, reward }: { code: string; reward: string }) => reward ? [code, reward] : [code]);
-    return { type: "forward", nodes: [title || `${result.gameName}前瞻兑换码`, ...codes, ...details] };
+    const manualNote = manual && (gameId === "gs" || gameId === "sr")
+      ? ["以上为国服前瞻码。另有国际服兑换码时，可在机器人好友私聊发送 " +
+        `#${gameId === "sr" ? "星铁" : ""}兑换码使用 <兑换码>。`] : [];
+    return { type: "forward", nodes: [title || `${result.gameName}前瞻兑换码`, ...codes, ...details, ...manualNote] };
   }
 
   async function configure(match: RegExpExecArray, context: CommandContext, auto: AutoRedeemCommands) {
@@ -62,6 +67,7 @@ export function redeemCodeCommands(options: RedeemPreviewOptions = {},
     name: "@lotus-yunzai/redeem-codes",
     commands: {},
     fallback(message, context) {
+      if (manual && isManualRedeemCommand(context.normalizedMessage)) return manual(context.normalizedMessage, context);
       if (message.trim() === "#星布谷地公测兑换码") {
         const { expired, messages } = planetLaunchMessages((options.now || Date.now)());
         return expired ? messages.join("\n") : { type: "forward", nodes: messages };

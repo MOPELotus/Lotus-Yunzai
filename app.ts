@@ -53,6 +53,7 @@ import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
 import { gameCheckinCommands, namedCheckinCommand } from "./lib/game-checkin-commands.ts";
 import { isPreviewRedeemSetting, redeemCodeCommands } from "./lib/redeem-code-commands.ts";
+import { createManualRedeemCommand, isManualRedeemCommand } from "./lib/redeem-code-manual.ts";
 import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
@@ -2059,7 +2060,7 @@ if (import.meta.main) {
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
         atlasCommand || updateCheck || updateNoticeChange || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
-        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) ||
+        isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || isManualRedeemCommand(event.msg) ||
         zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
@@ -2549,15 +2550,19 @@ if (import.meta.main) {
     }
     const redeemSetting = isPreviewRedeemSetting(command.msg);
     const redeemConnection = redeemSetting ? event[delegationSession]?.signal : undefined;
+    const manualRedeem = isManualRedeemCommand(command.msg);
+    const manualRedeemSignal = manualRedeem && event.privateCredentialSignal ? nativeOperationSignal(event.privateCredentialSignal) : undefined;
+    if (manualRedeem && (!allowNew || event.attachmentOnly || manualRedeemSignal?.aborted)) return;
     const redeemEvent = redeemSetting ? {
       ...event, privateCredentialSignal: redeemConnection && nativeOperationSignal(redeemConnection),
-    } : event;
+    } : manualRedeem ? { ...event, privateCredentialSignal: manualRedeemSignal } : event;
     const redeemReply = await commands.dispatchFallback(redeemEvent,
       (names) => names[0] === "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg);
     if (redeemReply !== undefined) {
-      await sendCommandReply(event, redeemReply);
+      if (!manualRedeemSignal?.aborted) await sendCommandReply(event, redeemReply);
       return;
     }
+    if (manualRedeem) return;
     if (/^#绝区零[^\p{Cc}\p{Cf}]{1,80}影画$/u.test(command.msg)) {
       // The V3 Atlas shortcut also matches this suffix. The explicit 图鉴 suffix still goes to Atlas.
       const cinema = await commands.dispatchFallback(event,
@@ -2927,9 +2932,11 @@ if (import.meta.main) {
           };
         },
       });
+      const manualRedeem = createManualRedeemCommand(checkinProfiles, fileURLToPath(new URL("data/redeemCodes/manual.json", root)),
+        previewSignal, hoyoTransport);
       commands.registerModule(redeemCodeCommands(previewOptions, publicPreview, {
         profiles: checkinProfiles, signal: previewSignal, canRegister: canRegisterCheckin, hasHistory: preview.hasHistory,
-      }));
+      }, manualRedeem));
       registerModuleTask("[前瞻兑换]", "0 */5 * * * *",
         () => preview.scan(previewSignal, diagnostic => console.warn(`[前瞻兑换] ${diagnostic}`)));
       previewSettings = {

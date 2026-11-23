@@ -181,6 +181,19 @@ test("原神旧别名匿名查询，中文码和奖励分别发送，同次并�
   expect(mock.calls).toHaveLength(count);
 });
 
+test("国际服私聊用法在国服公开转发末尾，码和奖励仍是可单独复制的节点", async () => {
+  const mock = officialMock();
+  const options = { fetch: mock.fetch, now: () => start + 1_000 };
+  const registry = new CommandRegistry();
+  registry.registerModule(redeemCodeCommands(options, new RedeemCodeService(options), undefined, async () => undefined));
+  const reply = await registry.dispatchFallback(message("#原神兑换码"), () => true, () => false);
+  expect(reply).toEqual({ type: "forward", nodes: [
+    title, fixtureItems[0]!.code, "模拟原石×100", fixtureItems[1]!.code, fixtureItems[1]!.title,
+    "有效期至：2026-10-26 12:00:00（北京时间）", `官方页面：${page}`,
+    "以上为国服前瞻码。另有国际服兑换码时，可在机器人好友私聊发送 #兑换码使用 <兑换码>。",
+  ] });
+});
+
 const additionalGames = [
   { id: "sr", uid: "288909600", gids: "6", version: "4.7", title: "星穹铁道4.7版本前瞻",
     aliases: ["*兑换码", "*前瞻兑换码", "#星铁兑换码", "#崩铁兑换码", "#星穹铁道前瞻兑换码", "#崩坏：星穹铁道直播CoDe"] },

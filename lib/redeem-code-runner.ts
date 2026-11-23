@@ -23,7 +23,7 @@ export interface PreviewRole {
   readonly region: string;
 }
 
-const resultText = {
+export const redeemResultText = {
   succeeded: "使用成功",
   "already-used": "已使用",
   expired: "兑换码已过期",
@@ -31,7 +31,7 @@ const resultText = {
   blocked: "请求已被拒绝，请在官方客户端检查账号状态",
   unknown: "结果未确认，请到游戏内检查",
 } as const;
-export type PreviewSubmissionStatus = keyof typeof resultText;
+export type PreviewSubmissionStatus = keyof typeof redeemResultText;
 interface PreviewBinding {
   readonly accountId: string;
   readonly selectedUid: string;
@@ -185,9 +185,9 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
       const recorded = new Set([source.primary, ...source.historical].flatMap(data => data ? Object.keys(data) : []));
       return { profiles: profiles.filter(profile => canUse(source, profile)), recorded };
     },
-    claim(keys: readonly string[], time: number, profile: PreviewProfile) {
+    claim(keys: readonly string[], time: number, profile?: PreviewProfile) {
       return edit((data, source) => {
-        if (!canUse(source, profile) ||
+        if ((profile && !canUse(source, profile)) ||
           keys.some(key => Object.hasOwn(data, key) || source.historical.some(journal => Object.hasOwn(journal, key)))) return false;
         for (const key of keys) data[key] = { time, status: "started" };
         return true;
@@ -202,6 +202,26 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
         for (const key of keys) data[key] = { time, status: "finished" };
         return true;
       });
+    },
+    release(key: string, time: number) {
+      return edit(data => {
+        const value = record(data[key]);
+        if (value?.status !== "started" || value.time !== time) return false;
+        delete data[key];
+        return true;
+      });
+    },
+  };
+}
+
+export function createManualRedeemLedger(file: string) {
+  const store = createJournal(resolve(file), [], false);
+  return {
+    async claim(verifiedAccount: string, game: PreviewGame, role: PreviewRole, code: string) {
+      const key = createHash("sha256").update(JSON.stringify([verifiedAccount, game, role.region, role.uid, code.toLowerCase()])).digest("hex");
+      const time = Date.now();
+      if (!await store.claim([key], time)) return;
+      return { finish: () => store.finish([key], time), release: () => store.release(key, time) };
     },
   };
 }
@@ -250,9 +270,9 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
       let status: PreviewSubmissionStatus = "unknown";
       try {
         const result = await access.submit(code, role, request);
-        if (Object.hasOwn(resultText, result?.status)) status = result.status;
+        if (Object.hasOwn(redeemResultText, result?.status)) status = result.status;
       } catch { /* A result may have been lost after the request reached the server. */ }
-      lines.push(`${code}：${resultText[status]}`);
+      lines.push(`${code}：${redeemResultText[status]}`);
       stopped = status === "blocked" || status === "unknown";
     }
     if (signal?.aborted || !await store.finish(keys, time)) return;

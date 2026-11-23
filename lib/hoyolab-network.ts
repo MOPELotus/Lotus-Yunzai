@@ -6,6 +6,8 @@ const internationalOrigins = new Set([
   "https://passport-api-eu.hoyolab.com",
   "https://api-account-os.hoyolab.com",
   "https://sg-act-public-api.hoyolab.com",
+  "https://sg-hk4e-api.hoyolab.com",
+  "https://sg-hkrpg-api.hoyolab.com",
 ]);
 
 function parseProxy(address: unknown): URL | undefined {

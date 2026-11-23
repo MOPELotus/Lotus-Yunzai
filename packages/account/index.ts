@@ -983,6 +983,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!state.summary.loggedIn || !account) return;
       return { ...account, revision, selectedUid: accountId(state.selected[game]) };
     },
+    async internationalRedeemContext(qq: string, id: number, game: "gs" | "sr") {
+      const { document, state, revision } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      const account = verifiedInternationalAccount(os, os.cookie);
+      if (!state.summary.loggedIn || !account) return;
+      const activity = verifiedInternationalAccount(os, os.verified_activity_cookie);
+      return { ...account, revision, selectedUid: accountId(state.selected[game]), activityCookie: activity?.cookie };
+    },
     async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
