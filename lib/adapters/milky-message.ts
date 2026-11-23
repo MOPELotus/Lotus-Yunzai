@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
-import { generatedImagePreview, notifyReplyDelivery, replyRecallSeconds, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
+import { generatedImagePreview, notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, type InboundSegment, type MessageEvent, type MessageReply, type QuotedMessage, type ReplyOptions } from "../messages.ts";
 import { maxPublicFileBytes } from "../public-files.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
 
@@ -404,8 +404,9 @@ function senderMetadata(data: Record<string, unknown>, groupId: number | undefin
 }
 
 function replyToMilky(target: Target, call: MilkyCall, {
-  messageId, groupSender, scheduleRecall,
-}: { messageId?: number; groupSender?: number; scheduleRecall?: ScheduleRecall } = {}): MessageEvent["reply"] {
+  messageId, quotedSequence, groupSender, scheduleRecall, confirmedCall,
+}: { messageId?: number; quotedSequence?: number; groupSender?: number; scheduleRecall?: ScheduleRecall;
+  confirmedCall?: MilkyConfirmedCall } = {}): MessageEvent["reply"] {
   const group = "group_id" in target;
   const action = group ? "send_group_message" : "send_private_message";
   return async (reply, quote = false, options = {}) => {
@@ -416,9 +417,14 @@ function replyToMilky(target: Target, call: MilkyCall, {
     try {
       const sequence = (await call(action, { ...target, message }))?.message_seq;
       if (!isSequence(sequence)) return false;
+      const recallAction = group ? "recall_group_message" : "recall_private_message";
+      const recallTarget = { ...target, message_seq: sequence };
       const seconds = replyRecallSeconds(options.recallMsg);
       if (seconds !== undefined) {
-        scheduleRecall?.(group ? "recall_group_message" : "recall_private_message", { ...target, message_seq: sequence }, seconds);
+        scheduleRecall?.(recallAction, recallTarget, seconds);
+      }
+      if (confirmedCall && options.onOwnReply && sequence !== messageId && sequence !== quotedSequence) {
+        await notifyOwnReply(options.onOwnReply, async () => (await confirmedCall(recallAction, recallTarget)).status);
       }
       await notifyReplyDelivery(options.onDelivered, sequence);
       return true;
@@ -489,7 +495,7 @@ function milkyUploadedFile(selfId: number, userId: number, target: Target, data:
 
 export function milkyMessage(
   value: unknown, selfId: number, call: MilkyCall, scheduleRecall?: ScheduleRecall, forwardCall?: MilkyCall,
-  uploadCall?: MilkyConfirmedCall,
+  confirmedCall?: MilkyConfirmedCall,
 ): MessageEvent | undefined {
   if (!isId(selfId) || !isRecord(value) || value.event_type !== "message_receive" || value.self_id !== selfId ||
       !isRecord(value.data)) return;
@@ -563,9 +569,9 @@ export function milkyMessage(
       if (seconds !== undefined) scheduleRecall?.(isGroup ? "recall_group_message" : "recall_private_message", { ...target, message_seq: result.message_seq }, seconds);
       return true;
     }),
-    uploadFile: uploadCall && uploadToMilky(target, uploadCall),
-    [sendSessionMedia]: uploadCall && forwardCall && (async (url, name, type) => {
-      if (type === "file") return uploadMilkyFile(target, uploadCall, url, name);
+    uploadFile: confirmedCall && uploadToMilky(target, confirmedCall),
+    [sendSessionMedia]: confirmedCall && forwardCall && (async (url, name, type) => {
+      if (type === "file") return uploadMilkyFile(target, confirmedCall, url, name);
       try {
         const result = await forwardCall(action, { ...target, message: [{ type, data: { uri: url } }] });
         if (!result) return "rejected";
@@ -575,6 +581,7 @@ export function milkyMessage(
       }
     }),
     canReadAttachments: true,
-    reply: replyToMilky(target, call, { messageId, groupSender: isGroup ? userId : undefined, scheduleRecall }),
+    reply: replyToMilky(target, call, { messageId, quotedSequence: isSequence(quotedSequence) ? quotedSequence : undefined,
+      groupSender: isGroup ? userId : undefined, scheduleRecall, confirmedCall }),
   };
 }

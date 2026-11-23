@@ -8,7 +8,7 @@ import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
-import { replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
+import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageReply, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
@@ -984,8 +984,16 @@ async function dispatchMessage(
       const params = { message_type: messageType, ...target, message, auto_escape: true };
       const recall = replyRecallSeconds(options.recallMsg);
       const onDelivered = options.onDelivered;
-      const report = onDelivered && boundAccount && attachmentSession && !attachmentSession.signal.aborted
-        ? (id: number) => oneBotMessageId(id) !== undefined && !attachmentSession.signal.aborted ? onDelivered(id) : undefined
+      const onOwnReply = options.onOwnReply;
+      const report = (onDelivered || onOwnReply) && boundAccount && attachmentSession && !attachmentSession.signal.aborted
+        ? async (id: number) => {
+          const signal = attachmentSession.signal;
+          if (oneBotMessageId(id) === undefined || signal.aborted) return;
+          if (onOwnReply && id !== messageId && id !== quotedId) {
+            await notifyOwnReply(onOwnReply, () => signal.aborted ? Promise.resolve("unknown") : calls.recallMessage(send, id, signal));
+          }
+          await notifyReplyDelivery(onDelivered, id);
+        }
         : undefined;
       if (recall !== undefined || report) {
         return calls.replyWithReceipt(send, params, recall, options.recallOriginal === false ? undefined : messageId, report);

@@ -157,6 +157,7 @@ export interface QuotedMessage {
 }
 
 export type RecallResult = "confirmed" | "rejected" | "unknown";
+export type RecallOwnReply = () => Promise<RecallResult>;
 export type GroupCardResult = RecallResult | "missing-group" | "insufficient-role";
 
 export interface ReplyOptions {
@@ -164,6 +165,17 @@ export interface ReplyOptions {
   readonly recallMsg?: number;
   readonly recallOriginal?: boolean;
   readonly onDelivered?: (messageId: number) => void | Promise<void>;
+  /** Receives a one-use handle to this confirmed reply on its original connection. */
+  readonly onOwnReply?: (recall: RecallOwnReply) => void | Promise<void>;
+}
+
+export async function notifyOwnReply(callback: NonNullable<ReplyOptions["onOwnReply"]>, recall: RecallOwnReply): Promise<void> {
+  let result: Promise<RecallResult> | undefined;
+  try {
+    await callback(() => result ??= Promise.resolve().then(recall).catch(() => "unknown"));
+  } catch {
+    console.warn("[消息] 已确认送达，撤回回执记录失败。");
+  }
 }
 
 export function replyRecallSeconds(seconds: unknown): number | undefined {
