@@ -127,3 +127,19 @@ device: { id: fixture-device, fp: fixture-fp }
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("显式月份以 YYYYMM 参与签名并拒绝错月及无效月份", async () => {
+  const requested: string[] = [];
+  let returned = "202512";
+  const client = createHoyoClient(async (url, options) => {
+    requested.push(url.searchParams.get("month")!);
+    const [time, nonce, hash] = new Headers(options.headers).get("DS")!.split(",");
+    expect(hash).toBe(createHash("md5").update(`salt=xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs&t=${time}&r=${nonce}&b=&q=${url.search.slice(1)}`).digest("hex"));
+    return response({ ...data, month: undefined, data_month: returned });
+  });
+  expect((await client.fetchStarRailMonthly(source, { month: "202512" })).snapshot?.month).toBe("202512");
+  returned = "202511";
+  await expect(client.fetchStarRailMonthly(source, { month: "202512" })).rejects.toMatchObject({ code: "response" });
+  await expect(client.fetchStarRailMonthly(source, { month: "202513" })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(requested).toEqual(["202512", "202512"]);
+});

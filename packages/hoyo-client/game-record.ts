@@ -53,7 +53,7 @@ const genshinPanelPaths = {
 } as const;
 type ZzzPeriodRecord = "zzz-hadal" | "zzz-deadly" | "zzz-holo-boss" | "zzz-void-front";
 type RecordOptions = { readonly signal?: AbortSignal } & (
-  { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "starrail-index" | "starrail-avatar-basic" | "starrail-grid-fight" | "starrail-monthly" | "genshin-panel-list" |
+  { readonly kind: "daily-note" | "genshin-index" | "genshin-gcg-deck" | "genshin-gcg-collection-summary" | "starrail-avatar-info" | "starrail-index" | "starrail-avatar-basic" | "starrail-grid-fight" | "genshin-panel-list" |
     Exclude<keyof typeof zzzCardPaths, ZzzPeriodRecord | "zzz-panel-detail"> } |
   { readonly kind: "genshin-abyss"; readonly scheduleType: 1 | 2 } |
   { readonly kind: "starrail-rogue"; readonly scheduleType: 1 | 2 } |
@@ -61,6 +61,7 @@ type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "genshin-theater" } |
   { readonly kind: "genshin-hard-challenge" | "genshin-hard-popularity" } |
   { readonly kind: "genshin-monthly"; readonly month: number } |
+  { readonly kind: "starrail-monthly"; readonly month?: string } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
   { readonly kind: "zzz-panel-detail"; readonly characterId: number } |
@@ -216,6 +217,10 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if (genshinMonthly && (!Number.isInteger(options.month) || options.month < 1 || options.month > 12)) {
     throw new HoyoRequestError("invalid-input", "原石札记月份无效。");
   }
+  if (options.kind === "starrail-monthly" && options.month !== undefined &&
+      (!/^20\d{2}(?:0[1-9]|1[0-2])$/u.test(options.month) || options.month < "202304")) {
+    throw new HoyoRequestError("invalid-input", "星铁月收入月份无效。");
+  }
   const regionalPeriod = options.kind === "zzz-deadly" || options.kind === "zzz-holo-boss" || options.kind === "zzz-void-front";
   const zzzPeriod = options.kind === "zzz-hadal" || regionalPeriod;
   const usesRegion = regionalPeriod || climbingTower || hollowLost || zenkov || exploration || monthly;
@@ -267,7 +272,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
     if (hollowDetail) endpoint.searchParams.set("type", "3");
-    if (starRailMonthly) endpoint.searchParams.set("month", "");
+    if (options.kind === "starrail-monthly") endpoint.searchParams.set("month", options.month ?? "");
   }
   const headers = requestHeaders(source, endpoint.search.slice(1), body);
   // The signed query for this route ends at need_wiki. The selected ID is appended afterward.

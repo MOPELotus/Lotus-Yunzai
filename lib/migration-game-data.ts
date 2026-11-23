@@ -32,6 +32,7 @@ const scopes = [
   { path: "data/PlayerData/gs", nesting: 0, active: (name: string) => panelUid.test(name), maxMiB: 8 },
   { path: "data/PlayerData/sr", nesting: 0, active: (name: string) => panelUid.test(name), maxMiB: 8 },
   { path: "data/ZZZ-Plugin/gacha", nesting: 0, active: (name: string) => zzzUid.test(name), maxMiB: 32 },
+  { path: "data/SR_NoteData", nesting: 0, active: () => false, maxMiB: 4 },
   { path: "data/textJson", nesting: 0, active: () => false, maxMiB: 32 },
 ] as const;
 

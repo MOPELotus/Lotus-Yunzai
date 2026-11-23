@@ -89,7 +89,7 @@ export { createPassportQr, PassportQrError, type PassportQrSession } from "./pas
 export { genshinGachaPools, type GenshinGachaOptions, type GenshinGachaPool, type GenshinGachaRow } from "./genshin-gacha.ts";
 export type { StarRailLedgerKind, StarRailLedgerRow, StarRailLedgerOptions, StarRailOnlineOptions, StarRailPowerRecovery } from "./starrail-ledger.ts";
 export { defaultStarRailGrowthLevels, type StarRailGrowthSnapshot, type StarRailGrowthOptions } from "./starrail-growth.ts";
-export type { StarRailMonthlySnapshot, StarRailMonthlyOptions } from "./starrail-monthly.ts";
+export { normalizeStarRailMonthly, type StarRailMonthlySnapshot, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
 export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
