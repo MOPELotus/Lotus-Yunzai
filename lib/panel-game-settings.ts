@@ -1,3 +1,4 @@
+import { readLegacyPanelRecoveryEnabled } from "./legacy-panel-recovery-flow.ts";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
 import { GlobalConfigWriteError, updateLocalConfiguration, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
@@ -81,6 +82,8 @@ async function showcasePanel(root: URL) {
     import("../plugins/starrail/panel-original-config.ts"),
   ]);
   const fields: readonly SettingField[] = [
+    { key: "legacyPanelRecovery", label: "允许本人确认后恢复旧面板", type: "boolean",
+      hint: "仅限好友私聊，官方更新无结果且本机无档时提示。需本人确认才向原旧档服务提供 QQ 和游戏 UID。" },
     {
       key: "genshinSource", label: "原神公开展柜来源", type: "text",
       readonly: !!Bun.env.LOTUS_GENSHIN_SHOWCASE_SERVER?.trim(),
@@ -103,10 +106,11 @@ async function showcasePanel(root: URL) {
     },
   ];
   async function read() {
-    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings] = await Promise.all([
+    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery] = await Promise.all([
       readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root), originals.readStarRailOriginalSettings(root),
+      readLegacyPanelRecoveryEnabled(root),
     ]);
-    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings };
+    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery };
   }
   return {
     fields,
@@ -118,6 +122,10 @@ async function showcasePanel(root: URL) {
           const current = effective as Awaited<ReturnType<typeof read>>;
           if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
           const edits: Edit[] = [];
+          if (typeof values.legacyPanelRecovery !== "boolean") throw new InvalidGameSettings();
+          if (values.legacyPanelRecovery !== current.legacyPanelRecovery) {
+            edits.push({ path: ["panel_legacy_recovery"], value: values.legacyPanelRecovery });
+          }
           for (const [field, section, override] of [
             ["genshinSource", "genshin", "LOTUS_GENSHIN_SHOWCASE_SERVER"],
             ["starrailSource", "starrail", "LOTUS_STAR_RAIL_SHOWCASE_SERVER"],

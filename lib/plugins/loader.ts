@@ -499,7 +499,8 @@ export async function loadPlugins(
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
           fallback: fallback as CommandModule["fallback"],
           fallbackFeatures: fallbackFeatures as CommandModule["fallbackFeatures"],
-        }, label);
+        }, label, { trustedLegacyPanelRecovery: Boolean(builtIn &&
+          (moduleName === "@lotus-yunzai/genshin" || moduleName === "@lotus-yunzai/starrail")) });
         if (builtIn && moduleName === "@lotus-yunzai/meme" && options.profileLikeImages &&
             typeof published.createProfileLikeImageRenderer === "function") {
           const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory, options.profileLikeImages.rasterScale);

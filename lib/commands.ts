@@ -1,3 +1,4 @@
+import type { LegacyPanelRecoveryOffer } from "./legacy-panel-recovery-flow.ts";
 import { sendBatchedImageForward, type BatchedImageForward } from "@lotus-yunzai/skia/forward-images";
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
@@ -37,6 +38,7 @@ export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent
   readonly groupOriginalSignal?: AbortSignal;
   readonly characterGallerySignal?: AbortSignal;
   readonly panelTransfer?: PanelTransferAccess;
+  readonly offerLegacyPanelRecovery?: LegacyPanelRecoveryOffer;
   readonly readCharacterGalleryImages?: () => Promise<readonly (Uint8Array | undefined)[] | "too-many">;
 };
 
@@ -224,7 +226,7 @@ function commandFeatureNames(module: string, command: string): readonly string[]
 export class CommandRegistry {
   readonly #handlers = new Map<string, RegisteredCommand>();
   readonly #fallbacks = new Map<string, { readonly handler: MessageFallback; readonly names: readonly string[];
-    readonly features?: CommandModule["fallbackFeatures"] }>();
+    readonly features?: CommandModule["fallbackFeatures"]; readonly trustedLegacyPanelRecovery: boolean }>();
   readonly #modules = new Set<string>();
 
   register(name: string, handler: CommandHandler): void {
@@ -236,7 +238,8 @@ export class CommandRegistry {
     return this.#modules.has(name);
   }
 
-  registerModule(module: CommandModule, label = module.name): () => void {
+  registerModule(module: CommandModule, label = module.name,
+    { trustedLegacyPanelRecovery = false }: { readonly trustedLegacyPanelRecovery?: boolean } = {}): () => void {
     const { name, fallback, fallbackFeatures } = module;
     if (this.hasModule(name)) {
       throw new Error(`模块已注册：${name}`);
@@ -275,7 +278,7 @@ export class CommandRegistry {
       if (!fallbackFeatures && ["@lotus-yunzai/genshin", "@lotus-yunzai/starrail", "@lotus-yunzai/zzz"].includes(name)) {
         names.push("[gacha] 抽卡记录");
       }
-      this.#fallbacks.set(name, { handler: fallback, names, features: fallbackFeatures });
+      this.#fallbacks.set(name, { handler: fallback, names, features: fallbackFeatures, trustedLegacyPanelRecovery });
     }
     this.#modules.add(name);
 
@@ -335,10 +338,11 @@ export class CommandRegistry {
     normalizedMessage = event.msg,
     capabilities?: Pick<MessageFallbackContext,
       "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages" |
-      "canManagePackages" | "panelTransfer">,
+      "canManagePackages" | "panelTransfer" | "offerLegacyPanelRecovery">,
     onlyModule?: string,
   ): Promise<CommandReply | undefined> {
-    for (const { handler, names, features } of this.#fallbacks.values()) {
+    const { offerLegacyPanelRecovery, ...sharedCapabilities } = capabilities ?? {};
+    for (const { handler, names, features, trustedLegacyPanelRecovery } of this.#fallbacks.values()) {
       if (onlyModule !== undefined && names[0] !== onlyModule) continue;
       if (!features && !allowed(names)) continue;
       const context = {
@@ -346,7 +350,8 @@ export class CommandRegistry {
         lookupMediaReply: names[0] === "@lotus-yunzai/genshin" ? event.lookupMediaReply : undefined,
         verifyOwnGroupMembership: names[0] === "@lotus-yunzai/genshin" && !event.isDelegated && !event.attachmentOnly
           ? event.verifyOwnGroupMembership : undefined,
-        reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
+        reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...sharedCapabilities,
+        ...(trustedLegacyPanelRecovery && offerLegacyPanelRecovery && { offerLegacyPanelRecovery }),
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
         [groupExportSession]: names[0] === "@lotus-yunzai/group-member-export" && !event.isDelegated ? event[groupExportSession] : undefined,
       };

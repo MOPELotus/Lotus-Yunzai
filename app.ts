@@ -1,3 +1,4 @@
+import { createLegacyPanelRecoveryFlow, matchLegacyPanelRecoveryConfirmation, readLegacyPanelRecoveryEnabled } from "./lib/legacy-panel-recovery-flow.ts";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -374,6 +375,28 @@ if (import.meta.main) {
   const panelRebuild = createPanelRebuild(roleProfiles, lifecycle.signal);
   const arkSelfRank = createArkSelfRankCommand(roleProfiles);
   const panelSignatures = createPanelSignatureService(lockFile);
+  const legacyPanelRecoveryEnabled = () => readLegacyPanelRecoveryEnabled(root);
+  const legacyPanelRecovery = createLegacyPanelRecoveryFlow({
+    enabled: legacyPanelRecoveryEnabled,
+    async authorize({ game, uid, profileId }, session) {
+      const qq = String(session.user);
+      const selected = await roleProfiles.savedRole(qq, profileId, game).catch(() => undefined);
+      if (!selected || selected.uid !== uid) return;
+      const sameRole = (role: typeof selected | undefined) => role?.uid === uid && role.region === selected.region &&
+        role.gameBiz === selected.gameBiz;
+      const read = async () => {
+        const role = await roleProfiles.savedRole(qq, profileId, game).catch(() => undefined);
+        if (!sameRole(role)) return;
+        const auth = await roleProfiles.requestSelectedContext(qq, profileId, game).catch(() => undefined);
+        if (auth && sameRole(auth.role)) return previewRedeemIdentity(auth);
+      };
+      const account = await read();
+      if (account) return async () => session.isCurrent() && (await read()) === account;
+      const signed = await panelSignatures.authorization(game, uid, session);
+      if (signed) return async () => session.isCurrent() &&
+        sameRole(await roleProfiles.savedRole(qq, profileId, game).catch(() => undefined)) && await signed();
+    },
+  });
 
   async function exportSignedPanel(game: "gs" | "sr", uid: string, authorized: () => Promise<boolean>,
     event: MessageEvent, signal: AbortSignal) {
@@ -2079,6 +2102,20 @@ if (import.meta.main) {
       }
     }
     if (await privateAccess.blocked(event)) return;
+    const recoveryConfirmation = matchLegacyPanelRecoveryConfirmation(event.msg);
+    if (recoveryConfirmation) {
+      const features = panelSignatureFeatures[recoveryConfirmation.game];
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
+      const scope = ownCheckinSession(event, features);
+      if (!scope?.privateFriend || event.self_id === undefined) {
+        await event.reply("请在当前机器人的好友私聊中确认恢复本人旧面板。");
+        return;
+      }
+      const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
+      const reply = await legacyPanelRecovery.confirm(recoveryConfirmation, session);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
     const panelSignature = matchPanelSignatureCommand(event.msg);
     if (panelSignature) {
       const features = panelSignatureFeatures[panelSignature.game];
@@ -2541,8 +2578,21 @@ if (import.meta.main) {
     } : teamDamageSession ? { ...event, calculationSignal: nativeOperationSignal(teamDamageSession) } : event;
     const deliveryEvent = deliverMedia ? { ...fallbackEvent, deliverMedia } : fallbackEvent;
     const packageManagement = !event.isDelegated && canManagePackages(event) ? { canManagePackages: true as const } : undefined;
+    const panelUpdate = /^#?(?:(原神|星铁|米游社|mys)\s*)*(?:全部面板更新|更新全部面板|获取游戏角色详情|更新面板|面板更新)(?:[1-9\s]|$)/iu.test(command.msg);
+    let offerLegacyPanelRecovery;
+    if (panelUpdate && event.message_type === "private" && event.self_id !== undefined &&
+        await legacyPanelRecoveryEnabled().catch(() => false)) {
+      const game = /^#星铁/u.test(command.msg) ? "sr" : "gs";
+      const scope = ownCheckinSession(event, panelSignatureFeatures[game]);
+      if (scope?.privateFriend) {
+        const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
+        const offer = legacyPanelRecovery.offer(session);
+        offerLegacyPanelRecovery = (candidate: Parameters<typeof offer>[0]) => candidate.game === game ? offer(candidate) : Promise.resolve(undefined);
+      }
+    }
     const fallback = await commands.dispatchFallback(deliveryEvent,
-      (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg, packageManagement);
+      (names) => names[0] !== "@lotus-yunzai/redeem-codes" && allowed(names), isBotMaster, command.msg,
+      { ...packageManagement, offerLegacyPanelRecovery });
     if (fallback !== undefined) {
       await sendCommandReply(event, fallback);
       return;
