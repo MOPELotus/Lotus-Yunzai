@@ -22,6 +22,7 @@ interface PreparedMigration {
     readonly coreConfig: Staged["coreConfig"];
     readonly groupConfig: Staged["groupConfig"];
     readonly panelRank?: Staged["panelRank"];
+    readonly gachaDisplay?: Staged["gachaDisplay"];
     readonly zzzRecall?: Staged["zzzRecall"];
     readonly zzzChallengeReminder?: Staged["zzzChallengeReminder"];
     readonly updateNotice?: Staged["updateNotice"];
@@ -86,6 +87,7 @@ async function prepare(source: string, target: string, directory: string, signal
         coreConfig: staged.coreConfig,
         groupConfig: staged.groupConfig,
         panelRank: staged.panelRank,
+        gachaDisplay: staged.gachaDisplay,
         zzzRecall: staged.zzzRecall,
         zzzChallengeReminder: staged.zzzChallengeReminder,
         updateNotice: staged.updateNotice,

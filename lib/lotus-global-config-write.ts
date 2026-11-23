@@ -36,7 +36,7 @@ interface Location {
 
 type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
   "remote" | "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
-  "group" | "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
+  "gacha-display" | "group" | "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
 
 function groupConfigLockPath(root: URL) {
   return fileURLToPath(new URL("config/.lotus-group-config.sqlite", root));

@@ -5,6 +5,7 @@
   "exports": {
     ".": "./index.ts",
     "./character-returns": "./character-returns.ts",
+    "./display-settings": "./display-settings.ts",
     "./expectation": "./expectation.ts",
     "./file-import": "./file-import.ts",
     "./literal-exports": "./literal-exports.ts",

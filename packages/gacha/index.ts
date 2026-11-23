@@ -1,3 +1,5 @@
+import { defaultGachaDisplaySettings, type GachaLuckSettings } from "./display-settings.ts";
+
 export interface GachaProbability {
   readonly base: number;
   readonly soft: number;
@@ -38,17 +40,6 @@ export interface GachaLuck extends GachaGuarantees {
   readonly hasNewPool: boolean;
 }
 
-const luckLevels = [
-  { min: 99, title: "天运所归", desc: "天选之人，建议去买彩票", color: "#ff7a1f" },
-  { min: 95, title: "终极欧皇", desc: "金光常伴左右", color: "#ff9f1f" },
-  { min: 85, title: "大欧皇", desc: "运气远超常人", color: "#f5b72a" },
-  { min: 70, title: "小欧皇", desc: "运气明显好于平均", color: "#e4c46a" },
-  { min: 55, title: "小有运气", desc: "运气略好于平均", color: "#c9cf8a" },
-  { min: 45, title: "平民", desc: "和理论期望相当", color: "#a8c1d8" },
-  { min: 25, title: "小非酋", desc: "运气略差于平均", color: "#8f9bd6" },
-  { min: 8, title: "大非酋", desc: "保底常客", color: "#9a76d8" },
-  { min: 0, title: "终极非酋", desc: "抱抱，下次一定出金", color: "#b0526a" },
-] as const;
 
 function convolution(a: readonly number[], b: readonly number[], limit: number): number[] {
   const output = Array<number>(Math.min(a.length + b.length - 1, limit + 1)).fill(0);
@@ -92,7 +83,9 @@ function luckPercent(distribution: readonly number[], goals: number, used: numbe
   if (goals > 50) {
     const expected = mean(distribution);
     const variance = distribution.reduce((sum, probability, count) => sum + probability * (count - expected) ** 2, 0);
-    return boundedPercent(1 - normalCdf((used - goals * expected) / Math.sqrt(goals * variance)));
+    const distance = used - goals * expected;
+    return variance ? boundedPercent(1 - normalCdf(distance / Math.sqrt(goals * variance)))
+      : distance === 0 ? 50 : distance < 0 ? 100 : 0;
   }
   let total = [1];
   for (let i = 0; i < goals; i++) total = convolution(total, distribution, used);
@@ -102,6 +95,7 @@ function luckPercent(distribution: readonly number[], goals: number, used: numbe
 
 function winPercent(attempts: number, wins: number, upRate: number): string | false {
   if (!attempts) return false;
+  if (upRate === 1) return wins === attempts ? "50.0" : "0.0";
   if (attempts > 1024) {
     const expected = attempts * upRate;
     return boundedPercent(normalCdf((wins - expected) / Math.sqrt(expected * (1 - upRate)))).toFixed(1);
@@ -148,9 +142,9 @@ export function applyGachaGuarantees(fiveLog: readonly GachaGuaranteeRow[], init
 
 export function gachaLuckFor(
   model: GachaProbability, fiveNum: number, fiveUsed: number, upNum: number, upUsed: number,
-  state: GachaGuarantees, hasNewPool: boolean,
+  state: GachaGuarantees, hasNewPool: boolean, settings: GachaLuckSettings = defaultGachaDisplaySettings.luck,
 ): GachaLuck | undefined {
-  if (!fiveNum || !fiveUsed) return;
+  if (!settings.enabled || !fiveNum || !fiveUsed) return;
   const { upRate, hard } = model;
   const fiveDistribution = starDistribution(model);
   const fivePercent = luckPercent(fiveDistribution, fiveNum, fiveUsed);
@@ -158,11 +152,11 @@ export function gachaLuckFor(
     ? convolution(fiveDistribution, fiveDistribution, hard * 2)
       .map((value, index) => (fiveDistribution[index] ?? 0) * upRate + value * (1 - upRate)) : undefined;
   const percent = upDistribution ? luckPercent(upDistribution, upNum, upUsed) : fivePercent;
-  const level = luckLevels.find(({ min }) => percent >= min)!;
+  const level = settings.levels.find(({ min }) => percent >= min) ?? settings.levels.at(-1)!;
   return {
     ...level, ...state, isUpPool: !!upDistribution, percent: percent.toFixed(1), hasNewPool,
     fiveAvg: (fiveUsed / fiveNum).toFixed(1), fiveExpect: mean(fiveDistribution).toFixed(1),
-    fivePercent: fivePercent.toFixed(1), fewSample: (upDistribution ? upNum : fiveNum) < 3,
+    fivePercent: fivePercent.toFixed(1), fewSample: (upDistribution ? upNum : fiveNum) < settings.minSample,
     ...(upDistribution ? {
       upAvg: (upUsed / upNum).toFixed(1), upExpect: mean(upDistribution).toFixed(1), upRate: Math.round(upRate * 100),
       winPercent: winPercent(state.smallNum, state.smallWin, upRate),

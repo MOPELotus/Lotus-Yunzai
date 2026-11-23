@@ -133,6 +133,7 @@ import { panelGroupRankSettings } from "./lib/group-panel-rank-settings.ts";
 import { panelStatusSettings } from "./lib/panel-status-settings.ts";
 import { panelGameSettings } from "./lib/panel-game-settings.ts";
 import { panelStarRailWarpSettings } from "./lib/panel-starrail-warp-settings.ts";
+import { panelGachaSettings } from "./lib/panel-gacha-settings.ts";
 import { panelGuidesSettings, panelGenshinGuideSettings, panelZzzGuideSettings, panelGuideCalendarSettings } from "./lib/panel-guides-settings.ts";
 import { panelIngressSettings } from "./lib/panel-ingress-settings.ts";
 import { panelGroupRouting } from "./lib/panel-group-routing.ts";
@@ -3927,6 +3928,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],
         ["/panel/api/settings/native/genshin-damage", panelGameSettings(root, "genshin-damage")],
         ["/panel/api/settings/native/starrail-warp", panelStarRailWarpSettings(root)],
+        ["/panel/api/settings/native/gacha-display", panelGachaSettings(root)],
         ["/panel/api/settings/native/zzz-rank", panelZzzSettings(root)],
         ["/panel/api/settings/native/zzz-panel", panelZzzSettings(root, "panel")],
         ["/panel/api/settings/native/zzz-reminders", panelZzzSettings(root, "reminders")],

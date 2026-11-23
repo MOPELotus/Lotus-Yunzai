@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseGachaDisplaySettings } from "@lotus-yunzai/gacha/display-settings";
 import type { GenshinGachaPool } from "../packages/hoyo-client/index.ts";
 import { buildGenshinGachaDetail, resolveGenshinDetailPool } from "../plugins/genshin/gacha-detail.ts";
 import { mergeGenshinGachaHistory } from "../plugins/genshin/gacha-history.ts";
@@ -152,4 +153,21 @@ test("keeps source order for same-second legacy pulls and descending IDs after a
   expect(detail(written).fiveLog[1]).toMatchObject({ id: 10000089, count: 3 });
   expect(detail([{ ...legacy[0], time: "" }, ...legacy.slice(1)]).stat)
     .toMatchObject({ allNum: 8, noFiveNum: 1, noFourNum: 2 });
+});
+
+test("uses configured ratings and pool model during pagination without changing record statistics", () => {
+  const original = buildGenshinGachaDetail(options)!;
+  const display = parseGachaDisplaySettings({ detailRows: 1, minSample: 0,
+    levels: [{ min: 100, title: "自定义评级", desc: "自定义说明", color: "#123" }],
+    models: { gs: { 301: { upRate: 0.7 } } } });
+  const first = buildGenshinGachaDetail({ ...options, display, page: 1 })!;
+  const final = buildGenshinGachaDetail({ ...options, display, page: 3 })!;
+  expect(first.pageInfo).toMatchObject({ total: 3, from: 1, to: 1 });
+  expect(final.pageInfo).toMatchObject({ total: 3, from: 3, to: 3 });
+  expect(final.gacha.stat).toEqual(original.gacha.stat);
+  expect(first.gacha.luck).toMatchObject({ title: "自定义评级", color: "#112233", upRate: 70, fewSample: false });
+  expect(final.gacha.luck).toEqual(first.gacha.luck);
+  const hidden = buildGenshinGachaDetail({ ...options, display: parseGachaDisplaySettings({ enabled: false, detailRows: 0 }) })!;
+  expect(hidden.gacha.luck).toBeUndefined();
+  expect(hidden.gacha.fiveLog).toEqual(original.gacha.fiveLog);
 });
