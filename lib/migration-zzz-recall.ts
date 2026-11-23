@@ -19,13 +19,16 @@ async function readArchivedConfig(archive: string, path: string, signal?: AbortS
   } catch { return null; }
 }
 
+export function zzzMigrationDirectories(archive: string, plugins: readonly LegacyPluginPlanEntry[]) {
+  const candidates = plugins.filter(plugin => plugin.status === "archive" && plugin.kind === "directory" && plugin.reason === mergedZzz);
+  candidates.sort((left, right) => Number(right.path === "plugins/ZZZ-Plugin") - Number(left.path === "plugins/ZZZ-Plugin"));
+  return candidates.map(plugin => join(archive, basename(plugin.path)));
+}
+
 export async function stageLegacyZzzRecallConfig(archive: string | undefined, stage: string,
   plugins: readonly LegacyPluginPlanEntry[], signal?: AbortSignal) {
   if (!archive) return { active: false, deferred: false };
-  const candidates = plugins.filter(plugin => plugin.status === "archive" && plugin.kind === "directory" && plugin.reason === mergedZzz);
-  candidates.sort((left, right) => Number(right.path === "plugins/ZZZ-Plugin") - Number(left.path === "plugins/ZZZ-Plugin"));
-  for (const plugin of candidates) {
-    const base = join(archive, basename(plugin.path));
+  for (const base of zzzMigrationDirectories(archive, plugins)) {
     const [defaults, config] = await Promise.all([
       readArchivedConfig(archive, join(base, "defSet/config.yaml"), signal),
       readArchivedConfig(archive, join(base, "config/config.yaml"), signal),

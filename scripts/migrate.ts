@@ -23,6 +23,7 @@ interface PreparedMigration {
     readonly groupConfig: Staged["groupConfig"];
     readonly panelRank?: Staged["panelRank"];
     readonly zzzRecall?: Staged["zzzRecall"];
+    readonly zzzChallengeReminder?: Staged["zzzChallengeReminder"];
     readonly keywords: Staged["keywords"];
     readonly lolomi?: Staged["lolomi"];
     readonly networkConfig: Staged["networkConfig"];
@@ -85,6 +86,7 @@ async function prepare(source: string, target: string, directory: string, signal
         groupConfig: staged.groupConfig,
         panelRank: staged.panelRank,
         zzzRecall: staged.zzzRecall,
+        zzzChallengeReminder: staged.zzzChallengeReminder,
         keywords: staged.keywords,
         lolomi: staged.lolomi,
         networkConfig: staged.networkConfig,
