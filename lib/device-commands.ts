@@ -29,7 +29,7 @@ interface BindingRequest {
 
 export function deviceCommands(directory: string | undefined, signal: AbortSignal,
   showProfile: (profileId: number, context: MessageFallbackContext) => Promise<CommandReply> | CommandReply,
-  apk = Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk,
+  apk?: string | URL,
 ): CommandModule {
   const profiles = createProfileStore(directory);
   const pending = new Map<string, BindingRequest>();
@@ -126,7 +126,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           const isCurrent = () => !signal.aborted && !context.privateCredentialSignal?.aborted && pending.get(scope) === current;
           if (!isCurrent()) return [];
           if (!context.uploadFile) return `当前连接无法发送附件。${apkFallback}`;
-          const file = Bun.file(apk);
+          const file = Bun.file(apk ?? (Bun.env.LOTUS_DEVICE_INFO_APK?.trim() || oldApk));
           let bytes: Uint8Array | undefined;
           try {
             if (await file.exists() && file.size > 0 && file.size <= maxChatFileBytes) {
