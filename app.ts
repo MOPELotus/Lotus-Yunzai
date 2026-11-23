@@ -23,6 +23,7 @@ import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
 import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner-account-command.ts";
 import { createOwnerQzoneCommand, ownerQzoneFeatures } from "./lib/owner-qzone-command.ts";
+import { arkSelfRankFeatures, createArkSelfRankCommand, matchArkSelfRank } from "./lib/ark-self-rank.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -350,6 +351,7 @@ if (import.meta.main) {
     signal: lifecycle.signal,
   });
   const panelRebuild = createPanelRebuild(createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined), lifecycle.signal);
+  const arkSelfRank = createArkSelfRankCommand(createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined));
   const restartPausedAt = readRestartPausedAt();
   const durablePause = handoff.powerState;
   const recordedPause = durablePause?.load();
@@ -2007,6 +2009,19 @@ if (import.meta.main) {
       }
     }
     if (await privateAccess.blocked(event)) return;
+    const selfRank = matchArkSelfRank(event.msg);
+    if (selfRank) {
+      const features = arkSelfRankFeatures[selfRank.game];
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
+      const scope = ownCheckinSession(event, features);
+      const reply = await arkSelfRank(selfRank, scope);
+      for (const part of typeof reply === "string" ? [reply] : reply ?? []) {
+        if (scope && !scope.isCurrent()) break;
+        await event.reply(part);
+      }
+      handled?.();
+      return;
+    }
     if (await ownerMessageRelay.handle(event, {
       allowNew, signal: nativeOperationSignal(),
       allowed: () => allowsOwnerRelay(event),
