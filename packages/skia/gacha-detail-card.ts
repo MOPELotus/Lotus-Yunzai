@@ -11,6 +11,7 @@ export interface GachaDetailOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory: string;
+  readonly avatar?: Uint8Array;
 }
 
 const width = 740;
@@ -480,7 +481,7 @@ function portraitPath(path: string, game: Game) {
 
 export async function renderGachaDetail(
   game: Game, model: GachaDetailModel,
-  { mode = "auto", scale = 4, themeDirectory }: GachaDetailOptions,
+  { mode = "auto", scale = 4, themeDirectory, avatar }: GachaDetailOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
   const root = await realpath(themeDirectory).catch(() => undefined);
@@ -496,7 +497,8 @@ export async function renderGachaDetail(
     if (image) images.set(path, image);
   }
 
-  const face = (model.face.face && images.get(model.face.face)) || theme.face;
+  const fallbackFace = avatar && await loadImage(Buffer.from(avatar)).catch(() => undefined);
+  const face = (model.face.face && images.get(model.face.face)) || fallbackFace || theme.face;
   const banner = (model.face.banner && images.get(model.face.banner)) || theme.banner;
   const laterPage = model.pageInfo && model.pageInfo.page > 1 ? model.pageInfo : undefined;
   const luck = laterPage ? undefined : model.gacha.luck;

@@ -10,6 +10,7 @@ export interface GachaVersionOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory: string;
+  readonly avatar?: Uint8Array;
 }
 
 const width = 740;
@@ -188,9 +189,10 @@ function richLine(ctx: Context, parts: readonly (readonly [string, string])[], x
   }
 }
 
-function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme, assets: ReadonlyMap<string, Image>, game: Game) {
+function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme,
+  assets: ReadonlyMap<string, Image>, game: Game, avatar?: Image) {
   const hero = (model.face.banner && assets.get(model.face.banner)) || theme.banner;
-  const icon = (model.face.face && assets.get(model.face.face)) || theme.face;
+  const icon = (model.face.face && assets.get(model.face.face)) || avatar || theme.face;
   ctx.save();
   shape(ctx, margin, 25, panelWidth, 90, 50);
   ctx.clip();
@@ -448,7 +450,7 @@ function pagingNote(model: GachaVersionModel, game: Game) {
 
 export async function renderGachaVersion(
   game: Game, model: GachaVersionModel,
-  { mode = "auto", scale = 4, themeDirectory }: GachaVersionOptions,
+  { mode = "auto", scale = 4, themeDirectory, avatar }: GachaVersionOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("版本统计缩放比例须在 1 至 4 之间。");
   const config = games[game];
@@ -485,6 +487,7 @@ export async function renderGachaVersion(
     const image = await readImage(root, path);
     if (image) images.set(path, image);
   }
+  const face = avatar && await loadImage(Buffer.from(avatar)).catch(() => undefined);
   const zoom = scale * (game === "gs" ? 1.4 : 1);
   return renderPng(Math.round(width * zoom), Math.round(height * zoom), (ctx) => {
     fontFamilies.set(ctx, theme.family);
@@ -496,7 +499,7 @@ export async function renderGachaVersion(
 
     if (laterPage) drawPageHead(ctx, model, laterPage, game);
     else {
-      drawBanner(ctx, model, theme, images, game);
+      drawBanner(ctx, model, theme, images, game, face);
       drawNotice(ctx, game, model.recordArchive, model.poolName);
       if (note) text(ctx, note, width / 2, config.groupsTop - 2, 13, gold, "center", panelWidth - 16);
     }

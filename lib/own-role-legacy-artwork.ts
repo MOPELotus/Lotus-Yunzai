@@ -24,7 +24,7 @@ function safeName(value: unknown): value is string {
     !/[\/\\\p{Cc}\p{Cf}]/u.test(value);
 }
 
-async function legacyPlayer(game: Game, uid: string, signal: AbortSignal) {
+export async function readLegacyPlayerPortrait(game: Game, uid: string, signal: AbortSignal) {
   if (!uidPattern.test(uid)) return;
   const configured = game === "gs" ? Bun.env.LOTUS_GENSHIN_LEGACY_PANEL_DIR : Bun.env.LOTUS_STAR_RAIL_LEGACY_PANEL_DIR;
   const base = await realpath(resolve(configured?.trim() || join(root, "data", "PlayerData", game))).catch(() => undefined);
@@ -36,7 +36,7 @@ async function legacyPlayer(game: Game, uid: string, signal: AbortSignal) {
   if (!data || scalar(data.uid) !== uid || !avatars) return;
   const ids = Object.values(avatars).map(value => scalar(dictionary(value)?.id)).filter(value => characterId.test(value));
   const first = ids.sort((a, b) => Number(a) - Number(b))[0];
-  return { face: game === "gs" ? scalar(data.face) : "", first };
+  return { face: scalar(data.face), first };
 }
 
 async function sourceArt(directory: string | undefined, game: Game, name: string | undefined, elem: unknown, signal: AbortSignal) {
@@ -83,7 +83,7 @@ export function createOwnRoleLegacyArtwork(profiles: ProfileStore, lockFile: Acq
       const source = await profiles.requestContext(qq, id, game, uid);
       const account = profileCookieAccountId(source.account);
       if (!account || source.role.uid !== uid || signal.aborted) return;
-      const player = await legacyPlayer(game, uid, signal);
+      const player = await readLegacyPlayerPortrait(game, uid, signal);
       if (!player || signal.aborted) return;
 
       let directory: string | undefined;

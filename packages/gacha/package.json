@@ -10,6 +10,7 @@
     "./file-import": "./file-import.ts",
     "./literal-exports": "./literal-exports.ts",
     "./miao-data": "./miao-data.ts",
+    "./player-art": "./player-art.ts",
     "./update": "./update.ts"
   },
   "dependencies": {
