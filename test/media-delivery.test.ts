@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMediaDelivery } from "../lib/media-delivery.ts";
@@ -90,6 +90,61 @@ test("媒体递送拒绝非任务和越界文件，仅保留未确认的临时�
     expect(bridge.handle(new Request(url!))?.status).toBe(404);
   } finally {
     await bridge.close();
+    await rm(data, { recursive: true });
+  }
+});
+
+test("四个媒体模块的 17 MiB 文件通过原整文件递送，其他目录和错误标记继续拒绝", async () => {
+  const data = await mkdtemp(join(tmpdir(), "lotus-media-modules-"));
+  let origin: URL | undefined;
+  const bridge = createMediaDelivery(data, () => origin);
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => bridge.handle(request) ?? new Response(null, { status: 404 }) });
+  origin = server.url;
+  const length = 17 * 1024 * 1024;
+  const name = "公开媒体 15%.mp4";
+  try {
+    for (const platform of ["acfun", "pipixia", "kuaishou", "public-share", "public-share-copy"]) {
+      const task = await taskFixture(data, platform);
+      const path = join(task, name);
+      const file = await open(path, "wx");
+      try {
+        await file.truncate(length);
+        await file.write(Uint8Array.of(42), 0, 1, 0);
+        await file.write(Uint8Array.of(73), 0, 1, length - 1);
+      } finally {
+        await file.close();
+      }
+      let url: string | undefined;
+      let sends = 0;
+      const send = async (address: string, display: string, type: string) => {
+        sends++;
+        expect(display).toBe(name);
+        expect(type).toBe("file");
+        url = address;
+        return "confirmed" as const;
+      };
+      const entry = { path, name, type: "file" } as const;
+      if (platform === "public-share-copy") {
+        expect(await bridge.deliver(entry, send)).toBe("rejected");
+        expect(sends).toBe(0);
+        continue;
+      }
+      expect(await bridge.deliver(entry, send)).toBe("confirmed");
+      expect(sends).toBe(1);
+      await writeFile(join(task, ".lotus-media-task.json"), JSON.stringify({ version: 1, pid: process.pid + 1 }));
+      expect(await bridge.deliver(entry, send)).toBe("rejected");
+      expect(sends).toBe(1);
+      await rm(task, { recursive: true });
+      const response = await fetch(url!);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/octet-stream");
+      expect(response.headers.get("content-length")).toBe(String(length));
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      expect([bytes.length, bytes[0], bytes.at(-1)]).toEqual([length, 42, 73]);
+    }
+  } finally {
+    await bridge.close();
+    server.stop(true);
     await rm(data, { recursive: true });
   }
 });

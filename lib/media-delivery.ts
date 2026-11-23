@@ -16,6 +16,7 @@ const route = /^\/Media\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
 const spoolName = /^\.media-delivery-([1-9]\d{0,8})-[A-Za-z0-9]{6}$/u;
 const duration = 180_000;
 const maxSize = 1024 ** 3;
+const mediaTaskPlatforms = ["bilibili", "douyin", "music", "miyoushe", "acfun", "pipixia", "kuaishou", "public-share"] as const;
 const contentTypes: Readonly<Record<string, string>> = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
   ".mp4": "video/mp4", ".mkv": "video/x-matroska", ".flv": "video/x-flv", ".mov": "video/quicktime", ".m4v": "video/mp4",
@@ -64,7 +65,7 @@ export function createMediaDelivery(dataDirectory: string, baseUrl: () => URL | 
     const task = dirname(path);
     const parent = dirname(task);
     if (!/^task-[A-Za-z0-9]+$/u.test(basename(task)) ||
-        !["bilibili", "douyin", "music", "miyoushe"].some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
+        !mediaTaskPlatforms.some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
     const [parentPath, taskPath, file] = await Promise.all([realpath(parent), realpath(task), realpath(path)]);
     if (relative(parentPath, taskPath) !== basename(task) || file !== `${taskPath}${sep}${basename(path)}`) return;
     const marker = join(taskPath, ".lotus-media-task.json");
