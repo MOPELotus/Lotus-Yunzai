@@ -109,3 +109,55 @@ test("拒绝无效设置、不可编辑字段和失效写入授权", () => fixtu
   expect((await panelStatusSettings(root)(request, () => ++calls < 3)).status).toBe(401);
   expect(await readFile(file, "utf8")).toBe("defaultState: false\n");
 }));
+
+test("操作状态配色和自动分列时完整保留旧 YAML 嵌套键、锚点与 Pro 可见范围", () => fixture(async (root, write) => {
+  const legacy = await write("plugins/yenai-plugin/config/config/state.yaml",
+    "style: {startColumn: false, botInfoColor: {contacts: '#112233', botRunTime: '#0ff'}}\n");
+  const file = await write("config/system-status.yaml", [
+    "# 旧配置旁支", "base: &base", "  progressBarColor:", "    low: '#abc'", "    legacy: keep",
+    "  localExtra: keep-also", "style: *base", "chartsCfg: {show: pro, unused: preserve}",
+    "showRedisInfo: pro", "processLoad: {show: pro, showCmd: false}",
+  ].join("\n") + "\n");
+  const get = requests(root);
+  const { values, fields } = await (await get()).json();
+  expect(values).toMatchObject({
+    "style.startColumn": false, "style.progressBarColor.low": ["#abc"],
+    "style.botInfoColor.contacts": ["#112233"], "style.botInfoColor.botRunTime": "#0ff",
+    "chartsCfg.show": "pro",
+  });
+  expect(fields.find((field: { key: string }) => field.key === "chartsCfg.color")).toMatchObject({ type: "list", separator: "line" });
+  const updated = { ...values, "style.startColumn": true,
+    "style.BotNameColor": "gradient:90deg, #001bff 0%, #f34628 100%",
+    "style.progressBarColor.high": "#cf4500", "style.progressBarColor.medium": "#c90",
+    "style.progressBarColor.low": ["rgba(1, 2, 3, 0.9)", "#6f0"],
+    "style.redisInfoValColor": "#304", "style.botInfoColor.botVersion": "#123",
+    "style.botInfoColor.platform": "rgb(1, 2, 3)", "style.botInfoColor.botRunTime": "#345",
+    "style.botInfoColor.contacts": ["#456"], "chartsCfg.color": ["#123456", "hsl(45, 80%, 50%)"],
+  };
+  expect((await get("PUT", { previous: values, values: updated })).status).toBe(200);
+  expect(await (await get()).json()).toMatchObject({ values: updated });
+  const written = await readFile(file, "utf8");
+  expect(written).toContain("# 旧配置旁支");
+  expect(written).toContain("&base");
+  const saved = Bun.YAML.parse(written) as Record<string, unknown>;
+  expect(saved).toMatchObject({
+    base: { progressBarColor: { low: "#abc", legacy: "keep" }, localExtra: "keep-also" },
+    style: { localExtra: "keep-also", progressBarColor: { legacy: "keep" }, startColumn: true },
+    chartsCfg: { show: "pro", unused: "preserve" }, showRedisInfo: "pro", processLoad: { show: "pro", showCmd: false },
+  });
+  expect(await readFile(legacy, "utf8")).toContain("startColumn: false");
+  expect((await get("PUT", { previous: updated, values: { ...updated, "chartsCfg.show": "all" } })).status).toBe(200);
+  expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ chartsCfg: { show: true, unused: "preserve" } });
+}));
+
+test("拒绝无法绘制的颜色、非法渐变和不可访问的诊断模式", () => fixture(async (root, write) => {
+  const file = await write("config/system-status.yaml", "noPro: false\n");
+  const get = requests(root);
+  const { values } = await (await get()).json();
+  for (const invalid of [{ "style.BotNameColor": "gradient:90deg, #ccc 80%, #fff 30%" },
+    { "style.redisInfoValColor": "url(https://example.invalid/)" }, { "style.progressBarColor.high": "rgb(,,,)" },
+    { "style.botInfoColor.contacts": Array(13).fill("#123") }, { "chartsCfg.color": [] }, { "chartsCfg.show": "debug" }]) {
+    expect((await get("PUT", { previous: values, values: { ...values, ...invalid } })).status).toBe(400);
+  }
+  expect(await readFile(file, "utf8")).toBe("noPro: false\n");
+}));

@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
 import { mergeLegacyStatusConfig } from "../plugins/system/status-background.ts";
+import { parseStatusGradient, statusCardStyle } from "../plugins/system/status-card-style.ts";
 import { statusMonitorSettings } from "../plugins/system/status-monitor.ts";
 import { statusProbeSettings } from "../plugins/system/status-network-probes.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
@@ -18,6 +19,9 @@ type Field = {
   min?: number;
   max?: number;
   options?: readonly Option[];
+  separator?: "line";
+  rows?: number;
+  multiline?: boolean;
   accepts(value: unknown): boolean;
 };
 
@@ -50,6 +54,22 @@ function listField(key: string, label: string, hint?: string, options?: readonly
     (!options || new Set(value).size === value.length) };
 }
 
+const colorHint = "支持十六进制、RGB、RGBA、HSL 和常用色名。";
+const gradientHint = "可填颜色，或填写渐变，例如 gradient:90deg, #001bff 0%, #f34628 100%。";
+const isColor = (value: unknown): value is string => typeof value === "string" &&
+  statusCardStyle({ style: { BotNameColor: value } }).nameColor === value;
+
+function colorField(key: string, label: string, gradient = false): Field {
+  return { key, label, type: "text", hint: gradient ? gradientHint : colorHint,
+    ...(gradient && { multiline: true, rows: 2 }),
+    accepts: value => isColor(value) || (gradient && parseStatusGradient(value) !== undefined) };
+}
+
+function paletteField(key: string, label: string): Field {
+  return { key, label, type: "list", separator: "line", rows: 3, hint: `每行一种颜色，最多 12 种。${colorHint}`,
+    accepts: value => Array.isArray(value) && value.length > 0 && value.length <= 12 && value.every(isColor) };
+}
+
 function cleanProbeSites(input: unknown) {
   if (!Array.isArray(input)) return [];
   return input.slice(0, 8).flatMap(value => {
@@ -67,17 +87,35 @@ function cleanProbeSites(input: unknown) {
 const orderOptions = [
   { label: "按内存", value: "mem" }, { label: "按 CPU", value: "cpu" }, { label: "CPU 与内存各半", value: "cpu_mem" },
 ] as const;
+const chartVisibility = [
+  { label: "关闭", value: "off" }, { label: "仅状态 Pro", value: "pro" },
+  { label: "普通状态及状态 Pro", value: "all" },
+] as const;
+
 const fields: readonly Field[] = [
   booleanField("defaultState", "允许直接发送「状态」"),
   booleanField("noPro", "禁用状态 Pro"),
   booleanField("showFastFetch", "显示主机概况"),
   booleanField("showRedisInfo", "显示 Valkey 信息", "历史连接数采样在下次宿主重启时采用新设置。"),
-  booleanField("closedChart", "隐藏状态 Pro 历史图表"),
-  booleanField("chartsCfg.show", "显示网络历史图表"),
+  booleanField("closedChart", "隐藏状态历史图表"),
+  { key: "chartsCfg.show", label: "网络历史图表可见范围", type: "select", options: chartVisibility,
+    hint: "普通状态仅显示汇总网速。Valkey 等诊断依旧只出现在状态 Pro。",
+    accepts: value => chartVisibility.some(option => option.value === value) },
+  paletteField("chartsCfg.color", "网络历史图表配色"),
   listField("systemResources", "资源卡片及顺序", "可用项为 CPU、RAM、SWAP、Bun 和 GPU。",
     resourceOrder.map(value => ({ label: value, value }))),
   { key: "style.backdropDefault", label: "背景图文件名", type: "text", hint: "填 random 随机选择，或填写主题内现有文件名。",
     accepts: value => typeof value === "string" && background.test(value) },
+  booleanField("style.startColumn", "状态长图自动分列"),
+  colorField("style.BotNameColor", "机器人昵称颜色", true),
+  colorField("style.progressBarColor.high", "资源使用率 90% 起颜色"),
+  colorField("style.progressBarColor.medium", "资源使用率 80% 起颜色"),
+  paletteField("style.progressBarColor.low", "资源使用率低于 80% 的配色"),
+  colorField("style.redisInfoValColor", "Valkey 数值颜色"),
+  colorField("style.botInfoColor.botVersion", "机器人版本徽标背景色"),
+  colorField("style.botInfoColor.platform", "机器人协议徽标背景色"),
+  colorField("style.botInfoColor.botRunTime", "机器人运行时长徽标背景色"),
+  paletteField("style.botInfoColor.contacts", "联系人及消息计数徽标配色"),
   booleanField("monitor.open", "启用后台监控采样", restartHint),
   numberField("monitor.getDataInterval", "采样间隔（毫秒）", 1_000, 3_600_000, restartHint),
   numberField("monitor.saveDataNumber", "保留采样点数", 1, 720, restartHint),
@@ -103,7 +141,9 @@ function effectiveValues(config: Config) {
   const process = object(config.processLoad);
   const top = object(process?.showMax);
   const charts = object(config.chartsCfg);
-  const backdrop = object(config.style)?.backdropDefault;
+  const rawStyle = object(config.style);
+  const backdrop = rawStyle?.backdropDefault;
+  const style = statusCardStyle(config);
   const probes = object(config.psTestSites);
   const names = (value: unknown) => (Array.isArray(value) ? value : []).filter(
     (entry): entry is string => typeof entry === "string" && !!entry.length && entry.length <= 96 &&
@@ -118,9 +158,20 @@ function effectiveValues(config: Config) {
     showFastFetch: config.showFastFetch !== false,
     showRedisInfo: config.showRedisInfo !== false,
     closedChart: config.closedChart === true,
-    "chartsCfg.show": !charts || !Object.hasOwn(charts, "show") || charts.show === true || charts.show === "pro",
+    "chartsCfg.show": charts?.show === true ? "all" : charts?.show === undefined || charts.show === "pro" ? "pro" : "off",
+    "chartsCfg.color": style.chartColors,
     systemResources: resources,
     "style.backdropDefault": typeof backdrop === "string" && background.test(backdrop) ? backdrop : "random",
+    "style.startColumn": style.startColumn,
+    "style.BotNameColor": style.nameGradient ? rawStyle?.BotNameColor : style.nameColor,
+    "style.progressBarColor.high": style.progressHigh,
+    "style.progressBarColor.medium": style.progressMedium,
+    "style.progressBarColor.low": style.progressLow,
+    "style.redisInfoValColor": style.redisValueColor,
+    "style.botInfoColor.botVersion": style.botVersionColor,
+    "style.botInfoColor.platform": style.botPlatformColor,
+    "style.botInfoColor.botRunTime": style.botUptimeColor,
+    "style.botInfoColor.contacts": style.contactColors,
     "monitor.open": monitor.enabled,
     "monitor.getDataInterval": monitor.interval,
     "monitor.saveDataNumber": monitor.limit,
@@ -163,7 +214,10 @@ function editedYaml(text: string, local: Config, entries: readonly [string, unkn
       const node = document.getIn(ancestors, true);
       if (isAlias(node)) document.setIn(ancestors, document.createNode({ "<<": node.clone() }));
       else if (node !== undefined && !isMap(node)) throw new GlobalConfigWriteError("config");
-      const nested = { ...object(target[part]) };
+      const inherited = object(target[part]);
+      const nested = { ...inherited };
+      // A shallow YAML merge may leave this inherited map absent from the local AST.
+      if (node === undefined && inherited) document.setIn(ancestors, document.createNode(nested));
       target[part] = nested;
       target = nested;
     }
@@ -218,7 +272,8 @@ export function panelStatusSettings(root: URL) {
           if (Buffer.byteLength(text) > maxConfigBytes) throw new GlobalConfigWriteError("config");
           const seen = effectiveValues(config);
           if (!isDeepStrictEqual(seen, previous)) throw new GlobalConfigWriteError("conflict");
-          const entries = Object.entries(values).filter(([key, value]) => !isDeepStrictEqual(value, previous[key]));
+          const entries = Object.entries(values).filter(([key, value]) => !isDeepStrictEqual(value, previous[key]))
+            .map(([key, value]): [string, unknown] => [key, key === "chartsCfg.show" && value !== "pro" ? value === "all" : value]);
           return { yaml: entries.length ? editedYaml(text, local, entries) : undefined, value: values };
         },
       });
