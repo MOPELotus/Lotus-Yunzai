@@ -25,6 +25,7 @@ interface PreparedMigration {
     readonly gachaDisplay?: Staged["gachaDisplay"];
     readonly genshinWish?: Staged["genshinWish"];
     readonly starRailWarp?: Staged["starRailWarp"];
+    readonly starRailPersonalPools?: Staged["starRailPersonalPools"];
     readonly zzzRecall?: Staged["zzzRecall"];
     readonly zzzChallengeReminder?: Staged["zzzChallengeReminder"];
     readonly updateNotice?: Staged["updateNotice"];
@@ -92,6 +93,7 @@ async function prepare(source: string, target: string, directory: string, signal
         gachaDisplay: staged.gachaDisplay,
         genshinWish: staged.genshinWish,
         starRailWarp: staged.starRailWarp,
+        starRailPersonalPools: staged.starRailPersonalPools,
         zzzRecall: staged.zzzRecall,
         zzzChallengeReminder: staged.zzzChallengeReminder,
         updateNotice: staged.updateNotice,
