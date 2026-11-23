@@ -152,6 +152,7 @@ import { loadPlugins, systemModuleName, type PluginLoadReport } from "./lib/plug
 import { stopStaticRenderer } from "./lib/renderer/shotium.ts";
 import { accountScopePermission, readMasterPermissions } from "./lib/permissions.ts";
 import { isStarRailGachaLinkMessage, readPrivateAccess, starRailLinkEntry, zzzLinkEntry } from "./lib/private-access.ts";
+import { isGenshinPayLogLinkCandidate } from "@lotus-yunzai/hoyo-client/genshin-pay-log";
 import { createProcessReceipts, type ProcessReceipt } from "./lib/process-receipts.ts";
 import { takeLegacyProcessReceipt } from "./lib/legacy-process-receipts.ts";
 import { createPublicFiles, maxPublicFileBytes } from "./lib/public-files.ts";
@@ -237,7 +238,7 @@ const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_t
 
 function isPrivateCredentialMessage(text: string): boolean {
   return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
-    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text);
+    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text) || isGenshinPayLogLinkCandidate(text);
 }
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
@@ -1935,6 +1936,17 @@ if (import.meta.main) {
         }
       }
       if (warpLink || warpLinkEntry) return;
+    }
+    const paymentLink = originalMessage.find(isGenshinPayLogLinkCandidate);
+    if (paymentLink) {
+      const connection = event.privateCredentialSignal;
+      if (allowNew && event.isPrivate && !event.isDelegated && connection?.aborted === false) {
+        const protectedEvent = { ...event, privateCredentialSignal: nativeOperationSignal(connection) };
+        const reply = await commands.dispatchFallback(protectedEvent, names => names[0] === "@lotus-yunzai/genshin" && allowed(names),
+          user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user), paymentLink, undefined, "@lotus-yunzai/genshin");
+        if (reply !== undefined) await sendCommandReply(protectedEvent, reply);
+      }
+      return;
     }
     if (event.isPrivate && event.msg.trim() === "取消") {
       const reply = await commands.dispatchFallback(event, (names) => names[0] === "@lotus-yunzai/device" && allowed(names),

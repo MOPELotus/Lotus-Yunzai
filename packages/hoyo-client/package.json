@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./genshin-pay-log": "./genshin-pay-log.ts",
     "./miyoushe-exchange": "./miyoushe-exchange.ts",
     "./miyoushe-shop": "./miyoushe-shop.ts",
     "./redeem-preview": "./redeem-preview/index.ts",

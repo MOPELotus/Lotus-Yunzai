@@ -316,8 +316,10 @@ export class CommandRegistry {
     normalizedMessage = event.msg,
     capabilities?: Pick<MessageFallbackContext,
       "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages" | "canManagePackages">,
+    onlyModule?: string,
   ): Promise<CommandReply | undefined> {
     for (const { handler, names, features } of this.#fallbacks.values()) {
+      if (onlyModule !== undefined && names[0] !== onlyModule) continue;
       if (!features && !allowed(names)) continue;
       const context = {
         ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
