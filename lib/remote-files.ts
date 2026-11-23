@@ -10,13 +10,14 @@ function segments(root: string, target: string) {
 }
 
 async function withFile<T>(root: string, target: string, access: (file: string, name: string) => Promise<T>): Promise<T | undefined> {
-  const parts = segments(root, target);
+  const directory = ["data", "remote", "files"];
+  const parts = segments(join(root, ...directory), target);
   if (!parts || process.platform !== "linux") return;
   const handles: FileHandle[] = [];
   const name = parts.pop()!;
   try {
     handles.push(await open(root, constants.O_DIRECTORY | constants.O_NOFOLLOW));
-    for (const part of parts) {
+    for (const part of [...directory, ...parts]) {
       handles.push(await open(join("/proc/self/fd", String(handles.at(-1)!.fd), part),
         constants.O_DIRECTORY | constants.O_NOFOLLOW));
     }
@@ -44,16 +45,16 @@ export async function readRemoteFile(root: string, target: string, signal: Abort
   });
 }
 
-export async function writeRemoteFile(root: string, target: string, bytes: Uint8Array, overwrite: boolean, current: () => boolean) {
+export async function writeRemoteFile(root: string, target: string, bytes: Uint8Array, overwrite: boolean, current: () => boolean | Promise<boolean>) {
   if (!bytes.length || bytes.length > maxChatFileBytes) return false;
   return await withFile(root, target, async (path) => {
-    if (!current()) return false;
+    if (!await current()) return false;
     const staged = join(path, "..", `.${basename(path)}.${crypto.randomUUID()}`);
     const temporary = await open(staged, "wx", 0o600);
     try {
       await temporary.writeFile(bytes);
       await temporary.sync();
-      if (!current()) return false;
+      if (!await current()) return false;
       if (overwrite) await rename(staged, path);
       else await link(staged, path);
       return true;

@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { MessageEvent as BotMessageEvent } from "../lib/messages.ts";
+import { createRemoteControl } from "../lib/remote-control.ts";
 import { consumeRemoteOtp, remoteOtpPaired, rotateRemoteOtp } from "../lib/remote-otp.ts";
 import { readRemoteFile, writeRemoteFile } from "../lib/remote-files.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
@@ -41,22 +43,77 @@ test("远程 TOTP 持久拒绝重放，配对不可静默覆盖", async () => {
 test.skipIf(process.platform !== "linux")("运维文件拒绝目录跳转与符号链接，不允许无授权覆盖", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-remote-files-test-"));
   try {
-    const files = join(root, "files");
+    const files = join(root, "data", "remote", "files");
     await mkdir(join(files, "nested"), { recursive: true });
     await writeFile(join(root, "outside"), "outside");
     await symlink(root, join(files, "outside"));
     await symlink(join(root, "outside"), join(files, "linked"));
     const signal = new AbortController().signal;
     const bytes = Buffer.from("inside");
-    expect(await readRemoteFile(files, "../outside", signal)).toBeUndefined();
-    await expect(readRemoteFile(files, "outside/outside", signal)).rejects.toThrow();
-    await expect(readRemoteFile(files, "linked", signal)).rejects.toThrow();
-    expect(await writeRemoteFile(files, "nested/demo", bytes, false, () => true)).toBe(true);
-    await expect(writeRemoteFile(files, "nested/demo", Buffer.from("changed"), false, () => true)).rejects.toThrow();
-    expect((await readRemoteFile(files, join(files, "nested/demo"), signal))?.bytes.toString()).toBe("inside");
-    expect(await writeRemoteFile(files, "nested/demo", Buffer.from("changed"), true, () => false)).toBe(false);
-    expect(await writeRemoteFile(files, "linked", bytes, true, () => true)).toBe(true);
+    expect(await readRemoteFile(root, "../outside", signal)).toBeUndefined();
+    await expect(readRemoteFile(root, "outside/outside", signal)).rejects.toThrow();
+    await expect(readRemoteFile(root, "linked", signal)).rejects.toThrow();
+    expect(await writeRemoteFile(root, "nested/demo", bytes, false, () => true)).toBe(true);
+    await expect(writeRemoteFile(root, "nested/demo", Buffer.from("changed"), false, () => true)).rejects.toThrow();
+    expect((await readRemoteFile(root, join(files, "nested/demo"), signal))?.bytes.toString()).toBe("inside");
+    let gates = 0;
+    expect(await writeRemoteFile(root, "nested/demo", Buffer.from("changed"), true, async () => ++gates === 1)).toBe(false);
+    expect(gates).toBe(2);
+    expect(await readFile(join(files, "nested/demo"), "utf8")).toBe("inside");
+    expect(await writeRemoteFile(root, "linked", bytes, true, () => true)).toBe(true);
     expect(await readFile(join(root, "outside"), "utf8")).toBe("outside");
+    await mkdir(join(root, "elsewhere", "files"), { recursive: true });
+    await writeFile(join(root, "elsewhere", "files", "escape.txt"), "outside");
+    await rm(join(root, "data", "remote"), { recursive: true });
+    await symlink(join(root, "elsewhere"), join(root, "data", "remote"));
+    await expect(readRemoteFile(root, "escape.txt", signal)).rejects.toThrow();
+    await expect(writeRemoteFile(root, "escape.txt", bytes, true, () => true)).rejects.toThrow();
+    expect(await readFile(join(root, "elsewhere", "files", "escape.txt"), "utf8")).toBe("outside");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(process.platform !== "linux")("运维命令提交前重新授权，关闭后丢弃进行中的上传", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-remote-settings-test-"));
+  try {
+    const files = join(root, "data", "remote", "files");
+    await mkdir(files, { recursive: true });
+    await mkdir(join(root, "config"));
+    const settings = join(root, "config", "remote.yaml");
+    await writeFile(settings, "enable: true\nshells: [sh]\n");
+    const handle = createRemoteControl(root);
+    const scope = { signal: new AbortController().signal, current: () => true };
+    const event: BotMessageEvent = {
+      raw_message: "", message: "", msg: "", post_type: "message", message_type: "private", sub_type: "friend",
+      isPrivate: true, isGroup: false, isMaster: true, self_id: 99, user_id: 42, reply: () => true,
+    };
+    let permissionChecks = 0;
+    await handle({ ...event, msg: `#spawn ${otp(rotateRemoteOtp(root, false))} sh printf ran > should-not-exist` }, {
+      ...scope, async allowed() { return ++permissionChecks === 1; },
+    });
+    expect(permissionChecks).toBe(2);
+    await expect(access(join(root, "should-not-exist"))).rejects.toThrow();
+
+    const pending = Promise.withResolvers<Uint8Array>();
+    const attached = Promise.withResolvers<void>();
+    const uploadEvent = {
+      ...event, msg: `#上传 ${otp(rotateRemoteOtp(root, true))} draft.txt`,
+      canReadAttachments: true,
+      attachment: { name: "draft.txt", async read() { attached.resolve(); return pending.promise; } },
+    };
+    const finished = handle(uploadEvent, { ...scope, async allowed() { return true; } });
+    await attached.promise;
+    await writeFile(settings, "enable: false\n");
+    pending.resolve(Buffer.from("disabled"));
+    await finished;
+    await expect(access(join(files, "draft.txt"))).rejects.toThrow();
+
+    // The same old upload alias and attachment reach the destination after an explicit re-enable.
+    await writeFile(settings, "enable: true\n");
+    await handle({ ...uploadEvent, msg: `#上传 ${otp(rotateRemoteOtp(root, true))} draft.txt` },
+      { ...scope, async allowed() { return true; } });
+    expect(await readFile(join(files, "draft.txt"), "utf8")).toBe("disabled");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

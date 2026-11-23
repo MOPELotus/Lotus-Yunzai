@@ -1,5 +1,5 @@
-import { open, readFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { open } from "node:fs/promises";
+import { constants, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RemoteScope } from "./account-scope-policy.ts";
 import type { MessageEvent } from "./messages.ts";
@@ -24,11 +24,10 @@ interface Scope {
   allowed(permission: RemoteScope): Promise<boolean>;
 }
 
-async function loadSettings(root: string) {
-  const source = await readFile(join(root, "config", "remote.yaml"), "utf8").catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return "";
-  });
+function loadSettings(root: string) {
+  let source = "";
+  try { source = readFileSync(join(root, "config", "remote.yaml"), "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   const settings = Bun.YAML.parse(source) as Record<string, unknown> | undefined;
   const shells = (Array.isArray(settings?.shells) ? settings.shells : ["bash", "sh", "zsh"])
     .filter((name): name is RemoteShell => remoteShells.includes(name as RemoteShell));
@@ -56,7 +55,6 @@ export function createRemoteControl(root: string) {
     }
     failures = [];
   }
-  const files = join(root, "data", "remote", "files");
   async function rememberAuthorization(permission: RemoteScope, event: MessageEvent) {
     const audit = join(root, "data", "remote-auth", "operations.jsonl");
     await using file = await open(audit, constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
@@ -100,7 +98,7 @@ export function createRemoteControl(root: string) {
       const permission = spawn ? "remote.spawn" : file?.[1] === "远程下载" ? "remote.download" : "remote.upload";
       const stillAllowed = async () => await scope.allowed(permission) && scope.current();
       if (!await stillAllowed()) return;
-      const settings = await loadSettings(root);
+      const settings = loadSettings(root);
       if (!scope.current()) return;
       if (!settings.enabled) {
         await reply("远程运维未开启。");
@@ -116,8 +114,8 @@ export function createRemoteControl(root: string) {
           await reply("所选 Shell 未启用。");
           return;
         }
-        if (/^(?:远程管理员|admin)/iu.test(spawn[1]!) &&
-            (!settings.allowAdmin || process.getuid?.() !== 0)) {
+        const admin = /^(?:远程管理员|admin)/iu.test(spawn[1]!);
+        if (admin && (!settings.allowAdmin || process.getuid?.() !== 0)) {
           await reply("管理员模式须显式开启，并且宿主已用管理员权限运行。");
           return;
         }
@@ -128,7 +126,10 @@ export function createRemoteControl(root: string) {
         }
         await rememberAuthorization(permission, event);
         if (!await stillAllowed()) return;
-        await reply(await remoteShell(root, shell, spawn[4]!, scope.signal, settings.timeout));
+        const currentSettings = loadSettings(root);
+        if (!currentSettings.enabled || !currentSettings.shells.includes(shell) ||
+            (admin && !currentSettings.allowAdmin)) return;
+        await reply(await remoteShell(root, shell, spawn[4]!, scope.signal, currentSettings.timeout));
         return;
       }
 
@@ -145,10 +146,10 @@ export function createRemoteControl(root: string) {
         return;
       }
       await rememberAuthorization(permission, event);
-      if (!await stillAllowed()) return;
+      if (!await stillAllowed() || !loadSettings(root).enabled) return;
       if (download) {
-        const content = await readRemoteFile(files, target, scope.signal);
-        if (!content || !await stillAllowed()) {
+        const content = await readRemoteFile(root, target, scope.signal);
+        if (!content || !await stillAllowed() || !loadSettings(root).enabled) {
           await reply("未能读取目标文件。");
           return;
         }
@@ -166,8 +167,14 @@ export function createRemoteControl(root: string) {
         return;
       }
       if (!await stillAllowed()) return;
-      const written = await writeRemoteFile(files, target, bytes,
-        settings.overwrite || action === "远程上传覆盖", scope.current);
+      const currentSettings = loadSettings(root);
+      if (!currentSettings.enabled) return;
+      const allowOverwrite = action === "远程上传覆盖" || currentSettings.overwrite;
+      const written = await writeRemoteFile(root, target, bytes, allowOverwrite, async () => {
+        if (!await stillAllowed()) return false;
+        const latest = loadSettings(root);
+        return latest.enabled && (!allowOverwrite || action === "远程上传覆盖" || latest.overwrite);
+      });
       await reply(written ? "远程上传已保存。" : "远程上传未能保存。");
     } catch {
       await reply("远程运维未能完成，请在本机核对配置、权限或目标。");
