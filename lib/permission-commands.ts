@@ -9,7 +9,7 @@ import { readGlobalPermissions } from "./panel-global-permissions.ts";
 interface PermissionCommandOptions {
   readonly root: URL;
   readonly terminalOwner: () => boolean;
-  readonly activeSignal: (connection?: AbortSignal) => AbortSignal;
+  readonly activeSignal: (...connections: AbortSignal[]) => AbortSignal;
   readonly render?: (...args: Parameters<typeof renderStatusCard>) => Promise<{ readonly png: Uint8Array }>;
 }
 
