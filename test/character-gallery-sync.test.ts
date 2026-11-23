@@ -29,6 +29,7 @@ function sourceFixture() {
   let broken = false;
   let binary = false;
   let metadataFailure = false;
+  let retry = false;
   const origins: string[] = [];
   const downloads: { path: string; source: string; revision: string }[] = [];
   const expected = new Map<string, Buffer>();
@@ -55,6 +56,10 @@ function sourceFixture() {
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer test-token");
     if (op === "commits") {
       expect(rest).toEqual(["main"]);
+      if (retry && repo === main) {
+        retry = false;
+        throw new TypeError("temporary connection error");
+      }
       const index = [main, genshin, starrail, zzz].indexOf(repo!);
       return Response.json({ sha: sha(100 + phase * 10 + index), commit: { tree: { sha: sha([1, 2, 3, 10][index]!) } } });
     }
@@ -111,10 +116,11 @@ function sourceFixture() {
 
   setup(0);
   return { transport, downloads, origins, setup,
-    change(options: { broken?: boolean; binary?: boolean; metadataFailure?: boolean }) {
+    change(options: { broken?: boolean; binary?: boolean; metadataFailure?: boolean; retry?: boolean }) {
       broken = options.broken ?? false;
       binary = options.binary ?? false;
       metadataFailure = options.metadataFailure ?? false;
+      retry = options.retry ?? false;
       setup(phase);
     },
   };
@@ -140,6 +146,7 @@ test("图库按旧索引的来源和清洁等级下载，完整快照发布、�
     expect(source.origins.some(url => url.includes(`git/trees/${sha(8)}?recursive=1`))).toBe(true);
 
     source.downloads.length = 0;
+    source.change({ retry: true });
     expect(await run()).toMatchObject({ downloaded: 0, reused: 4, removed: 0 });
     expect(source.downloads).toEqual([]);
     expect(await readlink(active)).toBe(original);

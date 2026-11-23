@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 export const galleryDirectories = ["gs-character", "sr-character", "zzz-character"] as const;
 export type GalleryDirectory = typeof galleryDirectories[number];
@@ -107,6 +108,7 @@ export function createGallerySource(options: { fetch?: Transport; githubToken?: 
       } catch {
         options.signal.throwIfAborted();
         if (attempt >= 2) throw new Error("无法连接图库公开来源。");
+        await delay(250 * 3 ** attempt, undefined, { signal: options.signal });
         continue;
       }
       if (response.ok) return readResponse(response, maximum);
@@ -114,6 +116,7 @@ export function createGallerySource(options: { fetch?: Transport; githubToken?: 
       if (attempt >= 2 || response.status !== 429 && response.status < 500) {
         throw new Error(`图库公开来源返回 HTTP ${response.status}。`);
       }
+      await delay(250 * 3 ** attempt, undefined, { signal: options.signal });
     }
   }
 
