@@ -18,6 +18,7 @@ const response = (status: number) => new Response(null, { status, headers });
 
 type Kind = "ticket" | "session";
 interface Owner { bot: number; user: number }
+interface Credential extends Owner { expiresAt: number }
 interface Options {
   readonly databasePath: string;
   readonly publicBase: () => URL | undefined;
@@ -73,8 +74,8 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
     }
   }
   function lookup(key: string, kind: Kind) {
-    return database().query<Owner, [string, Kind, number]>(
-      "SELECT bot, user FROM credentials WHERE hash = ? AND kind = ? AND expiresAt > ?",
+    return database().query<Credential, [string, Kind, number]>(
+      "SELECT bot, user, expiresAt FROM credentials WHERE hash = ? AND kind = ? AND expiresAt > ?",
     ).get(digest(key), kind, now());
   }
   function insert(key: string, kind: Kind, owner: Owner, lifetime: number) {
@@ -188,6 +189,22 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
     commands,
     contactSession,
     async handle(request: Request, path: string) {
+      if (path === "/panel/api/session/current") {
+        const destination = page();
+        if (!destination || signal.aborted) return response(404);
+        if (request.method !== "GET") return new Response(null, { status: 405, headers: { ...headers, Allow: "GET" } });
+        if (!sameOrigin(request, destination, false) || request.headers.get("X-Lotus-Panel-Session") !== "1") return response(403);
+        const current = browserToken(request);
+        if (!current || request.headers.has("Authorization")) return response(401);
+        try {
+          const session = currentOwner(current, "session");
+          const serverTime = now();
+          if (!session || session.expiresAt <= serverTime) return response(401);
+          return Response.json({ expiresAt: session.expiresAt, now: serverTime }, { headers });
+        } catch {
+          return response(503);
+        }
+      }
       if (path !== "/panel/api/session/claim" && path !== "/panel/api/session/logout" && path !== "/panel/api/session/contacts") return;
       const destination = page();
       if (!destination || signal.aborted) return response(404);

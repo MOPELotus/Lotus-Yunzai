@@ -43,6 +43,12 @@ const clock = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
 
+const shanghaiTime = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hour12: false,
+});
+let sessionTimer: ReturnType<typeof setTimeout> | undefined;
+let sessionDeadline: number | undefined;
 let auth: PanelAuth = browserSession;
 let activeRequest: AbortController | undefined;
 let activeLogout: AbortController | undefined;
@@ -161,7 +167,17 @@ function duration(seconds: number): string {
     `${seconds} 秒`;
 }
 
+function checkSessionExpiry() {
+  clearTimeout(sessionTimer);
+  if (sessionDeadline === undefined) return;
+  const remaining = sessionDeadline - Date.now();
+  if (remaining <= 0) expireSession();
+  else sessionTimer = setTimeout(checkSessionExpiry, Math.min(remaining, 2_147_483_647));
+}
+
 function reset() {
+  clearTimeout(sessionTimer);
+  sessionDeadline = undefined;
   activeRequest?.abort();
   activeRequest = undefined;
   auth = browserSession;
@@ -197,6 +213,8 @@ async function synchronize(candidate: PanelAuth, purpose: "restore" | "sign-in" 
     draft.value = "";
     snapshot.value = incoming;
     updatedAt.value = clock.format(new Date());
+    sessionDeadline = incoming.session ? Date.now() + (incoming.session.expiresAt - incoming.session.now) : undefined;
+    checkSessionExpiry();
     if (purpose === "sign-in") {
       restoring.value = false;
       await nextTick(() => document.getElementById("overview-title")?.focus());
@@ -260,11 +278,16 @@ function openLinkedTicket() {
 
 onMounted(() => {
   window.addEventListener("hashchange", openLinkedTicket);
+  window.addEventListener("pageshow", checkSessionExpiry);
+  document.addEventListener("visibilitychange", checkSessionExpiry);
   if (!openLinkedTicket()) void synchronize(browserSession, "restore");
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("hashchange", openLinkedTicket);
+  window.removeEventListener("pageshow", checkSessionExpiry);
+  document.removeEventListener("visibilitychange", checkSessionExpiry);
+  clearTimeout(sessionTimer);
   activeRequest?.abort();
   activeRequest = undefined;
   activeLogout?.abort();
@@ -280,7 +303,12 @@ onBeforeUnmount(() => {
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>Lotus-Yunzai 管理面板</span>
       </div>
-      <ElButton v-if="snapshot" class="sign-out" :loading="signingOut" :disabled="busy" @click="signOut">退出登录</ElButton>
+      <div v-if="snapshot" class="session-actions">
+        <span v-if="snapshot.session" class="session-expiry">
+          登录有效至 {{ shanghaiTime.format(snapshot.session.expiresAt) }}（北京时间）
+        </span>
+        <ElButton class="sign-out" :loading="signingOut" :disabled="busy" @click="signOut">退出登录</ElButton>
+      </div>
     </div>
   </header>
 
@@ -451,3 +479,31 @@ onBeforeUnmount(() => {
     </template>
   </main>
 </template>
+
+<style scoped>
+.session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.session-expiry {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .header-inner:has(.session-expiry) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 16px;
+    padding-block: 10px;
+  }
+
+  .session-actions { display: contents; }
+  .session-expiry { grid-area: 2 / 1 / 3 / -1; }
+  .sign-out { grid-area: 1 / 2 / 2 / 3; }
+}
+</style>

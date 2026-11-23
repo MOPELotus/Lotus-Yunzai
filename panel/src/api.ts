@@ -20,9 +20,15 @@ interface PluginRecord {
   reason?: string;
 }
 
+interface PanelSessionTime {
+  expiresAt: number;
+  now: number;
+}
+
 export interface PanelSnapshot {
   runtime: RuntimeStatus;
   plugins: PluginRecord[];
+  session?: PanelSessionTime;
 }
 
 export class CredentialsError extends Error {}
@@ -76,23 +82,34 @@ function isPlugin(value: unknown): value is PluginRecord {
 export async function readPanel(auth: PanelAuth, signal: AbortSignal): Promise<PanelSnapshot> {
   let runtimeResponse: Response;
   let pluginsResponse: Response;
+  let sessionResponse: Response | undefined;
   try {
-    [runtimeResponse, pluginsResponse] = await Promise.all([
+    [runtimeResponse, pluginsResponse, sessionResponse] = await Promise.all([
       panelFetch(`${import.meta.env.BASE_URL}api/status`, auth, { signal }),
       panelFetch(`${import.meta.env.BASE_URL}api/plugins`, auth, { signal }),
+      auth.kind === "session" ? panelFetch(`${import.meta.env.BASE_URL}api/session/current`, auth, { signal }) : undefined,
     ]);
   } catch {
     throw new Error("暂时无法连接宿主，请重试。");
   }
-  if (runtimeResponse.status === 401 || pluginsResponse.status === 401) {
+  if (runtimeResponse.status === 401 || pluginsResponse.status === 401 || sessionResponse?.status === 401) {
     throw new CredentialsError(auth.kind === "bearer" ? "面板令牌无效，请重新输入。" : "登录已失效，请重新获取登录链接。");
   }
-  if (!runtimeResponse.ok || !pluginsResponse.ok) {
+  if (!runtimeResponse.ok || !pluginsResponse.ok || sessionResponse && !sessionResponse.ok) {
     throw new Error("宿主未能提供面板数据，请重试。");
   }
-  const [runtime, report]: unknown[] = await Promise.all([runtimeResponse.json(), pluginsResponse.json()]).catch(() => []);
+  const [runtime, report, session]: unknown[] = await Promise.all([
+    runtimeResponse.json(), pluginsResponse.json(), sessionResponse?.json(),
+  ]).catch(() => []);
   if (!isRuntime(runtime) || !isRecord(report) || !Array.isArray(report.plugins) || !report.plugins.every(isPlugin)) {
     throw new Error("宿主返回了无法识别的面板数据。");
+  }
+  if (auth.kind === "session") {
+    if (!isRecord(session) || typeof session.expiresAt !== "number" || !Number.isSafeInteger(session.expiresAt) ||
+        typeof session.now !== "number" || !Number.isSafeInteger(session.now) || session.expiresAt <= session.now) {
+      throw new Error("宿主返回了无法识别的登录有效期。");
+    }
+    return { runtime, plugins: report.plugins, session: { expiresAt: session.expiresAt, now: session.now } };
   }
   return { runtime, plugins: report.plugins };
 }

@@ -74,6 +74,19 @@ test("owner tickets are private, one-use, expiring and scoped to a current owner
       ? () => new Response(null, { status: 204 }) : undefined, undefined, session);
     const business = (suffix: string, extra: RequestInit = {}) => api(new Request(`http://127.0.0.1:4444/panel/api/${suffix}`, extra));
     expect((await business("status", { headers: { Cookie: cookie } }))?.status).toBe(200);
+    const readSession = (key: string, extra: HeadersInit = {}) => business("session/current", {
+      headers: { Cookie: key, "X-Lotus-Panel-Session": "1", ...extra },
+    });
+    const info = await readSession(cookie);
+    expect(info?.status).toBe(200);
+    expect(info?.headers.get("Cache-Control")).toBe("no-store");
+    expect(await info?.json()).toEqual({ expiresAt: time + 3_600_000, now: time });
+    time += 4_000;
+    expect(await (await readSession(cookie))?.json()).toEqual({ expiresAt: time + 3_596_000, now: time });
+    expect((await readSession(cookie, { "Sec-Fetch-Site": "cross-site" }))?.status).toBe(403);
+    expect((await business("session/current", { headers: { Cookie: cookie } }))?.status).toBe(403);
+    expect((await readSession(cookie, { Authorization: "Bearer static-test-token" }))?.status).toBe(401);
+
     expect((await business("status", { headers: { Cookie: `${cookie}; ${cookie}` } }))?.status).toBe(401);
     expect((await business("status", { headers: { Cookie: cookie, "Sec-Fetch-Site": "cross-site" } }))?.status).toBe(401);
     expect((await business("status", { headers: { Authorization: "Bearer wrong", Cookie: cookie } }))?.status).toBe(401);
@@ -96,6 +109,7 @@ test("owner tickets are private, one-use, expiring and scoped to a current owner
     const fourthCookie = (await api(request("claim", { ticket: fourth })))?.headers.get("Set-Cookie")?.split(";", 1)[0];
     expect(fourthCookie).toBeDefined();
     time += 3_600_000;
+    expect((await readSession(fourthCookie!))?.status).toBe(401);
     expect((await business("status", { headers: { Cookie: fourthCookie! } }))?.status).toBe(401);
   } finally {
     lifecycle.abort();
