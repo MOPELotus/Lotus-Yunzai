@@ -172,6 +172,20 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       expect(await query("#全量更新图鉴")).toBe("只有 bot 主人可以操作图鉴更新。");
 
       for (const command of excludedCommands) expect(await query(command)).toBe(`旁路 ${command}`);
+
+      const recovered = join(data, "items/简体中文/原神/武器/一星");
+      await mkdir(recovered, { recursive: true });
+      await writeFile(join(recovered, "无锋剑.json"), JSON.stringify({
+        meta: { gameId: "gi", gameFolder: "原神", locale: "zh", localeFolder: "简体中文", pageId: "weapon", pageFolder: "武器",
+          recordId: "11101", name: "无锋剑", rarity: "一星", version: "7.2.52", sourcePath: "7.2.52/weapon.json",
+          sourceUrl: "https://static.nanoka.cc/gi/7.2.52/weapon.json", hasDetail: false, images: [] },
+        content: { list: { id: "11101", type: "WEAPON_SWORD_ONE_HAND" }, detail: null },
+      }));
+      await rm(join(data, "map.json"));
+      expect(await query("#图鉴 无锋剑")).toBe("原神 · 武器 · 无锋剑 · 一星 · 单手剑 · ID 11101");
+      expect(await Bun.file(join(data, "map.json")).exists()).toBe(false);
+      await writeFile(join(data, "map.json"), "{ broken");
+      expect(await query("#图鉴 无锋剑")).toContain("图鉴数据不可用");
       expect(frames).toEqual([]);
     } finally {
       socket?.close();
