@@ -103,6 +103,11 @@ function nativeMessage(event: MessageEvent): MessageEvent {
 function legacyNotice(event: BotEvent) {
   if (event.post_type !== "notice" || !("adapter" in event)) return event;
   const milky = event.adapter === "milky";
+  if (milky && event.sub_type === "recall") {
+    const recall = { ...event, self_id: String(event.self_id), user_id: String(event.user_id), message_id: String(event.message_id),
+      operator_id: event.operator_id === undefined ? undefined : String(event.operator_id) };
+    return event.notice_type === "group" ? { ...recall, group_id: String(event.group_id) } : recall;
+  }
   // TRSS splits on the first underscore before Bot.em and uses the remainder as the subtype.
   if (event.notice_type === "group_msg_emoji_like") {
     return { ...event, notice_type: "group" as const, sub_type: "msg_emoji_like" as const,

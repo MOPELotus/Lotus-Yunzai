@@ -10,7 +10,7 @@ import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
-  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal,
+  type GroupRequest, type MessageEvent, type MessageRecallNotice, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal,
   type OneBotPokeRecallNotice, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
@@ -622,6 +622,34 @@ async function dispatchPokeRecall(
   await dispatch(group
     ? { ...base, notice_type: "group", group_id, isGroup: true, isPrivate: false }
     : { ...base, notice_type: "friend", peer_id: peer, isGroup: false, isPrivate: true });
+}
+
+async function dispatchMessageRecallNotice(
+  dispatch: (event: MessageRecallNotice) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, user_id, group_id, operator_id, time } = event;
+  const message_id = oneBotMessageId(event.message_id);
+  if (!isId(self_id) || !isId(user_id) || message_id === undefined) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  const group = event.notice_type === "group_recall";
+  if (group ? !isId(group_id) || !(isId(operator_id) || operator_id === 0)
+    : ((group_id !== undefined && group_id !== 0) || (operator_id !== undefined && operator_id !== user_id))) return;
+  const base = {
+    post_type: "notice" as const, sub_type: "recall" as const, adapter: "onebot" as const,
+    self_id, user_id, operator_id: typeof operator_id === "number" ? operator_id : undefined, message_id,
+    time: isId(time) ? time : undefined, isMaster: isMaster(self_id, user_id),
+    reply(reply: MessageReply) {
+      if (signal.aborted || (!group && self_id === user_id)) return false;
+      const message = encodeOneBotReply(reply);
+      const target = group ? { message_type: "group", group_id } : { message_type: "private", user_id };
+      return message !== undefined && send({ action: "send_msg", params: { ...target, message, auto_escape: true } });
+    },
+  };
+  await dispatch(group && isId(group_id)
+    ? { ...base, notice_type: "group", group_id, isGroup: true, isPrivate: false }
+    : { ...base, notice_type: "friend", isGroup: false, isPrivate: true });
 }
 
 async function dispatchProfileLike(
@@ -1353,6 +1381,10 @@ export function startOneBot(
           });
           if (message.post_type === "notice") {
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
+            if (message.notice_type === "group_recall" || message.notice_type === "friend_recall") {
+              void dispatchMessageRecallNotice(dispatch, send, message, socket.data, options.isMaster)
+                .catch(() => console.error("处理 OneBot 撤回通知失败。"));
+            }
             if (message.notice_type === "group_admin") {
               const { self_id, group_id, user_id, sub_type, time } = message;
               if (!options.onGroupOwnerAdminNotice || !isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(time) ||

@@ -812,6 +812,27 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return "accepted";
     }
 
+    if (body.event_type === "message_recall") {
+      const { message_scene, peer_id, sender_id, operator_id, message_seq } = body.data;
+      if ((message_scene === "group" || message_scene === "friend") &&
+          positiveId(peer_id) && positiveId(sender_id) && positiveId(operator_id) && hasMessageSequence(message_seq) &&
+          (message_scene === "group" || (sender_id === operator_id && peer_id !== account && (sender_id === account || sender_id === peer_id)))) {
+        const group = message_scene === "group";
+        const target = group ? { group_id: peer_id } : { user_id: peer_id };
+        const base = {
+          post_type: "notice" as const, sub_type: "recall" as const, adapter: "milky" as const,
+          event_type: "message_recall" as const, self_id: account, user_id: sender_id, operator_id, message_id: message_seq,
+          message_scene: group ? "group" as const : "friend" as const,
+          peer_id, sender_id, message_seq, time: positiveId(body.time) ? body.time : undefined,
+          isMaster: isMaster(sender_id),
+          async reply(reply: MessageReply) { return await sendConfirmed(target, reply) === "confirmed"; },
+        };
+        deliver(group
+          ? { ...base, notice_type: "group" as const, group_id: peer_id, isGroup: true, isPrivate: false }
+          : { ...base, notice_type: "friend" as const, isGroup: false, isPrivate: true });
+      }
+    }
+
     if (body.event_type === "message_recall" && body.data.message_scene === "friend") {
       const { sender_id, peer_id, operator_id, message_seq } = body.data;
       if (options.onFriendRecall && positiveId(sender_id) && sender_id === peer_id && sender_id === operator_id && sender_id !== account &&

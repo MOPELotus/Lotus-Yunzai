@@ -312,6 +312,27 @@ export type OneBotPokeRecallNotice = (
   Omit<GroupPoke, "sub_type" | "adapter">
 ) & { readonly sub_type: "poke_recall"; readonly adapter: "onebot" };
 
+export type MessageRecallNotice = {
+  readonly post_type: "notice";
+  readonly sub_type: "recall";
+  readonly adapter: "onebot" | "milky";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly operator_id?: number;
+  readonly message_id: number;
+  readonly time?: number;
+  readonly event_type?: "message_recall";
+  readonly message_scene?: "friend" | "group";
+  readonly peer_id?: number;
+  readonly sender_id?: number;
+  readonly message_seq?: number;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+} & (
+  { readonly notice_type: "friend"; readonly isGroup: false; readonly isPrivate: true } |
+  { readonly notice_type: "group"; readonly group_id: number; readonly isGroup: true; readonly isPrivate: false }
+);
+
 interface GroupCompatibilityNoticeBase {
   readonly post_type: "notice";
   readonly self_id: number;
@@ -387,7 +408,7 @@ export type OneBotLegacySignal = OneBotLegacySignalIdentity & (
 );
 
 export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
-  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice;
+  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice | MessageRecallNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

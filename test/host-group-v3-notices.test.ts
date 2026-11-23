@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,9 +47,10 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       if (path === "/api/get_login_info") {
         return Response.json({ status: "ok", retcode: 0, data: { uin: milkyId, nickname: "测试机器人" } });
       }
-      if (path === "/api/send_group_message") {
-        const { group_id, message } = await request.json();
-        replies.push({ group_id, payload: JSON.parse(message[0].data.text) });
+      if (path === "/api/send_group_message" || path === "/api/send_private_message") {
+        const { group_id, user_id, message } = await request.json();
+        const recipient = path === "/api/send_group_message" ? { group_id } : { user_id };
+        replies.push({ ...recipient, payload: JSON.parse(message[0].data.text) });
         return Response.json({ status: "ok", retcode: 0, data: { message_seq: replies.length, time: stamp } });
       }
       return new Response(null, { status: 404 });
@@ -68,15 +70,23 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
         "notice.group.msg_emoji_like", "notice.group.card", "notice.group.group_name",
         "notice.group.essence", "notice.group.decrease",
         "notice.group.poke", "notice.friend.poke", "notice.group.poke_recall", "notice.friend.poke_recall",
+        "notice.friend.recall", "notice.group.recall",
       ].map((key, index) => ["listener" + index, class extends plugin {
         constructor() { super({ event: key }); }
         async accept(e) {
           const { group_id, user_id, operator_id, message_id, message_seq, likes, face_id, reaction_type,
             is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member, notice_type, sub_type,
-            action_sub_type, target_id, peer_id } = e;
-          await e.reply(JSON.stringify({ key, group_id, user_id, operator_id, message_id, message_seq,
+            action_sub_type, target_id, peer_id, self_id, message_scene, event_type } = e;
+          const payload = { key, group_id, user_id, operator_id, message_id, message_seq,
             likes, face_id, reaction_type, is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member,
-            notice_type, sub_type, action_sub_type, target_id, peer_id }));
+            notice_type, sub_type, action_sub_type, target_id, peer_id,
+            ...(sub_type === "recall" && { self_id, message_scene, event_type }) };
+          if (sub_type === "recall" && notice_type === "friend" && self_id === ${oneBotId} && user_id === ${oneBotId}) {
+            const sent = await e.reply("不得回复给机器人自身");
+            await Bun.write("own-recall-fixture.json", JSON.stringify({ sent, payload }));
+          } else {
+            await e.reply(JSON.stringify(payload));
+          }
           return "return";
         }
       }]));
@@ -174,7 +184,35 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
         { user_id: userId });
       one("notify", { sub_type: "poke", group_id: undefined, user_id: userId, target_id: oneBotId });
       await verify({ key: "notice.friend.poke", user_id: userId, operator_id: userId, target_id: oneBotId }, { user_id: userId });
-      expect(replies).toHaveLength(17);
+      one("friend_recall", { group_id: undefined, user_id: userId, message_id: "-18" }, oneBotId + 9);
+      one("friend_recall", { user_id: userId, message_id: "-18" });
+      one("friend_recall", { group_id: undefined, user_id: userId, operator_id: 702, message_id: "-18" });
+      one("friend_recall", { group_id: undefined, user_id: userId, message_id: "-18" });
+      await verify({ key: "notice.friend.recall", self_id: oneBotId, user_id: userId, message_id: -18 }, { user_id: userId });
+      one("group_recall", { user_id: userId, operator_id: oneBotId, message_id: -19 });
+      await verify({ key: "notice.group.recall", self_id: oneBotId, group_id: groupId, user_id: userId, operator_id: oneBotId, message_id: -19 });
+      one("friend_recall", { group_id: undefined, user_id: oneBotId, message_id: -20 });
+      const ownRecall = join(root, "own-recall-fixture.json");
+      expect(await waitFor(() => statSync(ownRecall, { throwIfNoEntry: false })?.size || undefined,
+        "OneBot 自身撤回未进入 V3 插件。")).toBeGreaterThan(0);
+      expect(await Bun.file(ownRecall).json()).toEqual({ sent: false, payload: {
+        key: "notice.friend.recall", self_id: oneBotId, notice_type: "friend", sub_type: "recall", user_id: oneBotId, message_id: -20,
+      } });
+
+      const milkyRecall = { message_scene: "friend", peer_id: userId, sender_id: userId, operator_id: userId, message_seq: 19 };
+      const milkyRecallFields = { self_id: String(milkyId), event_type: "message_recall" };
+      mk("message_recall", milkyRecall, milkyId + 9);
+      mk("message_recall", { ...milkyRecall, sender_id: 702, operator_id: 702 });
+      mk("message_recall", milkyRecall);
+      await verify({ ...milkyRecall, ...milkyRecallFields, key: "notice.friend.recall",
+        user_id, operator_id: user_id, message_id: "19" }, { user_id: userId });
+      mk("message_recall", { ...milkyRecall, sender_id: milkyId, operator_id: milkyId });
+      await verify({ ...milkyRecall, ...milkyRecallFields, key: "notice.friend.recall", user_id: String(milkyId),
+        operator_id: String(milkyId), sender_id: milkyId, message_id: "19" }, { user_id: userId });
+      mk("message_recall", { ...milkyRecall, message_scene: "group", peer_id: groupId, operator_id: 702, message_seq: 0 });
+      await verify({ ...milkyRecall, ...milkyRecallFields, key: "notice.group.recall", message_scene: "group",
+        group_id, peer_id: groupId, user_id, operator_id: "702", message_id: "0", message_seq: 0 });
+      expect(replies).toHaveLength(22);
     } finally {
       oneBot?.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");

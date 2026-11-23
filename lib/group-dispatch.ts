@@ -239,7 +239,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
 
   // Moderation relies on replaying the group policy even for a globally blocked applicant.
   function allowsGroupModeration(event: GroupRoutingScope): boolean {
-    const user = id(event.peer_id ?? event.user_id);
+    const user = id((event.group_id === undefined ? event.peer_id : undefined) ?? event.user_id);
     const group = "group_id" in event ? id(event.group_id) : undefined;
     return !(lists.whiteUser.size && (!user || !lists.whiteUser.has(user))) &&
       !(group && (!passesGroupList(group) || isBotMuted(event)));
@@ -251,7 +251,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
 
   function allowsInbound(event: GroupRoutingScope): boolean {
     if (event.post_type === "message" && event.message_type === "terminal") return true;
-    const user = id(event.peer_id ?? event.user_id);
+    const user = id((event.group_id === undefined ? event.peer_id : undefined) ?? event.user_id);
     return !(user && lists.blackUser.has(user)) && allowsGroupModeration(event);
   }
 
