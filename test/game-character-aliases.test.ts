@@ -33,7 +33,7 @@ test("Genshin and Star Rail character aliases read archived data, preserve concu
     expect(await execute("#别名原神删除 剧团队长", { ...owner, isDelegated: true })).toBeUndefined();
     expect(await execute("#别名原神删除 剧团队长")).toContain("已删除");
     expect(await readFile(legacyGs, "utf8")).toBe(gsSource);
-    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map([["水舞演员", "芙宁娜"]]));
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map([["水舞演员", "芙宁娜"], ["小乌龟", "神里绫华"]]));
     expect(await readGameCharacterAliases("sr", root)).toEqual(new Map([["剧团队长", "希儿"], ["小蝴蝶", "希儿"]]));
     expect(await execute("*别名设置 希儿 小蝴蝶")).toContain("已存在");
     expect(await execute("*别名设置 不存在的角色 小白鹅")).toContain("未找到该角色");
@@ -55,7 +55,7 @@ test("Genshin and Star Rail character aliases read archived data, preserve concu
     expect(findPanelAvatar([srAvatar], "夜班花匠", srTheme)).toBe(srAvatar);
     expect(findPanelAvatar([srAvatar], "蓝线快递员", srTheme)).toBe(srAvatar);
     expect(await execute("#别名原神删除 水舞演员")).toContain("已删除");
-    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map());
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map([["小乌龟", "神里绫华"]]));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -193,7 +193,7 @@ test("独立星铁旧表补入唯一别名，保留现有归属并禁止旧名�
     expect(await readGameCharacterAliases("sr", root)).toEqual(new Map([
       ["旧共享", "卡芙卡"], ["饮月旧邮差", "丹恒•饮月"], ["独立档小蝶", "希儿"], ["独立档夜航", "卡芙卡"], ["历史太卜别称", "符玄"],
     ]));
-    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map());
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map([["小乌龟", "神里绫华"]]));
     const run = createGameCharacterAliasCommands(lockFile, new AbortController().signal, root);
     const owner = { user_id: 42, isBotMaster: (user: number) => user === 42 };
     const deletion = matchGameCharacterAliasCommand("*别名删除 独立档小蝶")!;
@@ -212,6 +212,41 @@ test("独立星铁旧表补入唯一别名，保留现有归属并禁止旧名�
     expect(await readGameCharacterAliases("sr", root)).toEqual(new Map([
       ["旧共享", "卡芙卡"], ["饮月旧邮差", "丹恒•饮月"], ["独立档夜航", "卡芙卡"], ["历史太卜别称", "符玄"],
     ]));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("初装原神复用旧小乌龟昵称，保留显式归属及删除且不影响星铁", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-genshin-default-alias-"));
+  try {
+    const aliasFile = join(root, "config/character-aliases/alias_gs.cfg");
+    const aliases = await readGameCharacterAliases("gs", root);
+    expect(aliases).toEqual(new Map([["小乌龟", "神里绫华"]]));
+    expect(await readGameCharacterAliases("sr", root)).toEqual(new Map());
+    expect(await Bun.file(aliasFile).exists()).toBe(false);
+    const ayaka = { id: 10000002, name: "神里绫华" } as PanelAvatar;
+    const furina = { id: 10000089, name: "芙宁娜" } as PanelAvatar;
+    const panel = { avatars: { [ayaka.id]: ayaka, [furina.id]: furina } } as PanelSnapshot;
+    const catalog: PanelCatalog = { characters: {}, artifacts: new Map(), artifactSets: new Map(), customAliases: aliases };
+    expect(selectAvatar(panel, "小乌龟", catalog)).toBe(ayaka);
+    expect(selectAvatar(panel, "小乌龟套装", catalog)).toBeUndefined();
+    expect(selectAvatar(panel, "小乌龟芙宁娜", catalog)).toBeUndefined();
+
+    await mkdir(dirname(aliasFile), { recursive: true });
+    await writeFile(aliasFile, "芙宁娜：小·乌龟\n");
+    expect((await readGameCharacterAliases("gs", root)).get("小乌龟")).toBe("芙宁娜");
+    const run = createGameCharacterAliasCommands(lockFile, new AbortController().signal, root);
+    const deletion = matchGameCharacterAliasCommand("#别名原神删除 小乌龟")!;
+    expect(await run(deletion, { user_id: 42, isBotMaster: () => true })).toContain("已删除");
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map());
+    expect(await readFile(aliasFile, "utf8")).toContain("# 已导入旧角色昵称");
+
+    const archive = join(root, "backup/plugins/genshin/config/role.name.yaml");
+    await mkdir(dirname(archive), { recursive: true });
+    await writeFile(archive, "神里绫华: [只保留的旧昵称]\n");
+    await rm(aliasFile);
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map([["只保留的旧昵称", "神里绫华"]]));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

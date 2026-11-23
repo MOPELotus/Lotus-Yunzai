@@ -163,3 +163,38 @@ test("星铁独立旧配置按受信角色决定权限，添加使用现代存�
       await writeFile(join(root, "backup/plugins/genshin/config/mys.set.yaml"), "abbrSetAuth: 0\n");
     });
 }, 18_000);
+
+test("旧初装昵称小乌龟在实际宿主匹配神里绫华，主人可正常删除", async () => {
+  await withDualGatewayFixture("first-genshin-alias", 'master: ["99:42", "100:43"]\ndisablePrivate: false\n',
+    async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+      const group = { message_type: "group", sub_type: "normal", group_id: 701, sender: { user_id: 42, role: "member" } };
+      const managed = join(root, "config/character-aliases/alias_gs.cfg");
+      sendOneBot("#小乌龟昵称", group);
+      const original = await onebot.next("send_group_forward_msg");
+      expect(original.params).toMatchObject({ group_id: 701 });
+      expect(JSON.stringify(original.params)).toContain("神里绫华");
+      expect(JSON.stringify(original.params)).toContain("小乌龟");
+      expect(JSON.stringify(original.params)).not.toContain("芙宁娜");
+      original.respond({ message_id: 1001 });
+      expect(await Bun.file(managed).exists()).toBe(false);
+
+      expect((await sendMilky("#删除昵称小乌龟")).status).toBe(200);
+      const removed = await milky.next("send_private_message");
+      expect(removed.params).toMatchObject({ user_id: 43 });
+      expect(JSON.stringify(removed.params)).toContain("删除神里绫华别名成功：小乌龟");
+      removed.respond({ message_seq: 1002 });
+      expect(await readFile(managed, "utf8")).not.toContain("小乌龟");
+
+      sendOneBot("#神里绫华昵称", group);
+      const current = await onebot.next("send_group_forward_msg");
+      expect(JSON.stringify(current.params)).toContain("龟龟");
+      expect(JSON.stringify(current.params)).not.toContain("小乌龟");
+      current.respond({ message_id: 1003 });
+    }, 3_000, undefined, async root => {
+      await writeFile(join(root, "config/group.yaml"), "default: {groupCD: 0, singleCD: 0}\n");
+      const preset = "plugins/genshin/panel/miao/character-alias.ts";
+      const target = join(root, preset);
+      await mkdir(dirname(target), { recursive: true });
+      await cp(new URL(`../${preset}`, import.meta.url), target);
+    });
+}, 12_000);

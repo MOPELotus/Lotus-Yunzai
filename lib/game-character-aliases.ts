@@ -139,7 +139,7 @@ function yamlAliasRows(raw: Record<string, unknown>, preset: Preset) {
   });
 }
 
-function independentAliasRows(raw: Record<string, unknown>, preset: Preset, existing: readonly string[], legacyPreset?: Preset) {
+function unclaimedAliasRows(raw: Record<string, unknown>, preset: Preset, existing: readonly string[], legacyPreset?: Preset) {
   const reserved = new Set(existing.flatMap(line => parseRow(line)?.labels.map(characterAliasKey) ?? []));
   const rows = yamlAliasRows(raw, preset);
   const candidates = new Map<string, { role: string; label: string }>();
@@ -172,18 +172,20 @@ async function snapshot(root: string, game: Game) {
   const legacy = managed && lines.includes(legacyDone) ? undefined
     : await firstAliasFile(root, legacyConfigs(root, "role.name.yaml"))
       .then(source => ({ source, aliases: yamlMapping(source) })).catch(() => undefined);
-  const generic = legacy?.aliases;
+  const firstGenshinAliases = game === "gs" && legacy && !legacy.source;
+  const generic = legacy?.aliases ?? (firstGenshinAliases ? { 神里绫华: ["小乌龟"] } : undefined);
   const independent = game !== "sr" || (managed && lines.includes(independentDone))
     ? undefined : await independentStarRailSetting(root, "alias.yaml").catch(() => undefined);
   if (!generic && !independent) return { base, legacy: legacy?.source, content };
   const preset = await readPreset(game);
   if (generic) {
-    const imported = yamlAliasRows(generic, preset).map(({ role, labels }) => `${legacyPrefix}${role}：${labels.join("，")}`);
+    const imported = firstGenshinAliases ? unclaimedAliasRows(generic, preset, lines)
+      : yamlAliasRows(generic, preset).map(({ role, labels }) => `${legacyPrefix}${role}：${labels.join("，")}`);
     lines.push(legacyDone, ...imported);
   }
   if (independent) {
     const legacyPreset = await readLegacyPreset(root, game, preset).catch(() => undefined);
-    lines.push(independentDone, ...independentAliasRows(independent, preset, lines, legacyPreset));
+    lines.push(independentDone, ...unclaimedAliasRows(independent, preset, lines, legacyPreset));
   }
   return { base, legacy: legacy?.source, content: [...lines, ""].join("\n") };
 }
