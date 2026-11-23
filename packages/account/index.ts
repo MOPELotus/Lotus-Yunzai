@@ -1161,12 +1161,16 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           roles_updated_at: new Date().toISOString(), role_sync_error: "" };
       }, revision);
     },
-    async clearLogin(qq: string, id = 1): Promise<void> {
-      const name = profileFilename(qq, id);
-      await updateAccount(qq, id, name, (account) => ({
+    async clearLogin(qq: string, id = 1, current?: { readonly revision: string; readonly signal: AbortSignal;
+      readonly canCommit: () => boolean; readonly verify: () => Promise<void> }): Promise<void> {
+      const cleared = (account: Record<string, unknown>) => ({
         ...account, ltuid: "", stuid: "", stoken: "", ltoken: "", mid: "", cookie: "",
         stoken_cookie: "", updated_at: "", roles_updated_at: "", role_sync_error: "",
-      }));
+      });
+      if (current) {
+        await updateCheckinProfile(qq, id, current.revision, document => ({ ...document, account: cleared(record(document.account)) }),
+          current.signal, current.verify, current.canCommit);
+      } else await updateAccount(qq, id, profileFilename(qq, id), cleared);
     },
     requestContext(qq: string, id: number, game: Game, uid?: string) {
       return readRoleContext(qq, id, game, uid, false);

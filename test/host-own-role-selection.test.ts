@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "@lotus-yunzai/account";
+import { matchGameLoginRemoval, removeSelectedGameLogin } from "../lib/account-commands.ts";
 import { matchOwnRoleSelection } from "../lib/own-role-selection.ts";
 import { matchPanelSignatureCommand } from "../lib/panel-signature.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
@@ -36,6 +37,30 @@ test("UID 只接旧序号和明确档案，签名验证有独立命令", () => {
   }
   expect(matchPanelSignatureCommand("#绑定UID100000042")).toMatchObject({ action: "begin", uid: "100000042" });
   expect(matchPanelSignatureCommand("#UID2")).toBeUndefined();
+});
+
+test("旧删除 CK 识别游戏前缀，新增的同游戏登录档案阻止在途清除", async () => {
+  expect(matchGameLoginRemoval("删除CK")).toBe("gs");
+  expect(matchGameLoginRemoval("#星铁删除COOKIE")).toBe("sr");
+  expect(matchGameLoginRemoval("#绝区零删除CK")).toBe("zzz");
+  expect(matchGameLoginRemoval("#删除Cookie")).toBeUndefined();
+  expect(matchGameLoginRemoval("#删除CK2")).toBeUndefined();
+  const root = await mkdtemp(join(tmpdir(), "lotus-game-login-removal-"));
+  try {
+    const first = join(root, "42.yaml"), second = join(root, "42-2.yaml");
+    const before = Bun.YAML.stringify(document("42", 1));
+    await writeFile(first, before);
+    const store = createProfileStore(root);
+    let reads = 0;
+    const profiles = { ...store, async listIds(qq: string) {
+      if (++reads === 2) await writeFile(second, Bun.YAML.stringify(document("42", 2)));
+      return store.listIds(qq);
+    } };
+    const scope = { user: 42, signal: new AbortController().signal, isCurrent: () => true };
+    expect(await removeSelectedGameLogin(profiles, "gs", scope)).toContain("对应登录档案已变更");
+    expect(await readFile(first, "utf8")).toBe(before);
+    expect((await store.describe("42", 2)).loggedIn).toBe(true);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("角色选择只修改本人所选档案和游戏，过期授权、档案并发变更及他档 UID 禁止提交", async () => {
@@ -138,12 +163,30 @@ globalThis.fetch = async (input, options) => {
     const milkyRoles = (await profiles.roleCatalog("43", 1)).active;
     expect(milkyRoles.gs).toBe("100000099");
     expect(milkyRoles.sr).toBe(games.sr[1]);
+
+    await replies("#删除CK", "多个登录档案（1、2）");
+    expect((await profiles.describe("42", 1)).loggedIn).toBe(true);
+    expect((await profiles.describe("42", 2)).loggedIn).toBe(true);
+    await replies("#绝区零删除CK", "请在机器人好友私聊中清除本人登录信息", { message_type: "group", sub_type: "normal", group_id: 701 });
+    expect((await profiles.describe("42", 2)).loggedIn).toBe(true);
+    await replies("%删除CK", "已清除档案 2 的米游社登录信息");
+    expect((await profiles.describe("42", 2)).loggedIn).toBe(false);
+    expect((await profiles.roleCatalog("42", 2)).active.zzz).toBe(games.zzz[1]);
+    expect((await profiles.describe("42", 1)).loggedIn).toBe(true);
+    expect((await profiles.describe("43", 1)).loggedIn).toBe(true);
+    expect((await sendMilky("*删除Cookie")).status).toBe(200);
+    const cleared = await milky.next("send_private_message");
+    expect(cleared.params).toMatchObject({ user_id: 43 });
+    expect(JSON.stringify(cleared.params)).toContain("已清除档案 1 的米游社登录信息");
+    cleared.respond({ message_seq: sequence++ });
+    expect((await profiles.describe("43", 1)).loggedIn).toBe(false);
+    expect((await profiles.describe("42", 1)).loggedIn).toBe(true);
     expect(await Bun.file(join(root, "unexpected-network.txt")).exists()).toBe(false);
   }, 2_000, preload, async (root) => {
     const target = join(root, "profiles");
     await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
     await mkdir(target);
-    await writeFile(join(target, "42.yaml"), Bun.YAML.stringify(document("42", 1, { ...games, gs: ["100000041"] })));
+    await writeFile(join(target, "42.yaml"), Bun.YAML.stringify(document("42", 1, { ...games, gs: ["100000041"], zzz: [] })));
     await writeFile(join(target, "42-2.yaml"), Bun.YAML.stringify(document("42", 2)));
     await writeFile(join(target, "43.yaml"), Bun.YAML.stringify(document("43", 1, { ...games, gs: ["100000099"] })));
   });

@@ -12,7 +12,7 @@ import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-cli
 import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia";
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
-import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
+import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { donationCommands } from "./lib/donation-command.ts";
 import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
@@ -2255,7 +2255,21 @@ if (import.meta.main) {
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }
-    const ownRoleSelection = matchOwnRoleSelection(normalizeGameCommand(event).msg);
+    const gameAccountCommand = normalizeGameCommand(event).msg;
+    const gameLoginRemoval = matchGameLoginRemoval(gameAccountCommand);
+    if (gameLoginRemoval) {
+      const features = ["@lotus-yunzai/account"];
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
+      const scope = ownCheckinSession(event, features);
+      if (!scope?.privateFriend) {
+        if (event.message_type === "group" && scope) await event.reply("请在机器人好友私聊中清除本人登录信息。");
+        return;
+      }
+      const reply = await removeSelectedGameLogin(roleProfiles, gameLoginRemoval, scope);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
+    const ownRoleSelection = matchOwnRoleSelection(gameAccountCommand);
     if (ownRoleSelection) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
       const scope = ownCheckinSession(event, ownRoleSelectionFeatures);

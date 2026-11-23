@@ -1,4 +1,4 @@
-import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames } from "@lotus-yunzai/account";
+import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
@@ -20,6 +20,59 @@ const loginMutation = new RegExp(`^(?:#刷新(?:cookie|${refreshAliases.join("|"
   `#(?:${clearVerbs.join("|")})(?:${clearNouns.join("|")}))(?:[1-9]\\d{0,2})?(?:\\s|$)`, "u");
 
 export function isAccountLoginMutation(command: string) { return loginMutation.test(command); }
+
+const removalGames = { 原神: "gs", 星铁: "sr", 绝区零: "zzz" } as const;
+
+export function matchGameLoginRemoval(message: string): Game | undefined {
+  if (/^#删除(?:Cookie|cookie)$/u.test(message)) return;
+  const match = /^#?(原神|星铁|绝区零)?删除c(?:oo)?k(?:ie)?$/iu.exec(message);
+  if (match) return removalGames[match[1] as keyof typeof removalGames] ?? "gs";
+}
+
+export async function removeSelectedGameLogin(profiles: Pick<ReturnType<typeof createProfileStore>,
+  "listIds" | "requestSelectedContext" | "clearLogin">, game: Game,
+{ user, signal, isCurrent }: { readonly user: number; readonly signal: AbortSignal; readonly isCurrent: () => boolean }) {
+  const qq = String(user);
+  const active = () => !signal.aborted && isCurrent();
+  async function matchingProfiles() {
+    const matches: { id: number; revision: string }[] = [];
+    for (const id of await profiles.listIds(qq)) {
+      if (!active()) throw new DOMException("登录清除授权已失效。", "AbortError");
+      try {
+        const { revision } = await profiles.requestSelectedContext(qq, id, game);
+        matches.push({ id, revision });
+      } catch (error) {
+        if (!(error instanceof ProfileError) || !["missing", "login-required", "role-missing"].includes(error.code)) throw error;
+      }
+    }
+    return matches;
+  }
+
+  if (!active()) return;
+  try {
+    const matches = await matchingProfiles();
+    if (!active()) return;
+    if (matches.length === 0) return `没有找到已登录的${roleLabels[game]}档案。可发送 #登录列表 查看。`;
+    if (matches.length > 1) {
+      return `${roleLabels[game]}角色分布在多个登录档案（${matches.map(({ id }) => id).join("、")}）。请用 #清除登录 加档案编号指定。`;
+    }
+    const { id, revision } = matches[0]!;
+    await profiles.clearLogin(qq, id, {
+      revision, signal, canCommit: active,
+      async verify() {
+        const latest = await matchingProfiles();
+        if (latest.length !== 1 || latest[0]?.id !== id || latest[0]?.revision !== revision) {
+          throw new ProfileError("changed", "对应登录档案已变更。");
+        }
+      },
+    });
+    if (active()) return `已清除档案 ${id} 的米游社登录信息，设备和角色设置已保留。`;
+  } catch (error) {
+    if (!active()) return;
+    if (error instanceof ProfileError && error.code === "changed") return "对应登录档案已变更，请发送 #登录列表 确认后重试。";
+    return "无法清除登录信息，请发送 #登录列表 确认后重试。";
+  }
+}
 
 export function accountCommands(
   directory: string | undefined,
