@@ -279,6 +279,7 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
   const unrelated = [
     "theme/donor/app.ts", "theme/donor/meta-gs/character/其他角色/imgs/splash.webp",
     "media/gallery/original.psd", " media/gallery/sr-character/仅原样.jpg",
+    "media/gallery/waves-character/今汐/原图.webp",
     " resources/login/secret.txt", "resources/login/source-templates/miao/common/theme/bg-01.jpg",
     "resources/note/fonts/MiSans-VF.ttf",
     "assets/donation/unrelated.txt",
