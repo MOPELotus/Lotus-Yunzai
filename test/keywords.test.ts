@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createKeywords } from "../lib/keywords.ts";
+import { delegationSession } from "../lib/command-delegation.ts";
 import type { InboundSegment, MessageEvent, MessageReply, ReplyOptions } from "../lib/messages.ts";
 
 type Store = Parameters<typeof createKeywords>[0];
@@ -153,6 +154,67 @@ test("分页及搜索在成功转发时静默，失败降级文本，未知结�
   const unknown = await send("#词条列表", { forward: async () => { throw new Error("sample"); } });
   expect(unknown.text).toBe("词条列表转发结果未确认，请在聊天中核对。");
   expect((await send("#词条列表0")).text).toContain("大于 0");
+});
+
+test("旧全局表情别名与合并词条目录可读，本群覆盖同名，其他目录与词条回放保持原义", async () => {
+  const { send, put, removals, writes } = fixture();
+  await put("global", "同名", "全局甲", "全局乙");
+  await put("global", "全局独有", "全局");
+  await put(77, "同名", "群版本");
+  await put(77, "本群独有", "群");
+  await put(88, "别群独有", "其他群");
+  const writesBefore = writes.length;
+  expect((await send("#合并词条列表")).text).toBe("消息列表：第1页，共3条\n3. 本群独有(1)\n2. 全局独有(1)\n1. 同名(1)");
+  expect((await send("#合并词条 同名")).text).toBe("消息同名：共1条\n1. 同名(1)");
+  expect((await send("#合并词条 别群独有")).text).toBe("暂无消息。");
+  expect((await send("#词条列表")).text).toBe("消息列表：第1页，共2条\n2. 本群独有(1)\n1. 同名(1)");
+  expect((await send("#全局表情列表", privateChat)).text).toBe((await send("#全局词条列表", privateChat)).text);
+  expect((await send("#全部表情列表")).handled).toBe(false);
+  expect((await send("#表情列表")).handled).toBe(false);
+  expect((await send("同名2")).text).toEqual([{ type: "text", text: "全局甲" }]);
+  expect((await send("#合并词条列表", { ...privateChat, self_id: 100 })).text).toContain("所属群");
+  expect((await send("#合并词条列表", { ...privateChat, getGroupRole: async () => undefined })).text).toContain("所属群");
+  expect((await send("#合并词条列表", { ...privateChat, getGroupRole: async id => id === 77 ? "member" : undefined }))
+    .text).toContain("本群独有(1)");
+  expect(writes).toHaveLength(writesBefore);
+  expect(removals).toEqual([]);
+});
+
+test("合并词条目录撤回会话时不发送，未知的转发结果不重发内容", async () => {
+  const { put, send, store } = fixture();
+  await put(77, "本群词条", "群");
+  const overlay = new AbortController();
+  const session = { signal: overlay.signal } as NonNullable<MessageEvent[typeof delegationSession]>;
+  const read = store.read;
+  store.read = async scope => {
+    if (scope === "global") overlay.abort();
+    return read(scope);
+  };
+  let forwards = 0;
+  expect((await send("#合并词条列表", { [delegationSession]: session,
+    forward: async () => { forwards++; return true; },
+  })).replies).toEqual([]);
+  expect(forwards).toBe(0);
+  expect((await send("#合并词条列表", { forward: async () => { throw new Error("合并回执未知"); } })).text)
+    .toBe("词条列表转发结果未确认，请在聊天中核对。");
+});
+
+test("合并列表在私聊遵从群词条开关，并在阅读后再次检查权限", async () => {
+  let enabled = true;
+  const { put, send, store } = fixture({}, {
+    async read() { return; },
+    async write() {},
+    legacy: { async read() { return; }, allows: (_event, group) => enabled && group === 77 },
+  });
+  await put(77, "本群词条", "群");
+  await send("群内消息");
+  const chat = { ...privateChat, getGroupRole: async () => "member" as const };
+  enabled = false;
+  expect((await send("#合并词条列表", chat)).text).toContain("所属群");
+  enabled = true;
+  const read = store.read;
+  store.read = async scope => { enabled = false; return read(scope); };
+  expect((await send("#合并词条列表", chat)).replies).toEqual([]);
 });
 
 test("添加会话到期或没有合法内容时不写入", async () => {

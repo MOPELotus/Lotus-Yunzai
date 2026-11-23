@@ -56,6 +56,7 @@ const maxMediaDownloads = 4;
 const maxDraftMediaBytes = maxMediaDownloads * maxChatFileBytes;
 const finishCommand = "#结束添加";
 const managementCommand = /^#(全局)?(添加|删除|消息|词条)([\s\S]*)$/u;
+const compatibilityDirectory = /^#(全局表情|合并词条)([\s\S]*)$/u;
 const unboundMessage = "请通过已绑定的机器人连接管理词条。";
 
 function isId(value: unknown): value is number {
@@ -217,6 +218,10 @@ export function createKeywords(
     if (await readLegacyGroup(event) === group) return role;
   }
 
+  function allowsCompatibilityList(event: MessageEvent, scope: Scope): boolean {
+    return hasKeywordSession(event) && (scope === "global" || legacy?.allows(event, scope) !== false);
+  }
+
   async function permission(event: MessageEvent, scope: Scope, verifiedRole?: GroupRole): Promise<string | undefined> {
     if (!hasKeywordSession(event)) return unboundMessage;
     if (event.adapter === "milky" ? isMilkyOwnerSession(event) : event.isMaster) return;
@@ -236,7 +241,12 @@ export function createKeywords(
     return "暂无权限，只有群管理员才能操作。";
   }
 
-  async function list(event: MessageEvent, scope: Scope, argument: string, legacyGroup?: number) {
+  async function list(event: MessageEvent, scope: Scope, argument: string, {
+    legacyGroup, includeGlobal = false, sessionRequired = false,
+  }: { legacyGroup?: number; includeGlobal?: boolean; sessionRequired?: boolean } = {}) {
+    const active = () => (!sessionRequired || allowsCompatibilityList(event, scope)) &&
+      (legacyGroup === undefined || allowsLegacyGroup(event, legacyGroup));
+    if (sessionRequired && !active()) return;
     const listMode = !argument || argument.startsWith("列表");
     const page = listMode && argument ? Number(argument.slice(2).trim() || "1") : 1;
     if (listMode && ((!/^列表\s*\d*$/u.test(argument) && argument !== "") || !Number.isSafeInteger(page) || page < 1)) {
@@ -246,12 +256,14 @@ export function createKeywords(
 
     let entries: ReadonlyMap<string, Variants>;
     try {
-      entries = await store.read(scope);
+      const [local, global] = await Promise.all([store.read(scope), includeGlobal ? store.read("global") : undefined]);
+      // The original merged catalog kept the group entry for a duplicate key.
+      entries = global ? new Map([...global, ...local]) : local;
     } catch {
-      await event.reply("读取词条失败，请稍后重试。");
+      if (active()) await event.reply("读取词条失败，请稍后重试。");
       return;
     }
-    if (legacyGroup !== undefined && !allowsLegacyGroup(event, legacyGroup)) return;
+    if (!active()) return;
     const rows = [...entries]
       .filter(([name]) => listMode || name.includes(argument))
       .map(([name, versions], index) => `${index + 1}. ${name}(${versions.length})`)
@@ -268,17 +280,18 @@ export function createKeywords(
 
     const title = listMode ? `消息列表：第${page}页，共${rows.length}条` : `消息${argument}：共${rows.length}条`;
     const body = rows.slice((page - 1) * pageSize, page * pageSize).join("\n");
+    const pageCommand = includeGlobal ? "#合并词条列表" : scope === "global" ? "#全局消息列表" : "#消息列表";
     const pagesHint = listMode && page < pages
-      ? `更多内容请翻页查看\n如：#${scope === "global" ? "全局" : ""}消息列表${page + 1}` : undefined;
+      ? `更多内容请翻页查看\n如：${pageCommand}${page + 1}` : undefined;
     const nodes = pagesHint ? [title, body, pagesHint] : [title, body];
     let forwarded: boolean | undefined;
     try {
       forwarded = await event.forward?.(nodes);
     } catch {
-      await event.reply("词条列表转发结果未确认，请在聊天中核对。");
+      if (active()) await event.reply("词条列表转发结果未确认，请在聊天中核对。");
       return;
     }
-    if (!forwarded) await event.reply(nodes.join("\n"));
+    if (!forwarded && active()) await event.reply(nodes.join("\n"));
   }
 
   async function remove(event: MessageEvent, scope: Scope, argument: string, legacyGroup?: number) {
@@ -399,6 +412,31 @@ export function createKeywords(
       await event.reply("目前没有正在添加的词条。");
       return true;
     }
+    const directory = compatibilityDirectory.exec(name);
+    if (directory) {
+      if (!hasKeywordSession(event)) return true;
+      const argument = directory[2]!.trim();
+      if (directory[1] === "全局表情") {
+        await list(event, "global", argument, { sessionRequired: true });
+        return true;
+      }
+      const scoped = sender.group === undefined ? await recent(sender.actor) : undefined;
+      const legacyGroup = scoped?.useLegacy ? await readLegacyGroup(event) : undefined;
+      const group = sender.group ?? scoped?.group ?? legacyGroup;
+      let role: GroupRole | undefined;
+      if (group !== undefined && sender.group === undefined && allowsCompatibilityList(event, group)) {
+        role = legacyGroup === undefined ? await event.getGroupRole?.(group).catch(() => undefined)
+          : await checkLegacyMember(event, legacyGroup, sender.actor);
+      }
+      if (!hasKeywordSession(event)) return true;
+      if (group === undefined || !allowsCompatibilityList(event, group) || (sender.group === undefined && (!role ||
+          (legacyGroup === undefined && (await recent(sender.actor)).group !== group)))) {
+        if (hasKeywordSession(event)) await event.reply("请在所属群发送 #合并词条列表。");
+        return true;
+      }
+      await list(event, group, argument, { legacyGroup, includeGlobal: true, sessionRequired: true });
+      return true;
+    }
     const command = managementCommand.exec(name);
     const scoped = sender.group === undefined && !command?.[1] ? await recent(sender.actor) : undefined;
     const group = sender.group ?? scoped?.group;
@@ -419,7 +457,7 @@ export function createKeywords(
       return true;
     }
     if (action === "消息" || action === "词条") {
-      await list(event, scope, argument, legacyGroup);
+      await list(event, scope, argument, { legacyGroup });
       return true;
     }
     const denied = await permission(event, scope, role);
