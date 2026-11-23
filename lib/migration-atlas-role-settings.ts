@@ -9,7 +9,7 @@ export interface AtlasRoleArchive {
   readonly plugins: readonly LegacyPluginPlanEntry[];
 }
 
-const fields = { charWiki: "role_wiki", charWikiTalent: "role_talent", charPic: "role_photo" } as const;
+const fields = { charWiki: "role_wiki", charWikiTalent: "role_talent", charPic: "role_photo", qFace: "role_q_face" } as const;
 const miaoReason = rejectionReason(["miao-plugin"], []);
 const canonical = "plugins/miao-plugin";
 

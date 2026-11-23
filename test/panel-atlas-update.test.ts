@@ -417,7 +417,7 @@ test("角色开关由图鉴面板保存并在重启后分开影响原铁命令",
     const route = panelAtlasUpdate(root, validTask);
     const admin = panelApi(token, [], path => path === endpoint ? route : undefined);
     const before = await (await admin(request()))?.json();
-    expect(before.roleQueries).toEqual({ role_wiki: true, role_talent: true, role_photo: true });
+    expect(before.roleQueries).toEqual({ role_wiki: true, role_talent: true, role_photo: true, role_q_face: true });
     expect(before.settings.enable).toBe(false);
     const old = createModule();
     const run = async (module: ReturnType<typeof createModule>, msg: string) => {
@@ -432,13 +432,14 @@ test("角色开关由图鉴面板保存并在重启后分开影响原铁命令",
       admin(request("PUT", { revision, settings: before.settings, roleQueries }, valid));
     expect((await put({ role_wiki: false }, before.revision, false))?.status).toBe(401);
     expect((await put({ role_wiki: "false" }))?.status).toBe(400);
+    expect((await put({ role_q_face: "false" }))?.status).toBe(400);
     expect((await put({ charPicSe: true }))?.status).toBe(400);
 
-    const overview = (await put({ role_wiki: false }))!;
+    const overview = (await put({ role_wiki: false, role_q_face: false }))!;
     expect(overview.status).toBe(200);
     const first = await overview.json();
     expect(first.settings.enable).toBe(false);
-    expect(first.roleQueries).toEqual({ role_wiki: false, role_talent: true, role_photo: true });
+    expect(first.roleQueries).toEqual({ role_wiki: false, role_talent: true, role_photo: true, role_q_face: false });
     expect((await put({ role_talent: false }))?.status).toBe(409);
     const restart = async () => createModule({ atlasUpdateConfig: (await readLotusGlobalConfig(root)).atlas });
     const one = await restart();
@@ -451,6 +452,7 @@ test("角色开关由图鉴面板保存并在重启后分开影响原铁命令",
 
     const other = (await put({ role_talent: false, role_photo: false, role_wiki: true }, first.revision))!;
     expect(other.status).toBe(200);
+    expect((await other.json()).roleQueries.role_q_face).toBe(false);
     const two = await restart();
     expect(await run(two, "#芙宁娜资料")).toMatchObject({ handled: true });
     for (const cmd of ["#芙宁娜天赋", "#芙宁娜技能", "#芙宁娜命座", "*卡芙卡行迹", "*卡芙卡星魂", "#芙宁娜照片", "*卡芙卡写真"]) {

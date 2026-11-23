@@ -160,7 +160,7 @@ test("只迁原画像和星铁部件索引实际引用的本地图，不读索�
   });
 });
 
-test("迁移认定归档里的三个角色查询布尔值，现代显式设置优先且不启用新定时任务", async () => {
+test("迁移认定旧角色查询和 Q 版头像偏好，现代显式设置优先且不启用新定时任务", async () => {
   await fixture(async (base, source, stage) => {
     const directory = join(base, "archive");
     const plugin = "miao-renamed";
@@ -180,16 +180,16 @@ test("迁移认定归档里的三个角色查询布尔值，现代显式设置�
     const file = join(stage, "config/global.yaml");
     expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "staged" });
     expect(Bun.YAML.parse(await readFile(file, "utf8"))).toEqual({
-      atlas: { role_wiki: false, role_talent: true, role_photo: false, auto_update: { enable: false } },
+      atlas: { role_wiki: false, role_talent: true, role_photo: false, role_q_face: false, auto_update: { enable: false } },
     });
     expect(await readFile(legacy, "utf8")).toBe(values);
 
-    await write(file, "# 配置注释\natlas: {version_channel: live, role_photo: true}\n");
+    await write(file, "# 配置注释\natlas: {version_channel: live, role_photo: true, role_q_face: true}\n");
     expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "staged" });
     const merged = await readFile(file, "utf8");
     expect(merged).toContain("# 配置注释");
     expect(Bun.YAML.parse(merged)).toEqual({
-      atlas: { version_channel: "live", role_wiki: false, role_talent: true, role_photo: true },
+      atlas: { version_channel: "live", role_wiki: false, role_talent: true, role_photo: true, role_q_face: true },
     });
     expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "existing" });
     expect(await readFile(file, "utf8")).toBe(merged);
