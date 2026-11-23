@@ -199,10 +199,21 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_name", { group_id, group_name }, signal);
   }
 
-  updateOwnerAccount(send: Send, operation: OwnerAccountOperation, signal: AbortSignal) {
-    if (operation.kind === "deleteFriend") return this.#moderateGroup(send, "delete_friend", { user_id: operation.userId }, signal);
-    if (operation.kind === "nickname") return this.#moderateGroup(send, "set_qq_profile", { nickname: operation.text }, signal);
-    return this.#moderateGroup(send, "set_self_longnick", { longNick: operation.text }, signal);
+  async updateOwnerAccount(send: Send, operation: OwnerAccountOperation, signal: AbortSignal): Promise<GroupModerationResult> {
+    if (operation.kind === "status") return this.#moderateGroup(send, "set_online_status",
+      { status: operation.status, ext_status: 0, battery_status: 0 }, signal);
+    if (signal.aborted) return "rejected";
+    const [action, params] = operation.kind === "deleteFriend" ? ["delete_friend", { user_id: operation.userId }]
+      : operation.kind === "nickname" ? ["set_qq_profile", { nickname: operation.text }]
+        : ["set_self_longnick", { longNick: operation.text }];
+    try {
+      const result = await this.#request(send, action, params, signal);
+      if (isRecord(result) && operation.kind === "deleteFriend" && result.valid === false) return "rejected";
+      if (!isRecord(result) || !Number.isSafeInteger(result.result)) return "unknown";
+      return result.result === 0 ? "confirmed" : "rejected";
+    } catch (error) {
+      return error instanceof OneBotNotSentError || error instanceof OneBotRejectedError ? "rejected" : "unknown";
+    }
   }
 
   async setGroupPortrait(send: Send, groupId: number, file: string, signal: AbortSignal): Promise<GroupModerationResult> {

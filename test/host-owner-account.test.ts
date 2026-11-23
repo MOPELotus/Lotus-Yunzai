@@ -32,7 +32,7 @@ test("机器人资料和删好友走当前主人所属的隔离协议账号", as
     await oneVersion();
     const nickname = await onebot.next("set_qq_profile");
     expect(nickname.params).toEqual({ nickname: "新名字" });
-    nickname.respond({});
+    nickname.respond({ result: 0, errMsg: "" });
     await oneReply("修改昵称成功。", 701);
     sendOneBot("#换名称新名字", { ...group, message_id: 901 });
     await Bun.sleep(60);
@@ -49,9 +49,32 @@ test("机器人资料和删好友走当前主人所属的隔离协议账号", as
     await oneFriends([42, 111]);
     const deletion = await onebot.next("delete_friend");
     expect(deletion.params).toEqual({ user_id: 111 });
-    deletion.respond(null, "failed");
+    deletion.respond({ valid: false, message: "已不是好友" });
     await oneReply("删除好友失败。", 701);
 
+    sendOneBot("#删好友112");
+    await oneVersion();
+    await oneFriends([42, 112]);
+    (await onebot.next("delete_friend")).respond(undefined);
+    await oneReply("删除好友结果未确认，请在 QQ 中核对。");
+    sendOneBot("#删好友113");
+    await oneVersion();
+    await oneFriends([42, 113]);
+    (await onebot.next("delete_friend")).respond({ result: 0, errMsg: "" });
+    await oneReply("删除好友成功。");
+
+    sendOneBot("#改状态九成睡着");
+    await oneReply("可选在线状态为我在线上、离开、隐身、忙碌、Q我吧、请勿打扰。");
+    sendOneBot("#改状态请勿打扰");
+    await oneVersion();
+    await oneFriends([42]);
+    const state = await onebot.next("set_online_status");
+    expect(state.params).toEqual({ status: 70, ext_status: 0, battery_status: 0 });
+    state.respond(null);
+    await oneReply("修改在线状态成功。");
+
+    await sendMilky("#改状态隐身");
+    await milkyReply("当前协议端未确认支持修改在线状态。");
     await sendMilky("#改签名旧版不可用");
     await milkyVersion("1.0.0");
     await milkyReply("当前协议端未确认支持修改签名。");

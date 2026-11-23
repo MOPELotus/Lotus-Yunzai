@@ -743,7 +743,7 @@ async function dispatchMessage(
     }) : undefined,
     [ownerAccountSession]: boundAccount && leaveSignal && selfId !== undefined ? bindOwnerAccount({
       signal: leaveSignal, actor: userId, privateChat: messageType === "private", isOwner: () => isMaster(selfId, userId),
-      supported: active => calls.isNapCat(send, active), friends: active => calls.readCurrentFriendIds(send, active),
+      supported: (_operation, active) => calls.isNapCat(send, active), friends: active => calls.readCurrentFriendIds(send, active),
       write: (operation, active) => calls.updateOwnerAccount(send, operation, active),
     }) : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),

@@ -1,8 +1,8 @@
-import { ownerAccountSession, type OwnerAccountOperation } from "./adapters/owner-account.ts";
+import { ownerAccountSession, ownerAccountStatus, type OwnerAccountOperation } from "./adapters/owner-account.ts";
 import type { MessageEvent } from "./messages.ts";
 
 export const ownerAccountFeatureNames = ["[group] 机器人账号资料", "group", "@lotus-yunzai/group"];
-const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|删好友)([\s\S]*)$/u;
+const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|改状态|删好友)([\s\S]*)$/u;
 const maxHistory = 4096;
 
 function positiveId(raw: unknown): number | undefined {
@@ -43,6 +43,13 @@ export function createOwnerAccountCommand() {
       }
       operation = { kind: "deleteFriend", userId };
       label = "删除好友";
+    } else if (match[1] === "改状态") {
+      if (!Object.hasOwn(ownerAccountStatus, text)) {
+        await event.reply(`可选在线状态为${Object.keys(ownerAccountStatus).join("、")}。`);
+        return true;
+      }
+      operation = { kind: "status", status: ownerAccountStatus[text as keyof typeof ownerAccountStatus] };
+      label = "修改在线状态";
     } else {
       const signature = match[1] === "改签名";
       label = signature ? "修改签名" : "修改昵称";

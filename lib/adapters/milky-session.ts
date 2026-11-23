@@ -1099,7 +1099,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       [ownerAccountSession]: message && !message.attachmentOnly && positiveId(cardOwner) &&
           (positiveId(groupId) || message.sub_type === "friend") ? bindOwnerAccount({
         signal, actor: cardOwner, privateChat: !positiveId(groupId), isOwner: () => isMaster(cardOwner),
-        async supported(active) {
+        async supported(operation, active) {
+          if (operation.kind === "status") return false;
           const version = await call.confirmed("get_impl_info", {}, active);
           const raw = version.status === "confirmed" ? version.data.milky_version : undefined;
           const parsed = typeof raw === "string" ? /^(\d+)\.(\d+)(?:\.\d+)?$/u.exec(raw) : undefined;
@@ -1107,6 +1108,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         },
         friends: listCurrentFriends,
         async write(operation, active) {
+          if (operation.kind === "status") return "rejected";
           if (operation.kind === "deleteFriend") return (await call.confirmed("delete_friend", { user_id: operation.userId }, active)).status;
           if (operation.kind === "nickname") return (await call.confirmed("set_nickname", { new_nickname: operation.text }, active)).status;
           return (await call.confirmed("set_bio", { new_bio: operation.text }, active)).status;
