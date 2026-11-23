@@ -386,6 +386,11 @@ test("OneBot 群禁言按机器人生效，全员禁言保留管理员入口", (
   a.send("#状态", 78);
   await a.reply(alive, 78);
   a.sendFrame({ post_type: "notice", notice_type: "group_admin", group_id: 77, user_id: 99, sub_type: "set" });
+  const refresh = await a.action();
+  expect(refresh).toMatchObject({ action: "get_group_member_info", params: {
+    group_id: 77, user_id: 99, no_cache: true,
+  } });
+  a.sendFrame({ echo: refresh.echo, status: "ok", retcode: 0, data: { user_id: 99, role: "admin" } });
   a.send("#状态", 77);
   const updated = await a.action();
   expect(updated.action).toBe("get_group_member_info");
