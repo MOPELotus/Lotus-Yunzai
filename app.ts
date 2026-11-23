@@ -978,6 +978,7 @@ if (import.meta.main) {
         if (!live()) return targets;
         targets.push({
           groupId,
+          inlineImageByteLimit: session.inlineImageByteLimit,
           async send(message, active) {
             if (active.aborted || !live() || !await session.isGroupMember(groupId, session.botId).catch(() => false) ||
                 active.aborted || !live()) return "rejected";
