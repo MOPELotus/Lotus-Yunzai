@@ -91,7 +91,8 @@ export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, dir
   const archive = createRoleJsonArchive(directory, lockFile, {
     subject: "本人公开 UID 引用", lockSuffix: "public-role-reference", maxBytes: 8192, rejectNull: true,
   });
-  return async ({ game, action, value }: Command, { user, signal, isCurrent }: Scope) => {
+  const catalogue = (qq: string) => archive.read(qq, "1").then(decode);
+  return Object.assign(async ({ game, action, value }: Command, { user, signal, isCurrent }: Scope) => {
     const active = () => !signal.aborted && isCurrent();
     const verify = async () => {
       if (!active()) throw new DOMException("公开 UID 操作授权已失效。", "AbortError");
@@ -111,7 +112,7 @@ export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, dir
       return `请发送 ${prefix}公开UID列表 查看，可用 ${prefix}切换公开UID2、${prefix}查询公开UID2 或 ${prefix}删除公开UID2。`;
     }
     const qq = String(user);
-    const read = () => archive.read(qq, "1").then(decode);
+    const read = () => catalogue(qq);
     const index = value ? Number(value) - 1 : undefined;
     try {
       if (list) {
@@ -163,5 +164,5 @@ export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, dir
       if (active()) return query ? `${label}公开展板暂时无法查询，请确认游戏内公开设置后重试。`
         : "暂时无法读取或保存本人公开 UID 引用。";
     }
-  };
+  }, { catalogue });
 }

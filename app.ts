@@ -15,6 +15,7 @@ import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
+import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "./lib/public-role-registration.ts";
 import { donationCommands } from "./lib/donation-command.ts";
 import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
@@ -380,6 +381,7 @@ if (import.meta.main) {
   });
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const publicRoleReferences = createPublicRoleReferences(lockFile);
+  const publicRoleRegistration = createPublicRoleRegistration();
   const gachaBatch = createGachaBatch({
     listIds: roleProfiles.listIds,
     signal: lifecycle.signal,
@@ -2273,16 +2275,51 @@ if (import.meta.main) {
     }
     const gameAccountCommand = normalizeGameCommand(event).msg;
     const publicRoleReference = matchPublicRoleReferenceCommand(gameAccountCommand);
-    if (publicRoleReference) {
-      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(publicRoleReferenceFeatures)) return;
-      const scope = ownCheckinSession(event, publicRoleReferenceFeatures);
-      if (!scope?.privateFriend) {
-        if (event.message_type === "group" && scope) await event.reply("请私聊机器人管理或查询本人公开 UID 引用。");
+    const publicRoleFollowup = !publicRoleReference && event.isPrivate && matchPublicRoleRegistrationFollowup(event.msg);
+    if (publicRoleReference || publicRoleFollowup) {
+      const features = publicRoleReferenceFeatures;
+      const scope = allowNew && !event.isDelegated && !event.attachmentOnly && allowed(features) ? ownCheckinSession(event, features) : undefined;
+      const connection = event.privateCredentialSignal;
+      if (scope?.privateFriend && connection && event.self_id !== undefined) {
+        const session = { ...scope, connection, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
+        if (publicRoleReference?.action === "登记uid" || publicRoleReference?.action === "登记公开uid") {
+          if (!publicRoleReference.value) {
+            await publicRoleRegistration.start(session, publicRoleReference.game,
+              () => event.reply("请在两分钟内发送要登记的游戏 UID。发送「取消登记」可取消。"));
+            return;
+          }
+          publicRoleRegistration.clear(session);
+        }
+        const selection = publicRoleReference ?? (publicRoleFollowup ? publicRoleRegistration.consume(session, publicRoleFollowup) : undefined);
+        if (selection) {
+          const reply = "cancelled" in selection ? "已取消公开 UID 登记。" : await publicRoleReferences(selection, scope);
+          if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+          return;
+        }
+      }
+      if (publicRoleReference) {
+        if (scope && event.message_type === "group") await event.reply("请私聊机器人管理或查询本人公开 UID 引用。");
         return;
       }
-      const reply = await publicRoleReferences(publicRoleReference, scope);
-      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
-      return;
+    }
+    if (/^#(?:原神)?\s*(?:展板|备用)\s*(?:更新面板|面板更新|更新全部面板|全部面板更新|获取游戏角色详情)$/u.test(gameAccountCommand)) {
+      const features = ["[genshin] 角色面板", "@lotus-yunzai/genshin"];
+      const scope = allowNew && allowed(features) && allowed(publicRoleReferenceFeatures) ? ownCheckinSession(event, features) : undefined;
+      if (scope?.privateFriend && commands.hasModule("@lotus-yunzai/genshin")) {
+        const qq = String(scope.user);
+        const fallback = await roleProfiles.savedRole(qq, 1, "gs").then(() => false, (error: unknown) =>
+          error instanceof ProfileError && (error.code === "missing" || error.code === "role-missing"));
+        const uid = fallback ? await publicRoleReferences.catalogue(qq).then(value => value.gs.uid).catch(() => undefined) : undefined;
+        if (uid && scope.isCurrent()) {
+          const request = { ...event, privateCredentialSignal: scope.signal };
+          const reply = await commands.dispatchFallback(request, names => names[0] === "@lotus-yunzai/genshin" && allowed(names),
+            user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user),
+            `#原神展板更新面板 ${uid}`, undefined, "@lotus-yunzai/genshin");
+          const current = await publicRoleReferences.catalogue(qq).then(value => value.gs.uid).catch(() => undefined);
+          if (reply !== undefined && scope.isCurrent() && allowed(publicRoleReferenceFeatures) && uid === current) await sendCommandReply(event, reply);
+          return;
+        }
+      }
     }
     const gameLoginRemoval = matchGameLoginRemoval(gameAccountCommand);
     if (gameLoginRemoval) {
@@ -2305,7 +2342,8 @@ if (import.meta.main) {
         if (event.message_type === "group" && scope) await event.reply("请私聊机器人查看或切换本人游戏角色。");
         return;
       }
-      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope);
+      const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
+      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic);
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }

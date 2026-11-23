@@ -1,3 +1,4 @@
+import type { PublicRoleReferenceCatalogue } from "./public-role-references.ts";
 import { gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
 
 const command = /^#(原神|星铁|绝区零)?(?:我的)?uid([0-9]{1,3})?(?:[ \t]+档案[ \t]*([1-9][0-9]{0,2}))?$/iu;
@@ -24,15 +25,21 @@ function displayRole(game: Game, role: GameRole) {
   return [role.uid, name, region, role.level && `Lv.${role.level}`].filter(Boolean).join(" · ");
 }
 
-export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, { user, signal, isCurrent }: Scope) {
+export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, { user, signal, isCurrent }: Scope, readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>) {
   if (!isCurrent() || signal.aborted) return;
   if (profileId > MAX_PROFILE_ID) return `档案编号须在 1 到 ${MAX_PROFILE_ID} 之间。`;
   if (slot !== undefined && (slot < 1 || slot > maxSlot)) return `角色序号须在 1 到 ${maxSlot} 之间。`;
   const qq = String(user);
   try {
-    const { catalog, active, revision } = await profiles.roleCatalog(qq, profileId);
+    const publicRoles = slot === undefined ? await readPublic?.(qq).catch(() => undefined) : undefined;
+    const hasReferences = publicRoles && Object.values(publicRoles).some(entry => entry.data.length);
+    const profile = await profiles.roleCatalog(qq, profileId).catch((error: unknown) => {
+      if (hasReferences && profileId === 1 && error instanceof ProfileError && error.code === "missing") return;
+      throw error;
+    });
     if (!isCurrent() || signal.aborted) return;
-    if (slot !== undefined) {
+    if (slot !== undefined && profile) {
+      const { catalog, revision } = profile;
       const role = catalog[game][slot - 1];
       const label = gameLabels[game];
       if (!role) return `档案 ${profileId} 没有第 ${slot} 个${label}角色。请发送 #UID${profileId === 1 ? "" : ` 档案${profileId}`} 查看。`;
@@ -41,18 +48,27 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
       return;
     }
 
-    const lines = [`本人游戏角色 · 档案 ${profileId}`];
+    const lines = [profile ? `本人游戏角色 · 档案 ${profileId}` : "本人公开 UID 引用"];
     for (const item of games) {
-      const roles = catalog[item];
-      const selected = roles.find(role => role.uid === active[item]) ?? roles.find(role => role.chosen) ?? roles[0];
+      const roles = profile?.catalog[item] ?? [];
+      const selected = roles.find(role => role.uid === profile?.active[item]) ?? roles.find(role => role.chosen) ?? roles[0];
       lines.push(gameLabels[item]);
       if (!roles.length) lines.push("  暂无已同步角色");
       for (const [index, role] of roles.slice(0, maxSlot).entries()) {
-        lines.push(`  ${index + 1}. ${displayRole(item, role)}${role === selected ? "（当前）" : ""}`);
+        const reference = publicRoles?.[item].data.indexOf(role.uid) ?? -1;
+        const marker = reference >= 0
+          ? `（${publicRoles?.[item].uid === role.uid ? "公开当前" : "另有公开引用"} ${reference + 1}）` : "";
+        lines.push(`  ${index + 1}. ${displayRole(item, role)}${role === selected ? "（当前）" : ""}${marker}`);
       }
+      const references = publicRoles?.[item];
+      const listedUids = new Set(roles.slice(0, maxSlot).map(role => role.uid));
+      const uniqueReferences = references?.data.flatMap((uid, index) => listedUids.has(uid) ? [] :
+        [`  公开 ${index + 1}. ${uid}${uid === references.uid ? "（公开当前）" : ""}`]);
+      if (uniqueReferences?.length) lines.push("  独立公开引用", ...uniqueReferences);
     }
+    if (hasReferences) lines.push("公开引用独立编号。查询或切换请用 #、* 或 % 加 查询公开UID2、切换公开UID2。");
     const suffix = profileId === 1 ? "" : ` 档案${profileId}`;
-    lines.push(`切换请发送 #UID2${suffix}、*UID2${suffix} 或 %UID2${suffix}，数字为角色序号。`);
+    if (profile) lines.push(`切换请发送 #UID2${suffix}、*UID2${suffix} 或 %UID2${suffix}，数字为角色序号。`);
     return lines.join("\n");
   } catch (error) {
     if (!isCurrent() || signal.aborted) return;
