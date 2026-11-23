@@ -136,7 +136,7 @@ import { panelGameSettings } from "./lib/panel-game-settings.ts";
 import { panelStarRailWarpSettings } from "./lib/panel-starrail-warp-settings.ts";
 import { panelGachaSettings } from "./lib/panel-gacha-settings.ts";
 import { panelGenshinWishSettings } from "./lib/panel-genshin-wish-settings.ts";
-import { panelGuidesSettings, panelGenshinGuideSettings, panelZzzGuideSettings, panelGuideCalendarSettings } from "./lib/panel-guides-settings.ts";
+import { panelGuidesSettings, panelGenshinGuideSettings, panelStarRailGuideSettings, panelZzzGuideSettings, panelGuideCalendarSettings } from "./lib/panel-guides-settings.ts";
 import { panelIngressSettings } from "./lib/panel-ingress-settings.ts";
 import { panelGroupRouting } from "./lib/panel-group-routing.ts";
 import { panelNoticeSettings, panelNoticeMysSettings } from "./lib/panel-notice-settings.ts";
@@ -3995,6 +3995,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/group-routing", panelGroupRouting(root, groupDispatch.refreshGroups)],
         ["/panel/api/settings/native/guides", panelGuidesSettings(root)],
         ["/panel/api/settings/native/genshin-guides", panelGenshinGuideSettings(root)],
+        ["/panel/api/settings/native/starrail-guides", panelStarRailGuideSettings(root)],
         ["/panel/api/settings/native/zzz-guides", panelZzzGuideSettings(root)],
         ["/panel/api/settings/native/calendar", panelGuideCalendarSettings(() => calendarSchedule?.policy)],
         ["/panel/api/settings/native/notice", panelNoticeSettings(root)],

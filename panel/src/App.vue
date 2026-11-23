@@ -74,6 +74,7 @@ const nativeSections = computed(() => [
   { key: "group-routing", label: "群组派发" },
   { key: "guides", label: "攻略来源与推送" },
   { key: "genshin-guides", label: "原神攻略" },
+  { key: "starrail-guides", label: "星铁攻略" },
   { key: "zzz-guides", label: "绝区零攻略" },
   { key: "calendar", label: "活动日历" },
   { key: "notice", label: "群公告调度" },

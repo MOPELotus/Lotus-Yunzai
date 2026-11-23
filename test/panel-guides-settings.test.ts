@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
-import { panelGenshinGuideSettings, panelGuideCalendarSettings, panelGuidesSettings, panelZzzGuideSettings } from "../lib/panel-guides-settings.ts";
+import { panelGenshinGuideSettings, panelGuideCalendarSettings, panelGuidesSettings, panelStarRailGuideSettings, panelZzzGuideSettings } from "../lib/panel-guides-settings.ts";
 import { createCalendarSchedule } from "../plugins/guides/calendar-schedule.ts";
 import { createGenshinStrategyPreference } from "../plugins/guides/genshin-strategy.ts";
 import { guideFlags, readGuidesConfiguration } from "../plugins/guides/guide-configuration.ts";
 import { readGuideAuthors } from "../plugins/guides/role-guide-collections.ts";
 import { createZzzStrategySettings } from "../plugins/guides/zzz-strategy.ts";
+import { createStarRailStrategyPreference } from "../plugins/guides/starrail-strategy.ts";
 
 const active = () => true;
 const base = "http://127.0.0.1/panel/api/settings/native/guides";
@@ -140,6 +141,46 @@ test("面板更新日历名单和任务即时生效，取消任务阻止正在�
   } finally {
     release.resolve();
     await setup.stop();
+    await f.cleanup();
+  }
+});
+
+test("星铁旧编号面板和聊天共用一个默认来源，作者合集仍独立配置", async () => {
+  const f = await fixture();
+  const previousCache = Bun.env.LOTUS_GUIDES_ROLE_DIR;
+  delete Bun.env.LOTUS_GUIDES_ROLE_DIR;
+  const handler = panelStarRailGuideSettings(f.root);
+  const read = async () => await (await handler(get(), active)).json();
+  const cache = join(f.path, "data/guides/roleGuides");
+  const strategy = createStarRailStrategyPreference({ cache, settingsRoot: f.root });
+  try {
+    expect((await read()).values).toEqual({ defaultSource: "current" });
+    const old = "backup/plugins/StarRail-plugin/config/mys.yaml";
+    const current = "config/guides.yaml";
+    const authorConfig = 'sr_collections: [{source: 新作者, collection_id: [123]}]\n';
+    await f.file(old, 'defaultSource: "2"\n');
+    await f.file(current, authorConfig);
+    const { fields, values } = await read();
+    expect(values).toEqual({ defaultSource: 2 });
+    expect(fields[0].options.map(({ value }: { value: unknown }) => value)).toEqual(["current", 0, 1, 2, 3]);
+    for (const invalid of [4, -1, "0", null]) {
+      expect((await handler(put(values, { defaultSource: invalid }), active)).status).toBe(400);
+    }
+    let approvals = 0;
+    expect((await handler(put(values, { defaultSource: 0 }), () => ++approvals <= 3)).status).toBe(401);
+    expect(await strategy.get()).toBe(2);
+    expect((await handler(put(values, { defaultSource: 0 }), active)).status).toBe(200);
+    expect(await strategy.get()).toBe(0);
+    await strategy.set(3);
+    expect((await handler(put({ defaultSource: 0 }, values), active)).status).toBe(409);
+    expect((await read()).values).toEqual({ defaultSource: 3 });
+    expect((await handler(put({ defaultSource: 3 }, { defaultSource: "current" }), active)).status).toBe(200);
+    expect(await strategy.get()).toBe("current");
+    expect(await readFile(join(cache, "starrail-strategy.json"), "utf8")).toBe('{"defaultSource":null}\n');
+    expect(await readFile(join(f.path, old), "utf8")).toBe('defaultSource: "2"\n');
+    expect(await readFile(join(f.path, current), "utf8")).toBe(authorConfig);
+  } finally {
+    if (previousCache !== undefined) Bun.env.LOTUS_GUIDES_ROLE_DIR = previousCache;
     await f.cleanup();
   }
 });

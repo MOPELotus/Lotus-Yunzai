@@ -12,7 +12,7 @@ type Field = {
   readonly key: string;
   readonly label: string;
   readonly type: "boolean" | "number" | "select" | "list" | "json";
-  readonly options?: readonly { readonly label: string; readonly value: number }[];
+  readonly options?: readonly { readonly label: string; readonly value: number | string }[];
   readonly min?: number;
   readonly max?: number;
   readonly hint?: string;
@@ -148,6 +148,30 @@ export function panelGenshinGuideSettings(root: URL) {
         if (!includesExactly(previous, fields) || !includesExactly(values, fields) ||
             typeof previous.defaultSource !== "number" || typeof values.defaultSource !== "number") throw new GuidesPanelError(400);
         return { defaultSource: await strategy.set(values.defaultSource, { previous: previous.defaultSource, canWrite }) };
+      },
+    };
+  });
+}
+
+export function panelStarRailGuideSettings(root: URL) {
+  return endpoint(async () => {
+    const { createStarRailStrategyPreference, starRailStrategyOptions, validStarRailStrategyChoice } =
+      await import("../plugins/guides/starrail-strategy.ts");
+    const fields = [{
+      key: "defaultSource", type: "select", label: "旧编号攻略默认来源",
+      hint: "仅用于未指定编号的星铁角色攻略。一图流的作者由「攻略来源与推送」设置。保存后即时生效。",
+      options: starRailStrategyOptions,
+    }] as const satisfies readonly Field[];
+    const strategy = createStarRailStrategyPreference({ cache: roleCache(root), settingsRoot: root });
+    function decode(values: Values) {
+      if (!includesExactly(values, fields) || !validStarRailStrategyChoice(values.defaultSource)) throw new GuidesPanelError(400);
+      return values.defaultSource;
+    }
+    return {
+      fields,
+      read: async () => ({ defaultSource: await strategy.get() }),
+      async write(previous, values, { canWrite }) {
+        return { defaultSource: await strategy.set(decode(values), { previous: decode(previous), canWrite }) };
       },
     };
   });
