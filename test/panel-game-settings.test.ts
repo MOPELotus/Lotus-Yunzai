@@ -99,10 +99,10 @@ test("面板伤害设置保留原字段和注释，拒绝授权丢失、旧页�
     const route = panelGameSettings(root, "genshin-damage");
     const record = await (await route(new Request(endpoint), () => true)).json() as Result;
     const { values } = record;
-    expect(values).toEqual({ engineMode: "auto", lolomicalc: true, templateteam: false, conscompare: true });
+    expect(values).toEqual({ engineMode: "auto", lolomicalc: true, lolomiartis: true, templateteam: false, conscompare: true });
     expect(record.fields.every(field => field.hint?.includes("重启"))).toBe(true);
     expect((await route(send(values, { ...values, engineMode: "python" }), () => true)).status).toBe(400);
-    const next = { ...values, engineMode: "lolomi", templateteam: true, conscompare: false };
+    const next = { ...values, engineMode: "lolomi", lolomiartis: false, templateteam: true, conscompare: false };
     let checks = 0;
     expect((await route(send(values, next), () => ++checks < 3)).status).toBe(401);
     expect(await readFile(config, "utf8")).toBe(initial);
@@ -112,7 +112,7 @@ test("面板伤害设置保留原字段和注释，拒绝授权丢失、旧页�
     expect(saved).toContain("# 保留不同用途的字段");
     expect(saved).toContain("# 命座对比");
     expect(Bun.YAML.parse(saved)).toEqual({
-      engineMode: "lolomi", extra: { keep: true }, templateteam: true, conscompare: false,
+      engineMode: "lolomi", extra: { keep: true }, lolomiartis: false, templateteam: true, conscompare: false,
     });
   } finally {
     await rm(directory, { recursive: true, force: true });

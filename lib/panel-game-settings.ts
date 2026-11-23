@@ -118,6 +118,7 @@ async function damagePanel(root: URL) {
   const hint = "保存后重启宿主生效。";
   const fields: readonly SettingField[] = [
     { key: "lolomicalc", label: "启用原神伤害计算", type: "boolean", hint },
+    { key: "lolomiartis", label: "使用原神角色专用圣遗物评分", type: "boolean", hint },
     { key: "templateteam", label: "使用预设配队计算", type: "boolean", hint },
     { key: "conscompare", label: "展示命座伤害对比", type: "boolean", hint },
     {
