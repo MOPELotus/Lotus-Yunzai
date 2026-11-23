@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { lstatSync, mkdirSync, openSync, closeSync } from "node:fs";
+import { lstatSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -60,24 +60,65 @@ function base32(secret: Buffer) {
   return encoded;
 }
 
-export function rotateRemoteOtp(root: string, replace: boolean) {
+function saveSecret(root: string, secret: Buffer, replace: boolean, counter: number) {
   const database = state(root, true);
   if (!database) throw new Error("无法打开远程身份验证数据库。");
-  const secret = randomBytes(20);
   try {
-    const query = new URLSearchParams({
-      secret: base32(secret), issuer: "Lotus-Yunzai", algorithm: "SHA1", digits: "6", period: "30",
-    });
-    return database.transaction(() => {
+    database.transaction(() => {
       if (!replace && database.query("SELECT 1 FROM remote_otp WHERE id = 1").get()) {
         throw new Error("远程身份验证已配对。更换验证器请使用 reset。");
       }
-      database.run("INSERT OR REPLACE INTO remote_otp (id, secret, last_counter) VALUES (1, ?, -1)", [secret]);
-      return `otpauth://totp/Lotus-Yunzai:remote?${query}`;
+      database.run("INSERT OR REPLACE INTO remote_otp (id, secret, last_counter) VALUES (1, ?, ?)", [secret, counter]);
     }).immediate();
   } finally {
-    secret.fill(0);
     database.close();
+  }
+}
+
+export function rotateRemoteOtp(root: string, replace: boolean) {
+  const secret = randomBytes(20);
+  try {
+    saveSecret(root, secret, replace, -1);
+    const query = new URLSearchParams({
+      secret: base32(secret), issuer: "Lotus-Yunzai", algorithm: "SHA1", digits: "6", period: "30",
+    });
+    return `otpauth://totp/Lotus-Yunzai:remote?${query}`;
+  } finally {
+    secret.fill(0);
+  }
+}
+
+export function importLegacyRemoteOtp(root: string, path: string, now = Date.now()) {
+  const file = lstatSync(path);
+  if (!file.isFile() || file.size < 1 || file.size > 4_096) throw new Error("旧配对文件无效。");
+  const source = readFileSync(path);
+  try {
+    if (source.length > 4_096) throw new Error("旧配对文件无效。");
+    const parsed: unknown = Bun.YAML.parse(source.toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || !("version" in parsed) || parsed.version !== 1 ||
+        !("secret" in parsed) || typeof parsed.secret !== "string") throw new Error("旧配对文件无效。");
+    const text = parsed.secret.replace(/\s+/gu, "").replace(/=+$/u, "").toUpperCase();
+    if (!/^[A-Z2-7]{32}$/u.test(text)) throw new Error("旧配对密钥无效。");
+    const secret = Buffer.alloc(20);
+    let bits = 0;
+    let pending = 0;
+    let index = 0;
+    try {
+      for (const char of text) {
+        pending = (pending << 5) | alphabet.indexOf(char);
+        bits += 5;
+        if (bits >= 8) {
+          bits -= 8;
+          secret[index++] = (pending >> bits) & 255;
+        }
+      }
+      // Any still-valid code may have been used by the old service before the import.
+      saveSecret(root, secret, false, Math.floor(now / period) + 1);
+    } finally {
+      secret.fill(0);
+    }
+  } finally {
+    source.fill(0);
   }
 }
 
