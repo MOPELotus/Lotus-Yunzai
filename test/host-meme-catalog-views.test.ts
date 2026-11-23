@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { nativeCatalogTable } from "../plugins/meme/catalog-file.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const bytes = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -121,8 +122,8 @@ test("本机表情目录在宿主启动后通过两种协议生成预览", async
         if (await Bun.file(database).exists()) {
           const db = new Database(database, { readonly: true });
           try {
-            const initialized = db.query("SELECT 1 FROM sqlite_master WHERE name = 'meme'").get();
-            ready = !!initialized && db.query("SELECT 1 FROM meme WHERE key = 'turn'").get() !== null;
+            const initialized = db.query("SELECT 1 FROM sqlite_master WHERE name = ?").get(nativeCatalogTable);
+            ready = !!initialized && db.query(`SELECT 1 FROM ${nativeCatalogTable} WHERE key = 'turn'`).get() !== null;
           } finally { db.close(); }
         }
         if (!ready) await Bun.sleep(40);
