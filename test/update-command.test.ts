@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
+import { cp, symlink } from "node:fs/promises";
+import { basename, join } from "node:path";
 import type { ManagedUpdateProgress } from "../lib/managed-update-protocol.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 import { createUpdateCommand, hasValidUpdateTarget, isUpdateCommand } from "../lib/update-command.ts";
+import { matchGenshinTalentRefresh } from "../plugins/genshin/panel/talent-refresh.ts";
+import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 type Request = Parameters<typeof createUpdateCommand>[0];
 type Report = Parameters<Request>[3];
@@ -104,6 +108,45 @@ test("外部抽卡同步和已停用的旧同步指令都不会触发仓库更�
   }
   expect(calls).toEqual([]);
 });
+
+test("原神天赋更新到达业务匹配器并保留明确的仓库更新目标", async () => {
+  const { dispatch, calls, replies } = fixture();
+  for (const [message, profileId] of [["#更新所有角色技能", 1], ["#强制更新行迹档案2", 2],
+    [" #更新角色天赋 profile 3 ", 3], ["#原神强制更新所有角色技能", 1]] as const) {
+    expect(matchGenshinTalentRefresh(message)?.profileId).toBe(profileId);
+    expect(isUpdateCommand(message)).toBe(false);
+    expect(hasValidUpdateTarget(message)).toBe(false);
+    await dispatch(message, { isMaster: false });
+  }
+  expect(calls).toEqual([]);
+  expect(replies).toEqual([]);
+  for (const message of ["#更新 所有角色技能", "#强制更新行迹插件"]) {
+    expect(matchGenshinTalentRefresh(message)).toBeUndefined();
+    expect(hasValidUpdateTarget(message)).toBe(true);
+    await dispatch(message);
+  }
+  expect(calls.map(({ target }) => target)).toEqual(["所有角色技能", "行迹插件"]);
+});
+
+test("OneBot 和 Milky 好友能从旧入口进入原神天赋刷新", async () => {
+  await withDualGatewayFixture("genshin-talent-update", "disablePrivate: false\n", async ({ onebot, milky, sendOneBot, sendMilky }) => {
+    sendOneBot("#更新所有角色技能");
+    const onebotReply = await onebot.next("send_msg");
+    expect(JSON.stringify(onebotReply.params)).toContain("请先登录档案 1");
+    onebotReply.respond({ message_id: 151 });
+
+    expect((await sendMilky("#强制更新行迹档案2")).status).toBe(200);
+    const milkyReply = await milky.next("send_private_message");
+    expect(JSON.stringify(milkyReply.params)).toContain("请先登录档案 2");
+    milkyReply.respond({ message_seq: 152 });
+  }, 4_000, undefined, async root => {
+    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    const source = join(import.meta.dir, "../plugins/genshin");
+    const target = join(root, "plugins", "genshin");
+    await cp(source, target, { recursive: true, dereference: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
+    await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
+  });
+}, 12_000);
 
 test("旧星铁模拟插件更新走有权限的模块托管更新，真实抽卡更新保持原路由", async () => {
   const { dispatch, calls, replies } = fixture();

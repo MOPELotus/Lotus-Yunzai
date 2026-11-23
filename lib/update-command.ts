@@ -37,6 +37,7 @@ function updatePrefix(message: string): RegExpExecArray | undefined {
   if (/^#更新(?:图鉴|抽卡记录(?:[1-9]\d{0,2})?|(?:全部|所有)抽卡记录)$/u.test(message.trimEnd())) return;
   if (/^#更新(?:充值|消费)(?:记录|统计)(?:\s+(?:档案|profile)\s*\d{1,3})?$/iu.test(message.trimEnd())) return;
   if (/^#更新(?:全部)?面板\s*(?:[1-9]\d{0,2}|[1-9]\d{8,9})?$/u.test(message.trimEnd())) return;
+  if (/^#(?:强制)?更新(?:所有|角色)*(?:天赋|技能|行迹)(?:\s*(?:(?:档案|profile)\s*)?\d{1,3})?$/iu.test(message.trimEnd())) return;
   if (/^#更新(?:提瓦特)?小助手(?:抽卡|祈愿)?(?:记录|历史)(?:[1-9]\d{0,2})?(?:\s|$)/u.test(message)) return;
   const match = command.exec(message);
   if (!match || (match[1] === undefined && message.startsWith("日志", match[0].length))) return;
