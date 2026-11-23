@@ -326,9 +326,9 @@ export function createKeywords(
     if (!draft) return false;
     const finishing = event.msg.trim() === finishCommand;
     if (draft.active.aborted || draft.expires <= now()) {
-      drafts.delete(sender.chat);
       draft.controller.abort();
       if (!finishing || !hasKeywordSession(event)) return false;
+      drafts.delete(sender.chat);
       await event.reply("添加已失效，请重新添加。");
       return true;
     }

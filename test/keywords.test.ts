@@ -245,7 +245,9 @@ test("添加会话到期或没有合法内容时不写入", async () => {
   await send("#添加 过期词条");
   await send("过期内容", {}, true);
   advance(120_000);
+  expect((await send("失效后迟到的内容", {}, true)).handled).toBe(false);
   expect((await send("#结束添加", {}, true)).text).toContain("已失效");
+  expect((await send("#结束添加", {}, true)).handled).toBe(false);
   await send("#添加 附件");
   await send("", { message: [{ type: "image", file: "file:///private.png" }] }, true);
   expect((await send("#结束添加", {}, true)).text).toContain("没有添加内容");
