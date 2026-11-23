@@ -23,3 +23,44 @@ test("普通启动在图鉴重置时仍可继续，且保留重置指针", async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("便笺素材不完整或读取失败时，普通启动和显式初始化都可继续", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-startup-note-"));
+  const warning = console.warn;
+  const warnings: string[] = [];
+  try {
+    const root = pathToFileURL(directory + "/");
+    await Bun.write(join(directory, "plugins/atlas/initialize-atlas.ts"), "");
+    await Bun.write(join(directory, "data/atlas/data/map.json"), JSON.stringify({
+      games: { gi: { locales: { zh: { pages: { character: {
+        version: "夹具", recordCount: 1, records: { "1": { id: "1", name: "夹具角色", path: "items/fixture.json" } },
+      } } } } } },
+    }));
+    const resources = join(directory, "data/daily-note/resources");
+    const font = join(resources, "miao-theme/fonts/HYWH-65W.ttf");
+    await Bun.write(font, "原有本地字体");
+    console.warn = (line: unknown) => { warnings.push(String(line)); };
+
+    await prepareStartup(root, undefined, AbortSignal.timeout(2_000), true);
+    const incomplete = warnings.find(line => line.startsWith("[体力]"));
+    expect(incomplete).toContain("补齐");
+    expect(incomplete).toContain("LOTUS_DAILY_NOTE_RESOURCES");
+    expect(incomplete).not.toContain("bun run init");
+    expect(await Bun.file(font).text()).toBe("原有本地字体");
+
+    const unreadable = join(resources, "fonts/MiSans-VF.ttf");
+    await mkdir(join(resources, "fonts"));
+    await symlink(unreadable, unreadable);
+    warnings.length = 0;
+    await prepareStartup(root, undefined, AbortSignal.timeout(2_000));
+    await prepareStartup(root, undefined, AbortSignal.timeout(2_000), true);
+    const ioFailures = warnings.filter(line => line.startsWith("[体力]"));
+    expect(ioFailures).toHaveLength(2);
+    expect(ioFailures.every(line => line.includes("使用文字回执"))).toBe(true);
+    expect(await readlink(unreadable)).toBe(unreadable);
+    expect(await Bun.file(font).text()).toBe("原有本地字体");
+  } finally {
+    console.warn = warning;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 import { nativeImageRasterScale, renderPng, type PngRender } from "./index.ts";
+import { dailyNoteFonts, dailyNoteIcons, dailyNoteResourcePath } from "./daily-note-assets.ts";
 
 type Game = "gs" | "sr" | "zzz";
 type TextValue = string | number | null;
@@ -67,14 +68,14 @@ const inset = 16;
 const panelWidth = width - 2 * inset;
 const valueWidth = 148;
 const labelWidth = panelWidth - valueWidth - 53;
-const defaultResources = fileURLToPath(new URL("../../data/daily-note/resources", import.meta.url));
+const defaultResources = fileURLToPath(new URL(`../../${dailyNoteResourcePath}`, import.meta.url));
 const detailIcons = new Map<string, Icon>([
   ["洞天宝钱", "洞天宝钱"], ["每日委托", "委托"], ["探索派遣", "派遣"], ["最快派遣", "派遣"],
   ["周本减半", "周本"], ["参量质变仪", "参量质变仪"],
 ]);
 
-const icons = ["树脂", "洞天宝钱", "委托", "派遣", "周本", "参量质变仪"] as const;
-type Icon = typeof icons[number];
+type Icon = keyof typeof dailyNoteIcons;
+const icons = Object.keys(dailyNoteIcons) as Icon[];
 type Row = DailyNoteCardDetail & { readonly icon?: Icon };
 
 async function loadTheme(directory: string) {
@@ -84,9 +85,9 @@ async function loadTheme(directory: string) {
   const miSans = `DailyNoteMiSans${alias}`;
 
   for (const [name, file] of [
-    [body, "miao-theme/fonts/HYWH-65W.ttf"],
-    [number, "source-templates/miao-stat/fonts/tttgbnumber.ttf"],
-    [miSans, "fonts/MiSans-VF.ttf"],
+    [body, dailyNoteFonts.body[0]],
+    [number, dailyNoteFonts.number[0]],
+    [miSans, dailyNoteFonts.miSans[0]],
   ] as const) {
     const fontPath = join(directory, file);
     if (!await Bun.file(fontPath).exists()) throw new Error(`体力卡原字体不可用：${file}`);
@@ -95,7 +96,7 @@ async function loadTheme(directory: string) {
 
   const images = new Map<Icon, Image>();
   await Promise.all(icons.map(async (icon) => {
-    const file = join(directory, "source-templates/genshin/note-icons/gs", `${icon}.png`);
+    const file = join(directory, dailyNoteIcons[icon][0]);
     images.set(icon, await loadImage(file));
   }));
   const textFont = `"${body}", "${miSans}", sans-serif`;

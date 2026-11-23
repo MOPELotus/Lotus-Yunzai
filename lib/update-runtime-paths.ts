@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isUpdateDotenvPath, persistentDirectories } from "./update-activation.ts";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
 import { readPathLink, resolveLinkedPath } from "./update-linked-path.ts";
+import { dailyNoteAssets } from "../packages/skia/daily-note-assets.ts";
 
 const pathKeys = [
   "LOTUS_ATLAS_DATA_DIR", "LOTUS_PROFILE_DIR", "LOTUS_ZZZ_PANEL_DIR", "LOTUS_ZZZ_SHOWCASE_DIR",
@@ -35,10 +36,6 @@ const passportAssets = [
   ...passportFonts, passportBackdrop, "source-templates/miao-stat/fonts/tttgbnumber.ttf",
   "source-templates/miao/common/theme/bg-01.jpg", "source-templates/miao/common/theme/main-01.png",
 ];
-const dailyNoteAssets = [
-  "miao-theme/fonts/HYWH-65W.ttf", "fonts/MiSans-VF.ttf", "source-templates/miao-stat/fonts/tttgbnumber.ttf",
-  ...["树脂", "洞天宝钱", "委托", "派遣", "周本", "参量质变仪"].map(icon => `source-templates/genshin/note-icons/gs/${icon}.png`),
-];
 
 function configuredAssetPaths(env: RuntimePaths): string[] {
   const assets = configuredGameResourcePaths(env);
@@ -55,7 +52,7 @@ function configuredAssetPaths(env: RuntimePaths): string[] {
   const checkin = login?.trim();
   if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
-  if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
+  if (dailyNote) assets.push(...dailyNoteAssets.map(([path]) => join(dailyNote, path)));
   const donation = env.LOTUS_DONATION_RESOURCES?.trim();
   if (donation) assets.push(join(donation, "alipay-lotus.jpg"), join(donation, "wechat-lotus.png"));
   const deviceApk = env.LOTUS_DEVICE_INFO_APK?.trim();

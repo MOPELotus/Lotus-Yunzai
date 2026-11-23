@@ -99,6 +99,20 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
   }
 
+  const { prepareDailyNoteTheme } = await import("../lib/daily-note-theme.ts");
+  const dailyNote = await prepareDailyNoteTheme(root, {
+    override: Bun.env.LOTUS_DAILY_NOTE_RESOURCES, signal, download: firstSetup,
+  }).catch(() => {
+    signal.throwIfAborted();
+    console.warn("[体力] 原便笺主题读取或写入失败。体力查询将使用文字回执，请检查项目下的 data/daily-note/resources。");
+  });
+  signal.throwIfAborted();
+  if (dailyNote === "installed") console.log("[体力] 已准备三游原便笺主题。");
+  if (dailyNote === "incomplete") {
+    console.warn("[体力] 本地原便笺主题不完整。可将原字体和图标补齐到 data/daily-note/resources，或设置 LOTUS_DAILY_NOTE_RESOURCES 指向完整主题。");
+  }
+  if (dailyNote === "missing" && firstSetup) console.warn("[体力] 原便笺主题暂不可用，可运行 bun run init 重试。");
+
   if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
     const { prepareGenshinWishCalendar } = await import("../plugins/genshin/wish-calendar.ts");
     const wishCalendar = await prepareGenshinWishCalendar(root, { signal, download: firstSetup });
