@@ -91,7 +91,7 @@ test("次数限制按会话原子结算，整批预检并优先核对自己的�
     const signal = new AbortController().signal;
     let time = Date.parse("2026-09-06T03:59:59+08:00");
     const base = parseWishSettings({ pink: 100, blue: 10, recallSeconds: 0,
-      groups: { 54: { blue: 0 } }, dailyDrawLimits: {
+      groups: { 54: { blue: 0 }, 55: { recallSeconds: 2 } }, dailyDrawLimits: {
         default: { count: 1, separate: false }, 51: { count: 1, separate: true },
         52: null, 53: { count: 0, separate: false }, 54: { count: 0, separate: false },
         private: { count: 2, separate: false },
@@ -128,6 +128,16 @@ test("次数限制按会话原子结算，整批预检并优先核对自己的�
     expect(await run("#二十连", { user_id: 46, message_type: "private" })).not.toContain("达到");
     expect(await run("#单抽", { user_id: 46, message_type: "private" })).toContain("达到 20 抽");
     expect(await run("#单抽", u)).toContain("已抽 19 抽");
+
+    const sent: string[] = [];
+    const recalled = { user_id: 47, group_id: 55, reply: (message: string) => sent.push(message) };
+    await run("#十连", recalled);
+    expect(await run("#单抽", recalled)).toEqual({
+      type: "recallable", seconds: 2,
+      message: "旅行者\n今日已抽，累计10抽无五星\n今日模拟祈愿已达到 10 抽上限（已抽 10 抽）。",
+    });
+    expect(sent).toEqual(["今日成功领取100个纠缠之缘和10个相遇之缘。"]);
+
     time += 1000;
     expect(await run("#单抽", u)).toContain("今日成功领取100个纠缠之缘");
     expect(await readAccount()).toMatchObject({ balance: { pink: 99, blue: 10 },
@@ -156,7 +166,8 @@ test("跨日先到的请求等待卡池时，后完成也只会使用当前事�
     now += 1000;
     expect(await run("#武器十连", user)).toContain("今日成功领取100个纠缠之缘");
     gate.resolve();
-    expect(await waiting).toContain("已抽 10 抽");
+    expect(await waiting).toMatchObject({ type: "recallable", seconds: 110,
+      message: expect.stringContaining("已抽 10 抽") });
     expect(await run("#我的粉球", user)).toContain("还有90个纠缠之缘");
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
