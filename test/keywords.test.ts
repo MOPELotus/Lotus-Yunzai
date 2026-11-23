@@ -217,6 +217,29 @@ test("合并列表在私聊遵从群词条开关，并在阅读后再次检查�
   expect((await send("#合并词条列表", chat)).replies).toEqual([]);
 });
 
+test("群名片预览查询途中撤销会话时，目录既不转发也不退发明文", async () => {
+  const { put, send } = fixture();
+  await put(77, "{at:12345}", "群");
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>(), result = Promise.withResolvers<string>();
+  const session = { signal: controller.signal } as NonNullable<MessageEvent[typeof delegationSession]>;
+  let forwarded = false;
+  const pending = send("#合并词条列表", {
+    [delegationSession]: session,
+    async readKeywordGroupMemberName(group, id) {
+      expect({ group, id }).toEqual({ group: 77, id: 12345 });
+      started.resolve();
+      return result.promise;
+    },
+    async forward() { forwarded = true; return false; },
+  });
+  await started.promise;
+  controller.abort();
+  result.resolve("已撤销");
+  expect((await pending).replies).toEqual([]);
+  expect(forwarded).toBe(false);
+});
+
 test("添加会话到期或没有合法内容时不写入", async () => {
   const { send, advance, writes } = fixture();
   await send("#添加 过期词条");

@@ -967,6 +967,13 @@ async function dispatchMessage(
     getGroupRole: selfId !== undefined && selfId === connectedBotId
       ? (id) => isId(id) ? calls.getGroupRole(send, id, userId, true) : Promise.resolve(undefined)
       : undefined,
+    readKeywordGroupMemberName: boundAccount && attachmentSession && !noticeAttachment
+      ? async (group, member, workflow) => {
+        const active = AbortSignal.any([attachmentSession.signal, workflow]);
+        if (!isId(group) || !isId(member) || active.aborted ||
+            ("group_id" in target ? target.group_id !== group : event.sub_type !== "friend")) return;
+        return (await calls.getLiveGroupMember(send, group, member, true, active))?.name;
+      } : undefined,
     setGroupCard: boundAccount && owner && attachmentSession && display && !noticeAttachment &&
         (messageType === "group" || event.sub_type === "friend") ? bindGroupCard({
       botId: selfId,

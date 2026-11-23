@@ -1236,6 +1236,13 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
+      readKeywordGroupMemberName: !message.attachmentOnly && (positiveId(groupId) || message.sub_type === "friend")
+        ? async (target: number, member: number, workflow: AbortSignal) => {
+          const active = AbortSignal.any([signal, workflow]);
+          if (!positiveId(target) || !positiveId(member) || active.aborted ||
+              (positiveId(groupId) && groupId !== target)) return;
+          return (await liveGroupMember(target, member, active))?.name;
+        } : undefined,
       [groupExportSession]: !message.attachmentOnly && (positiveId(groupId) || message.sub_type === "friend")
         ? async (target: number, active: AbortSignal) => {
           const roster = await readGroupRoster(target, AbortSignal.any([signal, active]));

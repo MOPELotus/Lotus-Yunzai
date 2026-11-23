@@ -114,6 +114,7 @@ export interface MessageEvent {
   readonly isFriend?: () => Promise<boolean>;
   readonly profileLikeFriendship?: () => Promise<boolean | undefined>;
   readonly getGroupRole?: (groupId: number) => Promise<GroupMembership["botRole"] | undefined>;
+  readonly readKeywordGroupMemberName?: (groupId: number, userId: number, signal: AbortSignal) => Promise<string | undefined>;
   readonly setGroupCard?: (card: string, groupId?: number, userId?: number) => Promise<GroupCardResult>;
   readonly setGroupName?: (name: string, groupId?: number) => Promise<"confirmed" | "rejected" | "unknown" | "unavailable">;
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;

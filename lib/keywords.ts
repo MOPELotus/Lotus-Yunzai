@@ -2,6 +2,7 @@ import { decodeChatFileBytes, maxChatFileBytes, readQqMessageMedia } from "./cha
 import { delegationSession } from "./command-delegation.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { isKeywordMedia } from "./keyword-store.ts";
+import { previewKeywordList } from "./keyword-list-preview.ts";
 import type { GroupMembership, InboundSegment, MessageEvent, MessageReply } from "./messages.ts";
 
 type Scope = number | "global";
@@ -242,11 +243,11 @@ export function createKeywords(
   }
 
   async function list(event: MessageEvent, scope: Scope, argument: string, {
-    legacyGroup, includeGlobal = false, sessionRequired = false,
-  }: { legacyGroup?: number; includeGlobal?: boolean; sessionRequired?: boolean } = {}) {
-    const active = () => (!sessionRequired || allowsCompatibilityList(event, scope)) &&
+    legacyGroup, includeGlobal = false, compatibility = false,
+  }: { legacyGroup?: number; includeGlobal?: boolean; compatibility?: boolean } = {}) {
+    const active = () => (!compatibility || allowsCompatibilityList(event, scope)) &&
       (legacyGroup === undefined || allowsLegacyGroup(event, legacyGroup));
-    if (sessionRequired && !active()) return;
+    if (compatibility && !active()) return;
     const listMode = !argument || argument.startsWith("列表");
     const page = listMode && argument ? Number(argument.slice(2).trim() || "1") : 1;
     if (listMode && ((!/^列表\s*\d*$/u.test(argument) && argument !== "") || !Number.isSafeInteger(page) || page < 1)) {
@@ -283,7 +284,15 @@ export function createKeywords(
     const pageCommand = includeGlobal ? "#合并词条列表" : scope === "global" ? "#全局消息列表" : "#消息列表";
     const pagesHint = listMode && page < pages
       ? `更多内容请翻页查看\n如：${pageCommand}${page + 1}` : undefined;
-    const nodes = pagesHint ? [title, body, pagesHint] : [title, body];
+    const plain = pagesHint ? [title, body, pagesHint] : [title, body];
+    const preview = compatibility && event.forward ? await previewKeywordList(body, {
+      group: scope === "global" ? (event.isGroup ? event.group_id : undefined) : scope,
+      connection: event[delegationSession]?.signal,
+      readMember: event.readKeywordGroupMemberName,
+      readMedia,
+    }) : body;
+    if (!active()) return;
+    const nodes = pagesHint ? [title, preview, pagesHint] : [title, preview];
     let forwarded: boolean | undefined;
     try {
       forwarded = await event.forward?.(nodes);
@@ -291,7 +300,7 @@ export function createKeywords(
       if (active()) await event.reply("词条列表转发结果未确认，请在聊天中核对。");
       return;
     }
-    if (!forwarded && active()) await event.reply(nodes.join("\n"));
+    if (!forwarded && active()) await event.reply(plain.join("\n"));
   }
 
   async function remove(event: MessageEvent, scope: Scope, argument: string, legacyGroup?: number) {
@@ -417,7 +426,7 @@ export function createKeywords(
       if (!hasKeywordSession(event)) return true;
       const argument = directory[2]!.trim();
       if (directory[1] === "全局表情") {
-        await list(event, "global", argument, { sessionRequired: true });
+        await list(event, "global", argument, { compatibility: true });
         return true;
       }
       const scoped = sender.group === undefined ? await recent(sender.actor) : undefined;
@@ -434,7 +443,7 @@ export function createKeywords(
         if (hasKeywordSession(event)) await event.reply("请在所属群发送 #合并词条列表。");
         return true;
       }
-      await list(event, group, argument, { legacyGroup, includeGlobal: true, sessionRequired: true });
+      await list(event, group, argument, { legacyGroup, includeGlobal: true, compatibility: true });
       return true;
     }
     const command = managementCommand.exec(name);
