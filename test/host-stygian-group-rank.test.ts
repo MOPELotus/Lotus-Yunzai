@@ -11,6 +11,13 @@ const group = 701;
 const current = "6.4";
 const old = "6.0";
 const fakeUid = { 42: "100000042", 43: "100000043", 44: "100000044", 45: "100000045" } as const;
+const fixturePoolStart = Math.floor(Date.now() / 1000) - 8 * 86_400;
+const fixtureChallengeStart = fixturePoolStart + (7 * 24 + 4) * 3600;
+const fixtureChallengeEnd = fixtureChallengeStart + (33 * 24 + 18) * 3600;
+const hardPath = "/game_record/app/genshin/api/hard_challenge";
+const personalRecord = { schedule: { version: current, start_time: fixtureChallengeStart, end_time: fixtureChallengeEnd },
+  single: { has_data: true, best: { difficulty: 6, second: 120 } },
+  mp: { has_data: true, best: { difficulty: 6, second: 61 } } };
 const skiaEntry = join(import.meta.dir, "../packages/skia/node_modules/skia-canvas/lib/index.js");
 const preload = `
 import { appendFile } from "node:fs/promises";
@@ -37,6 +44,20 @@ globalThis.fetch = async (input, options) => {
   const headers = new Headers(options?.headers);
   const privacy = options?.credentials === "omit" && options?.redirect === "error" && !headers.has("cookie") && !headers.has("authorization");
   async function record(data) { await appendFile("./requests.jsonl", JSON.stringify({ privacy, ...data }) + "\\n"); }
+  if (url.origin === "https://api-takumi-record.mihoyo.com") {
+    const path = ${JSON.stringify(hardPath)};
+    const role = url.searchParams.get("role_id"), server = url.searchParams.get("server");
+    await record({ site: "miyoushe", path: url.pathname, role, server });
+    if (options?.method !== "GET" || options?.redirect !== "error" || role !== uid[42] ||
+        server !== "cn_gf01" || !headers.get("cookie")?.includes("cookie_token=fixture-42")) throw Error("幽境个人请求使用了错误档案");
+    if (url.pathname === path && url.searchParams.get("need_detail") === "true") {
+      return Response.json({ retcode: 0, data: { data: [${JSON.stringify(personalRecord)}] } });
+    }
+    if (url.pathname === path + "/popularity" && !url.searchParams.has("need_detail")) {
+      return Response.json({ retcode: 0, data: { avatar_list: [] } });
+    }
+    throw Error("未登记的米游社请求");
+  }
   if (url.href === "https://ark.ivny.cn/rank/stygian" && options?.method === "POST") {
     const body = JSON.parse(options.body);
     await record({ site: "ark", body });
@@ -64,7 +85,7 @@ globalThis.fetch = async (input, options) => {
 };
 `;
 
-async function prepare(root: string, redis: { port: number; password: string }) {
+async function prepare(root: string, redis?: { port: number; password: string }) {
   const source = join(import.meta.dir, "../plugins/genshin");
   const plugin = join(root, "plugins/genshin");
   await cp(source, plugin, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
@@ -77,17 +98,17 @@ async function prepare(root: string, redis: { port: number; password: string }) 
         stuid: qq, stoken: "simulated", current_uid: { gs: uid }, game_roles: { gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }] } },
     }));
   }
-  await writeFile(join(root, "config/redis.yaml"), Bun.YAML.stringify({ host: "127.0.0.1", ...redis }));
+  if (redis) await writeFile(join(root, "config/redis.yaml"), Bun.YAML.stringify({ host: "127.0.0.1", ...redis }));
   const theme = join(root, "data/genshin/miao-theme");
   for (const file of ["common/bg/bg-hydro.webp", "common/cont/card-bg.png", "character/imgs/mark-icon.png",
-    "common/font/NZBZ.woff", "common/font/HYWH-65W.woff", "common/font/tttgbnumber.woff"]) {
+    "common/font/NZBZ.woff", "common/font/HYWH-65W.woff", "common/font/tttgbnumber.woff", "stat/imgs/bg1.png", "stat/imgs/footer.png"]) {
     const local = join(theme, file);
     await mkdir(dirname(local), { recursive: true });
     await cp(join(themeSource!, file), local);
   }
   const calendar = join(theme, "meta-gs/info/pool.js");
   await mkdir(dirname(calendar), { recursive: true });
-  const from = new Date(Date.now() - 8 * 86400_000).toISOString();
+  const from = new Date(fixturePoolStart * 1000).toISOString();
   await writeFile(calendar, `export const poolDetail = [{ version: '${current}', half: '上半', from: '${from}' }];\nexport const mixPoolDetail = [];\n`);
 }
 
@@ -262,4 +283,79 @@ test.skipIf(!proof || !themeSource || !valkey)("幽境群榜从双协议真实�
     await server.exited;
     await rm(storage, { recursive: true, force: true });
   }
+}, 60_000);
+
+test.skipIf(!proof || !themeSource)("新装 OneBot 宿主仅从本人授权后的群聊战绩生成本地幽境榜", async () => {
+  await withDualGatewayFixture("genshin-stygian-local-fixture", 'master: ["99:42"]\ndisablePrivate: false\n',
+    async ({ root, onebot, sendOneBot }) => {
+      const groupContext = { message_type: "group", sub_type: "normal", group_id: group };
+      const directory = "data/genshin/stygian-scores";
+      const archives = new Bun.Glob(`${directory}/**/*.json`);
+      const localFiles = () => Array.fromAsync(archives.scan({ cwd: root }));
+      const requests = [hardPath, hardPath + "/popularity"].map(path => ({
+        privacy: false, site: "miyoushe", path, role: fakeUid[42], server: "cn_gf01",
+      }));
+      let receipt = 1200;
+      async function groupReply(command: string) {
+        sendOneBot(command, groupContext);
+        const reply = await nextReply(onebot, "onebot", "send_msg");
+        expect(reply.params.group_id).toBe(group);
+        reply.respond({ message_id: ++receipt });
+        return reply.params;
+      }
+      async function privateReply(command: string) {
+        sendOneBot(command);
+        const reply = await nextReply(onebot, "onebot", "send_msg");
+        expect(reply.params.user_id).toBe(42);
+        reply.respond({ message_id: ++receipt });
+        return JSON.stringify(reply.params);
+      }
+      const personalCommand = "#本期幽境危战最佳";
+      expect(await localFiles()).toEqual([]);
+      const initialImage = imageBytes(await groupReply(personalCommand));
+      expect(await new Bun.Image(initialImage).metadata()).toMatchObject({ width: 3880, format: "png" });
+      expect(await localFiles()).toEqual([]);
+      expect(JSON.stringify(await groupReply("#幽境危战排名"))).toContain("本群暂无已授权成员");
+      expect(await lines(root, "requests.jsonl")).toEqual(requests);
+
+      const prompt = await privateReply(`#幽境群榜授权 ${group} Ark`);
+      const confirmation = /#幽境群榜确认 701 \d{6}/u.exec(prompt)?.[0];
+      expect(confirmation).toBeDefined();
+      await Bun.sleep(20);
+      expect(await privateReply(confirmation!)).toContain("已确认群 701");
+      expect(await localFiles()).toEqual([]);
+      const personal = imageBytes(await groupReply(personalCommand));
+      expect(await new Bun.Image(personal).metadata()).toMatchObject({ width: 3880, format: "png" });
+      const files = await localFiles();
+      expect(files).toHaveLength(1);
+      const stored = await Bun.file(join(root, files[0]!)).json();
+      expect(stored).toMatchObject({
+        adapter: "onebot", bot: 99, group, qq: 42, profileId: 1, uid: fakeUid[42], period: { index: 58, version: current },
+        scores: { ark: { score: { difficulty: 6, seconds: 120 } } },
+      });
+      expect(Object.keys(stored.scores)).toEqual(["ark"]);
+      expect(await lines(root, "requests.jsonl")).toEqual([...requests, ...requests]);
+
+      const board = imageBytes(await groupReply("#幽境危战排名"));
+      expect(await new Bun.Image(board).metadata()).toMatchObject({ width: 3248, format: "png" });
+      expect(await lines(root, "requests.jsonl")).toEqual([...requests, ...requests]);
+      expect(await privateReply(`#幽境群榜撤回 ${group}`)).toContain("已撤回");
+      expect(JSON.stringify(await groupReply("#幽境危战排名"))).toContain("本群暂无已授权成员");
+      const trace = await lines(root, "requests.jsonl");
+      expect(trace).toEqual([...requests, ...requests]);
+      const engines = await lines(root, "engine.jsonl");
+      expect(engines).toHaveLength(3);
+      for (const engine of engines) {
+        expect(engine).toMatchObject({ renderer: "GPU", api: "Vulkan", device: expect.stringContaining("RTX A4000") });
+      }
+      await mkdir(proof!, { recursive: true });
+      await Promise.all([
+        Bun.write(join(proof!, "onebot-personal.png"), personal),
+        Bun.write(join(proof!, "onebot-new-local.png"), board),
+        Bun.write(join(proof!, "onebot-new-local-verification.json"), JSON.stringify({ engines, trace, stored }, null, 2) + "\n"),
+      ]);
+    }, 8_000, preload, async root => {
+      await prepare(root);
+      await writeFile(join(root, "config/panel-rank.yaml"), "stygianArk: false\nstygianAkasha: false\n");
+    });
 }, 60_000);
