@@ -101,16 +101,24 @@ function nativeMessage(event: MessageEvent): MessageEvent {
 }
 
 function legacyNotice(event: BotEvent) {
-  if (event.post_type !== "notice" || !("adapter" in event) || event.adapter !== "milky") return event;
+  if (event.post_type !== "notice" || !("adapter" in event)) return event;
+  const milky = event.adapter === "milky";
+  // TRSS splits on the first underscore before Bot.em and uses the remainder as the subtype.
   if (event.notice_type === "group_msg_emoji_like") {
-    return { ...event, group_id: String(event.group_id), user_id: String(event.user_id), message_id: String(event.message_id) };
+    return { ...event, notice_type: "group" as const, sub_type: "msg_emoji_like" as const,
+      group_id: milky ? String(event.group_id) : event.group_id,
+      user_id: milky ? String(event.user_id) : event.user_id,
+      message_id: milky ? String(event.message_id) : event.message_id };
   }
   if (event.notice_type === "group_card") {
-    return { ...event, group_id: String(event.group_id), user_id: String(event.user_id) };
+    return { ...event, notice_type: "group" as const, sub_type: "card" as const,
+      group_id: milky ? String(event.group_id) : event.group_id, user_id: milky ? String(event.user_id) : event.user_id };
   }
   if (event.notice_type === "group_essence") {
-    return { ...event, group_id: String(event.group_id), message_id: String(event.message_id),
-      operator_id: event.operator_id === undefined ? undefined : String(event.operator_id) };
+    return { ...event, notice_type: "group" as const, sub_type: "essence" as const, action_sub_type: event.sub_type,
+      group_id: milky ? String(event.group_id) : event.group_id,
+      message_id: milky ? String(event.message_id) : event.message_id,
+      operator_id: milky && event.operator_id !== undefined ? String(event.operator_id) : event.operator_id };
   }
   return event;
 }
@@ -492,10 +500,12 @@ export class LegacyPlugins {
   }
 
   async #dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
-    const matching = this.#ordered.filter((app) => matches(app.event, incoming) && (!allowed || allowed(app.names)));
+    const legacyEvent = legacyNotice(incoming);
+    const matching = this.#ordered.filter((app) => matches(app.event, "native" in app ? incoming : legacyEvent) &&
+      (!allowed || allowed(app.names)));
     const native = incoming.post_type === "message" && matching.some(app => "native" in app) ? nativeMessage(incoming) : incoming;
     let legacy: PluginEvent | undefined;
-    const compatible = () => legacy ??= incoming.post_type === "message" ? this.#message(incoming) : legacyNotice(incoming);
+    const compatible = () => legacy ??= incoming.post_type === "message" ? this.#message(incoming) : legacyEvent;
     for (const app of matching) {
       if (!app.published) continue;
       let result: unknown;
