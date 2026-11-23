@@ -47,7 +47,7 @@ function assertImage(params: unknown) {
   return bytes;
 }
 
-test("本机两协议收到角色卡和本人戳事件，未知回执不回退再发", async () => {
+test("本机两协议可使用原神角色卡命令，戳一戳不触发原神出图", async () => {
   await withDualGatewayFixture("genshin-avatar-fixture", "disablePrivate: false\n",
     async ({ ws, milky, onebot, sendOneBot, sendMilky, sendMilkyEvent }) => {
       sendOneBot("#胡桃卡片");
@@ -57,18 +57,12 @@ test("本机两协议收到角色卡和本人戳事件，未知回执不回退�
       card.respond({ message_id: 101 });
       const poke = { post_type: "notice", notice_type: "notify", sub_type: "poke", user_id: 42, target_id: 99, self_id: 99 };
       ws.send(JSON.stringify(poke));
-      const first = await onebot.next("send_msg");
-      expect(first.params).toMatchObject({ user_id: 42 });
-      assertImage(first.params);
-      first.respond({}, "failed");
-      ws.send(JSON.stringify(poke));
-      ws.send(JSON.stringify({ ...poke, target_id: 44 }));
-
       await sendMilky("#老婆设置胡桃");
       const set = await milky.next("send_private_message");
       expect(JSON.stringify(set.params)).toContain("老婆已经设置");
       set.respond({ message_seq: 102 });
       expect((await sendMilkyEvent("friend_nudge", { user_id: 43, is_self_send: false, is_self_receive: true })).status).toBe(200);
+      await sendMilky("#胡桃卡片");
       const second = await milky.next("send_private_message");
       expect(second.params).toMatchObject({ user_id: 43 });
       assertImage(second.params);
@@ -77,22 +71,6 @@ test("本机两协议收到角色卡和本人戳事件，未知回执不回退�
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);
     }, 8000, preload, prepare);
-}, 20_000);
-
-test("关闭原神戳卡后原有聊天角色卡仍可用", async () => {
-  await withDualGatewayFixture("genshin-avatar-off-fixture", "disablePrivate: false\n",
-    async ({ ws, milky, onebot, sendOneBot, sendMilkyEvent }) => {
-      ws.send(JSON.stringify({ post_type: "notice", notice_type: "notify", sub_type: "poke", user_id: 42, target_id: 99, self_id: 99 }));
-      await sendMilkyEvent("friend_nudge", { user_id: 43, is_self_send: false, is_self_receive: true });
-      sendOneBot("#胡桃卡片");
-      const card = await onebot.next("send_msg");
-      expect(card.params).toMatchObject({ user_id: 42 });
-      assertImage(card.params);
-      card.respond({ message_id: 104 });
-      await Bun.sleep(100);
-      expect(onebot.calls).toEqual([]);
-      expect(milky.calls).toEqual([]);
-    }, 8000, preload + '\nBun.env.LOTUS_GENSHIN_AVATAR_POKE = "false";\n', prepare);
 }, 20_000);
 
 test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用原始图片", async () => {
@@ -104,7 +82,7 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
   const gallery = "./avatar-gallery/gs-character/胡桃";
   const key = (type: string, data: object) => ({ type, data });
   await withDualGatewayFixture("genshin-avatar-original-fixture", "disablePrivate: false\n",
-    async ({ root, milky, onebot, sendOneBot, sendMilky, sendMilkyEvent }) => {
+    async ({ root, milky, onebot, sendOneBot, sendMilky }) => {
       const group = { message_type: "group", sub_type: "normal", group_id: 81 };
       sendOneBot("#胡桃卡片", group);
       const card = await onebot.next("send_msg");
@@ -119,8 +97,6 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       privateCard.respond({ message_seq: 0 });
       sendOneBot("#胡桃卡片");
       (await onebot.next("send_msg")).respond({ message_id: 881 });
-      await sendMilkyEvent("friend_nudge", { user_id: 43, is_self_send: false, is_self_receive: true });
-      (await milky.next("send_private_message")).respond({ message_seq: 889 });
       await Bun.sleep(60);
       await writeFile(join(root, gallery, "另一张.png"), replacement);
 
@@ -144,14 +120,6 @@ test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用�
       const privateOriginal = await milky.next("send_private_message");
       expect(assertImage(privateOriginal.params)).toEqual(original);
       privateOriginal.respond({ message_seq: 873 });
-
-      const pokeSource = [key("reply", { message_seq: 889 }), key("text", { text: "#原图" })];
-      await sendMilky("#原图", { segments: pokeSource });
-      (await milky.next("get_message")).respond({ message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 889,
-        segments: [key("image", { resource_id: "verified", temp_url: "https://example.invalid/poke.png" })] } });
-      const pokeOriginal = await milky.next("send_private_message");
-      expect(assertImage(pokeOriginal.params)).toEqual(original);
-      pokeOriginal.respond({ message_seq: 890 });
 
       const privateSource = [key("reply", { id: "881" }), key("text", { text: "#原神原图" })];
       sendOneBot("#原神原图", { message: privateSource });

@@ -30,7 +30,7 @@ import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { PanelRebuildGame, PanelRebuilder } from "../panel-rebuild.ts";
 import type { lockFile } from "../file-lock.ts";
 import { isManagedLegacyScript, isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
-import type { MessageReply, ReplyOptions } from "../messages.ts";
+import type { MessageReply } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { legacyScriptHash, readFlatScript, watchLegacyFiles } from "./file-watch.ts";
@@ -183,20 +183,6 @@ export interface PluginLoadRecord {
   readonly reason?: string;
 }
 
-export type GenshinAvatarPoke = (input: {
-  readonly actorId: number;
-  readonly signal: AbortSignal;
-  readonly scope: {
-    readonly adapter: "onebot" | "milky";
-    readonly self_id: number;
-    readonly user_id: number;
-    readonly group_id?: number;
-    readonly message_type: "private" | "group";
-  };
-  allowed(): boolean;
-  reply(message: MessageReply, onDelivered?: ReplyOptions["onDelivered"]): Promise<boolean>;
-}) => Promise<boolean>;
-
 export interface PluginLoadReport {
   readonly records: readonly PluginLoadRecord[];
   readonly directories: ReadonlyMap<string, { path: string; packageName: string }>;
@@ -286,7 +272,6 @@ export async function loadPlugins(
     readonly memeRuntime?: import("../../plugins/meme/catalog-runtime.ts").MemeRuntime;
     registerMemePoke?(run: (input: import("../../plugins/meme/lotus.ts").MemePokeContext) => Promise<void>,
       signal: AbortSignal): () => void;
-    registerGenshinAvatarPoke?(run: GenshinAvatarPoke, signal: AbortSignal): () => void;
     readonly mediaRuntime?: {
       readonly disconnect: AbortSignal;
       whenReady(start: () => void): () => void;
@@ -497,7 +482,7 @@ export async function loadPlugins(
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, panelRebuild, atlasSchedule,
-          handlePoke, handleAvatarPoke, nativeEvents } = record(module);
+          handlePoke, nativeEvents } = record(module);
         if (dispose !== undefined) {
           if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
           cleanup = () => dispose.call(module);
@@ -520,15 +505,6 @@ export async function loadPlugins(
         if (memeRuntime && options.registerMemePoke && handlePoke !== undefined) {
           if (typeof handlePoke !== "function") throw new Error("表情戳一戳须提供处理函数。");
           const removePoke = options.registerMemePoke(input => handlePoke.call(module, input), signal);
-          const dispose = cleanup;
-          cleanup = async () => {
-            removePoke();
-            await dispose?.();
-          };
-        }
-        if (builtIn && moduleName === "@lotus-yunzai/genshin" && options.registerGenshinAvatarPoke && handleAvatarPoke !== undefined) {
-          if (typeof handleAvatarPoke !== "function") throw new Error("原神角色卡戳一戳须提供处理函数。");
-          const removePoke = options.registerGenshinAvatarPoke(input => handleAvatarPoke.call(module, input), signal);
           const dispose = cleanup;
           cleanup = async () => {
             removePoke();
