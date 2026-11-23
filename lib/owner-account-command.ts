@@ -2,7 +2,7 @@ import { ownerAccountSession, ownerAccountStatus, type OwnerAccountOperation } f
 import type { MessageEvent } from "./messages.ts";
 
 export const ownerAccountFeatureNames = ["[group] 机器人账号资料", "group", "@lotus-yunzai/group"];
-const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|改状态|删好友)([\s\S]*)$/u;
+const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|改状态|删好友|设置机型)([\s\S]*)$/u;
 const maxHistory = 4096;
 
 function positiveId(raw: unknown): number | undefined {
@@ -31,6 +31,10 @@ export function createOwnerAccountCommand() {
       return true;
     }
     if (session.signal.aborted || workflow.aborted || !allowed()) return true;
+    if (match[1] === "设置机型") {
+      await event.reply("当前协议端未确认支持修改机型显示。");
+      return true;
+    }
 
     const text = match[2]!.trim();
     let operation: OwnerAccountOperation;

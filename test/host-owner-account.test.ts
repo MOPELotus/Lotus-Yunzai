@@ -28,6 +28,11 @@ test("机器人资料和删好友走当前主人所属的隔离协议账号", as
     sendOneBot("#改昵称假主人", { ...group, user_id: 43, sender: { user_id: 43, role: "owner" } });
     await oneReply("只有当前机器人的主人可在群聊或好友私聊使用此功能。", 701);
 
+    sendOneBot("#设置机型示例机型");
+    await oneReply("当前协议端未确认支持修改机型显示。");
+    await sendMilky("#设置机型");
+    await milkyReply("当前协议端未确认支持修改机型显示。");
+
     sendOneBot("#换名称新名字", { ...group, message_id: 901 });
     await oneVersion();
     const nickname = await onebot.next("set_qq_profile");
