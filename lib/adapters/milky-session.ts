@@ -40,7 +40,7 @@ import { createMilkyRecallReply } from "./milky-recall-reply.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { NoticeNotSentError, type NoticeGroupAccount } from "./notice-groups.ts";
-import { memberDisplayName } from "./onebot-member-display.ts";
+import { legacyGroupMemberRoster, memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
 import { bindOwnerFriendReply } from "./owner-friend-reply.ts";
 import { reviewObservedBatch } from "./owner-request-batch.ts";
@@ -459,23 +459,29 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
   };
 
-  async function listGroupMembers(group_id: number) {
+  async function listGroupMemberDisplay(group_id: number) {
     if (signal.aborted) return;
     const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true });
     if (signal.aborted || result.status !== "confirmed") return;
     const { members } = result.data;
     if (!Array.isArray(members) || members.length > maxGroupMembers) return;
     const seen = new Set<number>();
-    const roster: { id: number; name?: string }[] = [];
+    const roster: MemberRosterEntry[] = [];
     for (const member of members) {
       if (!record(member) || member.group_id !== group_id || !positiveId(member.user_id) || seen.has(member.user_id)) return;
       seen.add(member.user_id);
       const card = typeof member.card === "string" ? member.card.trim() : "";
       const nickname = typeof member.nickname === "string" ? member.nickname.trim() : "";
-      const name = card || nickname;
-      roster.push({ id: member.user_id, ...(name && { name }) });
+      roster.push({ id: member.user_id, card, nickname });
     }
     return roster;
+  }
+
+  async function listGroupMembers(groupId: number) {
+    return (await listGroupMemberDisplay(groupId))?.map(({ id, card, nickname }) => {
+      const name = card || nickname;
+      return { id, ...(name && { name }) };
+    });
   }
 
   async function listGroupActivity(group_id: number, actor: number, visibility?: GroupActivityVisibility) {
@@ -1272,6 +1278,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
+      [legacyGroupMemberRoster]: positiveId(groupId) && !message.attachmentOnly ? async () =>
+        (await listGroupMemberDisplay(groupId))?.map(({ id, card, nickname }) => ({
+          id, card: memberDisplayName(card), nickname: memberDisplayName(nickname),
+        })) : undefined,
       readKeywordGroupMemberName: !message.attachmentOnly && (positiveId(groupId) || message.sub_type === "friend")
         ? async (target: number, member: number, workflow: AbortSignal) => {
           const active = AbortSignal.any([signal, workflow]);
