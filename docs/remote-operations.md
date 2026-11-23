@@ -2,6 +2,8 @@
 
 Linux 与 Windows x64/ARM64 宿主可以在绑定机器人的主人好友私聊中，通过 TOTP 执行运维命令或收发文件。服务默认关闭。
 
+Windows x64 已在 Windows Server 2025 验收。ARM64 尚无对应的 Windows 验收记录。
+
 在运行宿主的系统用户自己的私用终端中，进入 Lotus-Yunzai 目录，运行 `bun --no-env-file scripts/remote-otp.ts setup`。使用支持 TOTP 的验证器扫描终端二维码。更换验证器时运行同一脚本的 `reset`。凭据保存在 `data/remote-auth/`，仅该系统用户可以访问。
 
 已有旧版 TOTP 文件时，可在首次配对前运行 `bun --no-env-file scripts/remote-otp.ts import /本机路径/otp.yaml`，继续使用原验证器。导入保留源文件，不开启远程运维，并拒绝导入时仍然有效的验证码。
@@ -26,5 +28,7 @@ allow_overwrite_upload: false
 | `#远程下载 <验证码> example.txt` | 发送 `data/remote/files/example.txt` |
 | `#远程上传 <验证码> example.txt` | 从本条消息附件写入文件 |
 | `#远程上传覆盖 <验证码> example.txt` | 用本条消息附件原子替换文件 |
+
+Windows 可使用 `#远程spawn <验证码> cmd ver` 或 `#远程spawn <验证码> powershell Get-Date`。Shell 白名单须包含对应入口。
 
 上传要求 OneBot 或 Milky 在该条消息中提供文件附件。目标目录须事先建立，且从工作区到运维文件的目录均须为真实目录，单个文件上限 16 MiB。提示文件发送结果未确认时，先查看当前私聊再决定是否重发。运维命令可以访问宿主系统用户本来有权访问的文件和进程。下载和上传只可访问运维文件目录。Windows 要求本地磁盘及支持 NTFS ACL 的文件系统，目录和文件不能经过重解析点。授权记录保存在 `data/remote-auth/operations.jsonl`，包含时间、操作类型、使用协议和发起账号。
