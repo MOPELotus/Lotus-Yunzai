@@ -80,19 +80,21 @@ async function* readBands(canvas: Canvas, width: number, height: number, mode: "
   }
 }
 
-async function render(width: number, height: number, draw: Draw, mode: "gpu" | "cpu"): Promise<PngRender> {
-  let canvas: Canvas;
-  let context: CanvasRenderingContext2D;
+function createSurface(width: number, height: number, mode: "gpu" | "cpu") {
   try {
-    canvas = new Canvas(width, height);
+    const canvas = new Canvas(width, height);
     canvas.gpu = mode === "gpu";
-    context = canvas.getContext("2d");
+    const context = canvas.getContext("2d");
     checkEngine(canvas, mode);
+    return { canvas, context };
   } catch (error) {
     if (error instanceof BackendError) throw error;
     throw new BackendError(`无法初始化 Skia ${mode.toUpperCase()} 后端。`, { cause: error });
   }
+}
 
+async function render(width: number, height: number, draw: Draw, mode: "gpu" | "cpu"): Promise<PngRender> {
+  const { canvas, context } = createSurface(width, height, mode);
   await draw(context);
   if (width > singleSurfaceDimension || height > singleSurfaceDimension) {
     // Keep the full drawing coordinate space, then replay the recorded drawing on bounded surfaces.
@@ -110,16 +112,23 @@ async function render(width: number, height: number, draw: Draw, mode: "gpu" | "
   return { png: markGeneratedImage(png), engine };
 }
 
-async function renderByBackend(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
-  if (mode !== "auto") return render(width, height, draw, mode);
+async function withBackend<T extends object>(
+  mode: RenderMode,
+  draw: (backend: "gpu" | "cpu") => Promise<T>,
+): Promise<T & { fallbackReason?: string }> {
+  if (mode !== "auto") return draw(mode);
 
   try {
-    return await render(width, height, draw, "gpu");
+    return await draw("gpu");
   } catch (error) {
     if (!(error instanceof BackendError)) throw error;
     console.warn(`[渲染] ${error.message} 改用 Skia CPU 后端。`);
-    return { ...await render(width, height, draw, "cpu"), fallbackReason: error.message };
+    return { ...await draw("cpu"), fallbackReason: error.message };
   }
+}
+
+function renderByBackend(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
+  return withBackend(mode, (backend) => render(width, height, draw, backend));
 }
 
 function renderByMode(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
@@ -133,6 +142,27 @@ function renderByMode(width: number, height: number, draw: Draw, mode: RenderMod
   return next;
 }
 
+/** 为动图编码器导出固定像素尺寸的非预乘 RGBA 帧。 */
+export async function renderRgba(width: number, height: number, draw: Draw, mode: RenderMode = "auto") {
+  if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1 ||
+      width > 8_192 || height > 8_192 || width * height > 24_000_000) {
+    throw new ImageSizeLimitError("RGBA 帧单边须在 8,192 像素内，总像素须在 2,400 万内。");
+  }
+
+  return withBackend(mode, async (backend) => {
+    const { canvas, context } = createSurface(width, height, backend);
+    await draw(context);
+    let rgba: Buffer;
+    try {
+      rgba = await canvas.toBuffer("raw", { colorType: "rgba", premultiplied: false });
+      if (rgba.byteLength !== width * height * 4) throw new Error("RGBA 帧像素尺寸不匹配。");
+    } catch (error) {
+      throw new BackendError(`Skia ${backend.toUpperCase()} 导出 RGBA 帧失败。`, { cause: error });
+    }
+    return { rgba, engine: checkEngine(canvas, backend) };
+  });
+}
+
 /** 缩略图采用固定的像素边长，不随聊天图片倍率缩小。 */
 export async function renderRasterThumbnail(bytes: Buffer, maxSide: number, maxPixels: number, mode: RenderMode = "auto") {
   const image = await loadImage(bytes).catch(() => undefined);
@@ -143,12 +173,22 @@ export async function renderRasterThumbnail(bytes: Buffer, maxSide: number, maxP
   return renderByBackend(width, height, context => context.drawImage(image, 0, 0, width, height), mode);
 }
 
-/** 绘制回调应可重试。只有按 4× 请求的业务调用方才应允许减半。 */
-export async function renderPng(width: number, height: number, draw: Draw, mode: RenderMode = "auto",
-  { allowHalfScale = false }: { readonly allowHalfScale?: boolean } = {}): Promise<PngRender> {
+function requirePositivePixels(width: number, height: number) {
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
     throw new RangeError("画布尺寸须为正整数。");
   }
+}
+
+/** 中间合成图保持指定像素尺寸，最终出图由调用方应用倍率。 */
+export function renderExactPng(width: number, height: number, draw: Draw, mode: RenderMode = "auto") {
+  requirePositivePixels(width, height);
+  return renderByMode(width, height, draw, mode);
+}
+
+/** 绘制回调应可重试。只有按 4× 请求的业务调用方才应允许减半。 */
+export async function renderPng(width: number, height: number, draw: Draw, mode: RenderMode = "auto",
+  { allowHalfScale = false }: { readonly allowHalfScale?: boolean } = {}): Promise<PngRender> {
+  requirePositivePixels(width, height);
   const initialScale = nativeImageRasterScale() / 4;
   const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(height * scale),
     scale === 1 ? draw : context => {

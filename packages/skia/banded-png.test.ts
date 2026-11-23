@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { inflateSync } from "node:zlib";
 import type { CanvasRenderingContext2D } from "skia-canvas";
 import { encodeBandedPng } from "./banded-png.ts";
-import { nativeImageRasterScale, renderPng, setImageRenderPreset } from "./index.ts";
+import { nativeImageRasterScale, renderExactPng, renderPng, renderRgba, setImageRenderPreset } from "./index.ts";
 
 async function* bands(...parts: Buffer[]) {
   yield* parts;
@@ -58,6 +58,14 @@ test("低配档在分配画布前按 1× 直接绘制，旧设置仍是标准档
     const result = await renderPng(404, 283, draw, "auto", { allowHalfScale: true });
     expect(size(result.png)).toEqual([101, 71]);
     expect(result.reducedScaleReason).toBeUndefined();
+    expect(size((await renderExactPng(404, 283, draw)).png)).toEqual([404, 283]);
+    const frame = await renderRgba(2, 2, (context) => {
+      context.fillStyle = "rgba(50, 80, 120, 0.5)";
+      context.fillRect(1, 1, 1, 1);
+    });
+    expect(frame.rgba.byteLength).toBe(16);
+    expect([...frame.rgba.subarray(0, 4)]).toEqual([0, 0, 0, 0]);
+    expect([...frame.rgba.subarray(12)]).toEqual([50, 80, 120, 128]);
   } finally {
     setImageRenderPreset("standard");
   }
