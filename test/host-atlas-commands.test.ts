@@ -33,7 +33,8 @@ async function writeCatalog(directory: string) {
       hsr: game({ lightcone: page(record("201", "锋镝", "三星"), record("202", "共用样例", "四星")) }),
       zzz: game({ weapon: page(record("301", "深海访客")) }),
     } })),
-    detail("gi", "weapon", "101", { list: { type: "WEAPON_SWORD_ONE_HAND" } }),
+    detail("gi", "weapon", "101", { list: { type: "WEAPON_SWORD_ONE_HAND" },
+      detail: { desc: "西风骑士团的制式长剑。" } }),
     detail("gi", "weapon", "102", { list: { type: "WEAPON_SWORD_ONE_HAND" } }),
     detail("gi", "weapon", "104", { list: { type: "WEAPON_SWORD_ONE_HAND" } }),
     detail("gi", "artifact", "103", {
@@ -146,6 +147,7 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       const gWeapon = "原神 · 武器 · 共用样例 · 五星 · 单手剑 · ID 102";
       const gSet = "原神 · 圣遗物 · 共用样例 · ID 103";
       const cone = "星铁 · 光锥 · 共用样例 · 四星 · 巡猎 · ID 202";
+      expect(await query("#图鉴 西风骑士团的制式长剑")).toBe(genshin);
       expect(await query("#圣遗物图鉴 共用样例")).toBe(`${gSet}\n1件套 · 样例增益。`);
       for (const command of ["#图鉴 共用样例", "#图鉴共用样例"]) {
         const result = await query(command);
