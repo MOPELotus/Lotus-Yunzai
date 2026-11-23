@@ -44,12 +44,18 @@ test("合成数据通过原计算器选择技能，保留零暴击及默认最�
 test("缺乏角色、配装、原始资料或属性证据时不给出伤害数值", async () => {
   const reader = createPanelDamageReader();
   await expect(reader({ ...avatar, id: 1341 }, "/not/loaded")).rejects.toThrow(/尚未核验/u);
-  await expect(reader(avatar, undefined)).rejects.toThrow(/未配置/u);
   await expect(reader(avatar, "/not/loaded")).rejects.toThrow(/版本一致/u);
   const unverified = { ...avatar, weapon: { id: 14177, name: "合成未确认音擎", rarity: "S", star: 1, level: 30 } };
   expect(() => calculatePanelDamage(unverified, numericFixture, noGear)).toThrow(/音擎/u);
   expect(() => calculatePanelDamage({ ...avatar, properties: [] }, numericFixture, noGear)).toThrow(ZzzDamageUnavailable);
   expect(() => calculatePanelDamage({ ...avatar, skills: [] }, numericFixture, noGear)).toThrow(/技能等级/u);
+});
+
+test("绝区零新装使用随模块携带的原验算表，无需另设旧资料目录", async () => {
+  await expect(createPanelDamageReader()(avatar, undefined, 2)).resolves.toMatchObject({
+    skillIndex: 1,
+    selected: { skill: { type: "AX", name: "普攻：落雷" } },
+  });
 });
 
 test("冰、以太与物理使用角色自身属性，按旧规则保留可见技能顺序", () => {
