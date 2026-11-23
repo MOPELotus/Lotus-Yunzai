@@ -5,7 +5,7 @@ export const accountScopes = [
 export type AccountScope = typeof accountScopes[number];
 
 export const mediaDownloadScopes = [
-  "bilibili.download", "douyin.download", "acfun.play", "pipixia.download", "weishi.play", "zuiyou.play",
+  "bilibili.download", "douyin.download", "acfun.play", "pipixia.download", "weishi.play", "zuiyou.play", "kuaishou.download",
 ] as const;
 export type MediaDownloadScope = typeof mediaDownloadScopes[number];
 

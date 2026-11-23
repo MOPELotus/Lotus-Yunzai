@@ -41,7 +41,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     const before = JSON.parse(beforeRaw);
     expect(before.settings).toEqual({
       "bilibili.download": "deny", "douyin.download": "inherit", "acfun.play": "inherit",
-      "pipixia.download": "inherit", "weishi.play": "inherit", "zuiyou.play": "inherit",
+      "pipixia.download": "inherit", "weishi.play": "inherit", "zuiyou.play": "inherit", "kuaishou.download": "inherit",
     });
     const regular = { user_id: 51, group_id: 99, isMaster: false };
     const listed = { ...regular, user_id: 42 };
@@ -59,7 +59,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect((await account(request("PUT", { revision: checkin.revision, patch: { "bilibili.download": "deny" } }), () => true)).status).toBe(400);
     const patch = {
       "bilibili.download": "allow", "douyin.download": "master_only", "acfun.play": "deny",
-      "pipixia.download": "master_only", "weishi.play": "allow", "zuiyou.play": "deny",
+      "pipixia.download": "master_only", "weishi.play": "allow", "zuiyou.play": "deny", "kuaishou.download": "master_only",
     };
     let authorized = true;
     expect((await route(request("PUT", { revision: before.revision, patch }), () => {
@@ -81,6 +81,8 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect(active.can(owner, "pipixia.download")).toBe(true);
     expect(active.can(regular, "weishi.play")).toBe(true);
     expect(active.can(owner, "zuiyou.play")).toBe(false);
+    expect(active.can(listed, "kuaishou.download")).toBe(false);
+    expect(active.can(owner, "kuaishou.download")).toBe(true);
     for (const subject of [{ ...owner, user_id: 765432109 }, { ...owner, group_id: 678901234 }]) {
       expect(active.can(subject, "bilibili.download")).toBe(false);
       expect(active.can(subject, "douyin.download")).toBe(false);
@@ -90,6 +92,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
       "checkin.refresh": { policy: "master_only" }, "bilibili.download": { policy: "allow" }, "douyin.download": { policy: "master_only" },
       "acfun.play": { policy: "deny" },
       "pipixia.download": { policy: "master_only" }, "weishi.play": { policy: "allow" }, "zuiyou.play": { policy: "deny" },
+      "kuaishou.download": { policy: "master_only" },
     } } });
     const revision = (await read()).revision;
     expect((await admin(request("PUT", { revision, patch: before.settings })))?.status).toBe(200);

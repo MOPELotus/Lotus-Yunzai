@@ -33,6 +33,7 @@ const labels: Record<Scope, string> = {
   "pipixia.download": "皮皮虾视频下载",
   "weishi.play": "微视视频播放",
   "zuiyou.play": "最右视频播放",
+  "kuaishou.download": "快手视频下载",
   "bilibili.login": "B 站扫码登录",
   "tools.install": "初始化及按需安装媒体工具",
   "netease.partner": "合伙人手动操作及 TuneWeave 指令",
