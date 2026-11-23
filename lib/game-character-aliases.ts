@@ -14,6 +14,7 @@ const gameLabels = { gs: "原神", sr: "星铁" };
 const rootDirectory = fileURLToPath(new URL("../", import.meta.url)).replace(/\/$/u, "");
 const maxBytes = 64 * 1024;
 const legacyDone = "# 已导入旧角色昵称";
+const independentDone = "# 已导入旧星铁角色别名";
 const legacyPrefix = "# 旧角色昵称 ";
 
 export function characterAliasKey(value: string) {
@@ -78,10 +79,35 @@ function legacyConfigs(root: string, filename: string) {
   return ["plugins/genshin/config", "backup/plugins/genshin/config"].map(directory => join(root, directory, filename));
 }
 
-export async function readLegacyCharacterAliasMode(root = rootDirectory) {
-  const source = await firstAliasFile(root, legacyConfigs(root, "mys.set.yaml"));
-  const config = source && parse(source.content, { maxAliasCount: 0 });
-  const mode = config?.abbrSetAuth as unknown;
+function yamlMapping(source?: Awaited<ReturnType<typeof firstAliasFile>>): Record<string, unknown> | undefined {
+  const value: unknown = source && parse(source.content, { maxAliasCount: 0 });
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+}
+
+async function independentStarRailSetting(root: string, filename: string) {
+  for (const location of ["plugins", "backup/plugins"]) {
+    const base = join(root, location, "StarRail-plugin");
+    const [local, defaults] = await Promise.all([
+      firstAliasFile(root, [join(base, "config", filename)]),
+      firstAliasFile(root, [join(base, "defSet", filename)]),
+    ]);
+    if (local || defaults) {
+      const configured = yamlMapping(local);
+      const bundled = yamlMapping(defaults);
+      if (!configured && !bundled) throw new TypeError("旧星铁设置文件应为 YAML 映射。");
+      return { ...bundled, ...configured };
+    }
+  }
+}
+
+export async function readLegacyCharacterAliasMode(game: Game, root = rootDirectory) {
+  const independent = game === "sr" ? await independentStarRailSetting(root, "gachaHelp.yaml") : undefined;
+  if (game === "sr" && !independent) {
+    const managed = await firstAliasFile(root, [files(root, game).target]);
+    if ((managed && snapshotLines(managed.content).includes(independentDone)) || await independentStarRailSetting(root, "alias.yaml")) return 2;
+  }
+  const config = independent ?? yamlMapping(await firstAliasFile(root, legacyConfigs(root, "mys.set.yaml")));
+  const mode = config?.abbrSetAuth;
   return mode === 0 || mode === "0" ? 0 : mode === 1 || mode === "1" ? 1 : 2;
 }
 
@@ -91,25 +117,62 @@ function snapshotLines(content: string) {
   return lines;
 }
 
+function yamlAliasRows(raw: Record<string, unknown>, preset: Preset) {
+  return Object.entries(raw).flatMap(([name, entries]) => {
+    const role = canonicalRole(preset, name);
+    if (!preset.displays.has(role) || !Array.isArray(entries)) return [];
+    const labels = [...new Set(entries.filter((label): label is string => typeof label === "string" && validCharacterAlias(label)))];
+    return labels.length ? [{ role, labels }] : [];
+  });
+}
+
+function independentAliasRows(raw: Record<string, unknown>, preset: Preset, existing: readonly string[], legacyPreset?: Preset) {
+  const reserved = new Set(existing.flatMap(line => parseRow(line)?.labels.map(characterAliasKey) ?? []));
+  const rows = yamlAliasRows(raw, preset);
+  const candidates = new Map<string, { role: string; label: string }>();
+  const conflicts = new Set<string>();
+  for (const { role, labels } of rows) {
+    for (const label of labels) {
+      const key = characterAliasKey(label);
+      if (reserved.has(key) || preset.matches.has(key) || legacyPreset?.matches.has(key)) continue;
+      const previous = candidates.get(key);
+      if (previous && previous.role !== role) conflicts.add(key);
+      if (!previous) candidates.set(key, { role, label });
+    }
+  }
+  const unique = new Map<string, string[]>();
+  for (const [key, { role, label }] of candidates) {
+    if (conflicts.has(key)) continue;
+    const labels = unique.get(role) ?? [];
+    labels.push(label);
+    unique.set(role, labels);
+  }
+  return [...unique].map(([role, labels]) => `${legacyPrefix}${role}：${labels.join("，")}`);
+}
+
 async function snapshot(root: string, game: Game) {
   const { target, sources } = files(root, game);
   const base = await firstAliasFile(root, [target, ...sources]);
   const content = base?.content ?? "";
-  if (base?.file === target && snapshotLines(content).includes(legacyDone)) return { base, content };
-  const legacy = await firstAliasFile(root, legacyConfigs(root, "role.name.yaml")).catch(() => undefined);
-  if (!legacy) return { base, content };
-  let raw: unknown;
-  try { raw = parse(legacy.content, { maxAliasCount: 0 }); }
-  catch { return { base, content }; }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { base, content };
+  const lines = snapshotLines(content);
+  const managed = base?.file === target;
+  const legacy = managed && lines.includes(legacyDone) ? undefined
+    : await firstAliasFile(root, legacyConfigs(root, "role.name.yaml"))
+      .then(source => ({ source, aliases: yamlMapping(source) })).catch(() => undefined);
+  const generic = legacy?.aliases;
+  const independent = game !== "sr" || (managed && lines.includes(independentDone))
+    ? undefined : await independentStarRailSetting(root, "alias.yaml").catch(() => undefined);
+  if (!generic && !independent) return { base, legacy: legacy?.source, content };
   const preset = await readPreset(game);
-  const imported = Object.entries(raw).flatMap(([name, entries]) => {
-    const role = canonicalRole(preset, name);
-    if (!preset.displays.has(role) || !Array.isArray(entries)) return [];
-    const labels = [...new Set(entries.filter((label): label is string => typeof label === "string" && validCharacterAlias(label)))];
-    return labels.length ? [`${legacyPrefix}${role}：${labels.join("，")}`] : [];
-  });
-  return { base, legacy, content: [...snapshotLines(content), legacyDone, ...imported, ""].join("\n") };
+  if (generic) {
+    const imported = yamlAliasRows(generic, preset).map(({ role, labels }) => `${legacyPrefix}${role}：${labels.join("，")}`);
+    lines.push(legacyDone, ...imported);
+  }
+  if (independent) {
+    const legacyPreset = await readLegacyPreset(root, game, preset).catch(() => undefined);
+    lines.push(independentDone, ...independentAliasRows(independent, preset, lines, legacyPreset));
+  }
+  return { base, legacy: legacy?.source, content: [...lines, ""].join("\n") };
 }
 
 export async function readGameCharacterAliases(game: Game, root = rootDirectory) {
@@ -323,7 +386,9 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
           if (!await permitted() || signal.aborted) return denied;
           const latest = await snapshot(root, game);
           if (signal.aborted || !stillActive()) return denied;
-          if (!sameSource(latest.base, source.base) || !sameSource(latest.legacy, source.legacy)) return "别名已变更，请重新操作。";
+          if (!sameSource(latest.base, source.base) || !sameSource(latest.legacy, source.legacy) || latest.content !== source.content) {
+            return "别名已变更，请重新操作。";
+          }
           if (latest.base?.file === target) renameSync(temporary, target);
           else linkSync(temporary, target);
         } finally {

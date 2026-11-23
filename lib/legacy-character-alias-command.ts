@@ -16,15 +16,17 @@ type Conversation = Pick<MessageFallbackContext, "normalizedMessage" | "isDelega
 
 function match(message: string) {
   if (message.length > 160 || cancel.test(message) || matchGameCharacterAliasCommand(message)) return;
-  const parts = /^(?:#(原神|星铁|崩铁)?|(\*))\s*(.+)$/u.exec(message);
+  const legacyPrefix = message.replace(/^(?:#星铁sr|#?(?:[*＊]?sr|＊))/u, "#星铁");
+  const parts = /^(?:#(原神|星铁|崩铁)?|(\*))\s*(.+)$/u.exec(legacyPrefix);
   if (!parts) return;
   const game: AliasGame = parts[2] || (parts[1] && parts[1] !== "原神") ? "sr" : "gs";
   const body = parts[3]!;
   if (game === "gs" && /^(?:绝区零|绝区)/u.test(body)) return;
   const remove = /^删除(?:别名|昵称)\s*(.+)$/u.exec(body)?.[1]?.trim();
   if (remove) return { game, type: "delete" as const, name: remove };
-  const set = /^(?:设置|配置)\s*(.+?)\s*(?:别名|昵称)$/u.exec(body)?.[1]?.trim();
-  if (set) return { game, type: "begin" as const, name: set };
+  const set = /^(设置|配置|添加)\s*(.+?)\s*(?:别名|昵称)$/u.exec(body);
+  const role = set?.[2]?.trim();
+  if (role && (set?.[1] !== "添加" || game === "sr")) return { game, type: "begin" as const, name: role };
   const name = /^(.+?)\s*(?:别名|昵称)$/u.exec(body)?.[1]?.trim();
   if (name) return { game, type: "list" as const, name };
 }
@@ -69,12 +71,12 @@ export function legacyCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, s
   }
   const matchedWaits = new WeakMap<MessageFallbackContext, NonNullable<ReturnType<typeof waiting>>>();
 
-  async function permitted(context: MessageFallbackContext, connection: AbortSignal) {
+  async function permitted(context: MessageFallbackContext, game: AliasGame, connection: AbortSignal) {
     const active = () => !signal.aborted && !connection.aborted;
     if (!active() || !activeId(context.user_id) || !activeId(context.self_id)) return false;
     if (context.isBotMaster(context.user_id)) return true;
     if (context.message_type !== "group") return false;
-    const mode = await readLegacyCharacterAliasMode(root).catch(() => 2);
+    const mode = await readLegacyCharacterAliasMode(game, root).catch(() => 2);
     if (!active() || mode === 2) return false;
     if (mode === 1) {
       const members = await context.groupActivityRoster?.("management").catch(() => undefined);
@@ -114,11 +116,11 @@ export function legacyCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, s
         if (next.input.cancel) return "已取消设置角色别名。";
         const { game, role } = next.entry;
         return store.run({ game, type: "legacy-set", role, aliases: next.input.aliases }, context, {
-          permitted: () => permitted(context, next.entry.expiry),
+          permitted: () => permitted(context, game, next.entry.expiry),
           active: () => !next.entry.expiry.aborted,
         });
       }
-      const canWrite = () => permitted(context, session.connection);
+      const canWrite = () => permitted(context, command.game, session.connection);
       if (command.type === "delete") {
         return store.run({ game: command.game, type: "legacy-delete", alias: command.name }, context, {
           permitted: canWrite,

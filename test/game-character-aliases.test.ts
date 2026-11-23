@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
-import { createGameCharacterAliasCommands, matchGameCharacterAliasCommand, readGameCharacterAliases } from "../lib/game-character-aliases.ts";
+import { createGameCharacterAliasCommands, matchGameCharacterAliasCommand, readGameCharacterAliases, readLegacyCharacterAliasMode } from "../lib/game-character-aliases.ts";
 import { legacyCharacterAliasCommands } from "../lib/legacy-character-alias-command.ts";
 import { CommandRegistry } from "../lib/commands.ts";
 import { normalizeGameCommand } from "../lib/command-prefix.ts";
@@ -170,6 +170,49 @@ test("旧原神星铁昵称通过宿主分派续接同会话，按当前权限�
     groupConnection.abort();
     otherConnection.abort();
     friendConnection.abort();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("独立星铁旧表补入唯一别名，保留现有归属并禁止旧名称复活", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-independent-sr-alias-"));
+  const archive = join(root, "backup/plugins/StarRail-plugin");
+  const managed = join(root, "config/character-aliases/alias_sr.cfg");
+  const source = join(archive, "config/alias.yaml");
+  const stored = [
+    "丹恒•饮月: [饮月旧邮差, 旧共享, 布洛妮娅, 同名甲]",
+    "希儿: [独立档小蝶, 同名甲]",
+    "卡芙卡: [独立档夜航]",
+    "未知角色: [未知角色档]",
+  ].join("\n") + "\n";
+  try {
+    for (const folder of [dirname(source), join(archive, "defSet"), dirname(managed)]) await mkdir(folder, { recursive: true });
+    await writeFile(join(archive, "defSet/alias.yaml"), "希儿: [被角色配置替代]\n符玄: [历史太卜别称]\n");
+    await writeFile(source, stored);
+    await writeFile(managed, "# 已导入旧角色昵称\n卡芙卡：旧共享\n");
+    expect(await readGameCharacterAliases("sr", root)).toEqual(new Map([
+      ["旧共享", "卡芙卡"], ["饮月旧邮差", "丹恒•饮月"], ["独立档小蝶", "希儿"], ["独立档夜航", "卡芙卡"], ["历史太卜别称", "符玄"],
+    ]));
+    expect(await readGameCharacterAliases("gs", root)).toEqual(new Map());
+    const run = createGameCharacterAliasCommands(lockFile, new AbortController().signal, root);
+    const owner = { user_id: 42, isBotMaster: (user: number) => user === 42 };
+    const deletion = matchGameCharacterAliasCommand("*别名删除 独立档小蝶")!;
+    expect(await run(deletion, { ...owner, user_id: 43 })).toContain("主人");
+    expect(await run(deletion, owner)).toContain("已删除");
+    expect(await readFile(managed, "utf8")).not.toContain("独立档小蝶");
+    expect(await readFile(source, "utf8")).toBe(stored);
+    await writeFile(source, stored + "白露: [归档后来编辑]\n");
+    const shared = join(root, "backup/plugins/genshin/config");
+    await mkdir(shared, { recursive: true });
+    await writeFile(join(shared, "mys.set.yaml"), "abbrSetAuth: 0\n");
+    expect(await readLegacyCharacterAliasMode("gs", root)).toBe(0);
+    expect(await readLegacyCharacterAliasMode("sr", root)).toBe(2);
+    await rm(archive, { recursive: true });
+    expect(await readLegacyCharacterAliasMode("sr", root)).toBe(2);
+    expect(await readGameCharacterAliases("sr", root)).toEqual(new Map([
+      ["旧共享", "卡芙卡"], ["饮月旧邮差", "丹恒•饮月"], ["独立档夜航", "卡芙卡"], ["历史太卜别称", "符玄"],
+    ]));
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
