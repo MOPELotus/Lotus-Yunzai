@@ -7,6 +7,7 @@ import type { PendingGroupInvitation, PendingGroupInvitationList } from "../grou
 import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-requests.ts";
 import type { RequestDecisionOutcome } from "../request-claim.ts";
 import { reviewObservedBatch } from "./owner-request-batch.ts";
+import { inlineAvatar } from "./group-avatar.ts";
 import type { OwnerAccountOperation } from "./owner-account.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
@@ -202,6 +203,7 @@ export class OneBotCalls {
   async updateOwnerAccount(send: Send, operation: OwnerAccountOperation, signal: AbortSignal): Promise<GroupModerationResult> {
     if (operation.kind === "status") return this.#moderateGroup(send, "set_online_status",
       { status: operation.status, ext_status: 0, battery_status: 0 }, signal);
+    if (operation.kind === "avatar") return this.#moderateGroup(send, "set_qq_avatar", { file: inlineAvatar(operation.bytes) }, signal);
     if (signal.aborted) return "rejected";
     const [action, params] = operation.kind === "deleteFriend" ? ["delete_friend", { user_id: operation.userId }]
       : operation.kind === "nickname" ? ["set_qq_profile", { nickname: operation.text }]

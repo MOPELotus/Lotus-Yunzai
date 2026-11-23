@@ -2106,9 +2106,10 @@ if (import.meta.main) {
       handled?.();
       return;
     }
-    if (allowed(groupAvatarNames) && await groupAvatar(event, {
+    if (await groupAvatar(event, {
       allowNew, workflow: nativeOperationSignal,
-      permitted: async () => groupDispatch.allowsInbound(event) && allowed(groupAvatarNames) && !await privateAccess.blocked(event),
+      allowed: kind => groupDispatch.allowsInbound(event) && allowed(kind === "group" ? groupAvatarNames : ownerAccountFeatureNames),
+      permitted: async () => !await privateAccess.blocked(event),
     })) {
       handled?.();
       return;

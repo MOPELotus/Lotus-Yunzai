@@ -112,3 +112,72 @@ test("群头像仅用原会话栅格字节，NapCat 与 Milky 都复核权限并
       expect(milky.calls).toEqual([]);
     }, 4_000, offline);
 }, 15_000);
+
+test("机器人头像复用群头像的图片与续发链，分开两种修改并保护当前机器人", async () => {
+  await withDualGatewayFixture("owner-avatar-fixture", 'master: ["99:42", "100:43"]\ndisablePrivate: false\n',
+    async ({ onebot, milky, sendOneBot, sendMilky }) => {
+      async function oneAuthorization() {
+        (await onebot.next("get_version_info")).respond({ app_name: "NapCat.Onebot", app_version: "4.9.2" });
+        (await onebot.next("get_friend_list")).respond([{ user_id: 42 }]);
+      }
+      async function milkyAuthorization() {
+        (await milky.next("get_impl_info")).respond({ milky_version: "1.3" });
+        (await milky.next("get_friend_list")).respond({ friends: [{ user_id: 43 }] });
+      }
+      async function replyMilky(text: string, id: number) {
+        const reply = await milky.next("send_private_message");
+        expect(reply.params).toMatchObject({ user_id: 43, message: [{ data: { text } }] });
+        reply.respond({ message_seq: id });
+      }
+      sendOneBot("#改头像", { user_id: 43, message: [text("#改头像"), { type: "image", data: { url: imageUrl } }] });
+      const denied = await onebot.next("send_msg");
+      expect(denied.params).toMatchObject({ user_id: 43, message: "只有当前机器人的主人可在群聊或好友私聊修改头像。" });
+      denied.respond({ message_id: 121 });
+
+      sendOneBot("#改头像", { message: [text("#改头像"), { type: "image", data: { url: imageUrl } }] });
+      await oneAuthorization();
+      await oneAuthorization();
+      const personal = await onebot.next("set_qq_avatar");
+      expect(personal.params).toEqual({ file: inline });
+      personal.respond(null);
+      const success = await onebot.next("send_msg");
+      expect(success.params).toMatchObject({ user_id: 42, message: "✅ 头像修改成功" });
+      success.respond({ message_id: 122 });
+
+      await sendMilky("#改群头像701");
+      const role = await milky.next("get_group_member_info");
+      expect(role.params).toMatchObject({ group_id: 701, user_id: 100, no_cache: true });
+      role.respond({ member: { group_id: 701, user_id: 100, role: "admin" } });
+      await replyMilky("⚠ 请发送图片", 123);
+      await sendMilky("#换头像");
+      await milkyAuthorization();
+      await replyMilky("⚠ 请发送图片", 124);
+      await sendMilky("#取消改群头像");
+      await sendMilky("", { sender_id: 42, peer_id: 42, segments: [image(imageUrl)] });
+      await Bun.sleep(30);
+      expect(milky.calls).toEqual([]);
+
+      await sendMilky("", { segments: [image(imageUrl)] });
+      await milkyAuthorization();
+      await milkyAuthorization();
+      const update = await milky.next("set_avatar");
+      expect(update.params).toEqual({ uri: inline });
+      update.respond({}, "failed");
+      await replyMilky("❎ 头像修改失败", 125);
+      await sendMilky("", { segments: [image(imageUrl)] });
+      await Bun.sleep(30);
+      expect(milky.calls).toEqual([]);
+
+      const quote = { type: "reply", data: { message_seq: 72 } };
+      await sendMilky("#改头像", { segments: [quote, text("#改头像")] });
+      await milkyAuthorization();
+      const lookup = await milky.next("get_message");
+      expect(lookup.params).toMatchObject({ message_scene: "friend", peer_id: 43, message_seq: 72 });
+      lookup.respond({ message: {
+        message_scene: "friend", peer_id: 42, sender_id: 42, message_seq: 72, segments: [image(imageUrl)],
+      } });
+      await replyMilky("无法读取当前会话的引用消息。", 126);
+      expect(onebot.calls).toEqual([]);
+      expect(milky.calls).toEqual([]);
+    }, 4_000, offline);
+}, 15_000);

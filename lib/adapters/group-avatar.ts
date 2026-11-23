@@ -4,6 +4,10 @@ import type { GroupModerationResult } from "./group-moderation.ts";
 export const groupAvatarSession = Symbol("groupAvatarSession");
 export const maxGroupAvatarBytes = 6 * 1024 * 1024;
 
+export function inlineAvatar(bytes: Uint8Array) {
+  return `base64://${Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64")}`;
+}
+
 type Availability = "ready" | "unavailable" | "unsupported";
 
 export interface GroupAvatarSession {
@@ -31,8 +35,7 @@ export function bindGroupAvatar(scope: GroupSettingsScope & {
       if (!(bytes instanceof Uint8Array) || bytes.length === 0 || bytes.length > maxGroupAvatarBytes) return "rejected";
       const access = await authorize(group, signal);
       if (!access?.active()) return "unavailable";
-      const inline = `base64://${Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64")}`;
-      return scope.write(access.groupId, inline, access.signal).catch(() => "unknown");
+      return scope.write(access.groupId, inlineAvatar(bytes), access.signal).catch(() => "unknown");
     },
   };
 }
