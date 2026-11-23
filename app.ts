@@ -2037,6 +2037,19 @@ if (import.meta.main) {
     }
   }
 
+  async function isCompactGenshinShowcase(message: string) {
+    if (!/^#更新\S/u.test(message) || !isUpdateCommand(message)) return false;
+    try {
+      const { matchGenshinShowcase } = await import("./plugins/genshin/panel/showcase-command.ts");
+      const intent = matchGenshinShowcase(message);
+      if (typeof intent !== "object" || !intent.characterName) return false;
+      const { resolveGenshinCharacter } = await import("./plugins/genshin/rank-statistics/stats.ts");
+      return !!await resolveGenshinCharacter(intent.characterName);
+    } catch {
+      return false;
+    }
+  }
+
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
@@ -2147,6 +2160,7 @@ if (import.meta.main) {
       if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
     }
+    const namedShowcase = allowNew && await isCompactGenshinShowcase(event.msg);
     if (event.message_type === "private" && isMilkyOwnerSession(event)) {
       await privateAccess.refresh();
       if (privateAccess.disabled) {
@@ -2158,7 +2172,7 @@ if (import.meta.main) {
           if (allowNew && allowed(updateFeatureNames)) await configureUpdateNotice(event, updateNoticeChange);
           return;
         }
-        if (hasValidUpdateTarget(event.msg)) {
+        if (!namedShowcase && hasValidUpdateTarget(event.msg)) {
           if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
           return;
         }
@@ -2583,7 +2597,7 @@ if (import.meta.main) {
       if (allowed(updateFeatureNames)) await updateLogCommand(command);
       return;
     }
-    if (isUpdateCommand(command.msg)) {
+    if (!namedShowcase && isUpdateCommand(command.msg)) {
       if (allowed(updateFeatureNames)) await updateCommand(command);
       return;
     }
