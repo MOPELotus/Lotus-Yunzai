@@ -1,5 +1,5 @@
 // Ark protocol reference e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See rank-statistics.LICENSE.
-const endpoint = "https://ark.ivny.cn/rank/specific";
+const endpoint = "https://ark.ivny.cn";
 const legacyVersion = "2.1.0";
 const maxBytes = 64 * 1024;
 
@@ -86,20 +86,80 @@ async function responsePayload(response: Response) {
   }
 }
 
-export async function fetchRankStats(id: number, signal: AbortSignal, transport: RankStatsTransport = fetch): Promise<RankStatsResult> {
-  if (!Number.isSafeInteger(id) || id < 1) return { message: "此角色没有有效的排名统计编号。" };
+type RankResponse = { readonly payload: unknown } | { readonly message: string };
+
+async function postRankQuery(route: "rank/specific" | "rank/data", query: object, signal: AbortSignal,
+  transport: RankStatsTransport): Promise<RankResponse> {
   try {
-    const response = await transport(endpoint, {
+    const response = await transport(`${endpoint}/${route}`, {
       method: "POST", credentials: "omit", redirect: "error", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, percent: 0, version: legacyVersion }),
+      body: JSON.stringify({ ...query, version: legacyVersion }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
     });
     if (!response.ok || response.redirected) {
       void response.body?.cancel().catch(() => undefined);
       return { message: response.status === 429 ? messages[104]! : "排名服务暂时无法连接。" };
     }
-    return readRankStatsPayload(await responsePayload(response));
+    return { payload: await responsePayload(response) };
   } catch {
     return { message: "排名服务暂时无法连接。" };
   }
+}
+
+export async function fetchRankStats(id: number, signal: AbortSignal, transport: RankStatsTransport = fetch): Promise<RankStatsResult> {
+  if (!Number.isSafeInteger(id) || id < 1) return { message: "此角色没有有效的排名统计编号。" };
+  const result = await postRankQuery("rank/specific", { id, percent: 0 }, signal, transport);
+  return "message" in result ? result : readRankStatsPayload(result.payload);
+}
+
+const uidPattern = /^[1-9]\d{8,9}$/u;
+const rankCommand = /^(#(?:原神|星铁)?|\*)角色排名([^#]*)$/u;
+type RankGame = "gs" | "sr";
+
+function damageRankArguments(input: string) {
+  const explicit = /^(.{1,40}?)\s+([1-9]\d{8,9})$/u.exec(input);
+  const attached = /^(.{0,39}?[^\d\s])([1-9]\d{8,9})$/u.exec(input);
+  const match = explicit ?? attached;
+  return match ? { name: match[1]!.trim(), uid: match[2]! } : undefined;
+}
+
+export function matchPublicDamageRank(message: string, game: RankGame) {
+  const match = rankCommand.exec(message);
+  if (!match) return;
+  const prefix = match[1]!;
+  if (prefix !== "#" && (prefix === "#原神" ? game !== "gs" : game !== "sr")) return;
+  return { explicitGame: prefix !== "#", query: damageRankArguments(match[2]!.trim()) };
+}
+
+export async function fetchPublicDamageRank(uid: string, id: number, signal: AbortSignal,
+  transport: RankStatsTransport = fetch): Promise<{ readonly rank: number; readonly score: number } | { readonly message: string }> {
+  if (!uidPattern.test(uid) || !Number.isSafeInteger(id) || id < 1) return { message: "角色或 UID 无效。" };
+  const result = await postRankQuery("rank/data", { uid, id, update: 0 }, signal, transport);
+  if ("message" in result) return result;
+  const row = object(result.payload);
+  if (row?.retcode !== 100) {
+    const code = row?.retcode;
+    return { message: code === 102 ? "此 UID 的该角色暂无全服伤害排名。" :
+      typeof code === "number" && messages[code] ? messages[code]! : "排名服务暂时无法返回全服位次。" };
+  }
+  const rank = sampleCount(row.rank);
+  const amount = score(row.score);
+  return rank && amount !== undefined ? { rank, score: amount } : { message: "排名服务返回的全服位次不完整。" };
+}
+
+export async function queryPublicDamageRank(message: string, game: RankGame,
+  resolve: (name: string) => Promise<{ readonly id: number; readonly name: string } | undefined>,
+  signal: AbortSignal, transport?: RankStatsTransport) {
+  const match = matchPublicDamageRank(message, game);
+  if (!match || signal.aborted) return;
+  const prefix = game === "gs" ? "#" : "*";
+  if (!match.query) return game === "gs" || match.explicitGame
+    ? `用法：${prefix}角色排名 角色名 UID` : undefined;
+  const character = await resolve(match.query.name);
+  if (signal.aborted) return;
+  if (!character) return match.explicitGame ? "找不到该游戏的角色。请检查角色名和 UID。" : undefined;
+  const result = await fetchPublicDamageRank(match.query.uid, character.id, signal, transport);
+  if (signal.aborted) return;
+  return "message" in result ? result.message :
+    `UID ${match.query.uid} 的${character.name}全服伤害排名为 ${result.rank}，伤害评分 ${result.score.toFixed(2)}。`;
 }
