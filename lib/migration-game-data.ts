@@ -3,8 +3,12 @@ import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promis
 import { dirname, join, resolve } from "node:path";
 import { genshinGachaPools } from "../packages/hoyo-client/genshin-gacha.ts";
 import { readPanel, type PanelCatalog } from "../plugins/genshin/panel/model.ts";
-import { safeGuideName } from "../plugins/guides/role-guide-input.ts";
+import { genshinStrategySource } from "../plugins/guides/genshin-strategy.ts";
+import { guideCollectionKeys } from "../plugins/guides/guide-configuration.ts";
+import { parseGuideCollections } from "../plugins/guides/role-guide-collections.ts";
+import { guideGames, safeGuideName, type GuideGame } from "../plugins/guides/role-guide-input.ts";
 import { isGuideImage, roleImageLimit } from "../plugins/guides/role-image-files.ts";
+import { zzzStrategyOptions } from "../plugins/guides/zzz-strategy.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
@@ -187,8 +191,69 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     }
   }
 
+  async function oldGuideConfiguration(relative: string): Promise<unknown> {
+    signal?.throwIfAborted();
+    const path = join(source, relative);
+    if (!await sourceDirectory(dirname(path), true)) return;
+    const info = await named(path);
+    if (!info?.isFile() || info.nlink !== 1 || info.size > 64 * 1024) return;
+    const bytes = await readSnapshot(path, info, signal);
+    files.set(path, info);
+    try { return Bun.YAML.parse(bytes.toString("utf8")); } catch { return undefined; }
+  }
+
+  function configMapping(input: unknown): Record<string, unknown> {
+    return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  }
+
+  async function stageGuideSettings() {
+    const strategyDirectory = "data/guides/roleGuides";
+    const genshin = configMapping(await oldGuideConfiguration("plugins/genshin/config/mys.set.yaml"));
+    const sourceNumber = genshin.defaultSource;
+    if (typeof sourceNumber === "number" && Number.isInteger(sourceNumber) && genshinStrategySource(sourceNumber)) {
+      await publishFile(strategyDirectory, [], "genshin-strategy.json",
+        Buffer.from(JSON.stringify({ defaultSource: sourceNumber }) + "\n"), active);
+    }
+
+    const strategy = new Map<string, number>();
+    for (const folder of ["defSet", "config"]) {
+      const values = configMapping(await oldGuideConfiguration(`plugins/ZZZ-Plugin/${folder}/guide.yaml`));
+      for (const key of ["default_guide", "max_forward_guides"]) {
+        const input = values[key];
+        const number = key === "default_guide" && input === "all" ? 0
+          : typeof input === "string" && /^\d+$/u.test(input) ? Number(input) : input;
+        if (typeof number === "number" && (key === "default_guide" || number > 0) &&
+            zzzStrategyOptions.some(({ value }) => value === number)) strategy.set(key, number);
+      }
+    }
+    if (strategy.size) {
+      await publishFile(strategyDirectory, [], "zzz-strategy.json",
+        Buffer.from(JSON.stringify(Object.fromEntries(strategy)) + "\n"), active);
+    }
+
+    const guides: Record<string, unknown> = {};
+    async function mora(file: string) {
+      return await oldGuideConfiguration(`plugins/mora-plugin/config/user/${file}`) ??
+        await oldGuideConfiguration(`plugins/mora-plugin/config/default/${file}`);
+    }
+    const forward = configMapping(await mora("config.yaml")).forwardMsg;
+    if (typeof forward === "boolean" || forward === 0 || forward === 1) guides.forward = Boolean(forward);
+    for (const game of Object.keys(guideGames) as GuideGame[]) {
+      const input = await mora(guideGames[game].config);
+      if (!input || typeof input !== "object" || Array.isArray(input) === (game === "gs")) continue;
+      try {
+        const authors = parseGuideCollections(game, input);
+        guides[guideCollectionKeys[game]] = game === "gs" ? authors : authors.news;
+      } catch {}
+    }
+    if (Object.keys(guides).length) {
+      await publishFile("config", [], "guides.yaml", Buffer.from(Bun.YAML.stringify(guides)), active);
+    }
+  }
+
   for (const scope of scopes) await scan(scope);
   await stageRoleMaterials();
+  await stageGuideSettings();
   for (const [path, info] of [...dirs, ...files]) {
     signal?.throwIfAborted();
     if (!unchanged(info, await named(path))) throw sourceChanged();

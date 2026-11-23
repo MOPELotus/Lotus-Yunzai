@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
 import { stageLegacyGameData } from "../lib/migration-game-data.ts";
+import { panelGenshinGuideSettings, panelGuidesSettings, panelZzzGuideSettings } from "../lib/panel-guides-settings.ts";
 import { createGenshinGachaHistoryStore } from "../plugins/genshin/gacha-store.ts";
 import { createGenshinPanelArchive } from "../plugins/genshin/panel/panel.ts";
 import { createRoleMaterials } from "../plugins/guides/role-materials.ts";
+import { readGuideAuthors } from "../plugins/guides/role-guide-collections.ts";
 import { readLegacyPanel } from "../plugins/starrail/panel-model.ts";
 import { readZzzFlatLegacyGacha } from "../plugins/zzz/gacha-legacy.ts";
 
@@ -115,6 +117,42 @@ test("复制四个固定素材缓存目录中的原图，迁移后无需访问�
   const command = createRoleMaterials({ cache: directory, async fetch() { requests++; return new Response(null, { status: 404 }); } });
   for (const text of ["#刻晴素材", "#星铁符玄素材"]) expect(await command(text)).toEqual({ type: "image", file: image });
   expect(requests).toBe(0);
+}));
+
+test("拒载的旧攻略来源设置转成宿主与面板直接读取的配置", () => fixture(async (source, state) => {
+  const paths = {
+    "plugins/genshin/config/mys.set.yaml": "defaultSource: 4\nunused: ignored\n",
+    "plugins/ZZZ-Plugin/defSet/guide.yaml": "default_guide: 1\nmax_forward_guides: 5\n",
+    "plugins/ZZZ-Plugin/config/guide.yaml": "default_guide: all\nmax_forward_guides: -1\n",
+    "plugins/mora-plugin/config/default/config.yaml": "forwardMsg: 1\n",
+    "plugins/mora-plugin/config/user/config.yaml": "forwardMsg: 0\n",
+    "plugins/mora-plugin/config/default/roleGuides.yaml": "news: [{source: 默认作者, collection_id: [31]}]\n",
+    "plugins/mora-plugin/config/user/roleGuides.yaml": "news: [{source: 用户作者, collection_id: [32]}]\nolds: []\n",
+    "plugins/mora-plugin/config/default/srRoleGuides.yaml": "[{source: 星铁作者, collection_id: [33]}]\n",
+    "plugins/mora-plugin/config/user/zzzRoleGuides.yaml": "[]\n",
+  };
+  for (const [path, value] of Object.entries(paths)) await put(source, path, value);
+  const result = await stageLegacyGameData(source, state);
+  expect(result.active.map(({ path, files }) => [path, files])).toEqual([["data/guides/roleGuides", 2], ["config", 1]]);
+  const root = Bun.pathToFileURL(state + "/");
+  const get = async (endpoint: (request: Request, authorized: () => boolean) => Promise<Response>) => {
+    const response = await endpoint(new Request("http://localhost/settings"), () => true);
+    expect(response.status).toBe(200);
+    return (await response.json()).values;
+  };
+  expect(await get(panelGenshinGuideSettings(root))).toEqual({ defaultSource: 4 });
+  expect(await get(panelZzzGuideSettings(root))).toEqual({ default_guide: 0, max_forward_guides: 5 });
+  expect(await get(panelGuidesSettings(root))).toMatchObject({
+    forward: false,
+    gs_collections: { news: [{ source: "用户作者", collection_id: [32] }], olds: [] },
+    sr_collections: [{ source: "星铁作者", collection_id: [33] }],
+    zzz_collections: [],
+  });
+  expect(await readGuideAuthors("zzz", undefined, root)).toEqual({ news: [], olds: [] });
+  expect(await readGuideAuthors("gs", undefined, root)).toEqual({
+    news: [{ source: "用户作者", collection_id: [32] }], olds: [],
+  });
+  for (const [path, value] of Object.entries(paths)) expect(await readFile(join(source, path), "utf8")).toBe(value);
 }));
 
 test("普通游戏迁移可跳过符号链接指向的旧临时缓存", () => fixture(async (source, state) => {
