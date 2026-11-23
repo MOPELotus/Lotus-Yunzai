@@ -39,7 +39,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect(beforeRaw).not.toContain("765432109");
     expect(beforeRaw).not.toContain("678901234");
     const before = JSON.parse(beforeRaw);
-    expect(before.settings).toEqual({ "bilibili.download": "deny", "douyin.download": "inherit" });
+    expect(before.settings).toEqual({ "bilibili.download": "deny", "douyin.download": "inherit", "acfun.play": "inherit" });
     const regular = { user_id: 51, group_id: 99, isMaster: false };
     const listed = { ...regular, user_id: 42 };
     const owner = { ...regular, isMaster: true };
@@ -54,7 +54,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     const account = panelAccountPermissions(root);
     const checkin = await (await account(request(), () => true)).json();
     expect((await account(request("PUT", { revision: checkin.revision, patch: { "bilibili.download": "deny" } }), () => true)).status).toBe(400);
-    const patch = { "bilibili.download": "allow", "douyin.download": "master_only" };
+    const patch = { "bilibili.download": "allow", "douyin.download": "master_only", "acfun.play": "deny" };
     let authorized = true;
     expect((await route(request("PUT", { revision: before.revision, patch }), () => {
       const valid = authorized;
@@ -70,6 +70,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect(active.can(regular, "bilibili.download")).toBe(true);
     expect(active.can(listed, "douyin.download")).toBe(false);
     expect(active.can(owner, "douyin.download")).toBe(true);
+    expect(active.can(owner, "acfun.play")).toBe(false);
     for (const subject of [{ ...owner, user_id: 765432109 }, { ...owner, group_id: 678901234 }]) {
       expect(active.can(subject, "bilibili.download")).toBe(false);
       expect(active.can(subject, "douyin.download")).toBe(false);
@@ -77,6 +78,7 @@ test("媒体下载权限复用原策略写入，作用域与签到隔离，真�
     expect(await readFile(legacy, "utf8")).toBe(source);
     expect(Bun.YAML.parse(await readFile(local, "utf8"))).toEqual({ permissions: { scopes: {
       "checkin.refresh": { policy: "master_only" }, "bilibili.download": { policy: "allow" }, "douyin.download": { policy: "master_only" },
+      "acfun.play": { policy: "deny" },
     } } });
     const revision = (await read()).revision;
     expect((await admin(request("PUT", { revision, patch: before.settings })))?.status).toBe(200);

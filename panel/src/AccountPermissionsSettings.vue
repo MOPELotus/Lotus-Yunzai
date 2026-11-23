@@ -29,6 +29,7 @@ const labels: Record<Scope, string> = {
   "scheduler.manage": "聊天中修改调度",
   "bilibili.download": "B 站视频下载",
   "douyin.download": "抖音媒体下载",
+  "acfun.play": "AcFun 视频播放",
   "bilibili.login": "B 站扫码登录",
   "tools.install": "初始化及按需安装媒体工具",
   "netease.partner": "合伙人手动操作及 TuneWeave 指令",

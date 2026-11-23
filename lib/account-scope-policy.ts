@@ -4,7 +4,7 @@ export const accountScopes = [
 ] as const;
 export type AccountScope = typeof accountScopes[number];
 
-export const mediaDownloadScopes = ["bilibili.download", "douyin.download"] as const;
+export const mediaDownloadScopes = ["bilibili.download", "douyin.download", "acfun.play"] as const;
 export type MediaDownloadScope = typeof mediaDownloadScopes[number];
 
 export const accountScopePolicies = ["inherit", "allow", "deny", "master_only"] as const;
