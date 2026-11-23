@@ -10,7 +10,7 @@ export const mediaDownloadScopes = [
 export type MediaDownloadScope = typeof mediaDownloadScopes[number];
 
 export const mediaPreviewScopes = [
-  "acfun.preview", "weishi.preview", "zuiyou.preview", "wxchannels.preview", "xigua.preview",
+  "acfun.preview", "weishi.preview", "zuiyou.preview", "wxchannels.preview", "xigua.preview", "xhs.preview",
 ] as const;
 export type MediaPreviewScope = typeof mediaPreviewScopes[number];
 
