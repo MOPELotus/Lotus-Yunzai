@@ -61,7 +61,8 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       state.directory, plan.plugins, signal);
     const keywords = await stageLegacyKeywords(plan.source, state.directory, signal);
     const networkConfig = await stageLegacyNetworkConfig(plan.source, state.directory, signal);
-    const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal, stagedReminders.settings);
+    const globalConfig = await stageLegacyGlobalConfig(plan.source, state.directory, signal, stagedReminders.settings,
+      backup.status === "empty" ? undefined : { directory: backup.directory, plugins: plan.plugins });
     const tuneweave = (await readOptionalLocalConfig(Bun.pathToFileURL(`${state.directory}/`), "global"))?.tuneweave;
     const apiUrl = tuneweave && typeof tuneweave === "object" && "api_url" in tuneweave ? tuneweave.api_url : undefined;
     const mediaState = await stageLegacyMediaState(plan.source, state.directory, {

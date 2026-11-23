@@ -5,6 +5,7 @@ import { legacyLotusDirectories, resolveLotusGlobalConfig } from "./lotus-global
 import { MigrationSourceFileError, readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyDailyNoteReminderSettings } from "./migration-daily-note-reminders.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
+import { projectShowcaseSettings, type ShowcaseArchive } from "./migration-showcase.ts";
 import { configuredSiteIcpNumber } from "./web-icp.ts";
 
 type Config = Record<string, unknown>;
@@ -39,13 +40,15 @@ async function readGlobal(root: string, prefix: string): Promise<Config | undefi
 }
 
 /** Materialize settings whose running consumers previously reached into rejected plugin directories. */
-export async function stageLegacyGlobalConfig(source: string, stage: string, signal?: AbortSignal, legacyDailyNote?: LegacyDailyNoteReminderSettings) {
+export async function stageLegacyGlobalConfig(source: string, stage: string, signal?: AbortSignal,
+  legacyDailyNote?: LegacyDailyNoteReminderSettings, showcaseArchive?: ShowcaseArchive) {
   signal?.throwIfAborted();
   const [local, ...legacy] = await Promise.all([readGlobal(source, ""),
     ...legacyLotusDirectories.map(id => readGlobal(source, `plugins/${id}`))]);
   const effective = await resolveLotusGlobalConfig(local ?? {}, async id => legacy[legacyLotusDirectories.indexOf(id)]);
   const media = projectLegacyMediaConfig(local ?? {}, legacy.filter((config): config is Config => config !== undefined));
-  const projected: Config = { ...media.config };
+  const showcase = await projectShowcaseSettings(local ?? {}, showcaseArchive, signal);
+  const projected: Config = { ...media.config, ...showcase.config };
   for (const [key, fields] of Object.entries(supported)) {
     if (Object.hasOwn(effective, key)) projected[key] = projectSettings(effective[key], fields);
   }
@@ -75,5 +78,6 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
     }
     await writeFile(join(directory, "global.yaml"), Bun.YAML.stringify(projected), { flag: "wx", mode: 0o600 });
   }
-  return { sections, deferredMedia: media.deferred };
+  return { sections, deferredMedia: media.deferred,
+    ...(showcase.deferred.length && { deferredShowcase: showcase.deferred }) };
 }
