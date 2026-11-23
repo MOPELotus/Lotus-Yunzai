@@ -6,7 +6,15 @@ import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
 interface Settings { enable: boolean; check_cron: string; challenge_cron: string; run_on_missing_data: boolean }
-interface Snapshot { settings: Settings; revision: string; syncAfterUpdate: boolean; syncGallery: boolean; scopes?: AtlasScopeSelections; searchLimit?: number }
+interface Snapshot {
+  settings: Settings;
+  revision: string;
+  syncAfterUpdate: boolean;
+  syncGallery: boolean;
+  syncCharacterGallery: boolean;
+  scopes?: AtlasScopeSelections;
+  searchLimit?: number;
+}
 
 const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
 const scopeFields = ["update_args", "challenge_args"] as const;
@@ -30,6 +38,7 @@ const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
 const syncAfterUpdate = ref(true);
 const syncGallery = ref(true);
+const syncCharacterGallery = ref(true);
 const busy = ref<"load" | "save">();
 const error = ref("");
 const feedback = ref("");
@@ -45,8 +54,9 @@ const searchInvalid = computed(() => saved.value?.searchLimit !== undefined &&
 const searchDirty = computed(() => saved.value?.searchLimit !== searchLimit.value);
 const syncDirty = computed(() => saved.value?.syncAfterUpdate !== syncAfterUpdate.value);
 const galleryDirty = computed(() => saved.value?.syncGallery !== syncGallery.value);
-const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || galleryDirty.value || Object.keys(scopePatch.value).length > 0 ||
-  JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
+const characterGalleryDirty = computed(() => saved.value?.syncCharacterGallery !== syncCharacterGallery.value);
+const dirty = computed(() => !!saved.value && (searchDirty.value || syncDirty.value || galleryDirty.value || characterGalleryDirty.value ||
+  Object.keys(scopePatch.value).length > 0 || JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
 watch(dirty, value => emit("dirty-change", value));
@@ -67,6 +77,7 @@ async function sync(mode: "load" | "save") {
         ...(searchDirty.value && { searchLimit: searchLimit.value }),
         ...(syncDirty.value && { syncAfterUpdate: syncAfterUpdate.value }),
         ...(galleryDirty.value && { syncGallery: syncGallery.value }),
+        ...(characterGalleryDirty.value && { syncCharacterGallery: syncCharacterGallery.value }),
         ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
@@ -98,7 +109,7 @@ async function sync(mode: "load" | "save") {
     const result = await response.json() as Snapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || typeof result?.settings?.enable !== "boolean" ||
-        typeof result.syncAfterUpdate !== "boolean" || typeof result.syncGallery !== "boolean" ||
+        typeof result.syncAfterUpdate !== "boolean" || typeof result.syncGallery !== "boolean" || typeof result.syncCharacterGallery !== "boolean" ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
         (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
@@ -110,6 +121,7 @@ async function sync(mode: "load" | "save") {
     searchLimit.value = result.searchLimit;
     syncAfterUpdate.value = result.syncAfterUpdate;
     syncGallery.value = result.syncGallery;
+    syncCharacterGallery.value = result.syncCharacterGallery;
     scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
@@ -158,10 +170,18 @@ onBeforeUnmount(() => {
         </p>
         <label class="update-toggle">
           <input id="atlas-sync-gallery" v-model="syncGallery" type="checkbox" aria-describedby="atlas-sync-gallery-note" />
-          发布时同步新图库
+          发布图鉴时同步插图
         </label>
         <p id="atlas-sync-gallery-note" class="subtitle toggle-note">
-          关闭后，发布新条目时沿用当前图库。恢复后可发送 #全量更新图鉴 补齐图片。
+          关闭后，发布新条目时沿用已有图鉴插图。恢复后可发送 #全量更新图鉴 补齐图片。
+        </p>
+        <label class="update-toggle">
+          <input id="atlas-sync-character-gallery" v-model="syncCharacterGallery" type="checkbox"
+            aria-describedby="atlas-sync-character-gallery-note" />
+          自动同步三游角色图库
+        </label>
+        <p id="atlas-sync-character-gallery-note" class="subtitle toggle-note">
+          每 12 小时检查原神、星铁和绝区零的角色图片。关闭后保留已同步的图片。
         </p>
         <label for="atlas-check-cron">版本检查 Cron</label>
         <input id="atlas-check-cron" v-model="draft.check_cron" type="text" maxlength="160" autocomplete="off"

@@ -10,7 +10,12 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
 
 const defaults = { check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" };
 const cronFields = ["check_cron", "challenge_cron"] as const;
-type AtlasScalars = { readonly max_results?: number; readonly sync_after_update?: boolean; readonly sync_gallery?: boolean };
+type AtlasScalars = {
+  readonly max_results?: number;
+  readonly sync_after_update?: boolean;
+  readonly sync_gallery?: boolean;
+  readonly sync_character_gallery?: boolean;
+};
 type Settings = typeof defaults & { enable: boolean; run_on_missing_data: boolean };
 type ProposedSettings = Omit<Settings, "run_on_missing_data"> & Partial<Pick<Settings, "run_on_missing_data">>;
 type Config = Readonly<Record<string, unknown>>;
@@ -37,10 +42,11 @@ function snapshot(document: Config, parsePolicy?: Parser, search?: SearchSetting
   };
   const syncAfterUpdate = atlas?.sync_after_update !== false;
   const syncGallery = atlas?.sync_gallery !== false;
+  const syncCharacterGallery = atlas?.sync_character_gallery !== false;
   const revision = createHash("sha256").update(JSON.stringify([
-    settings, atlas?.update_args, atlas?.challenge_args, atlas?.max_results, syncAfterUpdate, syncGallery,
+    settings, atlas?.update_args, atlas?.challenge_args, atlas?.max_results, syncAfterUpdate, syncGallery, syncCharacterGallery,
   ])).digest("hex");
-  return { settings, revision, syncAfterUpdate, syncGallery, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
+  return { settings, revision, syncAfterUpdate, syncGallery, syncCharacterGallery, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
     searchLimit: search && (search.parseAtlasSearchLimit(atlas?.max_results) ?? search.defaultAtlasSearchLimit) };
 }
 
@@ -115,10 +121,12 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
     let proposedLimit: number | undefined;
     let proposedSync: boolean | undefined;
     let proposedGallery: boolean | undefined;
+    let proposedCharacterGallery: boolean | undefined;
     try {
       const body = record(await readPanelJson(request, 4096));
       const settings = record(body?.settings);
-      if (!body || Object.keys(body).some(key => !["revision", "settings", "scopePatch", "searchLimit", "syncAfterUpdate", "syncGallery"].includes(key)) ||
+      if (!body || Object.keys(body).some(key =>
+        !["revision", "settings", "scopePatch", "searchLimit", "syncAfterUpdate", "syncGallery", "syncCharacterGallery"].includes(key)) ||
           typeof body.revision !== "string" || !/^[a-f0-9]{64}$/u.test(body.revision) ||
           !settings || Object.keys(settings).length !== (Object.hasOwn(settings, "run_on_missing_data") ? 4 : 3) ||
           typeof settings.enable !== "boolean" ||
@@ -138,6 +146,10 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
       if (Object.hasOwn(body, "syncGallery")) {
         if (typeof body.syncGallery !== "boolean") return Response.json({ field: "syncGallery" }, { status: 400 });
         proposedGallery = body.syncGallery;
+      }
+      if (Object.hasOwn(body, "syncCharacterGallery")) {
+        if (typeof body.syncCharacterGallery !== "boolean") return Response.json({ field: "syncCharacterGallery" }, { status: 400 });
+        proposedCharacterGallery = body.syncCharacterGallery;
       }
       proposed = { enable: settings.enable, check_cron: settings.check_cron, challenge_cron: settings.challenge_cron,
         run_on_missing_data: settings.run_on_missing_data as boolean | undefined };
@@ -177,6 +189,8 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
             ...(proposedLimit !== undefined && proposedLimit !== before.searchLimit && { max_results: proposedLimit }),
             ...(proposedSync !== undefined && proposedSync !== before.syncAfterUpdate && { sync_after_update: proposedSync }),
             ...(proposedGallery !== undefined && proposedGallery !== before.syncGallery && { sync_gallery: proposedGallery }),
+            ...(proposedCharacterGallery !== undefined && proposedCharacterGallery !== before.syncCharacterGallery &&
+              { sync_character_gallery: proposedCharacterGallery }),
           };
           if (!Object.keys(changes).length && !Object.keys(args).length && !Object.keys(scalars).length) return { value: before };
           // Creating the first Atlas mapping would otherwise enable its schedule implicitly.

@@ -172,6 +172,49 @@ test("图鉴同步默认发布，页面关闭后只修改候选发布配置", as
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("三游角色图库开关默认开启，和图鉴插图分开保存及检查并发", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-character-gallery-panel-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const original = "# 保留注释与既有图鉴插图开关\r\natlas:\r\n  sync_gallery: false\r\n  auto_update: {enable: false}\r\n";
+    await writeFile(file, original);
+    const route = panelAtlasUpdate(root, validTask);
+    const admin = panelApi(token, [], path => path === endpoint ? route : undefined);
+    const get = async () => (await admin(request()))!.json();
+    const initial = await get();
+    expect(initial).toMatchObject({ syncCharacterGallery: true, syncGallery: false, settings: { enable: false } });
+    const edit = (value: unknown, revision = initial.revision) => request("PUT", {
+      revision, settings: initial.settings, syncCharacterGallery: value,
+    });
+    const invalid = await admin(edit("false"));
+    expect(invalid?.status).toBe(400);
+    expect(await invalid?.json()).toEqual({ field: "syncCharacterGallery" });
+    let authorize = true;
+    expect((await route(edit(false), () => {
+      const current = authorize;
+      authorize = false;
+      return current;
+    })).status).toBe(401);
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    const saved = await admin(edit(false));
+    expect(saved?.status).toBe(200);
+    const disabled = await saved!.json();
+    expect(disabled).toMatchObject({ syncCharacterGallery: false, syncGallery: false, settings: initial.settings });
+    expect(await get()).toEqual(disabled);
+    expect(disabled.revision).not.toBe(initial.revision);
+    expect((await admin(edit(true)))?.status).toBe(409);
+    expect(await readFile(file, "utf8")).toBe(original + "  sync_character_gallery: false\r\n");
+
+    expect((await admin(edit(true, disabled.revision)))?.status).toBe(200);
+    expect(await get()).toMatchObject({ syncCharacterGallery: true, syncGallery: false, settings: initial.settings });
+    const effective = (await readLotusGlobalConfig(root)).atlas;
+    expect(effective).toMatchObject({ sync_character_gallery: true, sync_gallery: false, auto_update: { enable: false } });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("缺数据开关仅在重启后的版本任务读取，并保持原版本渠道和两条 Cron", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-panel-empty-"));
   try {
