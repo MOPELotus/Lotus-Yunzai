@@ -76,7 +76,7 @@ async function prepare(root: string) {
   } } } } } }));
   await writeFile(join(root, "catalog/items/achievement.json"), JSON.stringify({
     meta: { gameId: "gi", pageId, recordId: "6", version: "1" },
-    content: { list: { id: 6, name: "尘世巡游", list: [{ id: 100, name: "固定验收", desc: "完成条件", reward: 5 }] } },
+    content: { list: { id: 6, name: "尘世巡游", list: [{ id: 100, name: "固定验收", desc: "完成条件", reward: { item_count: 5 } }] } },
   }));
 }
 
@@ -191,4 +191,50 @@ test("真实双协议宿主接受成就待导入的带说明群附件，坏文�
       await Bun.write(join(gpuProof, "milky.png"), secondImage);
     }
   }, 6_000, preload, prepare);
+}, 25_000);
+
+test("真实双协议分发旧成就分类别名和紧邻导入，公开成就查询保持独立", async () => {
+  await withDualGatewayFixture("achievement-command-fixture", "disablePrivate: false\n", async ({
+    root, onebot, milky, sendOneBot, sendMilky,
+  }) => {
+    const group = { message_type: "group", sub_type: "normal", group_id: 77 };
+    const mkGroup = { message_scene: "group", peer_id: 77, sender_id: actor };
+    async function receive(protocol: "onebot" | "milky", command: string) {
+      if (protocol === "onebot") sendOneBot(command, group);
+      else expect((await sendMilky(command, mkGroup)).status).toBe(200);
+      const call = await (protocol === "onebot" ? onebot.next("send_msg") : milky.next("send_group_message"));
+      if (protocol === "onebot") call.respond({ message_id: 906 });
+      else call.respond({ message_seq: 907 });
+      return call.params;
+    }
+    async function capture(protocol: "onebot" | "milky", name: string, command: string, text: string) {
+      const reply = await receive(protocol, command);
+      expect(reply.group_id).toBe(77);
+      if (gpuProof) await Bun.write(join(gpuProof, name + ".png"), imageData(reply));
+      else expect(JSON.stringify(reply)).toContain(text);
+    }
+    await capture("onebot", "bare-abbreviation", "#尘世", "尘世巡游");
+    await capture("milky", "explicit-reserved", "#成就深境挑战者第一辑成就2", "深境挑战者");
+    expect(JSON.stringify(await receive("onebot", "#成就分类 原神"))).toContain("成就分类");
+    expect(JSON.stringify(await receive("milky", "#成就未知条目"))).toContain("未找到原神成就分类");
+    const legacy = JSON.stringify({ source: "椰羊成就", value: { account: { uid }, achievements: [{ id: 100, status: "3" }] } });
+    const fence = String.fromCharCode(96).repeat(3);
+    await capture("onebot", "inline-legacy", `#成就录入${uid} ${fence}json\n${legacy}\n${fence}`, "新增 1 条");
+    expect(await Bun.file(join(root, "data/achievements/42", uid + ".json")).json())
+      .toMatchObject({ uid, done: { "100": { id: 100, source: "cocogoat" } } });
+  }, 6_000, preload, async root => {
+    await prepare(root);
+    const index = Bun.file(join(root, "catalog/map.json"));
+    const map = await index.json();
+    const pageId = "achievement/achievement";
+    const page = map.games.gi.locales.zh.pages[pageId];
+    const name = "深境挑战者·第一辑";
+    page.recordCount++;
+    page.records["7"] = { id: "7", path: "items/abyss.json", name };
+    await Bun.write(index, JSON.stringify(map));
+    await Bun.write(join(root, "catalog/items/abyss.json"), JSON.stringify({
+      meta: { gameId: "gi", pageId, recordId: "7", version: "1" },
+      content: { list: { id: 7, name, list: [{ id: 101, name: "深境验收", desc: "完成挑战", reward: { item_count: 10 } }] } },
+    }));
+  });
 }, 25_000);
