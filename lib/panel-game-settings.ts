@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
 import { GlobalConfigWriteError, updateLocalConfiguration, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
+import { isTrialTitleMode, readPanelTrialDisplay } from "./panel-trial-display.ts";
 import { readPanelJson } from "./panel.ts";
 import { readLegacyCharacterAliasMode, validLegacyCharacterAliasMode } from "./game-character-aliases.ts";
 
@@ -84,6 +85,10 @@ async function showcasePanel(root: URL) {
     import("../plugins/starrail/panel-original-config.ts"),
   ]);
   const fields: readonly SettingField[] = [
+    { key: "panelTrialDifference", label: "原神、星铁临时试算伤害差值", type: "boolean",
+      hint: "显示试算结果相对原面板的暴击和期望变化。关闭后也停用下方的标题处理。" },
+    { key: "panelTrialLongTitle", label: "原神、星铁临时试算长标题", type: "select",
+      options: [{ label: "保留", value: 0 }, { label: "截断", value: 1 }, { label: "换行", value: 2 }] },
     { key: "legacyPanelRecovery", label: "允许本人确认后恢复旧面板", type: "boolean",
       hint: "仅限好友私聊，官方更新无结果且本机无档时提示。需本人确认才向原旧档服务提供 QQ 和游戏 UID。" },
     {
@@ -120,13 +125,14 @@ async function showcasePanel(root: URL) {
   ];
   async function read() {
     const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery,
-      portraitGroups, starrailLegacyAliasMode] = await Promise.all([
+      portraitGroups, starrailLegacyAliasMode, trial] = await Promise.all([
       readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root), originals.readStarRailOriginalSettings(root),
       readLegacyPanelRecoveryEnabled(root), originals.readStarRailBuiltInPortraitGroups(root),
-      readLegacyCharacterAliasMode("sr", fileURLToPath(root)).catch(() => 2),
+      readLegacyCharacterAliasMode("sr", fileURLToPath(root)).catch(() => 2), readPanelTrialDisplay(root),
     ]);
     return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery, starrailLegacyAliasMode,
-      starrailBuiltInPortraitGroups: portraitGroups.join(", ") };
+      starrailBuiltInPortraitGroups: portraitGroups.join(", "),
+      panelTrialDifference: trial.showDifference, panelTrialLongTitle: trial.longTitle };
   }
   return {
     fields,
@@ -138,6 +144,13 @@ async function showcasePanel(root: URL) {
           const current = effective as Awaited<ReturnType<typeof read>>;
           if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
           const edits: Edit[] = [];
+          if (typeof values.panelTrialDifference !== "boolean" || !isTrialTitleMode(values.panelTrialLongTitle)) throw new InvalidGameSettings();
+          if (values.panelTrialDifference !== current.panelTrialDifference) {
+            edits.push({ path: ["panel_trial", "show_difference"], value: values.panelTrialDifference });
+          }
+          if (values.panelTrialLongTitle !== current.panelTrialLongTitle) {
+            edits.push({ path: ["panel_trial", "long_title"], value: values.panelTrialLongTitle });
+          }
           if (typeof values.legacyPanelRecovery !== "boolean") throw new InvalidGameSettings();
           if (values.legacyPanelRecovery !== current.legacyPanelRecovery) {
             edits.push({ path: ["panel_legacy_recovery"], value: values.legacyPanelRecovery });

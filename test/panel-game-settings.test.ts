@@ -1,3 +1,4 @@
+import { readPanelTrialDisplay } from "../lib/panel-trial-display.ts";
 import { readLegacyCharacterAliasMode } from "../lib/game-character-aliases.ts";
 import { readLegacyPanelRecoveryEnabled } from "../lib/legacy-panel-recovery-flow.ts";
 import { expect, test } from "bun:test";
@@ -42,18 +43,23 @@ test("游戏展柜和货币战争面板复用真实旧设置，并即刻由现�
     const original = await panel(new Request(endpoint, { headers }));
     const result = await original!.json() as Result;
     expect(result.values).toEqual({ genshinSource: "0", starrailSource: "442", gridFightRecentCount: 3,
-      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false, starrailBuiltInPortraitGroups: "", starrailLegacyAliasMode: 2 });
+      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false, starrailBuiltInPortraitGroups: "", starrailLegacyAliasMode: 2,
+      panelTrialDifference: true, panelTrialLongTitle: 1 });
 
-    const values = { ...result.values, genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1, legacyPanelRecovery: true };
+    const values = { ...result.values, genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1, legacyPanelRecovery: true,
+      panelTrialDifference: false, panelTrialLongTitle: 2 };
     expect((await panel(send(result.values, { ...values, genshinSource: "3" })))?.status).toBe(400);
     expect((await panel(send(result.values, { ...values, starrailSource: "1" })))?.status).toBe(400);
     expect((await panel(send(result.values, { ...values, gridFightRecentCount: 4 })))?.status).toBe(400);
+    expect((await panel(send(result.values, { ...values, panelTrialDifference: "false" })))?.status).toBe(400);
+    expect((await panel(send(result.values, { ...values, panelTrialLongTitle: 3 })))?.status).toBe(400);
     const saved = await panel(send(result.values, values));
     expect(saved?.status).toBe(200);
     expect(await readGenshinShowcaseServer(root)).toBe("332");
     expect(await readShowcaseServer(root)).toBe("234");
     expect(await readGridFightRecentCount(root)).toBe(1);
     expect(await readLegacyPanelRecoveryEnabled(root)).toBe(true);
+    expect(await readPanelTrialDisplay(root)).toEqual({ showDifference: false, longTitle: 2 });
     const text = await readFile(config, "utf8");
     expect(text).toContain("# 保留此注释");
     expect(Bun.YAML.parse(text)).toEqual({
@@ -61,6 +67,7 @@ test("游戏展柜和货币战争面板复用真实旧设置，并即刻由现�
       starrail: { part: "keep", showcase_server: "234", grid_fight_recent_count: 1 },
       extra: "yes",
       panel_legacy_recovery: true,
+      panel_trial: { show_difference: false, long_title: 2 },
     });
     expect((await panel(send(result.values, values)))?.status).toBe(409);
     expect(await readFile(config, "utf8")).toBe(text);

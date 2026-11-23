@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { legacyLotusDirectories, resolveLotusGlobalConfig } from "./lotus-global-config.ts";
 import { MigrationSourceFileError, readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyDailyNoteReminderSettings } from "./migration-daily-note-reminders.ts";
+import { projectPanelTrialDisplay } from "./migration-panel-trial-display.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
 import { projectShowcaseSettings, type ShowcaseArchive } from "./migration-showcase.ts";
 import { configuredSiteIcpNumber } from "./web-icp.ts";
@@ -48,7 +49,9 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
   const effective = await resolveLotusGlobalConfig(local ?? {}, async id => legacy[legacyLotusDirectories.indexOf(id)]);
   const media = projectLegacyMediaConfig(local ?? {}, legacy.filter((config): config is Config => config !== undefined));
   const showcase = await projectShowcaseSettings(local ?? {}, showcaseArchive, signal);
-  const projected: Config = { ...media.config, ...showcase.config };
+  const trial = await projectPanelTrialDisplay(local ?? {}, showcaseArchive, signal);
+  const projected: Config = { ...media.config, ...showcase.config,
+    ...(Object.keys(trial.config).length && { panel_trial: trial.config }) };
   for (const [key, fields] of Object.entries(supported)) {
     if (Object.hasOwn(effective, key)) projected[key] = projectSettings(effective[key], fields);
   }
@@ -79,5 +82,6 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
     await writeFile(join(directory, "global.yaml"), Bun.YAML.stringify(projected), { flag: "wx", mode: 0o600 });
   }
   return { sections, deferredMedia: media.deferred,
-    ...(showcase.deferred.length && { deferredShowcase: showcase.deferred }) };
+    ...(showcase.deferred.length && { deferredShowcase: showcase.deferred }),
+    ...(trial.deferred.length && { deferredPanelTrial: trial.deferred }) };
 }
