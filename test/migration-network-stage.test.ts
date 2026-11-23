@@ -43,6 +43,7 @@ function certificate(root: string, label: string) {
 test("stages only named YAML and keeps the primary schema, explicitly configured remote endpoints and private modes", async () => {
   const { source, stage } = await setup();
   await put(source, ".env", "LOTUS_VALKEY_URL=must-not-copy");
+  await put(source, "config/default_config/server.yaml", "[invalid old value ignored by active configuration");
   await put(source, "config/config/server.yaml", { port: 30444, auth: { "X-Fixture": "older" } });
   await put(source, "config/server.yaml", { port: 30222, auth: { "X-Fixture": "private-fixture" }, https: false });
   await put(source, "config/config/milky.yaml", {
@@ -65,6 +66,72 @@ test("stages only named YAML and keeps the primary schema, explicitly configured
   expect(await readFile(join(stage, "config/group.yaml"), "utf8")).toBe("keep: true\n");
   await expect(lstat(join(stage, ".env"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(join(source, "config/config/server.yaml"), "utf8")).toContain("30444");
+});
+
+test("materializes omitted network defaults and replaces whole legacy sections before opening the host settings", async () => {
+  const { source, stage } = await setup();
+  const auth = { Authorization: "Bearer effective-loopback-only" };
+  await put(source, "config/default_config/server.yaml", {
+    port: 0, url: "https://bot.example.invalid/base", redirect: "https://docs.example.invalid/",
+    auth: { "X-Legacy-Default": "not-effective" }, https: { key: "unread.pem", cert: "unread.pem", port: 42533 },
+  });
+  await put(source, "config/config/server.yaml", { auth, https: null });
+  await put(source, "config/default_config/milky.yaml", {
+    enable: true, host: "127.0.0.1", port: 32001, prefix: "/inherited", connection: "ws",
+    access_token: "fixture-default-milky", http_timeout: 2.5, webhook: { path: "/inherited-hook" },
+    ws: { heartbeat: 7, reconnect_interval: 4 },
+  });
+  await put(source, "config/config/milky.yaml", { ws: { heartbeat: 2 } });
+  await put(source, "config/default_config/redis.yaml", {
+    host: "127.0.0.1", port: 32002, username: "fixture-acl", password: "fixture-private-store",
+    db: 11, path: "must-not-start",
+  });
+
+  const report = await stageLegacyNetworkConfig(source, stage);
+  expect(report).toEqual({ groups: ["server", "milky", "redis"], deferred: [] });
+  expect(JSON.stringify(report)).not.toMatch(/fixture|effective-loopback|example\.invalid/u);
+  const root = pathToFileURL(stage + "/");
+  const settings = await readServerSettings(root, {});
+  expect(settings.http?.port).toBe(0);
+  expect(settings.oneBot?.port).toBe(0);
+  expect(Object.fromEntries(settings.http!.auth)).toEqual({ authorization: auth.Authorization });
+  expect(settings.https).toBeUndefined();
+  expect(settings.publicUrl?.pathname).toBe("/base/");
+  expect(settings.redirect).toBe("https://docs.example.invalid/");
+  const server = Bun.serve({ hostname: "127.0.0.1", port: settings.http!.port, fetch: httpStatus(settings.http!.auth) });
+  try {
+    const url = new URL("/status", server.url);
+    url.searchParams.set("Authorization", auth.Authorization);
+    expect((await fetch(url)).status).toBe(401);
+    expect((await fetch(url, { headers: auth })).status).toBe(200);
+  } finally {
+    server.stop(true);
+  }
+  const milky = await readMilkySettings(root);
+  expect(milky?.apiBase.href).toBe("http://127.0.0.1:32001/inherited/api/");
+  expect(milky).toMatchObject({ accessToken: "fixture-default-milky", timeoutMs: 2_500, heartbeatMs: 2_000,
+    reconnectMs: 10_000, webhookPath: "/inherited-hook" });
+  expect(await readStorageConnection(root)).toEqual({
+    host: "127.0.0.1", port: 32002, username: "fixture-acl", password: "fixture-private-store", database: 11,
+  });
+  for (const group of report.groups) expect((await lstat(join(stage, "config", group + ".yaml"))).mode & 0o777).toBe(0o600);
+  expect(await readFile(join(stage, "config/redis.yaml"), "utf8")).not.toContain("must-not-start");
+});
+
+test("removing inherited auth leaves old unauthenticated WebSocket and Webhook ingress deferred", async () => {
+  const { source, stage } = await setup();
+  await put(source, "config/default_config/server.yaml", { port: 0, auth: { Authorization: "Bearer discarded" } });
+  await put(source, "config/config/server.yaml", { auth: null });
+  await put(source, "config/default_config/milky.yaml", { enable: true, connection: "webhook", access_token: "discarded" });
+  await put(source, "config/config/milky.yaml", { access_token: "" });
+  expect(await stageLegacyNetworkConfig(source, stage)).toEqual({ groups: ["server"], deferred: [
+    "server.onebot.authorization", "milky.webhook.authorization",
+  ] });
+  const settings = await readServerSettings(pathToFileURL(stage + "/"), {});
+  expect(settings.http?.port).toBe(0);
+  expect(settings.http?.auth.has("Authorization")).toBe(false);
+  expect(settings.oneBot).toBeUndefined();
+  expect(await Bun.file(join(stage, "config/milky.yaml")).exists()).toBe(false);
 });
 
 test.skipIf(!Bun.which("openssl"))("restores an independent matching TLS pair, resolves staged relative paths and serves trusted loopback TLS", async () => {

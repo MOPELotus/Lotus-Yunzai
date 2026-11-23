@@ -130,23 +130,31 @@ const httpsFiles = {
   cert: "config/tls/legacy-server-cert.pem",
 } as const;
 
-async function readFamily(source: string, family: Family, signal?: AbortSignal): Promise<Fields | undefined> {
-  for (const prefix of ["config", "config/config"]) {
-    let file;
-    try {
-      file = await readMigrationSourceFile(source, join(source, prefix, `${family}.yaml`), 256 * 1024, signal);
-    } catch {
-      signal?.throwIfAborted();
-      throw new Error(`旧 ${family}.yaml 须为副本中的普通 YAML 文件。`);
-    }
-    if (!file) continue;
-    try {
-      const config: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
-      return subsection(config, family) ?? {};
-    } catch {
-      throw new Error(`旧 ${family}.yaml 须为有效的 YAML 映射。`);
-    }
+async function readFamilyFile(source: string, prefix: string, family: Family, signal?: AbortSignal): Promise<Fields | undefined> {
+  let file;
+  try {
+    file = await readMigrationSourceFile(source, join(source, prefix, `${family}.yaml`), 256 * 1024, signal);
+  } catch {
+    signal?.throwIfAborted();
+    throw new Error(`旧 ${family}.yaml 须为副本中的普通 YAML 文件。`);
   }
+  if (!file) return;
+  try {
+    const config: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
+    return subsection(config, family) ?? {};
+  } catch {
+    throw new Error(`旧 ${family}.yaml 须为有效的 YAML 映射。`);
+  }
+}
+
+async function readFamily(source: string, family: Family, signal?: AbortSignal): Promise<Fields | undefined> {
+  const active = await readFamilyFile(source, "config", family, signal);
+  if (active !== undefined) return active;
+  const [defaults, runtime] = await Promise.all([
+    readFamilyFile(source, "config/default_config", family, signal),
+    readFamilyFile(source, "config/config", family, signal),
+  ]);
+  if (defaults !== undefined || runtime !== undefined) return { ...defaults, ...runtime };
 }
 
 async function readTlsPair(source: string, keyPath: string, certPath: string, signal?: AbortSignal) {
