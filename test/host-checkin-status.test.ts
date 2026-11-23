@@ -126,6 +126,18 @@ test("旧签到时间仅主人能设置，普通用户仍可管理本人签到�
     const current = await profiles.checkinSettings("43", 2);
     expect(current).toMatchObject({ communityForums: [], notify: { enabled: false }, games: { honkai_sr: { enabled: false } } });
     expect(current.schedule).toMatchObject({ mode: "fixed", fixedTime: "08:15" });
+
+    const owner = { sender_id: 91, peer_id: 91 };
+    expect((await sendMilky("#随机签到时间2", owner)).status).toBe(200);
+    (await milky.next("send_private_message")).respond({ message_seq: sequence++ });
+    expect((await profiles.checkinSettings("91", 2)).schedule.mode).toBe("random");
+
+    expect((await sendMilky("#注册本群签到2", { ...owner, message_scene: "group", peer_id: 72 })).status).toBe(200);
+    const roster = await milky.next("get_group_member_list");
+    expect(roster.params).toEqual({ group_id: 72, no_cache: true });
+    roster.respond({ members: [{ group_id: 72, user_id: 91, nickname: "合成群名片" }] });
+    (await milky.next("send_group_message")).respond({ message_seq: sequence++ });
+    expect((await profiles.checkinSettings("91", 2)).notify.fallbackGroups).toEqual([72]);
   }, 4000, `
     Bun.env.LOTUS_PROFILE_DIR = process.cwd() + "/profiles";
     const originalFetch = globalThis.fetch;
@@ -137,7 +149,7 @@ test("旧签到时间仅主人能设置，普通用户仍可管理本人签到�
     const directory = join(root, "profiles");
     await mkdir(directory);
     await writeFile(join(root, "config", "global.yaml"), "scheduler: {enable: false}\n");
-    for (const qq of ["42", "43"]) {
+    for (const qq of ["42", "43", "91"]) {
       const profile = {
         user: { qq }, profile: { id: 2 }, schedule: { mode: "fixed", fixed_time: "08:15" },
         account: { cookie: "cookie_token=fixture", stoken: "fixture" },
@@ -146,4 +158,4 @@ test("旧签到时间仅主人能设置，普通用户仍可管理本人签到�
       await writeFile(join(directory, `${qq}-2.yaml`), Bun.YAML.stringify(profile));
     }
   });
-}, 15_000);
+}, 20_000);

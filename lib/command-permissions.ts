@@ -1,4 +1,5 @@
 import type { MessageEvent } from "./messages.ts";
+import type { MessageFallbackContext } from "./commands.ts";
 
 function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -8,6 +9,11 @@ export function isMilkyOwnerSession(event: MessageEvent): boolean {
   return event.adapter === "milky" && event.canManageProcess === true && positiveId(event.self_id) &&
     positiveId(event.user_id) && (event.message_type === "private" ||
       (event.message_type === "group" && positiveId(event.group_id)));
+}
+
+export function isCheckinCommandOwner(context: MessageFallbackContext): boolean {
+  return context.isMaster || (context.adapter === "milky" && !context.isDelegated &&
+    positiveId(context.self_id) && positiveId(context.user_id) && context.isBotMaster(context.user_id));
 }
 
 export function canManagePackages(event: MessageEvent): boolean {

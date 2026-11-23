@@ -1,6 +1,7 @@
 import { createProfileStore, MAX_PROFILE_ID, ProfileError,
   type ProfileCheckinSettingsChange } from "@lotus-yunzai/account";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const toggle = /^#(启用|开启|关闭|禁用)((?:原神|星铁|崩铁|绝区零|绝|未定事件簿|未定|崩坏3|崩三|崩坏2|崩二|因缘精灵)(?:游戏)?|全部游戏)签到([1-9]\d{0,2})?$/u;
 const notifyToggle = /^#(启用|开启|关闭|禁用)签到通知([1-9]\d{0,2})?$/u;
@@ -70,7 +71,7 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
       const { id, change } = match;
       if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从对应的 QQ 会话设置签到。";
-      if (change.type === "schedule" && !context.isMaster) return "签到模式与时间由机器人主人统一安排。";
+      if (change.type === "schedule" && !isCheckinCommandOwner(context)) return "签到模式与时间由机器人主人统一安排。";
       const qq = String(context.user_id);
       let saved = false;
       try {

@@ -1,6 +1,7 @@
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import type { CheckinScheduleProfile } from "./checkin-schedule-plan.ts";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const register = /^#注册自动签到([1-9]\d{0,2})?$/u;
 
@@ -111,7 +112,7 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
         return "请从对应的 QQ 会话注册自动签到。";
       }
-      if (!canRegister(context)) return "当前会话无权注册自动签到。";
+      if (!canRegister({ ...context, isMaster: isCheckinCommandOwner(context) })) return "当前会话无权注册自动签到。";
       const qq = String(context.user_id);
       let saved = false;
       try {

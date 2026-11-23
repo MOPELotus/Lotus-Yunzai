@@ -2,6 +2,7 @@ import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CommandContext, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
+import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const register = /^#注册本群签到([1-9]\d{0,2})?$/u;
 const title = "注册本群签到";
@@ -75,7 +76,9 @@ export function checkinGroupRegistrationCommands({
       if (context.message_type !== "group" || !isQq(groupId) || !isQq(userId)) {
         return "请在目标群内执行 #注册本群签到。普通用户可在目标群发送 #绑定通知群。";
       }
-      if (!canRegister(context)) return "当前会话无权为本群批量注册签到。普通用户可发送 #绑定通知群。";
+      if (!canRegister({ ...context, isMaster: isCheckinCommandOwner(context) })) {
+        return "当前会话无权为本群批量注册签到。普通用户可发送 #绑定通知群。";
+      }
       let members;
       try {
         members = await listCheckinGroupMembers?.();
