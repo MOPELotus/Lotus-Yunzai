@@ -35,7 +35,7 @@ interface Location {
 }
 
 type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
-  "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
+  "remote" | "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
   "group" | "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
 
 function groupConfigLockPath(root: URL) {

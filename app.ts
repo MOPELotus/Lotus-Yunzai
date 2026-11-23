@@ -130,6 +130,7 @@ import { panelGroupRouting } from "./lib/panel-group-routing.ts";
 import { panelNoticeSettings, panelNoticeMysSettings } from "./lib/panel-notice-settings.ts";
 import { panelNoticeDeliverySettings } from "./lib/panel-notice-delivery-settings.ts";
 import { panelZzzSettings } from "./lib/panel-zzz-settings.ts";
+import { panelRemoteSettings } from "./lib/panel-remote-settings.ts";
 import { panelRuntimeSettings } from "./lib/panel-runtime-settings.ts";
 import { panelProcessScheduleSettings } from "./lib/panel-process-schedule-settings.ts";
 import { panelDailyNoteSettings } from "./lib/panel-daily-note-settings.ts";
@@ -3642,6 +3643,7 @@ if (import.meta.main) {
         ["/panel/api/settings/native/rank", panelGroupRankSettings(root)],
         ["/panel/api/settings/native/status", panelStatusSettings(root)],
         ["/panel/api/settings/native/runtime", panelRuntimeSettings(root)],
+        ["/panel/api/settings/native/remote", panelRemoteSettings(root)],
         ["/panel/api/settings/native/process-schedule", panelProcessScheduleSettings(root, validateModuleCron)],
         ["/panel/api/settings/native/daily-note", panelDailyNoteSettings(root, validateModuleCron)],
         ["/panel/api/settings/native/showcase", panelGameSettings(root, "showcase")],

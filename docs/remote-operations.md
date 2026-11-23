@@ -4,7 +4,7 @@ Linux 宿主可以在绑定机器人的主人好友私聊中，通过 TOTP 执�
 
 在运行宿主的系统用户自己的私用终端中，进入 Lotus-Yunzai 目录，运行 `bun --no-env-file scripts/remote-otp.ts setup`。使用支持 TOTP 的验证器扫描终端二维码。更换验证器时运行同一脚本的 `reset`。凭据保存在 `data/remote-auth/`，仅该系统用户可以访问。
 
-确认配对后，在 `config/remote.yaml` 设置：
+完成配对后，可在管理面板的「业务设置 → 远程运维」管理启停、超时、Shell 白名单和上传覆盖。也可直接修改 `config/remote.yaml`：
 
 ```yaml
 enable: true

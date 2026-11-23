@@ -58,6 +58,7 @@ const nativeSections = computed(() => [
   { key: "rank", label: "原神与星铁列表和群榜" },
   { key: "status", label: "状态与监控" },
   { key: "runtime", label: "宿主运行" },
+  { key: "remote", label: "远程运维" },
   { key: "process-schedule", label: "停启与更新调度" },
   { key: "showcase", label: "游戏展柜与战绩" },
   { key: "genshin-damage", label: "原神伤害计算" },
