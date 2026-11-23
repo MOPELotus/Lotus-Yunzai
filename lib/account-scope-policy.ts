@@ -34,7 +34,7 @@ export type RemoteScope = "remote.spawn" | "remote.download" | "remote.upload";
 export function accountScopePolicy(scope: AccountScope | GroupScope | RemoteScope, configured: unknown): AccountScopePolicy {
   const ownerOnly = scope === "group.cleanup" || scope === "group.members.export" || scope.startsWith("remote.");
   if (configured !== null && configured !== undefined) {
-    return accountScopePolicies.find(value => value === configured) ?? (ownerOnly ? "deny" : "inherit");
+    return accountScopePolicies.find(value => value === configured) ?? "deny";
   }
   return scope.startsWith("scheduler.") || scope === "checkin.group_register" || ownerOnly ? "master_only" : "inherit";
 }

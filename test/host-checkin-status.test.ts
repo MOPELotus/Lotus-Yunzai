@@ -188,3 +188,33 @@ test("全局签到到期授权只认当前机器人主人，并保留显式用�
       "scheduler: {enable: false}\npermissions: {users: {deny: [44]}}\n");
   });
 }, 12_000);
+
+test("全局签到尊重合法 allow 和 inherit，非法策略不会放宽权限", async () => {
+  const disabled = "全局自动签到已关闭。";
+  const denied = "当前会话无权执行到期签到。";
+  for (const [rule, ordinary, allowListed] of [
+    [{ policy: "master_ony" }, denied, denied],
+    [{ policy: "allow" }, disabled, disabled],
+    [{ policy: "inherit" }, denied, disabled],
+  ] as const) {
+    await withDualGatewayFixture("checkin-due-policy", 'master: ["99:42"]\ndisablePrivate: false\n',
+      async ({ onebot, milky, sendOneBot, sendMilky }) => {
+        sendOneBot("#执行到期签到", { user_id: 43 });
+        const one = await onebot.next("send_msg");
+        expect(one.params.message).toBe(ordinary);
+        one.respond({ message_id: 1 });
+        for (const [qq, expected] of [[44, denied], [45, allowListed]] as const) {
+          expect((await sendMilky("#执行到期签到", { sender_id: qq, peer_id: qq })).status).toBe(200);
+          const response = await milky.next("send_private_message");
+          expect(response.params).toMatchObject({ user_id: qq, message: [{ data: { text: expected } }] });
+          response.respond({ message_seq: qq });
+        }
+      }, 3_000, undefined, async root => {
+        await writeFile(join(root, "config", "global.yaml"), Bun.YAML.stringify({
+          scheduler: { enable: false },
+          permissions: { default_policy: rule.policy === "inherit" ? "deny" : "allow",
+            users: { allow: [45], deny: [44] }, scopes: { "scheduler.run_due": rule } },
+        }));
+      });
+  }
+}, 15_000);
