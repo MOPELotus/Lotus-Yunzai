@@ -50,11 +50,12 @@ function validQq(value: unknown): value is string {
   return typeof value === "string" && qqDigits.test(value);
 }
 
-function validDate(time: unknown): time is string {
+export function isStoredCheckinAuditTime(time: unknown): time is string {
   if (typeof time !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/u.test(time) ||
       !Number.isFinite(Date.parse(time))) return false;
   const civil = time.slice(0, 19);
-  return new Date(`${civil}Z`).toISOString().slice(0, 19) === civil;
+  const calendar = new Date(`${civil}Z`);
+  return Number.isFinite(calendar.getTime()) && calendar.toISOString().slice(0, 19) === civil;
 }
 
 function normalizeCounts(input: unknown): Counts | undefined {
@@ -68,6 +69,12 @@ function normalizeCounts(input: unknown): Counts | undefined {
     counts[key] = count;
   }
   return counts;
+}
+
+export function storedCheckinAuditSource(source: unknown): CheckinAuditEntry["source"] | undefined {
+  if (source === "scheduled_signin_retry") return "scheduled_retry";
+  if (source === "manual_community_retry") return "manual";
+  return sources.find(value => value === source);
 }
 
 function normalizeEntry(input: unknown): CheckinAuditEntry | undefined {
@@ -95,8 +102,8 @@ function rowFor(time: string, entry: CheckinAuditEntry): CheckinAuditRow {
 function decodeLine(input: Buffer, ownerQq: string | undefined): CheckinAuditRow | undefined {
   try {
     const data = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)));
-    if (!data || (ownerQq !== undefined && data.qq !== ownerQq) || !validDate(data.time) || typeof data.message !== "string") return;
-    const entry = normalizeEntry(data);
+    if (!data || (ownerQq !== undefined && data.qq !== ownerQq) || !isStoredCheckinAuditTime(data.time) || typeof data.message !== "string") return;
+    const entry = normalizeEntry({ ...data, source: storedCheckinAuditSource(data.source) });
     if (entry) return rowFor(data.time, entry);
   } catch {
     // Old audit logs may contain malformed or interrupted lines.
@@ -228,15 +235,17 @@ export function createCheckinAudit(path: string, now = () => new Date(), history
       const batches = (await Promise.all(sources.map(input => readFile(input, qq)))).filter(batch => batch.length);
       if (batches.length <= 1) return batches[0] ?? [];
       const rows: CheckinAuditRow[] = [];
-      const seen = new Set<string>();
+      const seen = new Map<string, number>();
       for (const batch of batches) {
-        const thisFile = new Set<string>();
+        const thisFile = new Map<string, number>();
         for (const row of batch) {
-          const key = JSON.stringify(row);
-          if (!seen.has(key)) rows.push(row);
-          thisFile.add(key);
+          // Copies can use different offsets for one instant. Keep genuine repeat rows within each file.
+          const key = JSON.stringify({ ...row, time: Date.parse(row.time) });
+          const occurrences = (thisFile.get(key) ?? 0) + 1;
+          if (occurrences > (seen.get(key) ?? 0)) rows.push(row);
+          thisFile.set(key, occurrences);
         }
-        for (const key of thisFile) seen.add(key);
+        for (const [key, occurrences] of thisFile) seen.set(key, Math.max(occurrences, seen.get(key) ?? 0));
       }
       return rows.sort((a, b) => Date.parse(b.time) - Date.parse(a.time)).slice(0, limit);
     },

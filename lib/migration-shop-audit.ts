@@ -4,7 +4,7 @@ import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { createProfileStore, MAX_PROFILE_ID, profileCookieAccountId } from "@lotus-yunzai/account";
-import type { CheckinAuditEntry } from "./checkin-audit.ts";
+import { isStoredCheckinAuditTime, storedCheckinAuditSource, type CheckinAuditEntry } from "./checkin-audit.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
 import type { MiyousheShopPlan } from "./miyoushe-shop-plans.ts";
 import { asTrackerRecord as record, trackerId, trackingRule } from "./miyoushe-shop-tracking.ts";
@@ -21,7 +21,6 @@ const qqId = /^[1-9]\d{0,18}$/u;
 const code = /^[a-zA-Z0-9_]{1,32}$/u;
 const stamp = /^[a-f0-9]{64}$/u;
 const stages = ["refresh", "precheck", "runner", "checkin", "schedule"] as const;
-const sources = ["manual", "scheduled", "scheduled_community_retry", "scheduled_retry"] as const;
 const countKeys = ["signed", "already", "first-bind", "unconfirmed", "failed", "skipped", "community-accepted", "community-already"] as const;
 const statuses = ["scheduled", "preparing", "submitting", "unknown", "cancelled", "missed", "succeeded", "failed"] as const;
 const terminal = ["cancelled", "missed", "succeeded", "failed"] as const;
@@ -87,16 +86,11 @@ function auditRow(line: string) {
   let data: ReturnType<typeof record>;
   try { data = record(JSON.parse(line)); } catch { return; }
   const stage = stages.find(item => item === data?.stage);
-  const source = data?.source === "scheduled_signin_retry" ? "scheduled_retry" : data?.source === "manual_community_retry"
-    ? "manual" : sources.find(item => item === data?.source);
+  const source = storedCheckinAuditSource(data?.source);
   const qq = data?.qq;
   const time = data?.time;
   if (!data || !stage || !source || !valid(qq, qqId) || !profileId(data.profileId) || typeof data.ok !== "boolean" ||
-      !valid(time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/u) ||
-      !Number.isFinite(Date.parse(time))) return;
-  const civil = time.slice(0, 19);
-  const civilDate = new Date(civil + "Z");
-  if (!Number.isFinite(civilDate.getTime()) || civilDate.toISOString().slice(0, 19) !== civil) return;
+      !isStoredCheckinAuditTime(time)) return;
   let counts: CheckinAuditEntry["counts"];
   if (data.counts !== undefined) {
     const raw = record(data.counts);

@@ -353,7 +353,7 @@ test("复杂 cron 仍交给中国时区 Job，自动补偿不猜测应触发的�
   }
 });
 
-test("两次日末任务只补跑当天可核对的社区，不启动普通签到", async () => {
+test("日末任务补跑当天待处理的社区与游戏，不启动普通签到", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-community-final-"));
   const store = createCheckinScheduleStore(directory);
   const signal = new AbortController();
@@ -364,7 +364,7 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
   const config = { fixed_time: "09:00", plan_generate_cron: "0 17 9 * * 1,3", run_due_cron: "15 9 * * *" };
   const plan = generateCheckinSchedulePlan({ config, profiles, now: at, date });
   const accountKey = "a".repeat(64);
-  const ready = { forums: ["6"], attempts: 2, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true } as const;
+  const ready = { forums: ["6"], games: ["honkai_sr"], attempts: 2, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true } as const;
   const calls: string[] = [];
   const completed = Promise.withResolvers<string>();
   const runtime = createCheckinScheduleRuntime({
@@ -374,6 +374,7 @@ test("两次日末任务只补跑当天可核对的社区，不启动普通签�
       calls.push(entry.qq);
       expect(context.communityAccountKey).toBe(accountKey);
       expect(context.communityRetryForums).toEqual(["6"]);
+      expect(context.gameRetryKeys).toEqual(["honkai_sr"]);
       return { status: "complete", ok: true, stage: "checkin" };
     },
     onComplete(entry) { completed.resolve(entry.qq); },

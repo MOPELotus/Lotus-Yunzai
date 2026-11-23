@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { link, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCheckinAudit, type CheckinAuditScope } from "../lib/checkin-audit.ts";
+import { createCheckinAudit, type CheckinAuditEntry, type CheckinAuditScope } from "../lib/checkin-audit.ts";
 
 const qq = "42";
 const timestamp = "2026-01-03T12:34:56.123+08:00";
@@ -87,6 +87,50 @@ test("从两处旧安装合并签到审计副本，按用户过滤，当前历�
   expect(all.map(row => [row.qq, row.profileId])).toEqual([["43", 1], ["42", 2], ["42", 1], ["42", 3]]);
   expect(JSON.stringify(all)).not.toContain("old-secret");
   expect(await Promise.all(history.map(path => readFile(path, "utf8")))).toEqual(bytes);
+}));
+
+test("旧补跑来源在原始日志可读，迁移副本跨时区只显示同一条", () => workspace(async directory => {
+  const active = join(directory, "current.jsonl");
+  const old = join(directory, "legacy.jsonl");
+  const legacy = { ...entry, source: "scheduled_signin_retry", time: timestamp, message: "fixture-legacy-detail" };
+  await writeFile(old, [
+    JSON.stringify(legacy),
+    JSON.stringify({ ...legacy, qq: "43", source: "manual_community_retry" }),
+    JSON.stringify({ ...legacy, profileId: 3, source: "unsupported", time: "2026-01-03T04:35:00.000Z" }),
+    "",
+  ].join("\n"));
+  const audit = createCheckinAudit(active, () => new Date(timestamp), [old]);
+  expect(await audit.read({ qq })).toEqual([
+    { ...entry, source: "scheduled_retry", time: timestamp, message: "签到已完成。" },
+  ]);
+  expect((await audit.read({ qq: "43" })).at(0)?.source).toBe("manual");
+
+  await audit.append({ ...entry, source: "scheduled_retry" });
+  const merged = await audit.read({ owner: true });
+  expect(merged.map(({ qq, source }) => [qq, source])).toEqual([["42", "scheduled_retry"], ["43", "manual"]]);
+  expect(JSON.stringify(merged)).not.toContain("fixture-legacy-detail");
+  await expect(audit.append({ ...entry, source: "scheduled_signin_retry" } as unknown as CheckinAuditEntry)).rejects.toThrow("记录无效");
+}));
+
+test("合并填满最近十二条的旧副本，仍保留应显示的较早独立记录和同文件重数", () => workspace(async directory => {
+  const active = join(directory, "current.jsonl");
+  const history = [join(directory, "copy-a.jsonl"), join(directory, "copy-b.jsonl")];
+  const row = (profileId: number, time: string) => ({ ...entry, time, profileId, message: "ignored" });
+  const repeated = Array.from({ length: 10 }, (_, index) =>
+    row(index + 1, `2026-01-03T04:34:${String(index).padStart(2, "0")}.000Z`));
+  const first = [row(11, "2026-01-03T04:32:30.000Z"), row(12, "2026-01-03T04:33:00.000Z"), ...repeated];
+  const second = [row(13, "2026-01-03T12:32:00.000+08:00"), row(14, "2026-01-03T12:33:20.000+08:00"),
+    ...repeated.map(event => ({ ...event, time: event.time.replace("T04:", "T12:").replace("Z", "+08:00") }))];
+  const writeRows = (file: string, rows: readonly object[]) => writeFile(file, rows.map(event => JSON.stringify(event)).join("\n") + "\n");
+  await writeRows(history[0]!, first);
+  await writeRows(history[1]!, second);
+  const audit = createCheckinAudit(active, undefined, history);
+  expect((await audit.read({ qq })).map(event => event.profileId)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 14, 12]);
+
+  await writeRows(active, [row(20, timestamp)]);
+  await writeRows(history[0]!, [row(20, timestamp), row(20, timestamp)]);
+  await writeRows(history[1]!, [row(20, new Date(timestamp).toISOString())]);
+  expect((await audit.read({ qq })).map(event => event.profileId)).toEqual([20, 20]);
 }));
 
 test("多个写者并发追加时，每条记录完整且各 QQ 不会相互串读", () => workspace(async (directory) => {
