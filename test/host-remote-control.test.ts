@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MessageEvent as BotMessageEvent } from "../lib/messages.ts";
 import { createRemoteControl } from "../lib/remote-control.ts";
-import { consumeRemoteOtp, remoteOtpPaired, rotateRemoteOtp } from "../lib/remote-otp.ts";
+import { consumeRemoteOtp, importLegacyRemoteOtp, remoteOtpPaired, rotateRemoteOtp } from "../lib/remote-otp.ts";
 import { readRemoteFile, writeRemoteFile } from "../lib/remote-files.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
@@ -35,6 +35,26 @@ test("远程 TOTP 持久拒绝重放，配对不可静默覆盖", async () => {
     const replacement = rotateRemoteOtp(root, true);
     expect(consumeRemoteOtp(root, otp(uri, 1, time), time)).toBe(false);
     expect(consumeRemoteOtp(root, otp(replacement, 1, time), time)).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("旧 TOTP 只通过本机显式导入，保留原文件并拒绝旧运行期验证码", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-old-remote-otp-"));
+  try {
+    const time = 1_700_000_010_000;
+    const old = rotateRemoteOtp(join(root, "source"), false);
+    const seed = new URL(old).searchParams.get("secret");
+    const path = join(root, "otp.yaml");
+    const yaml = `version: 1\nsecret: ${seed}\n`;
+    await writeFile(path, yaml);
+    expect(() => importLegacyRemoteOtp(root, path, time)).not.toThrow();
+    expect(await readFile(path, "utf8")).toBe(yaml);
+    expect(consumeRemoteOtp(root, otp(old, 0, time), time)).toBe(false);
+    expect(consumeRemoteOtp(root, otp(old, 1, time), time)).toBe(false);
+    expect(consumeRemoteOtp(root, otp(old, 0, time + 60_000), time + 60_000)).toBe(true);
+    expect(() => importLegacyRemoteOtp(root, path, time)).toThrow();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
