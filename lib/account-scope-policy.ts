@@ -22,12 +22,14 @@ export const groupExportScopes = ["group.members.export"] as const;
 export type GroupExportScope = typeof groupExportScopes[number];
 export type GroupScope = "group.cleanup" | GroupExportScope;
 
-export function accountScopePolicy(scope: AccountScope | GroupScope, configured: unknown): AccountScopePolicy {
-  const group = scope === "group.cleanup" || scope === "group.members.export";
+export type RemoteScope = "remote.spawn" | "remote.download" | "remote.upload";
+
+export function accountScopePolicy(scope: AccountScope | GroupScope | RemoteScope, configured: unknown): AccountScopePolicy {
+  const ownerOnly = scope === "group.cleanup" || scope === "group.members.export" || scope.startsWith("remote.");
   if (configured !== null && configured !== undefined) {
-    return accountScopePolicies.find(value => value === configured) ?? (group ? "deny" : "inherit");
+    return accountScopePolicies.find(value => value === configured) ?? (ownerOnly ? "deny" : "inherit");
   }
-  return scope.startsWith("scheduler.") || scope === "checkin.group_register" || group ? "master_only" : "inherit";
+  return scope.startsWith("scheduler.") || scope === "checkin.group_register" || ownerOnly ? "master_only" : "inherit";
 }
 
 export interface ScopePolicySnapshot<Scope extends string> {

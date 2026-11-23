@@ -69,6 +69,7 @@ import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/ow
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
+import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
@@ -1823,9 +1824,31 @@ if (import.meta.main) {
     return true;
   }
 
+  const remoteControl = createRemoteControl(fileURLToPath(root));
+
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    if ([event.msg, event.raw_message].some(isRemoteControlCommand)) {
+      const transport = event.privateCredentialSignal;
+      const { self_id: botId, user_id: actorId, sender } = event;
+      if (!allowNew || !transport || event.isDelegated || event.attachmentOnly || dispatchPower.paused ||
+          event.message_type !== "private" || event.sub_type !== "friend" || event.group_id !== undefined ||
+          botId === undefined || actorId === undefined || event.message_id === undefined ||
+          (sender?.user_id !== undefined && sender.user_id !== actorId && sender.user_id !== String(actorId))) return;
+      const signal = nativeOperationSignal(transport);
+      const current = () => !signal.aborted && !stopping && handoff.accepting &&
+        allowed(["远程运维", "system", "@lotus-yunzai/system"]) && canManagePackages(event) &&
+        (event.adapter !== "milky" || onlineMilkyBotId() === botId) && masterPermissions.isMaster(botId, actorId);
+      if (current()) await remoteControl(event, {
+        signal, current,
+        async allowed(permission) {
+          const policy = await readLotusGlobalConfig(root).then(config => accountScopePermission(config, permission)).catch(() => undefined);
+          return current() && policy?.({ user_id: actorId, isMaster: true }) === true;
+        },
+      });
+      return;
+    }
     const atlasCommand = atlasMaintenanceCommand.test(event.msg);
     const updateCheck = isUpdateCheckCommand(event.msg);
     if (event.msg === "#TodayEatPro20x" && (event.isDelegated || !canManagePackages(event) ||
