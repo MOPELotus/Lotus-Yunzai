@@ -1135,7 +1135,8 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return updateCloudGame(document, game, { token, enable: true });
       }, signal);
     },
-    async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials, roles?: GameRoles) {
+    // A null catalog means the refresh tried to synchronize roles and failed.
+    async saveRefreshedCredentials(qq: string, id: number, revision: string, credentials: RefreshedCredentials, roles?: GameRoles | null) {
       const name = profileFilename(qq, id);
       if (!credentials.cookie.trim() || !credentials.ltoken.trim() ||
           [credentials.cookie, credentials.ltoken, credentials.stokenCookie ?? ""].some((value) => /[\r\n\0]/u.test(value))) {
@@ -1159,6 +1160,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           ...(stuid && stoken && { stuid, ltuid: stuid, stoken, mid: login.get("mid") ?? current.account.mid }),
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
           ...(roles && { ...rolesForStorage(roles, current), roles_updated_at: new Date().toISOString(), role_sync_error: "" }),
+          ...(roles === null && { role_sync_error: "角色暂未同步。" }),
         };
       }, revision);
     },

@@ -47,7 +47,7 @@ import { readZzzClimbingTower } from "./zzz-climbing-tower.ts";
 import { readZzzVoidFront } from "./zzz-void-front.ts";
 import { readZzzPanel, type ZzzPanelOptions } from "./zzz-panel.ts";
 import { readZzzShiyu } from "./zzz-shiyu.ts";
-import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, type ZzzTuningOptions } from "./zzz-tuning.ts";
+import { isZzzTuningCookieExpired, readZzzTuning, readZzzTuningInventory, resolveZzzTuningRegion, type ZzzTuningOptions } from "./zzz-tuning.ts";
 
 export { readGenshinTeamDamage, type TeamDamagePayload, type TeamDamageRole, type TeamDamageArtifact } from "./genshin-team-damage.ts";
 export { createCredentialExchange };
@@ -126,7 +126,8 @@ function isGenshinPersonalRecordCookieExpired(error: unknown) {
 }
 
 interface CookieRecovery {
-  readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">;
+  readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">
+    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext">>;
   readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
   readonly scope?: () => Promise<string>;
   readonly syncRoles?: boolean;
@@ -185,9 +186,9 @@ export function createHoyoClient(
       }
       const credentials = await recovery.exchange(latest, { verifyProfile: () => ensureCurrentProfile(latest) });
       const roles = recovery.syncRoles ? await list({ ...latest, account: { ...latest.account, ...credentials } })
-        .then(roleCatalog).catch(() => undefined) : undefined;
+        .then(roleCatalog).catch(() => null) : undefined;
       const profile = await recovery.profiles.saveRefreshedCredentials(latest.qq, latest.profileId, latest.revision, credentials, roles);
-      return { profile, rolesSynced: roles !== undefined };
+      return { profile, rolesSynced: Boolean(roles) };
     })();
     entry.refreshed = operation;
     const settle = (success: boolean) => {
@@ -323,6 +324,29 @@ export function createHoyoClient(
       return reader({ ...source, ...profile }, transport, options, guard);
     }, options.signal, isExpired);
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
+  }
+
+  function sameTuningRegion(previous: ProfileRequestContext, current: ProfileRequestContext) {
+    try {
+      return resolveZzzTuningRegion(previous) === resolveZzzTuningRegion(current);
+    } catch {
+      return false;
+    }
+  }
+
+  function readForZzzTuning<Data extends object>(source: ProfileRequestContext, options: ZzzTuningOptions,
+    reader: (source: ProfileRequestContext, transport: HoyoTransport, options: ZzzTuningOptions,
+      guard?: () => Promise<void>) => Promise<Data>) {
+    return readForProfile(source, options, async (current, request, sameOptions, guard) => {
+      const profiles = recovery?.profiles;
+      if (current.revision !== source.revision && profiles?.requestSelectedContext) {
+        const changed = new HoyoRequestError("profile-changed", "绝区零档案角色已变化，请重新发起请求。");
+        const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "zzz").catch(() => { throw changed; });
+        if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
+            !sameTuningRegion(source, selected)) throw changed;
+      }
+      return reader(current, request, sameOptions, guard);
+    }, isZzzTuningCookieExpired);
   }
 
   async function readForShop<T>(source: ProfileAccountContext, options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> },
@@ -663,7 +687,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readStarRailGacha);
     },
     fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
-      return readForProfile(source, options, readZzzTuning, isZzzTuningCookieExpired);
+      return readForZzzTuning(source, options, readZzzTuning);
     },
     fetchZzzGachaAuthKey(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGachaAuthKey, isZzzGachaAuthExpired);
@@ -740,7 +764,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
-      return readForProfile(source, options, readZzzTuningInventory, isZzzTuningCookieExpired);
+      return readForZzzTuning(source, options, readZzzTuningInventory);
     },
   };
 

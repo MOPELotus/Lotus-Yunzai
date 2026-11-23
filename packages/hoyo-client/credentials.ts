@@ -49,9 +49,8 @@ function readLogin(account: ProfileAccountContext["account"]) {
 }
 
 export function needsLegacyCookieRepair(account: ProfileAccountContext["account"]): boolean {
+  if (!account.cookie.trim()) return false;
   const session = readCookie(account.cookie);
-  if (!["ltoken", "ltoken_v2", "cookie_token", "cookie_token_v2", "ltuid", "ltuid_v2", "account_id", "account_id_v2"]
-    .some(key => session.has(key))) return false;
   let owner: ReturnType<typeof readLogin>;
   try { owner = readLogin(account); }
   catch { return false; }
