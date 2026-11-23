@@ -333,6 +333,27 @@ export type MessageRecallNotice = {
   { readonly notice_type: "group"; readonly group_id: number; readonly isGroup: true; readonly isPrivate: false }
 );
 
+export type FileUploadNotice = {
+  readonly post_type: "notice";
+  readonly adapter: "onebot" | "milky";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly time?: number;
+  readonly event_type?: "friend_file_upload";
+  readonly file_id?: string;
+  readonly file_name?: string;
+  readonly file_size?: number;
+  readonly file_hash?: string;
+  readonly is_self?: boolean;
+  readonly file: { readonly name: string; readonly size?: number; readonly id?: string; readonly file_id?: string;
+    readonly busid?: number; readonly url?: string };
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+} & (
+  { readonly notice_type: "offline"; readonly sub_type: "file"; readonly isGroup: false; readonly isPrivate: true } |
+  { readonly notice_type: "group"; readonly sub_type: "upload"; readonly group_id: number; readonly isGroup: true; readonly isPrivate: false }
+);
+
 interface GroupCompatibilityNoticeBase {
   readonly post_type: "notice";
   readonly self_id: number;
@@ -408,7 +429,8 @@ export type OneBotLegacySignal = OneBotLegacySignalIdentity & (
 );
 
 export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
-  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice | MessageRecallNotice;
+  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice |
+  MessageRecallNotice | FileUploadNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

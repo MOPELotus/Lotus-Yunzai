@@ -114,5 +114,11 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
     return true;
   }
 
-  return { get disabled() { return policy.enabled; }, refresh, blocked, blockedPoke };
+  async function allowsFileNotice(isMaster: boolean, name: string): Promise<boolean> {
+    if (isMaster) return true;
+    await refresh();
+    return !policy.enabled || allowedFile.test(name);
+  }
+
+  return { get disabled() { return policy.enabled; }, refresh, blocked, blockedPoke, allowsFileNotice };
 }

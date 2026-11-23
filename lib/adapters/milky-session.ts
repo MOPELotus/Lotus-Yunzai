@@ -1,6 +1,6 @@
 import type { OwnerRequestBatchResult } from "../../plugins/group/owner-request-batch.ts";
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
-import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
+import { chatFileRelaySource, isChatFileName, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
 import { groupExportSession, readExportedGroupMembers } from "../group-member-export.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
@@ -797,6 +797,19 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
 
     if (body.event_type === "friend_file_upload") {
+      const { user_id, is_self, file_id, file_name, file_size, file_hash } = body.data;
+      if (positiveId(user_id) && user_id !== account && typeof is_self === "boolean" && isChatFileName(file_name) &&
+          hasMessageSequence(file_size) && typeof file_id === "string" && file_id.length > 0 && file_id.length <= 1024 &&
+          !/[\s\p{Cc}]/u.test(file_id) && !URL.canParse(file_id)) {
+        deliver({
+          post_type: "notice", notice_type: "offline", sub_type: "file", adapter: "milky",
+          event_type: "friend_file_upload", self_id: account, user_id, is_self, file_id, file_name, file_size,
+          file_hash: typeof file_hash === "string" && file_hash.length <= 1024 && !/[\s\p{Cc}]/u.test(file_hash) ? file_hash : undefined,
+          file: { name: file_name, size: file_size, url: file_id }, time: positiveId(body.time) ? body.time : undefined,
+          isGroup: false, isPrivate: true, isMaster: isMaster(user_id),
+          async reply(reply) { return await sendConfirmed({ user_id }, reply) === "confirmed"; },
+        });
+      }
       const upload = milkyFriendFileUpload(body, account, async (action, params) => {
         return confirmSent(upload, await call(action, params), params.message);
       }, call.confirmed);

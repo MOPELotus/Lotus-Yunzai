@@ -1,6 +1,6 @@
 import { sanitizeRuntimeLog } from "../runtime-logs.ts";
 import { createHash } from "node:crypto";
-import { chatFileRelaySource, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
+import { chatFileRelaySource, isChatFileName, maxChatFileBytes, qqChatFileUrl, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
 import { groupExportSession } from "../group-member-export.ts";
@@ -9,7 +9,7 @@ import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
-import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
+import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FileUploadNotice, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageRecallNotice, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal,
   type OneBotPokeRecallNotice, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
@@ -150,7 +150,7 @@ function incomingAttachment(
   const fileId = attachmentId(source === "group_upload" ? data.id : data.file_id, name);
   const busid = "group_id" in target && typeof data.busid === "number" && Number.isSafeInteger(data.busid) && data.busid >= 0
     ? data.busid : undefined;
-  const directUrl = source === "offline_file" && typeof data.url === "string" ? data.url : undefined;
+  const directUrl = source === "offline_file" ? qqChatFileUrl(data.url)?.href : undefined;
   if (!fileId && directUrl === undefined) return;
   const fileTarget = busid !== undefined ? { ...target, busid } : target;
   return Object.freeze({
@@ -650,6 +650,39 @@ async function dispatchMessageRecallNotice(
   await dispatch(group && isId(group_id)
     ? { ...base, notice_type: "group", group_id, isGroup: true, isPrivate: false }
     : { ...base, notice_type: "friend", isGroup: false, isPrivate: true });
+}
+
+async function dispatchFileUploadNotice(
+  dispatch: (event: FileUploadNotice) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, user_id, group_id, time, file } = event;
+  const group = event.notice_type === "group_upload";
+  if (!isId(self_id) || !isId(user_id) || (!group && self_id === user_id) || !isRecord(file) || !isChatFileName(file.name)) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  if (group ? !isId(group_id) : group_id !== undefined && group_id !== 0) return;
+  const id = attachmentId(group ? file.id : file.file_id, file.name);
+  const url = group ? undefined : qqChatFileUrl(file.url)?.href;
+  const size = typeof file.size === "string" && /^\d{1,16}$/u.test(file.size) ? Number(file.size) : file.size;
+  if ((!id && !url) || (size !== undefined && (typeof size !== "number" || !Number.isSafeInteger(size) || size < 0))) return;
+  const busid = isId(file.busid) || file.busid === 0 ? file.busid : undefined;
+  const base = {
+    post_type: "notice" as const, adapter: "onebot" as const, self_id, user_id,
+    time: isId(time) ? time : undefined, isMaster: isMaster(self_id, user_id),
+    reply(reply: MessageReply) {
+      if (signal.aborted) return false;
+      const message = encodeOneBotReply(reply);
+      const target = group ? { message_type: "group", group_id } : { message_type: "private", user_id };
+      return message !== undefined && send({ action: "send_msg", params: { ...target, message, auto_escape: true } });
+    },
+  };
+  const metadata = { name: file.name, size: typeof size === "number" ? size : undefined };
+  await dispatch(group && isId(group_id)
+    ? { ...base, notice_type: "group", sub_type: "upload", group_id, isGroup: true, isPrivate: false,
+      file: { ...metadata, id, busid } }
+    : { ...base, notice_type: "offline", sub_type: "file", isGroup: false, isPrivate: true,
+      file: { ...metadata, file_id: id, url } });
 }
 
 async function dispatchProfileLike(
@@ -1505,14 +1538,17 @@ export function startOneBot(
                   !isId(message.group_id) || !isRecord(message.file)) return;
               const attachment = incomingAttachment(attachmentSession.signal, calls, send, { group_id: message.group_id }, message.file,
                 "group_upload");
-              if (!attachment) return;
-              const reference = attachmentId(message.file.id, attachment.name);
-              await dispatchMessage(dispatch, send, {
-                ...message, post_type: "message", message_type: "group", sub_type: "normal", message_id: undefined, raw_message: undefined,
-                message: [{ type: "file", data: message.file }],
-              }, calls, options.isMaster, socket.data, attachment, undefined, reference ? {
-                source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
-              } : undefined);
+              if (attachment) {
+                const reference = attachmentId(message.file.id, attachment.name);
+                await dispatchMessage(dispatch, send, {
+                  ...message, post_type: "message", message_type: "group", sub_type: "normal", message_id: undefined,
+                  raw_message: `[文件：${attachment.name}]`,
+                  message: [{ type: "file", data: message.file }],
+                }, calls, options.isMaster, socket.data, attachment, undefined, reference ? {
+                  source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
+                } : undefined);
+              }
+              await dispatchFileUploadNotice(dispatch, send, message, socket.data, options.isMaster);
             } else if (message.notice_type === "offline_file" && isId(message.self_id) &&
                 !message.group_id && isRecord(message.file)) {
               const attachment = isId(message.user_id) && message.self_id === botId && attachmentSession
@@ -1523,10 +1559,12 @@ export function startOneBot(
                   ? `url:${createHash("sha256").update(message.file.url).digest("hex")}` : undefined));
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
+                raw_message: attachment && `[文件：${attachment.name}]`,
                 message: [{ type: "file", data: message.file }],
               }, calls, options.isMaster, undefined, attachment, undefined, reference && attachmentSession ? {
                 source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
               } : undefined);
+              await dispatchFileUploadNotice(dispatch, send, message, socket.data, options.isMaster);
             } else if (message.notice_type === "notify" && message.sub_type === "poke") {
               if (isId(message.group_id)) await dispatchGroupPoke(dispatch, send, message, socket.data, options.isMaster);
               else if (!message.group_id) await dispatchFriendPoke(dispatch, send, message, socket.data, options);

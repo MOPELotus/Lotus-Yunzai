@@ -1465,6 +1465,8 @@ if (import.meta.main) {
       await privateAccess.refresh();
       if (privateAccess.disabled) return;
     }
+    if (event.post_type === "notice" && event.notice_type === "offline" &&
+        !await privateAccess.allowsFileNotice(event.isMaster, event.file.name)) return;
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "invite") {
       await dispatchGroupInvitation(event, allowed);
@@ -2323,6 +2325,9 @@ if (import.meta.main) {
         const reply = await commands.dispatchFallback(event, allowed, (userId) =>
           self_id !== undefined && masterPermissions.isMaster(self_id, userId));
         if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      if (allowNew && event.attachmentOnly && event[chatFileRelaySource]?.notice) {
+        await legacy.dispatch(event, allowed, undefined, { externalOnly: true });
       }
       return;
     }

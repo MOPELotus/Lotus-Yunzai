@@ -108,6 +108,9 @@ function legacyNotice(event: BotEvent) {
       operator_id: event.operator_id === undefined ? undefined : String(event.operator_id) };
     return event.notice_type === "group" ? { ...recall, group_id: String(event.group_id) } : recall;
   }
+  if (milky && event.notice_type === "offline") {
+    return { ...event, self_id: String(event.self_id), user_id: String(event.user_id) };
+  }
   // TRSS splits on the first underscore before Bot.em and uses the remainder as the subtype.
   if (event.notice_type === "group_msg_emoji_like") {
     return { ...event, notice_type: "group" as const, sub_type: "msg_emoji_like" as const,
@@ -493,9 +496,10 @@ export class LegacyPlugins {
     })();
   }
 
-  async dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
+  async dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void,
+    options?: { readonly externalOnly: boolean }): Promise<boolean> {
     try {
-      return await this.#dispatch(incoming, allowed, onDenied);
+      return await this.#dispatch(incoming, allowed, onDenied, options?.externalOnly === true);
     } catch (error) {
       if (!(error instanceof UnsupportedLegacyHandlerError)) throw error;
       console.error(error.message);
@@ -504,9 +508,11 @@ export class LegacyPlugins {
     }
   }
 
-  async #dispatch(incoming: BotEvent, allowed?: (names: readonly string[]) => boolean, onDenied?: () => void): Promise<boolean> {
+  async #dispatch(incoming: BotEvent, allowed: ((names: readonly string[]) => boolean) | undefined,
+    onDenied: (() => void) | undefined, externalOnly: boolean): Promise<boolean> {
     const legacyEvent = legacyNotice(incoming);
-    const matching = this.#ordered.filter((app) => matches(app.event, "native" in app ? incoming : legacyEvent) &&
+    const matching = this.#ordered.filter((app) => (!externalOnly || !("native" in app)) &&
+      matches(app.event, "native" in app ? incoming : legacyEvent) &&
       (!allowed || allowed(app.names)));
     const native = incoming.post_type === "message" && matching.some(app => "native" in app) ? nativeMessage(incoming) : incoming;
     let legacy: PluginEvent | undefined;

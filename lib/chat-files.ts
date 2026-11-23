@@ -55,9 +55,14 @@ function qqFileHost(url: URL) {
   return [".qq.com", ".qq.com.cn"].some(suffix => url.hostname.endsWith(suffix));
 }
 
-export async function readQqChatFile(value: unknown, size?: number, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+export function qqChatFileUrl(value: unknown): URL | undefined {
   const url = qqResourceUrl(value);
-  if (!url || !qqFileHost(url) || (size !== undefined && !isFileSize(size))) return;
+  if (url && qqFileHost(url)) return url;
+}
+
+export async function readQqChatFile(value: unknown, size?: number, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+  const url = qqChatFileUrl(value);
+  if (!url || (size !== undefined && !isFileSize(size))) return;
   return readQqResource(url, size, signal);
 }
 

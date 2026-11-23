@@ -34,7 +34,7 @@ async function hostReady(stream: ReadableStream<Uint8Array>) {
   throw new Error("测试宿主未完成启动。\n" + stdout);
 }
 
-test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听", async () => {
+test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应的 V3 插件监听", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-v3-group-notices-"));
   const replies: unknown[] = [];
   let milkySocket: Bun.ServerWebSocket<undefined> | undefined;
@@ -71,16 +71,22 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
         "notice.group.essence", "notice.group.decrease",
         "notice.group.poke", "notice.friend.poke", "notice.group.poke_recall", "notice.friend.poke_recall",
         "notice.friend.recall", "notice.group.recall",
+        "message.group.normal", "message.private.friend", "notice.group.upload", "notice.offline.file",
       ].map((key, index) => ["listener" + index, class extends plugin {
         constructor() { super({ event: key }); }
         async accept(e) {
           const { group_id, user_id, operator_id, message_id, message_seq, likes, face_id, reaction_type,
             is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member, notice_type, sub_type,
-            action_sub_type, target_id, peer_id, self_id, message_scene, event_type } = e;
+            action_sub_type, target_id, peer_id, self_id, message_scene, event_type, file, file_name, file_size, file_id, file_hash, is_self } = e;
+          if (e.post_type === "message" && !e.attachment) return false;
+          const fileNotice = sub_type === "file" || sub_type === "upload";
           const payload = { key, group_id, user_id, operator_id, message_id, message_seq,
             likes, face_id, reaction_type, is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member,
-            notice_type, sub_type, action_sub_type, target_id, peer_id,
-            ...(sub_type === "recall" && { self_id, message_scene, event_type }) };
+            notice_type: notice_type ?? e.message_type, sub_type, action_sub_type, target_id, peer_id,
+            ...(sub_type === "recall" && { self_id, message_scene, event_type }),
+            ...(fileNotice && { self_id, event_type, file, file_name, file_size, file_id, file_hash, is_self }),
+            ...(e.post_type === "message" && { name: e.attachment.name, size: e.attachment.size,
+              ...(e.adapter !== "milky" && { raw_message: e.raw_message }) }) };
           if (sub_type === "recall" && notice_type === "friend" && self_id === ${oneBotId} && user_id === ${oneBotId}) {
             const sent = await e.reply("不得回复给机器人自身");
             await Bun.write("own-recall-fixture.json", JSON.stringify({ sent, payload }));
@@ -212,7 +218,36 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       mk("message_recall", { ...milkyRecall, message_scene: "group", peer_id: groupId, operator_id: 702, message_seq: 0 });
       await verify({ ...milkyRecall, ...milkyRecallFields, key: "notice.group.recall", message_scene: "group",
         group_id, peer_id: groupId, user_id, operator_id: "702", message_id: "0", message_seq: 0 });
-      expect(replies).toHaveLength(22);
+      const name = "记录.json";
+      const size = 3;
+      const groupFile = { name, size, id: "/v3-group-file", busid: 102 };
+      one("group_upload", { user_id: userId, file: groupFile }, oneBotId + 9);
+      one("group_upload", { user_id: userId, file: { ...groupFile, name: "../记录.json" } });
+      one("group_upload", { user_id: userId, file: groupFile });
+      const raw_message = `[文件：${name}]`;
+      await verify({ key: "message.group.normal", user_id: userId, group_id: groupId, name, size, raw_message,
+        member: { is_admin: false, is_owner: false } });
+      await verify({ key: "notice.group.upload", self_id: oneBotId, user_id: userId, group_id: groupId, file: groupFile });
+      const friendFile = { name, size, url: "https://fixture.qq.com/记录.json" };
+      one("offline_file", { group_id: undefined, user_id: userId, file: { ...friendFile, url: "https://127.0.0.1/记录.json" } });
+      one("offline_file", { group_id: undefined, user_id: 799, file: friendFile });
+      one("offline_file", { group_id: undefined, user_id: userId, file: friendFile });
+      await verify({ key: "message.private.friend", user_id: userId, name, size, raw_message }, { user_id: userId });
+      await verify({ key: "notice.offline.file", self_id: oneBotId, user_id: userId,
+        file: { ...friendFile, url: new URL(friendFile.url).href } }, { user_id: userId });
+      const uploaded = { file_id: "/v3-milky-file", file_name: name, file_size: size, file_hash: "hash", is_self: false };
+      const milkyFileNotice = { ...uploaded, key: "notice.offline.file", self_id: String(milkyId), user_id,
+        event_type: "friend_file_upload", file: { name, size, url: uploaded.file_id } };
+      mk("friend_file_upload", { ...uploaded, user_id: userId }, milkyId + 9);
+      mk("friend_file_upload", { ...uploaded, user_id: userId });
+      await verify(milkyFileNotice, { user_id: userId });
+      mk("message_receive", { message_scene: "friend", peer_id: userId, sender_id: userId, message_seq: 37,
+        segments: [{ type: "file", data: uploaded }] });
+      await verify({ key: "message.private.friend", user_id: userId, message_id: 37, name, size }, { user_id: userId });
+      mk("friend_file_upload", { ...uploaded, user_id: userId, is_self: true });
+      await verify({ ...milkyFileNotice, is_self: true }, { user_id: userId });
+      await Bun.sleep(1_050);
+      expect(replies).toHaveLength(29);
     } finally {
       oneBot?.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");
