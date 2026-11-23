@@ -1,4 +1,4 @@
-import { MAX_PROFILE_ID, ProfileError, type GameRole } from "@lotus-yunzai/account";
+import { gameCommandProfileId, MAX_PROFILE_ID, ProfileError, type GameRole } from "@lotus-yunzai/account";
 
 const importTimeoutMs = 120_000;
 
@@ -43,7 +43,7 @@ export function createGachaFileImport({ prefix, gameName, signal, savedRole, imp
 }) {
   const owner = Symbol(gameName);
   function retry(profileId: number) {
-    return `${prefix}导入记录${profileId === 1 ? "" : profileId}`;
+    return `${prefix}导入记录${profileId}`;
   }
   signal.addEventListener("abort", () => {
     for (const [scope, request] of pending) if (request.owner === owner) pending.delete(scope);
@@ -61,10 +61,10 @@ export function createGachaFileImport({ prefix, gameName, signal, savedRole, imp
     const qq = String(user_id);
     const scope = `${adapter ?? "onebot"}:${self_id}:${qq}:${target}`;
     if (command) {
-      const profileId = Number(command[2] ?? 1);
+      const profileId = gameCommandProfileId(prefix === "*" ? "sr" : "gs", command[2]);
       if (profileId > MAX_PROFILE_ID) return;
       if (message_type === "group" && !command[1]) {
-        return `建议私聊导入，若你确认要在此导入，请发送【${prefix}强制导入记录${profileId === 1 ? "" : profileId}】。`;
+        return `建议私聊导入，若你确认要在此导入，请发送【${prefix}强制导入记录${profileId}】。`;
       }
       if (context.canReadAttachments !== true) return "当前网关会话暂不支持接收抽卡文件。";
       const request: PendingImport = { owner, profileId, role: savedRole(qq, profileId), expires: performance.now() + importTimeoutMs };

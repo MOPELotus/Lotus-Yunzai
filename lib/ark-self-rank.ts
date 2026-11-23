@@ -1,4 +1,4 @@
-import { MAX_PROFILE_ID, ProfileError, type createProfileStore } from "@lotus-yunzai/account";
+import { gameCommandProfileId, MAX_PROFILE_ID, ProfileError, type createProfileStore } from "@lotus-yunzai/account";
 import { previewRedeemIdentity } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { lockFile } from "./file-lock.ts";
 import { postArkQuery, type RankStatsTransport } from "./rank-statistics.ts";
@@ -23,7 +23,7 @@ export function matchArkSelfRank(message: string) {
   if (!input) return;
   const game: Game = input[1] === "#星铁" || input[1] === "*" ? "sr" : "gs";
   const args = rankArguments.exec(input[2]!.trim());
-  const profileId = Number(args?.[2] ?? args?.[3] ?? 1);
+  const profileId = gameCommandProfileId(game, args?.[2] ?? args?.[3]);
   return { game, profileId, ...(args?.[1] && { uid: args[1] }), valid: Boolean(args) && profileId <= MAX_PROFILE_ID,
     confirmed: args?.[4] === "确认" };
 }
@@ -131,8 +131,7 @@ export function createArkSelfRankCommand(profiles: ProfileStore,
     if (!active()) return;
     if (!command.valid) return `用法 ${prefix}总排名 [档案编号]，档案编号须为 1–${MAX_PROFILE_ID}。`;
     if (!command.confirmed) {
-      const selection = command.uid ? ` ${command.uid}${profileId === 1 ? "" : ` 档案${profileId}`}`
-        : profileId === 1 ? "" : ` ${profileId}`;
+      const selection = command.uid ? ` ${command.uid} 档案${profileId}` : ` ${profileId}`;
       const confirmation = `${prefix}总排名${selection} 确认`;
       return `这项查询会向 Ark 排名服务（ark.ivny.cn）发送所选${gameName}档案的 UID、游戏类型和本地已保存的角色编号。确认查询请发送 ${confirmation}。`;
     }

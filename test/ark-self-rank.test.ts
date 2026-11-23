@@ -159,7 +159,7 @@ test("宿主按实际中文前缀在绑定好友私聊出提示和登录回执�
       expect((await onebot.next("send_msg")).params).toMatchObject({ user_id: 42, message: "请先登录档案 2。" });
       await sendMilky("*总排名");
       const milkyPrompt = await milky.next("send_private_message");
-      expect(milkyPrompt.params).toMatchObject({ user_id: 43, message: [{ data: { text: expect.stringContaining("*总排名 确认") } }] });
+      expect(milkyPrompt.params).toMatchObject({ user_id: 43, message: [{ data: { text: expect.stringContaining("*总排名 1 确认") } }] });
       milkyPrompt.respond({ message_seq: 604 });
       await sendMilky("#星铁总排名 确认");
       const milkyLogin = await milky.next("send_private_message");

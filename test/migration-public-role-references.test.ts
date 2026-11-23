@@ -3,6 +3,8 @@ import { Database } from "bun:sqlite";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { createProfileStore } from "@lotus-yunzai/account";
+import { createGameProfileDefaults, gameProfileDefaultsPath } from "../lib/game-profile-defaults.ts";
 import { lockFile } from "../lib/file-lock.ts";
 import { stageLegacyOfficialBindings } from "../lib/migration-official-bindings.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand } from "../lib/public-role-references.ts";
@@ -158,4 +160,43 @@ test("正常迁移一次发布旧 reg 引用，目标已有资料不会覆盖，
   const repeated = await migrateInstallation(old, next);
   expect(repeated.status).toBe("already-published");
   expect(await Bun.file(join(next, a42)).exists()).toBe(false);
+}), 12_000);
+
+test("迁移旧三游主 UID 只引用唯一已登录的本人档案，跳过多义和其他账号", () => fixture(async (old, next) => {
+  const live = { gs: "100000241", sr: "800000241", zzz: "82000241" };
+  const oldDefaults = JSON.stringify(Object.fromEntries(Object.entries(live).map(([game, uid]) => [game, { uid, data: {} }])));
+  using database = new Database(join(old, "data/db/data.db"));
+  database.run("CREATE TABLE Users (id VARCHAR PRIMARY KEY, type VARCHAR, ltuids VARCHAR, games VARCHAR)");
+  database.query("INSERT INTO Users VALUES (?, 'qq', ?, ?)").run("42", "287,388", oldDefaults);
+  database.query("INSERT INTO Users VALUES (?, 'qq', ?, ?)").run("43", "555", oldDefaults);
+  const users = join(old, "data", "users");
+  await mkdir(users);
+  async function profile(qq: string, id: number, accountId: string, game: "gs" | "sr" | "zzz") {
+    const uid = live[game];
+    await Bun.write(join(users, `${qq}-${id}.yaml`), Bun.YAML.stringify({ user: { qq }, profile: { id }, account: {
+      stuid: accountId, stoken: "fixture-stoken", cookie: `account_id=${accountId}; ltoken=fixture-cookie`,
+      game_roles: { [game]: [{ uid }] }, current_uid: { [game]: uid },
+    } }));
+  }
+  await profile("42", 2, "287", "gs");
+  await profile("42", 3, "388", "sr");
+  await profile("42", 4, "388", "sr");
+  await profile("42", 5, "555", "zzz");
+  await profile("43", 2, "555", "zzz");
+  await prepareCheckout(next);
+
+  const migrated = await migrateInstallation(old, next);
+  expect(migrated.status).toBe("published");
+  expect(migrated.officialBindings).toMatchObject({ gameProfileDefaults: { restored: 2, existing: 0 } });
+  const preference = join(next, gameProfileDefaultsPath, "42", "1.json");
+  const bytes = await Bun.file(preference).text();
+  expect(bytes).not.toContain("fixture-cookie");
+  expect(bytes).not.toContain(live.gs);
+  expect((await lstat(preference)).mode & 0o777).toBe(0o600);
+  const runtime = createGameProfileDefaults(join(next, gameProfileDefaultsPath), createProfileStore(join(next, "data", "users")), lockFile);
+  expect(await runtime.read("42")).toEqual({ gs: 2 });
+  expect(await runtime.read("43")).toEqual({ zzz: 2 });
+  await rm(preference);
+  expect((await migrateInstallation(old, next)).status).toBe("already-published");
+  expect(await runtime.read("42")).toEqual({});
 }), 12_000);

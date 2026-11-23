@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProfileStore, ProfileError } from "@lotus-yunzai/account";
+import { createProfileStore, gameCommandProfileId, ProfileError, withGameCommandProfiles } from "@lotus-yunzai/account";
 import { sampleGachaCharacterReturns } from "@lotus-yunzai/gacha/character-returns";
 import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
@@ -13,6 +13,7 @@ import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
+import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-profile-defaults.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
 import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "./lib/public-role-registration.ts";
@@ -382,6 +383,7 @@ if (import.meta.main) {
     },
   });
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
+  const gameProfileDefaults = createGameProfileDefaults(fileURLToPath(new URL(gameProfileDefaultsPath + "/", import.meta.url)), roleProfiles, lockFile);
   const publicRoleReferences = createPublicRoleReferences(lockFile);
   const publicRoleRegistration = createPublicRoleRegistration();
   const gachaBatch = createGachaBatch({
@@ -2060,7 +2062,22 @@ if (import.meta.main) {
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
-    const { event, allowNew, alias } = groupDispatch.prepare(incoming);
+    const prepared = groupDispatch.prepare(incoming);
+    const { event, allowNew } = prepared;
+    const scope = allowNew && event.msg ? ownCheckinSession(event, []) : undefined;
+    const dispatch = () => dispatchPreparedMessage(incoming, prepared, handled);
+    if (!scope) return withGameCommandProfiles(undefined, dispatch);
+    const profiles = await gameProfileDefaults.read(String(scope.user));
+    let handling = true;
+    try {
+      return await withGameCommandProfiles({ user: scope.user, profiles, isCurrent: () => handling && scope.isCurrent() }, dispatch);
+    } finally {
+      handling = false;
+    }
+  }
+
+  async function dispatchPreparedMessage(incoming: MessageEvent, { event, allowNew, alias }: ReturnType<typeof groupDispatch.prepare>,
+    handled?: () => void) {
     const botOperation = botOperationCommand(event.msg);
     if (botOperation) {
       await replyBotOperation(event, botOperation.target, allowNew);
@@ -2349,7 +2366,7 @@ if (import.meta.main) {
         return;
       }
       const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
-      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic);
+      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic, gameProfileDefaults);
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }
@@ -2366,7 +2383,7 @@ if (import.meta.main) {
       const { action, game } = panelSignature;
       const qq = String(scope.user);
       if (action !== "export") {
-        const uid = panelSignature.uid ?? (action === "begin" ? await roleProfiles.savedRole(qq, 1, game).then(role => role.uid).catch(() => undefined) : undefined);
+        const uid = panelSignature.uid ?? (action === "begin" ? await roleProfiles.savedRole(qq, gameCommandProfileId(game), game).then(role => role.uid).catch(() => undefined) : undefined);
         const reply = await panelSignatures.run({ action, game, uid }, session);
         if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
         return;

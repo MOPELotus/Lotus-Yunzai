@@ -1,4 +1,4 @@
-import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { gameCommandProfileId, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import type { MessageEvent } from "./messages.ts";
 import { maxPanelTransferBytes, type createPanelTransferReceiver, type createPanelTransferSource, type PanelTransferOwner } from "./panel-transfer.ts";
 
@@ -40,7 +40,7 @@ export function matchPanelTransferCommand(message: string): Parsed | undefined {
   const profile = profileArgument.exec(input);
   const head = profile ? input.slice(0, profile.index).trim() : input;
   const suffix = !profile && /^[1-9]\d{0,2}$/u.test(head) ? Number(head) : undefined;
-  const profileId = Number(profile?.[1] ?? suffix ?? 1);
+  const profileId = gameCommandProfileId(game, profile?.[1] ?? suffix);
   const parts = suffix !== undefined || !head ? [] : head.split(/\s+/u);
   const uid = parts.find(part => uidArgument.test(part));
   const code = action === "import" ? parts.find(part => capabilityInput.test(part)) : undefined;

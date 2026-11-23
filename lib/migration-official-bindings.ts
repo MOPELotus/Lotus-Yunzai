@@ -3,6 +3,7 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readMigrationSourceFile } from "./migration-files.ts";
+import { stageLegacyGameProfileDefaults } from "./migration-game-profile-defaults.ts";
 import { stageLegacyPublicRoleReferences } from "./migration-public-role-references.ts";
 
 const databaseName = "data.db";
@@ -96,7 +97,9 @@ async function validatePrivateCopy(stateDirectory: string, main: Buffer, wal?: B
     }
     db.run("PRAGMA trusted_schema=OFF");
     db.run("PRAGMA query_only=ON");
-    return await stageLegacyPublicRoleReferences(db, stateDirectory, signal);
+    const publicRoleReferences = await stageLegacyPublicRoleReferences(db, stateDirectory, signal);
+    const gameProfileDefaults = await stageLegacyGameProfileDefaults(db, stateDirectory, signal);
+    return { ...(publicRoleReferences && { publicRoleReferences }), ...(gameProfileDefaults && { gameProfileDefaults }) };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -151,7 +154,7 @@ export async function stageLegacyOfficialBindings(source: string, stateDirectory
   const main = files.get(databaseName);
   const savedWal = files.get(walName);
   const wal = savedWal?.length ? savedWal : undefined;
-  let publicRoleReferences: Awaited<ReturnType<typeof stageLegacyPublicRoleReferences>>;
+  let restored: Awaited<ReturnType<typeof validatePrivateCopy>> | undefined;
   if (!incomplete && main) {
     try {
       const pageSize = databasePageSize(main);
@@ -159,7 +162,7 @@ export async function stageLegacyOfficialBindings(source: string, stateDirectory
         if (main[18] !== 2 || main[19] !== 2) throw recapture();
         verifyWal(wal, pageSize);
       }
-      publicRoleReferences = await validatePrivateCopy(stateDirectory, main, wal, signal);
+      restored = await validatePrivateCopy(stateDirectory, main, wal, signal);
     } catch (error) {
       if (!(error instanceof IncompleteSnapshot)) throw error;
       incomplete = true;
@@ -171,5 +174,5 @@ export async function stageLegacyOfficialBindings(source: string, stateDirectory
   await mkdir(backup, { recursive: true, mode: 0o700 });
   for (const [name, bytes] of files) await writeFile(join(backup, name), bytes, { mode: 0o600, flag: "wx" });
   const type = incomplete ? "incomplete" : wal ? "sqlite-with-wal" : "sqlite";
-  return { type, files: files.size, ...(publicRoleReferences && { publicRoleReferences }) };
+  return { type, files: files.size, ...restored };
 }

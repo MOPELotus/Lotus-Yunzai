@@ -1271,3 +1271,5 @@ export async function importProfiles(source: string, destination: string, apply 
   }
   return result;
 }
+
+export { forGameCommandSender, gameCommandProfileId, withGameCommandProfiles, type GameCommandProfiles } from "./command-profile.ts";

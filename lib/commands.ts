@@ -1,3 +1,4 @@
+import { forGameCommandSender } from "@lotus-yunzai/account";
 import type { LegacyPanelRecoveryOffer } from "./legacy-panel-recovery-flow.ts";
 import { sendBatchedImageForward, type BatchedImageForward } from "@lotus-yunzai/skia/forward-images";
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
@@ -331,7 +332,8 @@ export class CommandRegistry {
     }
     if (!command || (allowed && !allowed(command.names))) return;
 
-    return command.handler(argument, commandContext(context, command.names[0] === "@lotus-yunzai/notice"));
+    const officialNotice = command.names[0] === "@lotus-yunzai/notice";
+    return forGameCommandSender(context.user_id, context.isDelegated, () => command.handler(argument, commandContext(context, officialNotice)));
   }
 
   async dispatchFallback(
@@ -358,8 +360,10 @@ export class CommandRegistry {
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
         [groupExportSession]: names[0] === "@lotus-yunzai/group-member-export" && !event.isDelegated ? event[groupExportSession] : undefined,
       };
-      if (features && !allowed([...names, ...(await features(context))])) continue;
-      const reply = await handler(event.msg, context);
+      const reply = await forGameCommandSender(event.user_id, event.isDelegated, async () => {
+        if (features && !allowed([...names, ...(await features(context))])) return;
+        return handler(event.msg, context);
+      });
       if (reply !== undefined) return reply;
     }
   }

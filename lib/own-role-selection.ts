@@ -1,5 +1,6 @@
 import type { PublicRoleReferenceCatalogue } from "./public-role-references.ts";
 import { gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
+import type { createGameProfileDefaults } from "./game-profile-defaults.ts";
 import { segment } from "./messages.ts";
 import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
 
@@ -46,8 +47,9 @@ function collectRoles(profiles: Catalogs, game: Game) {
   return [...rows.values()].slice(0, maxSlot);
 }
 
-export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, { user, signal, isCurrent }: Scope,
-  readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>) {
+export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, scope: Scope,
+  readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>, defaults?: ReturnType<typeof createGameProfileDefaults>) {
+  const { user, signal, isCurrent } = scope;
   if (!isCurrent() || signal.aborted) return;
   if (profileId !== undefined && profileId > MAX_PROFILE_ID) return `档案编号须在 1 到 ${MAX_PROFILE_ID} 之间。`;
   if (slot !== undefined && (slot < 1 || slot > maxSlot)) return `角色序号须在 1 到 ${maxSlot} 之间。`;
@@ -77,14 +79,21 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
       const label = gameLabels[game];
       if (!item) return `${profileId === undefined ? "本人" : `档案 ${profileId}`}没有第 ${slot} 个${label}角色。请发送 #UID${suffix} 查看。`;
       const { role, revision, profileId: id } = item;
-      await profiles.selectCatalogRole(qq, id, game, role.uid, revision, signal, isCurrent);
+      const saved = await profiles.selectCatalogRole(qq, id, game, role.uid, revision, signal, isCurrent);
       if (!isCurrent() || signal.aborted) return;
       for (const row of all[game]) row.activeIn = row.activeIn.filter(value => value !== id);
       item.activeIn.push(id);
       item.activeIn.sort((a, b) => a - b);
       confirmation = `档案 ${id} · ${label}当前角色已选为 ${[role.uid, roleInfo(game, role)].filter(Boolean).join(" · ")}。`;
+      if (profileId === undefined && defaults) {
+        const selected = await defaults.select(game, id, role.uid, saved.revision, scope).catch(() => false);
+        if (!isCurrent() || signal.aborted) return;
+        confirmation += selected ? `\n${label}默认档案为 ${id}。` : `\n未能保存${label}默认档案，请核对本档登录后重试。`;
+      }
     }
 
+    const activeDefaults = catalogs.size ? await defaults?.read(qq) : undefined;
+    if (!isCurrent() || signal.aborted) return;
     const title = catalogs.size ? "本人游戏角色" : "本人公开 UID 引用";
     const subtitle = catalogs.size ? (profileId === undefined ? "全部档案" : `档案 ${profileId}`) : undefined;
     const lines = [[title, subtitle].filter(Boolean).join(" · ")];
@@ -93,7 +102,10 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
       const roles = all[key];
       const references = publicRoles?.[key];
       const label = gameLabels[key];
-      lines.push(label);
+      const gameDefault = activeDefaults?.[key] ?? 1;
+      const defaultLabel = profileId === undefined && roles.length ? (catalogs.get(gameDefault)?.catalog[key].length
+        ? ` · 默认档案 ${gameDefault}` : " · 未选默认档案") : "";
+      lines.push(label + defaultLabel);
       if (!roles.length) lines.push("  暂无已同步角色");
       const rows: (ProfileCardRole & { readonly avatar?: string })[] = [];
       for (const [index, { profileId: source, role, activeIn }] of roles.entries()) {
@@ -116,7 +128,7 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
         return [`  公开 ${index + 1}. ${uid}${active ? "（公开当前）" : ""}`];
       });
       if (uniqueReferences?.length) lines.push("  独立公开引用", ...uniqueReferences);
-      cardGroups.push({ label: `${prefixes[key]}${label}`, command: `${prefixes[key]}UID1${suffix}`,
+      cardGroups.push({ label: `${prefixes[key]}${label}${defaultLabel}`, command: `${prefixes[key]}UID1${suffix}`,
         game: key, rows });
     }
     const instructions = [];

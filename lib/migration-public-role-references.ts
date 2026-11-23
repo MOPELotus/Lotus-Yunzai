@@ -15,7 +15,7 @@ function dictionary(input: unknown): Record<string, unknown> | undefined {
   if (input && typeof input === "object" && !Array.isArray(input)) return input as Record<string, unknown>;
 }
 
-function parseGames(input: unknown) {
+export function parseLegacyUserGames(input: unknown) {
   if (typeof input !== "string" || Buffer.byteLength(input) > maximumGamesSize) return;
   try { return dictionary(JSON.parse(input) as unknown); }
   catch { return; }
@@ -46,7 +46,7 @@ export async function stageLegacyPublicRoleReferences(db: Database, stateDirecto
   );
   for (const { id, games: storedGames } of rows.iterate()) {
     signal?.throwIfAborted();
-    const decoded = parseGames(storedGames);
+    const decoded = parseLegacyUserGames(storedGames);
     if (!decoded || typeof id !== "string" || !qqPattern.test(id) || !Number.isSafeInteger(Number(id))) {
       references.invalid++;
       continue;
