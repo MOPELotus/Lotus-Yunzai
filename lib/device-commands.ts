@@ -14,6 +14,13 @@ const apkName = "copy_device_info_1.2.apk";
 const oldApk = new URL(`../data/passport/resources/apk/${apkName}`, import.meta.url);
 const apkFallback = "可继续发送设备 JSON，或联系机器人主人获取设备信息工具。";
 
+const legacyDeviceMetadataFields = ["deviceBoard", "deviceFingerprint", "deviceModel", "deviceName", "deviceProduct"]
+  .map(field => new RegExp(`"${field}"\\s*:`, "u"));
+
+function containsLegacyDeviceMetadata(message: string): boolean {
+  return legacyDeviceMetadataFields.every(field => field.test(message));
+}
+
 function containsDeviceInput(message: string) {
   const id = /(?:device[_-]?id|bbs_device_id)\s*["']?\s*[:=：]/iu.test(message);
   const fp = /(?:device[_-]?fp|\bfp)\s*["']?\s*[:=：]/iu.test(message);
@@ -25,7 +32,8 @@ export function normalizeDeviceInfoCommand(message: string) {
 }
 
 export function isDeviceBindingInput(message: string) {
-  return bind.test(message) || cancel.test(message) || unbind.test(message) || zzzHelp.test(message) || containsDeviceInput(message);
+  return bind.test(message) || cancel.test(message) || unbind.test(message) || zzzHelp.test(message) ||
+    containsDeviceInput(message) || containsLegacyDeviceMetadata(message);
 }
 
 interface BindingRequest {
@@ -60,7 +68,8 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const unbound = unbind.exec(text);
       const help = zzzHelp.exec(text);
       const payload = containsDeviceInput(text);
-      if (!opened && !cancelled && !unbound && !help && !payload && text !== "取消") return;
+      const legacyMetadata = !payload && containsLegacyDeviceMetadata(text);
+      if (!opened && !cancelled && !unbound && !help && !payload && !legacyMetadata && text !== "取消") return;
       const { user_id, message_type, self_id, adapter } = context;
       const id = Number((opened ?? cancelled ?? unbound ?? help)?.[1] ?? 1);
       if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
@@ -70,7 +79,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         return [
           `登录该档案后，私聊发送 #绑定设备${suffix}。`,
           "按提示在同一条私聊消息中发送该设备的 JSON，或配对的 device_id 和 device_fp。",
-          "如收到附带的安卓设备信息工具，也可用它复制数据。等待有效期为两分钟，发送「取消」退出。",
+          "旧安卓工具可能只复制设备参数，绑定仍需配对的 ID 和已签发的 FP。等待有效期为两分钟，发送「取消」退出。",
           `绑定后可用 #设备信息${suffix} 查看。`,
         ].join("\n");
       }
@@ -85,6 +94,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const connection = context.privateCredentialSignal;
       if (context.isDelegated || !connection || connection.aborted) return;
       const active = AbortSignal.any([signal, connection]);
+      if (legacyMetadata) return "这份 JSON 只有设备参数。请在本人私聊提供同一设备的 device_id 和已签发的 device_fp。";
       if (unbound) {
         const waiting = pending.get(scope);
         if (waiting?.profileId === id) cancelRequest(scope, waiting);

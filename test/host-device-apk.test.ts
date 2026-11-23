@@ -125,3 +125,43 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
       for (const qq of [42, 43]) await writeFile(join(profiles, qq + "-2.yaml"), original);
     });
 }, 12_000);
+
+
+test("旧 APK 的设备元数据不交给通用插件，只在本人私聊提示所需字段", async () => {
+  const metadata = JSON.stringify({
+    deviceBoard: "fixture-board", deviceFingerprint: "fixture-firmware", deviceModel: "fixture-model",
+    deviceName: "fixture-name", deviceProduct: "fixture-product",
+  });
+  const control = "#设备分类对照";
+  await withDualGatewayFixture("device-apk-privacy", "disablePrivate: false\n",
+    async ({ onebot, milky, sendOneBot, sendMilky }) => {
+      const group = { message_type: "group", sub_type: "normal", group_id: 77, sender: { user_id: 42, role: "member" } };
+      sendOneBot(control, group);
+      (await onebot.next("send_msg")).respond({ message_id: 31 });
+      sendOneBot(metadata, group);
+      // A later matching command confirms that the protocol and plug-in remain available.
+      await Bun.sleep(50);
+      sendOneBot(control, group);
+      const next = await onebot.next("send_msg");
+      expect(next.params.message).toBe("通用插件对照");
+      next.respond({ message_id: 32 });
+      expect(onebot.calls).toHaveLength(0);
+
+      expect((await sendMilky(metadata)).status).toBe(200);
+      const own = await milky.next("send_private_message");
+      expect(own.params.user_id).toBe(43);
+      expect(JSON.stringify(own.params.message)).toContain("已签发的 device_fp");
+      expect(JSON.stringify(own.params.message)).not.toContain("fixture-firmware");
+      own.respond({ message_seq: 33 });
+    }, 3_000, undefined, async root => {
+      const plugin = join(root, "plugins", "native-device-proof");
+      await mkdir(plugin);
+      await writeFile(join(plugin, "package.json"), JSON.stringify({
+        name: "native-device-proof", lotusYunzai: { entry: "./index.ts" },
+      }));
+      await writeFile(join(plugin, "index.ts"), `export default { commands: {}, fallback(message) {
+        if (message === ${JSON.stringify(control)}) return "通用插件对照";
+        if (message === ${JSON.stringify(metadata)}) return "设备元数据到达通用插件";
+      } };`);
+    });
+}, 9_000);
