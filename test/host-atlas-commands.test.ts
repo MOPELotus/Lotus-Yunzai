@@ -6,7 +6,7 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "atlas-command-fixture";
 const excludedCommands = [
-  "#未知样例图鉴", "#风图鉴", "#101", "%锋镝图鉴",
+  "#风图鉴", "#101", "#未知样例",
   "#西风剑攻略", "*锋镝练度", "#我的深渊战绩",
   "#图鉴西风剑攻略", "#Lotus图鉴重置",
   "#荷花图鉴 西风剑", "#Lotus图鉴 西风剑", "lotus图鉴 西风剑", "荷花图鉴西风剑",
@@ -172,6 +172,14 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       expect(await query("#全量更新图鉴")).toBe("只有 bot 主人可以操作图鉴更新。");
 
       for (const command of excludedCommands) expect(await query(command)).toBe(`旁路 ${command}`);
+
+      // The fixture omits the optional local renderer to exercise the textual fallback.
+      for (const command of ["#图鉴 未知样例", "#图鉴未知样例", "#未知样例图鉴", "%锋镝图鉴"]) {
+        expect(await query(command)).toContain("未找到匹配的图鉴资料");
+      }
+      expect(await query("#未知样例命座")).toContain("未找到匹配的角色资料");
+      expect(await query("#图鉴 本期深渊")).toContain("本期轮换时间待核对");
+      expect(await query("#图鉴上期末日2026年2月29日")).toContain("日期无效");
 
       const recovered = join(data, "items/简体中文/原神/武器/一星");
       await mkdir(recovered, { recursive: true });

@@ -6,7 +6,7 @@ import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 type Game = "gi" | "hsr" | "zzz";
 const token = "atlas-role-book-fixture";
-const passthrough = ["#芙宁娜攻略", "#芙宁图鉴", "%芙宁娜图鉴", "*卡芙卡影画", "*我的卡芙卡星魂", "#西风剑天赋"];
+const passthrough = ["#芙宁娜攻略", "#芙宁", "*卡芙卡影画", "*我的卡芙卡星魂", "#西风剑天赋"];
 const sections = {
   gi: ["角色总览", "技能与天赋", "命座", "养成材料"],
   hsr: ["角色总览", "技能与天赋", "星魂"],
@@ -185,8 +185,10 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     const ellen = ["zzz", 103, "艾莲"] as const;
     await book("#图鉴 原神 芙宁娜", furina);
     await book("#芙宁娜图鉴", furina);
+    await book("#芙宁图鉴", furina);
     await book("#芙宁娜命座", furina);
     await book("*卡芙卡星魂", kafka);
+    await book("*卡芙星魂", kafka);
     await book("#星穹铁道卡芙卡星魂图鉴", kafka);
     await book("%艾莲影画", ellen);
     await book("#绝区零艾莲影画", ellen);
