@@ -4,6 +4,8 @@ import { readGameRecordPayload } from "./game-record.ts";
 
 const shopOrigin = "https://bbs-api.miyoushe.com";
 const addressOrigin = "https://api-takumi.miyoushe.com";
+const productOrigin = "https://api-takumi.mihoyo.com";
+const productPage = "https://user.mihoyo.com";
 const webOrigin = "https://webstatic.miyoushe.com";
 const appVersion = "2.118.1";
 const app = { app_id: 1, point_sn: "myb" };
@@ -201,8 +203,10 @@ async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAcc
   if (accepted?.status === 200 && retcodeOf(accepted.payload) === 0 && verifiedField(rpcChallenge, 2048)) return rpcChallenge;
 }
 
-async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountContext, signal?: AbortSignal, verify?: Verify) {
-  const result = await request(transport, url, profile, signal, verify);
+async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountContext,
+  signal?: AbortSignal, verify?: Verify, headers?: Headers,
+) {
+  const result = await request(transport, url, profile, signal, verify, undefined, headers);
   signal?.throwIfAborted();
   await verify?.();
   signal?.throwIfAborted();
@@ -213,6 +217,28 @@ async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountC
   const data = object(result.payload?.data);
   if (!data) throw readError();
   return data;
+}
+
+export async function readMiyousheShopAccountQuota(transport: HoyoTransport, profile: ProfileAccountContext, goodsId: string,
+  signal?: AbortSignal, verify?: Verify,
+) {
+  if (!idPattern.test(goodsId)) invalid("商品编号无效。");
+  const url = new URL("/mall/v1/web/goods/detail", productOrigin);
+  url.search = new URLSearchParams({ app_id: String(app.app_id), point_sn: app.point_sn, goods_id: goodsId }).toString();
+  const headers = requestHeaders(profile, false);
+  headers.set("Origin", productPage);
+  headers.set("Referer", productPage + "/");
+  const data = await read(transport, url, profile, signal, verify, headers);
+  const count = (input: unknown) => {
+    const value = typeof input === "string" && /^\d{1,16}$/u.test(input) ? Number(input) : input;
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  };
+  const cycle = data.account_cycle_type;
+  const limit = count(data.account_cycle_limit);
+  const used = count(data.account_exchange_num);
+  if (String(data.goods_id) !== goodsId || typeof cycle !== "string" || cycle === "not_limit" ||
+      !codePattern.test(cycle) || limit === undefined || limit < 1 || used === undefined) return;
+  return { limit, used, cycle };
 }
 
 export async function readMiyousheShopBalance(transport: HoyoTransport, profile: ProfileAccountContext,

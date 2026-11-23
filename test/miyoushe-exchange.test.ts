@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
 import type { HoyoTransport } from "../packages/hoyo-client/credentials.ts";
-import { readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange }
+import { readMiyousheShopAddresses, readMiyousheShopAccountQuota, readMiyousheShopBalance, submitMiyousheShopExchange }
   from "@lotus-yunzai/hoyo-client/miyoushe-exchange";
 
 const profile: ProfileAccountContext = {
@@ -272,4 +272,39 @@ test("不同挑战、退出或重检失败停止。续交结果未知时不再�
     expect(checks).toBe(kind === "wrong-proof" || kind === "logout" ? 0 : 1);
     expect(solves).toBe(1);
   }
+});
+
+
+test("账号限购只向固定商品详情读同档最小 Cookie，省略未验证的数字", async () => {
+  let guards = 0, requests = 0;
+  let data: Record<string, unknown> = { goods_id: "424242", account_cycle_type: "month",
+    account_cycle_limit: "2", account_exchange_num: 2, otherPrivate: "not exposed" };
+  const transport: HoyoTransport = async (url, init) => {
+    requests++;
+    expect(url.href).toBe("https://api-takumi.mihoyo.com/mall/v1/web/goods/detail?app_id=1&point_sn=myb&goods_id=424242");
+    expect(init.method).toBe("GET");
+    expect(init.redirect).toBe("error");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Origin")).toBe("https://user.mihoyo.com");
+    expect(headers.get("Cookie")).toBe("cookie_token_v2=v2_fixture; account_id_v2=123; account_mid_v2=fake-mid");
+    expect(headers.get("x-rpc-device_fp")).toBeNull();
+    return Response.json({ retcode: 0, data });
+  };
+  const verify = async () => { guards++; };
+  const read = () => readMiyousheShopAccountQuota(transport, profile, "424242", undefined, verify);
+  expect(await read()).toEqual({ cycle: "month", limit: 2, used: 2 });
+  expect(guards).toBe(2);
+  data = { ...data, goods_id: "424243" };
+  expect(await read()).toBeUndefined();
+  data = { ...data, goods_id: "424242", account_exchange_num: undefined };
+  expect(await read()).toBeUndefined();
+  data = { ...data, account_exchange_num: 0 };
+  expect(await read()).toEqual({ cycle: "month", limit: 2, used: 0 });
+  const stopped = async () => { throw new Error("网页会话已撤销"); };
+  await expect(readMiyousheShopAccountQuota(transport, profile, "424242", undefined, stopped)).rejects.toThrow("撤销");
+  expect(requests).toBe(4);
+  let checks = 0;
+  const revokedInFlight = async () => { if (++checks === 2) throw new Error("网页会话已撤销"); };
+  await expect(readMiyousheShopAccountQuota(transport, profile, "424242", undefined, revokedInFlight)).rejects.toThrow("撤销");
+  expect(requests).toBe(5);
 });

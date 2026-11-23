@@ -13,7 +13,7 @@ import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
 import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 import { isBh3CnCheckinRegion, readCnGameCheckinInfo, submitCnGameCheckin, type CnGameCheckinSource } from "./game-checkin.ts";
 import { GameRecordRequestError, isGameRecordCookieExpired, readGameRecordPayload } from "./game-record.ts";
-import { MiyousheExchangeError, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
+import { MiyousheExchangeError, readMiyousheShopAccountQuota, readMiyousheShopAddresses, readMiyousheShopBalance, submitMiyousheShopExchange,
   type MiyousheShopOrder, type ShopManualVerification } from "./miyoushe-exchange.ts";
 import { readGenshinBackpack, readGenshinGrowth, type GenshinBackpackOptions, type GenshinGrowthOptions } from "./genshin-backpack.ts";
 import { createGenshinBlueprintReader, type GenshinBlueprintOptions } from "./genshin-blueprint.ts";
@@ -377,6 +377,12 @@ export function createHoyoClient(
   return {
     async refreshCredentials(context: ProfileAccountContext) {
       return (await recover(context)).profile;
+    },
+    fetchMiyousheShopAccountQuota(source: ProfileAccountContext, goodsId: string,
+      options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {},
+    ) {
+      return readForShop(source, options, (profile, guard) =>
+        readMiyousheShopAccountQuota(transport, profile, goodsId, options.signal, guard));
     },
     fetchMiyousheShopAddresses(source: ProfileAccountContext, options: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void> } = {}) {
       return readForShop(source, options, (profile, guard) => readMiyousheShopAddresses(transport, profile, options.signal, guard));

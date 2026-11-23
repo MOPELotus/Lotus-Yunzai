@@ -162,6 +162,17 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
   }
 
   return {
+    async accountQuota(target: MiyousheOverviewTarget, good: Pick<ReturnType<typeof product>, "id" | "accountLimit" | "limitCycle">,
+      signal?: AbortSignal, verifyLogin?: () => Promise<void>,
+    ) {
+      if (!good.accountLimit || !good.limitCycle || good.limitCycle === "not_limit") return;
+      await verifyLogin?.();
+      const profile = await profiles.accountContext(target.qq, target.profileId);
+      const quota = await roleClient.fetchMiyousheShopAccountQuota(profile, good.id, { signal, verifyBinding: verifyLogin });
+      if (quota?.cycle === good.limitCycle && quota.limit === good.accountLimit) {
+        return { limit: quota.limit, used: quota.used };
+      }
+    },
     async trackingRoles(target: MiyousheOverviewTarget, gameBiz: string, signal?: AbortSignal, verifyLogin?: () => Promise<void>) {
       const game = gameKeys.get(gameBiz);
       if (!game) return [];

@@ -533,10 +533,12 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       }
       if (catalog && goodsId) {
         const detail = await catalog.detail(target, goodsId, deadline, verifyLogin);
-        const addresses = detail.good.type === 1 && shopAddresses
-          ? await shopAddresses(target, deadline, verifyLogin).catch(() => undefined) : undefined;
+        const [addresses, accountQuota] = await Promise.all([
+          detail.good.type === 1 && shopAddresses ? shopAddresses(target, deadline, verifyLogin).catch(() => undefined) : undefined,
+          catalog.accountQuota(target, detail.good, AbortSignal.any([deadline, AbortSignal.timeout(3_000)]), verifyLogin).catch(() => undefined),
+        ]);
         await verifyLogin();
-        return Response.json({ ...detail, ...(addresses && { addresses }), expiresAt: row.expiresAt }, { headers });
+        return Response.json({ ...detail, ...(addresses && { addresses }), ...(accountQuota && { accountQuota }), expiresAt: row.expiresAt }, { headers });
       }
       const view = catalog && part === "api/catalog" ? await catalog.list(target, searchParams, deadline, verifyLogin)
         : await overview(target, deadline, verifyLogin);

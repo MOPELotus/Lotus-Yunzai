@@ -25,7 +25,8 @@ type Good = CatalogData["goods"][number];
 type TrackerProduct = { readonly id: string; readonly game: string; readonly type: 1 | 2 };
 type Role = CatalogDetail["roles"][number];
 type Address = { readonly id: string; readonly label: string };
-type Detail = CatalogDetail & { readonly addresses?: readonly Address[] };
+type AccountQuota = NonNullable<Awaited<ReturnType<Catalog["accountQuota"]>>>;
+type Detail = CatalogDetail & { readonly addresses?: readonly Address[]; readonly accountQuota?: AccountQuota };
 type ShopPlans = ReturnType<typeof createMiyousheShopPlans>;
 type PlanData = Awaited<ReturnType<ShopPlans["list"]>>;
 type Plan = PlanData["plans"][number];
@@ -508,7 +509,7 @@ function shopIcon(good: Good) {
   return img;
 }
 
-function shopFacts(good: Good, detail = false) {
+function shopFacts(good: Good, detail = false, accountQuota?: AccountQuota) {
   const facts = add("dl", "shop-facts", "");
   function item(label: string, value: string) { facts.append(add("dt", "", label), add("dd", "", value)); }
   item("当前库存", good.unlimited ? "不限量" : good.stock == null ? "未知" : point(good.stock));
@@ -517,7 +518,7 @@ function shopFacts(good: Good, detail = false) {
     item("下一批数量", good.nextStock == null ? "未知" : point(good.nextStock));
   }
   if (detail && good.endsAt) item("结束时间", shopTime(good.endsAt));
-  if (good.accountLimit! > 0) item("账号限购", point(good.accountLimit));
+  if (good.accountLimit! > 0) item("账号限购", accountQuota ? `${point(accountQuota.used)}/${point(accountQuota.limit)}` : point(good.accountLimit));
   if (detail && good.roleLimit! > 0) item("角色限购", point(good.roleLimit));
   return facts;
 }
@@ -612,9 +613,9 @@ async function loadCatalog(page = shop.page, game = shop.game) {
   }
 }
 
-function detailContent({ good, roles, roleError, addresses }: Detail) {
+function detailContent({ good, roles, roleError, addresses, accountQuota }: Detail) {
   const blocks: HTMLElement[] = [add("h3", "", good.name), statusBadge(good.status),
-    add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true),
+    add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true, accountQuota),
     add("h4", "", "兑换条件"), add("p", "detail-copy", good.requirements || "官方暂未提供额外兑换说明。")];
   if (good.type === 1) blocks.push(add("p", "muted", "实物商品需要米游社收货地址。"));
   if (good.type === 2) {
@@ -641,7 +642,7 @@ function detailContent({ good, roles, roleError, addresses }: Detail) {
     });
     blocks.push(track);
   }
-  blocks.push(reservationForm(good, roles, addresses));
+  blocks.push(reservationForm(good, roles, addresses, accountQuota));
   return blocks;
 }
 
@@ -1037,13 +1038,20 @@ async function changePlan(id: string, action: "cancel" | "resolve", body: object
   }
 }
 
-function reservationForm(good: Good, roles: readonly Role[], addresses: readonly Address[] | undefined) {
+function reservationForm(good: Good, roles: readonly Role[], addresses: readonly Address[] | undefined, accountQuota?: AccountQuota) {
   const panel = add("form", "reservation-form", "");
   if (!plans.data?.canSubmit) {
     panel.append(add("p", "muted", plans.data ? "预约兑换服务暂未启用。" : "暂时无法确认预约服务状态。"));
     return panel;
   }
   const saved = plans.intents.get(good.id);
+  if (!saved && accountQuota && accountQuota.used >= accountQuota.limit) {
+    const disabled = add("button", "reservation-submit", "已达账号兑换上限");
+    disabled.type = "button";
+    disabled.disabled = true;
+    panel.append(disabled);
+    return panel;
+  }
   const immediate = saved?.body.immediate ?? good.status === "available";
   if (!saved && !immediate && good.status !== "scheduled") {
     panel.append(add("p", "muted", "当前商品不可兑换。"));
