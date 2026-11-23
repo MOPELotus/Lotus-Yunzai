@@ -81,9 +81,18 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
   try {
     await copyHost(root);
     disableMemberPrewarm(root);
+    const material = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X9uoAAAAASUVORK5CYII=", "base64");
+    const materialRoot = join(root, "temp", "material");
+    await Promise.all([mkdir(join(materialRoot, "gs", "友人A"), { recursive: true }),
+      mkdir(join(materialRoot, "sr", "小橙子啊"), { recursive: true })]);
     await Promise.all([
       writeCatalog(data),
+      writeFile(join(materialRoot, "gs", "友人A", "刻晴.jpg"), material),
+      writeFile(join(materialRoot, "sr", "小橙子啊", "符玄.jpg"), material),
       cp(new URL("../plugins/atlas/", import.meta.url), atlas, {
+        recursive: true, filter: (path) => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
+      }),
+      cp(new URL("../plugins/guides/", import.meta.url), join(root, "plugins", "guides"), {
         recursive: true, filter: (path) => !path.endsWith("/.git") && !path.endsWith("/node_modules"),
       }),
       writeFile(join(root, "plugins", "role-book-fallthrough-fixture.js"), `
@@ -98,6 +107,14 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
         }
       `),
     ]);
+    await writeFile(join(root, "offline.ts"), `
+      const original = fetch;
+      globalThis.fetch = Object.assign((input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.protocol === "http:" && url.hostname === "127.0.0.1") return original(input, init);
+        throw new Error("角色图册离线夹具禁止访问公网");
+      }, { preconnect: original.preconnect });
+    `);
     // Exercise host delivery without launching a renderer in the copied project.
     await writeFile(join(atlas, "role-render.ts"), `
       export async function renderRoleBook(role, { assetRoot }) {
@@ -112,9 +129,10 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
         }));
       }
     `);
-    host = Bun.spawn([process.execPath, "app.ts"], {
+    host = Bun.spawn([process.execPath, "--preload", "./offline.ts", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_ATLAS_DATA_DIR: data },
+      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_ATLAS_DATA_DIR: data,
+        LOTUS_GUIDES_AUTO_UPDATE: "0" },
     });
     const stderr = new Response(host.stderr).text();
     const endpoint = await deadline(readEndpoint(host.stdout), "角色图册测试宿主启动超时。");
@@ -173,6 +191,15 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     await book("%艾莲影画", ellen);
     await book("#绝区零艾莲影画", ellen);
     await book("图鉴 绝区零 艾莲", ellen, false);
+    for (const [command, group] of [["#刻晴素材", true], ["*符玄突破", false]] as const) {
+      send(command, group);
+      const frame = await next(command);
+      expect(frame).toMatchObject({ action: "send_msg", params: {
+        ...(group ? { group_id: 77 } : { user_id: 42 }),
+        message: [{ type: "image", data: expect.objectContaining({ file: `base64://${material.toString("base64")}` }) }],
+      } });
+      if (frame.echo) client.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 800 + messageId } }));
+    }
     await book("*卡芙卡星魂", kafka, true, 1);
     expect(await next("未确认回执")).toMatchObject({ action: "send_msg", params: {
       group_id: 77, message: "合并转发结果未确认，请在聊天中核对。",
