@@ -548,6 +548,11 @@ async function dispatchGroupCompatibilityNotice(
       });
     },
   };
+  const refreshMember = (memberId: number) => {
+    void connection.calls.getLiveGroupMember(send, group_id, memberId, true, signal).then(member => {
+      if (member && !signal.aborted) connection.display?.remember(group_id, memberId, member);
+    });
+  };
   if (notice_type === "group_card") {
     const { card_old, card_new } = event;
     if (!isId(user_id) || typeof card_new !== "string") return;
@@ -555,11 +560,14 @@ async function dispatchGroupCompatibilityNotice(
     await dispatch({ ...base, notice_type, card_old: stringField(card_old), card_new });
   } else if (notice_type === "notify" && sub_type === "title") {
     if (!isId(user_id) || typeof event.title !== "string" || event.title.length > 256) return;
-    void connection.calls.getLiveGroupMember(send, group_id, user_id, true, signal).then(member => {
-      if (member && !signal.aborted) connection.display?.remember(group_id, user_id, member);
-    });
+    refreshMember(user_id);
     console.info(`[${self_id}] 群 ${group_id} 成员 ${user_id} 的头衔：${sanitizeRuntimeLog(event.title, 256)}`);
     await dispatch({ ...base, notice_type: "group", sub_type, user_id, title: event.title });
+  } else if (notice_type === "notify" && sub_type === "honor") {
+    const { honor_type } = event;
+    if (!isId(user_id) || typeof honor_type !== "string" || !/^[a-z][a-z0-9_]{0,31}$/u.test(honor_type)) return;
+    refreshMember(user_id);
+    await dispatch({ ...base, notice_type: "group", sub_type, user_id, honor_type });
   } else if (notice_type === "notify" && sub_type === "group_name" && typeof event.name_new === "string") {
     await dispatch({ ...base, notice_type: "group", sub_type, name_new: event.name_new,
       target_id: isId(target_id) ? target_id : undefined });
@@ -1399,7 +1407,7 @@ export function startOneBot(
               });
             } else if (message.notice_type === "group_card" || message.notice_type === "essence" ||
                 message.notice_type === "group_msg_emoji_like" ||
-                (message.notice_type === "notify" && (message.sub_type === "group_name" || message.sub_type === "title"))) {
+                (message.notice_type === "notify" && (message.sub_type === "group_name" || message.sub_type === "title" || message.sub_type === "honor"))) {
               await dispatchGroupCompatibilityNotice(dispatch, send, message, socket.data, options.isMaster);
             } else if (message.notice_type === "notify" && message.sub_type === "profile_like") {
               await dispatchProfileLike(dispatch, send, message, socket.data, options.isMaster);

@@ -48,7 +48,7 @@ async function connect(url: string, id: number, calls: Call[]) {
     calls.push(frame);
     if (!frame.echo) return;
     let response: unknown = { message_id: calls.length, user_id: id };
-    if (frame.action === "get_group_member_info") response = { user_id: peer, group_id: group, role: "member", nickname: "已核身份" };
+    if (frame.action === "get_group_member_info") response = { user_id: frame.params.user_id, group_id: group, role: "member", nickname: "已核身份" };
     if (frame.action === "get_friend_list") response = [{ user_id: owner }, { user_id: peer }, { user_id: otherOwner }];
     socket.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: response }));
   });
@@ -56,7 +56,7 @@ async function connect(url: string, id: number, calls: Call[]) {
   return socket;
 }
 
-test("OneBot 头衔、收到点赞、输入及离线走固定旧路径并保留主人隔离", async () => {
+test("OneBot 群头衔与荣誉、点赞、输入及离线走固定旧路径并保留主人隔离", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-v3-onebot-signal-"));
   let oneBot: WebSocket | undefined;
   let other: WebSocket | undefined;
@@ -69,9 +69,9 @@ test("OneBot 头衔、收到点赞、输入及离线走固定旧路径并保留�
     await writeFile(join(root, "plugins", "onebot-legacy-signals.js"), `
       import { appendFileSync } from "node:fs";
       function record(name, { post_type, notice_type, sub_type, self_id, user_id, group_id, event_type, end, status_text,
-          message, operator_id, operator_nick, times, title, tag }) {
+          message, operator_id, operator_nick, times, title, honor_type, tag }) {
         appendFileSync("./trace.ndjson", JSON.stringify({ name, event: { post_type, notice_type, sub_type,
-          self_id, user_id, group_id, event_type, end, status_text, message, operator_id, operator_nick, times, title, tag } }) + "\\n");
+          self_id, user_id, group_id, event_type, end, status_text, message, operator_id, operator_nick, times, title, honor_type, tag } }) + "\\n");
       }
       export const apps = Object.fromEntries([
         "notice.group.title", "notice.friend.profile_like", "notice.group.honor",
@@ -122,7 +122,15 @@ test("OneBot 头衔、收到点赞、输入及离线走固定旧路径并保留�
       expect(like.event).toMatchObject({ post_type: "notice", notice_type: "friend", sub_type: "profile_like",
         operator_id: peer, user_id: peer, operator_nick: "来源昵称", times: 3 });
 
-      notify("notify", { sub_type: "honor", user_id: peer, group_id: group, honor_type: "talkative" });
+      const honored = peer + 10;
+      notify("notify", { sub_type: "honor", user_id: honored, group_id: group, honor_type: "emotion", self_id: otherBot });
+      notify("notify", { sub_type: "honor", user_id: honored, group_id: group, honor_type: "invalid event" });
+      notify("notify", { sub_type: "honor", user_id: honored, group_id: group, honor_type: "talkative" });
+      const honor = await waitFor(async () => (await read()).find(row => row.name === "notice.group.honor"), "未收到群荣誉。");
+      expect(honor.event).toMatchObject({ post_type: "notice", notice_type: "group", sub_type: "honor",
+        self_id: bot, user_id: honored, group_id: group, honor_type: "talkative" });
+      expect(await waitFor(() => calls.find(call => call.action === "get_group_member_info" && call.params.user_id === honored),
+        "群荣誉未刷新成员。")).toMatchObject({ params: { group_id: group, user_id: honored, no_cache: true } });
       notify("notify", { sub_type: "input_status", user_id: peer, event_type: 1, status_text: "非私聊", group_id: group });
       notify("notify", { sub_type: "input_status", user_id: peer, event_type: 1, status_text: "外账号", group_id: 0, self_id: otherBot });
       notify("notify", { sub_type: "input_status", user_id: peer, event_type: 1, status_text: "对方正在输入", group_id: 0 });
@@ -146,7 +154,8 @@ test("OneBot 头衔、收到点赞、输入及离线走固定旧路径并保留�
       expect(calls.filter(call => call.action === "send_msg")).toHaveLength(1);
       expect(otherCalls.filter(call => call.action === "send_msg")).toEqual([]);
       expect((await read()).map(row => row.name)).toEqual([
-        "notice.group.title", "notice.group.title", "notice.friend.profile_like", "exact", "once", "exact", "suffix", "offline",
+        "notice.group.title", "notice.group.title", "notice.friend.profile_like", "notice.group.honor",
+        "exact", "once", "exact", "suffix", "offline",
       ]);
       expect((await read()).at(-1)?.event).toMatchObject({
         post_type: "system", notice_type: "offline", self_id: bot, user_id: bot,

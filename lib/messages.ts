@@ -339,7 +339,8 @@ export type OneBotGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { re
   GroupReaction | (GroupEssence & { readonly sender_id: number }) |
   { readonly notice_type: "group_card"; readonly sub_type?: never; readonly card_old?: string; readonly card_new: string } |
   { readonly notice_type: "group"; readonly sub_type: "group_name"; readonly target_id?: number; readonly name_new: string } |
-  { readonly notice_type: "group"; readonly sub_type: "title"; readonly user_id: number; readonly title: string }
+  { readonly notice_type: "group"; readonly sub_type: "title"; readonly user_id: number; readonly title: string } |
+  { readonly notice_type: "group"; readonly sub_type: "honor"; readonly user_id: number; readonly honor_type: string }
 );
 
 export type MilkyGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "milky" } & (

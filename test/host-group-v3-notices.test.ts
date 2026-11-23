@@ -142,13 +142,16 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       mk("group_message_reaction", reaction);
       await verify({ key: "notice.group.msg_emoji_like", group_id, user_id, message_id: "0", message_seq: 0,
         face_id: "66", is_add: false, reaction_type: "emoji", likes: [{ emoji_id: "66", count: 0 }] });
+      mk("group_message_reaction", { ...reaction, message_seq: 14, is_add: true, reaction_type: "face" });
+      await verify({ key: "notice.group.msg_emoji_like", group_id, user_id, message_id: "14", message_seq: 14,
+        face_id: "66", is_add: true, reaction_type: "face", likes: [{ emoji_id: "66", count: 1 }] });
       mk("group_name_change", { operator_id: userId, new_group_name: "Milky 新群名" });
       await verify({ key: "notice.group.card", group_id, user_id, operator_id: userId, new_group_name: "Milky 新群名" });
       mk("group_essence_message_change", { message_seq: 15, is_set: true, operator_id: userId });
       await verify({ key: "notice.group.essence", action_sub_type: "add", group_id, operator_id: user_id, message_id: "15", message_seq: 15, is_set: true });
       mk("group_essence_message_change", { message_seq: 15, is_set: false });
       await verify({ key: "notice.group.essence", action_sub_type: "delete", group_id, message_id: "15", message_seq: 15, is_set: false });
-      expect(replies).toHaveLength(12);
+      expect(replies).toHaveLength(13);
     } finally {
       oneBot?.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");
