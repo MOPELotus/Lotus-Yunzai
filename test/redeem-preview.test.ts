@@ -343,6 +343,43 @@ test("兼容旧活动 ID 文件，重启可恢复活动，且文件不含任何�
   }
 });
 
+test("保存活动缓存失败不影响并发游戏查码，磁盘恢复后补存两场活动", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "lotus-redeem-cache-retry-"));
+  const directory = join(temp, "cache");
+  const historyFile = join(directory, "activities.json");
+  const discoveringStarRail = Promise.withResolvers<void>();
+  const continueStarRail = Promise.withResolvers<void>();
+  try {
+    await writeFile(directory, "temporarily blocked cache directory");
+    const service = new RedeemCodeService({ historyFile, now: () => start + 1_000 });
+    const provider = service.providers.miyolive;
+    provider.discover = async game => {
+      if (game.id === "sr") {
+        discoveringStarRail.resolve();
+        await continueStarRail.promise;
+      }
+      const actId = "fixture-" + game.id;
+      return { activity: { actId, live: { title: game.name + "7.2前瞻" } },
+        posts: [], newestVersion: "7.2", activities: [actId], announcement: null };
+    };
+    provider.codes = async () => [{ code: "SYNTHETIC", title: "测试奖励" }];
+    const starRail = service.query("sr");
+    await discoveringStarRail.promise;
+    const genshin = await service.query("gs");
+    continueStarRail.resolve();
+    expect(genshin).toMatchObject({ status: "available", codes: [{ code: "SYNTHETIC" }] });
+    expect(await starRail).toMatchObject({ status: "available", codes: [{ code: "SYNTHETIC" }] });
+    expect(await readFile(directory, "utf8")).toBe("temporarily blocked cache directory");
+
+    await rm(directory);
+    expect((await service.query("gs")).status).toBe("available");
+    expect(JSON.parse(await readFile(historyFile, "utf8"))).toEqual({ gs: ["fixture-gs"], sr: ["fixture-sr"] });
+  } finally {
+    continueStarRail.resolve();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("旧安装的前瞻缓存只作发现线索，通过官方作者校验后才写入主缓存", async () => {
   const temp = await mkdtemp(join(tmpdir(), "lotus-redeem-history-"));
   const historyFile = join(temp, "activities.json");

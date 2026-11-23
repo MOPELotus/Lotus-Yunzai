@@ -42,6 +42,8 @@ export class RedeemCodeService {
   loading: Promise<void> | null = null
   readonly inflight = new Map<RedeemGameId, Promise<RedeemPreviewResult>>()
   persisting = Promise.resolve()
+  #historyRevision = 0
+  #savedHistoryRevision = 0
 
   constructor(options: RedeemPreviewOptions = {}) {
     this.now = options.now || Date.now
@@ -178,24 +180,32 @@ export class RedeemCodeService {
   }
 
   async saveHistory(gameId: RedeemGameId, activities: readonly string[]) {
-    const previous = this.history![gameId] || []
+    const history = this.history!
+    const previous = history[gameId] || []
     const next = [...new Set([...activities, ...previous])].slice(0, 12)
-    if (previous.length === next.length && previous.every((id, index) => id === next[index])) return
-    this.history![gameId] = next
+    if (previous.length !== next.length || previous.some((id, index) => id !== next[index])) {
+      history[gameId] = next
+      this.#historyRevision++
+    }
     const file = this.historyFile
-    if (!file) return
-    this.persisting = this.persisting.catch(() => {}).then(async () => {
+    if (!file || this.#historyRevision === this.#savedHistoryRevision) return
+    this.persisting = this.persisting.then(async () => {
+      const revision = this.#historyRevision
+      if (revision === this.#savedHistoryRevision) return
+      const contents = JSON.stringify(history)
       await fs.mkdir(path.dirname(file), { recursive: true })
       const temporary = `${file}.${randomUUID()}.tmp`
       try {
-        await fs.writeFile(temporary, JSON.stringify(this.history), { encoding: "utf8", flag: "wx" })
+        await fs.writeFile(temporary, contents, { encoding: "utf8", flag: "wx" })
         await fs.rename(temporary, file)
+        this.#savedHistoryRevision = revision
       } finally {
         await fs.rm(temporary, { force: true })
       }
+    }).catch(() => {
+      // Keep discovered IDs available to concurrent queries and retry the unsaved version later.
     })
-    // History is a discovery aid; disk errors must not hide valid official results.
-    await this.persisting.catch(() => { this.history = null; this.loading = null })
+    await this.persisting
   }
 }
 
