@@ -167,8 +167,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const target = event.notice_type === "group" ? { group_id: event.group_id } : { user_id: userId };
       const delivery: PokeDeliverySession = {
         signal,
-        async send(reply, active) {
-          return await sendConfirmed(target, reply, undefined, AbortSignal.any([signal, active])) === "confirmed";
+        async send(reply, active, onDelivered) {
+          return await sendConfirmed(target, reply, undefined, AbortSignal.any([signal, active]), onDelivered) === "confirmed";
         },
       };
       const identity = { adapter: "milky" as const, isMaster: isMaster(userId), [pokeDeliverySession]: delivery };

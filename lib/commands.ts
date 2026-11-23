@@ -26,7 +26,7 @@ export type CommandContext = Readonly<Pick<
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
-  "reply_id" | "sender" | "lookupReply" | "reply" | "forward" | typeof ownerContactListSession>> & {
+  "reply_id" | "sender" | "lookupReply" | "lookupMediaReply" | "reply" | "forward" | typeof ownerContactListSession>> & {
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly canManagePackages?: true;
@@ -338,6 +338,7 @@ export class CommandRegistry {
       if (!features && !allowed(names)) continue;
       const context = {
         ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
+        lookupMediaReply: names[0] === "@lotus-yunzai/genshin" ? event.lookupMediaReply : undefined,
         reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
       };

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { renderPng } from "@lotus-yunzai/skia";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
@@ -41,7 +42,9 @@ globalThis.fetch = (value, options) => {
 function assertImage(params: unknown) {
   const match = /base64:\/\/([A-Za-z0-9+/=]+)/u.exec(JSON.stringify(params));
   expect(match).not.toBeNull();
-  expect(Buffer.from(match![1]!, "base64").subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const bytes = Buffer.from(match![1]!, "base64");
+  expect(bytes.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  return bytes;
 }
 
 test("本机两协议收到角色卡和本人戳事件，未知回执不回退再发", async () => {
@@ -90,4 +93,92 @@ test("关闭原神戳卡后原有聊天角色卡仍可用", async () => {
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);
     }, 8000, preload + '\nBun.env.LOTUS_GENSHIN_AVATAR_POKE = "false";\n', prepare);
+}, 20_000);
+
+test("群 OneBot 和私聊 Milky 能引用实际角色卡，取回出卡所用原始图片", async () => {
+  const image = (color: string) => renderPng(24, 17, context => {
+    context.fillStyle = color;
+    context.fillRect(0, 0, 24, 17);
+  }).then(({ png }) => Buffer.from(png));
+  const [original, replacement] = await Promise.all([image("#ff4466"), image("#65ffc0")]);
+  const gallery = "./avatar-gallery/gs-character/胡桃";
+  const key = (type: string, data: object) => ({ type, data });
+  await withDualGatewayFixture("genshin-avatar-original-fixture", "disablePrivate: false\n",
+    async ({ root, milky, onebot, sendOneBot, sendMilky, sendMilkyEvent }) => {
+      const group = { message_type: "group", sub_type: "normal", group_id: 81 };
+      sendOneBot("#胡桃卡片", group);
+      const card = await onebot.next("send_msg");
+      expect(card.params).toMatchObject({ group_id: 81 });
+      const generated = assertImage(card.params);
+      expect(generated).not.toEqual(original);
+      card.respond({ message_id: -871 });
+
+      await sendMilky("#胡桃卡片");
+      const privateCard = await milky.next("send_private_message");
+      assertImage(privateCard.params);
+      privateCard.respond({ message_seq: 0 });
+      sendOneBot("#胡桃卡片");
+      (await onebot.next("send_msg")).respond({ message_id: 881 });
+      await sendMilkyEvent("friend_nudge", { user_id: 43, is_self_send: false, is_self_receive: true });
+      (await milky.next("send_private_message")).respond({ message_seq: 889 });
+      await Bun.sleep(60);
+      await writeFile(join(root, gallery, "另一张.png"), replacement);
+
+      const source = [key("reply", { id: "-871" }), key("text", { text: "#原图" })];
+      sendOneBot("#原图", { ...group, message: source, user_id: 43 });
+      sendOneBot("#原图", { ...group, message: source });
+      const groupQuote = await onebot.next("get_msg");
+      expect(groupQuote.params).toMatchObject({ message_id: -871 });
+      groupQuote.respond({ message_type: "group", message_id: -871, group_id: 81, sender: { user_id: 99 },
+        message: [key("image", { file: "verified.png" })] });
+      const recovered = await onebot.next("send_msg");
+      expect(recovered.params).toMatchObject({ group_id: 81 });
+      expect(assertImage(recovered.params)).toEqual(original);
+      recovered.respond({ message_id: 872 });
+
+      await sendMilky("#原神原图", { segments: [key("reply", { message_seq: 0 }), key("text", { text: "#原神原图" })] });
+      const myQuote = await milky.next("get_message");
+      expect(myQuote.params).toMatchObject({ message_scene: "friend", peer_id: 43, message_seq: 0 });
+      myQuote.respond({ message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 0,
+        segments: [key("image", { resource_id: "verified", temp_url: "https://example.invalid/art.png" })] } });
+      const privateOriginal = await milky.next("send_private_message");
+      expect(assertImage(privateOriginal.params)).toEqual(original);
+      privateOriginal.respond({ message_seq: 873 });
+
+      const pokeSource = [key("reply", { message_seq: 889 }), key("text", { text: "#原图" })];
+      await sendMilky("#原图", { segments: pokeSource });
+      (await milky.next("get_message")).respond({ message: { message_scene: "friend", peer_id: 43, sender_id: 100, message_seq: 889,
+        segments: [key("image", { resource_id: "verified", temp_url: "https://example.invalid/poke.png" })] } });
+      const pokeOriginal = await milky.next("send_private_message");
+      expect(assertImage(pokeOriginal.params)).toEqual(original);
+      pokeOriginal.respond({ message_seq: 890 });
+
+      const privateSource = [key("reply", { id: "881" }), key("text", { text: "#原神原图" })];
+      sendOneBot("#原神原图", { message: privateSource });
+      const info = { message_type: "private", sub_type: "friend", message_id: 881, sender: { user_id: 99 },
+        message: [key("image", { file: "verified.png" })] };
+      (await onebot.next("get_msg")).respond(info);
+      const history = await onebot.next("get_friend_msg_history");
+      expect(history.params).toMatchObject({ user_id: 42, message_seq: 881 });
+      history.respond({ messages: [info] });
+      const napcat = await onebot.next("send_msg");
+      expect(assertImage(napcat.params)).toEqual(original);
+      napcat.respond({ message_id: 882 });
+
+      await writeFile(join(root, gallery, "当时所用.png"), replacement);
+      sendOneBot("#原图", { ...group, message: source });
+      (await onebot.next("get_msg")).respond({ message_type: "group", message_id: -871, group_id: 81, sender: { user_id: 99 },
+        message: [key("image", { file: "verified.png" })] });
+      await Bun.sleep(100);
+      expect(onebot.calls).toEqual([]);
+      expect(milky.calls).toEqual([]);
+    }, 7500, preload + '\nBun.env.LOTUS_CHARACTER_GALLERY_DIR = "./avatar-gallery";\nBun.env.LOTUS_GENSHIN_PANEL_THEME_DIR = "./avatar-theme";\n', async root => {
+      await prepare(root);
+      await mkdir(join(root, gallery), { recursive: true });
+      await writeFile(join(root, gallery, "当时所用.png"), original);
+      await mkdir(join(root, "avatar-theme", "meta-gs", "character"), { recursive: true });
+      await writeFile(join(root, "avatar-theme", "meta-gs", "character", "data.json"), JSON.stringify({
+        10000046: { id: 10000046, name: "胡桃", elem: "pyro" },
+      }));
+    });
 }, 20_000);

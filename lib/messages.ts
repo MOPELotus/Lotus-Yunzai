@@ -259,7 +259,7 @@ export const pokeDeliverySession = Symbol("pokeDeliverySession");
 
 export interface PokeDeliverySession {
   readonly signal: AbortSignal;
-  send(reply: MessageReply, active: AbortSignal): Promise<boolean>;
+  send(reply: MessageReply, active: AbortSignal, onDelivered?: ReplyOptions["onDelivered"]): Promise<boolean>;
 }
 
 export interface FriendPoke {

@@ -471,10 +471,10 @@ function confirmedPokeDelivery(calls: OneBotCalls, send: Send, target: { user_id
   signal: AbortSignal): PokeDeliverySession {
   return {
     signal,
-    async send(reply, active) {
+    async send(reply, active, onDelivered) {
       const message = encodeOneBotReply(reply);
       return message !== undefined &&
-        await calls.sendConfirmed(send, target, message, AbortSignal.any([signal, active])) === "confirmed";
+        await calls.sendConfirmed(send, target, message, AbortSignal.any([signal, active]), onDelivered) === "confirmed";
     },
   };
 }

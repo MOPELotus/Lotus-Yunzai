@@ -1362,10 +1362,14 @@ if (import.meta.main) {
         let attempted = false;
         const handled = active() && await characterCard.run({
           actorId: event.user_id, signal, allowed: active,
-          async reply(reply) {
+          scope: {
+            adapter: event.adapter ?? "onebot", self_id: event.self_id, user_id: event.user_id,
+            group_id: event.isGroup ? event.group_id : undefined, message_type: event.isGroup ? "group" : "private",
+          },
+          async reply(reply, onDelivered) {
             if (!active()) return false;
             attempted = true;
-            return delivery.send(reply, signal);
+            return delivery.send(reply, signal, onDelivered && (id => active() ? onDelivered(id) : undefined));
           },
         }).catch(() => false);
         if (handled || attempted) return;
@@ -1908,7 +1912,7 @@ if (import.meta.main) {
     const statusCard = /^#状态(?:[Pp]ro)?$/u.test(event.msg);
     const bareStatus = /^状态(?:[Pp]ro)?$/u.test(event.msg);
     const statusMonitor = event.msg === "#监控";
-    const statusPhoto = /^#?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
+    const statusPhoto = /^#?(?:原神)?原图$/u.test(event.msg) && event.lookupReply !== undefined &&
       (event.listCurrentGroupMembers !== undefined || event.privateCredentialSignal?.aborted === false);
     const milky = event.adapter === "milky" && event.self_id !== undefined && onlineMilkyBotId() === event.self_id;
     const atlasMaintenance = atlasCommand && canManagePackages(event) && (event.adapter !== "milky" || milky) ? true as const : undefined;
@@ -2249,12 +2253,15 @@ if (import.meta.main) {
       }
       const session = event.message_type === "group" ? event[delegationSession]?.signal : undefined;
       const groupOriginalSignal = session && nativeOperationSignal(session);
-      if (groupOriginalSignal && !groupOriginalSignal.aborted) {
-        const artwork = await commands.dispatchFallback(event,
-          (names) => names[0] === "@lotus-yunzai/zzz" && allowed(names), isBotMaster, command.msg, { groupOriginalSignal });
-        if (artwork !== undefined && !groupOriginalSignal.aborted) {
-          await sendCommandReply(event, artwork);
-          return;
+      if (groupOriginalSignal) {
+        for (const moduleName of ["@lotus-yunzai/zzz", "@lotus-yunzai/genshin"]) {
+          if (groupOriginalSignal.aborted) return;
+          const artwork = await commands.dispatchFallback(event,
+            (names) => names[0] === moduleName && allowed(names), isBotMaster, command.msg, { groupOriginalSignal });
+          if (artwork !== undefined && !groupOriginalSignal.aborted) {
+            await sendCommandReply(event, artwork);
+            return;
+          }
         }
       }
     }

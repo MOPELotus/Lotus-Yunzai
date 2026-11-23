@@ -30,7 +30,7 @@ import type { GachaGame, GachaUpdater } from "../gacha-batch.ts";
 import type { PanelRebuildGame, PanelRebuilder } from "../panel-rebuild.ts";
 import type { lockFile } from "../file-lock.ts";
 import { isManagedLegacyScript, isManagedPluginDirectory, managedUpdateDirectoryLimit } from "../managed-update-protocol.ts";
-import type { MessageReply } from "../messages.ts";
+import type { MessageReply, ReplyOptions } from "../messages.ts";
 import { defaultPluginLoadMs } from "../plugin-load-progress.ts";
 import type { RuntimeVersion } from "../runtime-version.ts";
 import { legacyScriptHash, readFlatScript, watchLegacyFiles } from "./file-watch.ts";
@@ -186,8 +186,15 @@ export interface PluginLoadRecord {
 export type GenshinAvatarPoke = (input: {
   readonly actorId: number;
   readonly signal: AbortSignal;
+  readonly scope: {
+    readonly adapter: "onebot" | "milky";
+    readonly self_id: number;
+    readonly user_id: number;
+    readonly group_id?: number;
+    readonly message_type: "private" | "group";
+  };
   allowed(): boolean;
-  reply(message: MessageReply): Promise<boolean>;
+  reply(message: MessageReply, onDelivered?: ReplyOptions["onDelivered"]): Promise<boolean>;
 }) => Promise<boolean>;
 
 export interface PluginLoadReport {
