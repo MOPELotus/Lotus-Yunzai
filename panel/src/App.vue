@@ -65,6 +65,7 @@ const nativeSections = computed(() => [
   { key: "genshin-damage", label: "原神伤害计算" },
   { key: "starrail-warp", label: "星铁模拟跃迁" },
   { key: "gacha-display", label: "原神与星铁抽卡显示" },
+  { key: "genshin-wish", label: "原神模拟祈愿" },
   { key: "zzz-rank", label: "绝区零群榜" },
   { key: "zzz-panel", label: "绝区零面板与提示" },
   { key: "zzz-reminders", label: "绝区零挑战提醒" },

@@ -10,7 +10,7 @@ const rawPaths = [
 
 const trimmedPaths = [
   "LOTUS_GENSHIN_LEGACY_PANEL_DIR", "LOTUS_GENSHIN_PANEL_THEME_DIR", "LOTUS_GENSHIN_GACHA_THEME_DIR",
-  "LOTUS_GENSHIN_GACHA_RESOURCES_DIR", "LOTUS_GENSHIN_WISH_POOL_FILE", "LOTUS_GENSHIN_WISH_COIN_FILE",
+  "LOTUS_GENSHIN_GACHA_RESOURCES_DIR", "LOTUS_GENSHIN_WISH_POOL_FILE", "LOTUS_GENSHIN_WISH_COIN_FILE", "LOTUS_GENSHIN_WISH_RECALL_FILE",
   "LOTUS_GENSHIN_DAMAGE_CONFIG",
   "LOTUS_GENSHIN_WISH_THEME_DIR", "LOTUS_GENSHIN_WISH_ELEMENTS_DIR", "LOTUS_STAR_RAIL_LEGACY_PANEL_DIR",
   "LOTUS_STAR_RAIL_PANEL_THEME_DIR", "LOTUS_STAR_RAIL_GACHA_THEME_DIR", "LOTUS_STAR_RAIL_GACHA_GENSHIN_RESOURCES_DIR",
@@ -42,6 +42,7 @@ export function configuredGameResourcePaths(env: Readonly<Record<string, string 
 
   const wish = env.LOTUS_GENSHIN_WISH_LEGACY_DIR?.trim() || env.LOTUS_GENSHIN_WISH_FLOWER_DIR?.trim();
   if (wish) {
+    if (!env.LOTUS_GENSHIN_WISH_RECALL_FILE?.trim()) paths.push(join(wish, "../../../genshin/config/gacha.set.yaml"));
     paths.push(join(wish, "config", "gacha.yaml"), join(wish, "def", "gacha.yaml"));
     if (!env.LOTUS_GENSHIN_WISH_POOL_FILE?.trim()) {
       paths.push(join(wish, "config", "pool.yaml"), join(wish, "def", "pool.yaml"), join(wish, "data"));

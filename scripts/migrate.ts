@@ -23,6 +23,7 @@ interface PreparedMigration {
     readonly groupConfig: Staged["groupConfig"];
     readonly panelRank?: Staged["panelRank"];
     readonly gachaDisplay?: Staged["gachaDisplay"];
+    readonly genshinWish?: Staged["genshinWish"];
     readonly zzzRecall?: Staged["zzzRecall"];
     readonly zzzChallengeReminder?: Staged["zzzChallengeReminder"];
     readonly updateNotice?: Staged["updateNotice"];
@@ -88,6 +89,7 @@ async function prepare(source: string, target: string, directory: string, signal
         groupConfig: staged.groupConfig,
         panelRank: staged.panelRank,
         gachaDisplay: staged.gachaDisplay,
+        genshinWish: staged.genshinWish,
         zzzRecall: staged.zzzRecall,
         zzzChallengeReminder: staged.zzzChallengeReminder,
         updateNotice: staged.updateNotice,
