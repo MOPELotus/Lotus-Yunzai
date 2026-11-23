@@ -1244,6 +1244,14 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
         ? () => bindCard(() => isMaster(cardOwner)) : undefined,
       privateCredentialSignal: message.isPrivate ? signal : undefined,
+      verifyOwnGroupMembership: message.isPrivate && message.sub_type === "friend" && !message.attachmentOnly &&
+          positiveId(cardOwner) && cardOwner !== account && hasMessageSequence(message.message_id)
+        ? async (target: number, workflow: AbortSignal) => {
+          const active = AbortSignal.any([signal, workflow]);
+          if (!positiveId(target) || active.aborted) return false;
+          const [robot, actor] = await Promise.all([liveGroupMember(target, account, active), liveGroupMember(target, cardOwner, active)]);
+          return !active.aborted && robot !== undefined && actor !== undefined;
+        } : undefined,
       isOwnerEnrollmentSession: message.isPrivate ? () => !signal.aborted : undefined,
       recallReply: recallReply(message),
       setGroupCard: positiveId(cardOwner) && isMaster(cardOwner) && Array.isArray(message.message) &&

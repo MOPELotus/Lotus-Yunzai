@@ -121,6 +121,7 @@ export interface MessageEvent {
   readonly [ownerAccountSession]?: OwnerAccountSession;
   readonly [qzoneSession]?: QzoneSession;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
+  readonly verifyOwnGroupMembership?: (groupId: number, signal: AbortSignal) => Promise<boolean>;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
   readonly forward?: (nodes: readonly MessageReply[], senderName?: string, options?: Pick<ReplyOptions, "recallMsg">) => Promise<boolean>;
   readonly uploadFile?: (file: ChatFile) => Promise<ChatFileResult>;

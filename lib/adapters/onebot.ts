@@ -712,6 +712,16 @@ async function dispatchMessage(
       } : undefined,
     privateCredentialSignal: boundAccount && messageType === "private" && event.sub_type === "friend"
       ? attachmentSession?.signal : undefined,
+    verifyOwnGroupMembership: boundAccount && leaveSignal && messageType === "private" && selfId !== undefined && selfId !== userId
+      ? async (groupId, workflow) => {
+        const active = AbortSignal.any([leaveSignal, workflow]);
+        if (!isId(groupId) || active.aborted) return false;
+        const [robot, actor] = await Promise.all([
+          calls.getLiveGroupMember(send, groupId, selfId, true, active),
+          calls.getLiveGroupMember(send, groupId, userId, true, active),
+        ]);
+        return !active.aborted && robot !== undefined && actor !== undefined;
+      } : undefined,
     ...(privateGroupSignal && attachmentSession && selfId !== undefined && groupActions?.canModeratePrivateGroup &&
       bindPrivateGroupActions({ bot: selfId, signal: AbortSignal.any([privateGroupSignal, attachmentSession.signal]),
         master: () => isMaster(selfId, userId), protectedMember: id => groupActions.isProtectedMaster?.(selfId, id) ?? isMaster(selfId, id),

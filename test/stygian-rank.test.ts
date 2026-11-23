@@ -25,7 +25,7 @@ test("旧 Ark 单条无 UID 回包可归属，批量无身份、重复和异 UID
   const query = (uids: string[], data: unknown) =>
     queryStygianRank("ark", uids, undefined, signal, async () => Response.json({ retcode: 100, data }));
   expect(await query([first], [arkRow])).toMatchObject({ status: "ok", rows: [{ uid: first }] });
-  expect(await query([first, second], [arkRow, arkRow])).toEqual({ status: "unverified" });
+  expect(await query([first, second], [arkRow, arkRow])).toEqual({ status: "unverified", retryIndividually: true });
   expect(await query([first, second], [{ ...arkRow, uid: "100000081" }])).toEqual({ status: "unverified" });
   expect(await query([first, second], [{ ...arkRow, uid: first }, { ...arkRow, uid: first }])).toEqual({ status: "unverified" });
   expect(await query([first], [{ ...arkRow, hard: 7, uid: first }])).toEqual({ status: "ok", rows: [] });

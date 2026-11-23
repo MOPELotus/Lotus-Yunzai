@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { GlobalConfigWriteError, readCanonicalLocalConfiguration, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
+import type { StygianRankSite } from "./stygian-rank.ts";
 
 const installation = new URL("../", import.meta.url);
 const games = ["gs", "sr"] as const;
@@ -10,7 +11,7 @@ type ListKey = Game | `${Game}Disabled`;
 type LimitKey = `${Game}Limit`;
 type DefaultKey = `${Game}Default`;
 type RankSettings = Record<ListKey, string[]> & Record<LimitKey, number> & Record<DefaultKey, boolean> &
-  { artifactListLimit: number; commaGroup: number };
+  { artifactListLimit: number; commaGroup: number; stygianArk: boolean; stygianAkasha: boolean };
 
 const defaultGroupPanelRankLimit = 15;
 export const maxGroupPanelRankLimit = 30;
@@ -36,7 +37,11 @@ const rankFields = games.flatMap(game => {
       min: minGroupPanelRankLimit, max: maxGroupPanelRankLimit },
   ] as const;
 });
-const fields = [artifactListField, commaGroupField, ...rankFields];
+const stygianFields = [
+  { key: "stygianArk", label: "原神幽境危战群榜 Ark 来源", type: "boolean", hint: "只查询单独授权 Ark 的群成员。关掉后停止请求该站。" },
+  { key: "stygianAkasha", label: "原神幽境危战群榜 Akasha 来源", type: "boolean", hint: "只查询单独授权 Akasha 的群成员。关掉后停止请求该站。" },
+] as const;
+const fields = [artifactListField, commaGroupField, ...rankFields, ...stygianFields];
 
 const legacyRankPolicies = [
   "不限",
@@ -126,6 +131,8 @@ function effective(config: Partial<RankSettings>): RankSettings {
     srLimit: config.srLimit ?? defaultGroupPanelRankLimit,
     artifactListLimit: config.artifactListLimit ?? defaultArtifactListLimit,
     commaGroup: config.commaGroup ?? 3,
+    stygianArk: config.stygianArk ?? true,
+    stygianAkasha: config.stygianAkasha ?? true,
   };
 }
 
@@ -168,6 +175,16 @@ export async function readArtifactListLimit(root = installation) {
 export async function readPanelCommaGroup(root = installation) {
   const raw = await readConfiguration(root).catch(() => undefined);
   return parsePanelCommaGroup(raw?.commaGroup);
+}
+
+export async function readStygianRankSites(root = installation): Promise<readonly StygianRankSite[]> {
+  try {
+    const config = effective(configured(await readConfiguration(root)));
+    return ([["ark", config.stygianArk], ["akasha", config.stygianAkasha]] as const)
+      .filter(([, enabled]) => enabled).map(([site]) => site);
+  } catch {
+    return [];
+  }
 }
 
 function input(value: unknown): RankSettings | undefined {

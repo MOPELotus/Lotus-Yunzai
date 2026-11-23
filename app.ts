@@ -72,6 +72,9 @@ import { normalizeGameCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
 import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
 import { arkRankCredentialsPath, containsArkRankTokenInput, createArkRankCredentialSettings, isArkRankTokenCommand } from "./lib/ark-rank-credentials.ts";
+import { hasPanelTransferCapability, matchPanelTransferCommand, type PanelTransferAccess } from "./lib/panel-transfer-command.ts";
+import { configurePanelTransfer } from "./lib/panel-transfer-config.ts";
+import { panelTransferPath } from "./lib/panel-transfer.ts";
 import { CommandRegistry, sendCommandReply, type CommandContext } from "./lib/commands.ts";
 import { readLocalConfig } from "./lib/config.ts";
 import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
@@ -250,7 +253,17 @@ const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_t
 
 function isPrivateCredentialMessage(text: string): boolean {
   return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
-    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text) || isGenshinPayLogLinkCandidate(text);
+    isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text) ||
+    isGenshinPayLogLinkCandidate(text) || hasPanelTransferCapability(text);
+}
+
+function containsPanelTransferCapability(message: MessageEvent["message"]): boolean {
+  if (typeof message === "string") return hasPanelTransferCapability(message);
+  return hasPanelTransferCapability(message.map(part => part.type === "text" ? part.text : "").join(""));
+}
+
+function isPanelTransferInput(event: MessageEvent): boolean {
+  return [event.msg, event.raw_message].some(hasPanelTransferCapability) || containsPanelTransferCapability(event.message);
 }
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
@@ -1012,7 +1025,7 @@ if (import.meta.main) {
   }
 
   async function routeEvent(event: BotEvent) {
-    if (event.post_type === "message" && containsArkRankTokenInput(event.message)) {
+    if (event.post_type === "message" && (containsArkRankTokenInput(event.message) || isPanelTransferInput(event))) {
       if (groupDispatch.admit(event)) await dispatchMessage(event);
       return;
     }
@@ -1286,7 +1299,7 @@ if (import.meta.main) {
 
   async function handleEvent(event: BotEvent) {
     if (event.post_type === "message") {
-      if ([event.msg, event.raw_message].some(isArkRankTokenCommand) || containsArkRankTokenInput(event.message)) {
+      if ([event.msg, event.raw_message].some(isArkRankTokenCommand) || containsArkRankTokenInput(event.message) || isPanelTransferInput(event)) {
         return dispatchMessage(event);
       }
       const transport = event[friendMessageNoticeSession];
@@ -1837,10 +1850,33 @@ if (import.meta.main) {
 
   const remoteControl = createRemoteControl(fileURLToPath(root));
   const arkRankCredentials = createArkRankCredentialSettings({ signal: lifecycle.signal });
+  let panelTransfer: PanelTransferAccess | undefined;
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
+    const transfer = matchPanelTransferCommand(event.msg);
+    const transferCapability = isPanelTransferInput(event);
+    if (transfer || transferCapability) {
+      if (!allowNew || dispatchPower.paused || event.isDelegated || event.attachmentOnly || !transfer) return;
+      const module = transfer.game === "gs" ? "@lotus-yunzai/genshin" : "@lotus-yunzai/starrail";
+      if (!allowed(["跨机器人面板交换", module])) return;
+      const connection = event.privateCredentialSignal;
+      if (event.message_type !== "private" || event.sub_type !== "friend" || !connection) {
+        if (event.message_type === "group" && !transferCapability) {
+          await event.reply("请在机器人好友私聊中交换本人面板数据。");
+        }
+        return;
+      }
+      const signal = nativeOperationSignal(connection);
+      if (signal.aborted || await privateAccess.blocked(event)) return;
+      const protectedEvent = { ...event, privateCredentialSignal: signal };
+      const reply = await commands.dispatchFallback(protectedEvent, names => allowed(names),
+        user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user),
+        event.msg, { panelTransfer }, module);
+      if (reply !== undefined && !signal.aborted) await sendCommandReply(protectedEvent, reply);
+      return;
+    }
     const rankCredentialCommand = [event.msg, event.raw_message].find(isArkRankTokenCommand);
     if (rankCredentialCommand !== undefined) {
       if (!allowNew || dispatchPower.paused || event.isDelegated || event.attachmentOnly ||
@@ -2487,6 +2523,7 @@ if (import.meta.main) {
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
     const botConfig = await readLocalConfig(root, "bot", { update_time: 1440 });
+    panelTransfer = configurePanelTransfer(botConfig.panelTransfer, lifecycle.signal);
     setImageRenderPreset(botConfig.imageRenderPreset);
     runtimeLogConfig = botConfig;
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
@@ -3049,7 +3086,7 @@ if (import.meta.main) {
         void handling.then(() => pending.delete(handling));
       },
       onGroupMessageSource(source: NativeGroupMessageSource) {
-        if (containsArkRankTokenInput(source.message)) return;
+        if (containsArkRankTokenInput(source.message) || containsPanelTransferCapability(source.message)) return;
         const capture = rememberGroupRecall(source);
         if (capture) {
           pending.add(capture);
@@ -3732,10 +3769,14 @@ if (import.meta.main) {
       const panel = !panelEnabled ? undefined : panelApi(panelToken, plugins.records,
         (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion, panelOwnerSession);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      publicRoutes = async (request, auth) =>
-        await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ?? await miyousheWeb?.handle(request) ??
-        await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
-        await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
+      publicRoutes = async (request, auth) => {
+        if (new URL(request.url).pathname === panelTransferPath) {
+          return panelTransfer?.source.serve(request) ?? new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+        }
+        return await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ??
+          await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+          await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
+      };
       for (const message of listenerMessages) console.log(message);
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
         // Port 0 is an ephemeral binding and may get a different allocated port on each process.

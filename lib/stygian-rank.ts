@@ -10,7 +10,7 @@ export type StygianRankResult = {
   readonly total?: number;
 };
 type SiteResult = { readonly status: "ok"; readonly rows: readonly StygianRankResult[] } |
-  { readonly status: "unavailable" | "unverified" };
+  { readonly status: "unavailable" } | { readonly status: "unverified"; readonly retryIndividually?: true };
 
 const uidPattern = /^[1-9]\d{8,9}$/u;
 const versionPattern = /^\d{1,2}\.\d$/u;
@@ -27,6 +27,10 @@ function integer(value: unknown, min: number, max = Number.MAX_SAFE_INTEGER) {
 
 function matchRows(site: StygianRankSite, data: unknown, uids: readonly string[], akashaTotal?: number): SiteResult {
   if (!Array.isArray(data) || data.length > uids.length) return { status: "unverified" };
+  if (site === "ark" && uids.length > 1 && data.some(value => value !== null) &&
+      data.every(value => value === null || (object(value) !== undefined && !Object.hasOwn(value, "uid")))) {
+    return { status: "unverified", retryIndividually: true };
+  }
   const requested = new Set(uids);
   const rows: StygianRankResult[] = [];
   for (const value of data) {

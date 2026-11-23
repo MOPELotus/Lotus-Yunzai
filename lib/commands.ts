@@ -4,6 +4,7 @@ import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts";
 import { ownerContactListSession } from "./owner-contact-list.ts";
 import { groupExportSession } from "./group-member-export.ts";
+import type { PanelTransferAccess } from "./panel-transfer-command.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
@@ -27,13 +28,15 @@ export type CommandContext = Readonly<Pick<
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
-  "reply_id" | "sender" | "lookupReply" | "lookupMediaReply" | "reply" | "forward" | typeof ownerContactListSession | typeof groupExportSession>> & {
+  "reply_id" | "sender" | "lookupReply" | "lookupMediaReply" | "reply" | "forward" |
+  "sub_type" | "verifyOwnGroupMembership" | typeof ownerContactListSession | typeof groupExportSession>> & {
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly canManagePackages?: true;
   readonly configureNoticeSettings?: NoticeSettingsContext["configureNoticeSettings"];
   readonly groupOriginalSignal?: AbortSignal;
   readonly characterGallerySignal?: AbortSignal;
+  readonly panelTransfer?: PanelTransferAccess;
   readonly readCharacterGalleryImages?: () => Promise<readonly (Uint8Array | undefined)[] | "too-many">;
 };
 
@@ -331,15 +334,18 @@ export class CommandRegistry {
     isBotMaster: MessageFallbackContext["isBotMaster"],
     normalizedMessage = event.msg,
     capabilities?: Pick<MessageFallbackContext,
-      "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages" | "canManagePackages">,
+      "configureNoticeSettings" | "groupOriginalSignal" | "characterGallerySignal" | "readCharacterGalleryImages" |
+      "canManagePackages" | "panelTransfer">,
     onlyModule?: string,
   ): Promise<CommandReply | undefined> {
     for (const { handler, names, features } of this.#fallbacks.values()) {
       if (onlyModule !== undefined && names[0] !== onlyModule) continue;
       if (!features && !allowed(names)) continue;
       const context = {
-        ...commandContext(event), sender: event.sender, reply_id: event.reply_id, lookupReply: event.lookupReply,
+        ...commandContext(event), sender: event.sender, sub_type: event.sub_type, reply_id: event.reply_id, lookupReply: event.lookupReply,
         lookupMediaReply: names[0] === "@lotus-yunzai/genshin" ? event.lookupMediaReply : undefined,
+        verifyOwnGroupMembership: names[0] === "@lotus-yunzai/genshin" && !event.isDelegated && !event.attachmentOnly
+          ? event.verifyOwnGroupMembership : undefined,
         reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
         [groupExportSession]: names[0] === "@lotus-yunzai/group-member-export" && !event.isDelegated ? event[groupExportSession] : undefined,
