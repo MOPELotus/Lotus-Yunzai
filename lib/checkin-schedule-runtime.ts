@@ -52,13 +52,16 @@ function dailySecond(rule: string) {
   if (second < 60 && minute < 60 && hour < 24) return hour * 3600 + minute * 60 + second;
 }
 
-export function createCheckinScheduleRuntime({ store, config: initial, listProfiles, signal, runProfile, onComplete, onNotice, now = Date.now }: Runner & {
+export function createCheckinScheduleRuntime({
+  store, config: initial, listProfiles, signal, runProfile, onComplete, onNotice, now = Date.now, startupCatchUpDelayMs = 60_000,
+}: Runner & {
   readonly store: Store;
   readonly config: CheckinScheduleConfig;
   readonly listProfiles: () => Promise<readonly CheckinScheduleProfile[]>;
   readonly signal: AbortSignal;
   readonly onNotice?: PlanNotice;
   readonly now?: () => number;
+  readonly startupCatchUpDelayMs?: number;
 }) {
   const jobs: Job[] = [];
   let config = structuredClone(initial);
@@ -196,7 +199,7 @@ export function createCheckinScheduleRuntime({ store, config: initial, listProfi
       if (finalRetry.job) jobs.push(finalRetry.job);
       immediateDue = due.rule === dueCron;
       schedulePlan();
-      startupCatchUp = setTimeout(() => { void catchUp(); }, 60_000);
+      startupCatchUp = setTimeout(() => { void catchUp(); }, startupCatchUpDelayMs);
       startupCatchUp.unref();
       if (immediateDue) void trigger();
     },

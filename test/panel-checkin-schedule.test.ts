@@ -185,7 +185,7 @@ test("面板保存的窗口被真实计划生成、随机和固定补注册以�
       return result;
     } };
     runtime = createCheckinScheduleRuntime({
-      store, config, now: () => now, signal: signal.signal, listProfiles: async () => [seed],
+      store, config, now: () => now, signal: signal.signal, listProfiles: async () => [seed], startupCatchUpDelayMs: 0,
       runProfile: async () => { throw new Error("no scheduled external requests"); },
       async onNotice(entry, day, lateNotice) {
         notified.push({ qq: entry.qq, date: day, late: lateNotice });
@@ -193,7 +193,8 @@ test("面板保存的窗口被真实计划生成、随机和固定补注册以�
       },
     });
     runtime.start();
-    await Promise.race([tomorrowReady.promise, Bun.sleep(2000).then(() => { throw new Error("未生成次日计划。"); })]);
+    const deadline = setTimeout(() => tomorrowReady.reject(new Error("未生成次日计划。")), 2_000);
+    try { await tomorrowReady.promise; } finally { clearTimeout(deadline); }
     expect((await store.read(tomorrow))?.entries).toMatchObject([{ qq: seed.qq, time: "09:10" }]);
     expect(notified).toEqual([]);
     await runtime.addRegisteredProfile(late);
