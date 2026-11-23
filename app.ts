@@ -137,7 +137,7 @@ import { panelPartner } from "./lib/panel-partner.ts";
 import { panelMediaEnvironment } from "./lib/panel-media-environment.ts";
 import { panelWebLogin } from "./lib/panel-web-login.ts";
 import { panelCheckinSchedule } from "./lib/panel-checkin-schedule.ts";
-import { panelAccountPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
+import { panelAccountPermissions, panelGroupExportPermissions, panelMediaDownloadPermissions, panelMediaOwnerPermissions } from "./lib/panel-account-permissions.ts";
 import { panelGlobalPermissions } from "./lib/panel-global-permissions.ts";
 import { panelGroupNoticeSettings, panelGroupSettings } from "./lib/panel-group.ts";
 import { panelGroupManagement } from "./lib/panel-group-management.ts";
@@ -3578,6 +3578,7 @@ if (import.meta.main) {
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
         ["/panel/api/settings/checkin/schedule", panelCheckinSchedule(root)],
         ["/panel/api/settings/checkin/permissions", panelAccountPermissions(root)],
+        ["/panel/api/settings/group/export-permissions", panelGroupExportPermissions(root)],
         ["/panel/api/settings/global/permissions", panelGlobalPermissions(root)],
         ["/panel/api/settings/atlas/channel", panelAtlasChannel(root)],
         ["/panel/api/settings/atlas/gallery", panelAtlasGallery(root)],

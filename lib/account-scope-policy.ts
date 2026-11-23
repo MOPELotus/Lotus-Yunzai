@@ -18,7 +18,9 @@ export function mediaOwnerScopePolicies(scope: MediaOwnerScope): readonly Accoun
   return scope === "netease.partner" ? accountScopePolicies : restrictedMediaPolicies;
 }
 
-export type GroupScope = "group.cleanup" | "group.members.export";
+export const groupExportScopes = ["group.members.export"] as const;
+export type GroupExportScope = typeof groupExportScopes[number];
+export type GroupScope = "group.cleanup" | GroupExportScope;
 
 export function accountScopePolicy(scope: AccountScope | GroupScope, configured: unknown): AccountScopePolicy {
   const group = scope === "group.cleanup" || scope === "group.members.export";

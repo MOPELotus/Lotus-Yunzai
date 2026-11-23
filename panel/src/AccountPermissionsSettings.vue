@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { accountScopePolicies, accountScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
-  type AccountScope, type AccountScopePolicy, type MediaDownloadScope, type MediaOwnerScope,
+import { accountScopePolicies, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
+  type AccountScope, type AccountScopePolicy, type GroupExportScope, type MediaDownloadScope, type MediaOwnerScope,
   type ScopePolicySnapshot } from "../../lib/account-scope-policy.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
-const props = defineProps<{ auth: PanelAuth; section?: "media-download" | "media-owner" }>();
+const props = defineProps<{ auth: PanelAuth; section?: "media-download" | "media-owner" | "group-export" }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
-type Scope = AccountScope | MediaDownloadScope | MediaOwnerScope;
+type Scope = AccountScope | MediaDownloadScope | MediaOwnerScope | GroupExportScope;
 type Snapshot = ScopePolicySnapshot<Scope>;
 const sections = {
   account: { title: "签到权限", id: "account-permissions", path: "checkin/permissions", scopes: accountScopes },
   "media-download": { title: "媒体下载权限", id: "media-download-permissions", path: "media/download-permissions", scopes: mediaDownloadScopes },
   "media-owner": { title: "媒体主人权限", id: "media-owner-permissions", path: "media/owner-permissions", scopes: mediaOwnerScopes },
+  "group-export": { title: "群成员导出权限", id: "group-export-permissions", path: "group/export-permissions", scopes: groupExportScopes },
 } as const;
 const section = props.section ?? "account";
 const { title, id, path, scopes } = sections[section];
@@ -31,6 +32,7 @@ const labels: Record<Scope, string> = {
   "bilibili.login": "B 站扫码登录",
   "tools.install": "初始化及按需安装媒体工具",
   "netease.partner": "合伙人手动操作及 TuneWeave 指令",
+  "group.members.export": "#群成员",
 };
 const policyLabels: Record<AccountScopePolicy, string> = {
   inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
@@ -38,7 +40,7 @@ const policyLabels: Record<AccountScopePolicy, string> = {
 const groups = section === "account" ? [
   { title: "档案与签到", scopes: accountScopes.slice(0, 3) },
   { title: "调度指令", scopes: accountScopes.slice(3) },
-] : [{ title: section === "media-download" ? "下载策略" : "主人指令", scopes }];
+] : [{ title: section === "media-download" ? "下载策略" : section === "group-export" ? "CSV 导出" : "主人指令", scopes }];
 function choices(scope: Scope) {
   const ownerScope = mediaOwnerScopes.find(name => name === scope);
   return ownerScope ? mediaOwnerScopePolicies(ownerScope) : accountScopePolicies;
@@ -150,6 +152,7 @@ onBeforeUnmount(() => {
       </fieldset>
       <p v-if="section === 'media-download'">用户和群拒绝名单优先。下次需要下载权限的操作会采用新设置。</p>
       <p v-else-if="section === 'media-owner'">用户和群拒绝名单优先。这些指令始终要求机器人主人，涉及扫码和合伙人日志时还要求好友私聊。保存后从下一次手动操作开始生效。</p>
+      <p v-else-if="section === 'group-export'">用户和群拒绝名单优先。给普通成员放行时，仍须核对此人在目标群内。保存后下次导出生效。</p>
       <p v-else>用户和群拒绝名单仍优先。聊天中修改调度的权限在下次操作时生效，其余项目重启宿主后生效。</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"

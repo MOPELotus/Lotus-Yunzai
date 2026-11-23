@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, parseDocument, type Node } from "yaml";
-import { accountScopePolicies, accountScopePolicy, accountScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
+import { accountScopePolicies, accountScopePolicy, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes,
   type AccountScopePolicy, type ScopePolicySnapshot } from "./account-scope-policy.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
@@ -141,6 +141,10 @@ function panelScopePermissions<Scope extends string>(root: URL, allowed: readonl
 
 export function panelAccountPermissions(root: URL) {
   return panelScopePermissions(root, accountScopes, accountScopePolicy);
+}
+
+export function panelGroupExportPermissions(root: URL) {
+  return panelScopePermissions(root, groupExportScopes, accountScopePolicy);
 }
 
 export function panelMediaDownloadPermissions(root: URL) {

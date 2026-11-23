@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { globalPermissionLists, globalPermissionPolicies, isPermissionId, sortPermissionIds,
   type GlobalPermissionList, type GlobalPermissionPolicy, type GlobalPermissionSettings, type GlobalPermissionSnapshot } from "../../lib/global-permission-policy.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
+import AccountPermissionsSettings from "./AccountPermissionsSettings.vue";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
@@ -28,6 +29,7 @@ const error = ref("");
 const notice = ref("");
 const conflict = ref(false);
 const confirmReload = ref(false);
+const groupExportDirty = ref(false);
 let active: AbortController | undefined;
 
 const parsed = computed(() => Object.fromEntries(globalPermissionLists.map(field => {
@@ -49,9 +51,9 @@ const changed = computed(() => {
 });
 const dirty = computed(() => !!saved.value && (invalid.value || Object.keys(changed.value).length > 0));
 watch(dirty, value => {
-  emit("dirty-change", value);
   if (!value) confirmReload.value = false;
 });
+watch(() => dirty.value || groupExportDirty.value, value => emit("dirty-change", value));
 
 function isSnapshot(input: unknown): input is GlobalPermissionSnapshot {
   if (!input || typeof input !== "object") return false;
@@ -158,19 +160,22 @@ onBeforeUnmount(() => {
           </div>
         </fieldset>
       </div>
-      <p>签到注册、登录信息刷新、计划生成和执行在宿主重启后采用新设置。媒体、群清理及聊天中修改调度按下次操作读取。</p>
+      <p>签到注册、登录信息刷新、计划生成和执行在宿主重启后采用新设置。媒体、群清理、群成员导出及聊天中修改调度按下次操作读取。</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
           :disabled="!dirty || invalid || Boolean(busy) || confirmReload || conflict">保存</ElButton>
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>
+    <AccountPermissionsSettings class="group-export-settings" :auth="auth" section="group-export"
+      @unauthorized="emit('unauthorized')" @dirty-change="groupExportDirty = $event" />
   </section>
 </template>
 
 <style scoped>
 .permission-settings, .permission-list { display: grid; gap: 8px; }
 .permission-settings { max-width: 800px; margin-top: 20px; gap: 14px; }
+.group-export-settings { margin-top: 26px; }
 .permission-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .permission-settings fieldset {
   display: grid; align-content: start; gap: 10px; min-width: 0; margin: 0; padding: 14px;

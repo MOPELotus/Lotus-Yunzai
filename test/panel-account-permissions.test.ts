@@ -7,7 +7,7 @@ import { accountScopes, type AccountScopeSnapshot } from "../lib/account-scope-p
 import { checkinPlanCommands } from "../lib/checkin-plan-commands.ts";
 import type { CommandContext } from "../lib/commands.ts";
 import { readLotusGlobalConfig } from "../lib/lotus-global-config.ts";
-import { panelAccountPermissions } from "../lib/panel-account-permissions.ts";
+import { panelAccountPermissions, panelGroupExportPermissions } from "../lib/panel-account-permissions.ts";
 import { panelApi } from "../lib/panel.ts";
 import { accountScopePermission } from "../lib/permissions.ts";
 
@@ -23,6 +23,38 @@ function request(method = "GET", body?: unknown, bearer = fixtureToken) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+
+test("群成员导出权限可从面板更新，防止覆盖外部改动或修改其他业务", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-panel-group-export-"));
+  try {
+    const scope = "group.members.export";
+    const root = pathToFileURL(directory + "/");
+    const settings = join(directory, "config/global.yaml");
+    await mkdir(join(directory, "config"));
+    await writeFile(settings, "permissions: {scopes: {checkin.refresh: {policy: deny}}}\n");
+    const route = panelGroupExportPermissions(root);
+    const endpoint = "/panel/api/settings/group/export-permissions";
+    const api = panelApi(fixtureToken, [], path => path === endpoint ? route : undefined);
+    const call = (patch?: object, revision?: string, token = fixtureToken) => api(new Request("http://localhost" + endpoint, {
+      method: patch ? "PUT" : "GET",
+      headers: { Authorization: "Bearer " + token, ...(patch && { "Content-Type": "application/json" }) },
+      body: patch ? JSON.stringify({ revision, patch }) : undefined,
+    }));
+    expect((await call(undefined, undefined, "unauthorized"))?.status).toBe(401);
+    const initial = await (await call())!.json();
+    expect(initial.settings).toEqual({ [scope]: "master_only" });
+    expect((await call({ "checkin.refresh": "allow" }, initial.revision))?.status).toBe(400);
+    const saved = await call({ [scope]: "allow" }, initial.revision);
+    expect(saved?.status).toBe(200);
+    expect((await saved!.json()).settings).toEqual({ [scope]: "allow" });
+    const config = await readLotusGlobalConfig(root);
+    expect(accountScopePermission(config, scope)(ordinary)).toBe(true);
+    expect(accountScopePermission(config, "checkin.refresh")(owner)).toBe(false);
+    expect((await call({ [scope]: "deny" }, initial.revision))?.status).toBe(409);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("签到权限只编辑六项现有作用域并继承其他原权限，撤销权限或版本冲突不覆盖配置", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-panel-scope-"));
