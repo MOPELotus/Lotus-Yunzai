@@ -25,6 +25,7 @@ const secretField = new RegExp(`${boundary}(["']?${secrets}${assignment})(?:${hi
 const secretArgument = new RegExp(`${boundary}(--${secrets}\\s+)(?:${hiddenValue}|${quotedValue}|[^\\s,;]+)`, "giu");
 
 const inlineImage = /(^|[^a-z0-9+._\/-])(data:image\/[a-z0-9][a-z0-9+._-]*;base64,)([a-z0-9+\/]+={0,2})(?![a-z0-9+\/_=-])/gi;
+const inlineMedia = /(\bbase64:\/\/)[a-z0-9+\/_=-]+/gi;
 
 export function runtimeLogFilename(kind: LogKind, now: Date): string {
   if (kind === "error") return "error.log";
@@ -38,6 +39,7 @@ export function sanitizeRuntimeLog(line: string, maxLength = maxLineLength): str
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, "")
     .replace(inlineImage, (_match, before: string, prefix: string, body: string) =>
       `${before}${prefix}[图片 Base64 省略，${body.length} 字符]`)
+    .replace(inlineMedia, "$1[媒体 Base64 省略]")
     .replace(headerField, `$1$2${hidden}`)
     .replace(secretField, `$1$2${hidden}`)
     .replace(secretArgument, `$1$2${hidden}`)

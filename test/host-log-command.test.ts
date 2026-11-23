@@ -11,6 +11,7 @@ const startupMarker = "fixture-plugin-startup-marker";
 const terminalMarker = "fixture-terminal-log-marker";
 const inlineData = Buffer.alloc(144, 65).toString("base64");
 const inlineImage = "data:image/png;base64," + inlineData;
+const oneBotMediaData = Buffer.from("fixture-onebot-private-media").toString("base64");
 const inlineSummary = "data:image/png;base64,[图片 Base64 省略，192 字符]";
 const unsafeMarkers = ["fixture-cookie-value", "fixture-authorization-value", "fixture-authkey-value"];
 
@@ -146,6 +147,8 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
         console.error("fixture-new-error token=fixture-local-secret");
         console.error(new Error("fixture-native-inline 前文😀 " + ${JSON.stringify(inlineImage)} + " 末尾"));
         Bot.makeLog("warn", "fixture-v3-inline " + ${JSON.stringify(inlineImage)}, false);
+        Bot.makeLog("warn", ["fixture-v3-onebot", segment.image("base64://" + ${JSON.stringify(oneBotMediaData)})], false);
+        console.error("fixture-native-onebot " + ${JSON.stringify("base64://" + oneBotMediaData)} + ", next");
         export default class extends plugin {}
       `),
     ]);
@@ -192,6 +195,11 @@ test.each([["默认日志目录", false], ["历史日志目录软链", true]] as
       expect(errorLog).not.toContain(inlineData);
       expect(readyLog).toContain(`fixture-v3-inline ${inlineSummary}`);
       expect(readyLog).not.toContain(inlineData);
+      expect(readyLog).toContain("fixture-v3-onebot");
+      expect(readyLog).toContain("base64://[媒体 Base64 省略]");
+      expect(readyLog).not.toContain(oneBotMediaData);
+      expect(errorLog).toContain("fixture-native-onebot base64://[媒体 Base64 省略], next");
+      expect(errorLog).not.toContain(oneBotMediaData);
 
       await Promise.all([
         appendFile(runtime, [
