@@ -1,3 +1,5 @@
+import { compatibleBilibiliDownload } from "./bilibili-download-compat.ts";
+
 type Fields = Readonly<Record<string, unknown>>;
 
 const sections = ["tools", "tuneweave", "bilibili", "douyin", "music", "netease_partner"] as const;
@@ -25,7 +27,8 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
   const config: Record<string, unknown> = {};
   const deferred = new Set<string>();
   for (const key of sections) {
-    const history = legacy.filter(item => Object.hasOwn(item, key)).map(item => fields(item[key]));
+    const historical = legacy.filter(item => Object.hasOwn(item, key));
+    const history = historical.map(item => fields(item[key]));
     const currentHasSection = Object.hasOwn(current, key);
     if (!currentHasSection && !history.length) continue;
     let source = currentHasSection ? fields(current[key]) : history[0]!;
@@ -70,9 +73,11 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
         const billi = key === "bilibili";
         const hasDownload = Object.hasOwn(source, "download") && source.download && typeof source.download === "object";
         const nested = fields(source.download);
-        const settings = billi ? { ...source, ...nested } : hasDownload ? nested : source;
+        const settings = billi ? compatibleBilibiliDownload(source, { ...source, ...nested }) : hasDownload ? nested : source;
         const download = scalars(settings, [...downloadKeys, ...(billi ? ["concurrency", "resolution"] : ["quality"])]);
-        if (settings.tools_path && settings.tools_path !== "data/tools/bin") deferred.add(key + ".download.tools_path");
+        const oldTools = billi ? fields((currentHasSection ? current : historical[0])?.external_tools).toolsPath : undefined;
+        const toolsPath = Object.hasOwn(settings, "tools_path") ? settings.tools_path : oldTools;
+        if (toolsPath && toolsPath !== "data/tools/bin") deferred.add(key + ".download.tools_path");
         config[key] = {
           ...scalars(source, billi ? ["search_limit"] : ["enable", "request_timeout_ms"]),
           ...(hasDownload || Object.keys(download).length ? { download } : {}),

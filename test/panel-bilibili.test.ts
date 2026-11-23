@@ -17,6 +17,32 @@ function request(method = "GET", data?: unknown, authenticated = true) {
   });
 }
 
+test("B 站面板和媒体运行时兼容旧下载偏好，面板保存后当前字段优先", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-panel-bili-alias-"));
+  try {
+    const root = pathToFileURL(`${dir}/`);
+    const legacy = join(dir, "plugins/Lotus-Plugin/config");
+    await mkdir(legacy, { recursive: true });
+    await mkdir(join(dir, "config"));
+    const historical = "# 旧下载参数\nbilibili:\n  resolution: '80'\n  durationLimit: '71'\n  videoSizeLimit: 89\n  maxSizeLimit: 37\n" +
+      "  multiPagePolicy: all\n  download: { video_size_limit_mb: 42 }\nexternal_tools: { toolsPath: /outside/bin }\n";
+    await writeFile(join(legacy, "global.yaml"), historical);
+    const route = panelBilibili(root);
+    const before = await (await route(request(), () => true)).json();
+    const settings = { resolution: 80, duration_limit_seconds: 71, video_size_limit_mb: 42, max_estimated_size_mb: 37, multi_page_policy: "all" };
+    expect(before.settings).toMatchObject(settings);
+    expect(normalizeDownloadConfig((await loadGlobalConfig(root)).bilibili)).toMatchObject({ ...settings, tools_path: "data/tools/bin" });
+    const saved = await route(request("PUT", { revision: before.revision, patch: { duration_limit_seconds: 55 } }), () => true);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).settings).toMatchObject({ ...settings, duration_limit_seconds: 55 });
+    expect(normalizeDownloadConfig((await loadGlobalConfig(root)).bilibili)).toMatchObject({ ...settings, duration_limit_seconds: 55 });
+    expect(await readFile(join(legacy, "global.yaml"), "utf8")).toBe(historical);
+    expect(await readFile(join(dir, "config/global.yaml"), "utf8")).not.toContain("/outside/bin");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("B 站面板写入九项视频配置，保留非面板配置和共用登录来源", async () => {
   const dir = await mkdtemp(join(tmpdir(), "lotus-panel-bili-"));
   try {

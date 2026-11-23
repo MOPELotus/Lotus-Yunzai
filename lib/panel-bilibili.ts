@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { compatibleBilibiliDownload } from "./bilibili-download-compat.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { GlobalConfigWriteError, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
 import { biliDownloadNumbers, biliPagePolicies, type BilibiliPanelSettings, type BilibiliPanelSnapshot } from "./panel-bilibili-schema.ts";
-import { editMediaDownloadSettings, mediaDownloadSource } from "./panel-media-download-edit.ts";
+import { editMediaDownloadSettings } from "./panel-media-download-edit.ts";
 
 type Config = Readonly<Record<string, unknown>>;
 type Patch = Partial<BilibiliPanelSettings>;
@@ -21,7 +22,7 @@ function int(value: unknown, min = 1, max = Number.MAX_SAFE_INTEGER): number | u
 
 function snapshot(document: Config): BilibiliPanelSnapshot {
   const bilibili = record(document.bilibili) ?? {};
-  const download = mediaDownloadSource(bilibili);
+  const download = compatibleBilibiliDownload(bilibili);
   const settings: BilibiliPanelSettings = {
     search_limit: int(Number(bilibili.search_limit)) ?? defaults.search_limit,
     enable: download.enable !== false,

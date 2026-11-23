@@ -18,6 +18,26 @@ test("keeps the active media settings and TuneWeave selection in legacy preceden
     .toEqual({ config: { tuneweave: {} }, deferred: [] });
 });
 
+test("projects Bilibili camelCase download preferences and defers old executable directories", () => {
+  const old = {
+    bilibili: { resolution: "80", durationLimit: "70", videoSizeLimit: 90, maxSizeLimit: "45", multiPagePolicy: "all",
+      video_size_limit_mb: 80, download: { duration_limit_seconds: 41, multi_page_policy: "first" } },
+    external_tools: { toolsPath: "/legacy/untrusted/bin" },
+  };
+  expect(projectLegacyMediaConfig({}, [old])).toEqual({
+    config: { bilibili: { download: { resolution: "80", duration_limit_seconds: 41, video_size_limit_mb: 80,
+      max_estimated_size_mb: 45, multi_page_policy: "first" } } },
+    deferred: ["bilibili.download.tools_path"],
+  });
+  expect(projectLegacyMediaConfig({
+    bilibili: { durationLimit: "25", download: { tools_path: "data/tools/bin", max_estimated_size_mb: 0 } },
+    external_tools: old.external_tools,
+  }, [old])).toEqual({
+    config: { bilibili: { download: { duration_limit_seconds: 25, max_estimated_size_mb: 0 } } },
+    deferred: [],
+  });
+});
+
 test("never changes the service origin when old settings conflict or contain URL credentials", () => {
   const source = (api_url: string) => ({ tuneweave: { api_url } });
   expect(() => projectLegacyMediaConfig({}, [source("https://one.example"), source("https://two.example")]))
