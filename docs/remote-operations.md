@@ -2,7 +2,7 @@
 
 Linux 与 Windows x64/ARM64 宿主可以在绑定机器人的主人好友私聊中，通过 TOTP 执行运维命令或收发文件。服务默认关闭。
 
-Windows x64 已在 Windows Server 2025 验收。ARM64 尚无对应的 Windows 验收记录。
+Windows x64 与 ARM64 已分别在 Windows Server 2025 和 Windows 11 验收。 [Windows 验收记录](https://github.com/MOPELotus/Lotus-Yunzai/actions/runs/45158418501)
 
 在运行宿主的系统用户自己的私用终端中，进入 Lotus-Yunzai 目录，运行 `bun --no-env-file scripts/remote-otp.ts setup`。使用支持 TOTP 的验证器扫描终端二维码。更换验证器时运行同一脚本的 `reset`。凭据保存在 `data/remote-auth/`，仅该系统用户可以访问。
 
