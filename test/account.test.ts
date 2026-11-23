@@ -11,6 +11,41 @@ import { readAccountRefreshPermission } from "../lib/permissions.ts";
 import { createProfileStore, importProfiles } from "../packages/account/index.ts";
 import { createCredentialExchange, createHoyoClient, createProfileHoyoClient } from "../packages/hoyo-client/index.ts";
 
+test("主人用户统计只显示去重的本机档案计数，不检查或回显凭据", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-account-inventory-"));
+  const account = { stuid: "18000721", ltuid: "18000721", stoken: "fixture-secret-stoken", cookie: "account_id=18000721;cookie_token=fixture-secret" };
+  const os = { cookie: "fixture-foreign-secret", verified_account_id: "18000722", verified_realm: "SG" };
+  const files = new Map([
+    ["42.yaml", Bun.YAML.stringify({ user: { qq: "42" }, account, games: { os } })],
+    ["42-2.yaml", Bun.YAML.stringify({ user: { qq: "42" }, profile: { id: 2 }, account, games: { os } })],
+    ["43.yaml", Bun.YAML.stringify({ user: { qq: "43" }, account: { ltuid: "18000723",
+      cookie: "ltuid=18000723;ltoken=fixture-legacy;cookie_token=fixture-readonly" } })],
+    ["44.yaml", Bun.YAML.stringify({ user: { qq: "99" }, account })],
+    ["45.yaml", Bun.YAML.stringify({ user: { qq: "45" }, account: { ...account, ltuid: "18000999" }, games: { os: { cookie: os.cookie } } })],
+  ]);
+  try {
+    await Promise.all([...files].map(([file, value]) => writeFile(join(root, file), value)));
+    let network = 0;
+    const registry = new CommandRegistry();
+    registry.registerModule(accountCommands(root, () => false, profiles => createProfileHoyoClient(profiles, async () => {
+      network++;
+      throw new Error("统计不应发出请求");
+    })));
+    const signal = new AbortController().signal;
+    const owner = { message_type: "private", user_id: 42, self_id: 50, isMaster: true, privateCredentialSignal: signal } as const;
+    expect(await registry.dispatch("#用户统计", { ...owner, isMaster: false })).toContain("只有机器人主人");
+    expect(await registry.dispatch("#用户统计", { ...owner, isDelegated: true })).toContain("只有机器人主人");
+    expect(await registry.dispatch("#用户统计", { ...owner, privateCredentialSignal: undefined })).toContain("已绑定");
+    const reply = await registry.dispatch("#用户统计", owner);
+    expect(reply).toBe("用户统计（本机档案）\nQQ 用户 3 · 可读取档案 4\n米游社已保存 1 个去重账号 · HoYoLAB 已保存 1 个去重账号\n仅查询旧 Cookie 档案 1 · 无法读取档案 1");
+    for (const fingerprint of [account.stuid, account.stoken, account.cookie, os.cookie, os.verified_account_id]) {
+      expect(reply).not.toContain(fingerprint);
+    }
+    expect(await Promise.all([...files.keys()].map(file => readFile(join(root, file), "utf8")))).toEqual([...files.values()]);
+    expect(network).toBe(0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("档案续期和设置跨进程写入只接受一个版本，重试保留两项结果", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "lotus-profile-cross-process-")));
   const alias = join(root, "profile-alias");

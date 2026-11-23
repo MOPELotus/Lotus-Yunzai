@@ -196,6 +196,21 @@ export function accountCommands(
     aliases,
     commands: {
       ...accountActions,
+      async "#用户统计"(argument, context) {
+        if (!context.isMaster || context.isDelegated) return "只有机器人主人可以查看用户统计。";
+        if (argument) return "用法：#用户统计";
+        const connection = context.message_type === "group" ? context.groupActivitySignal : context.privateCredentialSignal;
+        if (context.message_type !== "terminal" && connection?.aborted !== false) return "请从已绑定的机器人会话查看用户统计。";
+        try {
+          const { users, profiles: total, domestic, international, legacyProfiles, unreadable } = await profiles.credentialInventory();
+          if (connection?.aborted) return [];
+          return ["用户统计（本机档案）", `QQ 用户 ${users} · 可读取档案 ${total}`,
+            `米游社已保存 ${domestic} 个去重账号 · HoYoLAB 已保存 ${international} 个去重账号`,
+            `仅查询旧 Cookie 档案 ${legacyProfiles} · 无法读取档案 ${unreadable}`].join("\n");
+        } catch {
+          return "暂时无法读取本机档案统计。";
+        }
+      },
       async "#登录列表"(argument: string, context: CommandContext) {
         if (argument) return "用法：#登录列表";
         if (context.user_id === undefined) return "请从 QQ 会话发送 #登录列表。";

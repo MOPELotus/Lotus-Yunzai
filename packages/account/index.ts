@@ -793,6 +793,26 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       profileFilename(qq, 1);
       return (await listSlots()).filter(slot => slot.qq === qq).map(slot => slot.profileId).sort((a, b) => a - b);
     },
+    async credentialInventory() {
+      const users = new Set<string>();
+      const domestic = new Set<string>();
+      const international = new Set<string>();
+      let profiles = 0, legacyProfiles = 0, unreadable = 0;
+      for (const { qq, profileId } of await listSlots()) {
+        const saved = await readDocument(qq, profileId).catch(() => undefined);
+        if (!saved) { unreadable++; continue; }
+        users.add(qq);
+        profiles++;
+        const { document, state: { account, summary } } = saved;
+        const aid = profileCookieAccountId(account);
+        if (summary.loggedIn && aid) domestic.add(aid);
+        if (!summary.loggedIn && hasLegacyGameCookie(account)) legacyProfiles++;
+        const os = record(record(document.games).os);
+        const overseas = verifiedInternationalAccount(os, os.verified_activity_cookie) ?? verifiedInternationalAccount(os, os.cookie);
+        if (overseas) international.add(`${overseas.realm}:${overseas.accountId}`);
+      }
+      return { users: users.size, profiles, domestic: domestic.size, international: international.size, legacyProfiles, unreadable };
+    },
     async listCheckinProfiles(qqs?: ReadonlySet<string>, onlyProfile?: number) {
       const targets = [];
       for (const { qq, profileId } of await listSlots()) {
