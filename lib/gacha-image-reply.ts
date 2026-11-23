@@ -1,8 +1,9 @@
+import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { batchInlineImagePages } from "@lotus-yunzai/skia/forward-images";
 import type { CommandReply } from "./commands.ts";
 import type { MessageEvent } from "./messages.ts";
 
-type Scale = 4 | 2;
+type Scale = 4 | 2 | 1;
 type Image = { readonly type: "image"; readonly file: Uint8Array };
 
 interface GachaImageReplyOptions {
@@ -26,13 +27,16 @@ export async function gachaImageReply({
     return { type: "image", file: png };
   };
   const roleIsCurrent = async () => !signal.aborted && await verifyRole() && !signal.aborted;
+  const scale = nativeImageRasterScale();
+  const tooLarge = "抽卡记录已读取，但单页图片仍超过当前会话的图片大小上限。";
 
   let aggregate = 0;
   const high: Image[] = [];
   for (let page = 1; page <= total; page++) {
-    const card = await image(page, 4);
+    const card = await image(page, scale);
+    if (scale === 1 && card.file.byteLength > limit) return tooLarge;
     aggregate += card.file.byteLength;
-    if (aggregate > limit) break;
+    if (scale === 4 && aggregate > limit) break;
     high.push(card);
   }
   const highBatches = high.length === total ? batchInlineImagePages(high, inlineImageByteLimit, card => card.file.byteLength) : undefined;
@@ -48,12 +52,12 @@ export async function gachaImageReply({
   if (lowerDensity) {
     for (let page = 1; page <= total; page++) {
       const card = await image(page, 2);
-      if (card.file.byteLength > limit) return "抽卡记录已读取，但单页图片仍超过当前会话的图片大小上限。";
+      if (card.file.byteLength > limit) return tooLarge;
       low.push(card);
     }
   }
   const batches = highBatches ?? batchInlineImagePages(low, inlineImageByteLimit, card => card.file.byteLength);
-  if (!batches?.length) return "抽卡记录已读取，但单页图片仍超过当前会话的图片大小上限。";
+  if (!batches?.length) return tooLarge;
   if (!await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
   if (total === 1) return batches[0]?.[0];
   if (batches.length === 1) return { type: "forward", nodes: [title, ...batches[0]!] };

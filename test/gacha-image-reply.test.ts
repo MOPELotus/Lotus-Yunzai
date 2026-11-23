@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { setImageRenderPreset } from "@lotus-yunzai/skia";
 import { gachaImageReply } from "../lib/gacha-image-reply.ts";
 import type { MessageReply } from "../lib/messages.ts";
 
@@ -10,7 +11,7 @@ const base = {
 
 function pages(high: number, low: number) {
   const calls: Array<[number, number]> = [];
-  return { calls, async render(page: number, scale: 2 | 4) {
+  return { calls, async render(page: number, scale: 1 | 2 | 4) {
     calls.push([page, scale]);
     return { png: new Uint8Array(scale === 4 ? high : low).fill(page) };
   } };
@@ -84,4 +85,24 @@ test("a single 2× page above the byte limit is never offered for sending", asyn
   });
   expect(forwards).toBe(0);
   expect(reply).toContain("单页图片仍超过");
+});
+
+test("低配按原分页一次出图，单页超限时保留文字回执", async () => {
+  const render = pages(8, 4);
+  const sent: number[][] = [];
+  setImageRenderPreset("low");
+  try {
+    const reply = await gachaImageReply({
+      ...base, ...render, inlineImageByteLimit: 8,
+      async forward(nodes) { sent.push(pageOrder(nodes)); return true; },
+    });
+    expect(reply).toEqual([]);
+    expect(sent).toEqual([[1, 2], [3]]);
+    expect(render.calls).toEqual([[1, 1], [2, 1], [3, 1]]);
+    const oversized = pages(8, 9);
+    expect(await gachaImageReply({ ...base, ...oversized, inlineImageByteLimit: 8 })).toContain("单页图片仍超过");
+    expect(oversized.calls).toEqual([[1, 1]]);
+  } finally {
+    setImageRenderPreset("standard");
+  }
 });
