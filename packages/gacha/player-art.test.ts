@@ -35,6 +35,8 @@ test("抽卡头像从本人明确选择的角色取头像和横幅，并让缺�
       const gs = await readGachaPlayerArt(root, "gs", "本人", "纳西妲");
       expect(gs.face).toEqual({ name: "本人", face: "/meta-gs/character/纳西妲/imgs/face-q.webp",
         banner: "/meta-gs/character/纳西妲/imgs/banner.webp" });
+      expect((await readGachaPlayerArt(root, "gs", "本人", "纳西妲", undefined, undefined, false)).face)
+        .toMatchObject({ face: "/meta-gs/character/纳西妲/imgs/face.webp" });
       await rm(join(selected, "face-q.webp"));
       expect((await readGachaPlayerArt(root, "gs", "本人", "纳西妲")).face)
         .toMatchObject({ face: "/meta-gs/character/纳西妲/imgs/face.webp" });

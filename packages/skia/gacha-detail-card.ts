@@ -12,6 +12,7 @@ export interface GachaDetailOptions {
   readonly scale?: number;
   readonly themeDirectory: string;
   readonly avatar?: Uint8Array;
+  readonly qFace?: boolean;
 }
 
 const width = 740;
@@ -34,10 +35,10 @@ const statLabels = [
 
 const games = {
   sr: {
-    name: "星铁", background: "sr", face: "卡芙卡/imgs/face.webp", currency: "星琼", player: "开拓者", prefix: "*",
+    name: "星铁", background: "sr", face: "卡芙卡", currency: "星琼", player: "开拓者", prefix: "*",
   },
   gs: {
-    name: "原神", background: "hydro", face: "芭芭拉/imgs/face-q.webp", currency: "原石", player: "旅行者", prefix: "#",
+    name: "原神", background: "hydro", face: "芭芭拉", currency: "原石", player: "旅行者", prefix: "#",
   },
 } as const;
 type Game = keyof typeof games;
@@ -96,7 +97,7 @@ async function themeImage(root: string, path: string): Promise<Image | undefined
 
 const sharedThemes = new Map<string, ReturnType<typeof loadTheme>>();
 
-async function loadTheme(root: string, game: Game) {
+async function loadTheme(root: string, game: Game, qFace: boolean) {
   const config = games[game];
   const fonts = [
     ["Han", "HYWH-65W.ttf"], ["Title", "NZBZ.ttf"], ["Number", "tttgbnumber.ttf"],
@@ -112,27 +113,28 @@ async function loadTheme(root: string, game: Game) {
     }
   }
 
-  const [background, face, banner, sprite, star, empty] = await Promise.all(
+  const [background, regularFace, banner, sprite, star, empty] = await Promise.all(
     [
       `common/bg/bg-${config.background}.webp`,
-      `meta-${game}/character/${config.face}`,
+      `meta-${game}/character/${config.face}/imgs/face.webp`,
       `meta-${game}/character/common/imgs/banner.webp`,
       themeAssets.sprite, themeAssets.star, themeAssets.empty,
     ].map((path) => themeImage(root, path)),
   );
-  if (!background || !face || !banner || !sprite || !star || !empty) {
+  if (!background || !banner || !sprite || !star || !empty) {
     throw new Error(`${config.name}抽卡记录的原主题图片不可用。`);
   }
   const { Number: number, Title: title, Han: han } = aliases;
   const families = { body: `${number}, ${han}, sans-serif`, title: `${number}, ${title}, ${han}, sans-serif` };
-  return { background, face, banner, sprite, star, empty, families };
+  const preferred = qFace ? await themeImage(root, `meta-${game}/character/${config.face}/imgs/face-q.webp`) : undefined;
+  return { background, face: preferred ?? regularFace ?? empty, banner, sprite, star, empty, families };
 }
 
-function originalTheme(root: string, game: Game) {
-  const key = `${game}:${root}`;
+function originalTheme(root: string, game: Game, qFace: boolean) {
+  const key = `${game}:${qFace}:${root}`;
   let theme = sharedThemes.get(key);
   if (!theme) {
-    theme = loadTheme(root, game).catch((error: unknown) => {
+    theme = loadTheme(root, game, qFace).catch((error: unknown) => {
       sharedThemes.delete(key);
       throw error;
     });
@@ -481,12 +483,12 @@ function portraitPath(path: string, game: Game) {
 
 export async function renderGachaDetail(
   game: Game, model: GachaDetailModel,
-  { mode = "auto", scale = 4, themeDirectory, avatar }: GachaDetailOptions,
+  { mode = "auto", scale = 4, themeDirectory, avatar, qFace = true }: GachaDetailOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
   const root = await realpath(themeDirectory).catch(() => undefined);
   if (!root) throw new Error(`${games[game].name}抽卡记录的原主题目录不可用。`);
-  const theme = await originalTheme(root, game);
+  const theme = await originalTheme(root, game, qFace);
   const paths = new Set([
     model.face.face, model.face.banner,
     ...model.gacha.fiveLog.map(({ id }) => model.gacha.items[id]?.img),

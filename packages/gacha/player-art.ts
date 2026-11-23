@@ -21,7 +21,7 @@ export function gachaPortraitCharacter(characters: Iterable<Character>, hint: un
 }
 
 export async function readGachaPlayerArt(directory: string, game: Game, name: string,
-  character?: string, officialAvatar?: string, signal?: AbortSignal) {
+  character?: string, officialAvatar?: string, signal?: AbortSignal, qFace = true) {
   const root = await realpath(directory).catch(() => undefined);
   function characterPath(character: string, file: string) {
     return `/meta-${game}/character/${character}/imgs/${file}`;
@@ -35,7 +35,7 @@ export async function readGachaPlayerArt(directory: string, game: Game, name: st
     if (size?.every(side => side > 0 && side <= 4096)) return path;
   }
   async function icon(candidate: string | undefined) {
-    return await art(candidate, "face-q.webp") ?? await art(candidate, "face.webp");
+    return (qFace ? await art(candidate, "face-q.webp") : undefined) ?? await art(candidate, "face.webp");
   }
 
   const selected = await icon(character);

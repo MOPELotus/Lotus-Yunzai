@@ -11,6 +11,7 @@ export interface GachaVersionOptions {
   readonly scale?: number;
   readonly themeDirectory: string;
   readonly avatar?: Uint8Array;
+  readonly qFace?: boolean;
 }
 
 const width = 740;
@@ -30,8 +31,8 @@ const groupStats = [
 ] as const;
 
 const games = {
-  sr: { label: "星铁", background: "sr", face: "卡芙卡/imgs/face.webp", columns: 7, cardWidth: 90, groupsTop: 146, prefix: "*" },
-  gs: { label: "原神", background: "hydro", face: "芭芭拉/imgs/face-q.webp", columns: 9, cardWidth: 69, groupsTop: 162, prefix: "#" },
+  sr: { label: "星铁", background: "sr", face: "卡芙卡", columns: 7, cardWidth: 90, groupsTop: 146, prefix: "*" },
+  gs: { label: "原神", background: "hydro", face: "芭芭拉", columns: 9, cardWidth: 69, groupsTop: 162, prefix: "#" },
 } as const;
 type Game = keyof typeof games;
 
@@ -95,7 +96,7 @@ async function readImage(root: string, path: string) {
   }
 }
 
-async function readTheme(root: string, game: Game) {
+async function readTheme(root: string, game: Game, qFace: boolean) {
   const config = games[game];
   const fonts = [
     ["Number", "tttgbnumber.ttf"], ["Han", "HYWH-65W.ttf"],
@@ -111,10 +112,12 @@ async function readTheme(root: string, game: Game) {
     }
   }
 
-  const [background, banner, face, four, five] = await Promise.all([
+  const [background, banner, regularFace, four, five] = await Promise.all([
     `common/bg/bg-${config.background}.webp`, `meta-${game}/character/common/imgs/banner.webp`,
-    `meta-${game}/character/${config.face}`, "common/item/bg4.png", "common/item/bg5.png",
+    `meta-${game}/character/${config.face}/imgs/face.webp`, "common/item/bg4.png", "common/item/bg5.png",
   ].map((path) => readImage(root, path)));
+  const preferred = qFace ? await readImage(root, `meta-${game}/character/${config.face}/imgs/face-q.webp`) : undefined;
+  const face = preferred ?? regularFace ?? await readImage(root, "gacha/imgs/no-avatar.webp");
   if (!background || !banner || !face || !five || (game === "gs" && !four)) {
     throw new Error(`${config.label}版本统计的原主题图片不可用。`);
   }
@@ -123,11 +126,11 @@ async function readTheme(root: string, game: Game) {
 
 const themes = new Map<string, ReturnType<typeof readTheme>>();
 
-function themeAt(root: string, game: Game) {
-  const key = `${game}:${root}`;
+function themeAt(root: string, game: Game, qFace: boolean) {
+  const key = `${game}:${qFace}:${root}`;
   let theme = themes.get(key);
   if (!theme) {
-    theme = readTheme(root, game).catch((error: unknown) => {
+    theme = readTheme(root, game, qFace).catch((error: unknown) => {
       themes.delete(key);
       throw error;
     });
@@ -450,7 +453,7 @@ function pagingNote(model: GachaVersionModel, game: Game) {
 
 export async function renderGachaVersion(
   game: Game, model: GachaVersionModel,
-  { mode = "auto", scale = 4, themeDirectory, avatar }: GachaVersionOptions,
+  { mode = "auto", scale = 4, themeDirectory, avatar, qFace = true }: GachaVersionOptions,
 ) {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("版本统计缩放比例须在 1 至 4 之间。");
   const config = games[game];
@@ -470,7 +473,7 @@ export async function renderGachaVersion(
   let { bottom, footer, height } = dimensions(layouts);
   const root = await realpath(themeDirectory).catch(() => undefined);
   if (!root) throw new Error(`${config.label}版本统计的原主题目录不可用。`);
-  const theme = await themeAt(root, game);
+  const theme = await themeAt(root, game, qFace);
   if (game === "gs") {
     // The scratch canvas measures text only. All visible graphics go through renderPng below.
     const measure = new Canvas(1, 1).getContext("2d");

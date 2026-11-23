@@ -4095,6 +4095,7 @@ if (import.meta.main) {
         targets: scheduledCalendarTargets,
         whenReady: whenModuleTasksActive,
       },
+      roleQFace: (globalConfig.atlas as { readonly role_q_face?: unknown } | undefined)?.role_q_face !== false,
       atlasUpdate: probingUpdate ? undefined : {
         config: globalConfig.atlas,
         register(schedule) {

@@ -45,7 +45,7 @@ const roleLabels: Record<keyof AtlasRoleSettings, string> = {
   role_wiki: "角色图鉴和资料",
   role_talent: "角色天赋、技能、行迹和命座／星魂",
   role_photo: "角色照片和写真",
-  role_q_face: "专用分项图使用 Q 版头像",
+  role_q_face: "角色资料图使用 Q 版头像",
 };
 const roleChanges = computed(() => Object.fromEntries(atlasRoleFields.flatMap(field =>
   saved.value?.roleQueries && saved.value.roleQueries[field] !== roleDraft.value[field] ? [[field, roleDraft.value[field]]] : [],
@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
             <input :id="'atlas-' + field" v-model="roleDraft[field]" type="checkbox" aria-describedby="atlas-role-queries-note" />
             {{ roleLabels[field] }}
           </label>
-          <p id="atlas-role-queries-note" class="subtitle toggle-note">重启后生效，默认开启。关闭 Q 版头像后，专用分项图使用普通角色头像。</p>
+          <p id="atlas-role-queries-note" class="subtitle toggle-note">重启后生效，默认开启。头像选项适用于原神和星铁的天赋／星魂图、面板列表、角色名册及抽卡详情和统计。</p>
         </template>
         <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />启用图鉴定时更新</label>
         <label class="update-toggle">

@@ -291,6 +291,7 @@ export async function loadPlugins(
       targets: CalendarScheduleOptions["targets"];
       whenReady(start: () => void): () => void;
     };
+    readonly roleQFace?: boolean;
     readonly atlasUpdate?: {
       readonly config: unknown;
       register(schedule: AtlasSchedule): () => Promise<void>;
@@ -474,6 +475,8 @@ export async function loadPlugins(
           signal: disconnect ? AbortSignal.any([signal, disconnect]) : signal,
           ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
           ...(atlasUpdate && { atlasUpdateConfig: atlasUpdate.config }),
+          ...(builtIn && (moduleName === "@lotus-yunzai/genshin" || moduleName === "@lotus-yunzai/starrail") &&
+            { roleQFace: options.roleQFace }),
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
           ...(mediaRuntime && { mediaRuntime }),
