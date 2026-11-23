@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { bindOwnerAccount } from "../lib/adapters/owner-account.ts";
+import { OneBotCalls, type OneBotAction } from "../lib/adapters/onebot-calls.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 test("机器人资料和删好友走当前主人所属的隔离协议账号", async () => {
@@ -102,6 +103,86 @@ test("机器人资料和删好友走当前主人所属的隔离协议账号", as
     expect(milky.calls).toEqual([]);
   });
 }, 10_000);
+
+test("修改性别只接受旧命令选项并保留当前同账号昵称", async () => {
+  const config = 'master: ["99:42", "100:43"]\ndisablePrivate: false\n';
+  await withDualGatewayFixture("owner-gender-fixture", config, async ({ onebot, milky, sendOneBot, sendMilky }) => {
+    const group = { message_type: "group", sub_type: "normal", group_id: 701 };
+    async function oneReply(message: string) {
+      const reply = await onebot.next("send_msg");
+      expect(reply.params).toMatchObject({ message });
+      reply.respond({ message_id: 801 });
+    }
+    async function napcatProfile(data: unknown) {
+      (await onebot.next("get_version_info")).respond({ app_name: "NapCat.Onebot" });
+      const lookup = await onebot.next("get_stranger_info");
+      expect(lookup.params).toEqual({ user_id: "99", no_cache: true });
+      lookup.respond(data);
+    }
+
+    sendOneBot("#改性别 男", { ...group, user_id: 43, sender: { user_id: 43, role: "owner" } });
+    await oneReply("只有当前机器人的主人可在群聊或好友私聊使用此功能。");
+    sendOneBot("#改性别 0", group);
+    await oneReply("可选性别为男、女、无。");
+
+    const nickname = "原昵称 ";
+    for (const [label, sex, data, verdict] of [
+      ["无", "0", { result: 0 }, "修改性别成功。"],
+      ["男", "1", { result: 1 }, "修改性别失败。"],
+      ["女", "2", {}, "修改性别结果未确认，请在 QQ 中核对。"],
+    ] as const) {
+      sendOneBot("#改性别 " + label, group);
+      await napcatProfile({ user_id: 99, nickname });
+      const write = await onebot.next("set_qq_profile");
+      expect(write.params).toEqual({ nickname, sex });
+      write.respond(data);
+      await oneReply(verdict);
+    }
+    sendOneBot("#改性别无", group);
+    await napcatProfile({ user_id: 100, nickname });
+    await oneReply("无法确认当前会话的权限或好友关系。");
+
+    await sendMilky("#改性别无");
+    const unsupported = await milky.next("send_private_message");
+    expect(unsupported.params).toMatchObject({ user_id: 43, message: [{ data: { text: "当前协议端未确认支持修改性别。" } }] });
+    unsupported.respond({ message_seq: 802 });
+    expect(onebot.calls).toEqual([]);
+    expect(milky.calls).toEqual([]);
+  });
+}, 10_000);
+
+test("同一 OneBot 会话先提交昵称，再读新昵称写性别，资料读取后撤权不提交", async () => {
+  const calls = new OneBotCalls();
+  const frames: OneBotAction[] = [];
+  const send = (frame: OneBotAction) => { frames.push(frame); return true; };
+  const signal = new AbortController().signal;
+  let canWrite = true;
+  const current = () => canWrite;
+  const confirm = (index: number, data: unknown) => calls.receive({ echo: frames[index]!.echo, status: "ok", retcode: 0, data });
+
+  const rename = calls.updateOwnerAccount(send, 99, { kind: "nickname", text: "新昵称" }, signal, current);
+  const gender = calls.updateOwnerAccount(send, 99, { kind: "gender", gender: 2 }, signal, current);
+  await Bun.sleep(0);
+  expect(frames).toHaveLength(1);
+  expect(frames[0]).toMatchObject({ action: "set_qq_profile", params: { nickname: "新昵称" } });
+  confirm(0, { result: 0 });
+  expect(await rename).toBe("confirmed");
+  await Bun.sleep(0);
+  expect(frames[1]).toMatchObject({ action: "get_stranger_info", params: { user_id: "99", no_cache: true } });
+  confirm(1, { user_id: 99, nickname: "新昵称" });
+  await Bun.sleep(0);
+  expect(frames[2]).toMatchObject({ action: "set_qq_profile", params: { nickname: "新昵称", sex: "2" } });
+  confirm(2, { result: 0 });
+  expect(await gender).toBe("confirmed");
+
+  const revoked = calls.updateOwnerAccount(send, 99, { kind: "gender", gender: 1 }, signal, current);
+  await Bun.sleep(0);
+  expect(frames[3]?.action).toBe("get_stranger_info");
+  canWrite = false;
+  confirm(3, { user_id: 99, nickname: "新昵称" });
+  expect(await revoked).toBe("unavailable");
+  expect(frames).toHaveLength(4);
+});
 
 test("好友查询等待期间撤销当前主人或会话时禁止发送资料写入", async () => {
   for (const revoke of ["owner", "connection"] as const) {

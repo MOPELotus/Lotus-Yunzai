@@ -1,8 +1,8 @@
-import { ownerAccountSession, ownerAccountStatus, type OwnerAccountOperation } from "./adapters/owner-account.ts";
+import { ownerAccountGender, ownerAccountSession, ownerAccountStatus, type OwnerAccountOperation } from "./adapters/owner-account.ts";
 import type { MessageEvent } from "./messages.ts";
 
 export const ownerAccountFeatureNames = ["[group] 机器人账号资料", "group", "@lotus-yunzai/group"];
-const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|改状态|删好友|设置机型)([\s\S]*)$/u;
+const pattern = /^#((?:改|换)(?:昵|名)称?|改签名|改状态|改性别|删好友|设置机型)([\s\S]*)$/u;
 const maxHistory = 4096;
 
 function positiveId(raw: unknown): number | undefined {
@@ -54,6 +54,13 @@ export function createOwnerAccountCommand() {
       }
       operation = { kind: "status", status: ownerAccountStatus[text as keyof typeof ownerAccountStatus] };
       label = "修改在线状态";
+    } else if (match[1] === "改性别") {
+      if (!Object.hasOwn(ownerAccountGender, text)) {
+        await event.reply("可选性别为男、女、无。");
+        return true;
+      }
+      operation = { kind: "gender", gender: ownerAccountGender[text as keyof typeof ownerAccountGender] };
+      label = "修改性别";
     } else {
       const signature = match[1] === "改签名";
       label = signature ? "修改签名" : "修改昵称";

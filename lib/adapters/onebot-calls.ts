@@ -9,7 +9,7 @@ import type { PendingFriendRequest, PendingFriendRequestList } from "../friend-r
 import type { RequestDecisionOutcome } from "../request-claim.ts";
 import { reviewObservedBatch } from "./owner-request-batch.ts";
 import { inlineAvatar } from "./group-avatar.ts";
-import type { OwnerAccountOperation } from "./owner-account.ts";
+import type { OwnerAccountOperation, OwnerAccountOutcome } from "./owner-account.ts";
 import { readQzonePage, readQzonePublishResult, type QzoneWriteResult } from "./qzone.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
@@ -51,6 +51,7 @@ export class OneBotCalls {
   readonly #friendRequests = new Map<string, ObservedRequest<PendingFriendRequest>>();
   readonly #groupInvitations = new Map<string, ObservedRequest<PendingGroupInvitation>>();
   readonly #reviewingOwnerBatches = new Set<"friend" | "invite">();
+  #profileWrites = Promise.resolve();
   #closed = false;
 
   async #request(send: Send, action: string, params: object, signal?: AbortSignal, timeout = 5_000): Promise<unknown> {
@@ -202,17 +203,41 @@ export class OneBotCalls {
     return this.#moderateGroup(send, "set_group_name", { group_id, group_name }, signal);
   }
 
-  async updateOwnerAccount(send: Send, operation: OwnerAccountOperation, signal: AbortSignal): Promise<GroupModerationResult> {
+  async updateOwnerAccount(send: Send, botId: number, operation: OwnerAccountOperation, signal: AbortSignal,
+    current: () => boolean): Promise<OwnerAccountOutcome> {
     if (operation.kind === "status") return this.#moderateGroup(send, "set_online_status",
       { status: operation.status, ext_status: 0, battery_status: 0 }, signal);
     if (operation.kind === "avatar") return this.#moderateGroup(send, "set_qq_avatar", { file: inlineAvatar(operation.bytes) }, signal);
+    if (operation.kind === "deleteFriend") return this.#submitAccountWrite(send, "delete_friend", { user_id: operation.userId }, signal);
+
+    const previous = this.#profileWrites;
+    const pending = Promise.withResolvers<void>();
+    this.#profileWrites = pending.promise;
+    await previous;
+    try {
+      if (!current()) return "unavailable";
+      if (operation.kind === "nickname") return await this.#submitAccountWrite(send, "set_qq_profile", { nickname: operation.text }, signal);
+      if (operation.kind === "signature") return await this.#submitAccountWrite(send, "set_self_longnick", { longNick: operation.text }, signal);
+
+      // The profile API requires a nickname and writes it back. Login info may be cached.
+      const account = await this.#request(send, "get_stranger_info", { user_id: String(botId), no_cache: true }, signal).catch(() => undefined);
+      if (!current() || !isRecord(account) || account.user_id !== botId ||
+          typeof account.nickname !== "string" || !memberDisplayName(account.nickname)) return "unavailable";
+      return await this.#submitAccountWrite(send, "set_qq_profile", {
+        nickname: account.nickname,
+        // Older NapCat treats numeric zero as an omitted value.
+        sex: String(operation.gender),
+      }, signal);
+    } finally {
+      pending.resolve();
+    }
+  }
+
+  async #submitAccountWrite(send: Send, action: string, params: object, signal: AbortSignal): Promise<GroupModerationResult> {
     if (signal.aborted) return "rejected";
-    const [action, params] = operation.kind === "deleteFriend" ? ["delete_friend", { user_id: operation.userId }]
-      : operation.kind === "nickname" ? ["set_qq_profile", { nickname: operation.text }]
-        : ["set_self_longnick", { longNick: operation.text }];
     try {
       const result = await this.#request(send, action, params, signal);
-      if (isRecord(result) && operation.kind === "deleteFriend" && result.valid === false) return "rejected";
+      if (isRecord(result) && action === "delete_friend" && result.valid === false) return "rejected";
       if (!isRecord(result) || !Number.isSafeInteger(result.result)) return "unknown";
       return result.result === 0 ? "confirmed" : "rejected";
     } catch (error) {

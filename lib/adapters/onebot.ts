@@ -732,7 +732,7 @@ async function dispatchMessage(
     [ownerAccountSession]: boundAccount && leaveSignal && selfId !== undefined ? bindOwnerAccount({
       signal: leaveSignal, actor: userId, privateChat: messageType === "private", isOwner: () => isMaster(selfId, userId),
       supported: (_operation, active) => calls.isNapCat(send, active), friends: active => calls.readCurrentFriendIds(send, active),
-      write: (operation, active) => calls.updateOwnerAccount(send, operation, active),
+      write: (operation, active, current) => calls.updateOwnerAccount(send, selfId, operation, active, current),
     }) : undefined,
     [qzoneSession]: boundAccount && leaveSignal && messageType === "private" && selfId !== undefined ? {
       signal: leaveSignal, isOwner: () => isMaster(selfId, userId), supported: active => calls.isNapCat(send, active),
