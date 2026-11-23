@@ -70,6 +70,7 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
       const { id, change } = match;
       if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从对应的 QQ 会话设置签到。";
+      if (change.type === "schedule" && !context.isMaster) return "签到模式与时间由机器人主人统一安排。";
       const qq = String(context.user_id);
       let saved = false;
       try {

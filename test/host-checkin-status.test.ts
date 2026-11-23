@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { checkinStatus } from "../lib/checkin-registration-commands.ts";
+import { createProfileStore } from "@lotus-yunzai/account";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 test("旧签到状态只读取当前已认证 QQ 即时的各档登记", async () => {
@@ -93,3 +94,56 @@ test("本人签到状态读取后收到会话撤回时不返回档案状态", as
     expect(checks).toBe(3);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("旧签到时间仅主人能设置，普通用户仍可管理本人签到与通知", async () => {
+  const reply = "签到模式与时间由机器人主人统一安排。";
+  await withDualGatewayFixture("checkin-schedule-owner", 'master: ["99:42", "100:91"]\n', async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+    const profiles = createProfileStore(join(root, "profiles"));
+    const original = await readFile(join(root, "profiles", "43-2.yaml"), "utf8");
+    let sequence = 200;
+    for (const command of ["#随机签到时间2", "#设置签到时间2 6:40", "#跟随全局签到时间2"]) {
+      expect((await sendMilky(command)).status).toBe(200);
+      const result = await milky.next("send_private_message");
+      expect(result.params).toMatchObject({ user_id: 43, message: [{ data: { text: reply } }] });
+      result.respond({ message_seq: sequence++ });
+    }
+    expect(await readFile(join(root, "profiles", "43-2.yaml"), "utf8")).toBe(original);
+
+    sendOneBot("#固定签到时间2 9:05");
+    const scheduled = await onebot.next("send_msg");
+    expect(scheduled.params.user_id).toBe(42);
+    expect(JSON.stringify(scheduled.params.message)).not.toContain(reply);
+    scheduled.respond({ message_id: sequence++ });
+    expect((await profiles.checkinSettings("42", 2)).schedule.fixedTime).toBe("09:05");
+
+    for (const command of ["#关闭社区签到2", "#禁用崩铁游戏签到2", "#关闭签到通知2"]) {
+      expect((await sendMilky(command)).status).toBe(200);
+      const result = await milky.next("send_private_message");
+      expect(result.params.user_id).toBe(43);
+      expect(JSON.stringify(result.params.message)).not.toContain(reply);
+      result.respond({ message_seq: sequence++ });
+    }
+    const current = await profiles.checkinSettings("43", 2);
+    expect(current).toMatchObject({ communityForums: [], notify: { enabled: false }, games: { honkai_sr: { enabled: false } } });
+    expect(current.schedule).toMatchObject({ mode: "fixed", fixedTime: "08:15" });
+  }, 4000, `
+    Bun.env.LOTUS_PROFILE_DIR = process.cwd() + "/profiles";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign((input, init) => {
+      if (new URL(input instanceof Request ? input.url : input).hostname !== "127.0.0.1") throw new Error("offline fixture");
+      return originalFetch(input, init);
+    }, originalFetch);
+  `, async root => {
+    const directory = join(root, "profiles");
+    await mkdir(directory);
+    await writeFile(join(root, "config", "global.yaml"), "scheduler: {enable: false}\n");
+    for (const qq of ["42", "43"]) {
+      const profile = {
+        user: { qq }, profile: { id: 2 }, schedule: { mode: "fixed", fixed_time: "08:15" },
+        account: { cookie: "cookie_token=fixture", stoken: "fixture" },
+        mihoyobbs: { enable: true, tasks: { checkin: true }, checkin_list: [2, 8] },
+      };
+      await writeFile(join(directory, `${qq}-2.yaml`), Bun.YAML.stringify(profile));
+    }
+  });
+}, 15_000);
