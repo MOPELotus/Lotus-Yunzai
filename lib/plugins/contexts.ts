@@ -16,10 +16,11 @@ export class PluginContexts {
 
   #key(event: MessageEvent, group: boolean): string | undefined {
     if (event.message_type === "terminal") return group ? undefined : "terminal";
+    const adapter = event.adapter ?? "onebot";
     if (group) return event.group_id === undefined ? undefined
-      : JSON.stringify([event.self_id, "group", event.group_id]);
+      : JSON.stringify([adapter, event.self_id, "group", event.group_id]);
     if (event.user_id === undefined) return;
-    return JSON.stringify([event.self_id, event.message_type, event.group_id, event.user_id]);
+    return JSON.stringify([adapter, event.self_id, event.message_type, event.group_id, event.user_id]);
   }
 
   set(

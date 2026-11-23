@@ -3,7 +3,41 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { MessageEvent } from "../lib/messages.ts";
+import { PluginContexts } from "../lib/plugins/contexts.ts";
 import { copyHost } from "./host-fixture.ts";
+
+test("V3 等待输入和群上下文按接入协议隔离", async () => {
+  const contexts = new PluginContexts();
+  const onebot: MessageEvent = {
+    msg: "#接续", raw_message: "#接续", message: "#接续", post_type: "message",
+    message_type: "group", self_id: 99, group_id: 77, user_id: 42,
+    isGroup: true, isPrivate: false, isMaster: false, reply: () => true,
+  };
+  const milky = { ...onebot, adapter: "milky" } as const;
+  const otherOnebotMember = { ...onebot, user_id: 43 };
+
+  try {
+    const onebotInput = contexts.wait(onebot, false, 0);
+    const milkyInput = contexts.wait(milky, false, 0);
+    expect(contexts.resolve(otherOnebotMember)).toBe(false);
+    expect(contexts.resolve(milky)).toBe(true);
+    expect(await milkyInput).toBe(milky);
+    expect(contexts.resolve(onebot)).toBe(true);
+    expect(await onebotInput).toBe(onebot);
+
+    contexts.set(onebot, "finishGroupStep", true, 0, "");
+    expect(contexts.get(milky, true)).toEqual({});
+    contexts.finish(milky, "finishGroupStep", true);
+    expect(contexts.get(otherOnebotMember, true)).toEqual({ finishGroupStep: onebot });
+    const groupInput = contexts.wait(onebot, true, 0);
+    expect(contexts.resolve(milky)).toBe(false);
+    expect(contexts.resolve(otherOnebotMember)).toBe(true);
+    expect(await groupInput).toBe(otherOnebotMember);
+  } finally {
+    contexts.close();
+  }
+});
 
 test("宿主导入正常模块，并在执行入口前拒载库洛游戏插件和重复插件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-plugins-"));
