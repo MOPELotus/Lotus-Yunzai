@@ -64,7 +64,7 @@ export function createMediaDelivery(dataDirectory: string, baseUrl: () => URL | 
     const task = dirname(path);
     const parent = dirname(task);
     if (!/^task-[A-Za-z0-9]+$/u.test(basename(task)) ||
-        !["bilibili", "douyin", "music"].some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
+        !["bilibili", "douyin", "music", "miyoushe"].some(platform => resolve(parent) === join(dataDirectory, platform, "tasks"))) return;
     const [parentPath, taskPath, file] = await Promise.all([realpath(parent), realpath(task), realpath(path)]);
     if (relative(parentPath, taskPath) !== basename(task) || file !== `${taskPath}${sep}${basename(path)}`) return;
     const marker = join(taskPath, ".lotus-media-task.json");

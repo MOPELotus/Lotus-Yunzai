@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMediaDelivery } from "../lib/media-delivery.ts";
 
-async function taskFixture(data: string) {
-  const parent = join(data, "bilibili", "tasks");
+async function taskFixture(data: string, platform = "bilibili") {
+  const parent = join(data, platform, "tasks");
   await mkdir(parent, { recursive: true });
   const task = await mkdtemp(join(parent, "task-"));
   await writeFile(join(task, ".lotus-media-task.json"), JSON.stringify({ version: 1, pid: process.pid }));
@@ -19,7 +19,7 @@ test("媒体链接可经真实 HTTP 递送大文件，源任务清理后依然�
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => bridge.handle(request) ?? new Response(null, { status: 404 }) });
   origin = server.url;
   try {
-    const task = await taskFixture(data);
+    const task = await taskFixture(data, "miyoushe");
     const path = join(task, "中文.mp4");
     const stale = await mkdtemp(join(data, ".media-delivery-999999999-"));
     const unrelated = await mkdtemp(join(data, ".media-delivery-999999999-"));
