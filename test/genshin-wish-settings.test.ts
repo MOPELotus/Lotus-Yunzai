@@ -11,7 +11,7 @@ import { rejectionReason } from "../lib/plugins/policy.ts";
 import { createWishCommands } from "../plugins/genshin/wish-sim/commands.ts";
 import { createWishPoolSource } from "../plugins/genshin/wish-sim/pools.ts";
 
-test("Flower 票数、撤回时间和私聊单抽规则迁入面板，设置与群命令同源", async () => {
+test("Flower 票数、撤回与转生冷却迁入统一面板，设置与群命令同源", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-wish-pref-"));
   const source = join(directory, "source"), archive = join(directory, "archive"), stage = join(directory, "stage");
   const root = pathToFileURL(stage + "/");
@@ -22,10 +22,22 @@ test("Flower 票数、撤回时间和私聊单抽规则迁入面板，设置与�
     await mkdir(join(source, "plugins/genshin/config"), { recursive: true });
     await mkdir(join(legacy, "config"), { recursive: true });
     await mkdir(join(legacy, "def"), { recursive: true });
-    await writeFile(join(legacy, "config/gacha.yaml"), "delMsg: 3\n");
+    await writeFile(join(legacy, "config/gacha.yaml"), "relifeCD: 17\n");
+    const cooldownStage = join(directory, "cooldown-only");
+    expect(await stageLegacyGenshinWishConfig(source, archive, cooldownStage, plugins)).toEqual({ active: true, deferred: false });
+    expect(await readGenshinWishSettings(pathToFileURL(cooldownStage + "/"))).toMatchObject({ reincarnationMinutes: 17 });
+    await writeFile(join(legacy, "config/gacha.yaml"), "delMsg: 3\nrelifeCD: 11\n");
     const privateStage = join(directory, "private-only");
     expect(await stageLegacyGenshinWishConfig(source, archive, privateStage, plugins)).toEqual({ active: true, deferred: false });
-    expect(await readGenshinWishSettings(pathToFileURL(privateStage + "/"))).toMatchObject({ privateSingleRecallSeconds: 3 });
+    expect(await readGenshinWishSettings(pathToFileURL(privateStage + "/"))).toMatchObject({ privateSingleRecallSeconds: 3, reincarnationMinutes: 11 });
+    await writeFile(join(legacy, "def/gacha.yaml"), "relifeCD: 27\n");
+    await writeFile(join(legacy, "config/gacha.yaml"), "delMsg: 0\nrelifeCD: 0\n");
+    const unsupportedStage = join(directory, "unsupported-cooldown");
+    expect(await stageLegacyGenshinWishConfig(source, archive, unsupportedStage, plugins)).toEqual({ active: true, deferred: false });
+    expect(await readGenshinWishSettings(pathToFileURL(unsupportedStage + "/"))).toMatchObject({
+      privateSingleRecallSeconds: 0, reincarnationMinutes: 27,
+    });
+    await writeFile(join(legacy, "config/gacha.yaml"), "delMsg: 3\nrelifeCD: 11\n");
     await writeFile(join(source, "plugins/genshin/config/gacha.set.yaml"), "default: { delMsg: 23, count: 1 }\n123: { delMsg: 0 }\n");
     await writeFile(join(legacy, "config/coin.yaml"), "default: { pink: 22, blue: 11 }\n123: { pink: 10 }\n");
     await writeFile(join(legacy, "def/coin.yaml"), "default: { pink: 100, blue: 10 }\n456: { blue: 10 }\n");
@@ -34,14 +46,19 @@ test("Flower 票数、撤回时间和私聊单抽规则迁入面板，设置与�
     const panel = panelGenshinWishSettings(root);
     const url = "http://localhost/panel/api/settings/native/genshin-wish";
     const values = await (await panel(new Request(url), () => true)).json().then(r => r.values);
-    expect(values).toEqual({ pink: 22, blue: 11, recallSeconds: 23, privateSingleRecallSeconds: 3,
+    expect(values).toEqual({ pink: 22, blue: 11, recallSeconds: 23, privateSingleRecallSeconds: 3, reincarnationMinutes: 11,
       groups: { 123: { pink: 10, recallSeconds: 0 }, 456: { blue: 10 } } });
     const put = (next: unknown, allow: boolean) => panel(new Request(url, { method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ previous: values, values: next }) }), () => allow);
     expect((await put({ ...values, pink: 1 }, false)).status).toBe(401);
     expect((await put({ ...values, recallSeconds: -1 }, true)).status).toBe(400);
-    expect((await put({ ...values, pink: 40, groups: { 123: { ...values.groups["123"], blue: 1 } } }, true)).status).toBe(200);
+    for (const reincarnationMinutes of [0, 1441, 1.5, "7"]) {
+      expect((await put({ ...values, reincarnationMinutes }, true)).status).toBe(400);
+    }
+    expect((await put({ ...values, pink: 40, reincarnationMinutes: 9, groups: { 123: { ...values.groups["123"], blue: 1 } } }, true)).status).toBe(200);
     expect((await put({ ...values, recallSeconds: 1 }, true)).status).toBe(409);
+    expect(await readGenshinWishSettings(root)).toMatchObject({ reincarnationMinutes: 9,
+      privateSingleRecallSeconds: 3, groups: { 123: { recallSeconds: 0 } } });
 
     let roll = 0.999;
     const time = Date.parse("2026-09-06T16:00:00+08:00");

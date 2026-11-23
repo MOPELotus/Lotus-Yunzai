@@ -9,17 +9,26 @@ export interface WishAllowance {
 }
 export interface WishSettings extends WishAllowance {
   readonly privateSingleRecallSeconds: number;
+  readonly reincarnationMinutes: number;
   readonly groups: Readonly<Record<string, Partial<WishAllowance>>>;
 }
 
 const keys = ["pink", "blue", "recallSeconds"] as const;
 export const wishDefaultSettings: WishSettings = { pink: 100, blue: 10, recallSeconds: 110, privateSingleRecallSeconds: 0,
-  groups: { "123465": { pink: 10, blue: 10 } } };
+  reincarnationMinutes: 120, groups: { "123465": { pink: 10, blue: 10 } } };
 
 function checkAmount(value: unknown, key: keyof WishAllowance): number {
   const max = key === "recallSeconds" ? 120 : 10_000;
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max) return value;
   throw new TypeError(`模拟祈愿设置 ${key} 需为 0–${max} 的整数。`);
+}
+
+function validReincarnationMinutes(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 1440;
+}
+
+export function legacyWishReincarnationMinutes(...values: readonly unknown[]) {
+  return values.find(validReincarnationMinutes);
 }
 
 export function validWishGroup(id: string) {
@@ -35,8 +44,9 @@ function allowance(value: unknown) {
 export function parseWishSettings(value: unknown, base = wishDefaultSettings): WishSettings {
   const config = record(value);
   if (!config) throw new TypeError("模拟祈愿设置应为映射。");
-  const { groups, privateSingleRecallSeconds, ...defaults } = config;
-  const fallback = { ...base, ...allowance(defaults),
+  const { groups, privateSingleRecallSeconds, reincarnationMinutes = base.reincarnationMinutes, ...defaults } = config;
+  if (!validReincarnationMinutes(reincarnationMinutes)) throw new TypeError("转生冷却须为 1–1440 分钟的整数。");
+  const fallback = { ...base, ...allowance(defaults), reincarnationMinutes,
     privateSingleRecallSeconds: Object.hasOwn(config, "privateSingleRecallSeconds")
       ? checkAmount(privateSingleRecallSeconds, "recallSeconds") : base.privateSingleRecallSeconds };
   if (!Object.hasOwn(config, "groups")) return fallback;
@@ -54,7 +64,8 @@ export function wishAllowance(settings: WishSettings, group: string): WishAllowa
 }
 
 export function inheritWishSettings(coins: Record<string, unknown> | undefined, recall: Record<string, unknown> | undefined,
-  privateSingle: unknown = wishDefaultSettings.privateSingleRecallSeconds) {
+  privateSingle: unknown = wishDefaultSettings.privateSingleRecallSeconds,
+  reincarnationMinutes = wishDefaultSettings.reincarnationMinutes) {
   function readGroup(group: string) {
     const tickets = record(coins?.[group]);
     const delMsg = record(recall?.[group]);
@@ -66,5 +77,5 @@ export function inheritWishSettings(coins: Record<string, unknown> | undefined, 
   }
   const ids = new Set([...Object.keys(coins ?? {}), ...Object.keys(recall ?? {})]);
   const groups = Object.fromEntries([...ids].filter(validWishGroup).map(group => [group, readGroup(group)]));
-  return parseWishSettings({ ...readGroup("default"), groups, privateSingleRecallSeconds: privateSingle });
+  return parseWishSettings({ ...readGroup("default"), groups, privateSingleRecallSeconds: privateSingle, reincarnationMinutes });
 }

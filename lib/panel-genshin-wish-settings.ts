@@ -11,6 +11,8 @@ const fields = [
   { key: "recallSeconds", label: "结果撤回延时（秒）", type: "number", min: 0, max: 120, hint: "填 0 不撤回。" },
   { key: "privateSingleRecallSeconds", label: "私聊单抽撤回延时（秒）", type: "number", min: 0, max: 120,
     hint: "私聊单抽默认不撤回，与十连和群聊分开。" },
+  { key: "reincarnationMinutes", label: "转生冷却（分钟）", type: "number", min: 1, max: 1440,
+    hint: "下一次转生起生效。同一个 QQ 的群聊与私聊共用冷却，机器人主人不受限制。" },
   { key: "groups", label: "按群覆盖", type: "json",
     hint: '用群号作为键，只填写要覆盖的字段 pink、blue、recallSeconds，例如 {"123456789":{"pink":25,"recallSeconds":0}}。' },
 ] as const;

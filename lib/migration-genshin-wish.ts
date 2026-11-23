@@ -1,7 +1,7 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
-import { inheritWishSettings } from "./genshin-wish-settings-model.ts";
+import { inheritWishSettings, legacyWishReincarnationMinutes } from "./genshin-wish-settings-model.ts";
 import { wishConfigMaxBytes, wishConfigName } from "./genshin-wish-settings.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
@@ -34,9 +34,14 @@ export async function stageLegacyGenshinWishConfig(source: string, archive: stri
   let settings;
   try {
     const coins = { ...(stock ? decode(stock) : {}), ...(tickets ? decode(tickets) : {}) };
-    const privateSingle = (customRules && decode(customRules).delMsg) ?? (stockRules && decode(stockRules).delMsg);
-    if (!tickets && !stock && !fallbackRecall && privateSingle === undefined) return { active: false, deferred: false };
-    settings = inheritWishSettings(coins, fallbackRecall && decode(fallbackRecall), privateSingle);
+    const customization = customRules && decode(customRules);
+    const defaults = stockRules && decode(stockRules);
+    const privateSingle = customization?.delMsg ?? defaults?.delMsg;
+    const cooldown = legacyWishReincarnationMinutes(customization?.relifeCD, defaults?.relifeCD);
+    if (!tickets && !stock && !fallbackRecall && privateSingle === undefined && cooldown === undefined) {
+      return { active: false, deferred: false };
+    }
+    settings = inheritWishSettings(coins, fallbackRecall && decode(fallbackRecall), privateSingle, cooldown);
   } catch {
     return { active: false, deferred: true };
   }

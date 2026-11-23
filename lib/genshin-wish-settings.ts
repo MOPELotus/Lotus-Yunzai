@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
-import { parseWishSettings, type WishSettings } from "./genshin-wish-settings-model.ts";
+import { parseWishSettings, wishDefaultSettings, type WishSettings } from "./genshin-wish-settings-model.ts";
 import { GlobalConfigWriteError, readCanonicalLocalConfiguration, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 
 export const wishConfigName = "genshin-wish";
@@ -8,7 +8,7 @@ export const wishConfigMaxBytes = 512 * 1024;
 
 export async function readGenshinWishSettings(root: URL): Promise<WishSettings> {
   const local = await readCanonicalLocalConfiguration(root, wishConfigName, wishConfigMaxBytes);
-  if (["pink", "blue", "recallSeconds", "privateSingleRecallSeconds", "groups"].every(key => Object.hasOwn(local, key))) return parseWishSettings(local);
+  if (Object.keys(wishDefaultSettings).every(key => Object.hasOwn(local, key))) return parseWishSettings(local);
   const { readLegacyWishSettings } = await import("../plugins/genshin/wish-sim/settings.ts");
   return parseWishSettings(local, await readLegacyWishSettings());
 }
