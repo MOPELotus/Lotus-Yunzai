@@ -184,6 +184,8 @@ import { verifyMovedWebMount } from "./lib/update-web-mount.ts";
 import { createUpdateCommand, describeUpdateProgress, hasValidUpdateTarget, isUpdateCommand } from "./lib/update-command.ts";
 import { readUpdateHistory } from "./lib/update-history.ts";
 import { createUpdateLogCommand, isUpdateLogCommand } from "./lib/update-log-command.ts";
+import { createUpdateCheckCommand, isUpdateCheckCommand } from "./lib/update-check-command.ts";
+import { readUpdateAvailability } from "./lib/update-candidate-git.ts";
 import { scheduleUpdates } from "./lib/update-schedule.ts";
 import { readStorageConnection } from "./lib/valkey-config.ts";
 import type { GroupBannedWords } from "./plugins/group/banned-words.ts";
@@ -584,6 +586,11 @@ if (import.meta.main) {
   });
   const updateLogCommand = createUpdateLogCommand((requested) =>
     plugins ? readUpdateHistory(root, plugins.directories, requested) : Promise.resolve(undefined));
+  const updateCheckCommand = createUpdateCheckCommand(signal => readUpdateAvailability(fileURLToPath(root), signal));
+  const checkForUpdate = (event: MessageEvent) => {
+    const connection = event[delegationSession]?.signal;
+    return updateCheckCommand(event, connection ? nativeOperationSignal(connection) : nativeOperationSignal());
+  };
   const updateCommand = createUpdateCommand(async (event, requested, quiet, report, all, force) => {
     const target = sessionTarget(event);
     if (!target || !plugins) return false;
@@ -1833,13 +1840,14 @@ if (import.meta.main) {
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     const atlasCommand = atlasMaintenanceCommand.test(event.msg);
+    const updateCheck = isUpdateCheckCommand(event.msg);
     if (event.msg === "#TodayEatPro20x" && (event.isDelegated || !canManagePackages(event) ||
         (event.message_type !== "terminal" && (event.message_type !== "private" || event.sub_type !== "friend" ||
           event[delegationSession]?.signal.aborted !== false)))) return;
     if (event.isDelegated && (dispatchPower.paused || matchesMasterEnrollment(event.msg) ||
         (await import("./plugins/execute/index.ts")).isNestedExecution(event.msg) ||
         /^#(?:开机|关机|关机模式|重启|停机|停止|更新群名片)(?:\s|$)/u.test(event.msg) ||
-        atlasCommand || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
+        atlasCommand || updateCheck || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) ||
         zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
@@ -1878,6 +1886,10 @@ if (import.meta.main) {
     if (event.message_type === "private" && isMilkyOwnerSession(event)) {
       await privateAccess.refresh();
       if (privateAccess.disabled) {
+        if (updateCheck) {
+          if (allowNew && allowed(updateFeatureNames)) await checkForUpdate(event);
+          return;
+        }
         if (hasValidUpdateTarget(event.msg)) {
           if (allowNew && allowed(updateFeatureNames)) await updateCommand(event);
           return;
@@ -2185,6 +2197,10 @@ if (import.meta.main) {
     const sendMedia = command.isDelegated ? undefined : command[sendSessionMedia];
     const deliverMedia = sendMedia && ((file: MediaDelivery) => mediaDelivery.deliver(file, sendMedia));
     if (deliverMedia) Object.defineProperty(command, "deliverMedia", { value: deliverMedia });
+    if (updateCheck) {
+      if (allowed(updateFeatureNames)) await checkForUpdate(command);
+      return;
+    }
     if (isUpdateLogCommand(command.msg)) {
       if (allowed(updateFeatureNames)) await updateLogCommand(command);
       return;

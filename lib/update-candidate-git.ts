@@ -114,6 +114,58 @@ function releaseRef(directory: string, ref: string): () => Promise<void> {
   };
 }
 
+export interface UpdateAvailability {
+  readonly branch: string;
+  readonly current: string;
+  readonly dirty: boolean;
+  readonly upstream?: string;
+  readonly candidate?: string;
+  readonly ahead?: number;
+  readonly behind?: number;
+}
+
+export async function readUpdateAvailability(directory: string, signal: AbortSignal): Promise<UpdateAvailability | undefined> {
+  signal.throwIfAborted();
+  const git = createLocalGit();
+  if (!git) return;
+  const checkout = await realpath(directory);
+  if (checkout !== resolve(directory) || !await isGitCheckout(git, checkout)) return;
+
+  const [branchRef, current, dirty, upstream] = await Promise.all([
+    git(checkout, ["symbolic-ref", "--quiet", "HEAD"], true), gitHead(git, checkout),
+    isUpdateWorktreeDirty(git, checkout), readUpstream(git, checkout),
+  ]);
+  signal.throwIfAborted();
+  if (branchRef === undefined || current === undefined || dirty === undefined) return;
+  const branch = branchRef.trimEnd().replace(/^refs\/heads\//u, "") || "游离 HEAD";
+  const local = { branch, current, dirty };
+  if (!upstream) return local;
+  if (upstream.branch !== branchRef.trimEnd()) return;
+  const summary = { ...local, upstream: `${upstream.remote}/${upstream.merge.slice("refs/heads/".length)}` };
+  const temporary = `refs/lotus-yunzai/update-check/${crypto.randomUUID()}`;
+  const release = releaseRef(checkout, temporary);
+  try {
+    if (!await fetchUpstream(checkout, upstream, temporary, signal)) return summary;
+    const inspect = createLocalGit();
+    if (!inspect || !await isGitCheckout(inspect, checkout)) return;
+    const [revision, comparison, latest, binding, latestDirty] = await Promise.all([
+      inspect(checkout, ["rev-parse", "--verify", `${temporary}^{commit}`]),
+      inspect(checkout, ["rev-list", "--left-right", "--count", `${current}...${temporary}`]),
+      gitHead(inspect, checkout), updateBindingFingerprint(inspect, checkout), isUpdateWorktreeDirty(inspect, checkout),
+    ]);
+    signal.throwIfAborted();
+    if (latest !== current || latestDirty === undefined || binding !== upstreamFingerprint(upstream)) return;
+    const candidate = revision?.trim();
+    const counts = /^(\d+)\s+(\d+)$/u.exec(comparison?.trim() ?? "");
+    if (!candidate || !isGitRevision(candidate) || !counts) return summary;
+    const ahead = Number(counts[1]), behind = Number(counts[2]);
+    if (!Number.isSafeInteger(ahead) || !Number.isSafeInteger(behind)) return summary;
+    return { ...summary, candidate, ahead, behind, dirty: latestDirty };
+  } finally {
+    await release();
+  }
+}
+
 export async function fetchUpdateCandidate(directory: string, signal?: AbortSignal, force = false): Promise<UpdateCandidateResult> {
   signal?.throwIfAborted();
   const unavailable = { status: "unavailable" } as const;
