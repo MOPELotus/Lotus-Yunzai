@@ -239,6 +239,7 @@ export async function loadPlugins(
         report?(binding: TimedGroupMuteBinding, result: TimedGroupMuteResult): void;
       };
       autoRepeatSessionSignal(event: unknown): AbortSignal | undefined;
+      observeAutoRepeat?(group: number, run: (receivedAt?: number) => Promise<void>): void | Promise<void>;
       readAutoRepeatImage(url: unknown, signal?: AbortSignal): Promise<Uint8Array | undefined>;
       readonly profileLikeImage?: ProfileLikeImage;
       readonly noticeSettingsThemeDirectory?: string;

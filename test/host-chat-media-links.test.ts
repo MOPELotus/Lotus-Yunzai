@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp } from "node:fs/promises";
+import { cp, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
@@ -42,11 +42,22 @@ async function readImage(link: string) {
 }
 
 test("自动复读从原 OneBot 图片 file 链接和续期后的 Milky 资源取得原字节", async () => {
-  await withDualGatewayFixture("auto-repeat-image-fixture", "", async ({ onebot, milky, sendOneBot, sendMilky }) => {
-    for (const user_id of [61, 62]) sendOneBot("", {
-      message_type: "group", sub_type: "normal", group_id: 707, user_id,
-      message: [{ type: "image", data: { file: image, sub_type: user_id === 61 ? 0 : 1 } }],
+  await withDualGatewayFixture("auto-repeat-image-fixture", "", async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+    const group = { message_type: "group", sub_type: "normal", group_id: 707 };
+    const sendImage = (user_id: number, sub_type: number) => sendOneBot("", {
+      ...group, user_id, message: [{ type: "image", data: { file: image, sub_type } }],
     });
+    sendImage(61, 0);
+    const waiting = Bun.file(join(root, "repeat-lookup-started"));
+    const deadline = performance.now() + 2_000;
+    while (!await waiting.exists() && performance.now() < deadline) await Bun.sleep(10);
+    expect(await waiting.exists()).toBe(true);
+    sendImage(62, 1);
+    sendOneBot("#复读测试回声", { ...group, user_id: 65 });
+    const echo = await onebot.next("send_msg");
+    expect(echo.params).toMatchObject({ group_id: 707, message: "同群命令已先回执" });
+    echo.respond({ message_id: 320 });
+    await writeFile(join(root, "resume-repeat-lookup"), "");
     const one = await onebot.next("send_msg");
     expect(one.params).toMatchObject({ group_id: 707, message: [{ type: "image", data: { file: `base64://${sample}`, sub_type: 1 } }] });
     one.respond({ message_id: 321 });
@@ -64,9 +75,37 @@ test("自动复读从原 OneBot 图片 file 链接和续期后的 Milky 资源�
     mk.respond({ message_seq: 322 });
     expect(onebot.calls).toEqual([]);
     expect(milky.calls).toEqual([]);
-  }, 3_000, preload, root => cp(new URL("../plugins/group", import.meta.url), join(root, "plugins", "group"), {
-    recursive: true, filter: path => !path.endsWith("/.git"),
-  }));
+  }, 3_000, preload, async root => {
+    const directory = join(root, "plugins", "group");
+    await cp(new URL("../plugins/group", import.meta.url), directory, {
+      recursive: true, filter: path => !path.endsWith("/.git"),
+    });
+    // Stall only the first user's existing policy lookup to exercise actual host reordering.
+    await rename(join(directory, "index.ts"), join(directory, "fixture-index.ts"));
+    await writeFile(join(directory, "index.ts"), `
+      export { default } from "./fixture-index.ts";
+      import { createModule as create } from "./fixture-index.ts";
+      export function createModule(services) {
+        return create({ ...services, registerManagedBlacklist(policy) {
+          return services.registerManagedBlacklist({ ...policy, async blocked(userId) {
+            if (userId === 61) {
+              await Bun.write("repeat-lookup-started", "");
+              const release = Bun.file("resume-repeat-lookup");
+              const until = performance.now() + 5_000;
+              while (!await release.exists() && performance.now() < until) await Bun.sleep(10);
+            }
+            return policy.blocked(userId);
+          } });
+        } });
+      }
+    `);
+    await writeFile(join(root, "plugins", "repeat-echo-fixture.js"), `
+      export default class extends plugin {
+        constructor() { super({ event: "message.group", rule: [{ reg: "^#复读测试回声$", fnc: "replyEcho" }] }); }
+        replyEcho(e) { return e.reply("同群命令已先回执"); }
+      }
+    `);
+  });
 }, 10_000);
 
 test("取直链以当前或同会话图片和附件生成公开 HTTP 临时字节副本", async () => {

@@ -108,6 +108,7 @@ import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { startImagePreviews } from "./lib/image-previews.ts";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
+import { createGroupRepeatOrder } from "./lib/group-repeat-order.ts";
 import { readGroupInvitations } from "./lib/group-invitations.ts";
 import { createKeywords } from "./lib/keywords.ts";
 import { createKeywordStore } from "./lib/keyword-store.ts";
@@ -315,6 +316,7 @@ if (import.meta.main) {
   const pendingCounts = new Set<Promise<void>>();
   const shutdown = Promise.withResolvers<void>();
   const lifecycle = new AbortController();
+  const groupRepeatOrder = createGroupRepeatOrder(lifecycle.signal);
   const handoffSession = new AbortController();
   const stopWatchingHandoff = handoff.onDisconnect(() => handoffSession.abort());
   lifecycle.signal.addEventListener("abort", stopWatchingHandoff, { once: true });
@@ -1115,7 +1117,9 @@ if (import.meta.main) {
     if (event.post_type !== "message" || event.message_type !== "terminal") {
       recordCount("receive", event, event.post_type === "message" ? event.message : undefined);
     }
-    const handling = routeEvent(event);
+    const group = event.post_type === "message" && event.message_type === "group" && !event.isDelegated &&
+      event[delegationSession]?.signal.aborted === false ? event.group_id : undefined;
+    const handling = groupRepeatOrder.dispatch(group, () => routeEvent(event));
     pending.add(handling);
     try {
       await handling;
@@ -3767,6 +3771,12 @@ if (import.meta.main) {
           if (event.message_type !== "group" || event.isDelegated) return;
           const signal = event[delegationSession]?.signal;
           if (signal?.aborted === false) return signal;
+        },
+        observeAutoRepeat(group, observe) {
+          const handling = groupRepeatOrder.observe(group, observe);
+          if (!handling) return observe();
+          pending.add(handling);
+          void handling.catch(() => console.warn("[group] 自动复读处理失败。")).finally(() => pending.delete(handling));
         },
         readAutoRepeatImage: readQqMessageMedia,
         async profileLikeImage(userId, outcome, signal) {
