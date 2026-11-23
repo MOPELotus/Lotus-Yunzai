@@ -16,6 +16,7 @@ import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.
 import { donationCommand } from "./lib/donation-command.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
 import { weatherCommands } from "./lib/weather-command.ts";
+import { legacyCharacterAliasCommands } from "./lib/legacy-character-alias-command.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
@@ -399,6 +400,7 @@ if (import.meta.main) {
   let otherPolicies: Awaited<ReturnType<typeof readRequestOtherPolicies>>;
   const imageOcr = createImageOcr();
   const groupAvatar = createGroupAvatarCommand();
+  const legacyCharacterAliases = legacyCharacterAliasCommands(lockFile, lifecycle.signal, fileURLToPath(root));
   const ownerAccount = createOwnerAccountCommand();
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
@@ -2152,7 +2154,14 @@ if (import.meta.main) {
         return;
       }
     }
-    if (!allowNew) return;
+    if (!allowNew) {
+      if (legacyCharacterAliases.acceptsContinuation(event)) {
+        const reply = await commands.dispatchFallback(event, names => names[0] === legacyCharacterAliases.name && allowed(names),
+          user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
+        if (reply !== undefined) await sendCommandReply(event, reply);
+      }
+      return;
+    }
     const groupRules = allowed(groupBannedWordsNames), screenedWords = allowed(groupScreenedWordsNames);
     if ((groupRules || screenedWords) && await handleGroupBannedWords(incoming, event.msg, alias, groupRules, screenedWords)) return;
 
@@ -3140,6 +3149,7 @@ if (import.meta.main) {
         ? fileURLToPath(storedLikeAssets) : fileURLToPath(new URL("plugins/yenai-plugin/resources/memes/", root)));
     const groupTransport = groups.transport();
     const noticeActive = () => handoff.accepting && !stopping && !lifecycle.signal.aborted;
+    commands.registerModule(legacyCharacterAliases);
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groupTransport, signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       allowOfficialVideoGroup: (botId: number, groupId: number) => noticeActive() &&

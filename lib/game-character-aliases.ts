@@ -3,34 +3,40 @@ import { mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
+import { parse } from "yaml";
 import { readMigrationSourceFile } from "./migration-files.ts";
 
-type Game = "gs" | "sr";
-type Preset = Map<string, Set<string>>;
+export type AliasGame = "gs" | "sr";
+type Game = AliasGame;
+type Preset = { matches: Map<string, Set<string>>; displays: Map<string, string[]> };
 const games = ["gs", "sr"] as const;
 const gameLabels = { gs: "原神", sr: "星铁" };
 const rootDirectory = fileURLToPath(new URL("../", import.meta.url)).replace(/\/$/u, "");
 const maxBytes = 64 * 1024;
+const legacyDone = "# 已导入旧角色昵称";
+const legacyPrefix = "# 旧角色昵称 ";
 
 export function characterAliasKey(value: string) {
   return value.normalize("NFKC").toLowerCase().replace(/[\s·・•]/gu, "");
 }
 
-function validAlias(value: string) {
+export function validCharacterAlias(value: string) {
   const normalized = value.normalize("NFKC");
   return /^[\p{L}\p{M}\p{N}·・•_.&★-]{1,24}$/u.test(normalized) && /\p{L}/u.test(normalized);
 }
 
 function parseRow(line: string) {
-  const m = /^\s*([^:：\p{Cc}]+?)\s*[:：](.*)$/u.exec(line);
-  if (!m || /^\s*[#;]/u.test(line)) return;
+  const legacy = line.startsWith(legacyPrefix);
+  const input = legacy ? line.slice(legacyPrefix.length) : line;
+  const m = /^\s*([^:：\p{Cc}]+?)\s*[:：](.*)$/u.exec(input);
+  if (!m || /^\s*[#;]/u.test(input)) return;
   const role = m[1]!.trim();
   const labels = m[2]!.split(/[,，]/u).map(value => value.trim()).filter(Boolean);
-  if (role && labels.length) return { role, labels };
+  if (role && labels.length) return { role, labels, legacy };
 }
 
 function canonicalRole(preset: Preset, name: string) {
-  const alternatives = preset.get(characterAliasKey(name));
+  const alternatives = preset.matches.get(characterAliasKey(name));
   return [...(alternatives ?? [])].find(role => characterAliasKey(role) === characterAliasKey(name)) ??
     (alternatives?.size === 1 ? [...alternatives][0]! : name);
 }
@@ -60,19 +66,56 @@ function files(root: string, game: Game) {
   };
 }
 
-async function snapshot(root: string, game: Game) {
-  const { target, sources } = files(root, game);
-  for (const file of [target, ...sources]) {
+async function firstAliasFile(root: string, candidates: string[]) {
+  for (const file of candidates) {
     const stored = await readMigrationSourceFile(root, file, maxBytes);
     if (!stored) continue;
     return { file, stored, content: new TextDecoder("utf-8", { fatal: true }).decode(stored.bytes) };
   }
 }
 
+function legacyConfigs(root: string, filename: string) {
+  return ["plugins/genshin/config", "backup/plugins/genshin/config"].map(directory => join(root, directory, filename));
+}
+
+export async function readLegacyCharacterAliasMode(root = rootDirectory) {
+  const source = await firstAliasFile(root, legacyConfigs(root, "mys.set.yaml"));
+  const config = source && parse(source.content, { maxAliasCount: 0 });
+  const mode = config?.abbrSetAuth as unknown;
+  return mode === 0 || mode === "0" ? 0 : mode === 1 || mode === "1" ? 1 : 2;
+}
+
+function snapshotLines(content: string) {
+  const lines = content.split(/\r?\n/u);
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+async function snapshot(root: string, game: Game) {
+  const { target, sources } = files(root, game);
+  const base = await firstAliasFile(root, [target, ...sources]);
+  const content = base?.content ?? "";
+  if (base?.file === target && snapshotLines(content).includes(legacyDone)) return { base, content };
+  const legacy = await firstAliasFile(root, legacyConfigs(root, "role.name.yaml")).catch(() => undefined);
+  if (!legacy) return { base, content };
+  let raw: unknown;
+  try { raw = parse(legacy.content, { maxAliasCount: 0 }); }
+  catch { return { base, content }; }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { base, content };
+  const preset = await readPreset(game);
+  const imported = Object.entries(raw).flatMap(([name, entries]) => {
+    const role = canonicalRole(preset, name);
+    if (!preset.displays.has(role) || !Array.isArray(entries)) return [];
+    const labels = [...new Set(entries.filter((label): label is string => typeof label === "string" && validCharacterAlias(label)))];
+    return labels.length ? [`${legacyPrefix}${role}：${labels.join("，")}`] : [];
+  });
+  return { base, legacy, content: [...snapshotLines(content), legacyDone, ...imported, ""].join("\n") };
+}
+
 export async function readGameCharacterAliases(game: Game, root = rootDirectory) {
   try {
     const source = await snapshot(root, game);
-    return source ? parseGameCharacterAliases(await readPreset(game), source.content) : new Map<string, string>();
+    return source.content ? parseGameCharacterAliases(await readPreset(game), source.content) : new Map<string, string>();
   } catch {
     return new Map<string, string>();
   }
@@ -93,16 +136,37 @@ export function matchGameCharacterAliasCommand(message: string) {
 }
 
 function buildPreset(names: readonly (readonly [string, string])[]) {
-  const index: Preset = new Map();
+  const matches = new Map<string, Set<string>>();
+  const displays = new Map<string, string[]>();
   for (const [role, aliases] of names) {
     for (const term of [role, ...aliases.split(",")].filter(Boolean)) {
       const key = characterAliasKey(term);
-      const targets = index.get(key) ?? new Set<string>();
+      const targets = matches.get(key) ?? new Set<string>();
       targets.add(role);
-      index.set(key, targets);
+      matches.set(key, targets);
+      const display = displays.get(role) ?? [];
+      if (!display.includes(term)) display.push(term);
+      displays.set(role, display);
     }
   }
-  return index;
+  return { matches, displays };
+}
+
+async function readLegacyPreset(root: string, game: Game, current: Preset) {
+  const filename = game === "gs" ? "name.yaml" : "sr_name.yaml";
+  const candidates = ["plugins/genshin/defSet/role", "backup/plugins/genshin/defSet/role"]
+    .map(directory => join(root, directory, filename));
+  const source = await firstAliasFile(root, candidates);
+  const raw: unknown = source && parse(source.content, { maxAliasCount: 0 });
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  const names = Object.values(raw).flatMap(entries => {
+    if (!Array.isArray(entries) || typeof entries[0] !== "string") return [];
+    const role = canonicalRole(current, entries[0]);
+    if (!current.displays.has(role)) return [];
+    const labels = entries.filter((value): value is string => typeof value === "string" && /^[^,\p{Cc}]{1,48}$/u.test(value));
+    return [[role, labels.join(",")] as const];
+  });
+  return buildPreset(names);
 }
 
 const presetTables: Partial<Record<Game, Promise<Preset>>> = {};
@@ -114,7 +178,7 @@ function readPreset(game: Game): Promise<Preset> {
       import("../plugins/starrail/panel-theme/character-alias.ts"), import("../plugins/starrail/challenge-character-names.json"),
     ]).then(([{ alias }, { default: characters }]) => buildPreset([
       ...Object.entries(alias), ...Object.values(characters).map(name => [name, ""] as const),
-    ]))).catch(() => new Map());
+    ]))).catch(() => ({ matches: new Map(), displays: new Map() }));
 }
 type AliasContext = {
   readonly user_id?: number;
@@ -123,71 +187,125 @@ type AliasContext = {
 };
 type AliasCommand = NonNullable<ReturnType<typeof matchGameCharacterAliasCommand>>;
 
-export function createGameCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, signal: AbortSignal, root = rootDirectory) {
+type LegacyWrite =
+  | { game: Game; type: "legacy-set"; role: string; aliases: readonly string[] }
+  | { game: Game; type: "legacy-delete"; alias: string };
+type LegacyAccess = { permitted(): Promise<boolean>; active(): boolean };
+
+function sameSource(left?: Awaited<ReturnType<typeof firstAliasFile>>, right?: Awaited<ReturnType<typeof firstAliasFile>>) {
+  return left?.file === right?.file && left?.stored.dev === right?.stored.dev &&
+    left?.stored.ino === right?.stored.ino && left?.content === right?.content;
+}
+
+export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock, signal: AbortSignal, root = rootDirectory) {
   let atlas: Promise<typeof import("../plugins/atlas/catalog.ts") | undefined> | undefined;
-  return async (command: AliasCommand, context: AliasContext) => {
+  async function lookup(chosen: readonly Game[], withCatalog: boolean, withLegacy = false) {
+    const entries = new Map(await Promise.all(chosen.map(async game => [game, await snapshot(root, game)] as const)));
+    const presets = new Map(await Promise.all(chosen.map(async game => [game, await readPreset(game)] as const)));
+    const legacyPresets = new Map(await Promise.all(withLegacy ? chosen.map(async game =>
+      [game, await readLegacyPreset(root, game, presets.get(game)!).catch(() => undefined)] as const) : []));
+    const lookups = new Map([...entries].map(([game, source]) => [game, parseGameCharacterAliases(presets.get(game)!, source.content)]));
+    const atlasModule = withCatalog ? await (atlas ??= import("../plugins/atlas/catalog.ts").catch(() => undefined)) : undefined;
+    const catalog = await atlasModule?.createAtlasRuntimeCatalog(join(root, "data", "atlas"), Bun.env.LOTUS_ATLAS_DATA_DIR)
+      .read().catch(() => undefined);
+    function names(game: Game, value: string) {
+      const key = characterAliasKey(value);
+      const table = presets.get(game)!;
+      const preset = table.matches.get(key);
+      const original = legacyPresets.get(game)?.matches.get(key);
+      const current = lookups.get(game)?.get(key);
+      const indexed = catalog ? atlasModule!.findTraditionalEntries(catalog, value, game === "gs" ? "gi" : "hsr", "character")
+        .filter(({ score }) => score >= 2.5).map(({ entry }) => entry.name) : [];
+      const exact = [...(preset ?? []), ...indexed].find(role => characterAliasKey(role) === key);
+      return exact ? new Set([exact]) : new Set([...(preset ?? original ?? []), ...indexed, ...(current ? [current] : [])]
+        .map(role => canonicalRole(table, role)));
+    }
+    return { entries, presets, legacyPresets, lookups, names };
+  }
+
+  async function find(game: Game, name: string) {
+    const { names, presets, legacyPresets, entries } = await lookup([game], true, true);
+    const roles = [...names(game, name)];
+    if (roles.length !== 1) return;
+    const role = roles[0]!;
+    const stored = snapshotLines(entries.get(game)!.content).flatMap(line => {
+      const row = parseRow(line);
+      return row && canonicalRole(presets.get(game)!, row.role) === role ? row.labels : [];
+    });
+    return { role, aliases: [...new Set([...(presets.get(game)!.displays.get(role) ?? [role]),
+      ...(legacyPresets.get(game)?.displays.get(role) ?? []), ...stored])] };
+  }
+
+  async function run(command: AliasCommand | LegacyWrite, context: AliasContext, legacyAccess?: LegacyAccess) {
     if (signal.aborted || context.isDelegated) return;
     if (command.type === "help") {
       return "角色别名支持 #别名原神设置 角色名 别名、*别名设置 角色名 别名、#别名删除 别名和 #别名列表。\nhttps://www.lotusshared.cn/yunzai/";
     }
     const chosen = command.game ? [command.game] : games;
-    const owners = () => !signal.aborted && !context.isDelegated &&
+    const owner = () => !signal.aborted && !context.isDelegated &&
       typeof context.user_id === "number" && context.isBotMaster?.(context.user_id) === true;
-    if (command.type !== "list" && !owners()) return "仅限本机器人主人修改角色别名。";
-    if (command.type !== "list" && !validAlias(command.alias)) return "别名须为 1 到 24 个文字、数字或常用连接符，且不能是纯数字。";
+    const legacy = command.type === "legacy-set" || command.type === "legacy-delete";
+    const permitted = () => legacy ? legacyAccess?.permitted() : owner();
+    const stillActive = () => legacy ? legacyAccess?.active() : owner();
+    const denied = legacy ? "暂无权限修改角色别名。" : "仅限本机器人主人修改角色别名。";
     try {
-      const records = async () => new Map(await Promise.all(chosen.map(async game => [game, await snapshot(root, game)] as const)));
       if (command.type === "list") {
-        const entries = await records();
-        return [...entries].map(([game, source]) => {
-          const lines = (source?.content ?? "").split(/\r?\n/u).filter(line => parseRow(line));
+        const entries = await Promise.all(chosen.map(async game => [game, await snapshot(root, game)] as const));
+        return entries.map(([game, source]) => {
+          const lines = snapshotLines(source.content).flatMap(line => {
+            const row = parseRow(line);
+            return row ? [`${row.role}：${row.labels.join("，")}`] : [];
+          });
           return lines.length ? `【${gameLabels[game]}自定义别名】\n${lines.join("\n").slice(0, 3_000)}` : `暂无${gameLabels[game]}自定义别名。`;
         }).join("\n");
+      }
+      if (!await permitted() || signal.aborted) return denied;
+      const setting = command.type === "set" || command.type === "legacy-set";
+      const requested = command.type === "legacy-set" ? command.aliases : [command.alias];
+      if (!requested.length || requested.some(alias => !validCharacterAlias(alias))) {
+        return "别名须为 1 到 24 个文字、数字或常用连接符，且不能是纯数字。";
       }
       const directory = dirname(files(root, "gs").target);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       if (await realpath(directory) !== directory) return "角色别名配置目录不可用。";
       const lock = await lockFile(join(directory, ".aliases.sqlite"), "角色别名");
       try {
-        const entries = await records();
-        const atlasModule = command.type === "set" ? await (atlas ??= import("../plugins/atlas/catalog.ts").catch(() => undefined)) : undefined;
-        const catalog = await atlasModule?.createAtlasRuntimeCatalog(join(root, "data", "atlas"), Bun.env.LOTUS_ATLAS_DATA_DIR)
-          .read().catch(() => undefined);
-        const presets = new Map(await Promise.all(chosen.map(async game => [game, await readPreset(game)] as const)));
-        const lookups = new Map([...entries].map(([game, source]) => [game, parseGameCharacterAliases(presets.get(game)!, source?.content ?? "")]));
-        function names(game: Game, value: string) {
-          const key = characterAliasKey(value);
-          const table = presets.get(game)!;
-          const preset = table.get(key);
-          const current = lookups.get(game)?.get(key);
-          const indexed = catalog ? atlasModule!.findTraditionalEntries(catalog, value, game === "gs" ? "gi" : "hsr", "character")
-            .filter(({ score }) => score >= 2.5).map(({ entry }) => entry.name) : [];
-          const exact = [...(preset ?? []), ...indexed].find(role => characterAliasKey(role) === key);
-          return exact ? new Set([exact]) : new Set([...(preset ?? []), ...indexed, ...(current ? [current] : [])]
-            .map(role => canonicalRole(table, role)));
-        }
-        const key = characterAliasKey(command.alias);
-        const candidates = chosen.flatMap(game => command.type === "set"
+        const { entries, presets, legacyPresets, lookups, names } = await lookup(chosen, setting, legacy);
+        const key = characterAliasKey(requested[0]!);
+        const candidates = chosen.flatMap(game => setting
           ? [...names(game, command.role)].map(role => ({ game, role }))
           : lookups.get(game)?.has(key) ? [{ game, role: lookups.get(game)!.get(key)! }] : []);
+        if (!setting && legacy && chosen.some(game =>
+          presets.get(game)!.matches.has(key) || legacyPresets.get(game)?.matches.has(key))) return "默认别名设置，不能删除。";
         if (candidates.length !== 1) return candidates.length
-          ? "名称有多个匹配，请指定游戏或使用角色标准名。" : command.type === "set" ? "未找到该角色。" : "未找到可删除的自定义别名。";
+          ? "名称有多个匹配，请指定游戏或使用角色标准名。" : setting ? "未找到该角色。" : "未找到可删除的自定义别名。";
         const { game, role } = candidates[0]!;
-        const source = entries.get(game);
+        const source = entries.get(game)!;
         const target = files(root, game).target;
-        let lines = (source?.content ?? "").split(/\r?\n/u);
-        if (lines.at(-1) === "") lines.pop();
-        if (command.type === "set") {
-          if (names(game, command.alias).size || lines.some(line =>
-            parseRow(line)?.labels.some(label => characterAliasKey(label) === key))) return `别名 ${command.alias} 已存在。`;
-          lines.push(`${role}：${command.alias}`);
+        let lines = snapshotLines(source.content);
+        const added: string[] = [];
+        if (setting) {
+          const occupied = new Set(lines.flatMap(line => parseRow(line)?.labels.map(characterAliasKey) ?? []));
+          for (const alias of requested) {
+            const normalized = characterAliasKey(alias);
+            if (occupied.has(normalized) || names(game, alias).size) continue;
+            occupied.add(normalized);
+            added.push(alias);
+          }
+          if (!added.length) return legacy ? "设置失败：别名错误或已存在。" : `别名 ${requested[0]} 已存在。`;
+          lines.push(`${legacy ? legacyPrefix : ""}${role}：${added.join("，")}`);
         } else {
-          lines = lines.flatMap(line => {
-            const row = parseRow(line);
+          if (presets.get(game)!.matches.has(key)) return "默认别名设置，不能删除。";
+          const rows = lines.map(parseRow);
+          if (legacy && !owner() && rows.some(row => row && !row.legacy && row.labels.some(label => characterAliasKey(label) === key))) {
+            return "该别名仅限本机器人主人删除。";
+          }
+          lines = lines.flatMap((line, index) => {
+            const row = rows[index];
             if (!row || canonicalRole(presets.get(game)!, row.role) !== role) return [line];
             const remaining = row.labels.filter(label => characterAliasKey(label) !== key);
             if (remaining.length === row.labels.length) return [line];
-            return remaining.length ? [`${row.role}：${remaining.join("，")}`] : [];
+            return remaining.length ? [`${row.legacy ? legacyPrefix : ""}${row.role}：${remaining.join("，")}`] : [];
           });
         }
         const content = lines.length ? lines.join("\n") + "\n" : "";
@@ -202,21 +320,28 @@ export function createGameCharacterAliasCommands(lockFile: AcquireRoleArchiveLoc
           } finally {
             await file.close();
           }
+          if (!await permitted() || signal.aborted) return denied;
           const latest = await snapshot(root, game);
-          if (!owners()) return "仅限本机器人主人修改角色别名。";
-          if (latest?.file !== source?.file || latest?.stored.dev !== source?.stored.dev ||
-              latest?.stored.ino !== source?.stored.ino || latest?.content !== source?.content) return "别名已变更，请重新操作。";
-          if (latest?.file === target) renameSync(temporary, target);
+          if (signal.aborted || !stillActive()) return denied;
+          if (!sameSource(latest.base, source.base) || !sameSource(latest.legacy, source.legacy)) return "别名已变更，请重新操作。";
+          if (latest.base?.file === target) renameSync(temporary, target);
           else linkSync(temporary, target);
         } finally {
           await rm(staging, { recursive: true, force: true });
         }
-        return command.type === "set" ? `${role} 的别名 ${command.alias} 已添加。` : `别名 ${command.alias} 已删除。`;
+        if (!setting) return legacy ? `删除${role}别名成功：${requested[0]}` : `别名 ${requested[0]} 已删除。`;
+        return legacy ? `设置别名成功：${added.join("、")}` : `${role} 的别名 ${added[0]} 已添加。`;
       } finally {
         lock.close();
       }
     } catch {
       return signal.aborted ? undefined : "角色别名暂时无法读取或更新。";
     }
-  };
+  }
+
+  return { run, find };
+}
+
+export function createGameCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, signal: AbortSignal, root = rootDirectory) {
+  return createGameCharacterAliasManager(lockFile, signal, root).run;
 }
