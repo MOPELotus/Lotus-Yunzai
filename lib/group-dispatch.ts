@@ -302,8 +302,8 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
         duplicate = `${event.adapter ?? "onebot"}:group-vote:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       } else if (member?.readImageMd5 || member?.mixedImageParts) {
         duplicate = `${event.adapter ?? "onebot"}:image:${bot}:${group}:${user ?? ""}:${event.message_id}`;
-      } else if (event.adapter === "milky" && event.file) {
-        duplicate = `milky:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
+      } else if ((event.adapter === "milky" && event.file) || (event.boundAccount === true && event.attachment)) {
+        duplicate = `${event.adapter ?? "onebot"}:file:${bot}:${group}:${user ?? ""}:${event.message_id}`;
       }
     }
     return admitUnique(duplicate, now);
