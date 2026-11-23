@@ -14,6 +14,7 @@ import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-remin
 import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation } from "./lib/account-commands.ts";
 import { donationCommands } from "./lib/donation-command.ts";
+import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
 import { weatherCommands } from "./lib/weather-command.ts";
 import { legacyCharacterAliasCommands } from "./lib/legacy-character-alias-command.ts";
@@ -301,7 +302,8 @@ if (import.meta.main) {
     }
   }
 
-  function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>, runAtStartup = false) {
+  function registerModuleTask(name: string, cron: string, run: () => Promise<unknown>,
+    runAtStartup: boolean | (() => Promise<unknown>) = false) {
     const owner = new HandlerScope();
     let startup: Promise<void> | undefined;
     const start = () => {
@@ -313,7 +315,9 @@ if (import.meta.main) {
       }
       if (runAtStartup) {
         startup = Promise.resolve().then(async () => {
-          if (!lifecycle.signal.aborted && handoff.accepting) await run();
+          if (!lifecycle.signal.aborted && handoff.accepting) {
+            await (typeof runAtStartup === "function" ? runAtStartup : run)();
+          }
         }).catch(() => console.warn(`${name} 启动检查失败。`));
         const finished = startup;
         pending.add(finished);
@@ -3599,6 +3603,23 @@ if (import.meta.main) {
       commands.registerModule(generalToolCommands(lifecycle.signal), "[tools] 群聊工具");
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
+      }
+      if (!probingUpdate && commands.hasModule("@lotus-yunzai/atlas")) {
+        const gallery = createCharacterGallerySchedule({
+          readConfig: () => readLotusGlobalConfig(root),
+          async synchronize(signal) {
+            const { syncCharacterGallery } = await import("./lib/character-gallery-sync.ts");
+            return syncCharacterGallery({ root: fileURLToPath(new URL("data/character-gallery-synced/", root)), signal });
+          },
+          report: ({ downloaded, reused, removed }) => {
+            console.info(`[atlas] 角色图库已同步，新增或变更 ${downloaded} 张，复用 ${reused} 张，撤下 ${removed} 张。`);
+          },
+          reportFailure: error => {
+            console.warn("[atlas] 角色图库同步失败，保留上一版。", error instanceof Error ? error.message : "");
+          },
+        });
+        registerModuleTask("[atlas] 角色图库", characterGalleryCron,
+          () => gallery.run(nativeOperationSignal()), () => gallery.startup(nativeOperationSignal()));
       }
       const fallback = createServerRedirect(network.redirect);
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
