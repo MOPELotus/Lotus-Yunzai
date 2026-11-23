@@ -25,7 +25,7 @@ import { confirmJoinReview } from "../group-join-review.ts";
 import { bindMentionLike, mentionedProfileId } from "./mention-like.ts";
 import { isRequestFlag, OneBotCalls, OneBotNotSentError, type OneBotAction, type Send } from "./onebot-calls.ts";
 import type { OneBotGroups } from "./onebot-groups.ts";
-import { OneBotMemberDisplay } from "./onebot-member-display.ts";
+import { legacyGroupMemberRoster, OneBotMemberDisplay } from "./onebot-member-display.ts";
 import { decodeOneBotMessage, encodeOneBotForward, encodeOneBotMusicCard, encodeOneBotReply } from "./onebot-message.ts";
 import { OneBotMutes } from "./onebot-mutes.ts";
 import { bindOwnGroupCard, ownGroupCardSession, type OwnGroupCardAccount } from "./own-group-card.ts";
@@ -795,13 +795,14 @@ async function dispatchMessage(
         { followup, allowFollowup: id => isMaster(selfId, id) }),
     });
   }
-  const listCheckinGroupMembers = boundAccount && display && "group_id" in target ? async () => {
+  const listCurrentRoster = boundAccount && display && "group_id" in target ? async () => {
     const closed = () => display.closed || attachmentSession?.signal.aborted;
     if (closed()) return;
     const members = await calls.listMemberDisplay(send, target.group_id, true).catch(() => undefined);
-    if (closed()) return;
-    return members?.map(({ id, card, nickname }) => ({ id, name: card || nickname }));
+    if (!closed()) return members;
   } : undefined;
+  const listCheckinGroupMembers = listCurrentRoster && (async () =>
+    (await listCurrentRoster())?.map(({ id, card, nickname }) => ({ id, name: card || nickname })));
   const quotedId = oneBotMessageId(incoming.reply_id);
   let quoted: Promise<QuotedMessage | undefined> | undefined;
   const lookupReply = quotedId !== undefined && selfId !== undefined && selfId === connectedBotId &&
@@ -1100,6 +1101,7 @@ async function dispatchMessage(
     }) : undefined,
     listCheckinGroupMembers,
     listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
+    [legacyGroupMemberRoster]: likeSession && event.sub_type === "normal" ? listCurrentRoster : undefined,
     [groupExportSession]: boundAccount && attachmentSession && display?.closed === false && !noticeAttachment &&
       (messageType === "group" ? event.sub_type !== "anonymous" : event.sub_type === "friend") ? (groupId, active) => {
       const signal = AbortSignal.any([active, attachmentSession.signal]);

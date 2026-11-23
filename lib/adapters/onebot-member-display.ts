@@ -1,3 +1,5 @@
+export const legacyGroupMemberRoster = Symbol("legacyGroupMemberRoster");
+
 export interface MemberDisplay {
   readonly card?: string;
   readonly nickname?: string;

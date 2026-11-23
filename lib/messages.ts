@@ -10,6 +10,7 @@ import { groupAvatarSession, type GroupAvatarSession } from "./adapters/group-av
 import { ownerAccountSession, type OwnerAccountSession } from "./adapters/owner-account.ts";
 import { qzoneSession, type QzoneSession } from "./adapters/qzone.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
+import { legacyGroupMemberRoster, type MemberRosterEntry } from "./adapters/onebot-member-display.ts";
 import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
 import type { PendingGroupInvitationDecision, PendingGroupInvitationList, QuotedGroupInvitationDecision } from "./group-invitations.ts";
@@ -122,6 +123,7 @@ export interface MessageEvent {
   readonly [ownerAccountSession]?: OwnerAccountSession;
   readonly [qzoneSession]?: QzoneSession;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
+  readonly [legacyGroupMemberRoster]?: () => Promise<readonly MemberRosterEntry[] | undefined>;
   readonly verifyOwnGroupMembership?: (groupId: number, signal: AbortSignal) => Promise<boolean>;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
   readonly forward?: (nodes: readonly MessageReply[], senderName?: string, options?: Pick<ReplyOptions, "recallMsg">) => Promise<boolean>;

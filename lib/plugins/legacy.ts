@@ -3,6 +3,7 @@ import { addAbortListener } from "node:events";
 import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
 import { isMilkyOwnerSession } from "../command-permissions.ts";
+import { legacyGroupMemberRoster } from "../adapters/onebot-member-display.ts";
 import { sendCommandReply, type CommandForward } from "../commands.ts";
 import common, { isLegacyForward } from "../common/common.js";
 import { segment, type BotEvent, type MessageEvent, type MessageReply, type ReplyOptions } from "../messages.ts";
@@ -38,7 +39,17 @@ function legacyMessage(event: MessageEvent, legacyMessages: WeakMap<MessageEvent
     if (!message.nodes.length) return false;
     return sendCommandReply({ reply, forward: event.forward }, message).then(() => true);
   };
+  const readRoster = event[legacyGroupMemberRoster];
+  const group = event.message_type === "group" && readRoster ? Object.freeze({
+    group_id: event.group_id,
+    async getMemberMap() {
+      const roster = await readRoster();
+      if (roster === undefined) throw new Error("当前群成员名单不可用。");
+      return new Map(roster.map(({ id, card, nickname }) => [id, { user_id: id, card: card ?? "", nickname: nickname ?? "" }]));
+    },
+  }) : undefined;
   const access = {
+    ...(group && { group: { value: group, enumerable: true, configurable: true } }),
     reply: { value: compatibleReply, enumerable: true, configurable: true, writable: true },
     runtime: { value: Object.freeze({ ...legacyRuntime,
       render: legacyTemplateRender({ adapter: event.adapter, reply: compatibleReply }, resolveTemplates) }),
