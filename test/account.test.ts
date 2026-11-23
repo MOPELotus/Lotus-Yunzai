@@ -432,6 +432,43 @@ schedule: { mode: fixed }
   }
 });
 
+test("月谕圣牌只查询当前档案剧诗，续期一次并校验区服和角色", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-genshin-tarot-account-"));
+  try {
+    const uid = "123456789";
+    await writeFile(join(root, "42.yaml"), Bun.YAML.stringify({
+      account: { stuid: "71", stoken: "fixture-login", cookie: "ltoken=old;ltuid=71",
+        game_roles: { gs: [{ uid, region: "cn_gf01" }] } },
+      device: { id: "fixture-device" },
+    }));
+    const profiles = createProfileStore(root);
+    const source = await profiles.requestContext("42", 1, "gs");
+    const collection = { list: [{ name: "愚人", is_unlock: true, unlock_num: 2 }] };
+    let reads = 0;
+    let exchanges = 0;
+    const client = createHoyoClient(async (url, init) => {
+      reads++;
+      expect(url.pathname).toEndWith("/role_combat");
+      expect(url.searchParams.get("role_id")).toBe(uid);
+      expect(url.searchParams.get("server")).toBe("cn_gf01");
+      expect(url.searchParams.get("need_detail")).toBe("true");
+      return new Headers(init.headers).get("cookie")?.includes("ltoken=old")
+        ? Response.json({ retcode: -100 })
+        : Response.json({ retcode: 0, data: { uid, tarot_card_state: collection } });
+    }, { profiles, async exchange() {
+      exchanges++;
+      return { cookie: "ltoken=new;ltuid=71", ltoken: "new" };
+    } });
+    expect(await client.fetchGenshinTarotCollection(source)).toMatchObject({ collection, refreshedCookie: true });
+    expect([reads, exchanges]).toEqual([2, 1]);
+    const current = await profiles.requestContext("42", 1, "gs");
+    const mismatch = createHoyoClient(async () => Response.json({ retcode: 0, data: { uid: "987654321" } }));
+    await expect(mismatch.fetchGenshinTarotCollection(current)).rejects.toMatchObject({ code: "response" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("按旧 v1 和 Passport App v2 路径换票，核验账号后重试原业务", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-yunzai-exchange-"));
   try {

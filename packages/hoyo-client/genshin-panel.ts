@@ -114,6 +114,13 @@ export async function readGenshinTalents(source: ProfileRequestContext, transpor
 export type GenshinChallengeOptions = GenshinPanelOptions &
   ({ readonly mode: "abyss"; readonly scheduleType: 1 | 2 } | { readonly mode: "theater" });
 
+export async function readGenshinTarotCollection(source: ProfileRequestContext, transport: HoyoTransport,
+  { signal }: GenshinPanelOptions, verifyProfile?: () => Promise<void>) {
+  const { data, region } = await readCnGameRecord(source, transport, { kind: "genshin-theater", signal }, verifyProfile);
+  verifyRole(data, source.role.uid, region, "原神月谕圣牌");
+  return { collection: data.tarot_card_state };
+}
+
 export function createGenshinChallengeReader() {
   // A retry for a refreshed Cookie can reuse the verified index of the same owned role.
   let overview: Json | undefined;
