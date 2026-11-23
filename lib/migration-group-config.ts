@@ -4,7 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
 import { isNoticeLogLevel, parseNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
-import { withinInstallation } from "./plugins/migration-plan.ts";
+import { legacyAutoGroupCardScript } from "./plugins/metadata.ts";
+import { withinInstallation, type LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 
 type Mapping = Map<unknown, unknown>;
 const yenai = "plugins/yenai-plugin/config/config/";
@@ -255,7 +256,8 @@ function projectScreenedWords(load: (path: string) => Mapping | undefined, scope
 }
 
 /** Stage runtime configurations after rejected legacy plugins leave the plugin tree. Keep source YAML in a private rollback copy. */
-export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
+export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory: string, signal?: AbortSignal,
+  legacyPlugins: readonly LegacyPluginPlanEntry[] = []) {
   signal?.throwIfAborted();
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
   const stageInfo = await lstat(stage);
@@ -282,6 +284,11 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
     return settings;
   };
   const active = project(load);
+  const cardConfig = "config/auto-group-card.yaml";
+  if (!active.has(cardConfig) && legacyPlugins.some(entry => entry.status === "archive" && entry.kind === "script" &&
+      entry.path === legacyAutoGroupCardScript.path && entry.identity === legacyAutoGroupCardScript.identity)) {
+    active.set(cardConfig, new Map([["enable", true]]));
+  }
   const screened = projectScreenedWords(load, screenedScopes, inputs);
   const archives = new Map([...inputs].map(([path, config]) => [join("backup", "legacy-group-config", path), config.bytes]));
   const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...screened, ...archives];

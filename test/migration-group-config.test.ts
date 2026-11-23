@@ -7,6 +7,7 @@ import { readGroupDispatch } from "../lib/group-dispatch.ts";
 import { stageLegacyGroupConfig } from "../lib/migration-group-config.ts";
 import { stageLegacyKeywords } from "../lib/migration-keywords.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
+import { legacyAutoGroupCardScript } from "../lib/plugins/metadata.ts";
 import { readGroupRecallPermissions } from "../lib/quoted-recall.ts";
 import { createAutoGroupCard } from "../plugins/group/auto-group-card.ts";
 import { readGroupLeaveBlacklist } from "../plugins/group/group-leave-blacklist.ts";
@@ -87,6 +88,34 @@ test("group and notice configs use the active paths with original defaults, scop
   expect(configuredNoticeLogLevel(root, "")).toBe("debug");
   expect(Bun.YAML.parse(await readFile(new URL("config/notice.yaml", root), "utf8"))).toEqual({ enableSchedule: false, scheduleTime: "09:02-09:17", logger: "debug" });
   expect(await readFile(new URL("config/group.yaml", root), "utf8")).not.toContain("opaque");
+}));
+
+test("迁移固定旧自动群名片的无文件默认值，并保留显式关闭", () => fixture(async (source, state) => {
+  const config = "config/auto-group-card.yaml";
+  const retired = { ...legacyAutoGroupCardScript, status: "archive", kind: "script", reason: "归档旧自动群名片" } as const;
+  const differentScript = { ...retired, path: "plugins/自动群名片.js" };
+  const report = await stageLegacyGroupConfig(source, state, undefined, [differentScript, {
+    ...retired, identity: "irrelevant",
+  }]);
+  expect(report.active).toEqual([]);
+  expect(await Bun.file(join(state, config)).exists()).toBe(false);
+
+  const restored = await stageLegacyGroupConfig(source, state, undefined, [retired]);
+  expect(restored).toEqual({ active: [config], archived: [], deferred: [] });
+  expect(Bun.YAML.parse(await readFile(join(state, config), "utf8"))).toEqual({ enable: true });
+  const signal = new AbortController().signal;
+  const current = createAutoGroupCard({ root: pathToFileURL(state + sep), signal, accounts: () => [] });
+  expect(await current.configuration()).toEqual({ cron: "0 0,30 * * * *" });
+
+  const explicitLegacyConfig = "config/config/auto-group-card.yaml";
+  await file(source, explicitLegacyConfig, "enable: false\n");
+  const disabled = join(dirname(state), "disabled");
+  await mkdir(disabled, { mode: 0o700 });
+  const disabledResult = await stageLegacyGroupConfig(source, disabled, undefined, [retired]);
+  expect(disabledResult.archived).toEqual([archive + explicitLegacyConfig]);
+  expect(Bun.YAML.parse(await readFile(join(disabled, config), "utf8"))).toEqual({ enable: false });
+  const explicitlyDisabled = createAutoGroupCard({ root: pathToFileURL(disabled + sep), signal, accounts: () => [] });
+  expect(await explicitlyDisabled.configuration()).toBeUndefined();
 }));
 
 test("current full-scope settings win, while ambiguous schedule aliases and linked config files are rejected", () => fixture(async (source, state) => {

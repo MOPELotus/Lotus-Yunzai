@@ -56,7 +56,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const updateNotice = await readLegacyZzzUpdateNotice(backup.status === "empty" ? undefined : backup.directory,
       plan.plugins, signal);
     const coreConfig = await stageLegacyCoreConfig(plan.source, state.directory, signal, updateNotice.settings);
-    const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal);
+    const groupConfig = await stageLegacyGroupConfig(plan.source, state.directory, signal, plan.plugins);
     const panelRank = await stageLegacyPanelRankConfig(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
     const gachaDisplay = await stageLegacyGachaDisplayConfig(backup.status === "empty" ? undefined : backup.directory,
