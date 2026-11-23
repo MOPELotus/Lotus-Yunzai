@@ -2729,6 +2729,20 @@ if (import.meta.main) {
         return;
       }
     }
+    // 旧角色卡的 accept 先改写原神裸名，再由 Atlas 检查公开图鉴。
+    if (!command.isDelegated && command.game !== "sr" && command.game !== "zzz" &&
+        command.msg.startsWith("#") && commands.hasModule("@lotus-yunzai/genshin")) {
+      const { matchLegacyGenshinAvatarCard } = await import("./plugins/genshin/panel/avatar-card.ts");
+      if (matchLegacyGenshinAvatarCard(command.msg)) {
+        const card = await commands.dispatchFallback(event,
+          names => names[0] === "@lotus-yunzai/genshin" && allowed(names), isBotMaster, command.msg);
+        if (card !== undefined) {
+          handled?.();
+          await sendCommandReply(event, card);
+          return;
+        }
+      }
+    }
     let denied = false;
     if (await legacy.dispatch(command, allowed, () => { denied = true; })) {
       if (!denied) handled?.();
