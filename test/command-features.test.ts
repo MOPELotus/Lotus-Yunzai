@@ -150,6 +150,8 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
       "79": { enable: [gachaLabel], disable: [legacyLabel] },
       "80": { disable: ["genshin-inventory"] },
       "81": { enable: ["genshin-world-boss-kill-count-inventory"] },
+      "82": { disable: ["[Lotus-Plugin] Permissions", "[Lotus-Plugin] Group Manager"] },
+      "83": { enable: ["[Lotus-Plugin] Donate"] },
     }));
     const { allows } = await readGroupDispatch(pathToFileURL(`${root}/`));
     expect(allows(group, [gachaLabel])).toBe(false);
@@ -168,6 +170,11 @@ test("旧配置选择器匹配当前模块名称，禁用优先且保持其他�
     expect(allows({ ...group, group_id: 80 }, ["@lotus-yunzai/genshin"])).toBe(true);
     expect(allows({ ...group, group_id: 81 }, ["[genshin] 世界 BOSS"])).toBe(true);
     expect(allows({ ...group, group_id: 81 }, ["[genshin] 背包"])).toBe(false);
+    expect(allows({ ...group, group_id: 82 }, ["@lotus-yunzai/permissions"])).toBe(false);
+    expect(allows({ ...group, group_id: 82 }, ["@lotus-yunzai/group-member-export", "@lotus-yunzai/group"])).toBe(false);
+    expect(allows({ ...group, group_id: 82 }, ["[group] 退群档案清理", "@lotus-yunzai/group"])).toBe(false);
+    expect(allows({ ...group, group_id: 82 }, ["[group] 群成员活动排行", "@lotus-yunzai/group"])).toBe(true);
+    expect(allows({ ...group, group_id: 83 }, ["@lotus-yunzai/donation"])).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
