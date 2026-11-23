@@ -9,13 +9,19 @@ type Game = (typeof games)[number];
 type ListKey = Game | `${Game}Disabled`;
 type LimitKey = `${Game}Limit`;
 type DefaultKey = `${Game}Default`;
-type RankSettings = Record<ListKey, string[]> & Record<LimitKey, number> & Record<DefaultKey, boolean>;
+type RankSettings = Record<ListKey, string[]> & Record<LimitKey, number> & Record<DefaultKey, boolean> &
+  { artifactListLimit: number };
 
 const defaultGroupPanelRankLimit = 15;
 export const maxGroupPanelRankLimit = 30;
 const minGroupPanelRankLimit = 5;
+export const defaultArtifactListLimit = 28;
+const artifactListField = {
+  key: "artifactListLimit", label: "原神圣遗物与星铁遗器列表条数", type: "number", min: 4, max: 100,
+  hint: "共用上限，默认 28 件。实际条数取决于已收录角色中符合筛选规则的装备。",
+} as const;
 
-const fields = games.flatMap(game => {
+const rankFields = games.flatMap(game => {
   const label = game === "gs" ? "原神" : "星铁";
   return [
     { key: `${game}Default`, label: `${label}群榜默认开启`, type: "boolean",
@@ -26,6 +32,7 @@ const fields = games.flatMap(game => {
       min: minGroupPanelRankLimit, max: maxGroupPanelRankLimit },
   ] as const;
 });
+const fields = [artifactListField, ...rankFields];
 
 const legacyRankPolicies = [
   "不限",
@@ -52,14 +59,15 @@ function list(value: unknown): string[] | undefined {
   return [...new Set(value)];
 }
 
-function rankLimit(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isInteger(value) && value >= minGroupPanelRankLimit &&
-      value <= maxGroupPanelRankLimit) return value;
+export function parseArtifactListLimit(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) &&
+      value >= artifactListField.min && value <= artifactListField.max) return value;
 }
 
 function configured(record: Readonly<Record<string, unknown>>): Partial<RankSettings> {
   const result: Partial<RankSettings> = {};
-  for (const { key, type } of fields) {
+  for (const field of fields) {
+    const { key, type } = field;
     if (!Object.hasOwn(record, key)) continue;
     const value = record[key];
     if (type === "list") {
@@ -67,9 +75,10 @@ function configured(record: Readonly<Record<string, unknown>>): Partial<RankSett
       if (!groups) throw new GlobalConfigWriteError("config");
       result[key] = groups;
     } else if (type === "number") {
-      const limit = rankLimit(value);
-      if (limit === undefined) throw new GlobalConfigWriteError("config");
-      result[key] = limit;
+      if (typeof value !== "number" || !Number.isInteger(value) || value < field.min || value > field.max) {
+        throw new GlobalConfigWriteError("config");
+      }
+      result[key] = value;
     } else {
       if (typeof value !== "boolean") throw new GlobalConfigWriteError("config");
       result[key] = value;
@@ -93,6 +102,7 @@ function effective(config: Partial<RankSettings>): RankSettings {
     srDefault: config.srDefault ?? false,
     gsLimit: config.gsLimit ?? defaultGroupPanelRankLimit,
     srLimit: config.srLimit ?? defaultGroupPanelRankLimit,
+    artifactListLimit: config.artifactListLimit ?? defaultArtifactListLimit,
   };
 }
 
@@ -125,6 +135,11 @@ export async function readGroupPanelRankLimit(game: Game, defaultLimit: number, 
   } catch {
     return defaultLimit;
   }
+}
+
+export async function readArtifactListLimit(root = installation) {
+  const raw = await readConfiguration(root).catch(() => undefined);
+  return parseArtifactListLimit(raw?.artifactListLimit) ?? defaultArtifactListLimit;
 }
 
 function input(value: unknown): RankSettings | undefined {

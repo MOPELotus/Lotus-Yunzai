@@ -27,6 +27,7 @@ test.skipIf(!Bun.which("git"))("迁移入口从已归档的旧插件配置恢复
       "export const groupRank = true // 官方字段",
       "export const rankNumber = 30;",
       "export const groupRankLimit = 5;",
+      "export const artisNumber = 100;",
       "throw new Error('迁移不得执行旧配置');",
     ].join("\r\n");
     await put(source, `${plugin}/package.json`, '{"name":"miao-plugin"}');
@@ -43,6 +44,7 @@ test.skipIf(!Bun.which("git"))("迁移入口从已归档的旧插件配置恢复
     const published = join(target, "config/panel-rank.yaml");
     expect(Bun.YAML.parse(await readFile(published, "utf8"))).toEqual({
       gsDefault: true, srDefault: true, gsLimit: 30, srLimit: 30, legacyGroupStatus: true, legacyGroupRankLimit: 5,
+      artifactListLimit: 100,
     });
     expect((await lstat(published)).mode & 0o777).toBe(0o600);
     expect(await readFile(join(target, "backup", path), "utf8")).toBe(original);
@@ -71,5 +73,13 @@ test("从旧配置读取明确关闭，遇到需执行代码的设置则标为�
     const deferred = join(root, "deferred");
     expect(await stageLegacyPanelRankConfig(archive, deferred, entries)).toEqual({ active: false, deferred: true });
     await expect(lstat(join(deferred, "config/panel-rank.yaml"))).rejects.toMatchObject({ code: "ENOENT" });
+    await put(archive, archived, "export const artisNumber = 4\n");
+    const equipmentOnly = join(root, "equipment-only");
+    expect(await stageLegacyPanelRankConfig(archive, equipmentOnly, entries)).toEqual({ active: true, deferred: false });
+    expect(Bun.YAML.parse(await readFile(join(equipmentOnly, "config/panel-rank.yaml"), "utf8"))).toEqual({ artifactListLimit: 4 });
+    await put(archive, archived, "export const groupRank = true\nexport const artisNumber = readSetting()\n");
+    const partial = join(root, "partial");
+    expect(await stageLegacyPanelRankConfig(archive, partial, entries)).toEqual({ active: true, deferred: true });
+    expect(Bun.YAML.parse(await readFile(join(partial, "config/panel-rank.yaml"), "utf8"))).not.toHaveProperty("artifactListLimit");
   } finally { await rm(root, { recursive: true, force: true }); }
 });

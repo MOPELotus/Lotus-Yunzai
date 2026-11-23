@@ -55,7 +55,7 @@ const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "media" && plugin.status === "loaded") ?? false);
 
 const nativeSections = computed(() => [
-  { key: "rank", label: "原神与星铁群榜" },
+  { key: "rank", label: "原神与星铁列表和群榜" },
   { key: "status", label: "状态与监控" },
   { key: "runtime", label: "宿主运行" },
   { key: "process-schedule", label: "停启与更新调度" },

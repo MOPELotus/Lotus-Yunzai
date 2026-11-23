@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildArtifactList } from "../plugins/genshin/panel/artifact-list.ts";
 import { matchGenshinPanel, type PanelAvatar } from "../plugins/genshin/panel/model.ts";
 import type { PanelTheme } from "../plugins/genshin/panel/theme.ts";
@@ -55,6 +59,19 @@ test("保留跨角色前 28 件，无法核对词条的角色不会混入排行"
   expect(result.eligible).toBe(40);
   expect(result.entries).toHaveLength(28);
   expect(result.entries.every(row => row.avatar.id !== 10009999)).toBeTrue();
+  const directory = await mkdtemp(join(tmpdir(), "lotus-genshin-artifact-list-"));
+  try {
+    const root = pathToFileURL(directory + "/");
+    const configuration = join(directory, "config/panel-rank.yaml");
+    await mkdir(join(directory, "config"));
+    await writeFile(configuration, "artifactListLimit: 4\n");
+    const snapshot = { uid, avatars };
+    expect((await buildArtifactList(snapshot, plainTheme, undefined, root)).entries).toEqual(result.entries.slice(0, 4));
+    await writeFile(configuration, "artifactListLimit: 100\n");
+    expect((await buildArtifactList(snapshot, plainTheme, undefined, root)).entries.length).toBeGreaterThan(28);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("旧档评分缺的最终属性可用完整本地数值表复算，缺表继续排除", async () => {

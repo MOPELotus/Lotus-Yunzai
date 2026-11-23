@@ -1,5 +1,6 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { parseArtifactListLimit } from "./group-panel-rank-settings.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 import { rejectionReason } from "./plugins/policy.ts";
@@ -7,27 +8,41 @@ import { rejectionReason } from "./plugins/policy.ts";
 const mergedRankPlugin = rejectionReason(["miao-plugin"], []);
 const rankConfig = "config/panel-rank.yaml";
 const maxBytes = 256 * 1024;
+const rankKeys = ["groupRank", "rankNumber", "groupRankLimit"];
 
 // The legacy settings writer emits literal exports. Treat the archived JS as data.
 function legacySettings(text: string) {
   const source = text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/gu,
     token => token.startsWith("/") ? token.replace(/[^\r\n]/gu, " ") : token.replace(/[^\r\n]/gu, "?"));
   const fields = new Map<string, string>();
-  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber|groupRankLimit)[ \t]*=([^\r\n]*)$/gmu)) {
+  for (const [, key, value] of source.matchAll(/^[ \t]*export[ \t]+const[ \t]+(groupRank|rankNumber|groupRankLimit|artisNumber)[ \t]*=([^\r\n]*)$/gmu)) {
     if (key !== undefined && value !== undefined) fields.set(key, fields.has(key) ? "" : value.trim().replace(/;$/u, "").trim());
   }
   if (!fields.size) return;
-  const enabled = fields.get("groupRank") ?? "false";
-  const size = fields.get("rankNumber") ?? "15";
-  if ((enabled !== "true" && enabled !== "false") || !/^\d+$/u.test(size)) return { deferred: true } as const;
-  const count = Number(size);
-  if (!Number.isSafeInteger(count) || count < 5 || count > 30) return { deferred: true } as const;
-  const legacyGroupRankLimit = fields.get("groupRankLimit");
-  return { config: {
-    gsDefault: enabled === "true", srDefault: enabled === "true", gsLimit: count, srLimit: count,
-    legacyGroupStatus: true,
-    ...(/^[1-5]$/u.test(legacyGroupRankLimit ?? "") ? { legacyGroupRankLimit: Number(legacyGroupRankLimit) } : {}),
-  } } as const;
+  const config: Record<string, boolean | number> = {};
+  let deferred = false;
+  if (rankKeys.some(key => fields.has(key))) {
+    const enabled = fields.get("groupRank") ?? "false";
+    const size = fields.get("rankNumber") ?? "15";
+    const count = Number(size);
+    if ((enabled === "true" || enabled === "false") && /^\d+$/u.test(size) && count >= 5 && count <= 30) {
+      Object.assign(config, {
+        gsDefault: enabled === "true", srDefault: enabled === "true", gsLimit: count, srLimit: count,
+        legacyGroupStatus: true,
+      });
+      const policy = fields.get("groupRankLimit");
+      if (/^[1-5]$/u.test(policy ?? "")) config.legacyGroupRankLimit = Number(policy);
+    } else {
+      deferred = true;
+    }
+  }
+  const artifactSize = fields.get("artisNumber");
+  if (artifactSize !== undefined) {
+    const limit = /^\d+$/u.test(artifactSize) ? parseArtifactListLimit(Number(artifactSize)) : undefined;
+    if (limit === undefined) deferred = true;
+    else config.artifactListLimit = limit;
+  }
+  return { config, deferred };
 }
 
 export async function stageLegacyPanelRankConfig(archive: string | undefined, stage: string, plugins: readonly LegacyPluginPlanEntry[], signal?: AbortSignal) {
@@ -41,7 +56,7 @@ export async function stageLegacyPanelRankConfig(archive: string | undefined, st
     if (!file) continue;
     const settings = legacySettings(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
     if (!settings) continue;
-    if ("deferred" in settings) return { active: false, deferred: true };
+    if (!Object.keys(settings.config).length) return { active: false, deferred: settings.deferred };
     const destination = join(stage, "config");
     await mkdir(destination, { mode: 0o700, recursive: true });
     if (!(await lstat(destination)).isDirectory() || await realpath(destination) !== destination) {
@@ -49,7 +64,7 @@ export async function stageLegacyPanelRankConfig(archive: string | undefined, st
     }
     signal?.throwIfAborted();
     await writeFile(join(stage, rankConfig), Bun.YAML.stringify(settings.config), { flag: "wx", mode: 0o600 });
-    return { active: true, deferred: false };
+    return { active: true, deferred: settings.deferred };
   }
   return { active: false, deferred: false };
 }
