@@ -112,7 +112,11 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     const routingPath = base + "group-routing";
     const likesFile = join(root, "config/group.yaml");
     const groupRouting = join(root, "config/config/group.yaml");
+    const groupDefaults = join(root, "config/default_config/group.yaml");
+    const inheritedRouting = "default: {onlyReplyAt: 1}\n43: {botAlias: [旧群别名]}\n";
     await mkdir(join(root, "config/config"), { recursive: true });
+    await mkdir(join(root, "config/default_config"), { recursive: true });
+    await writeFile(groupDefaults, inheritedRouting);
     await writeFile(likesFile, "enable: true\ncount: 5\n");
     await writeFile(groupRouting, '# 旧安装\ndefault: { groupCD: 0, extra: 42 }\n42:\n  onlyReplyAt: 1 # 仅响应提及\n');
     const routingResult = await request("GET", undefined, token, routingPath);
@@ -135,6 +139,7 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
       default: { groupCD: 5, extra: 42 }, 42: { onlyReplyAt: 1 }, "99:42": { disable: ["群公告"] },
     });
     expect(await readFile(likesFile, "utf8")).toBe("enable: true\ncount: 5\n");
+    expect(await readFile(groupDefaults, "utf8")).toBe(inheritedRouting);
     await writeFile(likesFile, "enable: true\ncount: 5\n42: { onlyReplyAt: 2 }\n");
     const { values: modernRouting } = await (await request("GET", undefined, token, routingPath)).json() as { values: typeof routing };
     expect(modernRouting).toEqual({ file: "config/group.yaml", rules: { 42: { onlyReplyAt: 2 } } });

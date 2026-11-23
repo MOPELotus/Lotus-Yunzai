@@ -138,6 +138,68 @@ test("current full-scope settings win, while ambiguous schedule aliases and link
   expect(configuredNoticeSchedule(pathToFileURL(state + sep), "")).toEqual({ start: 555, end: 575 });
 }));
 
+test("迁移旧群默认派发并保留运行整段覆盖，实测未覆盖群的别名与提及", () => fixture(async (source, state) => {
+  const defaultsPath = "config/default_config/group.yaml";
+  const runtimePath = "config/config/group.yaml";
+  const defaults = "# 老群默认\ndefault: {onlyReplyAt: 1, botAlias: [默认别名], groupCD: 80, addRecall: 33}\n" +
+    "'99:default': {disable: [原机器人功能]}\n" +
+    "88: {onlyReplyAt: 1, botAlias: [原群别名], disable: [原群功能]}\n" +
+    "89: {onlyReplyAt: 1, botAlias: [旧同群], disable: [旧同群功能]}\n" +
+    "'99:88': {addAt: true}\n";
+  const runtime = "# 活动覆盖\ndefault: {groupCD: 0, singleCD: 0}\n89: {onlyReplyAt: 0}\n";
+  await file(source, defaultsPath, defaults);
+  await file(source, runtimePath, runtime);
+  await file(source, "config/group.yaml", "enable: true\ncount: 3\n");
+  const { directory } = await stageLegacyState(source, state);
+  const report = await stageLegacyGroupConfig(source, directory);
+  expect(report.active).toContain(defaultsPath);
+  expect(await readFile(join(directory, runtimePath), "utf8")).toBe(runtime);
+  expect(await readFile(join(directory, archive, defaultsPath), "utf8")).toBe(defaults);
+  expect((await stat(join(directory, defaultsPath))).mode & 0o777).toBe(0o600);
+  const routing = await readGroupDispatch(pathToFileURL(directory + sep));
+  expect(routing.keywordSettings({
+    post_type: "message", message_type: "terminal", msg: "", raw_message: "", message: "",
+    isGroup: false, isPrivate: false, isMaster: true, reply: () => true,
+  }, 77).addRecall).toBe(0);
+  expect(routing.allows({ group_id: 88 }, ["原群功能"])).toBe(false);
+  expect(routing.allows({ group_id: 89 }, ["旧同群功能"])).toBe(true);
+  expect(routing.allows({ self_id: 99, group_id: 77 }, ["原机器人功能"])).toBe(false);
+  await withDualGatewayFixture("migration-group-defaults", "", async ({ onebot, sendOneBot }) => {
+    const message = { message_type: "group", sub_type: "normal", sender: { user_id: 42 } };
+    sendOneBot("#版本", { ...message, group_id: 77 });
+    const direct = await onebot.next("send_msg");
+    expect(direct.params).toMatchObject({ group_id: 77, message: expect.stringContaining("Lotus-Yunzai 版本") });
+    direct.respond({ message_id: 100 });
+    sendOneBot("#版本 ", { ...message, group_id: 88 });
+    sendOneBot("旧同群 #版本", { ...message, group_id: 89 });
+    await Bun.sleep(100);
+    expect(onebot.calls).toEqual([]);
+    sendOneBot("原群别名 #版本", { ...message, group_id: 88 });
+    const aliased = await onebot.next("send_msg");
+    expect(aliased.params).toMatchObject({ group_id: 88, message: expect.stringContaining("Lotus-Yunzai 版本") });
+    aliased.respond({ message_id: 101 });
+  }, 2_500, undefined, async root => {
+    await cp(join(directory, "config"), join(root, "config"), { recursive: true });
+    await file(root, "config/bot.yaml", "cache_group_member: false\nupdate_time: 0\nfile_watch: false\n");
+  });
+}));
+
+test("旧群文件缺席时使用已迁移默认文件，现行派发配置优先", () => fixture(async (source, state) => {
+  const defaults = "config/default_config/group.yaml";
+  const active = "config/group.yaml";
+  await file(source, defaults, "default: {disable: [老默认功能]}\n");
+  expect((await stageLegacyGroupConfig(source, state)).active).toContain(defaults);
+  const root = pathToFileURL(state + sep);
+  expect((await readGroupDispatch(root)).allows({ group_id: 88 }, ["老默认功能"])).toBe(false);
+  const other = join(dirname(state), "modern");
+  await mkdir(other, { mode: 0o700 });
+  await file(source, active, "default: {disable: [现用功能]}\n");
+  expect((await stageLegacyGroupConfig(source, other)).active).toEqual([active]);
+  const modern = await readGroupDispatch(pathToFileURL(other + sep));
+  expect(modern.allows({ group_id: 88 }, ["老默认功能"])).toBe(true);
+  expect(modern.allows({ group_id: 88 }, ["现用功能"])).toBe(false);
+}));
+
 test("旧屏蔽规则停用时仍迁移，暂存后的群管无需加载旧插件", () => fixture(async (source, state) => {
   const old = "plugins/flower-plugin/";
   const original = "- 跨群旧词\n- 100\n";

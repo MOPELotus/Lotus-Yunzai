@@ -122,7 +122,7 @@ function updateYaml(content: string, local: Record<string, unknown>, before: Rul
 export function panelGroupRouting(root: URL, onSaved: () => Promise<void>) {
   async function snapshot() {
     const current = await readGroupRoutingConfig(root, maxConfigBytes);
-    return { file: current?.path ?? primary, rules: exposedRules(current?.config ?? {}) };
+    return { file: current?.path ?? primary, rules: exposedRules(current?.overrides ?? {}) };
   }
 
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {

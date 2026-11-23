@@ -87,28 +87,36 @@ function cooldown(value: unknown): number {
 
 export const groupRoutingScopePattern = /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u;
 
-export async function readGroupRoutingConfig(root: URL, maxBytes = Infinity) {
-  const legacyPath = "config/config/group.yaml";
-  for (const path of ["config/group.yaml", legacyPath]) {
-    const file = Bun.file(new URL(path, root));
-    if (!await file.exists()) continue;
-    try {
-      if (file.size > maxBytes) throw new Error();
-      const value: unknown = Bun.YAML.parse(await file.text());
-      if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
-      const config = record(value);
-      const keys = Object.keys(config);
-      const legacy = path === legacyPath;
-      // An empty TRSS runtime overlay still inherited its bundled group defaults.
-      if (legacy && keys.length === 0) return { config, legacy, path };
-      // Lotus likes settings also use config/group.yaml, with flat keys.
-      if (keys.some((key) => groupRoutingScopePattern.test(key))) {
-        return { config, legacy, path };
-      }
-    } catch {
-      throw new Error(`无法读取 ${path}。`);
-    }
+async function readRoutingFile(root: URL, path: string, maxBytes: number) {
+  const file = Bun.file(new URL(path, root));
+  if (!await file.exists()) return;
+  try {
+    if (file.size > maxBytes) throw new Error();
+    const value: unknown = Bun.YAML.parse(await file.text());
+    if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
+    return record(value);
+  } catch {
+    throw new Error(`无法读取 ${path}。`);
   }
+}
+
+export async function readGroupRoutingConfig(root: URL, maxBytes = Infinity) {
+  const primary = "config/group.yaml";
+  const legacyPath = "config/config/group.yaml";
+  const active = await readRoutingFile(root, primary, maxBytes);
+  // A modern file containing only likes settings leaves the legacy routing source active.
+  if (active && Object.keys(active).some(key => groupRoutingScopePattern.test(key))) {
+    return { config: active, overrides: active, legacy: false, path: primary, useBundledDefaults: true };
+  }
+  const [overrides, configuredDefaults] = await Promise.all([
+    readRoutingFile(root, legacyPath, maxBytes),
+    readRoutingFile(root, "config/default_config/group.yaml", maxBytes),
+  ]);
+  if (configuredDefaults === undefined && (!overrides ||
+      (Object.keys(overrides).length > 0 && !Object.keys(overrides).some(key => groupRoutingScopePattern.test(key))))) return;
+  const config = { ...configuredDefaults, ...overrides };
+  return { config, overrides: overrides ?? {}, legacy: true, path: legacyPath,
+    useBundledDefaults: configuredDefaults === undefined && !Object.hasOwn(config, "default") };
 }
 
 async function readSlashAlias(root: URL): Promise<boolean> {
@@ -224,12 +232,11 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
 
   function groupConfig(event: { self_id?: number; group_id?: number }, groupId?: number): Record<string, unknown> {
     if (!groups) return {};
-    const { config, legacy } = groups;
+    const { config, useBundledDefaults } = groups;
     const bot = id(event.self_id);
     const group = id(groupId ?? event.group_id);
     return {
-      // TRSS replaced the entire bundled default section when the runtime YAML provided one.
-      ...(legacy && Object.hasOwn(config, "default") ? {} : defaults),
+      ...(useBundledDefaults ? defaults : {}),
       ...record(config.default),
       ...(bot ? record(config[`${bot}:default`]) : {}),
       ...(group ? record(config[group]) : {}),

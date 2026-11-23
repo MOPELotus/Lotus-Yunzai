@@ -4,19 +4,21 @@ import { dirname, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
 import { isNoticeLogLevel, parseNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
+import { groupRoutingScopePattern } from "./group-dispatch.ts";
 import { legacyAutoGroupCardScript } from "./plugins/metadata.ts";
 import { withinInstallation, type LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 
 type Mapping = Map<unknown, unknown>;
 const yenai = "plugins/yenai-plugin/config/config/";
 const noticeDirectories = ["plugins/Notice-plugin/config/", "plugins/notice-plugin/config/"] as const;
+const legacyGroupDefaults = "config/default_config/group.yaml";
 const screenedConfigPaths = ["plugins/flower-plugin/defSet/wordListener.yaml", "plugins/flower-plugin/config/wordListener.yaml", "config/group-screened-words.yaml"] as const;
 const screenedLegacyWords = "plugins/flower-plugin/resources/blackword";
 const screenedCurrentWords = "data/group/screened-words";
 const sourcePaths = [
   "config/auto-group-card.yaml", "config/config/auto-group-card.yaml",
   "config/group-leave-blacklist.yaml", "config/config/group-leave-blacklist.yaml",
-  "config/group.yaml", `${yenai}thumbUp.yaml`,
+  "config/group.yaml", legacyGroupDefaults, `${yenai}thumbUp.yaml`,
   "config/groupAdmin.yaml", `${yenai}groupAdmin.yaml`,
   "config/group-notice.yaml", `${yenai}notice.yaml`, "config/notice.yaml",
   ...screenedConfigPaths,
@@ -187,11 +189,15 @@ function project(load: (path: string) => Mapping | undefined) {
 
   const modernGroup = load("config/group.yaml");
   const oldLikes = load(`${yenai}thumbUp.yaml`);
+  const routing = scopedSettings(modernGroup ?? new Map(), groupRoutingScopePattern, routingFields, "群派发");
   if (modernGroup || oldLikes) {
     const likes = fields(new Map([...oldLikes ?? [], ...modernGroup ?? []]), likeFields);
     if (oldLikes && !likes.has("recall")) likes.set("recall", 20);
-    const routing = scopedSettings(modernGroup ?? new Map(), /^(?:default|[1-9]\d*(?::(?:default|[1-9]\d*))?)$/u, routingFields, "群派发");
     active.set("config/group.yaml", new Map([...routing, ...likes]));
+  }
+  if (!routing.size) {
+    const defaults = load(legacyGroupDefaults);
+    if (defaults) active.set(legacyGroupDefaults, scopedSettings(defaults, groupRoutingScopePattern, routingFields, "旧群派发默认值"));
   }
   const oldManagement = load(`${yenai}groupAdmin.yaml`);
   const modernManagement = load("config/groupAdmin.yaml");
