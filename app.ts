@@ -30,6 +30,7 @@ import { hostAccessListCommand, hostAccessListNames } from "./lib/host-access-li
 import { cloudProfileCommands, cloudWalletProfile, createCloudGenshinWalletQuery, isCloudTokenInput } from "./lib/cloud-profile-commands.ts";
 import { createCheckinAudit } from "./lib/checkin-audit.ts";
 import { checkinAuditCommands } from "./lib/checkin-audit-commands.ts";
+import { generalToolCommands } from "./lib/general-tools.ts";
 import { notifyCheckin, type BotNotifications, type CheckinNotifyDelivery, type CheckinNotifyTransport } from "./lib/checkin-notify.ts";
 import { checkinPlanCommands, checkinPlanNotice, checkinScheduleSettingCommands } from "./lib/checkin-plan-commands.ts";
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
@@ -3527,6 +3528,7 @@ if (import.meta.main) {
     });
     if (!stopping) {
       commands.registerModule(weatherCommands(lifecycle.signal), "天气");
+      commands.registerModule(generalToolCommands(lifecycle.signal), "[tools] 群聊工具");
       if (!commands.hasModule(systemModuleName)) {
         throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
       }
