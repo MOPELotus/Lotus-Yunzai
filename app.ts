@@ -3129,6 +3129,8 @@ if (import.meta.main) {
     const noticeActive = () => handoff.accepting && !stopping && !lifecycle.signal.aborted;
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groupTransport, signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
+      allowOfficialVideoGroup: (botId: number, groupId: number) => noticeActive() &&
+        groupDispatch.allowsScheduledGroup(botId, groupId, ["[media] 米游社官号视频", "media", "@lotus-yunzai/media"]),
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       statusPhotoStorage: statusStorage("status-photo"),
@@ -3463,6 +3465,8 @@ if (import.meta.main) {
         disconnect: handoffSession.signal,
         whenReady: whenModuleTasksActive,
         registerTask: (cron, run) => registerModuleTask("[media] 网易云合伙人定时任务", cron, run),
+        registerOfficialVideoTask: (cron: string, run: () => Promise<void>) =>
+          registerModuleTask("[media] 米游社官号视频", cron, run),
         async notifyMasters(reply, signal) {
           const active = signal ? nativeOperationSignal(signal) : nativeOperationSignal();
           const notified = new Set<number>();

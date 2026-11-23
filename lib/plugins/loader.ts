@@ -276,6 +276,7 @@ export async function loadPlugins(
       readonly disconnect: AbortSignal;
       whenReady(start: () => void): () => void;
       registerTask(cron: string, run: () => Promise<unknown>): () => Promise<void>;
+      registerOfficialVideoTask?(cron: string, run: () => Promise<void>): () => Promise<void>;
       notifyMasters(reply: MessageReply, signal?: AbortSignal): Promise<void>;
     };
     readonly zzzPanelRankRoles?: ZzzPanelRankRoleReader;
