@@ -337,7 +337,8 @@ interface GroupEssence {
 export type OneBotGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "onebot" } & (
   GroupReaction | (GroupEssence & { readonly sender_id: number }) |
   { readonly notice_type: "group_card"; readonly sub_type?: never; readonly card_old?: string; readonly card_new: string } |
-  { readonly notice_type: "group"; readonly sub_type: "group_name"; readonly target_id?: number; readonly name_new: string }
+  { readonly notice_type: "group"; readonly sub_type: "group_name"; readonly target_id?: number; readonly name_new: string } |
+  { readonly notice_type: "group"; readonly sub_type: "title"; readonly user_id: number; readonly title: string }
 );
 
 export type MilkyGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "milky" } & (
@@ -347,8 +348,39 @@ export type MilkyGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { rea
     readonly old_name?: string; readonly new_name?: string }
 );
 
+export interface OneBotProfileLikeNotice {
+  readonly post_type: "notice";
+  readonly notice_type: "friend";
+  readonly sub_type: "profile_like";
+  readonly adapter: "onebot";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly operator_id: number;
+  readonly operator_nick: string;
+  readonly times: number;
+  readonly time: number;
+  readonly isGroup: false;
+  readonly isPrivate: true;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
+
+interface OneBotLegacySignalIdentity {
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly time: number;
+  readonly reply: MessageEvent["reply"];
+}
+
+export type OneBotLegacySignal = OneBotLegacySignalIdentity & (
+  { readonly post_type: "internal"; readonly notice_type: "input"; readonly sub_type: "input_status";
+    readonly group_id: 0; readonly status_text: string; readonly event_type: number; readonly end: boolean; readonly message: string } |
+  { readonly post_type: "system"; readonly notice_type: "offline"; readonly sub_type?: undefined;
+    readonly tag: string; readonly message: string }
+);
+
 export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
-  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice;
+  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

@@ -1,3 +1,4 @@
+import { sanitizeRuntimeLog } from "../runtime-logs.ts";
 import { createHash } from "node:crypto";
 import { chatFileRelaySource, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
@@ -9,7 +10,7 @@ import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
-  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type QuotedMessage } from "../messages.ts";
+  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
@@ -93,6 +94,7 @@ interface ConnectionData {
   skipInitialRoster?: Set<number>;
   joinRoster?: Map<number, symbol>;
   ownGroupCardAccount?: (authorized?: () => boolean) => OwnGroupCardAccount;
+  receivedOffline?: boolean;
 }
 
 interface OwnerNoticeOptions {
@@ -551,6 +553,13 @@ async function dispatchGroupCompatibilityNotice(
     if (!isId(user_id) || typeof card_new !== "string") return;
     connection.display?.remember(group_id, user_id, { card: card_new });
     await dispatch({ ...base, notice_type, card_old: stringField(card_old), card_new });
+  } else if (notice_type === "notify" && sub_type === "title") {
+    if (!isId(user_id) || typeof event.title !== "string" || event.title.length > 256) return;
+    void connection.calls.getLiveGroupMember(send, group_id, user_id, true, signal).then(member => {
+      if (member && !signal.aborted) connection.display?.remember(group_id, user_id, member);
+    });
+    console.info(`[${self_id}] 群 ${group_id} 成员 ${user_id} 的头衔：${sanitizeRuntimeLog(event.title, 256)}`);
+    await dispatch({ ...base, notice_type: "group", sub_type, user_id, title: event.title });
   } else if (notice_type === "notify" && sub_type === "group_name" && typeof event.name_new === "string") {
     await dispatch({ ...base, notice_type: "group", sub_type, name_new: event.name_new,
       target_id: isId(target_id) ? target_id : undefined });
@@ -573,6 +582,30 @@ async function dispatchGroupCompatibilityNotice(
         (typeof message_seq === "string" && /^\d{1,20}$/u.test(message_seq)) ? message_seq : undefined,
       is_add: typeof is_add === "boolean" ? is_add : undefined });
   }
+}
+
+async function dispatchProfileLike(
+  dispatch: (event: OneBotProfileLikeNotice) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, operator_id, operator_nick, times, time, group_id } = event;
+  if (!isId(self_id) || !isId(operator_id) || !isId(time) ||
+      (group_id !== undefined && group_id !== 0) || typeof times !== "number" || !Number.isSafeInteger(times) || times < 0 ||
+      typeof operator_nick !== "string" || operator_nick.length > 256) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  console.info(`[${self_id}] 收到 ${operator_id} 的资料卡点赞 ${times} 次。`);
+  await dispatch({
+    post_type: "notice", notice_type: "friend", sub_type: "profile_like", adapter: "onebot",
+    self_id, user_id: operator_id, operator_id, operator_nick, times, time,
+    isGroup: false, isPrivate: true, isMaster: isMaster(self_id, operator_id),
+    reply(reply) {
+      const message = encodeOneBotReply(reply);
+      return !signal.aborted && message !== undefined && send({
+        action: "send_msg", params: { message_type: "private", user_id: operator_id, message, auto_escape: true },
+      });
+    },
+  });
 }
 
 async function dispatchMessage(
@@ -1119,6 +1152,7 @@ export function startOneBot(
     prewarmGroupMembers?: boolean;
     accepting?: () => boolean;
     onBind?: (botId: number, signal?: AbortSignal) => void;
+    onLegacySignal?: (event: OneBotLegacySignal, signal: AbortSignal) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
     http?: (request: Request) => Response | Promise<Response>;
   },
@@ -1133,7 +1167,43 @@ export function startOneBot(
     };
   }
 
+  async function handleLegacySignal(event: Record<string, unknown>, send: Send, connection: ConnectionData) {
+    if (options.accepting?.() === false) return;
+    const { self_id, user_id, time, notice_type } = event;
+    if (!isId(self_id) || !isId(user_id) || !isId(time)) return;
+    const signal = groupActionSignal(connection, self_id);
+    if (!signal) return;
+    const reply: MessageEvent["reply"] = (body) => {
+      const message = encodeOneBotReply(body);
+      return !signal.aborted && message !== undefined && send({
+        action: "send_msg", params: { message_type: "private", user_id, message, auto_escape: true },
+      });
+    };
+    if (notice_type === "bot_offline") {
+      if (user_id !== self_id || (event.group_id !== undefined && event.group_id !== 0) || typeof event.message !== "string" ||
+          (event.tag !== undefined && (typeof event.tag !== "string" || event.tag.length > 256)) ||
+          event.message.length > 2_000 || connection.receivedOffline) return;
+      connection.receivedOffline = true;
+      const tag = sanitizeRuntimeLog(event.tag || "账号下线", 256);
+      const message = sanitizeRuntimeLog(event.message);
+      options.onLegacySignal?.({ post_type: "system", notice_type: "offline", self_id, user_id, time, tag, message,
+        reply: () => false }, signal);
+      await notifyVerifiedFriendOwners(connection.calls, send, self_id,
+        active => selectNoticeOwners(options, self_id, active, options.isMaster),
+        `[${self_id}] ${tag}：${message}`, signal);
+    } else {
+      const { group_id, event_type, status_text } = event;
+      if (group_id !== 0 || typeof event_type !== "number" || !Number.isSafeInteger(event_type) || event_type < 0 ||
+          typeof status_text !== "string" || status_text.length > 512) return;
+      const end = event_type !== 1;
+      const message = status_text || (end ? "对方结束输入..." : "对方正在输入...");
+      options.onLegacySignal?.({ post_type: "internal", notice_type: "input", sub_type: "input_status",
+        self_id, user_id, time, group_id, event_type, status_text, end, message, reply }, signal);
+    }
+  }
+
   function bind(socket: Bun.ServerWebSocket<ConnectionData>, botId: number) {
+    socket.data.receivedOffline = false;
     socket.data.botId = botId;
     const send = sender(socket, { self_id: botId });
     const display = new OneBotMemberDisplay((groupId) => socket.data.calls.listMemberDisplay(send, groupId));
@@ -1321,8 +1391,13 @@ export function startOneBot(
                 },
               });
             } else if (message.notice_type === "group_card" || message.notice_type === "essence" ||
-                message.notice_type === "group_msg_emoji_like" || (message.notice_type === "notify" && message.sub_type === "group_name")) {
+                message.notice_type === "group_msg_emoji_like" ||
+                (message.notice_type === "notify" && (message.sub_type === "group_name" || message.sub_type === "title"))) {
               await dispatchGroupCompatibilityNotice(dispatch, send, message, socket.data, options.isMaster);
+            } else if (message.notice_type === "notify" && message.sub_type === "profile_like") {
+              await dispatchProfileLike(dispatch, send, message, socket.data, options.isMaster);
+            } else if (message.notice_type === "bot_offline" || (message.notice_type === "notify" && message.sub_type === "input_status")) {
+              await handleLegacySignal(message, send, socket.data);
             } else if (message.notice_type === "group_ban" && (options.onMemberMute || options.onGroupOwnerBanNotice)) {
               const { self_id, group_id, user_id, operator_id, time, duration, sub_type } = message;
               if (!isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(operator_id) ||

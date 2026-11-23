@@ -187,7 +187,7 @@ import { createCommandDelegation, delegationSession } from "./lib/command-delega
 import { canRestartHost, readRestartPausedAt, restartHost } from "./lib/process-restart.ts";
 import { scheduleProcessRestart } from "./lib/process-restart-schedule.ts";
 import { attachRuntimeLog, createPluginLog, runtimePluginLogger } from "./lib/runtime-log-writer.ts";
-import { readRuntimeLogs } from "./lib/runtime-logs.ts";
+import { readRuntimeLogs, sanitizeRuntimeLog } from "./lib/runtime-logs.ts";
 import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { createRuntimeStatus, readRuntimeStatusRedisClients } from "./lib/runtime-status.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
@@ -1440,7 +1440,7 @@ if (import.meta.main) {
     if (event.post_type === "notice" && event.notice_type === "group" && event.sub_type === "increase") {
       await handleGroupVerificationNotice(event);
     }
-    if (event.post_type === "notice" && event.notice_type === "friend") {
+    if (event.post_type === "notice" && event.notice_type === "friend" && event.sub_type === "poke") {
       const transport = event[friendMessageNoticeSession];
       if (friendPokeNotice && transport) {
         const notice = forwardFriendPoke(event, transport).catch(() => {});
@@ -3390,6 +3390,17 @@ if (import.meta.main) {
         prewarmGroupMembers: botConfig.cache_group_member === undefined || Boolean(botConfig.cache_group_member),
         accepting: acceptingPublic,
         onBind: (botId, signal) => queueStartupMessages(botId, undefined, signal),
+        onLegacySignal(event, signal) {
+          if (!legacyBot || stopping || !handoff.accepting) return;
+          const active = AbortSignal.any([lifecycle.signal, handoffSession.signal, signal]);
+          if (active.aborted) return;
+          if (event.post_type === "system") console.info(`[${event.self_id}] ${event.tag}：${event.message}`);
+          else {
+            if (!groupDispatch.allowsInbound({ self_id: event.self_id, user_id: event.user_id })) return;
+            console.info(`[${event.self_id}] ${sanitizeRuntimeLog(event.message, 512)}`);
+          }
+          legacy.exitHooks.emit(legacyBot, event, active);
+        },
         onSent: valkey === undefined ? undefined : (identity, message) => recordCount("send", identity, message),
         http: fetch,
         tls,
@@ -3448,7 +3459,7 @@ if (import.meta.main) {
         return this;
       },
       once(event: unknown, listener: unknown) {
-        legacy.exitHooks.add(event, listener);
+        legacy.exitHooks.add(event, listener, true);
         return this;
       },
       off(event: unknown, listener: unknown) {
