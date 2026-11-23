@@ -24,6 +24,7 @@ import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-c
 import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner-account-command.ts";
 import { createOwnerQzoneCommand, ownerQzoneFeatures } from "./lib/owner-qzone-command.ts";
 import { arkSelfRankFeatures, createArkSelfRankCommand, matchArkSelfRank } from "./lib/ark-self-rank.ts";
+import { containsPanelSignatureChallenge, createPanelSignatureService, matchPanelSignatureCommand, panelSignatureFeatures } from "./lib/panel-signature.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -254,7 +255,7 @@ const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_t
 function isPrivateCredentialMessage(text: string): boolean {
   return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
     isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text) ||
-    isGenshinPayLogLinkCandidate(text) || hasPanelTransferCapability(text);
+    isGenshinPayLogLinkCandidate(text) || hasPanelTransferCapability(text) || containsPanelSignatureChallenge(text);
 }
 
 function containsPanelTransferCapability(message: MessageEvent["message"]): boolean {
@@ -264,6 +265,12 @@ function containsPanelTransferCapability(message: MessageEvent["message"]): bool
 
 function isPanelTransferInput(event: MessageEvent): boolean {
   return [event.msg, event.raw_message].some(hasPanelTransferCapability) || containsPanelTransferCapability(event.message);
+}
+
+function isGameSignatureInput(event: MessageEvent): boolean {
+  const text = typeof event.message === "string" ? event.message :
+    event.message.map(part => part.type === "text" ? part.text : "").join("");
+  return [event.msg, event.raw_message, text].some(containsPanelSignatureChallenge);
 }
 const groupVerificationNames = ["[group] 入群验证", "group", "@lotus-yunzai/group"];
 const privateGroupNames = ["[group] 私聊群管", "group", "@lotus-yunzai/group"];
@@ -359,12 +366,37 @@ if (import.meta.main) {
       if (!stopping && handoff.accepting && groupDispatch.admit(event)) await dispatchMessage(event, handled);
     },
   });
+  const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const gachaBatch = createGachaBatch({
-    listIds: createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined).listIds,
+    listIds: roleProfiles.listIds,
     signal: lifecycle.signal,
   });
-  const panelRebuild = createPanelRebuild(createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined), lifecycle.signal);
-  const arkSelfRank = createArkSelfRankCommand(createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined));
+  const panelRebuild = createPanelRebuild(roleProfiles, lifecycle.signal);
+  const arkSelfRank = createArkSelfRankCommand(roleProfiles);
+  const panelSignatures = createPanelSignatureService(lockFile);
+
+  async function exportSignedPanel(game: "gs" | "sr", uid: string, authorized: () => Promise<boolean>,
+    event: MessageEvent, signal: AbortSignal) {
+    const { uploadFile } = event;
+    if (!uploadFile || event.user_id === undefined) return "当前会话不支持发送面板文件。";
+    const authorize = async (target: string) => target === uid && await authorized();
+    try {
+      if (game === "gs") {
+        const [{ createGenshinSignedPanelExport }, { createGenshinPanelArchive }, { readPanelTheme }] = await Promise.all([
+          import("./plugins/genshin/panel/panel-file.ts"), import("./plugins/genshin/panel/panel.ts"),
+          import("./plugins/genshin/panel/theme.ts"),
+        ]);
+        return await createGenshinSignedPanelExport(createGenshinPanelArchive(lockFile), lifecycle.signal, readPanelTheme)(
+          { uid, authorize }, { ...event, privateCredentialSignal: signal });
+      }
+      const { createStarRailSignedPanelExport } = await import("./plugins/starrail/panel-signed-export.ts");
+      return await createStarRailSignedPanelExport(lockFile, lifecycle.signal)({
+        qq: String(event.user_id), uid, authorize, uploadFile, signal,
+      });
+    } catch {
+      if (!signal.aborted) return "当前无法读取签名导出的游戏模块。";
+    }
+  }
   const restartPausedAt = readRestartPausedAt();
   const durablePause = handoff.powerState;
   const recordedPause = durablePause?.load();
@@ -1025,6 +1057,7 @@ if (import.meta.main) {
   }
 
   async function routeEvent(event: BotEvent) {
+    if (event.post_type === "message" && isGameSignatureInput(event)) return;
     if (event.post_type === "message" && (containsArkRankTokenInput(event.message) || isPanelTransferInput(event))) {
       if (groupDispatch.admit(event)) await dispatchMessage(event);
       return;
@@ -1853,6 +1886,7 @@ if (import.meta.main) {
   let panelTransfer: PanelTransferAccess | undefined;
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
+    if (isGameSignatureInput(incoming)) return;
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     const transfer = matchPanelTransferCommand(event.msg);
@@ -2045,6 +2079,35 @@ if (import.meta.main) {
       }
     }
     if (await privateAccess.blocked(event)) return;
+    const panelSignature = matchPanelSignatureCommand(event.msg);
+    if (panelSignature) {
+      const features = panelSignatureFeatures[panelSignature.game];
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
+      const scope = ownCheckinSession(event, features);
+      if (!scope?.privateFriend || event.self_id === undefined) {
+        await event.reply("请在当前机器人的好友私聊中验证本人游戏签名或导出面板。");
+        return;
+      }
+      const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
+      const { action, game } = panelSignature;
+      const qq = String(scope.user);
+      if (action !== "export") {
+        const uid = panelSignature.uid ?? (action === "begin" ? await roleProfiles.savedRole(qq, 1, game).then(role => role.uid).catch(() => undefined) : undefined);
+        const reply = await panelSignatures.run({ action, game, uid }, session);
+        if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+        return;
+      }
+      const uid = panelSignature.uid!;
+      const authorized = await panelSignatures.authorization(game, uid, session);
+      if (!scope.isCurrent()) return;
+      if (!authorized) {
+        await event.reply(`请先签名验证本人 UID ${uid}，或使用已登录档案的导出指令。`);
+        return;
+      }
+      const reply = await exportSignedPanel(game, uid, authorized, event, session.signal);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
+    }
     const selfRank = matchArkSelfRank(event.msg);
     if (selfRank) {
       const features = arkSelfRankFeatures[selfRank.game];
@@ -3086,7 +3149,10 @@ if (import.meta.main) {
         void handling.then(() => pending.delete(handling));
       },
       onGroupMessageSource(source: NativeGroupMessageSource) {
-        if (containsArkRankTokenInput(source.message) || containsPanelTransferCapability(source.message)) return;
+        const text = typeof source.message === "string" ? source.message :
+          source.message.map(part => part.type === "text" ? part.text : "").join("");
+        if (containsArkRankTokenInput(source.message) || containsPanelTransferCapability(source.message) ||
+            containsPanelSignatureChallenge(text)) return;
         const capture = rememberGroupRecall(source);
         if (capture) {
           pending.add(capture);
