@@ -15,6 +15,7 @@ import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
 import { bindGroupAvatar, groupAvatarSession } from "./group-avatar.ts";
 import { bindOwnerAccount, ownerAccountSession } from "./owner-account.ts";
+import { qzoneSession, type QzoneSession } from "./qzone.ts";
 import { bindGroupModeration, bindGroupRuleImageDigest, bindGroupVerificationScope, bindMessageGroupActions, bindMixedGroupImageParts,
   bindPrivateGroupActions, bindSingleGroupImageDigest, canModerateGroupSubject, groupMayReadPendingJoins, groupOperatorAuthority,
   isMemberMuteDuration, type GroupActionPolicy, type NativeGroupOwnerGroupNotice } from "./group-moderation.ts";
@@ -733,6 +734,13 @@ async function dispatchMessage(
       supported: (_operation, active) => calls.isNapCat(send, active), friends: active => calls.readCurrentFriendIds(send, active),
       write: (operation, active) => calls.updateOwnerAccount(send, operation, active),
     }) : undefined,
+    [qzoneSession]: boundAccount && leaveSignal && messageType === "private" && selfId !== undefined ? {
+      signal: leaveSignal, isOwner: () => isMaster(selfId, userId), supported: active => calls.isNapCat(send, active),
+      isFriend: async active => await calls.friendship(send, userId, active) === true,
+      list: (offset, count, active) => calls.listQzonePosts(send, selfId, offset, count, active),
+      publish: (content, images, active) => calls.publishQzonePost(send, content, images, active),
+      remove: (tid, active) => calls.deleteQzonePost(send, tid, active),
+    } satisfies QzoneSession : undefined,
     likeSelf: (count) => calls.likeSelf(send, userId, count),
     profileLikeImageSignal: !noticeAttachment && connection && selfId !== undefined &&
       (messageType === "group" || event.sub_type === "friend") ? groupActionSignal(connection, selfId) : undefined,

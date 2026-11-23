@@ -22,6 +22,7 @@ import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } fr
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
 import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner-account-command.ts";
+import { createOwnerQzoneCommand, ownerQzoneFeatures } from "./lib/owner-qzone-command.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -411,6 +412,7 @@ if (import.meta.main) {
   const groupAvatar = createGroupAvatarCommand();
   const legacyCharacterAliases = legacyCharacterAliasCommands(lockFile, lifecycle.signal, fileURLToPath(root));
   const ownerAccount = createOwnerAccountCommand();
+  const ownerQzone = createOwnerQzoneCommand();
   let leaveBlacklist: { policy: GroupLeaveBlacklist; signal: AbortSignal } | undefined;
   let managedBlacklist: {
     policy: { blocked(userId: number): Promise<boolean>; shouldAutoUnmute(userId: number): Promise<boolean> };
@@ -2104,6 +2106,11 @@ if (import.meta.main) {
     }
     if (allowNew && allowed(ownerAccountFeatureNames) && await ownerAccount(event, nativeOperationSignal(),
       () => groupDispatch.allowsInbound(event) && allowed(ownerAccountFeatureNames))) {
+      handled?.();
+      return;
+    }
+    if (allowNew && allowed(ownerQzoneFeatures) && await ownerQzone(event, nativeOperationSignal(),
+      () => groupDispatch.allowsInbound(event) && allowed(ownerQzoneFeatures))) {
       handled?.();
       return;
     }

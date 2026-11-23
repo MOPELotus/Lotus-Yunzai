@@ -10,6 +10,7 @@ import type { RequestDecisionOutcome } from "../request-claim.ts";
 import { reviewObservedBatch } from "./owner-request-batch.ts";
 import { inlineAvatar } from "./group-avatar.ts";
 import type { OwnerAccountOperation } from "./owner-account.ts";
+import { readQzonePage, readQzonePublishResult, type QzoneWriteResult } from "./qzone.ts";
 
 type ResponseValue = Record<string, unknown> | undefined;
 interface ObservedRequest<T> {
@@ -52,12 +53,12 @@ export class OneBotCalls {
   readonly #reviewingOwnerBatches = new Set<"friend" | "invite">();
   #closed = false;
 
-  async #request(send: Send, action: string, params: object, signal?: AbortSignal): Promise<unknown> {
+  async #request(send: Send, action: string, params: object, signal?: AbortSignal, timeout = 5_000): Promise<unknown> {
     if (this.#closed) throw new OneBotNotSentError("QQ 协议连接已关闭。");
     signal?.throwIfAborted();
     const echo = crypto.randomUUID();
     const { promise, resolve } = Promise.withResolvers<ResponseValue>();
-    const timer = setTimeout(() => resolve(undefined), 5_000);
+    const timer = setTimeout(() => resolve(undefined), timeout);
     const abort = () => resolve(undefined);
     signal?.addEventListener("abort", abort, { once: true });
     this.#requests.set(echo, resolve);
@@ -333,6 +334,33 @@ export class OneBotCalls {
       const version = await this.#request(send, "get_version_info", {}, signal);
       return isRecord(version) && version.app_name === "NapCat.Onebot";
     } catch { return false; }
+  }
+
+  async listQzonePosts(send: Send, bot: number, offset: number, count: number, signal: AbortSignal) {
+    const data = await this.#request(send, "get_qzone_msg_list", { target_uin: String(bot), pos: offset, num: count }, signal, 25_000);
+    return readQzonePage(data, offset, count);
+  }
+
+  async #writeQzone<T>(send: Send, action: string, params: object, signal: AbortSignal,
+    readReceipt: (data: unknown) => T | undefined, timeout: number): Promise<QzoneWriteResult<T>> {
+    try {
+      if (signal.aborted) return { status: "rejected" };
+      const value = readReceipt(await this.#request(send, action, params, signal, timeout));
+      return value === undefined ? { status: "unknown" } : { status: "confirmed", value };
+    } catch (error) {
+      // NapCat can report an upstream connection failure after submitting a write.
+      return { status: error instanceof OneBotNotSentError ? "rejected" : "unknown" };
+    }
+  }
+
+  publishQzonePost(send: Send, content: string, images: readonly Uint8Array[], signal: AbortSignal) {
+    return this.#writeQzone(send, "send_qzone_msg", { content, ...(images.length && { images: images.map(inlineAvatar) }),
+      ugc_right: 1 }, signal, readQzonePublishResult, images.length ? 90_000 : 25_000);
+  }
+
+  deleteQzonePost(send: Send, tid: string, signal: AbortSignal) {
+    // NapCat validates the upstream business response before returning null.
+    return this.#writeQzone(send, "delete_qzone_msg", { tid }, signal, data => data === null ? null : undefined, 25_000);
   }
 
   publishGroupAnnouncement(send: Send, groupId: number, content: string, image: string | undefined, signal: AbortSignal) {

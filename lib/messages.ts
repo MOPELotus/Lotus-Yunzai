@@ -8,6 +8,7 @@ import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "./manual-
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import { groupAvatarSession, type GroupAvatarSession } from "./adapters/group-avatar.ts";
 import { ownerAccountSession, type OwnerAccountSession } from "./adapters/owner-account.ts";
+import { qzoneSession, type QzoneSession } from "./adapters/qzone.ts";
 import type { MentionLikeTarget } from "./adapters/mention-like.ts";
 import type { OwnerFriendReplyBody, OwnerFriendReplyOutcome } from "./adapters/owner-friend-reply.ts";
 import type { PendingGroupJoinBatch, PendingGroupJoinDecision, PendingGroupJoinList, QuotedJoinReviewResult } from "./group-join-review.ts";
@@ -118,6 +119,7 @@ export interface MessageEvent {
   readonly [ownGroupCardSession]?: () => OwnGroupCardAccount | undefined;
   readonly [groupAvatarSession]?: GroupAvatarSession;
   readonly [ownerAccountSession]?: OwnerAccountSession;
+  readonly [qzoneSession]?: QzoneSession;
   readonly listCurrentGroupMembers?: ReadCurrentGroupMembers;
   readonly listCheckinGroupMembers?: ReadCurrentGroupMembers;
   readonly forward?: (nodes: readonly MessageReply[], senderName?: string, options?: Pick<ReplyOptions, "recallMsg">) => Promise<boolean>;
