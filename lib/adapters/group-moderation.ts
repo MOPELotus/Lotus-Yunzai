@@ -11,6 +11,8 @@ export type GroupMuteAction = (userId: number, seconds: number) => Promise<Group
 export type GroupMuteSelfAction = (seconds: number) => Promise<GroupMemberModerationResult>;
 export type GroupWholeMuteAction = (enabled: boolean) => Promise<GroupModerationResult | "unavailable">;
 export type GroupKickAction = (userId: number, block: boolean, onConfirmedName?: (name: string) => void) => Promise<GroupMemberModerationResult>;
+type MemberActivity = Pick<GroupActivityMember, "joinTime" | "lastSentTime">;
+export type GroupKickInactiveAction = (userId: number, expected: MemberActivity) => Promise<GroupMemberModerationResult | "activity-changed">;
 export type GroupManageBlacklistAction = () => Promise<boolean>;
 export type GroupSpecialTitleAction = (
   userId: number, title: string, verify?: () => Promise<boolean>, onConfirmedName?: (name: string) => void,
@@ -372,7 +374,7 @@ export async function groupOperatorAuthority(
   const [actorRole, botRole] = await Promise.all([role(actor), role(bot)]).catch(() => []);
   if (!active() || !actorRole || !botRole) return;
   const master = isMaster();
-  if ((master || actorRole !== "member") && botRole !== "member") return { master, botRole };
+  if ((master || actorRole !== "member") && botRole !== "member") return { master, botRole, actorRole };
 }
 
 export async function runTimedWholeMute(binding: TimedGroupMuteBinding, session: {
@@ -471,7 +473,7 @@ async function buildGroupNotice(parts: readonly InboundSegment[], source: Messag
       (typeof data.text === "string" && data.text.trim()))) return reply;
 }
 
-export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, mute, wholeMute, kick, title, setAdmin,
+export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaster, isProtected, role, readMemberActivity, mute, wholeMute, kick, title, setAdmin,
   essence, notice, announcement, vote }: {
   readonly bot: number;
   readonly actor: number;
@@ -480,6 +482,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   readonly isMaster: () => boolean;
   readonly isProtected: (userId: number) => boolean;
   readonly role: (userId: number, onName?: (name: string) => void) => Promise<Role | undefined>;
+  readonly readMemberActivity?: (userId: number) => Promise<Pick<LiveGroupMember, "role" | "joinTime" | "lastSentTime"> | undefined>;
   readonly mute: (userId: number, seconds: number, active?: AbortSignal) => Promise<GroupModerationResult>;
   readonly wholeMute: (enabled: boolean) => Promise<GroupModerationResult>;
   readonly kick: (userId: number, block: boolean, active?: AbortSignal) => Promise<GroupModerationResult>;
@@ -507,6 +510,7 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
   };
 }): {
   groupMute: GroupMuteAction; groupWholeMute: GroupWholeMuteAction; groupKick: GroupKickAction;
+  groupKickInactive?: GroupKickInactiveAction;
   groupManageBlacklist: GroupManageBlacklistAction; groupManageWhitelistAutoUnmute: GroupManageBlacklistAction;
   groupSetSpecialTitle: GroupSpecialTitleAction;
   groupSetAdmin: GroupSetAdminAction;
@@ -620,6 +624,18 @@ export function bindMessageGroupActions({ bot, actor, signal, accepting, isMaste
       if (protection) return protection;
       return withConfirmedName(await apply(() => kick(userId, block)), name, onConfirmedName);
     },
+    groupKickInactive: readMemberActivity ? async (userId, expected) => {
+      if (!Number.isSafeInteger(userId) || userId <= 0) return "rejected";
+      if (userId === actor || userId === bot || isProtected(userId)) return "protected";
+      const authority = await authorize();
+      if (typeof authority === "string") return authority;
+      const current = await readMemberActivity(userId).catch(() => undefined);
+      if (!active() || !current || authority.actorRole === "member" && !isMaster()) return "unavailable";
+      if (current.role !== "member" || isProtected(userId)) return "protected";
+      if (current.joinTime === undefined || current.lastSentTime === undefined || current.lastSentTime === 0) return "unavailable";
+      if (current.joinTime !== expected.joinTime || current.lastSentTime !== expected.lastSentTime) return "activity-changed";
+      return apply(() => kick(userId, false));
+    } : undefined,
     groupManageBlacklist: () => canManage("list"),
     groupManageWhitelistAutoUnmute: () => canManage("automatic"),
     async groupSetSpecialTitle(userId, text, verify, onConfirmedName) {

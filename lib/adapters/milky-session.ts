@@ -1168,6 +1168,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           if (member?.name) onName?.(member.name);
           return member?.role;
         },
+        readMemberActivity: id => liveGroupMember(groupId, id),
         async mute(user_id, duration, active = signal) {
           return (await call.confirmed("set_group_member_mute", { group_id: groupId, user_id, duration }, active)).status;
         },

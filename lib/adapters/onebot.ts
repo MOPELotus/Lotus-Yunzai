@@ -760,6 +760,7 @@ async function dispatchMessage(
         if (member?.name) onName?.(member.name);
         return member?.role;
       },
+      readMemberActivity: id => calls.getLiveGroupMember(send, target.group_id, id, true, likeSession),
       mute: (id, seconds, active = likeSession) => calls.setGroupMute(send, target.group_id, id, seconds, active),
       wholeMute: enabled => calls.setGroupWholeMute(send, target.group_id, enabled, likeSession),
       kick: (id, block, active = likeSession) => calls.kickGroupMember(send, target.group_id, id, active, block),

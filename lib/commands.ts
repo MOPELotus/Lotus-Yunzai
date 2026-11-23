@@ -9,7 +9,7 @@ export type CommandContext = Readonly<Pick<
     "reviewGroupRequest" | "groupRequestScope" | "canReviewGroupRequests" | "uploadFile" | "deliverMedia" | "sendMusicCard" |
     "attachment" | "canReadAttachments" | "adapter" | "inlineImageByteLimit" | "isNapCat" |
     "listCurrentGroupMembers" | "listCheckinGroupMembers" | "privateCredentialSignal" | "canDelegate" | "delegationSignal" | "isDelegated" |
-    "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
+    "profileLikeImageSignal" | "groupMute" | "groupMuteSelf" | "groupWholeMute" | "groupKick" | "groupKickInactive" | "groupManageBlacklist" | "groupManageWhitelistAutoUnmute" |
     "groupSetSpecialTitle" | "groupSetAdmin" | "setGroupName" | "groupMuteRoster" | "groupActivityRoster" | "groupActivitySignal" | "groupSetQuotedEssence" |
     "groupNotifyAll" | "groupReviewQuotedRequest" | "groupReviewPendingJoin" | "groupReviewAllPendingJoins" | "groupListPendingJoinRequests" | "listPendingGroupInvitations" |
     "listPendingFriendRequests" | "reviewPendingFriendRequest" | "reviewPendingGroupInvitation" | "reviewQuotedGroupInvitation" |
@@ -123,7 +123,7 @@ interface RegisteredCommand {
 
 function commandContext(context: CommandContext): CommandContext {
   const { message_type, message_id, self_id, user_id, group_id, isMaster, member, likeSelf, mentionLike, groupMute, groupMuteSelf, groupWholeMute, groupKick,
-    groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
+    groupKickInactive, groupManageBlacklist, groupManageWhitelistAutoUnmute, groupSetSpecialTitle, groupSetAdmin, setGroupName, groupMuteRoster,
     groupActivityRoster, groupActivitySignal, groupSetQuotedEssence, groupNotifyAll, groupReviewQuotedRequest, groupReviewPendingJoin, groupReviewAllPendingJoins,
     groupListPendingJoinRequests, listPendingGroupInvitations, reviewPendingGroupInvitation, reviewQuotedGroupInvitation,
     listPendingFriendRequests, reviewPendingFriendRequest, reviewAllPendingFriendRequests, reviewAllPendingGroupInvitations,
@@ -146,6 +146,7 @@ function commandContext(context: CommandContext): CommandContext {
     ...(message_type === "group" && !isDelegated && groupMuteSelf ? { groupMuteSelf } : {}),
     ...(message_type === "group" && !isDelegated && groupWholeMute ? { groupWholeMute } : {}),
     ...(message_type === "group" && !isDelegated && groupKick ? { groupKick } : {}),
+    ...(message_type === "group" && !isDelegated && groupKickInactive ? { groupKickInactive } : {}),
     ...(message_type === "group" && !isDelegated && groupManageBlacklist ? { groupManageBlacklist } : {}),
     ...(message_type === "group" && !isDelegated && groupManageWhitelistAutoUnmute ? { groupManageWhitelistAutoUnmute } : {}),
     ...(message_type === "group" && !isDelegated && groupSetSpecialTitle ? { groupSetSpecialTitle } : {}),

@@ -127,6 +127,34 @@ test("管理员命令即使提及自己，设置头衔前也要复核主人权�
   expect(writes).toEqual(["正常自助申请"]);
 });
 
+test("清理需要当前主人或实时已核对的群管理权限", async () => {
+  const started = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<void>();
+  const activity = { joinTime: 1_700_000_000, lastSentTime: 1_700_000_000 };
+  let master = true;
+  let actor: "member" | "admin" = "member";
+  const writes: number[] = [];
+  const actions = bindMessageGroupActions({
+    bot: 99, actor: 51, signal: new AbortController().signal, isMaster: () => master, isProtected: () => false,
+    async role(id) { return id === 99 ? "admin" : actor; },
+    async readMemberActivity() { started.resolve(); await held.promise; return { role: "member", ...activity }; },
+    async mute() { return "confirmed"; },
+    async wholeMute() { return "confirmed"; },
+    async kick(id) { writes.push(id); return "confirmed"; },
+    async title() { return "confirmed"; },
+    async setAdmin() { return "confirmed"; },
+  });
+  const pending = actions.groupKickInactive!(42, activity);
+  await started.promise;
+  master = false;
+  held.resolve();
+  expect(await pending).toBe("unavailable");
+  expect(writes).toEqual([]);
+  actor = "admin";
+  expect(await actions.groupKickInactive!(42, activity)).toBe("confirmed");
+  expect(writes).toEqual([42]);
+});
+
 test("群投票终局复核当前角色、目标保护和暂停信号，网关确认的回复才可计时", async () => {
   const connection = new AbortController();
   const power = new AbortController();
@@ -213,18 +241,24 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         last_sent_time: group_id === 86 && cleanupRosterChanged ? joined + 60 : joined },
       { group_id, user_id: 54, role: "member", card: "已有活动夹具", join_time: joined + 5, last_sent_time: joined + 10 },
       ...(group_id === 79 && batchRoster ? [{ group_id, user_id: 77, role: "member", join_time: joined + 3, last_sent_time: joined + 3 }] : []),
-      ...(group_id === 86 ? [{ group_id, user_id: 62, role: "member", join_time: joined + 1, last_sent_time: joined + 1 }] : []),
+      ...(group_id === 86 ? [62, 64].map((user_id, index) => ({ group_id, user_id, role: "member",
+        join_time: joined + 1 + index, last_sent_time: joined + 1 + index })) : []),
       ...(group_id === 86 && cleanupRosterChanged ? [
         { group_id, user_id: 63, role: "member", join_time: joined + 12, last_sent_time: joined + 12 },
       ] : []),
+      ...(group_id === 89 ? [65, 66].map((user_id, index) => ({ group_id, user_id, role: "member",
+        join_time: joined + 1 + index, last_sent_time: joined + 1 + index })) : []),
     ];
   };
   const reportedMembers = (group: unknown, bot: number) => group === 85 ? 5 : activity(Number(group), bot).length;
   function member(params: Call["params"]) {
     const baseline = liveMember(params);
     const key = `${params.group_id}:${params.user_id}`;
-    return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key),
-      last_sent_time: memberLastSentTimes.get(key), ...(key === "88:55" ? { card: "合成私聊名片" } : {}),
+    const listed = params.group_id === 86 || params.group_id === 89
+      ? activity(params.group_id, 0).find(row => row.user_id === params.user_id) : undefined;
+    return { ...baseline, role: rosterChanges.get(key) ?? baseline.role, join_time: memberJoinTimes.get(key) ?? listed?.join_time,
+      last_sent_time: key === "89:66" ? undefined : memberLastSentTimes.get(key) ?? listed?.last_sent_time,
+      ...(key === "88:55" ? { card: "合成私聊名片" } : {}),
       ...(key === "82:42" ? { card: "合成管理名片", nickname: "未采用的旧昵称" } : {}),
       ...(key === "79:53" ? { nickname: "合成管理员昵称" } : {}),
       ...(key === "79:60044" ? { card: "未确认的管理名片" } : {}),
@@ -294,6 +328,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         milkyJoinReceipt = milkyCalls.length;
       }
       if (action === "reject_group_request" && params.notification_seq === 901) milkyJoinState = "rejected";
+      if (action === "kick_group_member" && params.group_id === 89 && params.user_id === 42) memberJoinTimes.set("89:65", 1_700_000_060);
       if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_sender") regularFriendReadback = "accepted";
       if (action === "accept_friend_request" && params.initiator_uid === "milky_fixture_unknown") return new Response(null, { status: 503 });
       if (action === "send_private_message" && params.user_id === 43 && JSON.stringify(params.message).includes("合成 Milky 未知回复")) {
@@ -417,6 +452,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
         oneBotJoinReceipts.add(oneBotCalls.length);
       }
       if (action === "set_group_add_request" && params.flag === "910001") originalJoinChecked = true;
+      if (action === "set_group_kick" && params.group_id === 86 && params.user_id === 62) memberLastSentTimes.set("86:64", 1_700_000_060);
       if (action === "_del_group_notice" && params.notice_id === "opaque-image") removedOneBotAnnouncements.add(params.notice_id);
       if (action === "set_group_admin") updateRole(params, params.enable);
       const denied = action === "set_group_ban" && params.group_id === 82 && params.user_id === 44;
@@ -817,11 +853,27 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     send(confirmation);
     const cleanup = await waitUntil(() => oneBotCalls.find(({ action, params }) =>
       action === "send_group_forward_msg" && params.group_id === 86), "OneBot 未转发已确认的清理回执。");
-    expect(JSON.stringify(cleanup.params.messages)).toContain("62");
+    const cleanupText = JSON.stringify(cleanup.params.messages);
+    expect(cleanupText).toContain("成功清理如下人员\\n1、62");
+    expect(cleanupText).toContain("已跳过\\n1、42\\n2、64");
     send(confirmation);
     await Bun.sleep(60);
     expect(oneBotCalls.filter(({ action, params }) => action === "set_group_kick" && params.group_id === 86)
       .map(({ params }) => params)).toEqual([{ group_id: 86, user_id: 62, reject_add_request: false }]);
+
+    const milkyCleanup = (msg: string) => ({ ...milkyTitle(msg), peer_id: 89, group_member: { group_id: 89, user_id: operator, role: "admin" } });
+    await webhook("message_receive", milkyCleanup("#清理从未发言的人"));
+    await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" && params.group_id === 89 &&
+      JSON.stringify(params.message).includes("本次共需清理 3 人")), "Milky 未生成待清理成员预览。");
+    await webhook("message_receive", milkyCleanup("#确认清理"));
+    const milkyCleanupResult = await waitUntil(() => milkyCalls.find(({ action, params }) => action === "send_group_message" &&
+      params.group_id === 89 && JSON.stringify(params.message).includes("成功清理如下人员")), "Milky 未转发清理回执。");
+    const milkyCleanupText = JSON.stringify(milkyCleanupResult.params.message);
+    expect(milkyCleanupText).toContain("成功清理如下人员\\n1、42");
+    expect(milkyCleanupText).toContain("已跳过\\n1、65");
+    expect(milkyCleanupText).toContain("以下成员未能清理，请核对权限和成员活动数据\\n1、66");
+    expect(milkyCalls.filter(({ action, params }) => action === "kick_group_member" && params.group_id === 89).map(({ params }) => params))
+      .toEqual([{ group_id: 89, user_id: 42, reject_add_request: false }]);
 
     send(oneBotMessage("#查看潜水排行榜二", 54, 84));
     const inactive = await waitUntil(() => oneBotCalls.find(({ action, params }) => action === "send_group_forward_msg" &&

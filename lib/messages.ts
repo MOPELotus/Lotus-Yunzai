@@ -13,7 +13,7 @@ import type { PendingGroupInvitationDecision, PendingGroupInvitationList, Quoted
 import type { PendingFriendRequestDecision, PendingFriendRequestList } from "./friend-requests.ts";
 import type { OwnerRequestBatchResult } from "../plugins/group/owner-request-batch.ts";
 import { friendMessageNoticeSession, type FriendMessageNoticeSession, type QuotedOwnerFriendReplyOutcome } from "./friend-message-notice.ts";
-import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupManageBlacklistAction,
+import type { GroupActivityMember, GroupActivityVisibility, GroupAnnouncement, GroupDeleteAnnouncement, GroupKickAction, GroupKickInactiveAction, GroupManageBlacklistAction,
   GroupMuteAction, GroupNotifyAllAction, GroupPublishAnnouncement, GroupVerificationScope, GroupVoteAccess,
   GroupMuteSelfAction, GroupSetAdminAction, GroupSetQuotedEssenceAction, GroupSpecialTitleAction, GroupWholeMuteAction,
   MutedGroupMember, PrivateGroupKick, PrivateGroupMute, PrivateGroupWholeMute } from "./adapters/group-moderation.ts";
@@ -74,6 +74,7 @@ export interface MessageEvent {
   readonly groupMuteSelf?: GroupMuteSelfAction;
   readonly groupWholeMute?: GroupWholeMuteAction;
   readonly groupKick?: GroupKickAction;
+  readonly groupKickInactive?: GroupKickInactiveAction;
   readonly groupManageBlacklist?: GroupManageBlacklistAction;
   readonly groupManageWhitelistAutoUnmute?: GroupManageBlacklistAction;
   readonly groupSetSpecialTitle?: GroupSpecialTitleAction;
