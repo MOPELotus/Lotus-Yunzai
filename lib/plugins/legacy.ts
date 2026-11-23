@@ -112,6 +112,10 @@ function legacyNotice(event: BotEvent) {
   if (milky && event.notice_type === "offline") {
     return { ...event, self_id, user_id: String(event.user_id) };
   }
+  if (milky && event.notice_type === "group" && (event.sub_type === "admin" || event.sub_type === "ban")) {
+    return { ...event, self_id, group_id: String(event.group_id), user_id: String(event.user_id),
+      operator_id: event.sub_type === "ban" ? String(event.operator_id) : event.operator_id };
+  }
   // TRSS splits on the first underscore before Bot.em and uses the remainder as the subtype.
   if (event.notice_type === "group_msg_emoji_like") {
     return { ...event, notice_type: "group" as const, sub_type: "msg_emoji_like" as const,

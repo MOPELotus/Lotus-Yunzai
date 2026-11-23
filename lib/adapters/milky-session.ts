@@ -774,6 +774,8 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (body.event_type === "bot_offline") return "offline";
     if (options.accepting?.() === false) return "accepted";
     groupMute.observe(body);
+    const compatibilityNotice = milkyGroupCompatibilityNotice(body, account, sendReply, isMaster);
+    if (compatibilityNotice) deliver(compatibilityNotice);
 
     if (body.event_type === "group_admin_change") {
       const { group_id, user_id, is_set } = body.data;
@@ -1334,11 +1336,6 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           } };
         },
       }));
-    }
-    const compatibilityNotice = milkyGroupCompatibilityNotice(body, account, sendReply, isMaster);
-    if (compatibilityNotice) {
-      deliver(compatibilityNotice);
-      return "accepted";
     }
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
       const status = await leaveGroup(group_id);

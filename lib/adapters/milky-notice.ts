@@ -1,4 +1,5 @@
 import type { FriendPoke, GroupNotice, GroupPoke, MessageReply, MilkyGroupCompatibilityNotice } from "../messages.ts";
+import { isMemberMuteDuration } from "./group-moderation.ts";
 import { inspectMilkyAutoQuit, type MilkyAutoQuitCall } from "./milky-auto-quit.ts";
 
 type SendReply = (target: { group_id: number } | { user_id: number }, reply: MessageReply) => Promise<boolean>;
@@ -25,6 +26,24 @@ export function milkyGroupCompatibilityNotice(
     isGroup: true as const, isPrivate: false as const, isMaster: false,
     reply: (reply: MessageReply) => sendReply({ group_id }, reply),
   };
+  if (type === "group_admin_change") {
+    const { is_set, user_id } = data;
+    if (!isId(user_id) || typeof is_set !== "boolean") return;
+    return { ...base, notice_type: "group", sub_type: "admin", event_type: type, user_id, is_set,
+      action_sub_type: is_set ? "set" : "unset", isMaster: isMaster(user_id) };
+  }
+  if (type === "group_mute") {
+    const { user_id, duration } = data;
+    if (!isId(user_id) || operator_id === undefined || !isMemberMuteDuration(duration)) return;
+    return { ...base, notice_type: "group", sub_type: "ban", event_type: type, user_id, operator_id, duration,
+      action_sub_type: duration > 0 ? "ban" : "lift_ban", isMaster: isMaster(user_id) };
+  }
+  if (type === "group_whole_mute") {
+    const { is_mute } = data;
+    if (operator_id === undefined || typeof is_mute !== "boolean") return;
+    return { ...base, notice_type: "group", sub_type: "ban", event_type: type, user_id: 0, operator_id, is_mute,
+      action_sub_type: is_mute ? "ban" : "lift_ban" };
+  }
   if (type === "group_name_change" && operator_id !== undefined && typeof new_group_name === "string") {
     return { ...base, notice_type: "group_card", user_id: operator_id, isMaster: isMaster(operator_id), new_group_name,
       old_name: typeof data.old_name === "string" ? data.old_name : undefined,

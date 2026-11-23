@@ -72,20 +72,24 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
         "notice.group.poke", "notice.friend.poke", "notice.group.poke_recall", "notice.friend.poke_recall",
         "notice.friend.recall", "notice.group.recall",
         "message.group.normal", "message.private.friend", "notice.group.upload", "notice.offline.file",
+        "notice.group.admin", "notice.group.ban", "notice.friend.add",
       ].map((key, index) => ["listener" + index, class extends plugin {
         constructor() { super({ event: key }); }
         async accept(e) {
           const { group_id, user_id, operator_id, message_id, message_seq, likes, face_id, reaction_type,
             is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member, notice_type, sub_type,
-            action_sub_type, target_id, peer_id, self_id, message_scene, event_type, file, file_name, file_size, file_id, file_hash, is_self } = e;
+            action_sub_type, target_id, peer_id, self_id, message_scene, event_type, file, file_name, file_size, file_id, file_hash, is_self,
+            set, is_set: isAdminSet, is_mute, duration } = e;
           if (e.post_type === "message" && !e.attachment) return false;
           const fileNotice = sub_type === "file" || sub_type === "upload";
           const legacyMilkyGroup = e.adapter === "milky" && ["msg_emoji_like", "card", "essence"].includes(sub_type);
+          const managementNotice = ["admin", "ban", "add"].includes(sub_type);
           const payload = { key, group_id, user_id, operator_id, message_id, message_seq,
             likes, face_id, reaction_type, is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member,
             notice_type: notice_type ?? e.message_type, sub_type, action_sub_type, target_id, peer_id,
             ...(sub_type === "recall" && { self_id, message_scene, event_type }),
             ...(legacyMilkyGroup && { self_id }),
+            ...(managementNotice && { self_id, event_type, set, is_set: isAdminSet, is_mute, duration }),
             ...(fileNotice && { self_id, event_type, file, file_name, file_size, file_id, file_hash, is_self }),
             ...(e.post_type === "message" && { name: e.attachment.name, size: e.attachment.size,
               ...(e.adapter !== "milky" && { raw_message: e.raw_message }) }) };
@@ -112,9 +116,13 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
         Authorization: `Bearer ${token}`, "X-Client-Role": "Universal", "X-Self-ID": String(oneBotId),
       } });
       let receipt = 100;
+      const displayRefreshes: unknown[] = [];
       socket.addEventListener("message", ({ data }) => {
         const { action, params, echo } = JSON.parse(data);
-        if (echo) socket.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: { message_id: ++receipt } }));
+        if (action === "get_group_member_info") displayRefreshes.push(params);
+        if (echo) socket.send(JSON.stringify({ echo, status: "ok", retcode: 0,
+          data: action === "get_group_member_info" ? { ...params, role: "member", card: "刷新后的名片" } : { message_id: ++receipt },
+        }));
         if (action === "send_msg") {
           const recipient = params.message_type === "group" ? { group_id: params.group_id } : { user_id: params.user_id };
           replies.push({ ...recipient, payload: JSON.parse(params.message) });
@@ -254,6 +262,62 @@ test("OneBot 和 Milky WebSocket 将旧群、好友与文件事件交给相应�
       await verify({ ...milkyFileNotice, is_self: true }, { user_id: userId });
       await Bun.sleep(1_050);
       expect(replies).toHaveLength(29);
+
+      const admin = { user_id: userId, sub_type: "set" };
+      const mute = { user_id: userId, operator_id: 703, duration: 120, sub_type: "ban" };
+      const oneBotGroupIdentity = { self_id: oneBotId, group_id: groupId };
+      one("group_admin", admin, oneBotId + 9);
+      one("group_admin", { ...admin, sub_type: "unknown" });
+      one("group_admin", admin);
+      await verify({ key: "notice.group.admin", ...oneBotGroupIdentity, user_id: userId, set: true, action_sub_type: "set" });
+      one("group_admin", { ...admin, sub_type: "unset" });
+      await verify({ key: "notice.group.admin", ...oneBotGroupIdentity, user_id: userId, set: false, action_sub_type: "unset" });
+      one("group_ban", { ...mute, duration: -1 });
+      one("group_ban", mute);
+      await verify({ key: "notice.group.ban", ...oneBotGroupIdentity, user_id: userId, operator_id: 703, duration: 120,
+        action_sub_type: "ban" });
+      one("group_ban", { ...mute, user_id: oneBotId, duration: 0, sub_type: "lift_ban" });
+      await verify({ key: "notice.group.ban", ...oneBotGroupIdentity, user_id: oneBotId, operator_id: 703, duration: 0,
+        action_sub_type: "lift_ban" });
+      one("group_ban", { ...mute, user_id: 0, duration: -1 });
+      await verify({ key: "notice.group.ban", ...oneBotGroupIdentity, user_id: 0, operator_id: 703, duration: -1,
+        action_sub_type: "ban" });
+      one("group_ban", { ...mute, user_id: 0, duration: 0, sub_type: "lift_ban" });
+      await verify({ key: "notice.group.ban", ...oneBotGroupIdentity, user_id: 0, operator_id: 703, duration: 0,
+        action_sub_type: "lift_ban" });
+      one("friend_add", { group_id: groupId, user_id: userId });
+      one("friend_add", { group_id: undefined, user_id: userId }, oneBotId + 9);
+      one("friend_add", { group_id: undefined, user_id: userId });
+      await verify({ key: "notice.friend.add", self_id: oneBotId, user_id: userId }, { user_id: userId });
+      expect(displayRefreshes).toEqual([userId, userId, userId, oneBotId].map(user_id => (
+        { group_id: groupId, user_id, no_cache: true }
+      )));
+      one("group_decrease", { sub_type: "leave", user_id: userId });
+      await verify({ key: "notice.group.decrease", action_sub_type: "leave", group_id: groupId, user_id: userId,
+        member: { card: "刷新后的名片" } });
+
+      mk("group_admin_change", { user_id: userId, is_set: "true" });
+      mk("group_admin_change", { user_id: userId, is_set: true, operator_id: 703 });
+      await verify({ key: "notice.group.admin", ...milkyGroupIdentity, user_id, operator_id: 703,
+        event_type: "group_admin_change", is_set: true, action_sub_type: "set" });
+      mk("group_admin_change", { user_id: userId, is_set: false }, milkyId + 9);
+      mk("group_admin_change", { user_id: userId, is_set: false });
+      await verify({ key: "notice.group.admin", ...milkyGroupIdentity, user_id,
+        event_type: "group_admin_change", is_set: false, action_sub_type: "unset" });
+      mk("group_mute", { user_id: userId, operator_id: 703, duration: -1 });
+      mk("group_mute", { user_id: userId, operator_id: 703, duration: 120 });
+      await verify({ key: "notice.group.ban", ...milkyGroupIdentity, user_id, operator_id: "703",
+        event_type: "group_mute", duration: 120, action_sub_type: "ban" });
+      mk("group_mute", { user_id: userId, operator_id: 703, duration: 0 });
+      await verify({ key: "notice.group.ban", ...milkyGroupIdentity, user_id, operator_id: "703",
+        event_type: "group_mute", duration: 0, action_sub_type: "lift_ban" });
+      mk("group_whole_mute", { operator_id: 703, is_mute: true });
+      await verify({ key: "notice.group.ban", ...milkyGroupIdentity, user_id: "0", operator_id: "703",
+        event_type: "group_whole_mute", is_mute: true, action_sub_type: "ban" });
+      mk("group_whole_mute", { operator_id: 703, is_mute: false });
+      await verify({ key: "notice.group.ban", ...milkyGroupIdentity, user_id: "0", operator_id: "703",
+        event_type: "group_whole_mute", is_mute: false, action_sub_type: "lift_ban" });
+      expect(replies).toHaveLength(43);
     } finally {
       oneBot?.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");

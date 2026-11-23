@@ -382,8 +382,15 @@ interface GroupEssence {
   readonly message_id: number;
 }
 
+type GroupAdminChange = { readonly notice_type: "group"; readonly sub_type: "admin"; readonly user_id: number;
+  readonly action_sub_type: "set" | "unset" };
+
+type GroupMuteChange = { readonly notice_type: "group"; readonly sub_type: "ban"; readonly user_id: number;
+  readonly operator_id: number; readonly action_sub_type: "ban" | "lift_ban" };
+
 export type OneBotGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "onebot" } & (
   GroupReaction | (GroupEssence & { readonly sender_id: number }) |
+  (GroupAdminChange & { readonly set: boolean }) | (GroupMuteChange & { readonly duration: number }) |
   { readonly notice_type: "group_card"; readonly sub_type?: never; readonly card_old?: string; readonly card_new: string } |
   { readonly notice_type: "group"; readonly sub_type: "group_name"; readonly target_id?: number; readonly name_new: string } |
   { readonly notice_type: "group"; readonly sub_type: "title"; readonly user_id: number; readonly title: string } |
@@ -393,9 +400,26 @@ export type OneBotGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { re
 export type MilkyGroupCompatibilityNotice = GroupCompatibilityNoticeBase & { readonly adapter: "milky" } & (
   (GroupReaction & { readonly face_id: string; readonly reaction_type?: "face" | "emoji" }) |
   (GroupEssence & { readonly message_seq: number; readonly is_set: boolean }) |
+  (GroupAdminChange & { readonly event_type: "group_admin_change"; readonly is_set: boolean }) |
+  (GroupMuteChange & ({ readonly event_type: "group_mute"; readonly duration: number } |
+    { readonly event_type: "group_whole_mute"; readonly is_mute: boolean })) |
   { readonly notice_type: "group_card"; readonly sub_type?: never; readonly new_group_name: string;
     readonly old_name?: string; readonly new_name?: string }
 );
+
+export interface OneBotFriendAddNotice {
+  readonly post_type: "notice";
+  readonly notice_type: "friend";
+  readonly sub_type: "add";
+  readonly adapter: "onebot";
+  readonly self_id: number;
+  readonly user_id: number;
+  readonly time?: number;
+  readonly isGroup: false;
+  readonly isPrivate: true;
+  readonly isMaster: boolean;
+  readonly reply: MessageEvent["reply"];
+}
 
 export interface OneBotProfileLikeNotice {
   readonly post_type: "notice";
@@ -430,7 +454,7 @@ export type OneBotLegacySignal = OneBotLegacySignalIdentity & (
 
 export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
   OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice |
-  MessageRecallNotice | FileUploadNotice;
+  MessageRecallNotice | FileUploadNotice | OneBotFriendAddNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

@@ -554,7 +554,21 @@ async function dispatchGroupCompatibilityNotice(
       if (member && !signal.aborted) connection.display?.remember(group_id, memberId, member);
     });
   };
-  if (notice_type === "group_card") {
+  if (notice_type === "group_admin") {
+    if (!isId(user_id) || (sub_type !== "set" && sub_type !== "unset")) return;
+    refreshMember(user_id);
+    await dispatch({ ...base, notice_type: "group", sub_type: "admin", user_id,
+      action_sub_type: sub_type, set: sub_type === "set" });
+  } else if (notice_type === "group_ban") {
+    const { duration } = event;
+    if ((user_id !== 0 && !isId(user_id)) || !isId(operator_id) ||
+        (sub_type !== "ban" && sub_type !== "lift_ban")) return;
+    if (duration === -1) {
+      if (user_id !== 0 || sub_type !== "ban") return;
+    } else if (!isMemberMuteDuration(duration) || (sub_type === "ban") !== (duration > 0)) return;
+    if (user_id !== 0) refreshMember(user_id);
+    await dispatch({ ...base, notice_type: "group", sub_type: "ban", user_id, operator_id, duration, action_sub_type: sub_type });
+  } else if (notice_type === "group_card") {
     const { card_old, card_new } = event;
     if (!isId(user_id) || typeof card_new !== "string") return;
     connection.display?.remember(group_id, user_id, { card: card_new });
@@ -1418,6 +1432,10 @@ export function startOneBot(
               void dispatchMessageRecallNotice(dispatch, send, message, socket.data, options.isMaster)
                 .catch(() => console.error("处理 OneBot 撤回通知失败。"));
             }
+            if (message.notice_type === "group_admin" || message.notice_type === "group_ban") {
+              void dispatchGroupCompatibilityNotice(dispatch, send, message, socket.data, options.isMaster)
+                .catch(() => console.error("处理 OneBot 群管理通知失败。"));
+            }
             if (message.notice_type === "group_admin") {
               const { self_id, group_id, user_id, sub_type, time } = message;
               if (!options.onGroupOwnerAdminNotice || !isId(self_id) || !isId(group_id) || !isId(user_id) || !isId(time) ||
@@ -1482,11 +1500,25 @@ export function startOneBot(
                   scope => selectNoticeOwners(options, self_id, scope, options.isMaster), reply, AbortSignal.any([signal, workflow]),
                   { source: followup === undefined ? undefined : user_id, followup, allowFollowup: id => options.isMaster(self_id, id) }),
               });
-            } else if (message.notice_type === "friend_add" && options.onFriendRelationship) {
-              const { self_id, user_id, time } = message;
-              if (!isId(self_id) || !isId(user_id) || self_id === user_id || !isId(time)) return;
+            } else if (message.notice_type === "friend_add") {
+              const { self_id, user_id, time, group_id } = message;
+              if (!isId(self_id) || !isId(user_id) || self_id === user_id) return;
               const signal = groupActionSignal(socket.data, self_id);
               if (!signal) return;
+              if (group_id === undefined || group_id === 0) {
+                void dispatch({
+                  post_type: "notice", notice_type: "friend", sub_type: "add", adapter: "onebot", self_id, user_id,
+                  time: isId(time) ? time : undefined, isGroup: false, isPrivate: true, isMaster: options.isMaster(self_id, user_id),
+                  reply(reply) {
+                    if (signal.aborted) return false;
+                    const content = encodeOneBotReply(reply);
+                    return content !== undefined && send({
+                      action: "send_msg", params: { message_type: "private", user_id, message: content, auto_escape: true },
+                    });
+                  },
+                }).catch(() => console.error("处理 OneBot 好友新增通知失败。"));
+              }
+              if (!options.onFriendRelationship || !isId(time)) return;
               let profiles: ReturnType<OneBotCalls["listFriendProfiles"]> | undefined;
               const readProfiles = (workflow: AbortSignal) =>
                 profiles ??= calls.listFriendProfiles(send, AbortSignal.any([signal, workflow])).catch(() => []);
