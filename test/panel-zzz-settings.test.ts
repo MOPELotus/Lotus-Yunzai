@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { panelZzzSettings } from "../lib/panel-zzz-settings.ts";
 import { readRankConfig } from "../plugins/zzz/challenge-rank-store.ts";
 import { parseZzzPanelConfig, readZzzPanelConfigDocument } from "../plugins/zzz/panel-command.ts";
+import { zzzPanelIntervalCommand } from "../plugins/zzz/panel-interval-command.ts";
 
 const api = "http://127.0.0.1/panel/api/settings/games/zzz-rank";
 const rankEnv = "LOTUS_ZZZ_RANK_CONFIG";
@@ -98,6 +99,45 @@ test("绝区零面板更新间隔与热读共用字段，旧资源目录回退�
   } finally {
     restore(panelEnv, previous);
     restore("LOTUS_ZZZ_LEGACY_RESOURCES_DIR", legacy);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("绝区零旧聊天设置及网页共用原子写入，检测权限变化和旧网页快照", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-chat-zzz-refresh-"));
+  const root = pathToFileURL(directory + "/");
+  const previousPath = Bun.env[panelEnv];
+  const file = join(directory, "config", "zzz-panel.yaml");
+  const lexical = "# 保留部署方注释\ninterval: 60\nroleInterval: 3000\nextra: on\n";
+  const session = new AbortController().signal;
+  const owner = { adapter: "onebot", message_type: "private", user_id: 42, isMaster: true,
+    isBotMaster: (user: number): boolean => user === 42, privateCredentialSignal: session };
+  const run = (text: string, context = owner) => zzzPanelIntervalCommand(text, context, session, root);
+  try {
+    delete Bun.env[panelEnv];
+    await mkdir(join(directory, "config"));
+    await writeFile(file, lexical);
+    const panel = panelZzzSettings(root, "panel");
+    const { values: stale } = await (await panel(new Request(api), () => true)).json();
+    expect(await run("%刷新角色间隔99")).toContain("100 到 10000 毫秒");
+    expect(await run("#绝区零刷新面板间隔1001")).toContain("0 到 1000 秒");
+    expect(await run("#刷新角色间隔480")).toBeUndefined();
+    expect(await run("%刷新面板间隔12", { ...owner, user_id: 51 })).toContain("仅限当前机器人的主人");
+    let checks = 0;
+    expect(await run("%刷新面板间隔12", { ...owner, isBotMaster: () => ++checks < 3 })).toContain("仅限当前机器人的主人");
+    expect(await readFile(file, "utf8")).toBe(lexical);
+
+    const changed = await Promise.all([run("%刷新面板间隔0"), run("#绝区零刷新角色间隔 180")]);
+    expect(changed).toEqual(["绝区零刷新面板间隔已设置为 0 秒。", "绝区零刷新角色间隔已设置为 180 毫秒。"]);
+    const active = { interval: 0, roleInterval: 180 };
+    expect((await (await panel(new Request(api), () => true)).json()).values).toEqual(active);
+    expect((await panel(save({ ...stale, interval: 50 }, stale), () => true)).status).toBe(409);
+    expect((await panel(save({ ...active, interval: 50 }, active), () => true)).status).toBe(200);
+    expect(parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root))).toEqual({ interval: 50, roleInterval: 180 });
+    expect(await readFile(file, "utf8")).toContain("# 保留部署方注释");
+    expect(await readFile(file, "utf8")).toContain("extra: on");
+  } finally {
+    restore(panelEnv, previousPath);
     await rm(directory, { recursive: true, force: true });
   }
 });

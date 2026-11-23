@@ -90,6 +90,24 @@ function fieldsChanged<T extends RankValues | PanelValues>(before: T, after: T):
     !isDeepStrictEqual(value, before[key as keyof T])));
 }
 
+export async function updateZzzPanelIntervals(root: URL, values: Readonly<Partial<PanelValues>>,
+  active: () => boolean, signal: AbortSignal, previous?: PanelValues) {
+  const { parseZzzPanelConfig, readZzzPanelConfigDocument, zzzPanelConfigFile } = await import("../plugins/zzz/panel-command.ts");
+  const load = () => readZzzPanelConfigDocument(undefined, root);
+  return updateLocalConfiguration(root, "zzz-panel", {
+    override: zzzPanelConfigFile(root), canWrite: active, canCommit: active, signal, resolveEffective: load,
+    prepare(text, local, effective) {
+      const current = parseZzzPanelConfig(effective);
+      if (previous && !isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
+      const next = requestedPanel({ ...current, ...values });
+      const changes = fieldsChanged(current, next);
+      if (!Object.keys(changes).length) return { value: current };
+      const saved = { ...(text.trim() ? {} : effective), ...changes };
+      return { yaml: edit(text, local, saved), value: next };
+    },
+  });
+}
+
 export function panelZzzSettings(root: URL, section: "rank" | "panel" | "reminders" = "rank") {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method !== "GET" && request.method !== "PUT") {
@@ -174,27 +192,15 @@ export function panelZzzSettings(root: URL, section: "rank" | "panel" | "reminde
         }));
       }
 
-      const { parseZzzPanelConfig, readZzzPanelConfigDocument, zzzPanelConfigFile } = await import("../plugins/zzz/panel-command.ts");
-      const load = () => readZzzPanelConfigDocument(undefined, root);
-      const snapshot = (document: Document) => ({ fields: panelFields, values: parseZzzPanelConfig(document) });
       if (!body) {
-        const result = snapshot(await load());
-        return active() ? Response.json(result) : new Response(null, { status: 401 });
+        const { parseZzzPanelConfig, readZzzPanelConfigDocument } = await import("../plugins/zzz/panel-command.ts");
+        const values = parseZzzPanelConfig(await readZzzPanelConfigDocument(undefined, root));
+        return active() ? Response.json({ fields: panelFields, values }) : new Response(null, { status: 401 });
       }
       let previous: PanelValues, values: PanelValues;
       try { previous = requestedPanel(body.previous); values = requestedPanel(body.values); }
       catch { return new Response(null, { status: 400 }); }
-      return Response.json(await updateLocalConfiguration(root, "zzz-panel", {
-        override: zzzPanelConfigFile(root), canWrite: active, canCommit: active, signal: request.signal, resolveEffective: load,
-        prepare(text, local, effective) {
-          const current = snapshot(effective).values;
-          if (!isDeepStrictEqual(current, previous)) throw new GlobalConfigWriteError("conflict");
-          const changes = fieldsChanged(current, values);
-          if (!Object.keys(changes).length) return { value: snapshot(effective) };
-          const saved = { ...(text.trim() ? {} : effective), ...changes };
-          return { yaml: edit(text, local, saved), value: snapshot({ ...effective, ...saved }) };
-        },
-      }));
+      return Response.json({ fields: panelFields, values: await updateZzzPanelIntervals(root, values, active, request.signal, previous) });
     } catch (error) {
       const reason = error instanceof GlobalConfigWriteError ? error.reason : undefined;
       return new Response(null, { status: reason === "conflict" ? 409 : reason === "permission" || reason === "cancelled" ? 401 : 503 });
