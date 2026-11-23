@@ -25,6 +25,7 @@ import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
 import { stageLegacySharedGameHistory } from "../lib/migration-shared-game-history.ts";
 import { stageLegacyShopAudit } from "../lib/migration-shop-audit.ts";
 import { stageLegacyState } from "../lib/migration-state.ts";
+import { migrateTrssWishSnapshot, migrationArguments, type MigrationInputs } from "../lib/migration-trss-wish.ts";
 import { stageLegacyZzzChallengeReminder } from "../lib/migration-zzz-challenge-reminder.ts";
 import { stageLegacyZzzRecallConfig } from "../lib/migration-zzz-recall.ts";
 import { readLegacyZzzUpdateNotice } from "../lib/migration-zzz-update-notice.ts";
@@ -34,7 +35,7 @@ import { planMigration } from "../lib/plugins/migration-plan.ts";
 import { prepareStarRailChallengeTheme } from "../plugins/starrail/challenge-theme.ts";
 import { prepareStarRailReincarnationTheme } from "../plugins/starrail/simulation/reincarnation-theme.ts";
 
-export async function stageMigration(source: string, target: string, signal?: AbortSignal) {
+export async function stageMigration(source: string, target: string, signal?: AbortSignal, inputs: MigrationInputs = {}) {
   signal?.throwIfAborted();
   const plan = await planMigration(source, target);
   signal?.throwIfAborted();
@@ -63,6 +64,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       state.directory, plan.plugins, signal);
     const genshinWish = await stageLegacyGenshinWishConfig(plan.source, backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
+    const trssWish = await migrateTrssWishSnapshot(plan, inputs, state.directory, signal);
     const starRailWarp = await stageLegacyStarRailWarpSettings(backup.status === "empty" ? undefined : backup.directory,
       state.directory, plan.plugins, signal);
     const starRailIndependentWarp = await stageLegacyStarRailIndependentWarp(backup.status === "empty" ? undefined : backup.directory,
@@ -98,7 +100,7 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
     return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, gameData,
-      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, starRailWarp, starRailIndependentWarp, starRailPersonalPools,
+      sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, trssWish, starRailWarp, starRailIndependentWarp, starRailPersonalPools,
       zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas,
       starRailTheme, starRailReincarnationTheme,
       shopAudit, redeem, officialBindings, dailyNoteReminders: stagedReminders.counts, deferredPlugins } as const;
@@ -109,9 +111,9 @@ export async function stageMigration(source: string, target: string, signal?: Ab
 }
 
 if (import.meta.main) {
-  const [source, ...extra] = Bun.argv.slice(2);
-  if (!source || source.startsWith("-") || extra.length) {
-    console.error("用法：bun run migrate:stage <旧安装快照路径>");
+  const selected = migrationArguments(Bun.argv.slice(2), Bun.env.LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL);
+  if (!selected) {
+    console.error("用法：bun run migrate:stage <旧安装快照路径> [--trss-wish-authorization 授权JSON]");
     process.exitCode = 2;
   } else {
     const controller = new AbortController();
@@ -119,7 +121,7 @@ if (import.meta.main) {
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
     try {
-      const result = await stageMigration(source, fileURLToPath(new URL("../", import.meta.url)), controller.signal);
+      const result = await stageMigration(selected.source, fileURLToPath(new URL("../", import.meta.url)), controller.signal, selected.inputs);
       console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);

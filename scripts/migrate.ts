@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { lockFile } from "../lib/file-lock.ts";
 import { exists, move, writeJournal } from "../lib/filesystem-transaction.ts";
 import { publishMigrationPayload } from "../lib/migration-publication.ts";
+import { migrationArguments, type MigrationInputs } from "../lib/migration-trss-wish.ts";
 import { stageMigration } from "./migrate-stage.ts";
 
 type Staged = Awaited<ReturnType<typeof stageMigration>>;
@@ -24,6 +25,7 @@ interface PreparedMigration {
     readonly panelRank?: Staged["panelRank"];
     readonly gachaDisplay?: Staged["gachaDisplay"];
     readonly genshinWish?: Staged["genshinWish"];
+    readonly trssWish?: Staged["trssWish"];
     readonly starRailWarp?: Staged["starRailWarp"];
     readonly starRailIndependentWarp?: Staged["starRailIndependentWarp"];
     readonly starRailPersonalPools?: Staged["starRailPersonalPools"];
@@ -65,8 +67,8 @@ async function loadPrepared(directory: string, source: string, target: string): 
   return result;
 }
 
-async function prepare(source: string, target: string, directory: string, signal?: AbortSignal): Promise<PreparedMigration> {
-  const staged = await stageMigration(source, target, signal);
+async function prepare(source: string, target: string, directory: string, inputs: MigrationInputs, signal?: AbortSignal): Promise<PreparedMigration> {
+  const staged = await stageMigration(source, target, signal, inputs);
   try {
     const payload = join(staged.directory, "payload");
     await rename(staged.state.directory, payload);
@@ -94,6 +96,7 @@ async function prepare(source: string, target: string, directory: string, signal
         panelRank: staged.panelRank,
         gachaDisplay: staged.gachaDisplay,
         genshinWish: staged.genshinWish,
+        trssWish: staged.trssWish,
         starRailWarp: staged.starRailWarp,
         starRailIndependentWarp: staged.starRailIndependentWarp,
         starRailPersonalPools: staged.starRailPersonalPools,
@@ -126,7 +129,7 @@ async function prepare(source: string, target: string, directory: string, signal
   }
 }
 
-export async function migrateInstallation(sourcePath: string, targetPath: string, signal?: AbortSignal) {
+export async function migrateInstallation(sourcePath: string, targetPath: string, signal?: AbortSignal, inputs: MigrationInputs = {}) {
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
   const directory = join(dirname(target), "." + basename(target) + ".lotus-migration-prepared");
   const lock = await lockFile(directory + ".sqlite", "旧安装迁移", 0);
@@ -134,7 +137,10 @@ export async function migrateInstallation(sourcePath: string, targetPath: string
     signal?.throwIfAborted();
     const prepared = await exists(directory)
       ? await loadPrepared(directory, source, target)
-      : await prepare(source, target, directory, signal);
+      : await prepare(source, target, directory, inputs, signal);
+    if (inputs.trssWishSnapshot && !prepared.report.trssWish) {
+      throw new Error("现有迁移暂存未包含旧 TRSS 限抽。需要续接时请从新目标重新准备带授权的迁移。");
+    }
     signal?.throwIfAborted();
     const result = await publishMigrationPayload(target, join(directory, "payload"), async () => {
       signal?.throwIfAborted();
@@ -146,9 +152,9 @@ export async function migrateInstallation(sourcePath: string, targetPath: string
 }
 
 if (import.meta.main) {
-  const [source, ...extra] = Bun.argv.slice(2);
-  if (!source || source.startsWith("-") || extra.length) {
-    console.error("用法：bun run migrate <旧安装快照路径>");
+  const selected = migrationArguments(Bun.argv.slice(2), Bun.env.LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL);
+  if (!selected) {
+    console.error("用法：bun run migrate <旧安装快照路径> [--trss-wish-authorization 授权JSON]");
     process.exitCode = 2;
   } else {
     const controller = new AbortController();
@@ -156,7 +162,7 @@ if (import.meta.main) {
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
     try {
-      const outcome = await migrateInstallation(source, fileURLToPath(new URL("../", import.meta.url)), controller.signal);
+      const outcome = await migrateInstallation(selected.source, fileURLToPath(new URL("../", import.meta.url)), controller.signal, selected.inputs);
       console.log(JSON.stringify(outcome, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);
