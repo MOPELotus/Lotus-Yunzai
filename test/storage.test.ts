@@ -127,12 +127,24 @@ async function verifyNoticePush(root: string, storageUrl: string) {
     });
 
     const image = { type: "image", data: { file: "https://example.invalid/notice.png" } };
-    expect((await command([
+    const published = await command([
       { type: "text", data: { text: "#发布公告停机回执测试" } }, image,
       { type: "text", data: { text: "图后文字" } },
-    ])).params).toMatchObject({
+    ]);
+    expect(published.params).toMatchObject({
       user_id: 51, message: expect.stringContaining("公告已发布"),
     });
+    const publishedNotice = await confirm(published.echo, { message_id: 601 });
+    expect(publishedNotice).toMatchObject({ action: "send_msg", params: {
+      user_id: 51,
+      message: [
+        { type: "text", data: { text: expect.stringContaining("【当前公告】") } },
+        { type: "text", data: { text: "停机回执测试" } },
+        image,
+        { type: "text", data: { text: "图后文字" } },
+      ],
+    } });
+    client.send(JSON.stringify({ echo: publishedNotice.echo, status: "ok", retcode: 0, data: { message_id: 602 } }));
     const beforeShutdown = await command("#推送公告");
     expect(beforeShutdown.action).toBe("get_group_list");
     const outstanding = await confirmNoticeStart(beforeShutdown.echo, membership);
