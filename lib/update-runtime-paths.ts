@@ -16,7 +16,7 @@ const trimmedPathKeys = [
 ] as const;
 const keys = [...pathKeys, ...trimmedPathKeys, ...gameResourcePathKeys, "LOTUS_ATLAS_THEME_SOURCE_DIR", "LOTUS_CHARACTER_GALLERY_DIR",
   "LOTUS_PASSPORT_QR_RESOURCES", "LOTUS_DAILY_NOTE_RESOURCES", "LOTUS_PUBLIC_IMAGE_DIR", "LOTUS_DEVICE_INFO_APK", "LOTUS_MEME_CONFIG_DIR",
-  "TESSDATA_PREFIX"];
+  "LOTUS_DONATION_RESOURCES", "TESSDATA_PREFIX"];
 type RuntimePaths = Readonly<Record<string, string | undefined>>;
 const alreadyPersistent = new Set<string>(persistentDirectories);
 const atlasBackgrounds = ["anemo", "cryo", "dendro", "electro", "geo", "hydro", "pyro", "quantum", "sr"]
@@ -56,6 +56,8 @@ function configuredAssetPaths(env: RuntimePaths): string[] {
   if (checkin) assets.push(...[...passportFonts, passportBackdrop].map(path => join(checkin, path)));
   const dailyNote = env.LOTUS_DAILY_NOTE_RESOURCES;
   if (dailyNote) assets.push(...dailyNoteAssets.map(path => join(dailyNote, path)));
+  const donation = env.LOTUS_DONATION_RESOURCES?.trim();
+  if (donation) assets.push(join(donation, "alipay-lotus.jpg"), join(donation, "wechat-lotus.png"));
   const deviceApk = env.LOTUS_DEVICE_INFO_APK?.trim();
   if (deviceApk) assets.push(deviceApk);
   return assets;

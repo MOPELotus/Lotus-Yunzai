@@ -259,6 +259,7 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
     LOTUS_CHARACTER_GALLERY_DIR: " media/gallery",
     LOTUS_PASSPORT_QR_RESOURCES: " resources/login",
     LOTUS_DAILY_NOTE_RESOURCES: " resources/note",
+    LOTUS_DONATION_RESOURCES: " assets/donation ",
   };
   const selected = [
     "theme/donor/bg/bg-pyro.webp", "theme/donor/common/bg/bg-sr.webp", "theme/donor/common/cont/card-bg.png",
@@ -273,12 +274,14 @@ test("受管更新保留图鉴供体、三游戏原图及登录和便笺固定�
     " resources/note/miao-theme/fonts/HYWH-65W.ttf", " resources/note/fonts/MiSans-VF.ttf",
     " resources/note/source-templates/miao-stat/fonts/tttgbnumber.ttf",
     " resources/note/source-templates/genshin/note-icons/gs/参量质变仪.png",
+    "assets/donation/alipay-lotus.jpg", "assets/donation/wechat-lotus.png",
   ];
   const unrelated = [
     "theme/donor/app.ts", "theme/donor/meta-gs/character/其他角色/imgs/splash.webp",
     "media/gallery/original.psd", " media/gallery/sr-character/仅原样.jpg",
     " resources/login/secret.txt", "resources/login/source-templates/miao/common/theme/bg-01.jpg",
     "resources/note/fonts/MiSans-VF.ttf",
+    "assets/donation/unrelated.txt",
   ];
   const conflict = selected[2]!;
   try {
