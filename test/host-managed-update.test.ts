@@ -81,15 +81,20 @@ function bootSupervisor(active: string, env: NodeJS.ProcessEnv = {}) {
     cwd: active, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, FIXTURE_MANAGED_FAILURE: "1", ...env },
   });
-  const stderr = new Response(supervisor.stderr).text();
+  let stderrOutput = "";
+  const stderr = supervisor.stderr.pipeThrough(new TextDecoderStream())
+    .pipeTo(new WritableStream<string>({ write(chunk) { stderrOutput += chunk; } }))
+    .then(() => stderrOutput);
   const reader = supervisor.stdout.getReader();
   const decoder = new TextDecoder();
   let output = "";
+  let lastStartupOutput = "";
   async function nextEndpoint() {
     while (true) {
       const started = output.indexOf(startupLine);
       if (started !== -1) {
-        const endpoints = [...output.slice(0, started).matchAll(/ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/gu)];
+        lastStartupOutput = output.slice(0, started);
+        const endpoints = [...lastStartupOutput.matchAll(/ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/gu)];
         output = output.slice(started + startupLine.length);
         const endpoint = endpoints.at(-1)?.[0];
         if (endpoint) return endpoint;
@@ -102,6 +107,9 @@ function bootSupervisor(active: string, env: NodeJS.ProcessEnv = {}) {
   }
   return {
     stderr, nextEndpoint,
+    startupDiagnostics() {
+      return lastStartupOutput + stderrOutput;
+    },
     async open(endpoint: string, id?: number) {
       const client = gateway(endpoint, id);
       clients.push(client);
@@ -804,26 +812,34 @@ async function exerciseTlsUpdate(fault?: "bind" | "wss" | "port") {
       git(writer, "push", "--quiet", "origin", "main");
     }
 
-    const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
-    const port = reservation.port;
-    reservation.stop(true);
     const config = join(active, "config");
     const cert = join(config, "fixture.crt");
     const key = join(config, "fixture.key");
     const generated = Bun.spawnSync([Bun.which("openssl")!, "req", "-x509", "-nodes", "-newkey", "rsa:2048",
       "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert]);
     expect(generated.exitCode).toBe(0);
-    await writeFile(join(config, "server.yaml"), Bun.YAML.stringify({ https: { port, cert, key } }));
     const ca = await readFile(cert, "utf8");
-    async function checkTls(revision: string) {
-      const response = await fetch(`https://127.0.0.1:${port}/status`, {
-        proxy: false, tls: { ca }, signal: AbortSignal.timeout(2_000),
-      });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ revision });
+    const reservation = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    const port = reservation.port;
+    // Prepare the certificate first and keep this fixed port reserved until the supervisor can spawn.
+    try {
+      await writeFile(join(config, "server.yaml"), Bun.YAML.stringify({ https: { port, cert, key } }));
+    } finally {
+      reservation.stop(true);
     }
-
     const supervisor = bootSupervisor(active);
+    async function checkTls(revision: string) {
+      const endpoint = `https://127.0.0.1:${port}/status`;
+      try {
+        const response = await fetch(endpoint, {
+          proxy: false, tls: { ca }, signal: AbortSignal.timeout(2_000),
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ revision });
+      } catch (error) {
+        throw new Error(`托管宿主在 ${endpoint} 的 TLS 验证失败（${revision}）。\n${supervisor.startupDiagnostics()}`, { cause: error });
+      }
+    }
     try {
       const first = await supervisor.open(await deadline(supervisor.nextEndpoint(), "TLS 测试宿主未启动。"), 99);
       await checkTls(old);
