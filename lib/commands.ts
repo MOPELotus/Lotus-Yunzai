@@ -3,6 +3,7 @@ import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts";
 import { ownerContactListSession } from "./owner-contact-list.ts";
+import { groupExportSession } from "./group-member-export.ts";
 
 export type CommandContext = Readonly<Pick<
   MessageEvent, "message_type" | "message_id" | "self_id" | "user_id" | "group_id" | "isMaster" | "member" | "likeSelf" | "mentionLike" | "isFriend" |
@@ -26,7 +27,7 @@ export type CommandContext = Readonly<Pick<
 }>;
 
 export type MessageFallbackContext = CommandContext & Readonly<Pick<MessageEvent,
-  "reply_id" | "sender" | "lookupReply" | "lookupMediaReply" | "reply" | "forward" | typeof ownerContactListSession>> & {
+  "reply_id" | "sender" | "lookupReply" | "lookupMediaReply" | "reply" | "forward" | typeof ownerContactListSession | typeof groupExportSession>> & {
   readonly isBotMaster: (userId: number) => boolean;
   readonly normalizedMessage: string;
   readonly canManagePackages?: true;
@@ -341,6 +342,7 @@ export class CommandRegistry {
         lookupMediaReply: names[0] === "@lotus-yunzai/genshin" ? event.lookupMediaReply : undefined,
         reply: event.reply, forward: event.forward, isBotMaster, normalizedMessage, ...capabilities,
         [ownerContactListSession]: names[0] === "@lotus-yunzai/panel-owner-session" ? event[ownerContactListSession] : undefined,
+        [groupExportSession]: names[0] === "@lotus-yunzai/group-member-export" && !event.isDelegated ? event[groupExportSession] : undefined,
       };
       if (features && !allowed([...names, ...(await features(context))])) continue;
       const reply = await handler(event.msg, context);

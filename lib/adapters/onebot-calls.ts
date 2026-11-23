@@ -1,4 +1,5 @@
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
+import { readExportedGroupMembers } from "../group-member-export.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
 import { memberDisplayName, type MemberRosterEntry } from "./onebot-member-display.ts";
 import { readGroupActivity, readGroupAnnouncements, type GroupActivityVisibility, type GroupModerationResult, type LiveGroupMember, type MutedGroupMember } from "./group-moderation.ts";
@@ -541,12 +542,24 @@ export class OneBotCalls {
 
   async listGroupActivity(send: Send, group: number, bot: number, actor: number, master: () => boolean, signal: AbortSignal,
     visibility?: GroupActivityVisibility) {
+    const roster = await this.#readGroupRoster(send, group, signal);
+    if (roster) return readGroupActivity(roster.members, { group, bot, actor, master, count: roster.count, visibility });
+  }
+
+  async listExportedGroupMembers(send: Send, group: number, signal: AbortSignal) {
+    const roster = await this.#readGroupRoster(send, group, signal);
+    if (roster) return readExportedGroupMembers(roster.members, group);
+  }
+
+  async #readGroupRoster(send: Send, group: number, signal: AbortSignal) {
     try {
+      if (signal.aborted) return;
       const count = await this.#getGroupSize(send, group, signal);
       if (count === undefined || count > 10_000 || signal.aborted) return;
       const members = await this.#request(send, "get_group_member_list", { group_id: group, no_cache: true }, signal);
-      if (signal.aborted || await this.#getGroupSize(send, group, signal) !== count || signal.aborted) return;
-      return readGroupActivity(members, { group, bot, actor, master, count, visibility });
+      if (!Array.isArray(members) || members.length !== count || signal.aborted ||
+          await this.#getGroupSize(send, group, signal) !== count || signal.aborted) return;
+      return { count, members };
     } catch {
       return undefined;
     }

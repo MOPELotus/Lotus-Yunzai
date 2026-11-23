@@ -1,4 +1,4 @@
-import { accountScopePolicy, type AccountScope } from "./account-scope-policy.ts";
+import { accountScopePolicy, type AccountScope, type GroupScope } from "./account-scope-policy.ts";
 import { readLocalConfig } from "./config.ts";
 import { watchConfigFiles } from "./config-watch.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
@@ -85,7 +85,7 @@ function configuredIds(value: unknown): Set<string> {
   return new Set(ids.map((id) => String(id).trim()).filter((id) => /^[1-9]\d*$/u.test(id)));
 }
 
-export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope | "group.cleanup") {
+export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope | GroupScope) {
   const permissions = configRecord(document.permissions);
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);

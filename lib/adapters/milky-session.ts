@@ -2,6 +2,7 @@ import type { OwnerRequestBatchResult } from "../../plugins/group/owner-request-
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
 import { delegationSession, type DelegationSession } from "../command-delegation.ts";
+import { groupExportSession, readExportedGroupMembers } from "../group-member-export.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "../manual-group-leave.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession,
@@ -485,17 +486,25 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   async function listGroupActivity(group_id: number, actor: number, visibility?: GroupActivityVisibility) {
+    const roster = await readGroupRoster(group_id, signal);
+    if (roster) return readGroupActivity(roster.members, { group: group_id, bot: account, actor,
+      master: () => isMaster(actor), count: roster.count, visibility });
+  }
+
+  async function readGroupRoster(group_id: number, active: AbortSignal) {
     async function readCount() {
-      const result = await call.confirmed("get_group_info", { group_id, no_cache: true });
+      const result = await call.confirmed("get_group_info", { group_id, no_cache: true }, active);
       const group = result.status === "confirmed" ? result.data.group : undefined;
       if (record(group) && group.group_id === group_id && positiveId(group.member_count)) return group.member_count;
     }
+    if (active.aborted) return;
     const count = await readCount();
-    if (count === undefined || count > maxGroupMembers || signal.aborted) return;
-    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true });
-    if (result.status !== "confirmed" || signal.aborted || await readCount() !== count || signal.aborted) return;
-    return readGroupActivity(result.data.members, { group: group_id, bot: account, actor,
-      master: () => isMaster(actor), count, visibility });
+    if (count === undefined || count > maxGroupMembers || active.aborted) return;
+    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true }, active);
+    const members = result.status === "confirmed" ? result.data.members : undefined;
+    if (!Array.isArray(members) || members.length !== count || active.aborted ||
+        await readCount() !== count || active.aborted) return;
+    return { count, members };
   }
 
   async function verifyPendingGroupJoin(origin: MilkyJoinOrigin, active = signal) {
@@ -1234,6 +1243,11 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
+      [groupExportSession]: !message.attachmentOnly && (positiveId(groupId) || message.sub_type === "friend")
+        ? async (target: number, active: AbortSignal) => {
+          const roster = await readGroupRoster(target, AbortSignal.any([signal, active]));
+          if (roster) return readExportedGroupMembers(roster.members, target);
+        } : undefined,
       [ownGroupCardSession]: positiveId(cardOwner) && isMaster(cardOwner) && (positiveId(groupId) || message.sub_type === "friend")
         ? () => bindCard(() => isMaster(cardOwner)) : undefined,
       privateCredentialSignal: message.isPrivate ? signal : undefined,

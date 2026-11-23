@@ -3,6 +3,7 @@ import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type Chat
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
 import { delegationSession, type DelegationSession } from "./command-delegation.ts";
 import { ownerContactListSession, type OwnerContactListSession } from "./owner-contact-list.ts";
+import { groupExportSession, type GroupExportSession } from "./group-member-export.ts";
 import { manualGroupLeaveSession, type ManualGroupLeaveSession } from "./manual-group-leave.ts";
 import { ownGroupCardSession, type OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import { groupAvatarSession, type GroupAvatarSession } from "./adapters/group-avatar.ts";
@@ -63,6 +64,7 @@ export interface MessageEvent {
   readonly canManageProcess?: boolean;
   readonly [delegationSession]?: DelegationSession;
   readonly [ownerContactListSession]?: OwnerContactListSession;
+  readonly [groupExportSession]?: GroupExportSession;
   readonly [manualGroupLeaveSession]?: ManualGroupLeaveSession;
   readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly canDelegate?: boolean;

@@ -24,6 +24,7 @@ import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
+import { groupMemberExportCommands } from "./lib/group-member-export-command.ts";
 import { createManualGroupLeave, manualGroupLeaveInput } from "./lib/manual-group-leave.ts";
 import { qqAvatarCommand, qqAvatarReply } from "./lib/qq-avatar.ts";
 import { isQqFaceCommand, qqFaceReply } from "./lib/qq-face.ts";
@@ -2527,6 +2528,9 @@ if (import.meta.main) {
     const checkinProfiles = createProfileStore(profileDirectory);
     if (!probingUpdate) commands.registerModule(groupCleanupCommands({
       profiles: checkinProfiles, auditPath: fileURLToPath(new URL("data/audit/group-cleanup.jsonl", root)),
+      readConfig: () => readLotusGlobalConfig(root), isMaster: permissions.isMaster, activeSignal: nativeOperationSignal,
+    }), "@lotus-yunzai/group");
+    if (!probingUpdate) commands.registerModule(groupMemberExportCommands({
       readConfig: () => readLotusGlobalConfig(root), isMaster: permissions.isMaster, activeSignal: nativeOperationSignal,
     }), "@lotus-yunzai/group");
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),

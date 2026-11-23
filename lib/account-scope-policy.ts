@@ -18,11 +18,14 @@ export function mediaOwnerScopePolicies(scope: MediaOwnerScope): readonly Accoun
   return scope === "netease.partner" ? accountScopePolicies : restrictedMediaPolicies;
 }
 
-export function accountScopePolicy(scope: AccountScope | "group.cleanup", configured: unknown): AccountScopePolicy {
+export type GroupScope = "group.cleanup" | "group.members.export";
+
+export function accountScopePolicy(scope: AccountScope | GroupScope, configured: unknown): AccountScopePolicy {
+  const group = scope === "group.cleanup" || scope === "group.members.export";
   if (configured !== null && configured !== undefined) {
-    return accountScopePolicies.find(value => value === configured) ?? (scope === "group.cleanup" ? "deny" : "inherit");
+    return accountScopePolicies.find(value => value === configured) ?? (group ? "deny" : "inherit");
   }
-  return scope.startsWith("scheduler.") || scope === "checkin.group_register" || scope === "group.cleanup" ? "master_only" : "inherit";
+  return scope.startsWith("scheduler.") || scope === "checkin.group_register" || group ? "master_only" : "inherit";
 }
 
 export interface ScopePolicySnapshot<Scope extends string> {

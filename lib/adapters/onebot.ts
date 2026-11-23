@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chatFileRelaySource, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
 import { delegationSession } from "../command-delegation.ts";
+import { groupExportSession } from "../group-member-export.ts";
 import { ownerContactListSession } from "../owner-contact-list.ts";
 import { manualGroupLeaveSession } from "../manual-group-leave.ts";
 import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
@@ -889,6 +890,11 @@ async function dispatchMessage(
     }) : undefined,
     listCheckinGroupMembers,
     listCurrentGroupMembers: attachmentSession && !noticeAttachment ? listCheckinGroupMembers : undefined,
+    [groupExportSession]: boundAccount && attachmentSession && display?.closed === false && !noticeAttachment &&
+      (messageType === "group" ? event.sub_type !== "anonymous" : event.sub_type === "friend") ? (groupId, active) => {
+      const signal = AbortSignal.any([active, attachmentSession.signal]);
+      return signal.aborted || display.closed ? Promise.resolve(undefined) : calls.listExportedGroupMembers(send, groupId, signal);
+    } : undefined,
     [ownGroupCardSession]: boundAccount && owner && !noticeAttachment && (messageType === "group" || event.sub_type === "friend")
       ? () => connection?.ownGroupCardAccount?.(() => isMaster(selfId, userId)) : undefined,
     forward: selfId === undefined ? undefined : async (nodes, senderName, options) => {
