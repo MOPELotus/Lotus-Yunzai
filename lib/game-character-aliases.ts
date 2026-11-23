@@ -1,9 +1,10 @@
 import { linkSync, renameSync } from "node:fs";
 import { mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
 import { parse } from "yaml";
+import { readOptionalLocalConfig } from "./config.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 
 export type AliasGame = "gs" | "sr";
@@ -79,9 +80,12 @@ function legacyConfigs(root: string, filename: string) {
   return ["plugins/genshin/config", "backup/plugins/genshin/config"].map(directory => join(root, directory, filename));
 }
 
-function yamlMapping(source?: Awaited<ReturnType<typeof firstAliasFile>>): Record<string, unknown> | undefined {
-  const value: unknown = source && parse(source.content, { maxAliasCount: 0 });
+function mapping(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+}
+
+function yamlMapping(source?: Awaited<ReturnType<typeof firstAliasFile>>) {
+  return source && mapping(parse(source.content, { maxAliasCount: 0 }));
 }
 
 async function independentStarRailSetting(root: string, filename: string) {
@@ -100,7 +104,16 @@ async function independentStarRailSetting(root: string, filename: string) {
   }
 }
 
+export function validLegacyCharacterAliasMode(value: unknown): value is 0 | 1 | 2 {
+  return value === 0 || value === 1 || value === 2;
+}
+
 export async function readLegacyCharacterAliasMode(game: Game, root = rootDirectory) {
+  if (game === "sr") {
+    const global = await readOptionalLocalConfig(pathToFileURL(root.endsWith("/") ? root : root + "/"), "global");
+    const current = mapping(global?.starrail)?.legacy_alias_group_permission;
+    if (current !== undefined) return validLegacyCharacterAliasMode(current) ? current : 2;
+  }
   const independent = game === "sr" ? await independentStarRailSetting(root, "gachaHelp.yaml") : undefined;
   if (game === "sr" && !independent) {
     const managed = await firstAliasFile(root, [files(root, game).target]);

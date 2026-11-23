@@ -1,3 +1,4 @@
+import { readLegacyCharacterAliasMode } from "../lib/game-character-aliases.ts";
 import { readLegacyPanelRecoveryEnabled } from "../lib/legacy-panel-recovery-flow.ts";
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -41,7 +42,7 @@ test("游戏展柜和货币战争面板复用真实旧设置，并即刻由现�
     const original = await panel(new Request(endpoint, { headers }));
     const result = await original!.json() as Result;
     expect(result.values).toEqual({ genshinSource: "0", starrailSource: "442", gridFightRecentCount: 3,
-      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false, starrailBuiltInPortraitGroups: "" });
+      starrailOriginalEnabled: true, starrailOriginalRecall: true, starrailOriginalRecallSeconds: 30, legacyPanelRecovery: false, starrailBuiltInPortraitGroups: "", starrailLegacyAliasMode: 2 });
 
     const values = { ...result.values, genshinSource: "332", starrailSource: "234", gridFightRecentCount: 1, legacyPanelRecovery: true };
     expect((await panel(send(result.values, { ...values, genshinSource: "3" })))?.status).toBe(400);
@@ -154,6 +155,45 @@ test("星铁原图设置继承归档，保存覆盖旧值并保留 0 秒", async
     expect((await route(send(next, { ...next, starrailBuiltInPortraitGroups: "90，91, 90" }), () => true)).status).toBe(200);
     expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 90 }, root)).toBe(true);
     expect(await starRailUsesBuiltInPortrait({ message_type: "group", group_id: 88 }, root)).toBe(false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("星铁面板查询旧别名权限，保存现代覆盖后聊天实时读取", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-panel-starrail-alias-"));
+  const root = pathToFileURL(directory + "/");
+  const old = join(directory, "backup/plugins/StarRail-plugin/config");
+  const config = join(directory, "config/global.yaml");
+  try {
+    await mkdir(old, { recursive: true });
+    await mkdir(join(directory, "config"));
+    await writeFile(join(old, "gachaHelp.yaml"), "abbrSetAuth: 1\n");
+    await writeFile(config, "# 现有配置\nstarrail: {original_pic: true}\n");
+    const route = panelGameSettings(root, "showcase");
+    const panel = panelApi("game-panel-test", [], name => name === path ? route : undefined);
+    const { fields, values } = await (await panel(new Request(endpoint, { headers })))!.json() as Result;
+    expect(fields.find(field => field.key === "starrailLegacyAliasMode")).toMatchObject({ type: "select",
+      options: [{ label: "仅机器人主人", value: 2 }, { label: "本群群主和管理员", value: 1 }, { label: "本群成员", value: 0 }],
+    });
+    expect(values.starrailLegacyAliasMode).toBe(1);
+    for (const invalid of [3, -1, "0", false]) {
+      expect((await panel(send(values, { ...values, starrailLegacyAliasMode: invalid })))?.status).toBe(400);
+    }
+    const next = { ...values, starrailLegacyAliasMode: 0 };
+    let calls = 0;
+    expect((await route(send(values, next), () => ++calls < 3)).status).toBe(401);
+    expect(await readLegacyCharacterAliasMode("sr", directory)).toBe(1);
+    expect((await panel(send(values, next)))?.status).toBe(200);
+    expect(await readLegacyCharacterAliasMode("sr", directory)).toBe(0);
+    expect(await readLegacyCharacterAliasMode("gs", directory)).toBe(2);
+    expect((await panel(send(values, next)))?.status).toBe(409);
+    expect(await readFile(join(old, "gachaHelp.yaml"), "utf8")).toBe("abbrSetAuth: 1\n");
+    expect(Bun.YAML.parse(await readFile(config, "utf8"))).toEqual({
+      starrail: { original_pic: true, legacy_alias_group_permission: 0 },
+    });
+    await writeFile(config, "starrail: {legacy_alias_group_permission: invalid}\n");
+    expect(await readLegacyCharacterAliasMode("sr", directory)).toBe(2);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,8 +1,10 @@
 import { readLegacyPanelRecoveryEnabled } from "./legacy-panel-recovery-flow.ts";
+import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
 import { GlobalConfigWriteError, updateLocalConfiguration, updateLotusGlobalConfig } from "./lotus-global-config-write.ts";
 import { readPanelJson } from "./panel.ts";
+import { readLegacyCharacterAliasMode, validLegacyCharacterAliasMode } from "./game-character-aliases.ts";
 
 type Config = Readonly<Record<string, unknown>>;
 type Primitive = boolean | string | number;
@@ -98,6 +100,15 @@ async function showcasePanel(root: URL) {
       key: "gridFightRecentCount", label: "星铁货币战争默认展示场数", type: "number", min: 1, max: 3,
       hint: "影响货币战争简写查询；编号战报仍按所选场次查询。",
     },
+    {
+      key: "starrailLegacyAliasMode", label: "星铁旧角色别名群聊权限", type: "select",
+      hint: "适用于旧式角色别名设置和删除。私聊修改和新版别名命令均仅限机器人主人。",
+      options: [
+        { label: "仅机器人主人", value: 2 },
+        { label: "本群群主和管理员", value: 1 },
+        { label: "本群成员", value: 0 },
+      ],
+    },
     { key: "starrailBuiltInPortraitGroups", label: "星铁仅使用内置立绘的群", type: "text",
       hint: "群号用逗号分隔。留空时所有群都按通常方式选图。" },
     { key: "starrailOriginalEnabled", label: "允许成员引用星铁面板取原图", type: "boolean", hint: "机器人主人仍可引用自己的有效面板取图。" },
@@ -108,11 +119,13 @@ async function showcasePanel(root: URL) {
     },
   ];
   async function read() {
-    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery, portraitGroups] = await Promise.all([
+    const [genshinSource, starrailSource, gridFightRecentCount, originalSettings, legacyPanelRecovery,
+      portraitGroups, starrailLegacyAliasMode] = await Promise.all([
       readGenshinShowcaseServer(root), readShowcaseServer(root), readGridFightRecentCount(root), originals.readStarRailOriginalSettings(root),
       readLegacyPanelRecoveryEnabled(root), originals.readStarRailBuiltInPortraitGroups(root),
+      readLegacyCharacterAliasMode("sr", fileURLToPath(root)).catch(() => 2),
     ]);
-    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery,
+    return { genshinSource, starrailSource, gridFightRecentCount, ...originalSettings, legacyPanelRecovery, starrailLegacyAliasMode,
       starrailBuiltInPortraitGroups: portraitGroups.join(", ") };
   }
   return {
@@ -142,6 +155,9 @@ async function showcasePanel(root: URL) {
           const recent = values.gridFightRecentCount;
           if (recent !== 1 && recent !== 2 && recent !== 3) throw new InvalidGameSettings();
           if (recent !== current.gridFightRecentCount) edits.push({ path: ["starrail", "grid_fight_recent_count"], value: recent });
+          const aliasMode = values.starrailLegacyAliasMode;
+          if (!validLegacyCharacterAliasMode(aliasMode)) throw new InvalidGameSettings();
+          if (aliasMode !== current.starrailLegacyAliasMode) edits.push({ path: ["starrail", "legacy_alias_group_permission"], value: aliasMode });
           for (const [field, key] of [
             ["starrailOriginalEnabled", "original_pic"], ["starrailOriginalRecall", "back_call_original_pic"],
           ] as const) {
