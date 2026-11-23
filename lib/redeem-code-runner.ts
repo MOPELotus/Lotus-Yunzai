@@ -32,10 +32,13 @@ const resultText = {
   unknown: "结果未确认，请到游戏内检查",
 } as const;
 export type PreviewSubmissionStatus = keyof typeof resultText;
-export interface PreviewRoleAccess {
+interface PreviewBinding {
   readonly accountId: string;
-  readonly roles: readonly PreviewRole[];
   readonly selectedUid: string;
+}
+
+export interface PreviewRoleAccess extends PreviewBinding {
+  readonly roles: readonly PreviewRole[];
   readonly submit: (code: string, role: PreviewRole, signal?: AbortSignal) => Promise<{ status: PreviewSubmissionStatus }>;
   readonly notify?: (reply: string, signal?: AbortSignal) => Promise<unknown>;
 }
@@ -45,6 +48,7 @@ interface Options {
   readonly legacyJournal?: string | readonly string[];
   readonly lookup: (game: PreviewGame, signal?: AbortSignal) => Promise<unknown>;
   readonly listProfiles: (signal?: AbortSignal) => Promise<readonly PreviewProfile[]>;
+  readonly readBinding?: (profile: PreviewProfile, game: PreviewGame, signal?: AbortSignal) => Promise<PreviewBinding | undefined>;
   readonly readRoles: (profile: PreviewProfile, game: PreviewGame, signal?: AbortSignal) => Promise<PreviewRoleAccess | undefined>;
   readonly notify?: (profile: PreviewProfile, reply: string, signal?: AbortSignal) => Promise<unknown>;
   readonly now?: () => number;
@@ -113,9 +117,8 @@ function selectRole(access: PreviewRoleAccess, game: PreviewGame) {
   return roles.length === 1 ? roles[0] : undefined;
 }
 
-function legacyBatchKeys(accountId: string, game: PreviewGame, version: string, uid: string, explicit: boolean) {
-  const key = (role: string) => createHash("sha256").update(JSON.stringify([accountId, game, version, role])).digest("hex");
-  return explicit ? [key(uid)] : [key(uid), key("implicit")];
+function legacyBatchKey(accountId: string, game: PreviewGame, version: string, uid: string) {
+  return createHash("sha256").update(JSON.stringify([accountId, game, version, uid])).digest("hex");
 }
 
 const createdJournal = "__lotusPreviewJournalVersion";
@@ -177,9 +180,10 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
 
   return {
     async hasHistory() { return hasHistory(await sources()); },
-    async eligible(profiles: readonly PreviewProfile[]) {
+    async inventory(profiles: readonly PreviewProfile[]) {
       const source = await sources();
-      return profiles.filter(profile => canUse(source, profile));
+      const recorded = new Set([source.primary, ...source.historical].flatMap(data => data ? Object.keys(data) : []));
+      return { profiles: profiles.filter(profile => canUse(source, profile)), recorded };
     },
     claim(keys: readonly string[], time: number, profile: PreviewProfile) {
       return edit((data, source) => {
@@ -202,7 +206,7 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
   };
 }
 
-export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, listProfiles, readRoles, notify, now = Date.now,
+export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, listProfiles, readBinding, readRoles, notify, now = Date.now,
   requireExistingJournal = false }: Options) {
   const journalPath = resolve(journal);
   const historicalPaths = new Set((typeof legacyJournal === "string" ? [legacyJournal] : legacyJournal ?? []).map(path => resolve(path)));
@@ -211,15 +215,26 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
   const nextLookup = new Map<PreviewGame, number>();
   let running: Promise<void> | undefined;
 
-  async function redeem(profile: PreviewProfile, game: PreviewGame, current: NonNullable<ReturnType<typeof batch>>, signal?: AbortSignal) {
+  async function redeem(profile: PreviewProfile, game: PreviewGame, current: NonNullable<ReturnType<typeof batch>>,
+    recorded: Set<string>, signal?: AbortSignal) {
     if (signal?.aborted || isExpired(current.expiry, now())) return;
+    if (readBinding) {
+      const binding = await readBinding(profile, game, signal);
+      if (!binding || !identity.test(binding.accountId) || (binding.selectedUid && !identity.test(binding.selectedUid)) ||
+          signal?.aborted || isExpired(current.expiry, now())) return;
+      const known = legacyBatchKey(binding.accountId, game, current.version, binding.selectedUid || "implicit");
+      if (recorded.has(known)) return;
+    }
     const access = await readRoles(profile, game, signal);
     if (!access || typeof access.accountId !== "string" || !identity.test(access.accountId)) return;
     const role = selectRole(access, game);
     if (!role) return;
-    const keys = legacyBatchKeys(access.accountId, game, current.version, role.uid, Boolean(access.selectedUid));
+    const keys = [legacyBatchKey(access.accountId, game, current.version, role.uid)];
+    if (!access.selectedUid) keys.push(legacyBatchKey(access.accountId, game, current.version, "implicit"));
     const time = now();
-    if (signal?.aborted || isExpired(current.expiry, time) || !await store.claim(keys, time, profile)) return;
+    if (signal?.aborted || isExpired(current.expiry, time) || keys.some(key => recorded.has(key)) ||
+        !await store.claim(keys, time, profile)) return;
+    for (const key of keys) recorded.add(key);
 
     const lines: string[] = [];
     let stopped = false;
@@ -251,7 +266,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
       if (signal?.aborted) return;
       const available = (await listProfiles(signal)).filter(profile => profile.games.length);
       if (signal?.aborted || !available.length) return;
-      const profiles = await store.eligible(available);
+      const { profiles, recorded } = await store.inventory(available);
       if (signal?.aborted || !profiles.length) return;
       for (const game of Object.keys(redeemGames) as PreviewGame[]) {
         if (signal?.aborted) return;
@@ -272,7 +287,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
         if (!current) continue;
         for (const profile of subscribers) {
           if (signal?.aborted || isExpired(current.expiry, now())) break;
-          try { await redeem(profile, game, current, signal); }
+          try { await redeem(profile, game, current, recorded, signal); }
           catch (error) {
             if (!signal?.aborted) onError?.(`${redeemGames[game].name} ${current.version} 前瞻自动兑换未完成（${requestFailure(error)}）。`);
           }

@@ -72,14 +72,20 @@ test("旧 journal 两个路径的 started、finished 与隐式角色键均阻止
     await writeFile(paths.journal, JSON.stringify(primary));
     await writeFile(paths.legacyJournal, historicalBytes);
     const posted: string[] = [];
+    const requestedRoles: string[] = [];
     const process = createPreviewRedeemRunner({ ...paths, now: () => stamp, lookup: async () => activity,
       listProfiles: async () => [100, 101, 102, 103].map(id => ({ ...oldProfile, qq: String(id) })),
-      async readRoles(snapshot) { return { accountId: snapshot.qq, roles: [role], selectedUid: snapshot.qq === "102" ? "" : role.uid,
-        async submit(code) { posted.push(snapshot.qq + ":" + code); return confirmed; } }; },
+      async readBinding({ qq }) { return { accountId: qq, selectedUid: qq === "102" ? "" : role.uid }; },
+      async readRoles({ qq }) {
+        requestedRoles.push(qq);
+        return { accountId: qq, roles: [role], selectedUid: role.uid,
+          async submit(code) { posted.push(qq + ":" + code); return confirmed; } };
+      },
     });
     expect(await process.hasHistory()).toBe(true);
     await process.scan();
     await process.scan();
+    expect(requestedRoles).toEqual(["103"]);
     expect(posted).toEqual(codes.map(code => "103:" + code));
     expect(await readFile(paths.legacyJournal, "utf8")).toBe(historicalBytes);
     const updated = JSON.parse(await readFile(paths.journal, "utf8"));

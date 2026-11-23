@@ -2606,6 +2606,12 @@ if (import.meta.main) {
           fileURLToPath(new URL(`plugins/${name}/data/redeemCodes/auto.json`, root))),
         lookup: game => publicPreview.query(game),
         listProfiles: checkinProfiles.listPreviewRedeemProfiles,
+        async readBinding({ qq, profileId }, game, signal) {
+          const account = await checkinProfiles.previewRedeemAccount(qq, profileId, game);
+          if (!account || signal?.aborted) return;
+          const accountId = previewRedeemIdentity(account);
+          if (accountId) return { accountId, selectedUid: account.selectedUid };
+        },
         async readRoles({ qq, profileId }, game, signal) {
           const initial = await checkinProfiles.previewRedeemAccount(qq, profileId, game);
           if (!initial || !previewRedeemIdentity(initial)) return;
