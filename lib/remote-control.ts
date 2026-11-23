@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join } from "node:path";
 import type { RemoteScope } from "./account-scope-policy.ts";
 import type { MessageEvent } from "./messages.ts";
@@ -56,6 +57,15 @@ export function createRemoteControl(root: string) {
     failures = [];
   }
   const files = join(root, "data", "remote", "files");
+  async function rememberAuthorization(permission: RemoteScope, event: MessageEvent) {
+    const audit = join(root, "data", "remote-auth", "operations.jsonl");
+    await using file = await open(audit, constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
+    if (!(await file.stat()).isFile()) throw new Error("运维审计须为普通文件。");
+    await file.writeFile(JSON.stringify({
+      at: new Date().toISOString(), action: permission, adapter: event.adapter ?? "onebot",
+      bot: event.self_id, owner: event.user_id,
+    }) + "\n");
+  }
   const guide = "请在私人本机终端运行 bun scripts/remote-otp.ts setup 配对，更换验证器使用 reset。";
   return async function handle(event: MessageEvent, scope: Scope) {
     const reply = (body: string) => scope.current() ? event.reply(body) : undefined;
@@ -116,6 +126,8 @@ export function createRemoteControl(root: string) {
           await reply(denied);
           return;
         }
+        await rememberAuthorization(permission, event);
+        if (!await stillAllowed()) return;
         await reply(await remoteShell(root, shell, spawn[4]!, scope.signal, settings.timeout));
         return;
       }
@@ -132,6 +144,8 @@ export function createRemoteControl(root: string) {
         await reply(denied);
         return;
       }
+      await rememberAuthorization(permission, event);
+      if (!await stillAllowed()) return;
       if (download) {
         const content = await readRemoteFile(files, target, scope.signal);
         if (!content || !await stillAllowed()) {

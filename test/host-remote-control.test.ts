@@ -108,6 +108,13 @@ test.skipIf(process.platform !== "linux")("旧远程命令只接真实好友私�
       });
       await sendResult("文件发送结果未确认，请先核对当前私聊。");
       delivery.respond(null);
+      const journal = await readFile(join(root, "data", "remote-auth", "operations.jsonl"), "utf8");
+      expect(journal.trim().split("\n").map(line => JSON.parse(line))).toEqual([
+        { at: expect.any(String), action: "remote.spawn", adapter: "onebot", bot: 99, owner: 42 },
+        { at: expect.any(String), action: "remote.download", adapter: "onebot", bot: 99, owner: 42 },
+      ]);
+      expect(journal).not.toContain("remote-test");
+      expect(journal).not.toContain("report.txt");
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);
     }, 8_000, undefined, async root => {
