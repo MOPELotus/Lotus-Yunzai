@@ -41,6 +41,13 @@ test("主人用户统计只显示去重的本机档案计数，不检查或回�
     for (const fingerprint of [account.stuid, account.stoken, account.cookie, os.cookie, os.verified_account_id]) {
       expect(reply).not.toContain(fingerprint);
     }
+    for (const suffix of ["缓存", "统计", "ck", "Ck", "CK"]) {
+      expect(await registry.dispatch(`#刷新用户${suffix}`, owner)).toBe(`已重新读取本机用户档案。\n${reply}`);
+      expect(await registry.dispatch(`#重置用户${suffix}`, owner)).toContain("无需重置");
+    }
+    expect(await registry.dispatch("#刷新用户统计", { ...owner, isMaster: false })).toContain("只有机器人主人");
+    expect(await registry.dispatch("#重置用户CK", { ...owner, isDelegated: true })).toContain("只有机器人主人");
+    expect(await registry.dispatch("#刷新用户缓存", { ...owner, privateCredentialSignal: AbortSignal.abort() })).toContain("已绑定");
     expect(await Promise.all([...files.keys()].map(file => readFile(join(root, file), "utf8")))).toEqual([...files.values()]);
     expect(network).toBe(0);
   } finally { await rm(root, { recursive: true, force: true }); }
