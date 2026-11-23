@@ -55,6 +55,24 @@ function editYaml(content: string, local: Config, edits: readonly Edit[]) {
   return yaml;
 }
 
+const starRailShowcaseOverride = () => !!Bun.env.LOTUS_STAR_RAIL_SHOWCASE_SERVER?.trim();
+const validPublicShowcaseSelector = (value: unknown): value is string => typeof value === "string" && /^[0234]{1,3}$/u.test(value);
+
+export async function saveStarRailShowcaseServer(root: URL, value: string, signal: AbortSignal, authorized: () => boolean) {
+  const { readShowcaseServer } = await import("../plugins/starrail/panel-showcase-config.ts");
+  return updateLotusGlobalConfig(root, {
+    signal,
+    canWrite: authorized,
+    canCommit: () => authorized() && !starRailShowcaseOverride(),
+    resolveEffective: async () => ({ starrailSource: await readShowcaseServer(root) }),
+    prepare(content, local, effective) {
+      if (starRailShowcaseOverride() || !validPublicShowcaseSelector(value)) throw new InvalidGameSettings();
+      return { value, yaml: effective.starrailSource === value ? undefined :
+        editYaml(content, local, [{ path: ["starrail", "showcase_server"], value }]) };
+    },
+  });
+}
+
 async function showcasePanel(root: URL) {
   const [{ readGenshinShowcaseServer }, { readShowcaseServer }, { readGridFightRecentCount }] = await Promise.all([
     import("../plugins/genshin/panel/showcase-config.ts"),
@@ -69,7 +87,7 @@ async function showcasePanel(root: URL) {
     },
     {
       key: "starrailSource", label: "星铁公开展柜来源", type: "text",
-      readonly: !!Bun.env.LOTUS_STAR_RAIL_SHOWCASE_SERVER?.trim(),
+      readonly: starRailShowcaseOverride(),
       hint: "可填 1 到 3 位，依次为官服、渠道服、国际服。缺省位置沿用第一位。0 或 2 Mihomo，3 Avocado，4 EnkaHSR。",
     },
     {
@@ -99,7 +117,7 @@ async function showcasePanel(root: URL) {
           ] as const) {
             const value = values[field];
             if (value === current[field]) continue;
-            if (Bun.env[override]?.trim() || typeof value !== "string" || !/^[0234]{1,3}$/u.test(value) ||
+            if (Bun.env[override]?.trim() || !validPublicShowcaseSelector(value) ||
                 (section === "genshin" && (value[2] ?? value[0]) === "3")) throw new InvalidGameSettings();
             edits.push({ path: [section, "showcase_server"], value });
           }
