@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { lstatSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { protectWindowsRemoteAuth } from "./remote-win32.ts";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const period = 30_000;
@@ -12,12 +13,17 @@ function remoteOtpPath(root: string) {
 
 function state(root: string, create: boolean): Database | undefined {
   const directory = remoteOtpPath(root);
-  if (create) mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const windows = process.platform === "win32";
+  if (create && windows) {
+    mkdirSync(dirname(directory), { recursive: true });
+    protectWindowsRemoteAuth(directory, true, true);
+  } else if (create) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const dir = lstatSync(directory, { throwIfNoEntry: false });
   if (!dir) return;
   if (!dir.isDirectory() || (process.platform !== "win32" && (dir.mode & 0o077) !== 0)) {
     throw new Error("远程身份验证目录必须仅当前系统用户可读写。");
   }
+  if (windows && !create) protectWindowsRemoteAuth(directory, false, true);
   const path = join(directory, "otp.sqlite");
   if (create) {
     try { closeSync(openSync(path, "wx", 0o600)); }
@@ -29,6 +35,7 @@ function state(root: string, create: boolean): Database | undefined {
     throw new Error("远程身份验证数据库必须是当前系统用户专用的普通文件。");
   }
 
+  if (windows) protectWindowsRemoteAuth(path, false, false);
   const database = new Database(path, { create: false, strict: true });
   try {
     database.run("PRAGMA busy_timeout = 1000");

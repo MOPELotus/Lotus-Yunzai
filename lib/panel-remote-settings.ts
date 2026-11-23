@@ -5,7 +5,7 @@ import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global
 import { readPanelJson } from "./panel.ts";
 import { readRemoteSettings } from "./remote-control.ts";
 import { remoteOtpPaired } from "./remote-otp.ts";
-import { remoteShells } from "./remote-shell.ts";
+import { isRemoteAdministrator, isRemotePlatformSupported, remoteShells } from "./remote-shell.ts";
 
 const configKeys = {
   enabled: "enable", timeout: "timeout_ms", shells: "shells",
@@ -29,7 +29,7 @@ function parseUpdate(value: unknown) {
 
 export function panelRemoteSettings(root: URL) {
   const directory = fileURLToPath(root);
-  const supported = process.platform === "linux";
+  const supported = isRemotePlatformSupported();
   function paired() {
     try { return remoteOtpPaired(directory); }
     catch { return false; }
@@ -37,16 +37,17 @@ export function panelRemoteSettings(root: URL) {
   function snapshot() {
     const current = readRemoteSettings(directory);
     const ready = paired();
+    const elevated = isRemoteAdministrator();
     return {
       fields: [
         { key: "paired", label: "本机 TOTP 配对", type: "boolean", readonly: true,
           hint: "在私人本机终端运行 bun --no-env-file scripts/remote-otp.ts setup 配对，使用 reset 更换验证器。" },
         { key: "enabled", label: "允许远程运维", type: "boolean", readonly: !current.enabled && !(ready && supported),
-          hint: "仅支持已在本机配对的 Linux 宿主。关闭后拒绝新操作并阻止尚未写入的文件发布。" },
+          hint: "仅支持已在本机配对的 Linux 或 Windows 宿主。关闭后拒绝新操作并阻止尚未写入的文件发布。" },
         { key: "timeout", label: "命令超时（毫秒）", type: "number", min: 100, max: 120_000 },
         { key: "shells", label: "允许的 Shell", type: "list", hint: "一行一个，可选 sh、bash、zsh、pwsh、powershell、cmd。仅能运行宿主已安装的 Shell。" },
-        { key: "allowAdmin", label: "允许管理员入口", type: "boolean", readonly: !current.allowAdmin && !(supported && process.getuid?.() === 0),
-          hint: "只有以 root 身份运行的 Linux 宿主才能启用。不会改变进程权限。" },
+        { key: "allowAdmin", label: "允许管理员入口", type: "boolean", readonly: !current.allowAdmin && !(supported && elevated),
+          hint: "仅当 Linux 宿主以 root 身份运行或 Windows 宿主已经拥有管理员令牌时可启用。不会改变进程权限。" },
         { key: "overwrite", label: "允许普通上传覆盖同名文件", type: "boolean" },
       ],
       values: { ...current, paired: ready },
@@ -69,8 +70,8 @@ export function panelRemoteSettings(root: URL) {
       const values = parseUpdate(body.values);
       if (!previous || !values) return new Response(null, { status: 400 });
       const mayEnable = () => (previous.enabled || !values.enabled || supported && paired()) &&
-        (previous.allowAdmin || !values.allowAdmin || supported && process.getuid?.() === 0);
-      if (!mayEnable()) return Response.json({ message: "请先完成本机配对，管理员入口还需要 Linux root 宿主。" }, { status: 403 });
+        (previous.allowAdmin || !values.allowAdmin || supported && isRemoteAdministrator());
+      if (!mayEnable()) return Response.json({ message: "请先完成本机配对，管理员入口还需要宿主已经具备管理员权限。" }, { status: 403 });
       await updateLocalConfiguration(root, "remote", {
         signal: request.signal,
         canWrite: active,

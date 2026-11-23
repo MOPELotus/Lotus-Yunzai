@@ -1,27 +1,68 @@
 import { spawn } from "node:child_process";
+import { windowsRemoteAdministrator, windowsRemoteJob } from "./remote-win32.ts";
 
 export const remoteShells = ["bash", "sh", "zsh", "pwsh", "powershell", "cmd"] as const;
 export type RemoteShell = typeof remoteShells[number];
+
+export function isRemotePlatformSupported() {
+  return process.platform === "linux" || process.platform === "win32" && ["x64", "arm64"].includes(process.arch);
+}
+
+export function isRemoteAdministrator() {
+  return process.platform === "win32" ? windowsRemoteAdministrator() : process.getuid?.() === 0;
+}
+
+const windowsShellWorker = `
+  const { spawn } = await import("node:child_process");
+  const source = await Bun.stdin.text();
+  if (!source) process.exit(1);
+  const { executable, args, verbatim } = JSON.parse(source);
+  const child = spawn(executable, args, {
+    stdio: ["ignore", "inherit", "inherit"], windowsHide: true, windowsVerbatimArguments: verbatim,
+  });
+  child.on("error", () => process.exit(127));
+  child.on("close", code => process.exit(code ?? 1));
+`;
 
 export async function remoteShell(root: string, shell: RemoteShell, command: string, signal: AbortSignal, timeout: number) {
   signal.throwIfAborted();
   const executable = Bun.which(shell);
   if (!executable) return "系统未安装所选 Shell。";
   const windows = process.platform === "win32";
-  const args = shell === "cmd" ? ["/d", "/q", "/c", command]
-    : shell === "pwsh" || shell === "powershell" ? ["-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command];
-  const child = spawn(executable, args, {
-    cwd: root, stdio: ["ignore", "pipe", "pipe"], detached: !windows,
-    env: Object.fromEntries(["PATH", "LANG", "LC_ALL", "TMPDIR", "TEMP", "USERPROFILE", "SystemRoot", "SystemDrive"]
-      .flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]]])),
-    windowsHide: true,
-  });
+  const powershell = shell === "pwsh" || shell === "powershell";
+  const script = powershell && windows ? Buffer.from(
+    "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " + command, "utf16le",
+  ).toString("base64") : undefined;
+  const args = shell === "cmd" ? ["/d", "/q", "/c", windows ? `chcp 65001>nul & ${command}` : command]
+    : powershell ? ["-NoProfile", "-NonInteractive", ...(script ? ["-EncodedCommand", script] : ["-Command", command])] : ["-c", command];
+  const child = spawn(windows ? process.execPath : executable,
+    windows ? ["--no-env-file", "--no-install", "-e", windowsShellWorker] : args, {
+      cwd: root, stdio: [windows ? "pipe" : "ignore", "pipe", "pipe"], detached: !windows,
+      env: Object.fromEntries(["PATH", "LANG", "LC_ALL", "TMPDIR", "TEMP", "USERPROFILE", "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT"]
+        .flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]]])),
+      windowsHide: true,
+    });
+  let terminateWindowsJob: (() => void) | undefined;
+  if (windows) child.stdin?.on("error", () => {}); // Cancellation can close the worker before it reads the payload.
+  if (windows && child.pid !== undefined) {
+    try {
+      terminateWindowsJob = windowsRemoteJob(child.pid);
+      if (!signal.aborted) child.stdin?.end(JSON.stringify({ executable, args, verbatim: shell === "cmd" }));
+      else child.stdin?.end();
+    } catch {
+      // No command is sent until the worker belongs to the job.
+      child.stdin?.end();
+      child.once("error", () => {});
+      child.kill();
+      return "无法建立 Windows 远程进程作业。";
+    }
+  }
   const maxBytes = 12_000;
   const output: Buffer[] = [];
   let remaining = maxBytes;
   let truncated = false;
   for (const stream of [child.stdout, child.stderr]) {
-    stream.on("data", (chunk: Buffer) => {
+    stream?.on("data", (chunk: Buffer) => {
       if (chunk.length > remaining) truncated = true;
       if (remaining > 0) {
         const piece = chunk.subarray(0, remaining);
@@ -33,6 +74,7 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
 
   const stop = () => {
     if (child.pid === undefined) return;
+    if (terminateWindowsJob) { terminateWindowsJob(); return; }
     try { process.kill(windows ? child.pid : -child.pid, "SIGKILL"); }
     catch {}
   };
@@ -42,8 +84,8 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
   const timer = setTimeout(() => {
     timedOut = true;
     stop();
-    child.stdout.destroy();
-    child.stderr.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
   }, timeout);
   try {
     const result = await new Promise<{ code: number | null } | undefined>((resolve) => {

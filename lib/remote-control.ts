@@ -6,7 +6,7 @@ import type { MessageEvent } from "./messages.ts";
 import { maxChatFileBytes } from "./chat-files.ts";
 import { consumeRemoteOtp, remoteOtpPaired } from "./remote-otp.ts";
 import { readRemoteFile, writeRemoteFile } from "./remote-files.ts";
-import { remoteShell, remoteShells, type RemoteShell } from "./remote-shell.ts";
+import { isRemoteAdministrator, isRemotePlatformSupported, remoteShell, remoteShells, type RemoteShell } from "./remote-shell.ts";
 
 const command = /^#(?:远程(?:2FA|OTP)(?:初始化|重置|绑定|状态)|(?:远程管理员spawn|admin\s+spawn|远程spawn|spawn|远程下载|远程上传(?:覆盖)?|上传)(?:\s|$))/iu;
 const settingsCommand = /^#远程(?:2FA|OTP)(初始化|重置|绑定|状态)$/iu;
@@ -29,7 +29,8 @@ export function readRemoteSettings(root: string) {
   try { source = readFileSync(join(root, "config", "remote.yaml"), "utf8"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   const settings = Bun.YAML.parse(source) as Record<string, unknown> | undefined;
-  const shells = [...new Set((Array.isArray(settings?.shells) ? settings.shells : ["bash", "sh", "zsh"])
+  const platformShells = process.platform === "win32" ? ["pwsh", "powershell", "cmd"] : ["bash", "sh", "zsh"];
+  const shells = [...new Set((Array.isArray(settings?.shells) ? settings.shells : platformShells)
     .filter((name): name is RemoteShell => remoteShells.includes(name as RemoteShell)))];
   const timeout = settings?.timeout_ms;
   return {
@@ -113,7 +114,7 @@ export function createRemoteControl(root: string) {
         await reply("远程运维未开启。");
         return;
       }
-      if (process.platform !== "linux") {
+      if (!isRemotePlatformSupported()) {
         await reply("当前平台未接入远程运维。");
         return;
       }
@@ -124,7 +125,7 @@ export function createRemoteControl(root: string) {
           return;
         }
         const admin = /^(?:远程管理员|admin)/iu.test(spawn[1]!);
-        if (admin && (!settings.allowAdmin || process.getuid?.() !== 0)) {
+        if (admin && (!settings.allowAdmin || !isRemoteAdministrator())) {
           await reply("管理员模式须显式开启，并且宿主已用管理员权限运行。");
           return;
         }
