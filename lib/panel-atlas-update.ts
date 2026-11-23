@@ -1,3 +1,4 @@
+import type { AtlasRoleSettings } from "../plugins/atlas/role-switches.ts";
 import type { AtlasLocale } from "../plugins/atlas/locale.ts";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -11,7 +12,7 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
 
 const defaults = { check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" };
 const cronFields = ["check_cron", "challenge_cron"] as const;
-type AtlasScalars = {
+type AtlasScalars = Partial<AtlasRoleSettings> & {
   readonly locale?: AtlasLocale;
   readonly max_results?: number;
   readonly sync_after_update?: boolean;
@@ -24,6 +25,7 @@ type Config = Readonly<Record<string, unknown>>;
 type Parser = typeof import("../plugins/atlas/update-policy.ts").parseAtlasUpdatePolicy;
 type SearchSettings = typeof import("../plugins/atlas/search-limit.ts");
 type LocaleSettings = typeof import("../plugins/atlas/locale.ts");
+type RoleSettings = typeof import("../plugins/atlas/role-switches.ts");
 
 class InvalidAtlasCron extends Error {
   constructor(readonly field: typeof cronFields[number]) { super(); }
@@ -33,7 +35,7 @@ function record(value: unknown): Config | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Config;
 }
 
-function snapshot(document: Config, parsePolicy?: Parser, search?: SearchSettings, locales?: LocaleSettings) {
+function snapshot(document: Config, parsePolicy?: Parser, search?: SearchSettings, locales?: LocaleSettings, roles?: RoleSettings) {
   const atlas = record(document.atlas);
   const auto = record(atlas?.auto_update);
   const settings: Settings = {
@@ -47,10 +49,11 @@ function snapshot(document: Config, parsePolicy?: Parser, search?: SearchSetting
   const syncGallery = atlas?.sync_gallery !== false;
   const syncCharacterGallery = atlas?.sync_character_gallery !== false;
   const locale = locales?.parseAtlasLocale(atlas?.locale) ?? "zh";
+  const roleQueries = roles?.readAtlasRoleSettings(atlas);
   const revision = createHash("sha256").update(JSON.stringify([
-    settings, locale, atlas?.update_args, atlas?.challenge_args, atlas?.max_results, syncAfterUpdate, syncGallery, syncCharacterGallery,
+    settings, locale, atlas?.update_args, atlas?.challenge_args, atlas?.max_results, syncAfterUpdate, syncGallery, syncCharacterGallery, roleQueries,
   ])).digest("hex");
-  return { settings, locale, revision, syncAfterUpdate, syncGallery, syncCharacterGallery, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
+  return { settings, locale, revision, syncAfterUpdate, syncGallery, syncCharacterGallery, roleQueries, scopes: parsePolicy && atlasScopeSnapshot(atlas, parsePolicy),
     searchLimit: search && (search.parseAtlasSearchLimit(atlas?.max_results) ?? search.defaultAtlasSearchLimit) };
 }
 
@@ -112,10 +115,10 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     if (request.method === "GET") {
       try {
-        const [parser, search, locales] = await Promise.all([import("../plugins/atlas/update-policy.ts").catch(() => undefined),
+        const [parser, search, locales, roles] = await Promise.all([import("../plugins/atlas/update-policy.ts").catch(() => undefined),
           import("../plugins/atlas/search-limit.ts").catch(() => undefined),
-          import("../plugins/atlas/locale.ts").catch(() => undefined)]);
-        return Response.json(snapshot(await readLotusGlobalConfig(root), parser?.parseAtlasUpdatePolicy, search, locales));
+          import("../plugins/atlas/locale.ts").catch(() => undefined), import("../plugins/atlas/role-switches.ts").catch(() => undefined)]);
+        return Response.json(snapshot(await readLotusGlobalConfig(root), parser?.parseAtlasUpdatePolicy, search, locales, roles));
       }
       catch { return new Response(null, { status: 500 }); }
     }
@@ -128,11 +131,12 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
     let proposedSync: boolean | undefined;
     let proposedGallery: boolean | undefined;
     let proposedCharacterGallery: boolean | undefined;
+    let proposedRoles: Config | undefined;
     try {
       const body = record(await readPanelJson(request, 4096));
       const settings = record(body?.settings);
       if (!body || Object.keys(body).some(key =>
-        !["revision", "settings", "scopePatch", "locale", "searchLimit", "syncAfterUpdate", "syncGallery", "syncCharacterGallery"].includes(key)) ||
+        !["revision", "settings", "scopePatch", "locale", "searchLimit", "syncAfterUpdate", "syncGallery", "syncCharacterGallery", "roleQueries"].includes(key)) ||
           typeof body.revision !== "string" || !/^[a-f0-9]{64}$/u.test(body.revision) ||
           !settings || Object.keys(settings).length !== (Object.hasOwn(settings, "run_on_missing_data") ? 4 : 3) ||
           typeof settings.enable !== "boolean" ||
@@ -160,6 +164,10 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
         if (typeof body.syncCharacterGallery !== "boolean") return Response.json({ field: "syncCharacterGallery" }, { status: 400 });
         proposedCharacterGallery = body.syncCharacterGallery;
       }
+      if (Object.hasOwn(body, "roleQueries")) {
+        proposedRoles = record(body.roleQueries);
+        if (!proposedRoles) throw new Error();
+      }
       proposed = { enable: settings.enable, check_cron: settings.check_cron, challenge_cron: settings.challenge_cron,
         run_on_missing_data: settings.run_on_missing_data as boolean | undefined };
     } catch { return new Response(null, { status: 400 }); }
@@ -167,13 +175,15 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
     let parsePolicy: Parser;
     let search: SearchSettings;
     let locales: LocaleSettings;
+    let roles: RoleSettings;
     try {
       // The builtin may be absent before bootstrap. Load its parser only when editing its configuration.
-      const [update, searchSettings, localeSettings] = await Promise.all([import("../plugins/atlas/update-policy.ts"),
-        import("../plugins/atlas/search-limit.ts"), import("../plugins/atlas/locale.ts")]);
+      const [update, searchSettings, localeSettings, roleSettings] = await Promise.all([import("../plugins/atlas/update-policy.ts"),
+        import("../plugins/atlas/search-limit.ts"), import("../plugins/atlas/locale.ts"), import("../plugins/atlas/role-switches.ts")]);
       parsePolicy = update.parseAtlasUpdatePolicy;
       search = searchSettings;
       locales = localeSettings;
+      roles = roleSettings;
     } catch { return new Response(null, { status: 503 }); }
     const proposedLocale = locales.parseAtlasLocale(requestedLocale);
     if (requestedLocale !== undefined && !proposedLocale) return Response.json({ field: "locale" }, { status: 400 });
@@ -181,12 +191,16 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
       return Response.json({ field: "searchLimit" }, { status: 400 });
     }
 
+    if (proposedRoles && Object.entries(proposedRoles).some(([key, value]) =>
+      !roles.atlasRoleFields.some(field => field === key) || typeof value !== "boolean")) {
+      return Response.json({ field: "roleQueries" }, { status: 400 });
+    }
     const active = () => !request.signal.aborted && stillAuthorized();
     try {
       return Response.json(await updateLotusGlobalConfig(root, {
         canWrite: active, canCommit: active, signal: request.signal,
         prepare(text, local, effective) {
-          const before = snapshot(effective, parsePolicy, search, locales);
+          const before = snapshot(effective, parsePolicy, search, locales, roles);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           const changes: Partial<Settings> = {};
           if (before.settings.enable !== proposed.enable) changes.enable = proposed.enable;
@@ -199,7 +213,12 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
             if (normalized !== before.settings[key]) changes[key] = normalized;
           }
           const args = atlasScopeChanges(scopePatch, before.scopes!, parsePolicy);
+          const roleChanges = Object.fromEntries(roles.atlasRoleFields.flatMap(field => {
+            const value = proposedRoles?.[field];
+            return typeof value === "boolean" && value !== before.roleQueries?.[field] ? [[field, value]] : [];
+          }));
           const scalars = {
+            ...roleChanges,
             ...(proposedLocale !== undefined && proposedLocale !== before.locale && { locale: proposedLocale }),
             ...(proposedLimit !== undefined && proposedLimit !== before.searchLimit && { max_results: proposedLimit }),
             ...(proposedSync !== undefined && proposedSync !== before.syncAfterUpdate && { sync_after_update: proposedSync }),
@@ -218,7 +237,7 @@ export function panelAtlasUpdate(root: URL, validModuleCron: (cron: string) => b
             }
           }
           const { yaml, atlas } = writeSettings(text, local, effective, changes, args, scalars);
-          return { yaml, value: snapshot({ atlas }, parsePolicy, search, locales) };
+          return { yaml, value: snapshot({ atlas }, parsePolicy, search, locales, roles) };
         },
       }));
     } catch (error) {

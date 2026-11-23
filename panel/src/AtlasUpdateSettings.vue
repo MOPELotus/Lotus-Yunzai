@@ -3,6 +3,7 @@ import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AtlasScopeField, AtlasScopePatch, AtlasScopeSelections } from "../../lib/panel-atlas-scope-schema.ts";
 import { atlasLocales, defaultAtlasLocale, parseAtlasLocale, type AtlasLocale } from "../../plugins/atlas/locale.ts";
+import { atlasRoleFields, readAtlasRoleSettings, type AtlasRoleSettings } from "../../plugins/atlas/role-switches.ts";
 import { parseAtlasSearchLimit } from "../../plugins/atlas/search-limit.ts";
 import { panelFetch, type PanelAuth } from "./api.ts";
 
@@ -14,6 +15,7 @@ interface Snapshot {
   syncAfterUpdate: boolean;
   syncGallery: boolean;
   syncCharacterGallery: boolean;
+  roleQueries?: AtlasRoleSettings;
   scopes?: AtlasScopeSelections;
   searchLimit?: number;
 }
@@ -38,6 +40,16 @@ const saved = ref<Snapshot>();
 const draft = ref<Settings>({ enable: false, check_cron: "", challenge_cron: "", run_on_missing_data: true });
 const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
+const roleDraft = ref(readAtlasRoleSettings(undefined));
+const roleLabels: Record<keyof AtlasRoleSettings, string> = {
+  role_wiki: "角色图鉴和资料",
+  role_talent: "角色天赋、技能、行迹和命座／星魂",
+  role_photo: "角色照片和写真",
+};
+const roleChanges = computed(() => Object.fromEntries(atlasRoleFields.flatMap(field =>
+  saved.value?.roleQueries && saved.value.roleQueries[field] !== roleDraft.value[field] ? [[field, roleDraft.value[field]]] : [],
+)));
+
 const locale = ref<AtlasLocale>(defaultAtlasLocale);
 const syncAfterUpdate = ref(true);
 const syncGallery = ref(true);
@@ -60,7 +72,7 @@ const galleryDirty = computed(() => saved.value?.syncGallery !== syncGallery.val
 const characterGalleryDirty = computed(() => saved.value?.syncCharacterGallery !== syncCharacterGallery.value);
 const localeDirty = computed(() => saved.value?.locale !== locale.value);
 const dirty = computed(() => !!saved.value && (localeDirty.value || searchDirty.value || syncDirty.value || galleryDirty.value || characterGalleryDirty.value ||
-  Object.keys(scopePatch.value).length > 0 || JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
+  Object.keys(roleChanges.value).length > 0 || Object.keys(scopePatch.value).length > 0 || JSON.stringify(saved.value.settings) !== JSON.stringify(draft.value)));
 let active: AbortController | undefined;
 
 watch(dirty, value => emit("dirty-change", value));
@@ -83,6 +95,7 @@ async function sync(mode: "load" | "save") {
         ...(syncDirty.value && { syncAfterUpdate: syncAfterUpdate.value }),
         ...(galleryDirty.value && { syncGallery: syncGallery.value }),
         ...(characterGalleryDirty.value && { syncCharacterGallery: syncCharacterGallery.value }),
+        ...(Object.keys(roleChanges.value).length && { roleQueries: roleChanges.value }),
         ...(Object.keys(scopePatch.value).length && { scopePatch: scopePatch.value }) }) : undefined,
       signal: controller.signal,
     });
@@ -115,6 +128,7 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || parseAtlasLocale(result.locale) === undefined || typeof result?.settings?.enable !== "boolean" ||
         typeof result.syncAfterUpdate !== "boolean" || typeof result.syncGallery !== "boolean" || typeof result.syncCharacterGallery !== "boolean" ||
+        (result.roleQueries !== undefined && (!result.roleQueries || atlasRoleFields.some(field => typeof result.roleQueries?.[field] !== "boolean"))) ||
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
         (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
@@ -128,6 +142,7 @@ async function sync(mode: "load" | "save") {
     syncAfterUpdate.value = result.syncAfterUpdate;
     syncGallery.value = result.syncGallery;
     syncCharacterGallery.value = result.syncCharacterGallery;
+    roleDraft.value = result.roleQueries ? { ...result.roleQueries } : readAtlasRoleSettings(undefined);
     scopeDraft.value = Object.fromEntries(scopeFields.flatMap(field => {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
@@ -172,6 +187,14 @@ onBeforeUnmount(() => {
           <input id="atlas-search-limit" v-model.number="searchLimit" type="number" min="1" step="1" required
             aria-describedby="atlas-search-limit-note" />
           <p id="atlas-search-limit-note" class="subtitle toggle-note">控制同名或模糊查询返回的条目数。</p>
+        </template>
+        <template v-if="saved.roleQueries">
+          <h3 id="atlas-role-queries">原神和星铁角色查询</h3>
+          <label v-for="field in atlasRoleFields" :key="field" class="update-toggle">
+            <input :id="'atlas-' + field" v-model="roleDraft[field]" type="checkbox" aria-describedby="atlas-role-queries-note" />
+            {{ roleLabels[field] }}
+          </label>
+          <p id="atlas-role-queries-note" class="subtitle toggle-note">重启后生效，三项默认开启。</p>
         </template>
         <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />启用图鉴定时更新</label>
         <label class="update-toggle">

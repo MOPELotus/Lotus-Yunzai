@@ -86,7 +86,8 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const mediaState = await stageLegacyMediaState(plan.source, state.directory, {
       tuneweaveUrl: typeof apiUrl === "string" ? apiUrl : undefined, signal,
     });
-    const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal);
+    const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal,
+      backup.status === "empty" ? undefined : { directory: backup.directory, plugins: plan.plugins });
     const starRailTheme = await prepareStarRailChallengeTheme(Bun.pathToFileURL(`${state.directory}/`), {
       source: Bun.pathToFileURL(`${plan.source}/`), signal,
     });

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { rejectionReason } from "../lib/plugins/policy.ts";
 import { stageLegacyAtlasState } from "../lib/migration-atlas-state.ts";
 import { discoverRuntimeAtlasDataDirectory } from "../plugins/atlas/legacy-atlas-directory.ts";
 import { parseAtlasUpdatePolicy } from "../plugins/atlas/update-policy.ts";
@@ -156,5 +157,41 @@ test("只迁原画像和星铁部件索引实际引用的本地图，不读索�
     });
     expect(await Bun.file(join(output,"relic-parts/gs-51430.webp")).exists()).toBe(false);
     expect(await readFile(join(output,"portraits/gi-10000005.webp"))).toEqual(png);
+  });
+});
+
+test("迁移认定归档里的三个角色查询布尔值，现代显式设置优先且不启用新定时任务", async () => {
+  await fixture(async (base, source, stage) => {
+    const directory = join(base, "archive");
+    const plugin = "miao-renamed";
+    const legacy = join(directory, plugin, "config/cfg.js");
+    const values = [
+      "export const charWiki = false // 关闭角色资料",
+      "export const charWikiTalent = true;",
+      "export const charPic = false",
+      "export const charPicSe = true",
+      "export const qFace = false",
+      "throw new Error('不得执行旧 JavaScript')",
+      "",
+    ].join("\n");
+    await write(legacy, values);
+    const archive = { directory, plugins: [{ path: "plugins/" + plugin, status: "archive", kind: "directory",
+      reason: rejectionReason(["miao-plugin"], [])!, identity: "fixture" }] } as const;
+    const file = join(stage, "config/global.yaml");
+    expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "staged" });
+    expect(Bun.YAML.parse(await readFile(file, "utf8"))).toEqual({
+      atlas: { role_wiki: false, role_talent: true, role_photo: false, auto_update: { enable: false } },
+    });
+    expect(await readFile(legacy, "utf8")).toBe(values);
+
+    await write(file, "# 配置注释\natlas: {version_channel: live, role_photo: true}\n");
+    expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "staged" });
+    const merged = await readFile(file, "utf8");
+    expect(merged).toContain("# 配置注释");
+    expect(Bun.YAML.parse(merged)).toEqual({
+      atlas: { version_channel: "live", role_wiki: false, role_talent: true, role_photo: true },
+    });
+    expect(await stageLegacyAtlasState(source, stage, undefined, archive)).toMatchObject({ settings: "existing" });
+    expect(await readFile(file, "utf8")).toBe(merged);
   });
 });

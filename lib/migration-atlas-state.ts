@@ -2,7 +2,9 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { stringify } from "yaml";
+import { isMap, parseDocument, stringify } from "yaml";
+import { atlasRoleFields } from "../plugins/atlas/role-switches.ts";
+import { projectAtlasRoleSettings, type AtlasRoleArchive } from "./migration-atlas-role-settings.ts";
 import { parseAtlasLocale } from "../plugins/atlas/locale.ts";
 import { copyAtlasCandidate } from "../plugins/atlas/assemble-candidate.ts";
 import { isAtlasSourceWebp } from "../plugins/atlas/source-transport.ts";
@@ -111,6 +113,7 @@ function safeArgs(selections: readonly string[]) {
 
 function stageConfig(atlas: Record<string, unknown>) {
   const value: Record<string, unknown> = {};
+  for (const key of atlasRoleFields) if (typeof atlas[key] === "boolean") value[key] = atlas[key];
   const locale = parseAtlasLocale(atlas.locale);
   if (locale) value.locale = locale;
   if (isAtlasChannel(atlas.version_channel)) value.version_channel = atlas.version_channel;
@@ -241,7 +244,7 @@ async function stageIndexedTheme(source: string, theme: string, signal?: AbortSi
 }
 
 /** Stages the recognized local export and only the Atlas settings consumed by the current runtime. */
-export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: string, signal?: AbortSignal) {
+export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: string, signal?: AbortSignal, archive?: AtlasRoleArchive) {
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
   const info = await lstat(stage);
   if (stage !== resolve(stateDirectory) || !info.isDirectory() || (info.mode & 0o077) ||
@@ -249,7 +252,9 @@ export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: 
     throw new Error("旧图鉴暂存必须使用独立的私有实体目录。");
   }
   const config = await atlasConfig(source, signal);
-  const projected = config ? stageConfig(config.atlas) : undefined;
+  const legacyRoles = await projectAtlasRoleSettings(archive, signal);
+  const projected = config ? { ...legacyRoles, ...stageConfig(config.atlas) }
+    : Object.keys(legacyRoles).length ? { ...legacyRoles, auto_update: { enable: false } } : undefined;
   const exportRoot = await atlasExport(source, config?.base, config?.atlas.data_root);
   const directory = join(stage, exportRelative);
   let dataset: { readonly status: "absent" | "external-or-unsupported" } |
@@ -284,6 +289,20 @@ export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: 
       await mkdir(dirname(file), { recursive: true, mode: 0o700 });
       await writeFile(file, stringify({ ...current, atlas: projected }), { mode: 0o600 });
       settings = "staged";
+    } else {
+      const atlas = record(current.atlas);
+      const changes = atlas ? atlasRoleFields.filter(key => projected[key] !== undefined && !Object.hasOwn(atlas, key)) : [];
+      if (changes.length) {
+        const original = await readStableFile(file, 1024 * 1024, signal);
+        const document = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(original), { merge: true, uniqueKeys: true });
+        if (document.errors.length || !isMap(document.contents) || !isMap(document.get("atlas", true))) {
+          throw new Error("图鉴迁移无法安全扩展暂存配置。");
+        }
+        for (const key of changes) document.setIn(["atlas", key], projected[key]);
+        signal?.throwIfAborted();
+        await writeFile(file, document.toString({ lineWidth: 0 }), { mode: 0o600 });
+        settings = "staged";
+      }
     }
   }
   return { settings, dataset, themeFiles };

@@ -8,6 +8,7 @@ import { panelApi } from "../lib/panel.ts";
 import { panelAtlasUpdate } from "../lib/panel-atlas-update.ts";
 import { HandlerScope } from "../lib/plugins/handler.ts";
 import { LegacyTasks } from "../lib/plugins/tasks.ts";
+import { createModule } from "../plugins/atlas/index.ts";
 import { createAtlasMaintenance } from "../plugins/atlas/maintenance.ts";
 
 const endpoint = "/panel/api/settings/atlas/update";
@@ -389,4 +390,76 @@ test("网页拒绝覆盖未知或无法往返的旧参数，并让未编辑值�
     expect(response.status).toBe(200);
     expect(await readFile(file, "utf8")).toBe(before.replace("{enable: false}", "{run_on_missing_data: false, enable: false}"));
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("角色开关由图鉴面板保存并在重启后分开影响原铁命令", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-role-panel-"));
+  const previous = Bun.env.LOTUS_ATLAS_DATA_DIR;
+  try {
+    const root = pathToFileURL(directory + "/");
+    const data = join(directory, "data");
+    await mkdir(data, { recursive: true });
+    const entries = [
+      ["gi", "character", "10000089", "芙宁娜"], ["hsr", "character", "1005", "卡芙卡"],
+      ["zzz", "character", "1191", "艾莲"], ["gi", "weapon", "11501", "风鹰剑"],
+    ] as const;
+    const games: Record<string, { locales: { zh: { pages: Record<string, unknown> } } }> = {};
+    for (const [game, page, id, name] of entries) {
+      const path = `items/${game}-${page}-${id}.json`;
+      const target = (games[game] ??= { locales: { zh: { pages: {} } } }).locales.zh.pages;
+      target[page] = { id: page, version: "1.0", recordCount: 1, recorded: true, records: { [id]: { id, path, name, hasDetail: false } } };
+      await mkdir(join(data, "items"), { recursive: true });
+      await writeFile(join(data, path), JSON.stringify({ meta: { gameId: game, pageId: page, locale: "zh", recordId: id, name,
+        version: "1.0", hasDetail: false }, content: { list: {}, detail: null } }));
+    }
+    await writeFile(join(data, "map.json"), JSON.stringify({ games }));
+    Bun.env.LOTUS_ATLAS_DATA_DIR = data;
+    const route = panelAtlasUpdate(root, validTask);
+    const admin = panelApi(token, [], path => path === endpoint ? route : undefined);
+    const before = await (await admin(request()))?.json();
+    expect(before.roleQueries).toEqual({ role_wiki: true, role_talent: true, role_photo: true });
+    expect(before.settings.enable).toBe(false);
+    const old = createModule();
+    const run = async (module: ReturnType<typeof createModule>, msg: string) => {
+      const replies: unknown[] = [];
+      const handled = await module.nativeEvents[0]!.rule.run({ msg, reply(value) { replies.push(value); } });
+      return { handled, replies };
+    };
+    for (const cmd of ["#芙宁娜资料", "#芙宁娜天赋", "#芙宁娜命座", "*卡芙卡行迹", "*卡芙卡星魂", "#芙宁娜照片"]) {
+      expect(await run(old, cmd)).toMatchObject({ handled: true });
+    }
+    const put = (roleQueries: Record<string, unknown>, revision = before.revision, valid = true) =>
+      admin(request("PUT", { revision, settings: before.settings, roleQueries }, valid));
+    expect((await put({ role_wiki: false }, before.revision, false))?.status).toBe(401);
+    expect((await put({ role_wiki: "false" }))?.status).toBe(400);
+    expect((await put({ charPicSe: true }))?.status).toBe(400);
+
+    const overview = (await put({ role_wiki: false }))!;
+    expect(overview.status).toBe(200);
+    const first = await overview.json();
+    expect(first.settings.enable).toBe(false);
+    expect(first.roleQueries).toEqual({ role_wiki: false, role_talent: true, role_photo: true });
+    expect((await put({ role_talent: false }))?.status).toBe(409);
+    const restart = async () => createModule({ atlasUpdateConfig: (await readLotusGlobalConfig(root)).atlas });
+    const one = await restart();
+    expect(await run(one, "#芙宁娜资料")).toEqual({ handled: false, replies: [] });
+    expect(await run(one, "#芙宁娜图鉴")).toEqual({ handled: false, replies: [] });
+    expect(await run(one, "#芙宁娜天赋")).toMatchObject({ handled: true });
+    expect(await run(one, "#芙宁娜照片")).toMatchObject({ handled: true });
+    expect(await one.commands["#图鉴"]("原神 芙宁娜")).toContain("已关闭");
+    expect(await one.commands["#角色图鉴"]("绝区零 艾莲")).toContain("艾莲");
+
+    const other = (await put({ role_talent: false, role_photo: false, role_wiki: true }, first.revision))!;
+    expect(other.status).toBe(200);
+    const two = await restart();
+    expect(await run(two, "#芙宁娜资料")).toMatchObject({ handled: true });
+    for (const cmd of ["#芙宁娜天赋", "#芙宁娜技能", "#芙宁娜命座", "*卡芙卡行迹", "*卡芙卡星魂", "#芙宁娜照片", "*卡芙卡写真"]) {
+      expect(await run(two, cmd)).toEqual({ handled: false, replies: [] });
+    }
+    expect(await two.commands["#武器图鉴"]("原神 风鹰剑")).toContain("风鹰剑");
+  } finally {
+    if (previous === undefined) delete Bun.env.LOTUS_ATLAS_DATA_DIR;
+    else Bun.env.LOTUS_ATLAS_DATA_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
