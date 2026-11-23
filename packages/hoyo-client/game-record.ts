@@ -57,6 +57,7 @@ type RecordOptions = { readonly signal?: AbortSignal } & (
   { readonly kind: "starrail-rogue"; readonly scheduleType: 1 | 2 } |
   { readonly kind: "starrail-rogue-locust" | "starrail-rogue-tourn" } |
   { readonly kind: "genshin-theater" } |
+  { readonly kind: "genshin-hard-challenge" | "genshin-hard-popularity" } |
   { readonly kind: "genshin-monthly"; readonly month: number } |
   { readonly kind: "genshin-gcg-cards"; readonly collection: "character" | "action" } |
   { readonly kind: "genshin-panel-detail"; readonly characterIds: readonly number[] } |
@@ -165,6 +166,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const forDeck = kind === "genshin-gcg-deck";
   const forGcgCards = kind === "genshin-gcg-cards" || kind === "genshin-gcg-collection-summary";
   const forGenshinChallenge = kind === "genshin-abyss" || kind === "genshin-theater";
+  const hardChallenge = kind === "genshin-hard-challenge" || kind === "genshin-hard-popularity";
   const forGenshinPanel = kind === "genshin-panel-list" || kind === "genshin-panel-detail";
   const zzzPanelDetail = kind === "zzz-panel-detail";
   const climbingTower = kind === "zzz-climbing-tower";
@@ -179,7 +181,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const label = forNote ? "体力" : genshinMonthly ? "原石札记" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
     kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
     hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : forZzz ? "绝区零战绩" :
-    starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
+    starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : hardChallenge ? "幽境危战" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
   const subject = `${label}查询`;
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
@@ -225,6 +227,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     : forZzz ? `/event/game_record_zzz/api/zzz/${zzzCardPaths[kind as keyof typeof zzzCardPaths]}`
     : forDeck ? "/game_record/app/genshin/api/gcg/deckList"
     : forGcgCards ? `/game_record/app/genshin/api/gcg/${kind === "genshin-gcg-cards" ? "cardList" : "basicInfo"}`
+    : hardChallenge ? `/game_record/app/genshin/api/hard_challenge${kind === "genshin-hard-popularity" ? "/popularity" : ""}`
     : forGenshinChallenge ? `/game_record/app/genshin/api/${kind === "genshin-abyss" ? "spiralAbyss" : "role_combat"}`
     : "/game_record/app/genshin/api/index";
   const endpoint = new URL(path, genshinMonthly ? "https://hk4e-api.mihoyo.com" : monthly ? "https://api-takumi.mihoyo.com" : origin);
@@ -249,7 +252,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     if (starRailRogue) endpoint.searchParams.set("need_detail", "true");
     endpoint.searchParams.set(usesRegion ? "uid" : "role_id", uid);
     if (options.kind === "genshin-abyss" || options.kind === "starrail-rogue") endpoint.searchParams.set("schedule_type", String(options.scheduleType));
-    if (kind === "genshin-theater") endpoint.searchParams.set("need_detail", "true");
+    if (kind === "genshin-theater" || kind === "genshin-hard-challenge") endpoint.searchParams.set("need_detail", "true");
     endpoint.searchParams.set(usesRegion ? "region" : "server", region);
     if (zzzPeriod) endpoint.searchParams.set("schedule_type", String(options.scheduleType));
     if (zzzPanelDetail) endpoint.searchParams.set("need_wiki", "false");
@@ -295,7 +298,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     await response.body?.cancel().catch(() => undefined);
     throw apiError(undefined, response.status, undefined, label);
   }
-  if (forStarRail || forGenshinPanel || forGenshinChallenge || forDeck || forGcgCards || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
+  if (forStarRail || forGenshinPanel || forGenshinChallenge || hardChallenge || forDeck || forGcgCards || zzzPanelDetail || zzzPeriod || climbingTower || hollow || zenkov || exploration || monthly || kind === "zzz-avatar") {
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     if (aigis && aigis !== "{}") {
       await response.body?.cancel().catch(() => undefined);

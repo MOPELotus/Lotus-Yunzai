@@ -16,7 +16,7 @@ function characterId(value: unknown) {
   if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) return id;
 }
 
-function verifyRole(data: Json, uid: string, region: string, label = "原神面板") {
+export function verifyRole(data: Json, uid: string, region: string, label = "原神面板") {
   for (const row of [data, object(data.role)]) {
     if (!row) continue;
     if (["role_id", "game_uid", "uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
