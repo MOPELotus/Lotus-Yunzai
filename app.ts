@@ -1460,6 +1460,11 @@ if (import.meta.main) {
       }
       if (await privateAccess.blockedPoke(event)) return;
     }
+    if (event.post_type === "notice" && event.notice_type === "friend" && event.sub_type === "poke_recall" &&
+        !masterPermissions.isMaster(event.self_id, event.peer_id)) {
+      await privateAccess.refresh();
+      if (privateAccess.disabled) return;
+    }
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     if (event.post_type === "request" && event.request_type === "group" && event.sub_type === "invite") {
       await dispatchGroupInvitation(event, allowed);

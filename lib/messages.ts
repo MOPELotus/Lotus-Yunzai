@@ -307,6 +307,11 @@ export interface GroupPoke {
   readonly reply: MessageEvent["reply"];
 }
 
+export type OneBotPokeRecallNotice = (
+  (Omit<FriendPoke, "sub_type" | "adapter" | typeof friendMessageNoticeSession> & { readonly peer_id: number }) |
+  Omit<GroupPoke, "sub_type" | "adapter">
+) & { readonly sub_type: "poke_recall"; readonly adapter: "onebot" };
+
 interface GroupCompatibilityNoticeBase {
   readonly post_type: "notice";
   readonly self_id: number;
@@ -382,7 +387,7 @@ export type OneBotLegacySignal = OneBotLegacySignalIdentity & (
 );
 
 export type BotEvent = MessageEvent | GroupNotice | GroupRequest | FriendRequest | FriendPoke | GroupPoke |
-  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice;
+  OneBotGroupCompatibilityNotice | MilkyGroupCompatibilityNotice | OneBotProfileLikeNotice | OneBotPokeRecallNotice;
 
 export interface InboundSegment extends Readonly<Record<string, unknown>> {
   readonly type: string;

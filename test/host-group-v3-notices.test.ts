@@ -59,6 +59,7 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
     await copyHost(root);
     disableMemberPrewarm(root);
     await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config", "other.yaml"), "blackUser: [799]\n");
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${gateway.port}`, `access_token: ${token}`,
     ].join("\n") + "\n");
@@ -66,14 +67,16 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       export const apps = Object.fromEntries([
         "notice.group.msg_emoji_like", "notice.group.card", "notice.group.group_name",
         "notice.group.essence", "notice.group.decrease",
+        "notice.group.poke", "notice.friend.poke", "notice.group.poke_recall", "notice.friend.poke_recall",
       ].map((key, index) => ["listener" + index, class extends plugin {
         constructor() { super({ event: key }); }
         async accept(e) {
           const { group_id, user_id, operator_id, message_id, message_seq, likes, face_id, reaction_type,
-            is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member, notice_type, sub_type, action_sub_type } = e;
+            is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member, notice_type, sub_type,
+            action_sub_type, target_id, peer_id } = e;
           await e.reply(JSON.stringify({ key, group_id, user_id, operator_id, message_id, message_seq,
             likes, face_id, reaction_type, is_add, is_set, card_old, card_new, name_new, new_group_name, sender_id, member,
-            notice_type, sub_type, action_sub_type }));
+            notice_type, sub_type, action_sub_type, target_id, peer_id }));
           return "return";
         }
       }]));
@@ -94,7 +97,10 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       socket.addEventListener("message", ({ data }) => {
         const { action, params, echo } = JSON.parse(data);
         if (echo) socket.send(JSON.stringify({ echo, status: "ok", retcode: 0, data: { message_id: ++receipt } }));
-        if (action === "send_msg") replies.push({ group_id: params.group_id, payload: JSON.parse(params.message) });
+        if (action === "send_msg") {
+          const recipient = params.message_type === "group" ? { group_id: params.group_id } : { user_id: params.user_id };
+          replies.push({ ...recipient, payload: JSON.parse(params.message) });
+        }
       });
       await waitFor(() => socket.readyState === WebSocket.OPEN ? true : undefined, "OneBot WebSocket 未连接。");
       const milky = await waitFor(() => milkySocket, "Milky WebSocket 未连接。");
@@ -103,11 +109,12 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       const mk = (event_type: string, data: object, self_id = milkyId) =>
         milky.send(JSON.stringify({ event_type, self_id, time: stamp, data: { group_id: groupId, ...data } }));
       let nextReply = 0;
-      async function verify(payload: { key: string; [field: string]: unknown }) {
+      async function verify(payload: { key: string; [field: string]: unknown },
+        recipient: { group_id: number } | { user_id: number } = { group_id: groupId }) {
         const index = nextReply++;
         const [, notice_type, sub_type] = payload.key.split(".");
         expect(await waitFor(() => replies[index], "V3 群事件监听未收到。")).toEqual({
-          group_id: groupId, payload: { ...payload, notice_type, sub_type },
+          ...recipient, payload: { ...payload, notice_type, sub_type },
         });
       }
 
@@ -151,7 +158,23 @@ test("旧群通知经 OneBot 和 Milky WebSocket 交给正确的 V3 插件监听
       await verify({ key: "notice.group.essence", action_sub_type: "add", group_id, operator_id: user_id, message_id: "15", message_seq: 15, is_set: true });
       mk("group_essence_message_change", { message_seq: 15, is_set: false });
       await verify({ key: "notice.group.essence", action_sub_type: "delete", group_id, message_id: "15", message_seq: 15, is_set: false });
-      expect(replies).toHaveLength(13);
+      const pokeRecall = { sub_type: "poke_recall", operator_id: userId, target_id: 702 };
+      one("notify", pokeRecall, oneBotId + 9);
+      one("notify", { ...pokeRecall, group_id: "801" });
+      one("notify", { ...pokeRecall, target_id: undefined });
+      one("notify", { ...pokeRecall, group_id: undefined });
+      one("notify", { ...pokeRecall, group_id: undefined, operator_id: oneBotId, target_id: 799 });
+      one("notify", pokeRecall);
+      await verify({ key: "notice.group.poke_recall", group_id: groupId, user_id: userId, operator_id: userId, target_id: 702 });
+      one("notify", { ...pokeRecall, group_id: 0, operator_id: undefined, user_id: userId, target_id: oneBotId });
+      await verify({ key: "notice.friend.poke_recall", user_id: userId, peer_id: userId, operator_id: userId, target_id: oneBotId },
+        { user_id: userId });
+      one("notify", { ...pokeRecall, group_id: undefined, operator_id: oneBotId, target_id: userId });
+      await verify({ key: "notice.friend.poke_recall", user_id: oneBotId, peer_id: userId, operator_id: oneBotId, target_id: userId },
+        { user_id: userId });
+      one("notify", { sub_type: "poke", group_id: undefined, user_id: userId, target_id: oneBotId });
+      await verify({ key: "notice.friend.poke", user_id: userId, operator_id: userId, target_id: oneBotId }, { user_id: userId });
+      expect(replies).toHaveLength(17);
     } finally {
       oneBot?.close();
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGTERM");

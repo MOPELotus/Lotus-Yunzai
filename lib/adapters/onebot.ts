@@ -10,7 +10,8 @@ import { createQuotedRecall, quotedRecallSessions } from "../quoted-recall.ts";
 import { findQuotedGroupFile, quotedGroupFile } from "./quoted-group-file.ts";
 import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMessageReceipts, type NativeFriendRelationshipNotice } from "../friend-message-notice.ts";
 import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
-  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
+  type GroupRequest, type MessageEvent, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal,
+  type OneBotPokeRecallNotice, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
 import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
@@ -590,6 +591,37 @@ async function dispatchGroupCompatibilityNotice(
         (typeof message_seq === "string" && /^\d{1,20}$/u.test(message_seq)) ? message_seq : undefined,
       is_add: typeof is_add === "boolean" ? is_add : undefined });
   }
+}
+
+async function dispatchPokeRecall(
+  dispatch: (event: OneBotPokeRecallNotice) => Promise<void>, send: Send, event: Record<string, unknown>,
+  connection: ConnectionData, isMaster: (bot: number, user: number) => boolean,
+) {
+  const { self_id, target_id, time, group_id } = event;
+  const user_id = event.user_id ?? (event.operator_id || target_id);
+  if (!isId(self_id) || !isId(user_id) || !isId(target_id)) return;
+  const signal = groupActionSignal(connection, self_id);
+  if (!signal) return;
+  const group = isId(group_id);
+  if (!group && ((group_id !== undefined && group_id !== 0) ||
+      user_id === target_id || (self_id !== user_id && self_id !== target_id))) return;
+  const peer = user_id === self_id ? target_id : user_id;
+  const base = {
+    post_type: "notice" as const, sub_type: "poke_recall" as const, adapter: "onebot" as const,
+    self_id, user_id, operator_id: user_id, target_id, time: isId(time) ? time : undefined,
+    isMaster: isMaster(self_id, user_id),
+    reply(reply: MessageReply) {
+      if (signal.aborted) return false;
+      const message = encodeOneBotReply(reply);
+      const target = group ? { message_type: "group", group_id } : { message_type: "private", user_id: peer };
+      return message !== undefined && send({
+        action: "send_msg", params: { ...target, message, auto_escape: true },
+      });
+    },
+  };
+  await dispatch(group
+    ? { ...base, notice_type: "group", group_id, isGroup: true, isPrivate: false }
+    : { ...base, notice_type: "friend", peer_id: peer, isGroup: false, isPrivate: true });
 }
 
 async function dispatchProfileLike(
@@ -1466,6 +1498,8 @@ export function startOneBot(
             } else if (message.notice_type === "notify" && message.sub_type === "poke") {
               if (isId(message.group_id)) await dispatchGroupPoke(dispatch, send, message, socket.data, options.isMaster);
               else if (!message.group_id) await dispatchFriendPoke(dispatch, send, message, socket.data, options);
+            } else if (message.notice_type === "notify" && message.sub_type === "poke_recall") {
+              await dispatchPokeRecall(dispatch, send, message, socket.data, options.isMaster);
             } else {
               await dispatchGroupNotice(dispatch, send, message, calls, options, socket.data);
             }
