@@ -1,6 +1,5 @@
 import { createLegacyPanelRecoveryFlow, matchLegacyPanelRecoveryConfirmation, readLegacyPanelRecoveryEnabled } from "./lib/legacy-panel-recovery-flow.ts";
 import { createHash } from "node:crypto";
-import { createInterface } from "node:readline";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -195,6 +194,7 @@ import { readRuntimeVersion } from "./lib/runtime-version.ts";
 import { createRuntimeStatus, readRuntimeStatusRedisClients } from "./lib/runtime-status.ts";
 import { createServerRedirect } from "./lib/server-redirect.ts";
 import { httpStatus, readServerSettings } from "./lib/server.ts";
+import { createTerminalInput } from "./lib/terminal-input.ts";
 import { createTerminalReply } from "./lib/terminal-reply.ts";
 import { previousUpdateDirectory } from "./lib/update-activation.ts";
 import { verifyMovedHttpsPaths } from "./lib/update-https-paths.ts";
@@ -462,7 +462,7 @@ if (import.meta.main) {
   let legacyProcessReady = false;
   let legacyExitHooksRan = false;
   let exitReason: LegacyExitReason = "exit";
-  let consoleInput: ReturnType<typeof createInterface> | undefined;
+  let consoleInput: ReturnType<typeof createTerminalInput> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
   const previous = !probingUpdate && handoff.managed && !handoff.accepting
@@ -4113,7 +4113,7 @@ if (import.meta.main) {
       queueStartupMessages();
 
       const terminalReply = createTerminalReply(fileToUrl, terminalOutput);
-      consoleInput = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      consoleInput = createTerminalInput(interrupt);
       for await (const message of consoleInput) {
         if (stopping) break;
         const waiting = Promise.withResolvers<void>();
