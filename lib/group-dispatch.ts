@@ -301,6 +301,16 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     return admitUnique(duplicate, now);
   }
 
+  function addressedCommand(msg: string, config: Record<string, unknown>, atBot?: boolean) {
+    const alias = !atBot && strings(config.botAlias).find((text) => msg.startsWith(text));
+    return { msg: alias ? normalizePrefix(msg.slice(alias.length).trimStart()) : msg, alias: alias || undefined };
+  }
+
+  function commandText(event: Pick<MessageEvent, "msg" | "self_id" | "group_id" | "message_type" | "atBot">) {
+    const msg = normalizePrefix(event.msg);
+    return groups && event.message_type === "group" ? addressedCommand(msg, groupConfig(event), event.atBot).msg : msg;
+  }
+
   function prepare(event: MessageEvent): { event: MessageEvent; allowNew: boolean; alias?: string } {
     const msg = normalizePrefix(event.msg);
     if (!groups || event.message_type !== "group") {
@@ -308,7 +318,8 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     }
 
     const config = groupConfig(event);
-    const alias = !event.atBot && strings(config.botAlias).find((text) => msg.startsWith(text));
+    const addressed = addressedCommand(msg, config, event.atBot);
+    const { alias } = addressed;
     const mode = config.onlyReplyAt;
     const owner = event.isMaster || isMilkyOwnerSession(event);
     const ownerExempt = (mode === 2 || mode === "2") && owner;
@@ -328,7 +339,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
 
     const normalized = {
       ...event,
-      msg: alias ? normalizePrefix(msg.slice(alias.length).trimStart()) : msg,
+      msg: addressed.msg,
       hasAlias: !!alias,
       only_reply_at: allowNew,
     };
@@ -374,6 +385,6 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     }
   }
 
-  return { admit, prepare, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, refreshLists, refreshGroups,
+  return { admit, prepare, commandText, allows, allowsInbound, allowsGroupModeration, allowsScheduledGroup, refreshLists, refreshGroups,
     blockUser, keywordSettings };
 }

@@ -74,6 +74,7 @@ import { ownGroupCardSession, type OwnGroupCardAccount } from "./lib/adapters/ow
 import { readAutoQuit } from "./lib/auto-quit.ts";
 import { normalizeGameCommand, normalizeOriginalPictureCommand } from "./lib/command-prefix.ts";
 import { canManagePackages, isMilkyOwnerSession } from "./lib/command-permissions.ts";
+import { botOperationCommand, isBotVerificationInput } from "./lib/bot-operation.ts";
 import { createRemoteControl, isRemoteControlCommand } from "./lib/remote-control.ts";
 import { arkRankCredentialsPath, containsArkRankTokenInput, createArkRankCredentialSettings, isArkRankTokenCommand } from "./lib/ark-rank-credentials.ts";
 import { hasPanelTransferCapability, matchPanelTransferCommand, type PanelTransferAccess } from "./lib/panel-transfer-command.ts";
@@ -260,7 +261,7 @@ const chatSettingsNames = ["[group] 设置", "group", "@lotus-yunzai/group"];
 const privateCredentialField = /\b(?:authkey|s?token|ltoken|cookie_token|login_ticket|account_mid|ltmid|stmid|combo_token)(?:_v2)?(?:\s|["']|%22|%27)*(?:=|:|%3d)/iu;
 
 function isPrivateCredentialMessage(text: string): boolean {
-  return privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
+  return isBotVerificationInput(text) || privateCredentialField.test(text) || isCloudTokenInput(text) || isHoYoLabCookieInput(text) || isPassportLoginInput(text) ||
     isDeviceBindingInput(text) || isZzzGachaLinkMessage(text) || isStarRailGachaLinkMessage(text) ||
     isGenshinPayLogLinkCandidate(text) || hasPanelTransferCapability(text) || containsPanelSignatureChallenge(text);
 }
@@ -1144,7 +1145,16 @@ if (import.meta.main) {
   }
 
   async function routeEvent(event: BotEvent) {
-    if (event.post_type === "message" && isGameSignatureInput(event)) return;
+    if (event.post_type === "message") {
+      const normalized = groupDispatch.commandText(event);
+      if ([normalized, event.raw_message].some(isBotVerificationInput)) {
+        const receipt = `#机器人验证:${event.adapter ?? "onebot"}:${event.message_type}:${event.group_id ?? ""}:${event.message_id ?? ""}`;
+        if (isBotVerificationInput(normalized) && botOperationCommand(normalized) &&
+            groupDispatch.admit({ ...event, raw_message: receipt })) await dispatchMessage(event);
+        return;
+      }
+      if (isGameSignatureInput(event)) return;
+    }
     if (event.post_type === "message" && (containsArkRankTokenInput(event.message) || isPanelTransferInput(event))) {
       if (groupDispatch.admit(event)) await dispatchMessage(event);
       return;
@@ -1991,9 +2001,39 @@ if (import.meta.main) {
     });
   }
 
+  async function replyBotOperation(event: MessageEvent, target: number | undefined, allowNew: boolean) {
+    if (!allowNew || dispatchPower.paused || stopping || !handoff.accepting || event.isDelegated || event.attachmentOnly ||
+        !groupDispatch.allows(event, ["botOperate", "机器人操作", "system", "@lotus-yunzai/system"])) return;
+    const { self_id: botId, user_id: actorId, sender, message_type, adapter } = event;
+    const transport = event[delegationSession]?.signal;
+    if (botId === undefined || actorId === undefined || !transport || event.message_id === undefined ||
+        (message_type === "group" ? event.group_id === undefined || event.sub_type === "anonymous"
+          : message_type !== "private" || event.sub_type !== "friend" || event.group_id !== undefined) ||
+        (sender?.user_id !== undefined && sender.user_id !== actorId && sender.user_id !== String(actorId))) return;
+    const signal = nativeOperationSignal(transport);
+    if (signal.aborted) return;
+    const oneBot = groups.onlineBots();
+    const milky = onlineMilkyBotId();
+    if (!(adapter === "milky" ? milky === botId : oneBot.includes(botId))) return;
+    if (!canManagePackages(event) || !masterPermissions.isMaster(botId, actorId)) {
+      await event.reply("只有当前机器人的主人才能执行此操作。");
+    } else if (target === undefined || (target !== milky && !oneBot.includes(target))) {
+      await event.reply("Bot 不存在");
+    } else if (target !== botId) {
+      await event.reply("只能操作当前机器人的账号。");
+    } else {
+      await event.reply("暂不支持此操作");
+    }
+  }
+
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
     const { event, allowNew, alias } = groupDispatch.prepare(incoming);
+    const botOperation = botOperationCommand(event.msg);
+    if (botOperation) {
+      await replyBotOperation(event, botOperation.target, allowNew);
+      return;
+    }
     const allowed = (names: readonly string[]) => groupDispatch.allows(event, names);
     const transfer = matchPanelTransferCommand(event.msg);
     const transferCapability = isPanelTransferInput(event);
@@ -3290,8 +3330,11 @@ if (import.meta.main) {
       onGroupMessageSource(source: NativeGroupMessageSource) {
         const text = typeof source.message === "string" ? source.message :
           source.message.map(part => part.type === "text" ? part.text : "").join("");
+        const commandText = groupDispatch.commandText({
+          msg: text, self_id: source.botId, group_id: source.groupId, message_type: "group",
+        });
         if (containsArkRankTokenInput(source.message) || containsPanelTransferCapability(source.message) ||
-            containsPanelSignatureChallenge(text)) return;
+            containsPanelSignatureChallenge(text) || isBotVerificationInput(commandText)) return;
         const capture = rememberGroupRecall(source);
         if (capture) {
           pending.add(capture);
