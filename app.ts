@@ -2231,10 +2231,16 @@ if (import.meta.main) {
         await sendCommandReply(event, original);
         return;
       }
-      const session = event.message_type === "group" ? event[delegationSession]?.signal : undefined;
+    }
+    const starRailPhoto = command.msg === "#星铁原图" && event.lookupReply !== undefined && !event.isDelegated;
+    if ((statusPhoto && runtimeStatusScope) || starRailPhoto) {
+      const session = event.message_type === "group" && event.listCurrentGroupMembers !== undefined
+        ? event[delegationSession]?.signal : undefined;
       const groupOriginalSignal = session && nativeOperationSignal(session);
       if (groupOriginalSignal) {
-        for (const moduleName of ["@lotus-yunzai/zzz", "@lotus-yunzai/genshin"]) {
+        const modules = starRailPhoto ? ["@lotus-yunzai/starrail"]
+          : ["@lotus-yunzai/zzz", "@lotus-yunzai/genshin", "@lotus-yunzai/starrail"];
+        for (const moduleName of modules) {
           if (groupOriginalSignal.aborted) return;
           const artwork = await commands.dispatchFallback(event,
             (names) => names[0] === moduleName && allowed(names), isBotMaster, command.msg, { groupOriginalSignal });
