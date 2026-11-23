@@ -1,6 +1,7 @@
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { logObjectOptions } from "./log-object-options.ts";
 import { readOwnerSnapshot } from "./permissions.ts";
 import type { UpdateNoticeSettings } from "./update-notice.ts";
 
@@ -18,7 +19,6 @@ const botFields = [
   "cache_group_member", "online_msg_exp", "plugin_load_timeout", "log_level", "log_length", "log_object", "log_align",
   "msg_type_count", "file_to_url_time", "file_to_url_times",
 ] as const;
-const inspectFields = ["length", "depth", "maxArrayLength", "maxStringLength"] as const;
 const inheritedOther = {
   master: ["stdin:stdin"], blackGroup: [213_938_015], blackUser: [528_952_540],
 } as const;
@@ -72,9 +72,7 @@ function projectConfig(config: Config, name: ConfigName, deferred: DeferredOwner
     if (!Object.hasOwn(config, key)) continue;
     const value = config[key];
     if (key === "log_object" && value != null && typeof value === "object" && !Array.isArray(value)) {
-      const options = value as Config;
-      selected[key] = Object.fromEntries(inspectFields.filter(field => Object.hasOwn(options, field) && scalar(options[field]))
-        .map(field => [field, options[field]]));
+      selected[key] = logObjectOptions(value);
       continue;
     }
     if (!scalar(value) && !(listFields.has(key) && Array.isArray(value) && value.every(scalar))) {

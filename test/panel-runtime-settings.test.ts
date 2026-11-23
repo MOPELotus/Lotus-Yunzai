@@ -18,13 +18,13 @@ test("宿主运行设置沿用旧生效配置，忽略不相关字段并防止�
     await mkdir(join(directory, "config/config"), { recursive: true });
     const legacy = join(directory, "config/config/bot.yaml");
     const modern = join(directory, "config/bot.yaml");
-    const legacySource = "# 旧配置\nlog_level: WARN\nlog_object: {depth: 4, length: '90'}\nlog_align: Host\nplugin_load_timeout: '2.75'\ncache_group_member: 0\nmsg_type_count: '1'\nfile_to_url_time: '1.25'\nfile_to_url_times: 0 # 禁止下载\npanel_token: fixture\n";
+    const legacySource = "# 旧配置\nlog_level: WARN\nlog_object: {depth: 4, length: '90', breakLength: 20, sorted: true, getters: true}\nlog_align: Host\nplugin_load_timeout: '2.75'\ncache_group_member: 0\nmsg_type_count: '1'\nfile_to_url_time: '1.25'\nfile_to_url_times: 0 # 禁止下载\npanel_token: fixture\n";
     await writeFile(legacy, legacySource);
     const initial = await get();
     expect(initial.fields).toHaveLength(13);
     expect(initial.values).toEqual({
       imageRenderPreset: "standard", log_level: "warn", log_length: 10_000, "/→#": true,
-      log_object: { depth: 4, length: 90 }, log_align: "Host", plugin_load_timeout: 2.75,
+      log_object: { depth: 4, length: 90, breakLength: 20, sorted: true }, log_align: "Host", plugin_load_timeout: 2.75,
       cache_group_member: false, msg_type_count: true, file_watch: true, online_msg_exp: 1440,
       file_to_url_time: 1.25, file_to_url_times: 0,
     });
@@ -33,6 +33,9 @@ test("宿主运行设置沿用旧生效配置，忽略不相关字段并防止�
       log_object: false, log_align: "", plugin_load_timeout: 0.35 };
     expect((await put(initial.values, { ...changes, log_length: 32_001 })).status).toBe(400);
     expect((await put(initial.values, { ...changes, log_object: { depth: 11 } })).status).toBe(400);
+    expect((await put(initial.values, { ...changes, log_object: { getters: true } })).status).toBe(400);
+    expect((await put(initial.values, { ...changes, log_object: { breakLength: 0 } })).status).toBe(400);
+    expect((await put(initial.values, { ...changes, log_object: { sorted: "true" } })).status).toBe(400);
     expect((await put(initial.values, { ...changes, plugin_load_timeout: -1 })).status).toBe(400);
     expect((await put(initial.values, { ...changes, file_to_url_time: Number.MAX_SAFE_INTEGER })).status).toBe(400);
     expect((await put(initial.values, { ...changes, file_to_url_times: 0.5 })).status).toBe(400);
@@ -51,6 +54,9 @@ test("宿主运行设置沿用旧生效配置，忽略不相关字段并防止�
     });
     expect((await get()).values).toEqual(changes);
     expect((await put(initial.values, changes)).status).toBe(409);
+    const withFormatting = { ...changes, log_object: { breakLength: 30, compact: 2, sorted: false, numericSeparator: true } };
+    expect((await put(changes, withFormatting)).status).toBe(200);
+    expect((await get()).values).toEqual(withFormatting);
 
     await writeFile(modern, "log_level: debug\n");
     const current = (await get()).values;

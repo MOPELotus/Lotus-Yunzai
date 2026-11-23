@@ -3,6 +3,7 @@ import { isMap, parseDocument } from "yaml";
 import { readLocalConfig, readOptionalConfigFile } from "./config.ts";
 import { fileShareDefaults } from "./file-to-url.ts";
 import { isLogLevel, logLevels, type LogLevel } from "./log-level-command.ts";
+import { logObjectOptions, type LogObjectOptions } from "./log-object-options.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
 import { onlineNoticeSeconds } from "./online-notice.ts";
 import { readPanelJson } from "./panel.ts";
@@ -19,7 +20,7 @@ const fields = [
     options: logLevels.map(value => ({ label: value, value })) },
   { key: "log_length", label: "日志单段字符上限", type: "number", min: 1, max: 32_000, hint: restart },
   { key: "log_object", label: "日志对象格式", type: "json",
-    hint: "填 false 简化对象输出，或设置 length、depth、maxArrayLength、maxStringLength。留空使用默认。保存后重启宿主生效。" },
+    hint: "填 false 简化对象输出。可设置 length、depth、maxArrayLength、maxStringLength、breakLength、compact、sorted 和 numericSeparator。留空使用默认。保存后重启宿主生效。" },
   { key: "log_align", label: "日志标签对齐", type: "text", hint: "标签最多 64 个字符。留空取消对齐。保存后重启宿主生效。" },
   { key: "plugin_load_timeout", label: "单个插件加载超时（秒）", type: "number", min: 0, max: maxPluginLoadMs / 1000,
     hint: "默认 60 秒，填 0 时立即触发加载超时。保存后重启宿主生效。" },
@@ -55,23 +56,10 @@ function enabled(value: unknown) {
   return value === true || value === 1;
 }
 
-const objectLimits = { length: 32_000, depth: 10, maxArrayLength: 100, maxStringLength: 1_000 } as const;
-type LogObjectKey = keyof typeof objectLimits;
-type LogObject = boolean | null | Partial<Record<LogObjectKey, number>>;
+type LogObject = boolean | LogObjectOptions | null;
 
 function logObjectValue(value: unknown): LogObject {
-  if (typeof value === "boolean") return value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const options = value as Record<string, unknown>;
-  const result: Partial<Record<LogObjectKey, number>> = {};
-  for (const key of Object.keys(objectLimits) as LogObjectKey[]) {
-    const option = options[key];
-    const number = key === "length" && typeof option === "string" ? Number(option) : option;
-    if (typeof number === "number" && Number.isSafeInteger(number) && number >= (key === "length" ? 1 : 0)) {
-      result[key] = Math.min(number, objectLimits[key]);
-    }
-  }
-  return result;
+  return typeof value === "boolean" ? value : logObjectOptions(value) ?? null;
 }
 
 async function readValues(root: URL): Promise<RuntimeValues> {

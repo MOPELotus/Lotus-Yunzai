@@ -66,6 +66,10 @@ test.each([
     "[long.] migration-object [object Object]", "migration-length " + "A".repeat(30) + "…"],
   ["对象选项和 YAML 空对齐", "log_length: 96\nlog_object: {length: 32, depth: 0, getters: true, unknownAuth: fixture-opaque}\nlog_align:\n",
     "[long-identity] migration-object { accepted: [Object] }", "migration-length " + "A".repeat(31) + "…"],
+  ["排序、数字分组和展开布局", "log_length: 180\nlog_object: {compact: false, sorted: true, numericSeparator: true}\nlog_align:\n",
+    "[long-identity] migration-style {   a: 12_345,   z: 1 }", "migration-length " + "A".repeat(80)],
+  ["按列宽展开", "log_length: 180\nlog_object: {breakLength: 12}\nlog_align:\n",
+    "[long-identity] migration-style {   z: 1,   a: 12345 }", "migration-length " + "A".repeat(80)],
 ] as const)("旧日志配置迁入后经 OneBot 消息生效：%s", async (_name, configuration, objectLine, lengthLine) => {
   const fixture = await mkdtemp(join(tmpdir(), "lotus-migrated-log-fixture-"));
   try {
@@ -81,6 +85,7 @@ test.each([
         constructor() { super({ event: "message", rule: [{ reg: "^#迁移格式联验$", fnc: "sample" }] }); }
         async sample() {
           Bot.makeLog("info", ["migration-object", { accepted: { sample: true } }], "long-identity");
+          Bot.makeLog("info", ["migration-style", { z: 1, a: 12345 }], "long-identity");
           Bot.makeLog("info", ["migration-length", "A".repeat(80)], false);
           await this.reply("已记录迁移日志");
         }

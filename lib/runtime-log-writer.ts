@@ -3,6 +3,7 @@ import { mkdir, open, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatWithOptions, inspect, types } from "node:util";
+import { logObjectOptions } from "./log-object-options.ts";
 import { archiveRuntimeLogs } from "./runtime-log-archive.ts";
 import { runtimeLogDirectory, runtimeLogFilename, sanitizeRuntimeLog } from "./runtime-logs.ts";
 
@@ -38,13 +39,9 @@ export function createPluginLog(config: Readonly<Record<string, unknown>>,
   write: (level: PluginLogLevel, message: string) => void = (level, message) => console[compatibilityLevels[level]](message)) {
   const limit = configuredLogLength(config.log_length) ?? 10_000;
   const setting = config.log_object;
-  const objectOptions = setting && typeof setting === "object" ? setting as Record<string, unknown> : {};
-  const partLimit = configuredLogLength(objectOptions.length) ?? limit;
-  const boundedNumber = (value: unknown, maximum: number) =>
-    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? Math.min(value, maximum) : maximum;
-  const options = { colors: false, customInspect: false, getters: false, showHidden: false, showProxy: false,
-    depth: boundedNumber(objectOptions.depth, 10), maxArrayLength: boundedNumber(objectOptions.maxArrayLength, 100),
-    maxStringLength: boundedNumber(objectOptions.maxStringLength, 1_000) } as const;
+  const { length: partLimit = limit, ...objectOptions } = logObjectOptions(setting) ?? {};
+  const options = { depth: 10, maxArrayLength: 100, maxStringLength: 1_000, ...objectOptions,
+    colors: false, customInspect: false, getters: false, showHidden: false, showProxy: false } as const;
   const label = typeof config.log_align === "string" ? sanitizeRuntimeLog(config.log_align, 64) : defaultLabel;
   const projectLabel = /^(?:TRSSYz|TRSS-Yunzai)$/iu.test(label.trim()) ? label.replace(label.trim(), defaultLabel) : label;
 
