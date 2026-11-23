@@ -22,6 +22,7 @@ type Catalog = ReturnType<typeof createMiyousheShopCatalog>;
 type CatalogData = Awaited<ReturnType<Catalog["list"]>>;
 type CatalogDetail = Awaited<ReturnType<Catalog["detail"]>>;
 type Good = CatalogData["goods"][number];
+type TrackerProduct = { readonly id: string; readonly game: string; readonly type: 1 | 2 };
 type Role = CatalogDetail["roles"][number];
 type Address = { readonly id: string; readonly label: string };
 type Detail = CatalogDetail & { readonly addresses?: readonly Address[] };
@@ -630,6 +631,16 @@ function detailContent({ good, roles, roleError, addresses }: Detail) {
       blocks.push(list, add("p", "muted", "实际兑换条件请以米游社商品说明为准。"));
     }
   }
+  const tracked = trackerProduct(good);
+  if (tracked && plans.data?.canSubmit) {
+    const track = add("button", "secondary", "持续追踪此商品 · 包括后续同名商品");
+    track.type = "button";
+    track.addEventListener("click", () => {
+      get("shop-detail").close();
+      openTracker(tracked);
+    });
+    blocks.push(track);
+  }
   blocks.push(reservationForm(good, roles, addresses));
   return blocks;
 }
@@ -925,16 +936,29 @@ async function loadTrackerTargets() {
   }
 }
 
-function openTracker() {
+function trackerProduct(good: Good): TrackerProduct | undefined {
+  if (good.type !== 1 && good.type !== 2) return;
+  const business = Object.keys(trackGames).find(game => game !== "bbs" && good.gameBiz === `${game}_cn`);
+  const game = good.game || business;
+  if (!game || game === "all" || !/^[a-zA-Z0-9_]{1,32}$/u.test(game) || good.type === 2 && game !== business) return;
+  return { id: good.id, game, type: good.type };
+}
+
+function openTracker(product?: TrackerProduct) {
   const form = get("tracker-form");
   form.reset();
-  trackerGameOptions(shop.game);
+  if (product) form.elements.itemType.value = String(product.type);
+  trackerGameOptions(product?.game ?? shop.game, product?.type === 1);
+  if (product) {
+    form.elements.mode.value = "goods";
+    form.elements.goodsIds.value = product.id;
+  }
   trackerMode();
   get("tracker-dialog").showModal();
   void loadTrackerTargets();
 }
 
-function trackerGameOptions(preferred: string) {
+function trackerGameOptions(preferred: string, includeProductGame = false) {
   const form = get("tracker-form").elements;
   const physical = form.itemType.value === "1";
   const entries = Object.entries(trackGames).filter(([key]) => physical || key !== "bbs");
@@ -945,6 +969,7 @@ function trackerGameOptions(preferred: string) {
       }
     }
   }
+  if (includeProductGame && !entries.some(([key]) => key === preferred)) entries.push([preferred, preferred]);
   form.game.replaceChildren(...entries.map(([key, name]) => new Option(name, key)));
   if (entries.some(([key]) => key === preferred)) form.game.value = preferred;
 }
@@ -969,6 +994,7 @@ async function saveTracker(event: SubmitEvent) {
     }));
     if (generation !== trackers.generation) return;
     get("tracker-dialog").close();
+    switchTab("trackers");
     await loadTrackers();
   } catch (error) {
     if (generation === trackers.generation) get("tracker-form-note").textContent = (error as Error).message;
@@ -1237,10 +1263,14 @@ get("tab-trackers").addEventListener("click", () => {
   switchTab("trackers");
   void loadTrackers();
 });
-get("tracker-open").addEventListener("click", openTracker);
+get("tracker-open").addEventListener("click", () => openTracker());
 get("tracker-close").addEventListener("click", () => get("tracker-dialog").close());
 get("tracker-dialog").addEventListener("close", () => trackers.targets?.abort());
 get("tracker-form").elements.mode.addEventListener("change", trackerMode);
+get("tracker-form").addEventListener("input", ({ target }) => {
+  const { confirmed } = get("tracker-form").elements;
+  if (target !== confirmed) confirmed.checked = false;
+});
 get("tracker-form").elements.game.addEventListener("change", () => void loadTrackerTargets());
 get("tracker-form").elements.itemType.addEventListener("change", () => {
   trackerGameOptions(get("tracker-form").elements.game.value);
