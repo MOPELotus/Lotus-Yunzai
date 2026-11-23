@@ -140,8 +140,10 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
     const bytes = await readFile(profile);
     await one("#登记UID100000042", "请私聊机器人", { message_type: "group", sub_type: "normal", group_id: 701 });
     expect(await Bun.file(join(root, "data/public-role-references/42/1.json")).exists()).toBe(false);
-    await one("#登记公开UID 100000042", "原神当前公开 UID 为 100000042");
-    await one("%登记UID82000042", "绝区零当前公开 UID 为 82000042");
+    await one("#登记公开UID", "两分钟内发送");
+    await one("100000042", "原神当前公开 UID 为 100000042");
+    await one("%登记UID", "两分钟内发送");
+    await one("82000042", "绝区零当前公开 UID 为 82000042");
     await other("*登记公开UID", "两分钟内发送");
     await Bun.sleep(40);
     await other("100000043", "星铁当前公开 UID 为 100000043");
