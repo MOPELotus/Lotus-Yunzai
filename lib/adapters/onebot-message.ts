@@ -6,7 +6,7 @@ import { generatedImagePreview, type InboundSegment, type MessageReply, type Mus
 
 interface OutboundSegment {
   type: string;
-  data: Record<string, string>;
+  data: Record<string, string | number>;
 }
 
 const required = new Map([
@@ -50,9 +50,14 @@ function encodeSegment(value: unknown): OutboundSegment | undefined {
   const payload = field(parameter, key);
   if (payload === undefined || (payload === "" && key !== "text")) return;
 
-  const data: Record<string, string> = { [key]: payload };
+  const data: OutboundSegment["data"] = { [key]: payload };
   for (const [name, input] of Object.entries(fields)) {
     if (name === key || (fields === value && name === "type")) continue;
+    if (type === "image" && name === "sub_type" && typeof input === "number" &&
+        Number.isInteger(input) && input >= 0 && input <= 7) {
+      data[name] = input;
+      continue;
+    }
     const result = field(input, name);
     if (result !== undefined) data[name] = result;
   }

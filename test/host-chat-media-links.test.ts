@@ -45,22 +45,22 @@ test("自动复读从原 OneBot 图片 file 链接和续期后的 Milky 资源�
   await withDualGatewayFixture("auto-repeat-image-fixture", "", async ({ onebot, milky, sendOneBot, sendMilky }) => {
     for (const user_id of [61, 62]) sendOneBot("", {
       message_type: "group", sub_type: "normal", group_id: 707, user_id,
-      message: [{ type: "image", data: { file: image } }],
+      message: [{ type: "image", data: { file: image, sub_type: user_id === 61 ? 0 : 1 } }],
     });
     const one = await onebot.next("send_msg");
-    expect(one.params).toMatchObject({ group_id: 707, message: [{ type: "image", data: { file: `base64://${sample}` } }] });
+    expect(one.params).toMatchObject({ group_id: 707, message: [{ type: "image", data: { file: `base64://${sample}`, sub_type: 1 } }] });
     one.respond({ message_id: 321 });
 
     for (const sender_id of [63, 64]) {
       expect((await sendMilky("", { message_scene: "group", peer_id: 708, sender_id,
-        segments: [{ type: "image", data: { temp_url: expired, resource_id: "repeat-image-fixture" } }],
+        segments: [{ type: "image", data: { temp_url: expired, resource_id: "repeat-image-fixture", sub_type: "sticker" } }],
       })).status).toBe(200);
     }
     const renew = await milky.next("get_resource_temp_url");
     expect(renew.params).toEqual({ resource_id: "repeat-image-fixture" });
     renew.respond({ url: renewed });
     const mk = await milky.next("send_group_message");
-    expect(mk.params).toMatchObject({ group_id: 708, message: [{ type: "image", data: { uri: `base64://${sample}` } }] });
+    expect(mk.params).toMatchObject({ group_id: 708, message: [{ type: "image", data: { uri: `base64://${sample}`, sub_type: "normal" } }] });
     mk.respond({ message_seq: 322 });
     expect(onebot.calls).toEqual([]);
     expect(milky.calls).toEqual([]);
