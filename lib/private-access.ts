@@ -105,12 +105,12 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
     return true;
   }
 
-  async function blockedPoke(event: Pick<MessageEvent, "isMaster" | "reply">): Promise<boolean> {
+  async function blockedPoke(event: Pick<MessageEvent, "isMaster" | "reply">, quiet = false): Promise<boolean> {
     if (event.isMaster) return false;
     await refresh();
     const { enabled, tip } = policy;
     if (!enabled) return false;
-    if (tip) await event.reply(tip);
+    if (tip && !quiet) await event.reply(tip);
     return true;
   }
 

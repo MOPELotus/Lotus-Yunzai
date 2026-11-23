@@ -74,7 +74,7 @@ test("Milky 群成员事件保留可证实的加入、退群和移出原因", ()
     .toBeUndefined();
 });
 
-test("Milky 只派发戳向当前账号的好友事件，回复固定原好友", async () => {
+test("Milky 好友戳一戳保留合法两种方向，回复固定原好友", async () => {
   const replies: { target: { group_id: number } | { user_id: number }; reply: MessageReply }[] = [];
   const poke = (extra: Record<string, unknown> = {}) =>
     envelope("friend_nudge", { user_id: userId, is_self_send: false, is_self_receive: true, ...extra });
@@ -85,10 +85,15 @@ test("Milky 只派发戳向当前账号的好友事件，回复固定原好友",
   expect(notice).toMatchObject({
     post_type: "notice", notice_type: "friend", sub_type: "poke",
     self_id: selfId, user_id: userId, operator_id: userId, target_id: selfId,
+    is_self_send: false, is_self_receive: true,
     isGroup: false, isPrivate: true, isMaster: false,
   });
   expect(await notice?.reply("收到")).toBe(true);
   expect(replies).toEqual([{ target: { user_id: userId }, reply: "收到" }]);
+  expect(milkyNotice(poke({ is_self_send: true, is_self_receive: false }), selfId, offline, notSent)).toMatchObject({
+    notice_type: "friend", sub_type: "poke", self_id: selfId, user_id: userId,
+    operator_id: selfId, target_id: userId, is_self_send: true, is_self_receive: false,
+  });
   for (const event of [
     poke({ user_id: selfId }), poke({ user_id: 2 ** 53 }), poke({ is_self_send: true }), poke({ is_self_receive: false }),
     poke({ is_self_send: "false" }), { ...poke(), self_id: selfId + 1 }, { ...poke(), self_id: String(selfId) },

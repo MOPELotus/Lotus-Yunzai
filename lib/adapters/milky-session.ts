@@ -166,7 +166,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     } else if (event.post_type === "notice" && event.sub_type === "poke") {
       const userId = event.user_id;
       const identity = { adapter: "milky" as const, isMaster: isMaster(userId) };
-      event = event.notice_type === "group" ? { ...event, ...identity } : {
+      event = event.notice_type === "group" || event.is_self_send ? { ...event, ...identity } : {
         ...event, ...identity, [friendMessageNoticeSession]: {
           signal,
           async notifyOwners(reply, workflow) {

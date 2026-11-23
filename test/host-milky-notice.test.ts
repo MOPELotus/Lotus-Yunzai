@@ -186,6 +186,9 @@ test("Milky Webhook 分发真实群进退、群名片、主动和自动复读，
       expect((await webhook(endpoint, "group_member_increase", joinEvent, botId + 1)).status).toBe(403);
       expect((await webhook(endpoint, "group_member_increase", { ...joinEvent, user_id: botId })).status).toBe(200);
       expect((await webhook(endpoint, "friend_nudge", nudge(true, false))).status).toBe(200);
+      expect(await mock.next("send_private_message")).toEqual({
+        user_id: memberId, message: [text(`好友戳一戳 ${memberId} ${botId} ${memberId}`)],
+      });
       expect((await webhook(endpoint, "friend_nudge", nudge(true, true, botId))).status).toBe(200);
       expect((await webhook(endpoint, "friend_nudge", nudge(false, true, botId))).status).toBe(200);
       expect((await webhook(endpoint, "group_member_increase", joinEvent)).status).toBe(200);
@@ -226,8 +229,8 @@ test("Milky Webhook 分发真实群进退、群名片、主动和自动复读，
       expect((await webhook(endpoint, "group_nudge", { ...groupPoke, sender_id: otherMember })).status).toBe(200);
       await Bun.sleep(80);
       expect(mock.calls.map(({ action }) => action)).toEqual([
-        "get_login_info", "get_group_info", "send_group_message", "send_group_message", "send_group_message",
-        "send_group_message", "send_private_message", "send_group_message",
+        "get_login_info", "send_private_message", "get_group_info", "send_group_message", "send_group_message",
+        "send_group_message", "send_group_message", "send_private_message", "send_group_message",
       ]);
 
       let sequence = 250;
@@ -275,6 +278,11 @@ test("Milky Webhook 分发真实群进退、群名片、主动和自动复读，
       expect(await mock.next("recall_group_message")).toEqual({ group_id: groupId, message_seq: echoedSeq });
 
       await writeFile(join(root, "config", "group-notice.yaml"), "default: { privateMessage: true }\n");
+      const outgoing = nudge(true, false, otherMember);
+      const sent = mock.calls.length;
+      expect((await webhook(endpoint, "friend_nudge", outgoing)).status).toBe(200);
+      await Bun.sleep(80);
+      expect(mock.calls).toHaveLength(sent);
       const incoming = nudge(false, true, otherMember);
       expect((await webhook(endpoint, "friend_nudge", incoming)).status).toBe(200);
       expect(await mock.next("get_friend_list")).toEqual({ no_cache: true });

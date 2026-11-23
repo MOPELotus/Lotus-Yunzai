@@ -83,10 +83,13 @@ export function milkyNotice(
   if (!isId(user_id)) return;
 
   if (type === "friend_nudge") {
-    if (user_id === selfId || data.is_self_send !== false || data.is_self_receive !== true) return;
+    const { is_self_send, is_self_receive } = data;
+    if (user_id === selfId || typeof is_self_send !== "boolean" || typeof is_self_receive !== "boolean" ||
+        is_self_send === is_self_receive) return;
     return {
       post_type: "notice", notice_type: "friend", sub_type: "poke",
-      self_id: selfId, user_id, operator_id: user_id, target_id: selfId,
+      self_id: selfId, user_id, operator_id: is_self_send ? selfId : user_id, target_id: is_self_receive ? selfId : user_id,
+      is_self_send, is_self_receive,
       time: isId(time) ? time : undefined,
       isGroup: false, isPrivate: true, isMaster: false,
       reply: (reply) => sendReply({ user_id }, reply),

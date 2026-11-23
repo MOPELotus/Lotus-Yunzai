@@ -282,6 +282,8 @@ export interface FriendPoke {
   readonly user_id: number;
   readonly operator_id: number;
   readonly target_id: number;
+  readonly is_self_send?: boolean;
+  readonly is_self_receive?: boolean;
   readonly time?: number;
   readonly [friendMessageNoticeSession]?: FriendMessageNoticeSession;
   readonly isGroup: false;

@@ -1460,7 +1460,7 @@ if (import.meta.main) {
         pending.add(notice);
         void notice.then(() => pending.delete(notice));
       }
-      if (await privateAccess.blockedPoke(event)) return;
+      if (await privateAccess.blockedPoke(event, event.is_self_send)) return;
     }
     if (event.post_type === "notice" && event.notice_type === "friend" && event.sub_type === "poke_recall" &&
         !masterPermissions.isMaster(event.self_id, event.peer_id)) {

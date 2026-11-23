@@ -135,7 +135,7 @@ test("私聊限制热读取旧配置，解析失败时保留当前限制", async
     const poke = { isMaster: false, reply: () => true as const };
     expect(await live.blocked(normal)).toBe(false);
 
-    await writeFile(file, 'disablePrivate: true\ndisableMsg: ""\ndisableAdopt: ["^夹具放行$"]\n');
+    await writeFile(file, 'disablePrivate: true\ndisableMsg: 旧私聊关闭\ndisableAdopt: ["^夹具放行$"]\n');
     await Bun.sleep(1_050);
     expect(await Promise.all([live.blocked(normal), live.blockedPoke(poke)])).toEqual([true, true]);
     expect(await live.blocked(incoming("夹具放行"))).toBe(false);
@@ -145,6 +145,13 @@ test("私聊限制热读取旧配置，解析失败时保留当前限制", async
     await Bun.sleep(1_050);
     expect(await live.blocked(normal)).toBe(true);
     expect(await live.blocked(incoming("夹具放行"))).toBe(false);
+
+    const tips: unknown[] = [];
+    const otherPoke = { isMaster: false, reply: (tip: unknown) => { tips.push(tip); return true; } };
+    expect(await live.blockedPoke(otherPoke, true)).toBe(true);
+    expect(tips).toEqual([]);
+    expect(await live.blockedPoke(otherPoke)).toBe(true);
+    expect(tips).toEqual(["旧私聊关闭"]);
 
     await writeFile(join(root, "config/other.yaml"), "disablePrivate: false\n");
     await Bun.sleep(1_050);
