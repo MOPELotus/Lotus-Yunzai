@@ -11,7 +11,7 @@ import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMap
   type Pair, type SourceEdit } from "./yaml-source-edits.ts";
 
 type Config = Readonly<Record<string, unknown>>;
-type Changes = Partial<GlobalPermissionSettings>;
+export type GlobalPermissionChanges = Partial<GlobalPermissionSettings>;
 type Tree = { [name: string]: Tree | readonly unknown[] | string };
 const revisionKey = randomBytes(32);
 
@@ -38,7 +38,7 @@ function localPermissionAliases(local: Config) {
   return normalizeLotusGlobalConfig({ ...local, permissions: undefined });
 }
 
-function snapshot(local: Config, effective: Config): GlobalPermissionSnapshot {
+export function globalPermissionSnapshot(local: Config, effective: Config): GlobalPermissionSnapshot {
   const permissions = record(effective.permissions);
   const aliases = localPermissionAliases(local);
   const settings = {
@@ -59,7 +59,7 @@ function snapshot(local: Config, effective: Config): GlobalPermissionSnapshot {
   return { revision, settings, locked, retained };
 }
 
-function parseChanges(input: unknown): Changes {
+function parseChanges(input: unknown): GlobalPermissionChanges {
   const fields = record(input);
   if (!fields || !Object.keys(fields).length) throw new Error();
   return Object.fromEntries(Object.entries(fields).map(([key, value]) => {
@@ -155,12 +155,29 @@ function editPermissions(text: string, current: Config, tree: Tree) {
   return result;
 }
 
-class LegacyPermissionAlias extends Error {}
+export class LegacyPermissionAlias extends Error {}
+
+export function editGlobalPermissionSettings(text: string, local: Config, effective: Config, patch: GlobalPermissionChanges,
+  before = globalPermissionSnapshot(local, effective)) {
+  const permissions: Tree = {};
+  if (patch.default_policy !== undefined && before.settings.default_policy !== patch.default_policy) {
+    permissions.default_policy = patch.default_policy;
+  }
+  for (const field of globalPermissionLists) {
+    const next = patch[field];
+    if (next === undefined || isDeepStrictEqual(next, before.settings[field])) continue;
+    if (before.locked[field]?.some(legacyId => !next.includes(legacyId))) throw new LegacyPermissionAlias();
+    const [scope, type] = field.split(".") as ["users" | "groups", "allow" | "deny"];
+    const branch = (permissions[scope] ??= {}) as Tree;
+    branch[type] = replacementList(local, effective, field, next);
+  }
+  return Object.keys(permissions).length ? editPermissions(text, local, { permissions }) : undefined;
+}
 
 export async function readGlobalPermissions(root: URL) {
   const local = await readOptionalLocalConfig(root, "global") ?? {};
   const effective = await inheritLotusGlobalConfig(root, local);
-  return { current: snapshot(local, effective), effective };
+  return { current: globalPermissionSnapshot(local, effective), effective };
 }
 
 export function panelGlobalPermissions(root: URL) {
@@ -175,7 +192,7 @@ export function panelGlobalPermissions(root: URL) {
     }
     if (request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
     let revision: string;
-    let patch: Changes;
+    let patch: GlobalPermissionChanges;
     try {
       const payload = record(await readPanelJson(request, 65_536));
       if (!payload || Object.keys(payload).length !== 2 || typeof payload.revision !== "string" ||
@@ -188,21 +205,9 @@ export function panelGlobalPermissions(root: URL) {
       await updateLotusGlobalConfig(root, {
         signal: request.signal, canWrite: active, canCommit: active,
         prepare(text, local, effective) {
-          const before = snapshot(local, effective);
+          const before = globalPermissionSnapshot(local, effective);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
-          const permissions: Tree = {};
-          if (patch.default_policy !== undefined && before.settings.default_policy !== patch.default_policy) {
-            permissions.default_policy = patch.default_policy;
-          }
-          for (const field of globalPermissionLists) {
-            const next = patch[field];
-            if (next === undefined || isDeepStrictEqual(next, before.settings[field])) continue;
-            if (before.locked[field]?.some(legacyId => !next.includes(legacyId))) throw new LegacyPermissionAlias();
-            const [scope, type] = field.split(".") as ["users" | "groups", "allow" | "deny"];
-            const branch = (permissions[scope] ??= {}) as Tree;
-            branch[type] = replacementList(local, effective, field, next);
-          }
-          const yaml = Object.keys(permissions).length ? editPermissions(text, local, { permissions }) : undefined;
+          const yaml = editGlobalPermissionSettings(text, local, effective, patch, before);
           return { yaml, value: undefined };
         },
       });

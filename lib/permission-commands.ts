@@ -5,6 +5,7 @@ import type { CommandModule, MessageFallbackContext } from "./commands.ts";
 import type { GlobalPermissionList } from "./global-permission-policy.ts";
 import { segment } from "./messages.ts";
 import { readGlobalPermissions } from "./panel-global-permissions.ts";
+import { editChatPermissions, parsePermissionEdit } from "./permission-command-edits.ts";
 
 interface PermissionCommandOptions {
   readonly root: URL;
@@ -14,7 +15,6 @@ interface PermissionCommandOptions {
 }
 
 const title = "权限配置";
-const description = "查看\n当前权限配置如下。";
 const denied = "只有机器人主人可以查看或修改业务权限。";
 const listPattern = /^#(?:权限(?:列表|名单|配置)|签到[黑白]名单列表)$/u;
 const labels: Record<GlobalPermissionList, string> = {
@@ -45,11 +45,24 @@ export function permissionCommands({ root, terminalOwner, activeSignal, render =
     name: "@lotus-yunzai/permissions",
     commands: {},
     async fallback(_message, context) {
-      if (!listPattern.test(context.normalizedMessage)) return;
+      const list = listPattern.test(context.normalizedMessage);
+      const edit = list ? undefined : parsePermissionEdit(context.normalizedMessage);
+      if (!list && edit === undefined) return;
       const access = authorization(context);
       if (!access || !access.allowed()) return denied;
       const { signal, allowed } = access;
       if (signal.aborted) return [];
+      if (edit === "invalid") return "权限指令格式错误，或该作用域不接受此策略。";
+      if (edit === "unsupported") return "该业务作用域当前不可通过聊天配置。";
+      let description = "查看\n当前权限配置如下。";
+      if (edit) {
+        const outcome = await editChatPermissions(root, edit, {
+          active: () => !signal.aborted && allowed(), signal, actor: String(context.user_id ?? "stdin"), group: context.group_id,
+        });
+        if (signal.aborted || !allowed()) return [];
+        if (typeof outcome === "string") return outcome;
+        description = `${outcome.changed ? "已更新" : "无需更新"}\n${outcome.note}`;
+      }
       try {
         const { current: { settings }, effective } = await readGlobalPermissions(root);
         if (signal.aborted || !allowed()) return [];
