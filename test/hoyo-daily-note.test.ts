@@ -9,6 +9,9 @@ import { isDailyNoteCookieExpired, readDailyNote } from "../packages/hoyo-client
 import { HoyoRequestError } from "../packages/hoyo-client/errors.ts";
 import { createHoyoClient } from "../packages/hoyo-client/index.ts";
 import { dailyNoteCommands } from "../lib/daily-note.ts";
+import { CommandRegistry } from "../lib/commands.ts";
+import { normalizeGameCommand } from "../lib/command-prefix.ts";
+import type { MessageEvent } from "../lib/messages.ts";
 
 const source = {
   qq: "42", profileId: 2, game: "gs", revision: "synthetic-revision",
@@ -369,3 +372,90 @@ account:
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应游戏档案", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-daily-note-alias-"));
+  const originalFetch = globalThis.fetch;
+  const profile = join(directory, "42-2.yaml");
+  const gs = { uid: "123456789", region: "cn_gf01", game_biz: "hk4e_cn" };
+  const sr = { uid: "523456789", region: "prod_qd_cn", game_biz: "hkrpg_cn" };
+  const nap = { uid: "12345678", region: "prod_gf_cn", game_biz: "nap_cn" };
+  const roles = [gs, sr, nap];
+  const data = {
+    profile: { id: 2 }, user: { qq: 42 },
+    account: { stuid: "62", stoken: "synthetic-stoken", cookie: "ltoken=expired",
+      game_roles: { gs: [gs], sr: [sr], zzz: [nap] } },
+    device: { id: "synthetic-device" },
+  };
+  const queries: string[][] = [];
+  const destinations: string[][] = [];
+  let exchanges = 0;
+  const registry = new CommandRegistry();
+
+  const replies: unknown[] = [];
+  const base: MessageEvent = {
+    post_type: "message", msg: "", message: "", raw_message: "", message_type: "group",
+    isGroup: true, isPrivate: false, isMaster: false, self_id: 51, user_id: 42, group_id: 99,
+    async reply(message) { replies.push(message); return true; },
+  };
+  const group = { ...base };
+  const privateFriend = { ...base, message_type: "private", isGroup: false, isPrivate: true, group_id: undefined,
+    privateCredentialSignal: new AbortController().signal } as const;
+  const dispatch = (msg: string, context = group) => registry.dispatchFallback(
+    normalizeGameCommand({ ...context, msg, raw_message: msg, message: msg }), () => true, () => false,
+  );
+  try {
+    globalThis.fetch = (async (input, options) => {
+      const url = new URL(String(input)), path = url.pathname;
+      const ok = (response: unknown) => Response.json({ retcode: 0, data: response });
+      if (path.endsWith("/getLTokenBySToken")) {
+        exchanges++;
+        return ok({ ltoken: "synthetic-fresh" });
+      }
+      if (path.endsWith("/getCookieAccountInfoBySToken")) {
+        exchanges++;
+        return ok({ uid: "62", cookie_token: "synthetic-cookie" });
+      }
+      if (path.endsWith("/getUserGameRolesByCookie")) return ok({ list: roles.map(role => ({ ...role, game_uid: role.uid })) });
+      const headers = new Headers(options?.headers);
+      const cookie = headers.get("cookie") ?? "";
+      destinations.push([url.origin, path, headers.get("x-rpc-device_id") ?? ""]);
+      const game = path.endsWith("/hkrpg/api/note") ? "sr" : path.endsWith("/zzz/note") ? "zzz" : "unexpected";
+      expect(["sr", "zzz"]).toContain(game);
+      queries.push([game, url.searchParams.get("role_id")!, cookie.includes("synthetic-fresh") ? "fresh" : cookie]);
+      if (cookie === "ltoken=expired") return Response.json({ retcode: -100 });
+      return game === "sr" ? ok({ current_stamina: 120, max_stamina: 240 }) : ok({ energy: { progress: { current: 100, max: 240 } } });
+    }) as typeof fetch;
+    registry.registerModule(dailyNoteCommands(directory, new AbortController().signal));
+    registry.registerModule({ name: "fixture-role-query", commands: {}, fallback: (_message, context) =>
+      context.normalizedMessage === "#星铁三月七面板" || context.normalizedMessage === "#绝区零艾莲面板" ? "角色入口" : undefined });
+    for (const [game, role, trigger, aliases] of [
+      ["sr", sr, "*树脂", ["*查询体力", "#星铁树脂", "星铁查询体力", "##星铁查询体力", "*树脂2"]],
+      ["zzz", nap, "%树脂", ["%查询体力", "#绝区树脂", "#绝区零查询体力", "##绝区查询体力", "％树脂2"]],
+    ] as const) {
+      await writeFile(profile, JSON.stringify(data));
+      queries.length = destinations.length = 0;
+      exchanges = 0;
+      expect(await dispatch(trigger)).toEqual([]);
+      expect(destinations).toEqual(Array.from({ length: 2 }, () => ["https://api-takumi-record.mihoyo.com",
+        game === "sr" ? "/game_record/app/hkrpg/api/note" : "/event/game_record_zzz/api/zzz/note", "synthetic-device"]));
+      expect(queries).toEqual([[game, role.uid, "ltoken=expired"], [game, role.uid, "fresh"]]);
+      expect(exchanges).toBe(2);
+      queries.length = 0;
+      for (const alias of aliases) expect(await dispatch(alias, privateFriend)).toEqual([]);
+      expect(queries).toEqual(aliases.map(() => [game, role.uid, "fresh"]));
+      expect(exchanges).toBe(2);
+    }
+    queries.length = 0;
+    expect(await dispatch("%查询体力", { ...group, user_id: 43, isMaster: true })).toContain("没有找到可查询的 profile");
+    expect(await dispatch("*三月七面板")).toBe("角色入口");
+    expect(await dispatch("%艾莲面板")).toBe("角色入口");
+    expect(await dispatch("*树脂活动")).toBeUndefined();
+    expect(await dispatch("%查询体力测试")).toBeUndefined();
+    expect(queries).toEqual([]);
+    expect(replies.some(reply => typeof reply === "string" && reply.includes("profile 2"))).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
