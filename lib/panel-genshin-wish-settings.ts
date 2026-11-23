@@ -31,6 +31,8 @@ const fields = [
     hint: "私聊单抽默认不撤回，与十连和群聊分开。" },
   { key: "reincarnationMinutes", label: "转生冷却（分钟）", type: "number", min: 1, max: 1440,
     hint: "下一次转生起生效。同一个 QQ 的群聊与私聊共用冷却，机器人主人不受限制。" },
+  { key: "dailyDrawLimits", label: "按会话的每日抽数限制", type: "json", rows: 8,
+    hint: '钱包仍先检查。default 为默认，private 为私聊，也可填群号。count 每单位 10 抽，separate 为 true 时武器单独计数。null 表示该会话取消继承，例如 {"default":{"count":1,"separate":false},"123456789":null}。' },
   { key: "groups", label: "按群覆盖", type: "json",
     hint: '用群号作为键，只填写要覆盖的字段 pink、blue、recallSeconds，例如 {"123456789":{"pink":25,"recallSeconds":0}}。' },
 ] as const;

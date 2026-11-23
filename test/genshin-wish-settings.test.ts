@@ -48,7 +48,7 @@ test("Flower 票数、撤回与转生冷却迁入统一面板，设置与群命�
     const panel = panelGenshinWishSettings(root);
     const url = "http://localhost/panel/api/settings/native/genshin-wish";
     const values = await (await panel(new Request(url), () => true)).json().then(r => r.values);
-    expect(values).toEqual({ ...wishDefaultRates, ...wishDefaultPools, enabled: true, multiple: true, pink: 22, blue: 11, recallSeconds: 23, privateSingleRecallSeconds: 3, reincarnationMinutes: 11,
+    expect(values).toEqual({ ...wishDefaultRates, ...wishDefaultPools, dailyDrawLimits: {}, enabled: true, multiple: true, pink: 22, blue: 11, recallSeconds: 23, privateSingleRecallSeconds: 3, reincarnationMinutes: 11,
       groups: { 123: { pink: 10, recallSeconds: 0 }, 456: { blue: 10 } } });
     const put = (next: unknown, allow: boolean) => panel(new Request(url, { method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ previous: values, values: next }) }), () => allow);

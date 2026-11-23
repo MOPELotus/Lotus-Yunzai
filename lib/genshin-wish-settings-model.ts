@@ -26,7 +26,15 @@ export interface WishManualPools extends Readonly<Record<WishPoolKey, readonly s
   readonly automaticPools: boolean;
 }
 
+export interface WishDailyDrawLimit {
+  readonly count: number;
+  readonly separate: boolean;
+}
+export type WishDailyDrawLimits = Readonly<Record<string, WishDailyDrawLimit | null>>;
+export const maximumWishDailyBatches = Math.floor(Number.MAX_SAFE_INTEGER / 10);
+
 export interface WishSettings extends WishAllowance, WishRates, WishSwitches, WishManualPools {
+  readonly dailyDrawLimits: WishDailyDrawLimits;
   readonly privateSingleRecallSeconds: number;
   readonly reincarnationMinutes: number;
   readonly groups: Readonly<Record<string, Partial<WishAllowance>>>;
@@ -40,7 +48,7 @@ export const wishDefaultPools: WishManualPools = {
   automaticPools: true, poolCharacterFive: [], poolCharacterFour: [], poolWeaponFive: [], poolWeaponFour: [],
 };
 export const wishDefaultSettings: WishSettings = { ...wishDefaultRates, ...wishDefaultPools, enabled: true, multiple: true, pink: 100, blue: 10, recallSeconds: 110, privateSingleRecallSeconds: 0,
-  reincarnationMinutes: 120, groups: { "123465": { pink: 10, blue: 10 } } };
+  reincarnationMinutes: 120, dailyDrawLimits: {}, groups: { "123465": { pink: 10, blue: 10 } } };
 
 function checkAmount(value: unknown, key: keyof WishAllowance): number {
   const max = key === "recallSeconds" ? 120 : 10_000;
@@ -126,11 +134,33 @@ function allowance(value: unknown) {
   return Object.fromEntries(keys.flatMap(key => Object.hasOwn(raw, key) ? [[key, checkAmount(raw[key], key)]] : []));
 }
 
+function dailyDrawLimitSettings(value: unknown): WishDailyDrawLimits {
+  const limits = record(value);
+  if (!limits || Object.keys(limits).length > 2002) throw new TypeError("模拟祈愿每日次数限制无效。");
+  return Object.fromEntries(Object.entries(limits).map(([scope, limit]) => {
+    if (scope !== "default" && scope !== "private" && !validWishGroup(scope)) {
+      throw new TypeError("每日次数限制须按默认、私聊或有效群号配置。");
+    }
+    if (limit === null) return [scope, null];
+    const row = record(limit);
+    if (!row || Object.keys(row).length !== 2 || typeof row.count !== "number" || !Number.isSafeInteger(row.count) ||
+        row.count < 0 || row.count > maximumWishDailyBatches || typeof row.separate !== "boolean") {
+      throw new TypeError("每日次数限制须含非负整数 count 与布尔值 separate。");
+    }
+    return [scope, { count: row.count, separate: row.separate }];
+  }));
+}
+
+export function wishDailyDrawLimit(settings: WishSettings, scope: string) {
+  const limits = settings.dailyDrawLimits;
+  return Object.hasOwn(limits, scope) ? limits[scope] : limits.default;
+}
+
 export function parseWishSettings(value: unknown, base = wishDefaultSettings): WishSettings {
   const config = record(value);
   if (!config) throw new TypeError("模拟祈愿设置应为映射。");
   const {
-    groups, privateSingleRecallSeconds, reincarnationMinutes = base.reincarnationMinutes,
+    groups, dailyDrawLimits = base.dailyDrawLimits, privateSingleRecallSeconds, reincarnationMinutes = base.reincarnationMinutes,
     enabled = base.enabled, multiple = base.multiple, characterFive = base.characterFive, characterFour = base.characterFour,
     weaponFive = base.weaponFive, weaponFour = base.weaponFour, featuredFive = base.featuredFive,
     automaticPools = base.automaticPools, poolCharacterFive = base.poolCharacterFive, poolCharacterFour = base.poolCharacterFour,
@@ -139,6 +169,7 @@ export function parseWishSettings(value: unknown, base = wishDefaultSettings): W
   if (typeof enabled !== "boolean" || typeof multiple !== "boolean" || typeof automaticPools !== "boolean") throw new TypeError("请选择模拟祈愿及多连开关。");
   if (!validReincarnationMinutes(reincarnationMinutes)) throw new TypeError("转生冷却须为 1–1440 分钟的整数。");
   const fallback = { ...base, ...allowance(defaults), reincarnationMinutes, enabled, multiple, automaticPools,
+    dailyDrawLimits: dailyDrawLimitSettings(dailyDrawLimits),
     poolCharacterFive: poolNames(poolCharacterFive, "poolCharacterFive"), poolCharacterFour: poolNames(poolCharacterFour, "poolCharacterFour"),
     poolWeaponFive: poolNames(poolWeaponFive, "poolWeaponFive"), poolWeaponFour: poolNames(poolWeaponFour, "poolWeaponFour"),
     characterFive: checkRate(characterFive, "characterFive"), characterFour: checkRate(characterFour, "characterFour"),
