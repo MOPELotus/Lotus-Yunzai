@@ -88,7 +88,7 @@ export async function readBoundedRankPayload(response: Response, maximum: number
 
 type RankResponse = { readonly payload: unknown } | { readonly message: string };
 
-export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/self" | "rank/custom" | "rank/custom/specific" | "rank/stygian", query: object,
+export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/self" | "rank/custom" | "rank/custom/specific" | "rank/stygian" | "auth/usage", query: object,
   signal: AbortSignal, transport: RankStatsTransport, { maximum = maxBytes, token }: {
     readonly maximum?: number; readonly token?: string;
   } = {}): Promise<RankResponse> {

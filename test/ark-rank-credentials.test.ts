@@ -3,6 +3,7 @@ import { arkRankCredentialsPath, arkRankTokenKey, containsArkRankTokenInput, cre
   isArkRankTokenCommand } from "../lib/ark-rank-credentials.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import { panelApi } from "../lib/panel.ts";
+import type { RankStatsTransport } from "../lib/rank-statistics.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const oldToken = "OLD-ARK-fixture-101";
@@ -37,7 +38,7 @@ test("宿主拦截旧凭据命令，群聊和其他成员无法使用已绑定�
     }, 4_000, `Bun.env.LOTUS_ARK_CUSTOM_RANK_TOKEN = ${JSON.stringify(environmentToken)};`);
 }, 15_000);
 
-function fixture() {
+function fixture(transport?: RankStatsTransport) {
   let token: string | undefined = oldToken;
   function verifyKey(key: string) { expect(key).toBe(arkRankTokenKey); }
   const operations = { reads: 0, sets: 0, clears: 0 };
@@ -66,10 +67,108 @@ function fixture() {
   };
   const signal = new AbortController();
   const settings = createArkRankCredentialSettings({
-    signal: signal.signal, storage: () => runtime.available ? storage : undefined, environment: () => runtime.environment,
+    signal: signal.signal, storage: () => runtime.available ? storage : undefined, environment: () => runtime.environment, transport,
   });
   return { ...settings, operations, runtime, current: () => token, signal };
 }
+
+test("宿主让当前主人查询分档额度，拒绝群和其他好友访问用量", async () => {
+  const preload = `
+    Bun.env.LOTUS_ARK_CUSTOM_RANK_TOKEN = ${JSON.stringify(environmentToken)};
+    const underlying = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.hostname === "127.0.0.1") return underlying(input, init);
+      if (url.href !== "https://ark.ivny.cn/auth/usage") throw new Error("unexpected external request");
+      calls++;
+      if (calls !== 1 || init?.method !== "POST" || init?.redirect !== "error" ||
+          init?.credentials !== "omit" || new Headers(init?.headers).get("authorization") !== "Bearer " + Bun.env.LOTUS_ARK_CUSTOM_RANK_TOKEN ||
+          JSON.stringify(JSON.parse(init?.body)) !== '{"version":"2.1.0"}') return new Response(null, { status: 400 });
+      return Response.json({ retcode: 0, data: {
+        auth: { permission: 1, limit_normal: 2.5, token: Bun.env.LOTUS_ARK_CUSTOM_RANK_TOKEN },
+        quota: { rank: { minute: { remaining: 0 }, hour: { remaining: 10 }, day: { remaining: 900 } },
+          custom: { normal: { remaining: 12 }, advanced: { remaining: 3 } } },
+      } });
+    };
+  `;
+  await withDualGatewayFixture("ark-usage-fixture", 'master: ["99:42"]\ndisablePrivate: true\n',
+    async ({ onebot, sendOneBot }) => {
+      sendOneBot("#排行凭据 用量", { message_type: "group", sub_type: "normal", group_id: 77 });
+      const group = await onebot.next("send_msg");
+      expect(group.params).toMatchObject({ group_id: 77, message: expect.stringContaining("好友私聊") });
+      group.respond({ message_id: 12 });
+      sendOneBot("#排行用量", { user_id: 43 });
+      const outsider = await onebot.next("send_msg");
+      expect(outsider.params).toMatchObject({ user_id: 43, message: expect.stringContaining("好友私聊") });
+      outsider.respond({ message_id: 13 });
+      sendOneBot("#排行凭据 用量");
+      const allowed = await onebot.next("send_msg");
+      expect(allowed.params).toMatchObject({ user_id: 42, message: [
+        "凭据权限：高级", "全部请求剩余（分钟／小时／天）：0／10／900", "自定义排行普通请求倍率：2.5 倍",
+        "自定义排行普通请求剩余：12", "自定义排行高级请求剩余：3",
+      ].join("\n") });
+      expect(JSON.stringify(allowed.params)).not.toContain(environmentToken);
+      allowed.respond({ message_id: 14 });
+    }, 4_000, preload);
+}, 15_000);
+
+test("排行用量覆盖缺失凭据、服务失败、部分字段及权限变化，所有回复均无回包中的秘密", async () => {
+  const blocked = Promise.withResolvers<Response>();
+  const entered = Promise.withResolvers<void>();
+  const responses: Array<Response | Promise<Response>> = [
+    Response.json({ retcode: 401, message: oldToken }),
+    Response.json({ retcode: 0, data: { auth: { permission: 0, limit_normal: oldToken },
+      quota: { rank: { hour: { remaining: "12" }, day: { remaining: -10 } }, custom: { normal: { remaining: oldToken } } } } }),
+    new Response(null, { status: 429 }),
+    blocked.promise,
+  ];
+  const calls: RequestInit[] = [];
+  const { command, operations, runtime } = fixture(async (url, init) => {
+    expect(url).toBe("https://ark.ivny.cn/auth/usage");
+    expect(init.body).toBe('{"version":"2.1.0"}');
+    calls.push(init);
+    if (calls.length === 4) entered.resolve();
+    return responses.shift()!;
+  });
+  let currentOwner = true;
+  const scope: MessageFallbackContext = {
+    normalizedMessage: "#排行用量", raw_message: "#排行用量", message_type: "private", self_id: 99, user_id: 42,
+    isMaster: true, isFriend: async () => true, isBotMaster: () => currentOwner,
+    privateCredentialSignal: new AbortController().signal, reply: () => true,
+  };
+  const issue = (message = "#排行用量") => command(message, scope);
+  runtime.environment = "";
+  expect(await issue()).toContain("格式无效");
+  expect(calls).toHaveLength(0);
+  expect(operations.reads).toBe(0);
+  runtime.environment = undefined;
+  expect(await issue()).toBe("暂时无法查询排行凭据用量，请检查凭据后重试。");
+  expect(new Headers(calls[0]!.headers).get("authorization")).toBe("Bearer " + oldToken);
+
+  runtime.environment = environmentToken;
+  expect(await issue()).toBe([
+    "凭据权限：普通", "全部请求剩余（分钟／小时／天）：—／12／—", "自定义排行普通请求倍率：1 倍",
+    "自定义排行普通请求剩余：—", "自定义排行高级请求剩余：—",
+  ].join("\n"));
+  expect(new Headers(calls[1]!.headers).get("authorization")).toBe("Bearer " + environmentToken);
+  expect(await issue()).toContain("过于频繁");
+  expect(operations.reads).toBe(1);
+
+  const pending = issue();
+  await entered.promise;
+  currentOwner = false;
+  blocked.resolve(Response.json({ retcode: 0, data: { auth: { permission: 1 } } }));
+  expect(await pending).toBeUndefined();
+  currentOwner = true;
+
+  runtime.environment = undefined;
+  expect(await issue("#排行凭据 清除")).toContain("已清除");
+  expect(await issue()).toBe("尚未设置排行榜 Token。");
+  expect(calls).toHaveLength(4);
+  expect(isArkRankTokenCommand("#arktoken用量")).toBe(false);
+  expect(containsArkRankTokenInput("#排行凭据 用量")).toBe(false);
+});
 
 function panelRequest(method = "GET", body?: unknown, authorized = true) {
   return new Request("https://panel.example.invalid" + arkRankCredentialsPath, {

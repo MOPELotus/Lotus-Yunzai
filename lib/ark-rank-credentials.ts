@@ -1,17 +1,49 @@
 import type { MessageFallback } from "./commands.ts";
 import type { MessageEvent } from "./messages.ts";
 import { readPanelJson } from "./panel.ts";
+import { postArkQuery, type RankStatsTransport } from "./rank-statistics.ts";
 
 export const arkRankTokenKey = "ark-plugin:customRank:token";
 export const arkRankTokenEnvironment = "LOTUS_ARK_CUSTOM_RANK_TOKEN";
 export const arkRankCredentialsPath = "/panel/api/settings/native/ark-rank-credentials";
 
-const tokenCommand = /^[#＃井/／]\s*(?:(?:ark配置token|设置排行凭据)([\s\S]*)|排行凭据\s*(状态|清除)?)$/iu;
+const tokenCommand = /^[#＃井/／]\s*(?:(?:ark配置token|设置排行凭据)([\s\S]*)|排行凭据\s*(状态|清除|用量)?|(排行用量))$/iu;
 const tokenInput = /[#＃井/／]\s*(?:ark配置token|设置排行凭据)/iu;
 const tokenPattern = /^[\x21-\x7e]{1,2048}$/u;
 const environmentHint = `当前由环境变量 ${arkRankTokenEnvironment} 控制，请在部署设置中修改。`;
 const storageError = "无法访问排行榜凭据存储，请检查 Valkey 后重试。";
 const invalidToken = "请输入有效的 Token，最多 2048 个非空格 ASCII 字符。";
+const usageError = "暂时无法查询排行凭据用量，请检查凭据后重试。";
+
+function object(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function quotaNumber(value: unknown, fraction = false) {
+  const amount = typeof value === "string" && /^\d{1,16}(?:\.\d{1,8})?$/u.test(value) ? Number(value) : value;
+  return typeof amount === "number" && amount >= 0 && amount <= Number.MAX_SAFE_INTEGER &&
+    (fraction || Number.isSafeInteger(amount)) ? amount : undefined;
+}
+
+function formatUsage(payload: unknown) {
+  const result = object(payload);
+  const data = object(result?.data);
+  if (result?.retcode !== 0 || !data) return usageError;
+  const auth = object(data.auth);
+  const quota = object(data.quota);
+  const rank = object(quota?.rank);
+  const custom = object(quota?.custom);
+  const remaining = (limit: unknown) => quotaNumber(object(limit)?.remaining) ?? "—";
+  const permission = quotaNumber(auth?.permission);
+  const multiplier = quotaNumber(auth?.limit_normal, true) ?? 1;
+  return [
+    `凭据权限：${permission === 1 ? "高级" : "普通"}`,
+    `全部请求剩余（分钟／小时／天）：${remaining(rank?.minute)}／${remaining(rank?.hour)}／${remaining(rank?.day)}`,
+    `自定义排行普通请求倍率：${multiplier} 倍`,
+    `自定义排行普通请求剩余：${remaining(custom?.normal)}`,
+    `自定义排行高级请求剩余：${remaining(custom?.advanced)}`,
+  ].join("\n");
+}
 
 export function isArkRankToken(value: unknown): value is string {
   return typeof value === "string" && tokenPattern.test(value);
@@ -44,10 +76,11 @@ interface Options {
   readonly signal: AbortSignal;
   readonly storage?: () => CredentialStorage | undefined;
   readonly environment?: () => string | undefined;
+  readonly transport?: RankStatsTransport;
 }
 
 export function createArkRankCredentialSettings({ signal, storage = () => globalThis.redis,
-  environment = () => Bun.env[arkRankTokenEnvironment] }: Options) {
+  environment = () => Bun.env[arkRankTokenEnvironment], transport = fetch }: Options) {
   async function status(): Promise<CredentialSnapshot> {
     const override = environment();
     if (override !== undefined) return { source: "environment", usable: isArkRankToken(override) };
@@ -74,16 +107,31 @@ export function createArkRankCredentialSettings({ signal, storage = () => global
   const command: MessageFallback = async (message, context) => {
     const match = tokenCommand.exec(message.trim());
     if (!match || signal.aborted) return;
+    const usage = match[2] === "用量" || match[3] !== undefined;
     const { privateCredentialSignal: connection, user_id: owner } = context;
     if (context.isDelegated || context.message_type !== "private" || connection?.aborted !== false ||
         owner === undefined || !context.isMaster || !context.isBotMaster(owner) || !context.isFriend) {
-      return "请由当前机器人主人在已绑定的好友私聊或管理面板设置排行凭据。";
+      return usage ? "请由当前机器人主人在已绑定的好友私聊查询排行用量。" :
+        "请由当前机器人主人在已绑定的好友私聊或管理面板设置排行凭据。";
     }
     const active = () => !signal.aborted && !connection.aborted && context.isBotMaster(owner);
     try {
       const friend = await context.isFriend().catch(() => false);
       if (!active()) return;
-      if (!friend) return "无法确认当前好友私聊，请通过管理面板设置排行凭据。";
+      if (!friend) return usage ? "无法确认当前好友私聊，未查询排行用量。" :
+        "无法确认当前好友私聊，请通过管理面板设置排行凭据。";
+      if (usage) {
+        const override = environment();
+        const store = override === undefined ? storage() : undefined;
+        if (override === undefined && !store) return storageError;
+        const token = override ?? await store?.get(arkRankTokenKey);
+        if (!active()) return;
+        if (token == null) return "尚未设置排行榜 Token。";
+        if (!isArkRankToken(token)) return "当前排行榜 Token 格式无效，请检查凭据。";
+        const result = await postArkQuery("auth/usage", {}, AbortSignal.any([signal, connection]), transport, { token });
+        if (!active()) return;
+        return "message" in result ? result.message : formatUsage(result.payload);
+      }
       if (match[1] !== undefined) {
         const token = match[1].trim();
         if (!token) return "请在本私聊发送 #设置排行凭据 加空格和 Token，或在管理面板配置。";
