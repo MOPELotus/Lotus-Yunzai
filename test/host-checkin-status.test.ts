@@ -218,3 +218,37 @@ test("全局签到尊重合法 allow 和 inherit，非法策略不会放宽权�
       });
   }
 }, 15_000);
+
+test("签到权限拒绝配置形状错误，并保留旧全局缺省策略行为", async () => {
+  const deniedDue = "当前会话无权执行到期签到。";
+  const deniedRefresh = "当前不允许刷新登录信息，请联系机器人主人。";
+  const allowedDue = "全局自动签到已关闭。";
+  const allowedRefresh = "当前 QQ 尚未创建档案。";
+  const inherited = { policy: "inherit" };
+  for (const [defaultPolicy, refreshRule, due, refresh] of [
+    ["allow_typo", inherited, deniedDue, deniedRefresh],
+    ["allow", "master_only", allowedDue, deniedRefresh],
+    ["allow", [], allowedDue, deniedRefresh],
+    ["master_only", inherited, allowedDue, allowedRefresh],
+    ["inherit", inherited, allowedDue, allowedRefresh],
+    ["deny", inherited, deniedDue, deniedRefresh],
+    [null, null, allowedDue, allowedRefresh],
+  ] as const) {
+    await withDualGatewayFixture("checkin-scope-shape", "disablePrivate: false\n", async ({ onebot, milky, sendOneBot, sendMilky }) => {
+      sendOneBot("#执行到期签到");
+      const one = await onebot.next("send_msg");
+      expect(one.params.message).toBe(due);
+      one.respond({ message_id: 1 });
+      expect((await sendMilky("#刷新Cookie")).status).toBe(200);
+      const other = await milky.next("send_private_message");
+      expect(other.params).toMatchObject({ user_id: 43, message: [{ data: { text: refresh } }] });
+      other.respond({ message_seq: 2 });
+    }, 3_000, undefined, async root => {
+      await writeFile(join(root, "config", "global.yaml"), Bun.YAML.stringify({
+        scheduler: { enable: false },
+        permissions: { default_policy: defaultPolicy,
+          scopes: { "scheduler.run_due": inherited, "checkin.refresh": refreshRule } },
+      }));
+    });
+  }
+}, 20_000);

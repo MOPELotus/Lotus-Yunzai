@@ -1,4 +1,4 @@
-import { accountScopePolicy, type AccountScope, type GroupScope, type RemoteScope } from "./account-scope-policy.ts";
+import { accountScopePolicies, accountScopePolicy, accountScopes, type AccountScope, type GroupScope, type RemoteScope } from "./account-scope-policy.ts";
 import { readLocalConfig } from "./config.ts";
 import { watchConfigFiles } from "./config-watch.ts";
 import { readLotusGlobalConfig } from "./lotus-global-config.ts";
@@ -87,19 +87,26 @@ function configuredIds(value: unknown): Set<string> {
 
 export function accountScopePermission(document: Readonly<Record<string, unknown>>, permission: AccountScope | GroupScope | RemoteScope) {
   const permissions = configRecord(document.permissions);
+  const configured = configRecord(permissions.scopes)[permission];
+  const defaultPolicy = permissions.default_policy;
+  if (accountScopes.some(scope => scope === permission) && (
+      [document.permissions, permissions.scopes, configured].some(value => value != null && configRecord(value) !== value) ||
+      (defaultPolicy != null && !accountScopePolicies.some(policy => policy === defaultPolicy)))) {
+    return () => false;
+  }
   const users = configRecord(permissions.users);
   const groups = configRecord(permissions.groups);
   const userAllow = configuredIds(users.allow);
   const userDeny = configuredIds(users.deny);
   const groupAllow = configuredIds(groups.allow);
   const groupDeny = configuredIds(groups.deny);
-  const scope = accountScopePolicy(permission, configRecord(configRecord(permissions.scopes)[permission]).policy);
+  const scope = accountScopePolicy(permission, configRecord(configured).policy);
   return (context: { user_id?: number; group_id?: number; isMaster: boolean }) => {
     const user = String(context.user_id ?? "");
     const group = String(context.group_id ?? "");
     if (userDeny.has(user) || groupDeny.has(group) || scope === "deny") return false;
     if (scope === "master_only") return context.isMaster;
-    return scope === "allow" || userAllow.has(user) || groupAllow.has(group) || permissions.default_policy !== "deny";
+    return scope === "allow" || userAllow.has(user) || groupAllow.has(group) || defaultPolicy !== "deny";
   };
 }
 
