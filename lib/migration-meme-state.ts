@@ -11,6 +11,7 @@ import { isExcludedMemeTemplate } from "../plugins/meme/template-policy.ts";
 const mergedMemePlugin = rejectionReason(["meme-plugin"], []);
 const databaseLimit = 32 * 1024 * 1024;
 const yamlLimit = 256 * 1024;
+const dataRowLimit = 10_000;
 const localFields = {
   meme: ["enable", "forceSharp", "cache", "reply", "userName", "imagesInMessage", "quotedImages", "errorReply"],
   access: ["enable", "mode", "userWhiteList", "userBlackList", "blackListEnable", "blackList"],
@@ -48,9 +49,11 @@ function rows(database: Database) {
   const presets: Preset[] = [];
   const statistics: Statistic[] = [];
   if (table("preset")) {
+    let rowCount = 0;
     for (const row of database.query<{
       name: unknown; key: unknown; arg_name: unknown; arg_value: unknown; createdAt: unknown; updatedAt: unknown;
-    }, []>("SELECT name, key, arg_name, arg_value, createdAt, updatedAt FROM preset LIMIT 10001").iterate()) {
+    }, [number]>("SELECT name, key, arg_name, arg_value, createdAt, updatedAt FROM preset LIMIT ?").iterate(dataRowLimit + 1)) {
+      if (++rowCount > dataRowLimit) throw new Error("表情旧数据超限。");
       const { name, key, arg_name, arg_value, createdAt, updatedAt } = row;
       if (!text(name) || !safeCatalogKey(key) || !text(arg_name, 256) || !text(arg_value) ||
           !text(createdAt, 128) || !text(updatedAt, 128) || denied.has(key) || isExcludedMemeTemplate(key)) continue;
@@ -60,16 +63,17 @@ function rows(database: Database) {
     }
   }
   if (table("stat")) {
-    for (const { key, count } of database.query<{ key: unknown; count: unknown }, []>(
-      'SELECT key, "all" AS count FROM stat LIMIT 10001',
-    ).iterate()) {
+    let rowCount = 0;
+    for (const { key, count } of database.query<{ key: unknown; count: unknown }, [number]>(
+      'SELECT key, "all" AS count FROM stat LIMIT ?',
+    ).iterate(dataRowLimit + 1)) {
+      if (++rowCount > dataRowLimit) throw new Error("表情旧数据超限。");
       if (safeCatalogKey(key) && !denied.has(key) && !isExcludedMemeTemplate(key) &&
           typeof count === "number" && Number.isSafeInteger(count) && count >= 0) {
         statistics.push([key, count]);
       }
     }
   }
-  if (presets.length > 10000 || statistics.length > 10000) throw new Error("表情旧数据超限。");
   return { presets, statistics, denied };
 }
 

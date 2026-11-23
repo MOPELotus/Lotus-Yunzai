@@ -11,6 +11,16 @@ async function put(root: string, path: string, contents: string) {
   await writeFile(filename, contents, { mode: 0o600 });
 }
 
+async function initializeTarget(target: string) {
+  await put(target, "package.json", '{"name":"lotus-yunzai"}');
+  await put(target, "plugins/.fixture", "fixture");
+  for (const args of [["init", "-q"], ["add", "package.json", "plugins/.fixture"],
+    ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+      "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]]) {
+    expect(Bun.spawnSync(["git", ...args], { cwd: target }).exitCode).toBe(0);
+  }
+}
+
 test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统计，原服务、戳图设置与目录仅归档", async () => {
   const folder = await mkdtemp(join(tmpdir(), "lotus-meme-migration-"));
   try {
@@ -40,13 +50,7 @@ test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统
       `);
     }
     const originalBytes = await readFile(originalDB);
-    await put(target, "package.json", '{"name":"lotus-yunzai"}');
-    await put(target, "plugins/.fixture", "fixture");
-    for (const args of [["init", "-q"], ["add", "package.json", "plugins/.fixture"],
-      ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]]) {
-      expect(Bun.spawnSync(["git", ...args], { cwd: target }).exitCode).toBe(0);
-    }
+    await initializeTarget(target);
     const result = await migrateInstallation(source, target);
     expect(result).toMatchObject({ status: "published", memeState: { settings: 4, presets: 1, statistics: 1, deferred: false } });
     const active = join(target, "data/meme/config");
@@ -102,3 +106,44 @@ test.skipIf(!Bun.which("git"))("表情迁移只应用本机配置、预设和统
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+const oversizedTables = [
+  {
+    table: "preset",
+    schema: "CREATE TABLE preset (name JSON PRIMARY KEY, key TEXT, arg_name TEXT, arg_value TEXT, createdAt TEXT, updatedAt TEXT)",
+    values: `CASE WHEN n = 1 THEN 'invalid JSON' ELSE json_quote('keyword' || n) END, 'pat', 'size', '150', 'created', 'updated'`,
+  },
+  {
+    table: "stat",
+    schema: 'CREATE TABLE stat (key TEXT PRIMARY KEY, "all" INTEGER)',
+    values: `'fixture_' || n, CASE WHEN n = 1 THEN -1 ELSE n END`,
+  },
+] as const;
+
+for (const { table, schema, values } of oversizedTables) {
+  test.skipIf(!Bun.which("git"))(`表情迁移发现 ${table} 源表超限时保留完整归档并标记延后`, async () => {
+    const folder = await mkdtemp(join(tmpdir(), "lotus-meme-migration-limit-"));
+    try {
+      const source = join(folder, "old"), target = join(folder, "new");
+      const plugin = "plugins/meme-plugin";
+      await put(source, `${plugin}/package.json`, '{"name":"meme-plugin"}');
+      await mkdir(join(source, plugin, "data"));
+      const originalDB = join(source, plugin, "data/data.db");
+      {
+        using db = new Database(originalDB, { create: true });
+        db.exec(`${schema};
+          WITH RECURSIVE seq(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM seq WHERE n < 10002)
+          INSERT INTO ${table} SELECT ${values} FROM seq;`);
+      }
+      const originalBytes = await readFile(originalDB);
+      await initializeTarget(target);
+      expect(await migrateInstallation(source, target)).toMatchObject({
+        status: "published", memeState: { presets: 0, statistics: 0, deferred: true },
+      });
+      expect(await Bun.file(join(target, "data/meme/data.db")).exists()).toBe(false);
+      expect(await readFile(join(target, "backup", plugin, "data/data.db"))).toEqual(originalBytes);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+}
