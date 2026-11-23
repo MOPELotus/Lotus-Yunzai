@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElButton } from "element-plus";
 import { panelFetch, type PanelAuth } from "./api";
 import GroupRoutingSettings from "./GroupRoutingSettings.vue";
+import GroupWarpSettings from "./GroupWarpSettings.vue";
 
 interface Field {
   key: string;
@@ -21,13 +22,14 @@ interface Field {
   multiline?: boolean;
 }
 type Values = Record<string, unknown>;
-interface Snapshot { fields: Field[]; values: Values; warning?: string }
+interface Snapshot { fields: Field[]; values: Values; defaults?: Values; warning?: string }
 
 const props = defineProps<{ auth: PanelAuth; sections: readonly { key: string; label: string }[] }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const current = ref(props.sections[0]?.key ?? "");
 const fields = ref<Field[]>([]);
 const stored = ref<Values>({});
+const defaults = ref<Values>();
 const draft = ref<Record<string, string | boolean>>({});
 const busy = ref(false);
 const feedback = ref("");
@@ -38,6 +40,25 @@ const groupRules = computed<Record<string, unknown>>({
   get: () => draft.value.rules ? JSON.parse(String(draft.value.rules)) as Values : {},
   set: value => { draft.value.rules = JSON.stringify(value, null, 2); },
 });
+type WarpAllowance = Partial<Record<"special" | "regular" | "recallSeconds", string | number>>;
+const warpGroups = computed<Record<string, WarpAllowance>>({
+  get: () => draft.value.groups ? JSON.parse(String(draft.value.groups)) as Record<string, WarpAllowance> : {},
+  set: value => { draft.value.groups = JSON.stringify(value, null, 2); },
+});
+const warpAllowance = computed<WarpAllowance>(() => ({
+  special: String(draft.value.special ?? ""), regular: String(draft.value.regular ?? ""),
+  recallSeconds: String(draft.value.recallSeconds ?? ""),
+}));
+
+function resetWarp(ratesOnly: boolean) {
+  const rates = new Set(["characterFive", "characterFour", "coneFive", "coneFour", "featuredFive"]);
+  if (!defaults.value) return;
+  for (const field of fields.value) {
+    if (field.key !== "groups" && (!ratesOnly || rates.has(field.key))) {
+      draft.value[field.key] = formatted(field, defaults.value[field.key]);
+    }
+  }
+}
 
 function formatted(field: Field, value: unknown): string | boolean {
   if (field.type === "boolean") return value === true;
@@ -120,6 +141,7 @@ async function update(save = false) {
     if (controller.signal.aborted) return;
     fields.value = result.fields;
     stored.value = result.values;
+    defaults.value = result.defaults;
     draft.value = baseline();
     if (save) feedback.value = result.warning ?? "已保存";
   } catch (error) {
@@ -132,6 +154,7 @@ async function update(save = false) {
 watch(current, () => {
   fields.value = [];
   stored.value = {};
+  defaults.value = undefined;
   draft.value = {};
   void update();
 }, { immediate: true });
@@ -153,6 +176,8 @@ onBeforeUnmount(() => {
       <template v-for="field in fields" :key="field.key">
         <GroupRoutingSettings v-if="current === 'group-routing' && field.key === 'rules'"
           v-model="groupRules" :disabled="busy" :legacy="stored.file === 'config/config/group.yaml'" />
+        <GroupWarpSettings v-else-if="current === 'starrail-warp' && field.key === 'groups'"
+          v-model="warpGroups" :allowance="warpAllowance" :disabled="busy" />
         <div v-else class="native-field">
           <label :for="'native-' + field.key">{{ field.label }}</label>
           <input v-if="field.type === 'boolean'" :id="'native-' + field.key" v-model="draft[field.key]"
@@ -175,6 +200,10 @@ onBeforeUnmount(() => {
         <ElButton type="primary" native-type="submit" :disabled="!dirty || busy" :loading="busy && dirty">保存</ElButton>
         <ElButton :disabled="busy" @click="update()">重新读取</ElButton>
         <ElButton :disabled="!dirty || busy" @click="draft = baseline()">撤销编辑</ElButton>
+        <template v-if="current === 'starrail-warp' && defaults">
+          <ElButton :disabled="busy" @click="resetWarp(false)">恢复全局默认</ElButton>
+          <ElButton :disabled="busy" @click="resetWarp(true)">恢复默认概率</ElButton>
+        </template>
       </div>
     </form>
   </section>

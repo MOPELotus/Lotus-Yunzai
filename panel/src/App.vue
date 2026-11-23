@@ -61,6 +61,7 @@ const nativeSections = computed(() => [
   { key: "process-schedule", label: "停启与更新调度" },
   { key: "showcase", label: "游戏展柜与战绩" },
   { key: "genshin-damage", label: "原神伤害计算" },
+  { key: "starrail-warp", label: "星铁模拟跃迁" },
   { key: "zzz-rank", label: "绝区零群榜" },
   { key: "zzz-panel", label: "绝区零面板刷新" },
   { key: "zzz-reminders", label: "绝区零挑战提醒" },
