@@ -463,6 +463,7 @@ if (import.meta.main) {
     checkinNotify?: CheckinNotifyTransport; ownGroupCardAccount: OwnGroupCardAccount;
     timedWholeMute: MilkySession["timedWholeMute"]; noticeAccount: NoticeGroupAccount; uploadFile: MilkySession["uploadFile"] } | undefined;
   let stopping = false;
+  let shutdownRequested = false;
   let legacyBot: object | undefined;
   let legacyProcessReady = false;
   let legacyExitHooksRan = false;
@@ -825,6 +826,7 @@ if (import.meta.main) {
   function stop(code: number, reason: LegacyExitReason = "exit") {
     if (stopping) return;
     stopping = true;
+    shutdownRequested = true;
     exitReason = reason;
     process.exitCode = code;
     handoff.reportPower(dispatchPower.pausedAt);
@@ -4290,17 +4292,15 @@ if (import.meta.main) {
     if (kind === "restart") {
       try {
         if (handoff.managed) {
-          const sent = legacyExitHooksRan ? Promise.withResolvers<boolean>() : undefined;
-          if (!handoff.restart(pausedAt, sent && (error => sent.resolve(!error)))) {
+          const sent = Promise.withResolvers<boolean>();
+          if (!handoff.restart(pausedAt, (error) => sent.resolve(!error))) {
             throw new Error("托管宿主未接受重启。");
           }
-          if (sent) {
-            const timer = setTimeout(() => sent.resolve(false), 1_000);
-            try {
-              if (!await sent.promise) throw new Error("未能发送托管重启请求。");
-            } finally {
-              clearTimeout(timer);
-            }
+          const timer = setTimeout(() => sent.resolve(false), 1_000);
+          try {
+            if (!await sent.promise) throw new Error("未能发送托管重启请求。");
+          } finally {
+            clearTimeout(timer);
           }
         } else {
           restartHost(pausedAt);
@@ -4316,6 +4316,9 @@ if (import.meta.main) {
       }
     }
   }
-  // 旧退出回调可能留下活动句柄，收尾和重启请求送达后结束进程。
-  if (legacyExitHooksRan) process.exit(process.exitCode ?? 0);
+  // 插件可能留下未登记的活动句柄。完成清理及重启交接后，正常退出
+  // 不会被这条定时器延迟，仍被句柄占用的进程才需要它结束。
+  if (shutdownRequested || legacyExitHooksRan) {
+    setTimeout(() => process.exit(process.exitCode ?? 0), 500).unref();
+  }
 }

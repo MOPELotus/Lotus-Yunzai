@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createProcessReceipts } from "../lib/process-receipts.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
 const token = "process-control-onebot-fixture";
@@ -20,10 +22,11 @@ function deadline<T>(promise: Promise<T>, description: string): Promise<T> {
   });
 }
 
-function boot(root: string) {
+function boot(root: string, managed?: { token: string; receive: (message: unknown) => void }) {
   const child = Bun.spawn([process.execPath, "app.ts"], {
     cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe",
-    env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+    env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_MANAGED_TOKEN: managed?.token },
+    ...(managed && { ipc: managed.receive }),
   });
   const reader = child.stdout.getReader();
   const stderr = new Response(child.stderr).text();
@@ -319,3 +322,68 @@ test.each([true, false])("V3 退出回调持有活动句柄时仍完成清理和
     await rm(root, { recursive: true, force: true });
   }
 }, 15_000);
+
+test.each([false, true])("旧插件的无钩子长计时器在完成清理后不会挂住进程（托管重启：%s）", async (restart) => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-trss-referenced-timer-"));
+  const token = crypto.randomUUID();
+  const ipcReady = Promise.withResolvers<void>();
+  const ipcRestart = Promise.withResolvers<void>();
+  const marker = join(root, "native-cleaned");
+  let host: ReturnType<typeof boot> | undefined;
+  try {
+    await copyHost(root);
+    disableMemberPrewarm(root);
+    const module = join(root, "plugins", "native-fixture");
+    await mkdir(module);
+    await Promise.all([
+      writeFile(join(root, "config/config/other.yaml"), 'master: ["stdin:stdin"]\n'),
+      writeFile(join(root, "plugins", "untamed-timeout.js"), `
+        export default class extends plugin {
+          constructor() {
+            super();
+            setTimeout(() => { throw new Error("fixture timeout fired"); }, 600000);
+          }
+        }
+      `),
+      writeFile(join(module, "package.json"), JSON.stringify({
+        name: "native-fixture", lotusYunzai: { entry: "./index.ts" },
+      })),
+      writeFile(join(module, "index.ts"), `
+        export default {
+          commands: {},
+          async dispose() {
+            await Bun.sleep(40);
+            await Bun.write("native-cleaned", "done");
+          },
+        };
+      `),
+    ]);
+    host = boot(root, restart ? { token, receive(message) {
+      if (!message || typeof message !== "object" || !("token" in message) || message.token !== token ||
+          !("type" in message)) return;
+      if (message.type === "lotus-ready") ipcReady.resolve();
+      if (message.type === "lotus-restart") ipcRestart.resolve();
+    } } : undefined);
+    await host.output(/^Lotus-Yunzai 已启动/mu);
+    if (restart) {
+      await deadline(ipcReady.promise, "宿主未报告就绪。");
+      host.command("#重启");
+      await host.output(/^开始重启/mu);
+      await deadline(ipcRestart.promise, "托管重启 IPC 未送达。");
+      expect(await readFile(marker, "utf8")).toBe("done");
+    } else {
+      host.child.kill("SIGTERM");
+    }
+
+    expect(await deadline(host.child.exited, "旧插件的活动计时器阻止退出。")).toBe(restart ? 0 : 143);
+    expect(await readFile(marker, "utf8")).toBe("done");
+    if (restart) {
+      const receipts = createProcessReceipts(pathToFileURL(root + "/"));
+      expect(await receipts.take()).toMatchObject({ kind: "restart", target: { type: "terminal" } });
+    }
+    expect(await host.stderr).not.toContain("无法重新启动宿主");
+  } finally {
+    await host?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
