@@ -29,6 +29,7 @@ import { readStarRailRogue, type StarRailRogueOptions } from "./starrail-rogue.t
 import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailPersonalRoster, type StarRailRosterOptions } from "./starrail-roster.ts";
+import { readStarRailPersonalRecord } from "./starrail-record.ts";
 import { readStarRailMonthly, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
 import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, type StarRailOnlineOptions } from "./starrail-ledger.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
@@ -599,6 +600,9 @@ export function createHoyoClient(
     },
     fetchStarRailMonthly(source: ProfileRequestContext, options: StarRailMonthlyOptions = {}) {
       return readForProfile(source, options, readStarRailMonthly, isGameRecordCookieExpired);
+    },
+    fetchStarRailPersonalRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readStarRailPersonalRecord, isGameRecordCookieExpired);
     },
     fetchStarRailPersonalRoster(source: ProfileRequestContext, options: StarRailRosterOptions) {
       return readForProfile(source, options, readStarRailPersonalRoster, isGameRecordCookieExpired);
