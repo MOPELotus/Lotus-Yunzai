@@ -85,7 +85,7 @@ test.each([
     }
     // The old Miao help rule accepts a literal slash even without the TRSS rewrite.
     // The spaced slash and the separate check-in help still require the rewrite.
-    const expected = enabled ? 16 : limited ? 13 : 14;
+    const expected = enabled ? 16 : 14;
     const deadline = performance.now() + 500;
     while (replies.length < expected && performance.now() < deadline) await Bun.sleep(10);
     await Bun.sleep(80);
