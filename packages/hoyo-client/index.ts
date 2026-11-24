@@ -233,7 +233,8 @@ export function createHoyoClient(
       if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
       throw new HoyoRequestError("transport", "米游社角色请求未完成。");
     }
-    if (!response.ok && response.status !== 401) {
+    if (response.redirected || (response.url && response.url !== endpoint.href) ||
+        (!response.ok && response.status !== 401)) {
       await response.body?.cancel().catch(() => undefined);
       throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
     }
@@ -257,6 +258,8 @@ export function createHoyoClient(
     }
 
     await verify();
+    signal?.throwIfAborted();
+    if (deadline.aborted) throw new HoyoRequestError("transport", "米游社角色请求未完成。");
     return payload.data.list;
   }
 

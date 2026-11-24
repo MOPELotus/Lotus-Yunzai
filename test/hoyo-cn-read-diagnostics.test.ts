@@ -150,3 +150,43 @@ test("诊断日志同步或异步失败不改变返回，流诊断回调失败�
     warn.mockRestore();
   }
 });
+
+test("官方绑定角色只接受原请求 URL 的直接回包", async () => {
+  const payload = { retcode: 0, data: { list: [{ game_biz: "hk4e_cn", game_uid: gs.role.uid, region: gs.role.region }] } };
+  const redirects = [
+    { redirected: true },
+    { redirected: false, url: "https://api-takumi.mihoyo.com/binding/api/unrelated" },
+  ];
+  for (const injected of redirects) {
+    const client = createHoyoClient(async (url, options) => {
+      expect(options.redirect).toBe("error");
+      const response = Response.json(payload);
+      Object.defineProperties(response, {
+        redirected: { value: injected.redirected },
+        url: { value: injected.url ?? url.href },
+      });
+      return response;
+    });
+    await expect(client.fetchCheckinRoles(gs, "gs")).rejects.toMatchObject({ code: "http", status: 200 });
+  }
+
+  const direct = createHoyoClient(async (url) => {
+    const response = Response.json(payload);
+    Object.defineProperty(response, "url", { value: url.href });
+    return response;
+  });
+  expect(await direct.fetchCheckinRoles(gs, "gs")).toMatchObject([{ uid: gs.role.uid }]);
+});
+
+test("原会话在角色目录返回后复核途中取消，不提交报表状态", async () => {
+  const client = createHoyoClient(async () => Response.json({ retcode: 0, data: { list: [] } }));
+  const controller = new AbortController();
+  let verified = 0;
+  await expect(client.checkLoginCookie(gs, {
+    signal: controller.signal,
+    async verifyReadOnly() {
+      if (++verified === 2) controller.abort();
+    },
+  })).rejects.toMatchObject({ name: "AbortError" });
+  expect(verified).toBe(2);
+});
