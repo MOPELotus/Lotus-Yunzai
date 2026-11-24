@@ -6,23 +6,29 @@ import { segment } from "./messages.ts";
 import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
 
 const command = /^#(原神|星铁|绝区零)?(?:我的)?uid([0-9]{1,3})?(?:[ \t]+档案[ \t]*([1-9][0-9]{0,2}))?$/iu;
-const gameCodes = { 原神: "gs", 星铁: "sr", 绝区零: "zzz" } as const;
+const directUidCommand = /^#(?:设置|切换)(原神|星铁|崩铁|绝区零|绝)uid(?:([1-9]\d{0,2})?[ \t]+)?([1-9]\d{7,9})$/iu;
+const gameCodes = { 原神: "gs", 星铁: "sr", 崩铁: "sr", 绝区零: "zzz", 绝: "zzz" } as const;
 const gameLabels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
 const prefixes = { gs: "#", sr: "*", zzz: "%" } as const;
 const games = ["gs", "sr", "zzz"] as const;
 const maxSlot = 99;
 export const ownRoleSelectionFeatures = ["[account] 本人角色", "account", "@lotus-yunzai/account"] as const;
 
-export function matchOwnRoleSelection(message: string) {
+type Selection = { readonly game: Game; readonly slot?: number; readonly profileId?: number; readonly uid?: string };
+
+export function matchOwnRoleSelection(message: string): Selection | undefined {
   const match = command.exec(message.trim());
-  if (!match) return;
-  const game = gameCodes[match[1] as keyof typeof gameCodes] ?? "gs";
-  return { game, slot: match[2] === undefined ? undefined : Number(match[2]), profileId: match[3] === undefined ? undefined : Number(match[3]) };
+  if (match) {
+    const game = gameCodes[match[1] as keyof typeof gameCodes] ?? "gs";
+    return { game, slot: match[2] === undefined ? undefined : Number(match[2]), profileId: match[3] === undefined ? undefined : Number(match[3]) };
+  }
+  const direct = directUidCommand.exec(message.trim());
+  if (!direct) return;
+  return { game: gameCodes[direct[1] as keyof typeof gameCodes], profileId: Number(direct[2] ?? 1), uid: direct[3]! };
 }
 
-type Selection = NonNullable<ReturnType<typeof matchOwnRoleSelection>>;
 type Scope = { readonly user: number; readonly signal: AbortSignal; readonly isCurrent: () => boolean };
-type Roles = Pick<ReturnType<typeof createProfileStore>, "listIds" | "roleCatalog" | "selectCatalogRole">;
+type Roles = Pick<ReturnType<typeof createProfileStore>, "listIds" | "roleCatalog" | "selectCatalogRole" | "requestContext">;
 type Catalog = Awaited<ReturnType<Roles["roleCatalog"]>>;
 type Catalogs = ReadonlyMap<number, Catalog>;
 
@@ -48,7 +54,7 @@ function collectRoles(profiles: Catalogs, game: Game) {
   return [...rows.values()].slice(0, maxSlot);
 }
 
-export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: Selection, scope: Scope,
+export async function selectOwnRole(profiles: Roles, { game, slot, profileId, uid }: Selection, scope: Scope,
   readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>, defaults?: ReturnType<typeof createGameProfileDefaults>,
   legacyArtwork?: ReturnType<typeof createOwnRoleLegacyArtwork>) {
   const { user, signal, isCurrent } = scope;
@@ -76,16 +82,21 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
     const all = { gs: collectRoles(catalogs, "gs"), sr: collectRoles(catalogs, "sr"), zzz: collectRoles(catalogs, "zzz") };
     const suffix = profileId === undefined ? "" : ` 档案${profileId}`;
     let confirmation: string | undefined;
-    if (slot !== undefined) {
-      const item = all[game][slot - 1];
+    if (slot !== undefined || (uid !== undefined && profileId !== undefined)) {
       const label = gameLabels[game];
-      if (!item) return `${profileId === undefined ? "本人" : `档案 ${profileId}`}没有第 ${slot} 个${label}角色。请发送 #UID${suffix} 查看。`;
-      const { role, revision, profileId: id } = item;
+      const selected = slot === undefined ? await profiles.requestContext(qq, profileId!, game, uid) : all[game][slot - 1];
+      if (!selected) return `${profileId === undefined ? "本人" : `档案 ${profileId}`}没有第 ${slot} 个${label}角色。请发送 #UID${suffix} 查看。`;
+      const { role, revision, profileId: id } = selected;
+      if (uid !== undefined && catalogs.get(id)?.revision !== revision) throw new ProfileError("changed", "档案已变更。");
+      if (!isCurrent() || signal.aborted) return;
       const saved = await profiles.selectCatalogRole(qq, id, game, role.uid, revision, signal, isCurrent);
       if (!isCurrent() || signal.aborted) return;
       for (const row of all[game]) row.activeIn = row.activeIn.filter(value => value !== id);
-      item.activeIn.push(id);
-      item.activeIn.sort((a, b) => a - b);
+      const item = all[game].find(row => row.role.uid === role.uid);
+      if (item) {
+        item.activeIn.push(id);
+        item.activeIn.sort((a, b) => a - b);
+      }
       confirmation = `档案 ${id} · ${label}当前角色已选为 ${[role.uid, roleInfo(game, role)].filter(Boolean).join(" · ")}。`;
       if (profileId === undefined && defaults) {
         const selected = await defaults.select(game, id, role.uid, saved.revision, scope).catch(() => false);
@@ -172,6 +183,10 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId }: 
     if (error instanceof ProfileError) {
       if (error.code === "missing") return `未找到本人档案 ${profileId}。可发送 #登录列表 查看。`;
       if (error.code === "changed") return "档案在操作期间已更新，请重新发送 #UID 查看后再选择。";
+      if (error.code === "login-required" && uid !== undefined) return `档案 ${profileId} 尚未登录，请先扫码登录。`;
+      if (error.code === "role-missing" && uid !== undefined) {
+        return `档案 ${profileId} 没有此${gameLabels[game]}角色。可发送 ${prefixes[game]}UID 档案${profileId} 查看。`;
+      }
     }
     return "暂时无法读取或切换本人角色，请确认档案后重试。";
   }
