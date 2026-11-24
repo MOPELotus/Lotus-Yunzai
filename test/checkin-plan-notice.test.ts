@@ -17,7 +17,7 @@ async function withPlan(
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-plan-notice-"));
   try {
     const store = createCheckinScheduleStore(directory);
-    const plan = generateCheckinSchedulePlan({ date, now, profiles: users.map(qq => ({ qq, enabled: true })) });
+    const plan = generateCheckinSchedulePlan({ date, now, config: { mode: "fixed" }, profiles: users.map(qq => ({ qq, enabled: true })) });
     await store.update(date, () => ({ plan, result: undefined }));
     await run(store, plan, directory);
   } finally {
@@ -79,7 +79,7 @@ test("明确未发释放领取，未知和发送异常保存领取且重启不�
     const traced: string[] = [];
     const checked = await rebooted.update(date, current => {
       const reconciled = reconcileCheckinSchedulePlan(current!, {
-        now, profiles: ["51", "52", "53", "54"].map(qq => ({ qq, enabled: true })),
+        config: { mode: "fixed" }, now, profiles: ["51", "52", "53", "54"].map(qq => ({ qq, enabled: true })),
       });
       return { plan: reconciled, result: reconciled };
     });

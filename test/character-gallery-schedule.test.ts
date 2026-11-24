@@ -15,7 +15,7 @@ test("角色图库每天检查两次，启动前可撤销，读取独立的图�
     reportFailure: error => { throw error; },
   });
 
-  expect(characterGalleryCron).toBe("0 0 */12 * * *");
+  expect(characterGalleryCron).toBe("0 0 1,13 * * *");
   await schedule.run(new AbortController().signal);
   expect(completed).toEqual([]);
 

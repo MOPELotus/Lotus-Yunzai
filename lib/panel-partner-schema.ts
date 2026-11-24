@@ -7,7 +7,7 @@ export const partnerNumbers = [
   { key: "review_timeout_ms", label: "AI 乐评超时（毫秒）", min: 1, max: 2_147_483_647 },
 ] as const;
 
-export const partnerScheduleDefault = "0 5 0 * * ? *";
+export const partnerScheduleDefault = "0 30 1 * * ? *";
 export const partnerResponsesDefaultUrl = "https://api.openai.com/v1/responses";
 export const partnerEditableReviewModes = ["fixed", "responses", "codex"] as const;
 export type PartnerEditableReviewMode = typeof partnerEditableReviewModes[number];

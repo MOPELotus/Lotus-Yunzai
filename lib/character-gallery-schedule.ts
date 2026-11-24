@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
-export const characterGalleryCron = "0 0 */12 * * *";
+export const characterGalleryCron = "0 0 1,13 * * *";
 const firstSyncDelay = 60_000;
 
 type GallerySyncSummary = Readonly<{

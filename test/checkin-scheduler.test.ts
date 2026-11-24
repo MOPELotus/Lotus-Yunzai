@@ -8,7 +8,7 @@ import { createCheckinScheduler } from "../lib/checkin-scheduler.ts";
 
 const date = "2026-11-19";
 const dueAt = Date.parse("2026-11-19T07:00:00+08:00");
-const config = { fixed_time: "06:00" };
+const config = { mode: "fixed" as const, fixed_time: "06:00" };
 const first = { qq: "1001", profileId: 1, enabled: true };
 const successful = { status: "complete", stage: "checkin", ok: true } as const;
 
@@ -288,7 +288,7 @@ test("跨日停止旧日期执行并保留原 claim，次日按新计划运行",
     let now = Date.parse(`${date}T23:58:00+08:00`);
     const invoked: string[] = [];
     const scheduler = createCheckinScheduler({
-      store, config: { fixed_time: "00:00" }, now: () => now, listProfiles: async () => [first, { ...first, qq: "1002" }],
+      store, config: { mode: "fixed" as const, fixed_time: "00:00" }, now: () => now, listProfiles: async () => [first, { ...first, qq: "1002" }],
       async runProfile(entry, context) {
         invoked.push(`${context.date} ${entry.qq}`);
         if (context.date === date) now = Date.parse(`${next}T00:01:00+08:00`);

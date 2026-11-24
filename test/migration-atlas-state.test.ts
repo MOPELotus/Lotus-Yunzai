@@ -62,7 +62,7 @@ test("保留固定旧宿主的定时语义和分类范围，只迁现行 Atlas �
     });
     const policy = parseAtlasUpdatePolicy(result.atlas);
     expect(policy.version).toEqual({ selections: ["hsr/lightcone"], cron: "0 0 */6 * * *" });
-    expect(policy.challenge).toEqual({ selections: ["zzz/shiyu"], cron: "0 15 */2 * * *" });
+    expect(policy.challenge).toEqual({ selections: ["zzz/shiyu"], cron: "0 30 1,13 * * *" });
     expect(await readFile(old, "utf8")).toBe(contents);
   });
 });
@@ -130,7 +130,7 @@ test("明确指定的非中文范围保持禁用，未指定的自动任务仍�
     expect(atlas).toEqual({ update_args: ["--locale", "en"] });
     const policy = parseAtlasUpdatePolicy(atlas);
     expect(policy.version).toEqual({ selections: [] });
-    expect(policy.challenge.cron).toBe("0 15 */2 * * *");
+    expect(policy.challenge.cron).toBe("0 30 1,13 * * *");
   });
 });
 

@@ -10,7 +10,7 @@ import { type AtlasScopeField, type AtlasScopePatch } from "./panel-atlas-scope-
 import { readPanelJson } from "./panel.ts";
 import { insertSourcePairs, replaceSourceScalar, sourceAliasOverrides, sourceMappingPair, type Pair } from "./yaml-source-edits.ts";
 
-const defaults = { check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *" };
+const defaults = { check_cron: "0 30 1,13 * * ? *", challenge_cron: "0 30 1,13 * * ? *" };
 const cronFields = ["check_cron", "challenge_cron"] as const;
 type AtlasScalars = Partial<AtlasRoleSettings> & {
   readonly locale?: AtlasLocale;

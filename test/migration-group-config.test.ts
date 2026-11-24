@@ -139,6 +139,12 @@ test("迁移固定旧自动群名片的无文件默认值，并保留显式关�
   const current = createAutoGroupCard({ root: pathToFileURL(state + sep), signal, accounts: () => [] });
   expect(await current.configuration()).toEqual({ cron: "0 0,30 * * * *" });
 
+  await file(source, "config/config/auto-group-card.yaml", "suffixes: [迁移文案]\n");
+  const implicit = join(dirname(state), "implicit-enabled");
+  await mkdir(implicit, { mode: 0o700 });
+  await stageLegacyGroupConfig(source, implicit, undefined, [retired]);
+  expect(Bun.YAML.parse(await readFile(join(implicit, config), "utf8"))).toEqual({ suffixes: ["迁移文案"], enable: true });
+
   const explicitLegacyConfig = "config/config/auto-group-card.yaml";
   await file(source, explicitLegacyConfig, "enable: false\n");
   const disabled = join(dirname(state), "disabled");

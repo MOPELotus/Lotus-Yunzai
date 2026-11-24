@@ -1,3 +1,4 @@
+import { withDefaultUpdateSchedule } from "./lib/update-schedule-settings.ts";
 import { createLegacyPanelRecoveryFlow, matchLegacyPanelRecoveryConfirmation, readLegacyPanelRecoveryEnabled } from "./lib/legacy-panel-recovery-flow.ts";
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -2961,7 +2962,7 @@ if (import.meta.main) {
   }
   try {
     if (previous) await verifyMovedRuntimePaths(fileURLToPath(root), previous, Bun.env);
-    const botConfig = await readLocalConfig(root, "bot", { update_time: 1440 });
+    const botConfig = withDefaultUpdateSchedule(await readLocalConfig(root, "bot"));
     panelTransfer = configurePanelTransfer(botConfig.panelTransfer, lifecycle.signal);
     setImageRenderPreset(botConfig.imageRenderPreset);
     runtimeLogConfig = botConfig;

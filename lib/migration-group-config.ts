@@ -322,6 +322,9 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
       entry.path === legacyAutoGroupCardScript.path && entry.identity === legacyAutoGroupCardScript.identity)) {
     active.set(cardConfig, new Map([["enable", true]]));
   }
+  // Legacy files omitted enable because the old script defaulted to enabled.
+  const migratedCard = active.get(cardConfig);
+  if (migratedCard && !migratedCard.has("enable")) migratedCard.set("enable", true);
   const screened = projectScreenedWords(load, screenedScopes, inputs);
   const archives = new Map([...inputs].map(([path, config]) => [join("backup", "legacy-group-config", path), config.bytes]));
   const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...screened, ...archives];

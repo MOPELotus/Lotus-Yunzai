@@ -1,3 +1,4 @@
+import { withDefaultUpdateSchedule } from "./update-schedule-settings.ts";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { readLocalConfig } from "./config.ts";
@@ -42,7 +43,7 @@ function expressions(value: unknown): string[] {
 }
 
 async function readValues(root: URL): Promise<Values> {
-  const config = await readLocalConfig(root, "bot", { update_time: 1440 });
+  const config = withDefaultUpdateSchedule(await readLocalConfig(root, "bot"));
   return {
     ...readUpdateNoticeSettings(config),
     update_time: minutes(config.update_time, false),

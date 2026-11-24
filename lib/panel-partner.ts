@@ -1,3 +1,4 @@
+import { hasNeteasePartnerAccount } from "./netease-partner-defaults.ts";
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, isSeq, parseDocument, type Node } from "yaml";
@@ -50,12 +51,12 @@ function customCodexCommand(review: Config) {
   return Boolean(review.codex_command && review.codex_command !== "codex");
 }
 
-function snapshot(document: Config): PartnerPanelSnapshot {
+function snapshot(document: Config, hasAccount = false): PartnerPanelSnapshot {
   const partner = record(document.netease_partner) ?? {};
   const review = record(partner.review) ?? {};
   const settings: PartnerPanelSettings = {
     ...numericDefaults,
-    enable: partner.enable === true,
+    enable: typeof partner.enable === "boolean" ? partner.enable : hasAccount,
     schedule: typeof partner.schedule === "string" && partner.schedule.length ? partner.schedule : partnerScheduleDefault,
     auto_catch_up: partner.auto_catch_up === true,
     notify_master: partner.notify_master !== false,
@@ -125,7 +126,7 @@ function readChanges(value: unknown): Patch {
   return changes;
 }
 
-function editPartner(text: string, local: Config, effective: Config, changes: Changes) {
+function editPartner(text: string, local: Config, effective: Config, changes: Changes, hasAccount = false) {
   const yaml = parseDocument(text, { strict: true, merge: true, uniqueKeys: true, keepSourceTokens: true });
   if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents))) throw new GlobalConfigWriteError("config");
   const prior = record(effective.netease_partner);
@@ -182,7 +183,7 @@ function editPartner(text: string, local: Config, effective: Config, changes: Ch
   const result = edits.sort((a, b) => b.start - a.start || b.end - a.end)
     .reduce((content, edit) => content.slice(0, edit.start) + edit.value + content.slice(edit.end), text);
   if (!isDeepStrictEqual(Bun.YAML.parse(result), { ...local, netease_partner: partner })) throw new GlobalConfigWriteError("config");
-  return { yaml: result, value: snapshot({ netease_partner: partner }) };
+  return { yaml: result, value: snapshot({ netease_partner: partner }, hasAccount) };
 }
 
 class PartnerInputError extends Error {
@@ -241,7 +242,8 @@ export function panelPartner(root: URL, validModuleCron: (cron: string) => boole
     if (request.method === "GET") {
       if (!active()) return new Response(null, { status: 401 });
       try {
-        const value = snapshot(await readLotusGlobalConfig(root));
+        const hasAccount = await hasNeteasePartnerAccount(root);
+        const value = snapshot(await readLotusGlobalConfig(root), hasAccount);
         return active() ? Response.json(value) : new Response(null, { status: 401 });
       } catch { return new Response(null, { status: 500 }); }
     }
@@ -268,10 +270,11 @@ export function panelPartner(root: URL, validModuleCron: (cron: string) => boole
     }
 
     try {
+      const hasAccount = await hasNeteasePartnerAccount(root);
       return Response.json(await updateLotusGlobalConfig(root, {
         canWrite: active, canCommit: active, signal: request.signal,
         prepare(text, local, effective) {
-          const before = snapshot(effective);
+          const before = snapshot(effective, hasAccount);
           if (before.revision !== revision) throw new GlobalConfigWriteError("conflict");
           if (patch.delay_ms_min !== undefined || patch.delay_ms_max !== undefined) {
             const min = patch.delay_ms_min ?? before.settings.delay_ms_min;
@@ -280,7 +283,7 @@ export function panelPartner(root: URL, validModuleCron: (cron: string) => boole
           }
           const changes = partnerChanges(before, effective, patch);
           if (!Object.keys(changes).length) return { value: before };
-          return editPartner(text, local, effective, changes);
+          return editPartner(text, local, effective, changes, hasAccount);
         },
       }));
     } catch (error) {

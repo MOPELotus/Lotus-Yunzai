@@ -43,7 +43,7 @@ export async function persistUpdateNoticeSettings(
   const canWrite = () => !signal.aborted && authorize();
   return updateLocalConfiguration(root, "bot", {
     signal, canWrite, canCommit: canWrite, onCommitted: apply,
-    resolveEffective: () => readLocalConfig(root, "bot", { update_time: 1440 }),
+    resolveEffective: () => readLocalConfig(root, "bot"),
     prepare(content, local, effective) {
       const current = readUpdateNoticeSettings(effective);
       const value = { ...current, ...change };

@@ -172,7 +172,7 @@ function checkedWindow(start: string, end: string) {
 }
 
 function configOf(config: CheckinScheduleConfig = {}) {
-  const { mode = "fixed", fixed_time: fixedTime = "04:30", random, late_registration: late } = config;
+  const { mode = "random", fixed_time: fixedTime = "04:30", random, late_registration: late } = config;
   if (!isMode(mode)) throw new TypeError("自动签到模式无效。");
   requiredMinute(fixedTime);
   return {

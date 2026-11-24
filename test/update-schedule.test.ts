@@ -1,3 +1,4 @@
+import { defaultUpdateCron, withDefaultUpdateSchedule } from "../lib/update-schedule-settings.ts";
 import { expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,12 +26,12 @@ function captureTimers(onSchedule: (count: number) => void = () => {}) {
   };
 }
 
-test("必须显式配置正的十进制分钟数，默认和零不调度", async () => {
+test("显式零停用更新，非法分钟间隔不调度", async () => {
   const timers = captureTimers();
   const warn = spyOn(console, "warn").mockImplementation(() => {});
   let runs = 0;
   try {
-    for (const config of [{}, { update_time: 0 }, { update_time: "0" }, { update_time: -1 },
+    for (const config of [{ update_time: 0 }, { update_time: "0" }, { update_time: -1 },
       { update_time: "0xF" }, { update_time: "1e3" }, { update_time: Number.MAX_SAFE_INTEGER }]) {
       await scheduleUpdates(config, () => { runs++; })();
     }
@@ -43,33 +44,25 @@ test("必须显式配置正的十进制分钟数，默认和零不调度", async
   }
 });
 
-test("旧 bot.yaml 省略更新间隔时保留每天更新，新路径和显式禁用不继承", async () => {
+test("现行和旧目录未设时间时默认双次更新，明确配置优先", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-legacy-update-"));
-  const legacyPath = join(directory, "config/config/bot.yaml");
-  const modernPath = join(directory, "config/bot.yaml");
+  const legacyPath = join(directory, "config/config/bot.yaml"), modernPath = join(directory, "config/bot.yaml");
   const root = pathToFileURL(directory + "/");
-  const read = () => readLocalConfig(root, "bot", { update_time: 1440 });
+  const read = async () => withDefaultUpdateSchedule(await readLocalConfig(root, "bot"));
   try {
-    expect(await read()).toEqual({});
+    expect(await read()).toEqual({ update_cron: defaultUpdateCron });
     await mkdir(join(directory, "config/config"), { recursive: true });
     await writeFile(legacyPath, "file_watch: false\n");
-    const imported = await read();
-    const timers = captureTimers();
-    try {
-      await scheduleUpdates(imported, () => { throw new Error("滴答需由试验显式触发。"); })();
-      expect(timers.scheduled.map(({ delay }) => delay)).toEqual([86_400_000]);
-    } finally {
-      timers.restore();
-    }
+    expect(await read()).toEqual({ file_watch: false, update_cron: defaultUpdateCron });
     await writeFile(legacyPath, "update_time: 0\n");
     expect(await read()).toEqual({ update_time: 0 });
     await writeFile(legacyPath, "update_time: 48\n");
     expect(await read()).toEqual({ update_time: 48 });
+    await writeFile(modernPath, "update_cron: []\n");
+    expect(await read()).toEqual({ update_cron: [] });
     await writeFile(modernPath, "file_watch: false\n");
-    expect(await read()).toEqual({ file_watch: false });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+    expect(await read()).toEqual({ file_watch: false, update_cron: defaultUpdateCron });
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("间隔从任务结束开始重计，停止等待当前任务并阻止重新调度", async () => {
@@ -183,4 +176,18 @@ test("有效的五段及六段 cron 仍可注册，无效配置单独提示", as
     await stop();
     warn.mockRestore();
   }
+});
+
+test("无配置默认北京时间00:30及12:30更新，显式关闭或自定时间优先", async () => {
+  const { scheduledJobs } = await import("node-schedule");
+  const existing = new Set(Object.keys(scheduledJobs));
+  const stop = scheduleUpdates({}, () => {});
+  try {
+    const job = Object.entries(scheduledJobs).find(([key]) => !existing.has(key))?.[1];
+    expect(job).toBeDefined();
+    const first = job!.nextInvocation()!;
+    const hhmm = (at: number) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+    expect(hhmm(first.getTime())).toMatch(/^(00|12):30$/u);
+    job!.invoke();
+  } finally { await stop(); }
 });

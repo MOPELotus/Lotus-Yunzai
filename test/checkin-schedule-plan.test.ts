@@ -36,14 +36,14 @@ test("中国签到日独立于宿主时区，公历日期正确跨年和闰日",
   expect(() => checkinScheduleClock(Number.NaN)).toThrow(TypeError);
 });
 
-test("生成默认明日固定计划，显式档案时间和旧随机开关按原优先级", () => {
+test("手动选择固定模式后，明日固定计划和档案覆盖保持原优先级", () => {
   const profiles = [
     profile("777", { name: "档案", profileId: 3 }), profile("42", { enabled: false }),
     profile("777", { name: "不保留的重复", profileId: 3 }),
     profile("888", { schedule: { mode: "fixed", fixedTime: "14:05" } }),
     profile("999", { schedule: { mode: "random", allowRandom: false } }),
   ];
-  expect(generateCheckinSchedulePlan({ now, profiles, random: () => { throw new Error("不需要随机数"); } })).toEqual({
+  expect(generateCheckinSchedulePlan({ now, profiles, config: { mode: "fixed" }, random: () => { throw new Error("不需要随机数"); } })).toEqual({
     version: 1, date: tomorrow, mode: "fixed", generatedAt: stamp,
     window: { window_start: "00:00", window_end: "23:30", notify_before: true },
     entries: [entry("777", { profileId: 3, name: "档案", time: "04:30" }),
@@ -209,4 +209,12 @@ test("清除在途标记后，社区写入记录保留原时段、通知状态�
   expect(reconcileCheckinSchedulePlan(after, {
     now, profiles: [profile("51", { schedule: { mode: "fixed", fixedTime: "05:00" } })],
   }).entries).toEqual([active, disabled, removed]);
+});
+
+test("默认提前生成次日随机计划，固定模式必须显式选择", () => {
+  const plan = generateCheckinSchedulePlan({ now, profiles: [profile("42")], random: () => 0.5 });
+  expect(plan.date).toBe(tomorrow);
+  expect(plan.mode).toBe("random");
+  expect(plan.entries[0]?.mode).toBe("random");
+  expect(plan.window).toEqual({ window_start: "00:00", window_end: "23:30", notify_before: true });
 });

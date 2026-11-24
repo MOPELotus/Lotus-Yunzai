@@ -49,7 +49,7 @@ test("图鉴面板写入现有 Atlas 调度配置，版本来源、旧字段与�
     expect(raw).not.toContain("private-atlas-path");
     const before = JSON.parse(raw);
     expect(before.settings).toEqual({
-      enable: true, check_cron: "0 0 */6 * * ? *", challenge_cron: "0 15 */2 * * ? *", run_on_missing_data: false,
+      enable: true, check_cron: "0 30 1,13 * * ? *", challenge_cron: "0 30 1,13 * * ? *", run_on_missing_data: false,
     });
     const edited = { ...before.settings, check_cron: "13 8 * * MON-FRI", challenge_cron: "0 14 */3 * * ? *" };
     const invalid = await admin(request("PUT", { revision: before.revision, settings: { ...edited, challenge_cron: "0 0 9 ? * 1-5 *" } }));

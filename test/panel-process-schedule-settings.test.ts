@@ -41,7 +41,7 @@ test("宿主定时设置沿用现行读取优先级并安全保存 Cron 和间�
     expect(snapshot.fields.find(({ key }: { key: string }) => key === "update_cron").separator).toBe("line");
     expect(snapshot.values).toEqual({
       update_notice: false, update_notice_cron: defaultUpdateNoticeCron,
-      update_time: 1440, restart_time: 10, update_cron: [], restart_cron: [], stop_cron: ["0 1 * * *"], start_cron: [],
+      update_time: 0, restart_time: 10, update_cron: ["0 30 0,12 * * *"], restart_cron: [], stop_cron: ["0 1 * * *"], start_cron: [],
     });
     expect(JSON.stringify(snapshot)).not.toContain("fixture");
     const values = { ...snapshot.values, update_time: 0.5, update_cron: ["1,15 12 * * *"], stop_cron: [],
@@ -66,7 +66,7 @@ test("宿主定时设置沿用现行读取优先级并安全保存 Cron 和间�
     const current = (await get()).values;
     expect(current).toEqual({
       update_notice: false, update_notice_cron: defaultUpdateNoticeCron,
-      update_time: 0, restart_time: 0, update_cron: [], restart_cron: [], stop_cron: [], start_cron: [],
+      update_time: 0, restart_time: 0, update_cron: ["0 30 0,12 * * *"], restart_cron: [], stop_cron: [], start_cron: [],
     });
     expect((await put(current, { ...current, restart_cron: ["0 12 * * *"] })).status).toBe(200);
     expect(Bun.YAML.parse(await readFile(modern, "utf8"))).toEqual({ other: true, restart_cron: "0 12 * * *" });

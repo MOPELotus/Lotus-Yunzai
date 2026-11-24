@@ -272,7 +272,7 @@ export function checkinSchedulePanelSnapshot(source: unknown): CheckinSchedulePa
   const current = validScheduler(source);
   const settings: CheckinSchedulePanelSettings = {
     enable: current.enable !== false,
-    mode: current.mode ?? "fixed",
+    mode: current.mode ?? "random",
     fixed_time: current.fixed_time ?? "04:30",
     ...defaultCheckinCrons,
     ...visibleWindows(current),

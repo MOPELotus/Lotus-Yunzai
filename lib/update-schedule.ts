@@ -1,3 +1,4 @@
+import { withDefaultUpdateSchedule } from "./update-schedule-settings.ts";
 import { HandlerScope } from "./plugins/handler.ts";
 import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
 
@@ -19,6 +20,7 @@ export function scheduleUpdates(
   config: Record<string, unknown>,
   run: () => void | Promise<void>,
 ): () => Promise<void> {
+  config = withDefaultUpdateSchedule(config);
   const tasks = new LegacyTasks(undefined, legacyHostCronTimeZone);
   const owner = new HandlerScope();
   const interval = updateInterval(config.update_time);

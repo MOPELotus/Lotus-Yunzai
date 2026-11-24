@@ -93,7 +93,7 @@ async function fixture(run: (helpers: {
           },
         });
         const runtime = createCheckinScheduleRuntime({
-          store, signal: controller.signal, config: { fixed_time: "18:00" }, now: () => at, listProfiles: profiles.listCheckinProfiles,
+          store, signal: controller.signal, config: { mode: "fixed" as const, fixed_time: "18:00" }, now: () => at, listProfiles: profiles.listCheckinProfiles,
           runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
         });
         try {

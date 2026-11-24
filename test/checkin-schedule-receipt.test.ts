@@ -19,7 +19,7 @@ const loadAccount = async (): Promise<ProfileAccountContext> => ({
   account: { stuid: "81526", ltuid: "", mid: "changed", cookie: "", stoken: "", stokenCookie: "", ltoken: "" },
   device: { id: "", fp: "", name: "", model: "", androidVersion: "", raw: {} },
 });
-const config = { fixed_time: "18:00" };
+const config = { mode: "fixed" as const, fixed_time: "18:00" };
 
 async function withStore(run: (store: ReturnType<typeof createCheckinScheduleStore>) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), "lotus-checkin-receipt-"));

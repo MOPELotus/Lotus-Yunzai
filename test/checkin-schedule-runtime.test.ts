@@ -136,7 +136,7 @@ test("旧七段 cron 以中国时区执行，注册时只补计划而不提前�
   const signal = new AbortController();
   let runs = 0;
   const runtime = createCheckinScheduleRuntime({
-    store, signal: signal.signal, config: { fixed_time: "00:00", run_due_cron: `0 17 ${hour} * * ? *`,
+    store, signal: signal.signal, config: { mode: "fixed" as const, fixed_time: "00:00", run_due_cron: `0 17 ${hour} * * ? *`,
       plan_generate_cron: "0 0 0 * * ? *", catch_up_cron: "*/10 * * * *" },
     listProfiles: async () => [active],
     runProfile: async () => { runs++; return { status: "complete", ok: true, stage: "checkin" }; },
@@ -172,7 +172,7 @@ test("主人手动生成计划可在关闭自动签到时确认通知，自动�
   const signal = new AbortController();
   const notices: string[] = [];
   const runtime = createCheckinScheduleRuntime({
-    store, signal: signal.signal, config: { enable: false, random: { notify_before: false } },
+    store, signal: signal.signal, config: { mode: "fixed", enable: false, random: { notify_before: false } },
     listProfiles: async () => [{ qq: "10001", profileId: 2, enabled: true }],
     runProfile: async () => { throw new Error("disabled automatic run"); },
     async onNotice(entry, day, late, isCurrent) {
@@ -207,7 +207,7 @@ test("固定生成时刻不被启动、补偿或补登提前，热换只替换�
   const active = { qq: "10001", profileId: 2, enabled: true };
   let clock = Date.parse("2026-11-19T08:01:29+08:00");
   const { tomorrow } = checkinScheduleClock(clock);
-  const initial = { fixed_time: "04:15", plan_generate_cron: "30 1 8 * * ? *",
+  const initial = { mode: "fixed" as const, fixed_time: "04:15", plan_generate_cron: "30 1 8 * * ? *",
     run_due_cron: "0 0 4 * * ? *", random: { notify_before: false } };
   let enumerated = 0;
   const runtime = createCheckinScheduleRuntime({
@@ -284,7 +284,7 @@ test("今日运行期间保留已捕获的配置，后续对账使用新配置�
   let calls = 0;
   const ran: string[] = [];
   const runtime = createCheckinScheduleRuntime({
-    store, signal: signal.signal, config: { fixed_time: "04:15" }, now: () => clock,
+    store, signal: signal.signal, config: { mode: "fixed" as const, fixed_time: "04:15" }, now: () => clock,
     listProfiles: async () => {
       if (calls++ > 0) return [one, two];
       await gate.promise;
@@ -295,7 +295,7 @@ test("今日运行期间保留已捕获的配置，后续对账使用新配置�
   try {
     const first = runtime.runDue();
     expect(calls).toBe(1);
-    const next = { fixed_time: "04:45" };
+    const next = { mode: "fixed" as const, fixed_time: "04:45" };
     runtime.updateConfig(next);
     next.fixed_time = "04:55";
     expect(await store.read(date)).toBeUndefined();
@@ -361,7 +361,7 @@ test("日末任务补跑当天待处理的社区与游戏，不启动普通签�
   const at = Date.parse("2026-11-19T23:50:00+08:00");
   const { date } = checkinScheduleClock(at);
   const profiles = [{ qq: "10001", profileId: 2, enabled: true }, { qq: "10002", profileId: 2, enabled: true }];
-  const config = { fixed_time: "09:00", plan_generate_cron: "0 17 9 * * 1,3", run_due_cron: "15 9 * * *" };
+  const config = { mode: "fixed" as const, fixed_time: "09:00", plan_generate_cron: "0 17 9 * * 1,3", run_due_cron: "15 9 * * *" };
   const plan = generateCheckinSchedulePlan({ config, profiles, now: at, date });
   const accountKey = "a".repeat(64);
   const ready = { forums: ["6"], games: ["honkai_sr"], attempts: 2, nextAt: new Date(at).toISOString(), accountKey, verifiedUnsent: true } as const;

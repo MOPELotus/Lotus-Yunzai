@@ -148,7 +148,7 @@ test("评论库和乐评限制分别编辑，保留旧 YAML 共享配置、注�
     expect(changedBack.status).toBe(200);
     const result = await changedBack.json();
     expect(result.settings.comments).toEqual(["打卡支持"]);
-    expect(result.settings.schedule).toBe("0 5 0 * * ? *");
+    expect(result.settings.schedule).toBe("0 30 1 * * ? *");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -300,4 +300,23 @@ test("迁移后的乐评和自定义 Codex 程序需要本机确认，面板补�
     expect(builtinCodex.status).toBe(200);
     expect((await builtinCodex.json()).reviewMode).toBe("codex");
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("普通网易云登录账号存在即默认开启01:30任务，显式关闭优先且不写入账号秘密", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lotus-partner-defaults-"));
+  const root = pathToFileURL(dir + "/");
+  try {
+    const route = panelPartner(root, validTask);
+    expect((await loadGlobalConfig(root)).netease_partner.enable).toBe(false);
+    await mkdir(join(dir, "data/netease"), { recursive: true });
+    await writeFile(join(dir, "data/netease/accounts.yaml"), "accounts: [{uid: '42', tuneweave_account: fixture-login, cookie: fixture-private}]\n");
+    expect((await loadGlobalConfig(root)).netease_partner.enable).toBe(true);
+    const snapshot = await (await route(request(), () => true)).json();
+    expect(snapshot.settings).toMatchObject({ enable: true, schedule: "0 30 1 * * ? *" });
+    expect(JSON.stringify(snapshot)).not.toContain("fixture-private");
+    await mkdir(join(dir, "config"));
+    await writeFile(join(dir, "config/global.yaml"), "netease_partner: {enable: false}\n");
+    expect((await loadGlobalConfig(root)).netease_partner.enable).toBe(false);
+    expect((await (await route(request(), () => true)).json()).settings.enable).toBe(false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
