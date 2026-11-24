@@ -849,7 +849,7 @@ test("初始化准备图库攻略媒体，后续普通启动不再调用任何�
   expect(await Bun.file(join(cwd, "prepared-resources")).text()).toBe("guides\nmedia\n");
 });
 
-test.skipIf(process.platform === "win32")("日志PTY中Ctrl+C正常退出，后台PID继续运行，自发130仍报失败", async () => {
+test.skipIf(process.platform === "win32")("bun run logs 包装层实际Ctrl+C字节正常退出，后台PID继续运行，自发130仍报失败", async () => {
  const { cwd } = await fixture();
  const parent = dirname(cwd), bin = join(parent,"logs-pty-bin"), home = join(parent,".checkout.lotus-pm2");
  await mkdir(bin); await mkdir(home,{mode:0o700});
@@ -871,13 +871,13 @@ test.skipIf(process.platform === "win32")("日志PTY中Ctrl+C正常退出，后�
  const env = {PATH:bin+":"+process.env.PATH};
  let text="";
  const terminal = new Bun.Terminal({cols:100,rows:20,data:(_t,chunk)=>{text+=new TextDecoder().decode(chunk)}});
- const launcher = Bun.spawn([process.execPath,join(cwd,"scripts/launcher.ts"),"logs"],{cwd,env,terminal});
+ const launcher = Bun.spawn([process.execPath,"run","logs"],{cwd,env,terminal});
  try {
   for(let attempt=0;attempt<150&&!text.includes("logs-pty-ready");attempt++)await Bun.sleep(20);
-  expect(text).toContain("logs-pty-ready");launcher.kill("SIGINT");
+  expect(text).toContain("logs-pty-ready");terminal.write("\x03");
   expect(await launcher.exited).toBe(0);
   expect(background.exitCode).toBeNull();process.kill(background.pid,0);
-  const failure = Bun.spawn([process.execPath,join(cwd,"scripts/launcher.ts"),"logs"],{cwd,env:{...env,FIXTURE_FAIL:"1"},stdin:"ignore",stdout:"ignore",stderr:"ignore"});
+  const failure = Bun.spawn([process.execPath,"run","logs"],{cwd,env:{...env,FIXTURE_FAIL:"1"},stdin:"ignore",stdout:"ignore",stderr:"ignore"});
   expect(await failure.exited).toBe(130);expect(background.exitCode).toBeNull();
   expect(await Bun.file(join(home,"valkey-stop")).exists()).toBe(false);
  } finally {

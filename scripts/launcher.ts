@@ -89,6 +89,19 @@ async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited"> & { ex
     child.kill("SIGINT");
   };
   const terminate = () => child.kill("SIGTERM");
+  // A PTY (and Bun's run wrapper) can deliver Ctrl+C as a byte instead of an
+  // OS signal. Own the viewer's TTY input and forward that key to this client only.
+  const terminal = process.stdin.isTTY && typeof process.stdin.setRawMode === "function";
+  const wasRaw = process.stdin.isRaw === true;
+  const wasFlowing = process.stdin.readableFlowing === true;
+  const keyboard = (chunk: Buffer | string) => {
+    if (typeof chunk === "string" ? chunk.includes("\x03") : chunk.includes(3)) interrupt();
+  };
+  if (terminal) {
+    process.stdin.setRawMode(true);
+    process.stdin.on("data", keyboard);
+    process.stdin.resume();
+  }
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   try {
@@ -98,6 +111,11 @@ async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited"> & { ex
   finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
+    if (terminal) {
+      process.stdin.removeListener("data", keyboard);
+      process.stdin.setRawMode(wasRaw);
+      if (!wasFlowing) process.stdin.pause();
+    }
   }
 }
 
