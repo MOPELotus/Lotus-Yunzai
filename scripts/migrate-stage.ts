@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readOptionalLocalConfig } from "../lib/config.ts";
+import { prepareZzzTuningTheme } from "../lib/zzz-tuning-theme.ts";
 import { prepareDailyNoteTheme } from "../lib/daily-note-theme.ts";
 import { stageLegacyAtlasState } from "../lib/migration-atlas-state.ts";
 import { stageLegacyCheckinSchedules } from "../lib/migration-checkin-schedules.ts";
@@ -92,6 +93,9 @@ export async function stageMigration(source: string, target: string, signal?: Ab
     const atlas = await stageLegacyAtlasState(plan.source, state.directory, signal,
       backup.status === "empty" ? undefined : { directory: backup.directory, plugins: plan.plugins });
     await prepareDailyNoteTheme(Bun.pathToFileURL(`${state.directory}/`), {
+      source: Bun.pathToFileURL(`${plan.source}/`), signal,
+    });
+    await prepareZzzTuningTheme(Bun.pathToFileURL(`${state.directory}/`), {
       source: Bun.pathToFileURL(`${plan.source}/`), signal,
     });
     const starRailTheme = await prepareStarRailChallengeTheme(Bun.pathToFileURL(`${state.directory}/`), {

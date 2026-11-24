@@ -792,3 +792,28 @@ test.skipIf(process.platform === "win32")("PM2 启动入口先恢复中断的目
   expect(delayedError).toContain("本次后台启动已取消或被替换");
   expect(await readFile(readyFile, "utf8")).toBe(String(retry.pid));
 });
+
+test("绝区零调频主题随首次初始化准备，普通暖启只尝试本地恢复", async () => {
+  const { cwd, start } = await fixture();
+  const module = join(cwd, "plugins/zzz");
+  const calls = join(cwd, "zzz-theme-calls.jsonl");
+  await mkdir(module);
+  await Promise.all([
+    writeFile(join(module, "tuning-detail-card.ts"), ""),
+    writeFile(join(cwd, "lib/zzz-tuning-theme.ts"), `
+      import { appendFile } from "node:fs/promises";
+      export async function prepareZzzTuningTheme(root, { override, signal, download }) {
+        if (!root || !(signal instanceof AbortSignal)) throw Error("主题启动参数缺失");
+        await appendFile(${JSON.stringify(calls)}, JSON.stringify({ override, download }) + "\\n");
+        return download ? "installed" : "available";
+      }
+    `),
+  ]);
+
+  const [initialCode, initialOutput] = await start(["init", "live"]);
+  expect(initialCode).toBe(0);
+  expect(initialOutput).toContain("已准备原调频与逐抽主题");
+  expect((await start(["start"], { LOTUS_ZZZ_GACHA_THEME_DIR: "./custom-theme" }))[0]).toBe(0);
+  const requests = (await Bun.file(calls).text()).trim().split("\n").map(line => JSON.parse(line));
+  expect(requests).toEqual([{ download: true }, { override: "./custom-theme", download: false }]);
+});

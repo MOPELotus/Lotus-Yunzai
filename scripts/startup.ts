@@ -113,6 +113,22 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   }
   if (dailyNote === "missing" && firstSetup) console.warn("[体力] 原便笺主题暂不可用，可运行 bun run init 重试。");
 
+  if (await Bun.file(new URL("plugins/zzz/tuning-detail-card.ts", root)).exists()) {
+    const { prepareZzzTuningTheme } = await import("../lib/zzz-tuning-theme.ts");
+    const zzzTuning = await prepareZzzTuningTheme(root, {
+      override: Bun.env.LOTUS_ZZZ_GACHA_THEME_DIR?.trim(), signal, download: firstSetup,
+    }).catch(() => {
+      signal.throwIfAborted();
+      console.warn("[绝区零] 调频原主题读写失败，请检查 data/zzz/gacha-theme 的文件权限。");
+    });
+    signal.throwIfAborted();
+    if (zzzTuning === "installed") console.log("[绝区零] 已准备原调频与逐抽主题。");
+    if (zzzTuning === "incomplete") {
+      console.warn("[绝区零] 本地调频原主题不完整。可补齐 data/zzz/gacha-theme，或设置 LOTUS_ZZZ_GACHA_THEME_DIR 指向完整主题。");
+    }
+    if (zzzTuning === "missing" && firstSetup) console.warn("[绝区零] 调频原主题暂不可用，可运行 bun run init 重试。");
+  }
+
   if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
     const { prepareGenshinWishCalendar } = await import("../plugins/genshin/wish-calendar.ts");
     const wishCalendar = await prepareGenshinWishCalendar(root, { signal, download: firstSetup });

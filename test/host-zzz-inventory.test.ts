@@ -7,7 +7,6 @@ import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 const avatar = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const preload = `
 const nativeFetch = globalThis.fetch;
-Bun.env.VK_LOADER_DEVICE_SELECT = "10de:24b0";
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_SKIA_MODE = "gpu";
 Bun.env.LOTUS_ZZZ_INVENTORY_THEME_DIR = "./no-old-art";
