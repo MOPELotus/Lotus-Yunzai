@@ -123,7 +123,9 @@ async function socketListening(path: string): Promise<boolean> {
     const client = createConnection(path);
     const finish = (live: boolean) => { client.destroy(); resolve(live); };
     client.setTimeout(1_000);
-    client.once("connect", () => finish(true)); client.once("error", () => finish(false)); client.once("timeout", () => finish(true));
+    client.once("connect", () => finish(true));
+    client.once("error", (error: NodeJS.ErrnoException) => finish(error.code !== "ENOENT" && error.code !== "ECONNREFUSED"));
+    client.once("timeout", () => finish(true));
   });
 }
 async function assertRelocationHasNoWriter(directory: string) {
@@ -213,13 +215,59 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
     return { managed: true, connection };
   } finally { await rm(lock, { recursive: true, force: true }); }
 }
+async function managedWriterAlive(root: URL): Promise<boolean> {
+  const directory = location(root);
+  const text = await readFile(join(directory, "valkey.pid"), "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  if (text === undefined) return false;
+  const pid = Number(text.trim());
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("项目 Valkey PID 记录无效，无法确认停止状态。");
+  try { process.kill(pid, 0); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error; }
+  if (process.platform !== "linux") return true;
+  const current = await stat(directory);
+  const working = await stat(`/proc/${pid}/cwd`).catch(async (error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+    const state = await readFile(`/proc/${pid}/stat`, "utf8").catch((failure: NodeJS.ErrnoException) => {
+      if (failure.code !== "ENOENT") throw failure;
+    });
+    if (!state || /\) Z /u.test(state)) return;
+    throw new Error("无法确认项目 Valkey 进程的数据目录。");
+  });
+  return Boolean(working && current.dev === working.dev && current.ino === working.ino);
+}
 /** Stop only this checkout's authenticated socket. Explicit external Redis is never stopped. */
 export async function stopManagedValkey(root: URL): Promise<void> {
   const connection = await managedValkeyConnection(root);
   if (!connection) return;
+  const socket = connection.socketPath!;
+  const entry = await lstat(socket).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+  if (entry && (!entry.isSocket() || entry.uid !== process.getuid?.())) throw new Error("项目 Valkey Socket 类型或所有者无效。");
+  if (!entry || !await socketListening(socket)) {
+    if (await managedWriterAlive(root)) throw new Error("项目 Valkey 进程仍在运行，但 Socket 不可用，请检查服务状态。");
+    return; // Missing/refused socket plus no owned writer is an already-stopped service.
+  }
   const client = createStorageClient(connection); client.on("error", () => {});
-  try { await client.connect(); await client.sendCommand(["SHUTDOWN", "SAVE"]).catch(() => {}); }
-  finally { if (client.isOpen) await client.disconnect(); }
+  try {
+    try { await client.connect(); }
+    catch (error) {
+      // The daemon can complete a concurrent shutdown after the socket preflight.
+      if (!await socketListening(socket) && !await managedWriterAlive(root)) return;
+      throw error;
+    }
+    try { await client.sendCommand(["SHUTDOWN", "SAVE"]); }
+    catch (error) {
+      // Successful SHUTDOWN closes its socket without a Redis reply. Persistence
+      // errors instead return an error reply and must remain visible to callers.
+      if (!(error instanceof Error) || error.message !== "Socket closed unexpectedly") throw error;
+    }
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (!await socketListening(socket) && !await managedWriterAlive(root)) return;
+      await Bun.sleep(40);
+    }
+    throw new Error("项目 Valkey 尚未确认停止，请检查 data/valkey/valkey.log。");
+  } finally { if (client.isOpen) await client.disconnect(); }
 }
 export async function initializeValkey(root: URL, signal: AbortSignal, progress?: (message: string) => void) {
   return ensureManagedValkey(root, { initialize: true, signal, progress });

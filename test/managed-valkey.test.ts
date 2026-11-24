@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -34,6 +34,7 @@ test.skipIf(!Bun.which("valkey-server"))("项目Valkey独立Socket、真实持�
   expect(await readStorageConnection(roots[0]!)).toBeUndefined();
   await rm(join(a,"config/redis.yaml"));
   await stopManagedValkey(roots[0]!);
+  await expect(stopManagedValkey(roots[0]!)).resolves.toBeUndefined();
   await ensureManagedValkey(roots[0]!, { env: {} });
   const restored = createStorageClient(first.connection); restored.on("error",()=>{}); await restored.connect();
   expect(await restored.get("private-test")).toBe("persisted"); await restored.disconnect();
@@ -89,5 +90,43 @@ test.skipIf(process.platform !== "linux" || !Bun.which("valkey-server"))("移动
   if (old?.isOpen) { await old.sendCommand(["SHUTDOWN","SAVE"]).catch(()=>{}); if(old.isOpen)await old.disconnect(); }
   await stopManagedValkey(destination).catch(()=>{}); await stopManagedValkey(root).catch(()=>{});
   await rm(base,{recursive:true,force:true});
+ }
+},30_000);
+
+
+test.skipIf(!Bun.which("valkey-server"))("停止幂等且不吞活实例认证错误和实际持久化失败", async () => {
+ const directory=await mkdtemp(join(tmpdir(),"lotus-valkey-stop-"));
+ const root=pathToFileURL(directory+"/"), data=join(directory,"data/valkey"), file=join(data,"managed.json");
+ let client: ReturnType<typeof createStorageClient> | undefined;
+ let saved: string | undefined;
+ try {
+  const service=await ensureManagedValkey(root,{initialize:true,env:{}});
+  if(!service.connection)throw Error("Expected private storage");
+  client=createStorageClient(service.connection);client.on("error",()=>{});await client.connect();await client.set("stop-proof","preserved");
+  saved=await readFile(file,"utf8");
+  await writeFile(file,JSON.stringify({...JSON.parse(saved),password:"0".repeat(64)}),{mode:0o600});
+  await expect(stopManagedValkey(root)).rejects.toThrow();
+  expect(await client.ping()).toBe("PONG");await writeFile(file,saved,{mode:0o600});
+  if(process.getuid?.()!==0) {
+   await chmod(data,0o500);
+   await expect(stopManagedValkey(root)).rejects.toThrow();
+   expect(await client.ping()).toBe("PONG");expect(await client.get("stop-proof")).toBe("preserved");
+   await chmod(data,0o700);
+  }
+  await client.disconnect();client=undefined;
+  await expect(stopManagedValkey(root)).resolves.toBeUndefined();
+  await expect(stopManagedValkey(root)).resolves.toBeUndefined();
+  const python=Bun.which("python3");
+  if(python && typeof service.connection!=="string" && service.connection.socketPath) {
+   const socket=service.connection.socketPath;
+   const stale=Bun.spawn([python,"-c","import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()",socket],{stdin:"ignore",stdout:"ignore",stderr:"ignore"});
+   expect(await stale.exited).toBe(0);expect((await stat(socket)).isSocket()).toBe(true);
+   await expect(stopManagedValkey(root)).resolves.toBeUndefined();
+   expect((await stat(socket)).isSocket()).toBe(true);await rm(socket);
+  }
+ }finally {
+  await chmod(data,0o700).catch(()=>{});if(saved)await writeFile(file,saved,{mode:0o600});
+  if(client?.isOpen)await client.disconnect();await stopManagedValkey(root).catch(()=>{});
+  await rm(directory,{recursive:true,force:true});
  }
 },30_000);
