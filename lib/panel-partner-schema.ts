@@ -8,8 +8,12 @@ export const partnerNumbers = [
 ] as const;
 
 export const partnerScheduleDefault = "0 5 0 * * ? *";
+export const partnerResponsesDefaultUrl = "https://api.openai.com/v1/responses";
+export const partnerEditableReviewModes = ["fixed", "responses", "codex"] as const;
+export type PartnerEditableReviewMode = typeof partnerEditableReviewModes[number];
+
 export const partnerReviewModes = {
-  fixed: "固定评论库", responses: "Responses API 联网生成", codex: "本机 Codex CLI 联网生成", unknown: "未知配置",
+  fixed: "固定评论库", responses: "Responses API 联网生成", codex: "本机 Codex CLI 联网生成", disabled: "迁移后等待本机确认", unknown: "未知配置",
 } as const;
 
 export interface PartnerPanelSettings {
@@ -29,5 +33,12 @@ export interface PartnerPanelSettings {
 export interface PartnerPanelSnapshot {
   settings: PartnerPanelSettings;
   reviewMode: keyof typeof partnerReviewModes;
+  review: {
+    model: string;
+    apiOrigin: string;
+    apiUrlConfigured: boolean;
+    apiKeyConfigured: boolean;
+    customCodexCommand: boolean;
+  };
   revision: string;
 }

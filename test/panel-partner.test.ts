@@ -46,15 +46,17 @@ test("面板保存合伙人配置后现有任务继续使用注册时刻并在�
     const panel = panelApi(token, [], path => path === endpoint ? route : undefined);
     expect((await panel(request("GET", undefined, false)))?.status).toBe(401);
     const beforeText = await (await panel(request()))!.text();
-    for (const hidden of ["test-nonpublic-field", "test-secret-key", "private-url", "test-private-model", "test-executable-path"]) {
+    for (const hidden of ["test-nonpublic-field", "test-secret-key", "private-url", "test-executable-path"]) {
       expect(beforeText).not.toContain(hidden);
     }
     const before = JSON.parse(beforeText);
     expect(before.reviewMode).toBe("responses");
+    expect(before.review).toEqual({ model: "test-private-model", apiOrigin: "https://fixture.invalid",
+      apiUrlConfigured: true, apiKeyConfigured: true, customCodexCommand: true });
     expect(before.settings).toEqual({ enable: false, schedule: "0 50 23 * * ? *", auto_catch_up: false, notify_master: true,
       login_timeout_ms: 300000, login_poll_ms: 3000, delay_ms_min: 8000, delay_ms_max: 11000,
       comments: ["打卡支持"], review_max_chars: 140, review_timeout_ms: 180000 });
-    for (const patch of [{ review_mode: "codex" }, { codex_command: "fixture-run" }, { api_key: "never-used" },
+    for (const patch of [{ review_mode: "codex" }, { review_codex_command: "fixture-run" }, { codex_command: "fixture-run" }, { api_key: "never-used" },
       { login_poll_ms: 0 }, { review_max_chars: 501 }, { delay_ms_min: 300001 }, { comments: ["a".repeat(501)] }]) {
       expect((await panel(request("PUT", { patch, revision: before.revision })))?.status).toBe(400);
     }
@@ -178,4 +180,124 @@ test("合伙人扫码确认后的定时启用保留原有选项并检查权限�
     await enablePartnerAfterLogin(root, active.signal, () => true);
     expect(await readFile(file, "utf8")).toBe(enabled);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("主人编辑乐评模型和 Responses 接口，密钥只写并保护旧凭据和并发变更", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-partner-review-edit-"));
+  try {
+    const root = pathToFileURL(`${directory}/`);
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const original = "netease_partner:\n  review: { mode: fixed, model: local-original-model, api_key: test-review-original, api_url: 'https://old.invalid/private-path' }\n";
+    await writeFile(file, original);
+    const route = panelPartner(root, validTask);
+    const panel = panelApi(token, [], path => path === endpoint ? route : undefined);
+    const update = async (revision: string, patch: Record<string, unknown>) => (await panel(request("PUT", { revision, patch })))!;
+    const current = async () => (await panel(request()))!;
+
+    const before = await current();
+    expect(before.headers.get("Cache-Control")).toBe("no-store");
+    const redacted = await before.text();
+    expect(redacted).not.toContain("test-review-original");
+    expect(redacted).not.toContain("/private-path");
+    const snapshot = JSON.parse(redacted);
+    expect(snapshot.review).toEqual({ model: "local-original-model", apiOrigin: "https://old.invalid", apiUrlConfigured: true,
+      apiKeyConfigured: true, customCodexCommand: false });
+    expect((await panel(request("PUT", { revision: snapshot.revision, patch: { review_api_key: "unauthorized-fixture" } }, false)))?.status).toBe(401);
+    let stillActive = true;
+    expect((await route(request(), () => {
+      const result = stillActive;
+      stillActive = false;
+      return result;
+    })).status).toBe(401);
+    for (const url of ["http://provider.invalid/v1/responses", "https://user:pass@provider.invalid/v1/responses",
+      "https://provider.invalid/v1/responses?secret=fixture", "https://provider.invalid/v1/responses#", "file:///tmp/settings"]) {
+      const result = await update(snapshot.revision, { review_api_url: url });
+      expect(result.status).toBe(400);
+      expect(await result.json()).toEqual({ field: "review_api_url" });
+    }
+    const rebound = await update(snapshot.revision, { review_api_url: "https://new.invalid/v1/responses", review_api_key: "" });
+    expect(rebound.status).toBe(400);
+    expect(await rebound.json()).toEqual({ field: "review_api_url_key" });
+    const contradictory = await update(snapshot.revision, { review_api_key: "test-review-new", review_clear_api_key: true });
+    expect(contradictory.status).toBe(400);
+    const malformed = await update(snapshot.revision, { review_api_key: "test\nreview" });
+    expect(malformed.status).toBe(400);
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    const switched = await update(snapshot.revision, { review_mode: "responses", review_model: "demo/model-v2",
+      review_api_url: "http://127.0.0.1:8237/v1/responses", review_api_key: "test-review-new" });
+    expect(switched.status).toBe(200);
+    const body = await switched.text();
+    expect(body).not.toContain("test-review-new");
+    expect(body).not.toContain("/v1/responses");
+    const configured = JSON.parse(body);
+    expect(configured.reviewMode).toBe("responses");
+    expect(configured.review).toEqual({ model: "demo/model-v2", apiOrigin: "http://127.0.0.1:8237", apiUrlConfigured: true,
+      apiKeyConfigured: true, customCodexCommand: false });
+    const config = await loadGlobalConfig(root);
+    expect(config.netease_partner.review).toMatchObject({ mode: "responses", model: "demo/model-v2",
+      api_url: "http://127.0.0.1:8237/v1/responses", api_key: "test-review-new" });
+    expect((await update(configured.revision, { review_api_key: "   " })).status).toBe(200);
+    const stored = await readFile(file, "utf8");
+    expect(stored).toContain("test-review-new");
+
+    // An out-of-band key rotation changes the revision even though the public status is still "configured".
+    await writeFile(file, stored.replace("test-review-new", "test-review-rotated"));
+    const following = await (await current()).json();
+    expect(following.review).toEqual(configured.review);
+    expect(following.revision).not.toBe(configured.revision);
+    expect((await update(configured.revision, { review_model: "retry-new-model" })).status).toBe(409);
+    const cleared = await update(following.revision, { review_clear_api_key: true, review_api_url: "" });
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).review).toEqual({ model: "demo/model-v2", apiOrigin: "https://api.openai.com",
+      apiUrlConfigured: false, apiKeyConfigured: false, customCodexCommand: false });
+    expect((await loadGlobalConfig(root)).netease_partner.review).toMatchObject({ api_url: "", api_key: "" });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("迁移后的乐评和自定义 Codex 程序需要本机确认，面板补齐其他设置", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-partner-review-local-"));
+  try {
+    const root = pathToFileURL(`${directory}/`);
+    await mkdir(join(directory, "config"));
+    const file = join(directory, "config/global.yaml");
+    const source = "netease_partner: { enable: false, review: { mode: disabled } }\n";
+    await writeFile(file, source);
+    const route = panelPartner(root, validTask);
+    const load = async () => (await route(request(), () => true)).json();
+    const update = async (revision: string, patch: Record<string, unknown>) =>
+      route(request("PUT", { revision, patch }), () => true);
+    const pending = await load();
+    expect(pending.reviewMode).toBe("disabled");
+    for (const patch of [{ review_mode: "fixed" }, { review_mode: "responses" }, { enable: true }]) {
+      const result = await update(pending.revision, patch);
+      expect(result.status).toBe(400);
+      expect(await result.json()).toEqual({ field: "review_local" });
+    }
+    await expect(enablePartnerAfterLogin(root, new AbortController().signal, () => true)).rejects.toThrow("review_local");
+    expect(await readFile(file, "utf8")).toBe(source);
+    const settings = await update(pending.revision, { comments: ["迁移后仍可修改固定评论库"] });
+    expect(settings.status).toBe(200);
+    expect((await settings.json()).reviewMode).toBe("disabled");
+
+    // A deployment edit can confirm mode and specify an executable; its path stays in local YAML.
+    await writeFile(file, "netease_partner: { enable: false, review: { mode: fixed, codex_command: local-trusted-command } }\n");
+    const local = await load();
+    expect(local.reviewMode).toBe("fixed");
+    expect(local.review.customCodexCommand).toBe(true);
+    expect(JSON.stringify(local)).not.toContain("local-trusted-command");
+    expect((await update(local.revision, { review_codex_command: "new-command" })).status).toBe(400);
+    const activation = await update(local.revision, { review_mode: "codex" });
+    expect(activation.status).toBe(400);
+    expect(await activation.json()).toEqual({ field: "review_local" });
+    await writeFile(file, "netease_partner: { enable: false, review: { mode: fixed } }\n");
+    const defaults = await load();
+    const needsCredentials = await update(defaults.revision, { review_mode: "responses", review_model: "demo-model" });
+    expect(needsCredentials.status).toBe(400);
+    expect(await needsCredentials.json()).toEqual({ field: "review_responses" });
+    const builtinCodex = await update(defaults.revision, { review_mode: "codex", review_model: "gpt-fixture" });
+    expect(builtinCodex.status).toBe(200);
+    expect((await builtinCodex.json()).reviewMode).toBe("codex");
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
