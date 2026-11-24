@@ -795,12 +795,13 @@ async function dispatchMessage(
         { followup, allowFollowup: id => isMaster(selfId, id) }),
     });
   }
-  const listCurrentRoster = boundAccount && display && "group_id" in target ? async () => {
-    const closed = () => display.closed || attachmentSession?.signal.aborted;
+  const readRoster = async (groupId: number, active?: AbortSignal) => {
+    const closed = () => display?.closed || attachmentSession?.signal.aborted || active?.aborted;
     if (closed()) return;
-    const members = await calls.listMemberDisplay(send, target.group_id, true).catch(() => undefined);
+    const members = await calls.listMemberDisplay(send, groupId, true, active).catch(() => undefined);
     if (!closed()) return members;
-  } : undefined;
+  };
+  const listCurrentRoster = boundAccount && display && "group_id" in target ? () => readRoster(target.group_id) : undefined;
   const listCheckinGroupMembers = listCurrentRoster && (async () =>
     (await listCurrentRoster())?.map(({ id, card, nickname }) => ({ id, name: card || nickname })));
   const quotedId = oneBotMessageId(incoming.reply_id);
@@ -1125,6 +1126,7 @@ async function dispatchMessage(
       signal: attachmentSession.signal,
       groups: async () => (await calls.listGroups(send)).map(group => group.id),
       members: async (id) => (await calls.listMemberDisplay(send, id, true)).map(member => member.id),
+      readRoster,
       isFriend: (id) => calls.isFriend(send, id),
       memberRole: (groupId, id) => calls.getGroupRole(send, groupId, id, true),
       botMute: async (groupId) => mutes?.forMessage(groupId, selfId, () => calls.getGroupRole(send, groupId, selfId, true)),

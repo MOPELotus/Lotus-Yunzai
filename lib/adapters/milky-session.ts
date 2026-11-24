@@ -459,10 +459,10 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     },
   };
 
-  async function listGroupMemberDisplay(group_id: number) {
-    if (signal.aborted) return;
-    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true });
-    if (signal.aborted || result.status !== "confirmed") return;
+  async function listGroupMemberDisplay(group_id: number, active = signal) {
+    if (signal.aborted || active.aborted) return;
+    const result = await call.confirmed("get_group_member_list", { group_id, no_cache: true }, active);
+    if (signal.aborted || active.aborted || result.status !== "confirmed") return;
     const { members } = result.data;
     if (!Array.isArray(members) || members.length > maxGroupMembers) return;
     const seen = new Set<number>();
@@ -475,6 +475,12 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       roster.push({ id: member.user_id, card, nickname });
     }
     return roster;
+  }
+
+  async function legacyRoster(groupId: number, active = signal) {
+    return (await listGroupMemberDisplay(groupId, active))?.map(({ id, card, nickname }) => ({
+      id, card: memberDisplayName(card), nickname: memberDisplayName(nickname),
+    }));
   }
 
   async function listGroupMembers(groupId: number) {
@@ -695,6 +701,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return groups.flatMap(group => record(group) && positiveId(group.group_id) ? [group.group_id] : []);
     },
     async members(groupId) { return (await listGroupMembers(groupId) ?? []).map(({ id }) => id); },
+    readRoster: legacyRoster,
     isFriend: checkinNotify.isFriend,
     botMute: groupMute.forMessage,
     memberRole,
@@ -1278,10 +1285,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
         } : undefined,
       })),
       listCurrentGroupMembers, listCheckinGroupMembers: listCurrentGroupMembers,
-      [legacyGroupMemberRoster]: positiveId(groupId) && !message.attachmentOnly ? async () =>
-        (await listGroupMemberDisplay(groupId))?.map(({ id, card, nickname }) => ({
-          id, card: memberDisplayName(card), nickname: memberDisplayName(nickname),
-        })) : undefined,
+      [legacyGroupMemberRoster]: positiveId(groupId) && !message.attachmentOnly ? () => legacyRoster(groupId) : undefined,
       readKeywordGroupMemberName: !message.attachmentOnly && (positiveId(groupId) || message.sub_type === "friend")
         ? async (target: number, member: number, workflow: AbortSignal) => {
           const active = AbortSignal.any([signal, workflow]);

@@ -1,7 +1,8 @@
 import { LegacyExitHooks } from "./exit-hooks.ts";
+import { createHash } from "node:crypto";
 import { addAbortListener } from "node:events";
 import { realpath } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { isMilkyOwnerSession } from "../command-permissions.ts";
 import { legacyGroupMemberRoster } from "../adapters/onebot-member-display.ts";
 import { sendCommandReply, type CommandForward } from "../commands.ts";
@@ -73,6 +74,7 @@ interface Rule {
   readonly fnc: string;
   readonly event?: string;
   readonly permission?: string;
+  readonly requiresAdaptation?: true;
 }
 
 interface App {
@@ -152,7 +154,17 @@ function legacyNotice(event: BotEvent) {
 
 type Registration = "loaded" | "skipped" | "empty";
 
-function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
+// The fixed external calendar release reads every birthday record regardless of group membership.
+const unscopedCalendarHandlers = new Set(["renderCalendar", "renderMonthlyCalendar", "birthdayList"]);
+
+async function hasUnscopedCalendar(packageName: string, directory: string | undefined): Promise<boolean> {
+  if (packageName !== "calendar-plugin" || !directory) return false;
+  const source = Bun.file(join(directory, "apps", "calendar.js"));
+  return source.size === 15_758 && createHash("sha256").update(await source.bytes()).digest("hex") ===
+    "df79702632f10d54b47e4313248ff9d75a30ba2384af0c03533c666d441fa523";
+}
+
+function rulesFor(app: PluginInstance, rules: readonly unknown[], unscopedCalendar: boolean): Rule[] {
   return rules.map((value) => {
     const rule = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
     if ((rule.reg !== undefined && typeof rule.reg !== "string" && !(rule.reg instanceof RegExp)) ||
@@ -161,7 +173,9 @@ function rulesFor(app: PluginInstance, rules: readonly unknown[]): Rule[] {
         (rule.permission !== undefined && typeof rule.permission !== "string")) {
       throw new Error(`插件 ${app.name} 有无效的消息规则。`);
     }
-    return { reg: new RegExp(rule.reg ?? ""), fnc: rule.fnc, event: rule.event, permission: rule.permission };
+    return { reg: new RegExp(rule.reg ?? ""), fnc: rule.fnc, event: rule.event, permission: rule.permission,
+      ...(unscopedCalendar && unscopedCalendarHandlers.has(rule.fnc) && { requiresAdaptation: true }),
+    };
   });
 }
 
@@ -317,6 +331,7 @@ export class LegacyPlugins {
       const published = exports.apps ?? exports;
       if (typeof published !== "object" || published === null) return "empty";
       const templates = directory ? { name: basename(directory), directory: await realpath(directory) } : undefined;
+      const unscopedCalendar = await hasUnscopedCalendar(packageName, templates?.directory);
       for (const value of new Set(Object.values(published))) {
         signal.throwIfAborted();
         if (typeof value !== "function" || !(value.prototype instanceof Plugin)) continue;
@@ -339,7 +354,8 @@ export class LegacyPlugins {
           throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
         }
         staged.push({
-          label, order, create, initializer, scope, contexts: new PluginContexts(), rules: rulesFor(initializer, rule),
+          label, order, create, initializer, scope, contexts: new PluginContexts(),
+          rules: rulesFor(initializer, rule, unscopedCalendar && create.name === "CalendarApp"),
           priority, event, names: typeof name === "string" ? [name, label, packageName] : [label, packageName],
           templates, published: false,
         });
@@ -573,6 +589,11 @@ export class LegacyPlugins {
         if (rule.event && !matches(rule.event, event)) continue;
         rule.reg.lastIndex = 0;
         if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
+        if (rule.requiresAdaptation) {
+          if (event.post_type === "message" && event.isDelegated) onDenied?.();
+          else if (event.post_type === "message") await event.reply("此旧日历查询需要适配 Lotus-Yunzai 才能使用。");
+          return true;
+        }
         if (!canRun(rule.permission, event)) {
           if (event.post_type === "message" && event.isDelegated) onDenied?.();
           else event.reply("暂无权限执行此指令。");

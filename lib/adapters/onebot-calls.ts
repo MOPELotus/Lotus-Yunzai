@@ -531,9 +531,9 @@ export class OneBotCalls {
     }
   }
 
-  async listMemberDisplay(send: Send, groupId: number, fresh = false): Promise<readonly MemberRosterEntry[]> {
+  async listMemberDisplay(send: Send, groupId: number, fresh = false, signal?: AbortSignal): Promise<readonly MemberRosterEntry[]> {
     if (!isPositiveInteger(groupId)) throw new RangeError("群号无效。");
-    const members = await this.#request(send, "get_group_member_list", { group_id: groupId, ...(fresh ? { no_cache: true } : {}) });
+    const members = await this.#request(send, "get_group_member_list", { group_id: groupId, ...(fresh ? { no_cache: true } : {}) }, signal);
     if (!Array.isArray(members) || members.length > 10_000) throw new Error("QQ 协议端返回无效的群成员列表。");
     const seen = new Set<number>();
     return Array.from(members, (member: unknown) => {

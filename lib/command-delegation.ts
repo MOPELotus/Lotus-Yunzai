@@ -1,4 +1,5 @@
 import type { ExecuteContext, ExecuteRequest, ExecuteService, ExecuteTarget } from "../plugins/execute/index.ts";
+import { legacyGroupMemberRoster, type MemberRosterEntry } from "./adapters/onebot-member-display.ts";
 import type { ChatFileResult } from "./chat-files.ts";
 import type { GroupMembership, MessageEvent, MessageReply } from "./messages.ts";
 
@@ -7,6 +8,7 @@ export interface DelegationSession {
   readonly signal: AbortSignal;
   readonly groups: () => Promise<readonly number[]>;
   readonly members: (groupId: number) => Promise<readonly number[]>;
+  readonly readRoster?: (groupId: number, signal: AbortSignal) => Promise<readonly MemberRosterEntry[] | undefined>;
   readonly isFriend: (userId: number) => Promise<boolean>;
   readonly memberRole: (groupId: number, userId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly botMute: (groupId: number) => Promise<MessageEvent["botMute"]>;
@@ -74,14 +76,21 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
       if (!current(actor, cancellation)) return "rejected";
       const isGroup = groupId !== undefined;
       const message = request.segments.filter(segment => segment.type !== "file" && segment.type !== "reply");
-      let match = false;
-      await run({
+      let match = false, dispatching = true;
+      const delegated: MessageEvent = {
         msg: request.command, raw_message: request.command, message, adapter: origin.adapter, inlineImageByteLimit: origin.inlineImageByteLimit,
         self_id: actor.self_id, user_id: userId, group_id: groupId,
         post_type: "message", message_type: isGroup ? "group" : "private", sub_type: isGroup ? "normal" : "friend",
         isGroup, isPrivate: !isGroup, isMaster: isMaster(actor.self_id, userId),
         atBot: true, isDelegated: true, boundAccount: false, botMute,
         isFriend: () => session.isFriend(userId),
+        ...(groupId !== undefined && session.readRoster && {
+          async [legacyGroupMemberRoster]() {
+            if (!dispatching || !current(actor, cancellation)) return;
+            const roster = await session.readRoster?.(groupId, cancellation);
+            if (dispatching && current(actor, cancellation) && roster?.some(member => member.id === userId)) return roster;
+          },
+        }),
         ...(role && { member: { is_admin: role === "admin", is_owner: role === "owner" } }),
         sender: { user_id: userId, ...(role && { role }) },
         async reply(content) {
@@ -90,7 +99,12 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
           if (request.hold) return true;
           return await session.send(target, content) !== "rejected";
         },
-      }, () => { match = true; });
+      };
+      try {
+        await run(delegated, () => { match = true; });
+      } finally {
+        dispatching = false;
+      }
       return match ? "handled" : "rejected";
     },
   };

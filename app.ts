@@ -374,11 +374,11 @@ if (import.meta.main) {
     };
   }
   const commandDelegation = createCommandDelegation({
-    signal: lifecycle.signal,
-    mayDelegate: event => event.adapter === "milky"
+    signal: AbortSignal.any([lifecycle.signal, handoffSession.signal]),
+    mayDelegate: event => !stopping && handoff.accepting && (event.adapter === "milky"
       ? isMilkyOwnerSession(event) && onlineMilkyBotId() === event.self_id
       : event.boundAccount === true && event.self_id !== undefined && event.user_id !== undefined &&
-        masterPermissions.isMaster(event.self_id, event.user_id),
+        masterPermissions.isMaster(event.self_id, event.user_id)),
     isMaster: (botId, userId) => masterPermissions.isMaster(botId, userId),
     async run(event, handled) {
       if (!stopping && handoff.accepting && groupDispatch.admit(event)) await dispatchMessage(event, handled);
