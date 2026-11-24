@@ -94,12 +94,12 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   const prepare = <T>(message: string, task: (onProgress: InitializationProgressCallback) => Promise<T>) =>
     firstSetup ? runInitializationStage(message, task, { signal }) : task(() => {});
   const { prepareAtlasTheme } = await import("../plugins/atlas/prepare-theme.ts");
-  const { copied, missing } = await prepare("准备图鉴主题", onProgress => prepareAtlasTheme(root, {
-    override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal, onProgress,
+  const { copied, missing } = await prepare("准备图鉴卡片背景与字体", onProgress => prepareAtlasTheme(root, {
+    override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal, onProgress, download: firstSetup,
   }));
-  if (copied.length) console.log(`[图鉴] 已从本地恢复 ${copied.length} 个原主题文件。`);
+  if (copied.length) console.log(`[图鉴] 已准备 ${copied.length} 个图鉴卡片素材文件。`);
   if (missing.length) {
-    console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
+    console.warn(`[图鉴] ${missing.length} 个图鉴卡片背景或字体尚未备齐，可能无法完整还原原样式。可重新运行 bun run bootstrap 补齐；自备素材仍可放入 data/atlas/theme/。`);
   }
 
   const { prepareDailyNoteTheme } = await import("../lib/daily-note-theme.ts");

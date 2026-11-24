@@ -27,6 +27,8 @@ test("普通启动在图鉴重置时仍可继续，且保留重置指针", async
 test("便笺素材不完整或读取失败时，普通启动和显式初始化都可继续", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-startup-note-"));
   const warning = console.warn;
+  const priorTheme = Bun.env.LOTUS_ATLAS_THEME_DIR;
+  Bun.env.LOTUS_ATLAS_THEME_DIR = join(directory, "isolated-theme");
   const warnings: string[] = [];
   try {
     const root = pathToFileURL(directory + "/");
@@ -61,6 +63,7 @@ test("便笺素材不完整或读取失败时，普通启动和显式初始化�
     expect(await Bun.file(font).text()).toBe("原有本地字体");
   } finally {
     console.warn = warning;
+    if (priorTheme === undefined) delete Bun.env.LOTUS_ATLAS_THEME_DIR; else Bun.env.LOTUS_ATLAS_THEME_DIR = priorTheme;
     await rm(directory, { recursive: true, force: true });
   }
 });

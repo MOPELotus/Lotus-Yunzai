@@ -460,7 +460,7 @@ async function fixture() {
     ...["package.json", "scripts/launcher.ts", "scripts/startup.ts", "scripts/managed-entry.ts",
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts", "plugins/atlas/locale.ts",
       "plugins/atlas/source-values.ts", "plugins/atlas/initialization-progress.ts",
-      "plugins/atlas/prepare-theme.ts", "plugins/atlas/theme-directories.ts"].map((path) =>
+      "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
     ...["atlas-channel", "lotus-global-config", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
       "migration-publication", "startup-render-preset", "update-activation", "initialization-progress"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
@@ -469,6 +469,7 @@ async function fixture() {
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
     writeFile(join(cwd, "plugins/atlas/update-policy.ts"),
       `export { atlasUpdatePublicationOptions } from ${JSON.stringify(join(source, "plugins/atlas/update-policy.ts"))};\n`),
+    writeFile(join(cwd, "plugins/atlas/prepare-theme.ts"), 'export async function prepareAtlasTheme() { return { copied: [], missing: Array(12).fill("fixture") }; }\n'),
     writeFile(join(cwd, "lib/daily-note-theme.ts"), 'export async function prepareDailyNoteTheme() { return "available"; }\n'),
     writeFile(join(cwd, "scripts/run-managed.ts"),
       'export async function runManaged(_root, ready) { await ready?.(); console.log("fixture host ready"); return 0; }\n'),
@@ -604,7 +605,7 @@ test("an already prepared installation starts without choosing a channel and rej
   const [code, output, warning] = await start(["start"]);
   expect(code).toBe(0);
   expect(output).toContain("fixture host ready");
-  expect(warning).toContain("缺少 12 个原主题文件");
+  expect(warning).toContain("12 个图鉴卡片背景或字体尚未备齐");
   expect(await Bun.file(config).exists()).toBe(false);
 
   await writeFile(config, "atlas: [\n");
