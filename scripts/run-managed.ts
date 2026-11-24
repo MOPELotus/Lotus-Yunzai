@@ -1,3 +1,4 @@
+import { formatTerminalLog } from "../lib/terminal-log-format.ts";
 import { realpath } from "node:fs/promises";
 import { lockFile, managedHostLockPath } from "../lib/file-lock.ts";
 import { serveForegroundControl } from "../lib/foreground-control.ts";
@@ -14,11 +15,19 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
     "托管宿主", 0, "当前目录已有托管宿主运行。");
   const supervisor = createManagedSupervisor(root, { onWorkerReady, powerState });
   let stopping = false;
+  let interrupted = false;
+  let reportedInterrupt = false;
+  const normalizeInterrupt = (status: number) => {
+    if (!interrupted || (status !== 130 && status !== 0)) return status;
+    if (!reportedInterrupt && !ready) console.info(formatTerminalLog("mark", "结束运行"));
+    reportedInterrupt = true;
+    return 0;
+  };
   const stop = (signal: "SIGINT" | "SIGTERM") => {
     stopping = true;
     void supervisor.stop(signal);
   };
-  const interrupt = () => stop("SIGINT");
+  const interrupt = () => { if (!stopping) interrupted = true; stop("SIGINT"); };
   const terminate = () => stop("SIGTERM");
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
@@ -37,10 +46,12 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
       }
     }
     const status = await supervisor.done;
-    return ready && stopping ? 0 : status;
+    return ready && stopping ? 0 : normalizeInterrupt(status);
   } catch (error) {
+    const status = started ? await supervisor.done : 1;
+    if (interrupted && (status === 130 || status === 0)) return normalizeInterrupt(status);
     console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
-    return started ? (await supervisor.done) || 1 : 1;
+    return status || 1;
   } finally {
     closeControl?.();
     process.off("SIGINT", interrupt);

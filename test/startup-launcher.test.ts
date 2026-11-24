@@ -848,3 +848,40 @@ test("初始化准备图库攻略媒体，后续普通启动不再调用任何�
   expect(ready).toContain("fixture host ready");
   expect(await Bun.file(join(cwd, "prepared-resources")).text()).toBe("guides\nmedia\n");
 });
+
+test.skipIf(process.platform === "win32")("日志PTY中Ctrl+C正常退出，后台PID继续运行，自发130仍报失败", async () => {
+ const { cwd } = await fixture();
+ const parent = dirname(cwd), bin = join(parent,"logs-pty-bin"), home = join(parent,".checkout.lotus-pm2");
+ await mkdir(bin); await mkdir(home,{mode:0o700});
+ const entry = join(home,"host-entry.js"), readyFile = join(home,"host-ready");
+ await writeFile(entry,"setInterval(()=>{},1000)");
+ await writeFile(join(cwd,"lib/managed-valkey.ts"), `export async function stopManagedValkey(){await Bun.write(${JSON.stringify(join(home,"valkey-stop"))},"unexpected");throw Error("日志不得停止Valkey");}`);
+ const background = Bun.spawn([process.execPath,"--no-env-file",entry,cwd,readyFile],{cwd:parent,stdin:"ignore",stdout:"ignore",stderr:"ignore"});
+ await writeFile(readyFile,String(background.pid));
+ await writeFile(join(bin,"pm2"), `#!${process.execPath}
+ const [action]=Bun.argv.slice(2);
+ if(action==="jlist")console.log(JSON.stringify([{name:"LOTUS-YUNZAI",pm_id:0,pid:${background.pid},pm2_env:{status:"online",exec_interpreter:"none",pm_cwd:${JSON.stringify(parent)},args:${JSON.stringify(["--no-env-file",entry,cwd,readyFile])}}}]));
+ else if(action==="logs") {
+   if(Bun.env.FIXTURE_FAIL==="1")process.exit(130);
+   process.on("SIGINT",()=>process.exit(130));
+   console.log("logs-pty-ready");setInterval(()=>{},1000);
+ } else process.exit(9);
+ `,{mode:0o700});
+ const daemon = Bun.listen({unix:join(home,"rpc.sock"),socket:{data(){}}});
+ const env = {PATH:bin+":"+process.env.PATH};
+ let text="";
+ const terminal = new Bun.Terminal({cols:100,rows:20,data:(_t,chunk)=>{text+=new TextDecoder().decode(chunk)}});
+ const launcher = Bun.spawn([process.execPath,join(cwd,"scripts/launcher.ts"),"logs"],{cwd,env,terminal});
+ try {
+  for(let attempt=0;attempt<150&&!text.includes("logs-pty-ready");attempt++)await Bun.sleep(20);
+  expect(text).toContain("logs-pty-ready");launcher.kill("SIGINT");
+  expect(await launcher.exited).toBe(0);
+  expect(background.exitCode).toBeNull();process.kill(background.pid,0);
+  const failure = Bun.spawn([process.execPath,join(cwd,"scripts/launcher.ts"),"logs"],{cwd,env:{...env,FIXTURE_FAIL:"1"},stdin:"ignore",stdout:"ignore",stderr:"ignore"});
+  expect(await failure.exited).toBe(130);expect(background.exitCode).toBeNull();
+  expect(await Bun.file(join(home,"valkey-stop")).exists()).toBe(false);
+ } finally {
+  if(launcher.exitCode===null)launcher.kill("SIGKILL");await launcher.exited;terminal.close();
+  background.kill("SIGKILL");await background.exited;daemon.stop(true);
+ }
+},15_000);

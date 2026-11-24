@@ -1,5 +1,5 @@
 import { setInteractiveTerminalInputActive } from "./terminal-output.ts";
-import { createInterface, clearLine, cursorTo } from "node:readline";
+import { createInterface, clearLine, clearScreenDown, cursorTo, moveCursor } from "node:readline";
 
 const historyCommands = new Set([
   "#状态", "#状态Pro", "#状态pro", "#版本",
@@ -57,6 +57,15 @@ export function createTerminalInput(interrupt: () => void) {
     } finally { drawing = false; }
   });
   readline.once("close", () => {
+    if (visible) {
+      drawing = true;
+      try {
+        const { rows } = readline.getCursorPos();
+        if (rows) moveCursor(output, 0, -rows);
+        cursorTo(output, 0);
+        clearScreenDown(output);
+      } finally { drawing = false; }
+    }
     visible = false;
     setInteractiveTerminalInputActive(false);
     process.stdin.removeListener("data", keyboard);

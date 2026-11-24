@@ -2956,7 +2956,12 @@ if (import.meta.main) {
     return explicit || reply !== undefined;
   }
 
-  const interrupt = () => stop(130);
+  const interrupt = () => {
+    if (stopping) return;
+    const report = !handoff.managed;
+    stop(0);
+    if (report) console.info(formatTerminalLog("mark", "结束运行"));
+  };
   const terminate = () => stop(143);
   if (handoff.managed) {
     process.on("SIGINT", interrupt);
@@ -4373,7 +4378,11 @@ if (import.meta.main) {
       queueStartupMessages();
 
       const terminalReply = createTerminalReply(fileToUrl, terminalOutput);
-      consoleInput = createTerminalInput(interrupt);
+      consoleInput = createTerminalInput(() => {
+        const report = !stopping && handoff.managed;
+        interrupt();
+        if (report) console.info(formatTerminalLog("mark", "结束运行"));
+      });
       for await (const message of consoleInput) {
         if (stopping) break;
         const waiting = Promise.withResolvers<void>();

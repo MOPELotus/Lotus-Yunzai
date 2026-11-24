@@ -136,7 +136,9 @@ test.skipIf(process.platform === "win32")("交互终端上下键只召回本次�
       terminal.write("\x03");
       const deadline = performance.now() + 5_000;
       while (child.exitCode === null && child.signalCode === null && performance.now() < deadline) await Bun.sleep(15);
-      expect(child.exitCode).toBe(130);
+      expect(child.exitCode).toBe(0);
+      expect(stripVTControlCharacters(output.output())).toContain("结束运行");
+      expect(stripVTControlCharacters(output.output()).trimEnd()).toMatch(/结束运行$/u);
       expect(await Bun.file(join(root, "data/stdin/history")).exists()).toBe(false);
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -145,3 +147,17 @@ test.skipIf(process.platform === "win32")("交互终端上下键只召回本次�
     }
   });
 }, 20_000);
+
+test.skipIf(process.platform === "win32")("高日志等级仍显示Ctrl+C结束提示，提示后不恢复输入光标",async()=>{
+ await withTerminalFixture(async root=>{
+  await writeFile(join(root,"config/bot.yaml"),"log_level: warn\ncache_group_member: false\n");
+  const output=capture();
+  const terminal=new Bun.Terminal({cols:100,rows:20,data:(_t,chunk)=>output.append(chunk)});
+  const child=Bun.spawn([process.execPath,"app.ts"],{cwd:root,env:flags,terminal});
+  try {
+   await output.until(startup);terminal.write("\x03");
+   expect(await child.exited).toBe(0);
+   expect(stripVTControlCharacters(output.output()).trimEnd()).toMatch(/结束运行$/u);
+  }finally{if(child.exitCode===null)child.kill("SIGKILL");await child.exited;terminal.close();}
+ });
+},10_000);

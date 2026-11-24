@@ -81,14 +81,19 @@ async function relayLogOutput(stream: ReadableStream<Uint8Array>) {
   } finally { reader.releaseLock(); }
 }
 
-async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited"> & { stdout?: ReadableStream<Uint8Array> | number | null }): Promise<number> {
-  const interrupt = () => child.kill("SIGINT");
+async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited"> & { exitCode?: number | null; stdout?: ReadableStream<Uint8Array> | number | null }): Promise<number> {
+  let interrupted = false;
+  const interrupt = () => {
+    interrupted = true;
+    if (child.exitCode !== undefined && child.exitCode !== null) return;
+    child.kill("SIGINT");
+  };
   const terminate = () => child.kill("SIGTERM");
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   try {
     const [code] = await Promise.all([child.exited, child.stdout && typeof child.stdout !== "number" ? relayLogOutput(child.stdout) : undefined]);
-    return code;
+    return interrupted && code === 130 ? 0 : code;
   }
   finally {
     process.off("SIGINT", interrupt);
