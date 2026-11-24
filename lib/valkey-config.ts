@@ -35,17 +35,20 @@ export async function readStorageConnection(
 ): Promise<string | StorageConnectionOptions | undefined> {
   if (url !== undefined) return url;
   const config = await readOptionalLocalConfig(root, "redis");
-  if (!config) return;
+  if (!config) return (await import("./managed-valkey.ts")).managedValkeyConnection(root);
+  if (config.enable === false) return;
   return parseStorageSettings(config);
 }
 
 export function parseStorageSettings(config: Readonly<Record<string, unknown>>): StorageConnectionOptions {
+  if (config.socket !== undefined && (typeof config.socket !== "string" || !config.socket.startsWith("/") || /[\0\r\n]/u.test(config.socket))) throw new Error("redis.yaml 的 socket 须为绝对路径。");
   return {
     host: readHost(config.host),
-    port: readInteger(config.port, "port", 6379, 1, 65535),
+    port: readInteger(config.port, "port", 6379, typeof config.socket === "string" ? 0 : 1, 65535),
     database: readInteger(config.db, "db", 0, 0, Number.MAX_SAFE_INTEGER),
     username: readCredential(config.username, "username"),
     password: readCredential(config.password, "password"),
+    ...(typeof config.socket === "string" && config.socket.startsWith("/") ? { socketPath: config.socket } : {}),
   };
 }
 
@@ -63,10 +66,11 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot | undefine
   try {
     return {
       host: readHost(value.host),
-      port: readInteger(value.port, "port", 6379, 1, 65535),
+      port: readInteger(value.port, "port", 6379, "socketPath" in value && typeof value.socketPath === "string" && value.socketPath.startsWith("/") ? 0 : 1, 65535),
       database: readInteger(value.database, "db", 0, 0, Number.MAX_SAFE_INTEGER),
       username: readCredential("username" in value ? value.username : undefined, "username"),
       password: readCredential("password" in value ? value.password : undefined, "password"),
+      ...("socketPath" in value && typeof value.socketPath === "string" && value.socketPath.startsWith("/") ? { socketPath: value.socketPath } : {}),
     };
   } catch { return; }
 }

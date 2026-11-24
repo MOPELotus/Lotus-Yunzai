@@ -3,6 +3,7 @@ import { createClient } from "redis";
 export { createRoleJsonArchive, type AcquireRoleArchiveLock } from "./role-json-archive.ts";
 
 export interface StorageConnectionOptions {
+  readonly socketPath?: string;
   readonly host: string;
   readonly port: number;
   readonly username?: string;
@@ -45,19 +46,7 @@ export async function connectStorage(connection: string | StorageConnectionOptio
 async function open(connection: string | StorageConnectionOptions): Promise<RedisClient> {
   let redis: RedisClient | undefined;
   try {
-    const direct = typeof connection === "string" ? undefined : connection;
-    redis = createClient({
-      url: typeof connection === "string" ? connection : undefined,
-      username: direct?.username,
-      password: direct?.password,
-      database: direct?.database,
-      disableOfflineQueue: true,
-      socket: {
-        ...(direct && { host: direct.host, port: direct.port }),
-        connectTimeout: 1_500,
-        reconnectStrategy: (attempt) => attempt < 3 ? 200 * (attempt + 1) : false,
-      },
-    });
+    redis = createStorageClient(connection);
     redis.on("error", () => console.warn("[存储] Valkey 连接异常。"));
     await redis.connect();
     await redis.ping();
@@ -67,6 +56,22 @@ async function open(connection: string | StorageConnectionOptions): Promise<Redi
     throw new Error(typeof connection === "string" ? "Valkey 连接失败，请检查服务状态和 LOTUS_VALKEY_URL。"
       : "Valkey 连接失败，请检查服务状态和连接配置。");
   }
+}
+
+export function createStorageClient(connection: string | StorageConnectionOptions) {
+    const direct = typeof connection === "string" ? undefined : connection;
+    return createClient({
+      url: typeof connection === "string" ? connection : undefined,
+      username: direct?.username,
+      password: direct?.password,
+      database: direct?.database,
+      disableOfflineQueue: true,
+      socket: {
+        ...(direct?.socketPath ? { path: direct.socketPath } : direct && { host: direct.host, port: direct.port }),
+        connectTimeout: 1_500,
+        reconnectStrategy: (attempt) => attempt < 3 ? 200 * (attempt + 1) : false,
+      },
+    });
 }
 
 export function closeStorage(): Promise<void> {
