@@ -1,5 +1,7 @@
 import https from "node:https"
 
+export const officialJsonByteLimit = 4 * 1024 * 1024
+
 const BBS_PATHS = ["/apihub/api/home/new", "/post/wapi/userPost", "/post/wapi/searchPosts", "/post/wapi/getPostFull"]
 const OFFICIAL_ROUTES = new Map([
   ["bbs-api.mihoyo.com", BBS_PATHS],
@@ -40,7 +42,7 @@ export function requestOfficialJson(url: string | URL, { headers = {}, timeoutMs
       let bytes = 0
       response.on("data", (chunk: Buffer) => {
         bytes += chunk.length
-        if (bytes > 4 * 1024 * 1024) response.destroy(new Error("官方接口响应过大"))
+        if (bytes > officialJsonByteLimit) response.destroy(new Error("官方接口响应过大"))
         else chunks.push(chunk)
       })
       response.on("error", reject)

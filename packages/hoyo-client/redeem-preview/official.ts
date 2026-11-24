@@ -1,6 +1,7 @@
 // Public official APIs only. No account cookie or redemption API is needed.
-import { officialReadTarget, requestOfficialJson, type OfficialJsonOptions } from "./http.ts"
+import { officialJsonByteLimit, officialReadTarget, requestOfficialJson, type OfficialJsonOptions } from "./http.ts"
 import { setTimeout as delay } from "node:timers/promises"
+import { readGameRecordPayload } from "../game-record.ts"
 import type { RedeemGame } from "./games.ts"
 import type { RedeemPreviewOptions } from "./index.ts"
 
@@ -198,11 +199,17 @@ export class MiyoliveProvider {
     let liveIndexGone = false
     try {
       let response!: Response
+      let requestSignal!: AbortSignal
       for (const waitMs of [0, 800, 1800]) {
         if (waitMs) await delay(waitMs, undefined, { signal: this.signal })
         const timeout = AbortSignal.timeout(Math.min(10000, Math.max(1, deadline - Date.now())))
+        requestSignal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout
         response = await this.fetch(target.href, { method: "GET", credentials: "omit", redirect: "error",
-          headers, signal: this.signal ? AbortSignal.any([this.signal, timeout]) : timeout })
+          headers, signal: requestSignal })
+        if (response.redirected || (response.url && response.url !== target.href)) {
+          await response.body?.cancel().catch(() => undefined)
+          throw Object.assign(new Error("官方接口回包地址不一致"), { retryable: false })
+        }
         if (response.status !== 403 || waitMs === 1800 || deadline - Date.now() < 3000) break
         await response.body?.cancel().catch(() => {})
       }
@@ -216,7 +223,9 @@ export class MiyoliveProvider {
         await response.body?.cancel().catch(() => {})
         throw error
       }
-      body = await response.json()
+      body = await readGameRecordPayload(response, officialJsonByteLimit, requestSignal)
+      requestSignal.throwIfAborted()
+      if (!body) throw new Error("官方接口响应格式异常或超限")
     } catch (error) {
       this.signal?.throwIfAborted()
       const endpoint = `${target.hostname}${target.pathname}`

@@ -64,6 +64,49 @@ test("仅官方直播索引 HTTP 410 触发一次匿名直连", async () => {
   expect(direct).toHaveLength(2);
 });
 
+test("匿名前瞻读取拒绝跳转及错地址的成功回包", async () => {
+  const index = "https://api-takumi.mihoyo.com/event/miyolive/index";
+  let fallback = 0;
+  for (const properties of [{ redirected: true, url: index }, {
+    redirected: false, url: "https://api-takumi.mihoyo.com/other",
+  }]) {
+    const provider = new MiyoliveProvider({
+      async fetch() {
+        const response = Response.json({ retcode: 0, data: { index: "fixture" } });
+        Object.defineProperties(response, {
+          redirected: { value: properties.redirected }, url: { value: properties.url },
+        });
+        return response;
+      },
+      async directRequest() { fallback++; return {} },
+    });
+    await expect(provider.request(index)).rejects.toThrow("官方接口回包地址不一致");
+  }
+  expect(fallback).toBe(0);
+});
+
+test("匿名前瞻读取拒绝超过原直连上限的 JSON 并释放响应流", async () => {
+  const endpoint = "https://bbs-api.mihoyo.com/post/wapi/userPost";
+  const padding = " ".repeat(1024 * 1024);
+  const text = new TextEncoder();
+  let reads = 0;
+  let cancelled = false;
+  const provider = new MiyoliveProvider({ async fetch() {
+    return new Response(new ReadableStream({
+      pull(stream) {
+        reads++;
+        if (reads === 1) stream.enqueue(text.encode('{"retcode":0,"data":{"list":[]}}'));
+        else if (reads > 8) stream.close();
+        else stream.enqueue(text.encode(padding));
+      },
+      cancel() { cancelled = true },
+    }));
+  } });
+  await expect(provider.request(endpoint)).rejects.toThrow("官方接口响应格式异常或超限");
+  expect(reads).toBeLessThan(8);
+  expect(cancelled).toBe(true);
+});
+
 test("首页返回异常结构时保留有效同版本官帖的未来开播公告", async () => {
   const announcement = { ...recap, content: "前瞻特别节目将于10月23日20:00播出。", created_at: start / 1000 - 86400 };
   const provider = new MiyoliveProvider({ now: () => start - 3600_000, async fetch(url) {
