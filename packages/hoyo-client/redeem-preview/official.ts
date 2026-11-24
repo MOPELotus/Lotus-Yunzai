@@ -163,7 +163,17 @@ export function activityIds(value: unknown): string[] {
 function normalizePost(item: unknown): OfficialPost | null {
   const row = item as PostEnvelope | undefined
   const post = row?.post?.post || row?.post || row
-  return post?.post_id ? post : null
+  return post && (typeof post.post_id === "string" ||
+    (typeof post.post_id === "number" && Number.isSafeInteger(post.post_id))) &&
+    /^[1-9]\d{0,23}$/.test(String(post.post_id)) && typeof post.subject === "string" ? post : null
+}
+
+function checkedLists<T extends object>(data: T | null, ...fields: (keyof T)[]): T {
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      fields.some(field => data[field] != null && !Array.isArray(data[field]))) {
+    throw new Error("官方活动列表格式异常")
+  }
+  return data
 }
 
 export class MiyoliveProvider {
@@ -238,15 +248,19 @@ export class MiyoliveProvider {
 
   async discover(game: RedeemGame, remembered: readonly string[] = []): Promise<Discovery> {
     const [homeResult, postsResult] = await Promise.allSettled([
-      this.request<{ readonly navigator?: readonly { readonly name?: string }[] }>(`https://bbs-api.miyoushe.com/apihub/api/home/new?gids=${game.gids}&parts=1%2C3%2C4`),
-      this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=0`),
+      this.request<{ readonly navigator?: readonly ({ readonly name?: string } | null)[] }>(`https://bbs-api.miyoushe.com/apihub/api/home/new?gids=${game.gids}&parts=1%2C3%2C4`)
+        .then(data => checkedLists(data, "navigator")),
+      this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=0`)
+        .then(data => checkedLists(data, "list")),
     ])
     const errors = [homeResult, postsResult].filter(r => r.status === "rejected").map(r => (r.reason as RequestFailure).message)
     const ids = new Set<string>()
     const navigationIds = new Set<string>()
     if (homeResult.status === "fulfilled") {
-      for (const nav of homeResult.value!.navigator || []) {
-        if (/前瞻|特别节目|直播|兑换码/.test(nav.name || "")) activityIds(nav).forEach(id => { ids.add(id); navigationIds.add(id) })
+      for (const nav of homeResult.value.navigator || []) {
+        if (typeof nav?.name === "string" && /前瞻|特别节目|直播|兑换码/.test(nav.name)) {
+          activityIds(nav).forEach(id => { ids.add(id); navigationIds.add(id) })
+        }
       }
     }
     const posts: OfficialPost[] = []
@@ -254,17 +268,17 @@ export class MiyoliveProvider {
       for (const item of list || []) {
         const post = normalizePost(item)
         if (!post || String(post.uid) !== game.uid || !(game.postPattern || /前瞻|特别节目|直播|兑换码/).test(post.subject || "")) continue
-        if (!posts.some(p => p.post_id === post.post_id)) posts.push(post)
+        if (!posts.some(p => String(p.post_id) === String(post.post_id))) posts.push(post)
         activityIds(post).forEach(id => ids.add(id))
       }
     }
     if (postsResult.status === "fulfilled") {
-      let page = postsResult.value!
+      let page = postsResult.value
       addPosts(page.list)
       // Official accounts can publish many posts between livestreams.
       for (let i = 0; i < 2 && !page.is_last && page.next_offset && !posts.some(p => versionOf(p.subject)); i++) {
         try {
-          page = (await this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=${encodeURIComponent(page.next_offset)}`))!
+          page = checkedLists(await this.request<PostPage>(`${BBS}/post/wapi/userPost?uid=${game.uid}&size=50&offset=${encodeURIComponent(page.next_offset)}`), "list")
           addPosts(page.list)
         } catch (error) { errors.push((error as RequestFailure).message); break }
       }
@@ -276,7 +290,7 @@ export class MiyoliveProvider {
       const keyword = game.searchKeyword || (version && `${version} 前瞻 特别节目`)
       if (keyword) {
         try {
-          const search = (await this.request<PostPage>(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`))!
+          const search = checkedLists(await this.request<PostPage>(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`), "posts", "list")
           addPosts(search.posts || search.list)
         } catch (error) { errors.push((error as RequestFailure).message) }
       }
@@ -288,11 +302,11 @@ export class MiyoliveProvider {
       return (newestVersion && version === newestVersion) || (game.searchKeyword && !version && /特别节目/.test(p.subject))
     }).sort((a, b) => Number(b.created_at) - Number(a.created_at)).slice(0, 5)
     const details = await Promise.allSettled(relevant.map(p => this.request<{ readonly post?: unknown }>(`${BBS}/post/wapi/getPostFull?post_id=${p.post_id}&gids=${game.gids}&read=0`)))
-    for (const result of details) {
+    for (const [index, result] of details.entries()) {
       if (result.status !== "fulfilled") continue
-      const post = normalizePost(result.value!.post)
-      if (post && String(post.uid) === game.uid) {
-        const i = posts.findIndex(p => p.post_id === post.post_id)
+      const post = normalizePost(result.value?.post)
+      if (post && String(post.uid) === game.uid && String(post.post_id) === String(relevant[index]?.post_id)) {
+        const i = posts.findIndex(p => String(p.post_id) === String(post.post_id))
         if (i >= 0) posts[i] = post
         activityIds(post).forEach(id => ids.add(id))
       }

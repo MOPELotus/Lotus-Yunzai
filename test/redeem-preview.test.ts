@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { MiyoliveProvider, parseOfficialDate } from "../packages/hoyo-client/redeem-preview/official.ts";
+import { REDEEM_GAMES } from "../packages/hoyo-client/redeem-preview/games.ts";
 import { CommandRegistry, sendCommandReply } from "../lib/commands.ts";
 import type { MessageEvent, MessageReply } from "../lib/messages.ts";
 import { redeemCodeCommands } from "../lib/redeem-code-commands.ts";
@@ -61,6 +62,84 @@ test("仅官方直播索引 HTTP 410 触发一次匿名直连", async () => {
   await expect(provider.request(index, activity)).rejects.toThrow();
   expect(calls).toHaveLength(4);
   expect(direct).toHaveLength(2);
+});
+
+test("首页返回异常结构时保留有效同版本官帖的未来开播公告", async () => {
+  const announcement = { ...recap, content: "前瞻特别节目将于10月23日20:00播出。", created_at: start / 1000 - 86400 };
+  const provider = new MiyoliveProvider({ now: () => start - 3600_000, async fetch(url) {
+    const path = new URL(url).pathname;
+    if (path === "/apihub/api/home/new") return Response.json({ retcode: 0, data: { navigator: { name: "前瞻" } } });
+    if (path === "/post/wapi/userPost") return Response.json({ retcode: 0, data: { list: [announcement], is_last: true } });
+    if (path === "/post/wapi/getPostFull") return Response.json({ retcode: 0, data: { post: announcement } });
+    if (path === "/post/wapi/searchPosts") return Response.json({ retcode: 0, data: { posts: [] } });
+    throw new Error("没有可验证的活动，不能请求直播索引");
+  } });
+  expect(await provider.discover(REDEEM_GAMES[0])).toMatchObject({
+    activity: null, activities: [], announcement: { startAt: start, postId: "101" },
+  });
+});
+
+test("只从请求所对应的官方帖补活动 ID，跳过不可用的导航及帖子条目", async () => {
+  const requestedPostIds: string[] = [];
+  const requestedActivities: string[] = [];
+  const provider = new MiyoliveProvider({ now: () => start, async fetch(url, init) {
+    const target = new URL(url);
+    const ok = (data: object) => Response.json({ retcode: 0, data });
+    switch (target.pathname) {
+      case "/apihub/api/home/new":
+        return ok({ navigator: [null, { name: "前瞻直播", link: page }] });
+      case "/post/wapi/userPost":
+        return ok({ list: [recap, { ...recap, post_id: "102&read=1" }], is_last: true });
+      case "/post/wapi/getPostFull":
+        requestedPostIds.push(target.searchParams.get("post_id")!);
+        return ok({ post: { ...recap, post_id: "103", content: page.replace(activity, "differentPost") } });
+      case "/event/miyolive/index":
+        requestedActivities.push(new Headers(init.headers).get("x-rpc-act_id")!);
+        return ok({ streamer: { aid: author }, live: { title, start: "2026-10-23 20:00:00" } });
+      default:
+        throw new Error("不应查询其他官方路由");
+    }
+  } });
+  const found = await provider.discover(REDEEM_GAMES[0]);
+  expect(found.activities).toEqual([activity]);
+  expect(requestedPostIds).toEqual(["101"]);
+  expect(requestedActivities).toEqual([activity]);
+});
+
+test("首页无活动时分页查官方作者，再从搜索和详情找回当前活动", async () => {
+  const paths: string[] = [];
+  const activityRequests: string[] = [];
+  const provider = new MiyoliveProvider({ now: () => start, async fetch(url, init) {
+    const target = new URL(url);
+    paths.push(target.pathname);
+    const ok = (data: object) => Response.json({ retcode: 0, data });
+    switch (target.pathname) {
+      case "/apihub/api/home/new":
+        return ok({ navigator: [] });
+      case "/post/wapi/userPost":
+        if (target.searchParams.get("offset") === "0") {
+          return ok({ list: [{ ...recap, subject: "未公布版号的直播" }], next_offset: "2&gids=9" });
+        }
+        expect(target.searchParams.get("offset")).toBe("2&gids=9");
+        expect(target.searchParams.has("gids")).toBe(false);
+        return ok({ list: [{ ...recap, post_id: "102" }], is_last: true });
+      case "/post/wapi/searchPosts":
+        expect(target.searchParams.get("keyword")).toBe("7.2 前瞻 特别节目");
+        return ok({ posts: [{ ...recap, uid: "1", link: page.replace(activity, "unrelated") }, { ...recap, post_id: "102" }] });
+      case "/post/wapi/getPostFull":
+        expect(target.searchParams.get("post_id")).toBe("102");
+        return ok({ post: { ...recap, post_id: "102", content: page } });
+      case "/event/miyolive/index":
+        activityRequests.push(new Headers(init.headers).get("x-rpc-act_id")!);
+        return ok({ streamer: { aid: author }, live: { title, start: "2026-10-23 20:00:00" } });
+      default:
+        throw new Error("不应查询其他官方路由");
+    }
+  } });
+  expect((await provider.discover(REDEEM_GAMES[0])).activities).toEqual([activity]);
+  expect(paths.filter(path => path === "/post/wapi/userPost")).toHaveLength(2);
+  expect(paths).toContain("/post/wapi/searchPosts");
+  expect(activityRequests).toEqual([activity]);
 });
 
 type MockOptions = {
