@@ -5,7 +5,7 @@ import { segment } from "./messages.ts";
 
 export type GachaGame = Game;
 export type GachaUpdater = (qq: string, profileId: number, notify?: () => unknown,
-  isDelegated?: boolean) => Promise<{ readonly uid: string } | undefined>;
+  isDelegated?: boolean, signal?: AbortSignal) => Promise<{ readonly uid: string } | undefined>;
 
 type Render = (title: string, lead: string, rows: readonly string[], at: Date) => Promise<{ readonly png: Uint8Array }>;
 type Entry = { readonly updater: GachaUpdater };
@@ -49,10 +49,10 @@ function rejected(error: unknown, profileId: number): Outcome {
   return failed("更新未完成，请稍后再试");
 }
 
-async function update(entry: Entry | undefined, qq: string, profileId: number, isDelegated?: boolean): Promise<Outcome> {
+async function update(entry: Entry | undefined, qq: string, profileId: number, signal: AbortSignal, isDelegated?: boolean): Promise<Outcome> {
   if (!entry) return skipped("游戏插件未加载，跳过");
   try {
-    const result = await entry.updater(qq, profileId, undefined, isDelegated);
+    const result = await entry.updater(qq, profileId, undefined, isDelegated, signal);
     if (!result) return skipped("已在更新，跳过");
     if (!/^[1-9]\d*$/u.test(result.uid)) return failed("更新结果缺少有效 UID");
     return { status: "done", text: `UID ${result.uid} · 完成` };
@@ -83,7 +83,11 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
   }
 
   const fallback: MessageFallback = async (_message, context) => {
-    if (signal.aborted || !batchCommand.test(context.normalizedMessage)) return;
+    if (!batchCommand.test(context.normalizedMessage)) return;
+    const session = context.isDelegated ? context.delegationSignal : context.message_type === "group"
+      ? context.groupActivitySignal : context.privateCredentialSignal;
+    const workflow = session ? AbortSignal.any([signal, session]) : signal;
+    if (workflow.aborted) return;
     const { user_id } = context;
     if (typeof user_id !== "number" || !Number.isSafeInteger(user_id) || user_id < 1) {
       return "请从登录档案对应的 QQ 会话更新全部抽卡记录。";
@@ -93,7 +97,7 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
     active.add(qq);
     try {
       const ids = await listIds(qq).catch(() => undefined);
-      if (signal.aborted) return;
+      if (workflow.aborted) return;
       if (!ids) return "[gacha] 读取档案列表失败，请稍后再试。";
       if (!ids.length) return "[gacha] 没有找到你的 profile。";
 
@@ -102,13 +106,13 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
       const rows: string[] = [];
       for (const profileId of ids) {
         for (const game of profileGames) {
-          if (signal.aborted) return;
-          const result = await update(providers.get(game), qq, profileId, game === "gs" ? context.isDelegated : undefined);
+          if (workflow.aborted) return;
+          const result = await update(providers.get(game), qq, profileId, workflow, game === "gs" ? context.isDelegated : undefined);
           counts[result.status]++;
           rows.push(`P${profileId} ${names[game]}：${result.text}`);
         }
       }
-      if (signal.aborted) return;
+      if (workflow.aborted) return;
       const badge = counts.failed ? "部分失败" : "完成";
       const lead = `QQ ${qq}\n${badge} · 完成 ${counts.done} 项，跳过 ${counts.skipped} 项，失败 ${counts.failed} 项。`;
       if (rows.length > maxCardRows) {
@@ -121,9 +125,9 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
 
       try {
         const { png } = await render(title, lead, rows, new Date());
-        if (!signal.aborted) return segment.image(png);
+        if (!workflow.aborted) return segment.image(png);
       } catch {
-        if (!signal.aborted) return [title, lead, ...rows].join("\n");
+        if (!workflow.aborted) return [title, lead, ...rows].join("\n");
       }
     } finally {
       active.delete(qq);

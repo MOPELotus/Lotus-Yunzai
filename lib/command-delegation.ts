@@ -82,7 +82,7 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
         self_id: actor.self_id, user_id: userId, group_id: groupId,
         post_type: "message", message_type: isGroup ? "group" : "private", sub_type: isGroup ? "normal" : "friend",
         isGroup, isPrivate: !isGroup, isMaster: isMaster(actor.self_id, userId),
-        atBot: true, isDelegated: true, boundAccount: false, botMute,
+        atBot: true, isDelegated: true, boundAccount: false, botMute, delegationSignal: cancellation,
         isFriend: () => session.isFriend(userId),
         ...(groupId !== undefined && session.readRoster && {
           async [legacyGroupMemberRoster]() {

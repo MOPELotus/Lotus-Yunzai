@@ -17,6 +17,34 @@ function context(normalizedMessage: string, replies: MessageReply[] = [], user_i
     reply(message) { replies.push(message); return true; } };
 }
 
+test("原会话中止会取消在途抽卡，停止余下游戏并释放批量占位", async () => {
+  const session = new AbortController();
+  const reached = Promise.withResolvers<void>();
+  const calls: string[] = [];
+  const batch = createGachaBatch({
+    listIds: async () => [1, 2], signal: new AbortController().signal,
+    render: async () => ({ png: image }),
+  });
+  batch.register("gs", async (_qq, id, _notify, _delegated, active) => {
+    if (!active) throw new Error("未传入原会话");
+    calls.push(`gs/${id}`);
+    if (calls.length === 1) {
+      reached.resolve();
+      await Bun.sleep(0);
+      active.throwIfAborted();
+    }
+    return { uid: "100000001" };
+  });
+  batch.register("sr", async (_qq, id) => { calls.push(`sr/${id}`); return { uid: "100000001" }; });
+  const running = batch.fallback(command, { ...context(command), privateCredentialSignal: session.signal });
+  await Promise.race([reached.promise, Bun.sleep(100).then(() => { throw new Error("批量未开始"); })]);
+  session.abort();
+  expect(await running).toBeUndefined();
+  expect(calls).toEqual(["gs/1"]);
+  expect(await batch.fallback(command, context(command))).toEqual({ type: "image", file: image });
+  expect(calls).toEqual(["gs/1", "gs/1", "sr/1", "gs/2", "sr/2"]);
+});
+
 test("keeps the original aliases and profile/game order, and reports independent failures in the original summary card", async () => {
   const calls: [string, number, GachaGame][] = [];
   const seen: unknown[] = [];
