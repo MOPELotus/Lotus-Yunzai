@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
@@ -157,8 +158,11 @@ export function accountCommands(
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
         return "请从 QQ 会话发送配置查询指令。";
       }
+      const signal = context.message_type === "group" ? context.groupActivitySignal : context.privateCredentialSignal;
+      if (signal?.aborted) return [];
       const qq = String(context.user_id);
       const profile = await profiles.describe(qq, id).catch(() => undefined);
+      if (signal?.aborted) return [];
       if (!profile?.loggedIn) return `[account] 请先扫码登录 profile ${id}。`;
       const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
         : profile.schedule.mode === "random" ? "随机" : "跟随全局";
@@ -197,10 +201,12 @@ export function accountCommands(
         ...(profile.rolesPending ? ["角色暂未同步，可发送 #同步角色 后重试。"] : []),
         ...(!profile.device.hasFingerprint ? ["社区任务需要配对的设备 ID 与 FP，也可绑定真机。"] : []),
       ];
+      let image: Uint8Array | undefined;
       try {
         const { renderProfileCard } = await import("@lotus-yunzai/skia/profile");
         const { loadProfileRoleArtwork } = await import("./profile-role-artwork.ts");
-        const artwork = await loadProfileRoleArtwork(roleGroups.flatMap(({ rows }) => rows.map(({ avatar }) => avatar)));
+        const artwork = await loadProfileRoleArtwork(roleGroups.flatMap(({ rows }) => rows.map(({ avatar }) => avatar)), { signal });
+        if (signal?.aborted) return [];
         const { png } = await renderProfileCard({
           title, subtitle, summary, account, settings, warnings,
           roleGroups: roleGroups.map(({ label, rows }) => ({
@@ -208,10 +214,17 @@ export function accountCommands(
           })),
           generatedAt: new Date().toLocaleString("sv-SE", { hour12: false }),
         }, { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined });
-        if (png.byteLength) return segment.image(png);
+        if (png.byteLength) image = png;
       } catch {
         // Settings stay readable if the original resources are absent.
       }
+      if (signal?.aborted) return [];
+      const current = await profiles.describe(qq, id).catch(() => undefined);
+      if (signal?.aborted) return [];
+      if (!isDeepStrictEqual(profile, current)) {
+        return `档案在查询期间已更新，请重新发送 #配置${id === 1 ? "" : id}。`;
+      }
+      if (image) return segment.image(image);
       return [title, subtitle, summary, ...account.map(({ label, value }) => `${label} · ${value}`),
         ...roleGroups.map(({ label, rows }) => `${label} · ${rows.map(({ uid, active }) => `${uid}${active ? "（当前）" : ""}`).join("、") || "未同步"}`),
         ...settings.map(({ label, value }) => `${label} · ${value}`), ...warnings].join("\n");
