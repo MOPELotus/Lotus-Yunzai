@@ -38,6 +38,7 @@ const statusMessage = {
 const details = {
   changed: "档案绑定的米游社账号或设备已变化，请重新预约。",
   resolveAccount: "请在当前档案登录原米游社账号，再核对这笔兑换记录。",
+  trackerRoleChanged: "当前档案的游戏 UID 已换绑，请重新建立追踪。",
   legacy: "旧版预约缺少账号绑定核验，请重新确认商品后预约。",
   updated: "官方调整了开放时间，预约已同步。",
   conditions: "商品、余额或兑换目标已变化，请重新预约。",
@@ -154,6 +155,10 @@ export class MiyousheShopPlanError extends Error {
 
 function bad(message: string): never { throw new MiyousheShopPlanError(400, message); }
 function conflict(message: string): never { throw new MiyousheShopPlanError(409, message); }
+function trackerBindingChanged(error: unknown): error is MiyousheShopPlanError {
+  return error instanceof MiyousheShopPlanError &&
+    (error.message === details.changed || error.message === details.trackerRoleChanged);
+}
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
@@ -523,7 +528,7 @@ export function createMiyousheShopPlans({
     if (!rule.role) return;
     if (!trackingGame(rule.game)) conflict("无法核验该分区的游戏角色。");
     const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[rule.game]);
-    if (selected !== rule.role.uid) conflict("当前档案的游戏 UID 已换绑，请重新建立追踪。");
+    if (selected !== rule.role.uid) conflict(details.trackerRoleChanged);
   }
 
   async function verifyTrackerTarget(target: MiyousheOverviewTarget, rule: Pick<ShopTracker, "game" | "itemType" | "role" | "addressId">,
@@ -669,7 +674,7 @@ export function createMiyousheShopPlans({
         const reason = asRecord(error)?.reason;
         if (reason === "verification" || reason === "rate-limited" || asRecord(error)?.status === 429) {
           pauseTracks(data, rule.accountId, reason === "verification" ? details.verification : details["rate-limited"]);
-        } else if (phase === "binding" || (error instanceof MiyousheShopPlanError && error.message === details.changed)) {
+        } else if (phase === "binding" || trackerBindingChanged(error)) {
           pauseTracks(data, rule.accountId, trackerMessages.changed, rule.id);
         } else {
           current.message = trackerMessages.retry;
@@ -867,6 +872,9 @@ export function createMiyousheShopPlans({
           } else if (error instanceof MiyousheExchangeError && (error.reason === "verification" || error.reason === "rate-limited")) {
             finish(current, "failed", details[error.reason]);
             pauseTracks(data, current.accountId, current.message);
+          } else if (current.trackingId && trackerBindingChanged(error)) {
+            finish(current, "failed", error.message);
+            if (trackerIsCurrent(data, current)) pauseTracks(data, current.accountId, trackerMessages.changed, current.trackingId);
           } else finish(current, "failed", message);
         });
       } finally {

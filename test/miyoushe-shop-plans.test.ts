@@ -646,3 +646,32 @@ test("追踪同档限购已满不创建计划，预订后满额也不派发", as
     });
   }
 });
+
+test("已预约的追踪发现档案 UID 换绑时立即停止该规则", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let inspections = 0, attempts = 0;
+    const options = { file, profileDirectory, now: () => startTime,
+      async inspect() {
+        if (++inspections === 3) {
+          const source = join(profileDirectory, "42.yaml");
+          const data = Bun.YAML.parse(await readFile(source, "utf8")) as { account: { current_uid: { gs: string } } };
+          data.account.current_uid.gs = "2000042";
+          await writeFile(source, Bun.YAML.stringify(data));
+        }
+        return inspection(trackedGood);
+      },
+      tracking: { async catalog() { return [trackedGood]; }, async destinations() { return { roles: [planRole] }; } },
+      async submit() { attempts++; return "succeeded" as const; },
+    };
+    const service = createMiyousheShopPlans(options);
+    const tracked = await service.createTracker(target, trackingBody);
+    await service.scan();
+    expect(attempts).toBe(0);
+    expect((await service.list(target)).plans).toEqual([expect.objectContaining({ status: "failed", attempts: 0 })]);
+    const restarted = createMiyousheShopPlans(options);
+    expect((await restarted.listTrackers(target)).trackers[0]).toMatchObject({
+      id: tracked.id, enabled: false, needsConfirmation: false, message: "档案绑定已变更，请重新建立追踪。",
+    });
+    await expect(restarted.setTracker(target, tracked.id, true, true)).rejects.toMatchObject({ status: 409 });
+  });
+});
