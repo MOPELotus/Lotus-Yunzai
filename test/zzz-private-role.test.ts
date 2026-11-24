@@ -25,8 +25,10 @@ device: { id: fixture-device, fp: fixture-fp }
     const module = createModule({ signal: new AbortController().signal, lockFile: async () => {
       throw new Error("战绩读取不需要写锁。");
     } });
-    const run = (message: string) => module.fallback(message, {
+    const current = new AbortController();
+    const run = (message: string, context?: { isDelegated?: boolean; privateCredentialSignal?: AbortSignal }) => module.fallback(message, {
       normalizedMessage: message, message_type: "private", user_id: 42, self_id: 99, reply: () => true,
+      privateCredentialSignal: current.signal, ...context,
     });
     await save("32345678");
     for (const command of ["%card3", "%获取抽卡链接3", "%更新抽卡记录3", "%迷宫战绩3 页 2", "%探索度3", "%临界3", "%爬塔3", "%迷失3"]) {
@@ -35,6 +37,10 @@ device: { id: fixture-device, fp: fixture-fp }
     expect(request).not.toHaveBeenCalled();
 
     await save("92345678");
+    expect(await run("%获取抽卡链接3", { isDelegated: true })).toContain("好友私聊");
+    expect(await run("%获取抽卡链接3", { privateCredentialSignal: AbortSignal.abort() })).toBeUndefined();
+    expect(request).not.toHaveBeenCalled();
+
     expect(await run("%临界3")).toBe("本期暂无临界推演战绩。");
     expect(request).toHaveBeenCalledTimes(1);
     const url = new URL(String(request.mock.calls[0]?.[0]));

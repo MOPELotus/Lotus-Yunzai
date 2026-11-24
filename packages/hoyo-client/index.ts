@@ -36,6 +36,7 @@ import { readStarRailMonthly, type StarRailMonthlyOptions } from "./starrail-mon
 import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, type StarRailOnlineOptions } from "./starrail-ledger.ts";
 import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
+import { resolveZzzGachaLinkRole } from "./zzz-gacha-link.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
 import { readHoYoLabZzzGameRecord, readZzzGameRecord, readZzzOwnedBuddyRoster } from "./zzz-game-record.ts";
 import { readZzzHoloBoss } from "./zzz-holo-boss.ts";
@@ -761,7 +762,19 @@ export function createHoyoClient(
       return readForZzzTuning(source, options, readZzzTuning);
     },
     fetchZzzGachaAuthKey(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
-      return readForProfile(source, options, readZzzGachaAuthKey, isZzzGachaAuthExpired);
+      return readForProfile(source, options, async (current, request, sameOptions, guard) => {
+        const profiles = recovery?.profiles;
+        if (current.revision === source.revision || !profiles?.requestSelectedContext) {
+          return readZzzGachaAuthKey(current, request, sameOptions, guard);
+        }
+        const changed = new HoyoRequestError("profile-changed", "续期后绝区零档案的角色已变更，请重新获取抽卡链接。");
+        const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "zzz").catch(() => { throw changed; });
+        const before = resolveZzzGachaLinkRole(source.role);
+        const after = resolveZzzGachaLinkRole(selected.role);
+        if (selected.revision !== current.revision || after.uid !== before.uid ||
+            after.region !== before.region || after.gameBiz !== before.gameBiz) throw changed;
+        return readZzzGachaAuthKey(selected, request, sameOptions, guard);
+      }, isZzzGachaAuthExpired);
     },
     fetchZzzGameRecord(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readZzzGameRecord, isGameRecordCookieExpired);
