@@ -721,7 +721,18 @@ export function createHoyoClient(
       return readForProfile(source, options, readStarRailRogue, isGameRecordCookieExpired);
     },
     fetchStarRailChallenge(source: ProfileRequestContext, options: StarRailChallengeOptions) {
-      return readForProfile(source, options, readStarRailChallenge, isGameRecordCookieExpired);
+      return readForProfile(source, options, async (current, request, attempt, guard) => {
+        const profiles = recovery?.profiles;
+        if (current.revision === source.revision || !profiles?.requestSelectedContext) {
+          return readStarRailChallenge(current, request, attempt, guard);
+        }
+        const changed = new HoyoRequestError("profile-changed", "续期后星铁档案角色已变更，请重新查询。");
+        const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "sr").catch(() => { throw changed; });
+        if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
+            (!isUnspecifiedCnRecordRegion(source.role.region) && selected.role.region !== source.role.region) ||
+            (source.role.gameBiz && selected.role.gameBiz !== source.role.gameBiz)) throw changed;
+        return readStarRailChallenge(selected, request, attempt, guard);
+      }, isGameRecordCookieExpired);
     },
     fetchStarRailLedger(source: ProfileRequestContext, options: StarRailLedgerOptions) {
       // This service mints a ticket with the SToken. Exchanging a Cookie cannot replace it.

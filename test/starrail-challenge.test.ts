@@ -211,3 +211,37 @@ test("星铁旧档缺省标记仅复用已知国服挑战区服，明确错区�
     }, options)).rejects.toMatchObject({ code: "invalid-input" });
   }
 });
+
+test("星铁战绩只在续期后仍是原选角时发出重试", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-sr-challenge-guard-"));
+  try {
+    const profiles = createProfileStore(directory);
+    const qq = "42", oldUid = "100000123", newUid = "100000124";
+    await writeFile(join(directory, "42-2.yaml"), Bun.YAML.stringify({
+      user: { qq }, profile: { id: 2 },
+      account: {
+        ltuid: "12", stuid: "12", stoken: "fixture-token", cookie: "ltuid=12;cookie_token=before-renewal",
+        game_roles: { sr: [{ uid: oldUid, region: "prod_gf_cn", game_biz: "hkrpg_cn" }] }, current_uid: { sr: oldUid },
+      },
+    }));
+    const start = await profiles.requestSelectedContext(qq, 2, "sr");
+    const reads: string[] = [];
+    const client = createHoyoClient(async endpoint => {
+      if (endpoint.pathname === "/binding/api/getUserGameRolesByCookie") {
+        return Response.json({ retcode: 0, data: { list: [{ game_uid: newUid, region: "prod_gf_cn", game_biz: "hkrpg_cn" }] } });
+      }
+      const uid = endpoint.searchParams.get("role_id");
+      reads.push(uid ?? "");
+      return reads.length === 1 ? Response.json({ retcode: -100 }) : Response.json({ retcode: 0, data: { role: { role_id: uid } } });
+    }, { profiles, syncRoles: true, exchange: async () => ({ ltoken: "new-token", cookie: "ltuid=12;cookie_token=after-renewal" }) });
+
+    await expect(client.fetchStarRailChallenge(start, { kinds: ["hall"], period: "current", simple: true }))
+      .rejects.toMatchObject({ code: "profile-changed" });
+    expect(reads).toEqual([oldUid]);
+    const updated = await profiles.requestSelectedContext(qq, 2, "sr");
+    expect(updated.role.uid).toBe(newUid);
+    expect(updated.account.cookie).toContain("after-renewal");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
