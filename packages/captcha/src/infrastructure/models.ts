@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createReadStream, createWriteStream } from 'node:fs'
@@ -20,10 +21,12 @@ export interface ModelAssetProgress {
   readonly stage: 'checking' | 'downloading' | 'verifying'
   readonly bytes: number
   readonly totalBytes: number
+  readonly attempt?: number
+  readonly maxAttempts?: number
 }
 export type ModelAssetProgressListener = (progress: ModelAssetProgress) => unknown
 
-function modelProgress(asset: ModelAsset, signal?: AbortSignal, onProgress?: ModelAssetProgressListener) {
+function modelProgress(asset: ModelAsset, signal?: AbortSignal, onProgress?: ModelAssetProgressListener, attempt?: number) {
   let lastStage: ModelAssetProgress['stage'] | undefined
   let lastTime = -Infinity
   return (stage: ModelAssetProgress['stage'], bytes: number, force = false) => {
@@ -33,7 +36,7 @@ function modelProgress(asset: ModelAsset, signal?: AbortSignal, onProgress?: Mod
     lastStage = stage
     lastTime = time
     try {
-      void Promise.resolve(onProgress({ modelId: asset.id, stage, bytes, totalBytes: asset.size })).catch(() => {})
+      void Promise.resolve(onProgress({ modelId: asset.id, stage, bytes, totalBytes: asset.size, ...(attempt && { attempt, maxAttempts: 3 }) })).catch(() => {})
     } catch { /* A progress display must not interrupt model preparation. */ }
   }
 }
@@ -111,12 +114,8 @@ export class ModelStore {
     }
   }
   private async download(id: string, signal?: AbortSignal, onProgress?: ModelAssetProgressListener): Promise<string> {
-    signal ??= AbortSignal.timeout(600000)
-    const asset = this.asset(id),
-      url = new URL(asset.url),
-      fromHuggingFace = url.hostname === 'huggingface.co'
-    const progress = modelProgress(asset, signal, onProgress)
-    progress('downloading', 0, true)
+    signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(600000)]) : AbortSignal.timeout(600000)
+    const asset = this.asset(id), url = new URL(asset.url), fromHuggingFace = url.hostname === 'huggingface.co'
     signal.throwIfAborted()
     if (process.env.HF_ENDPOINT && fromHuggingFace) {
       const endpoint = new URL(process.env.HF_ENDPOINT)
@@ -126,8 +125,30 @@ export class ModelStore {
     const headers: Record<string, string> = {}
     if (process.env.HF_TOKEN && fromHuggingFace)
       headers.Authorization = `Bearer ${process.env.HF_TOKEN}`
+    for (let attempt = 1; ; attempt++) {
+      signal.throwIfAborted()
+      try { return await this.downloadAttempt(asset, url, headers, signal, onProgress, attempt) }
+      catch (error) {
+        signal.throwIfAborted()
+        const details = error as { code?: string; status?: number; message?: string }
+        const retryable = details.status === 408 || details.status === 429 || (details.status !== undefined && details.status >= 500) ||
+          /^(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT)$/.test(details.code ?? '') ||
+          /fetch failed|network|socket|connection|TLS|certificate/i.test(details.message ?? '')
+        if (!retryable) throw error
+        if (attempt === 3) throw new Error(`验证码模型 ${id} 从 ${url.hostname} 下载失败（已尝试3次：${details.code ?? '网络错误'}）。已校验模型已保留，重新运行初始化可重试。`, { cause: error })
+        await sleep(500 * attempt, undefined, { signal })
+      }
+    }
+  }
+  private async downloadAttempt(asset: ModelAsset, url: URL, headers: Record<string, string>, signal: AbortSignal,
+    onProgress: ModelAssetProgressListener | undefined, attempt: number): Promise<string> {
+    const id = asset.id, progress = modelProgress(asset, signal, onProgress, attempt)
+    progress('downloading', 0, true)
     const response = await this.fetchImpl(url, { headers, signal })
-    if (!response.ok || !response.body) throw new Error(`Model ${id}: HTTP ${response.status}`)
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {})
+      throw Object.assign(new Error(`Model ${id}: HTTP ${response.status}`), { status: response.status })
+    }
     await fs.mkdir(this.directory, { recursive: true })
     if (this.temporaryDirectory) await fs.mkdir(this.temporaryDirectory, { recursive: true })
     const target = path.join(this.directory, asset.file),

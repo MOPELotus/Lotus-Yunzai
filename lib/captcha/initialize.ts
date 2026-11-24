@@ -46,7 +46,8 @@ export async function initializeCaptchaModels(root: URL, signal: AbortSignal, {
         const ready = stage === "ready" || stage === undefined;
         const action = ready ? cached ? "缓存已校验" : "已就绪" : stage === "downloading" ? "下载" : stage === "verifying" ? "校验" : "检查缓存";
         const position = ready ? completed : Math.min(total, completed + 1);
-        const message = `验证码模型 ${position}/${total}：${modelId} · ${action}`;
+        const retry = progress.attempt ? `（尝试 ${progress.attempt}/${progress.maxAttempts}）` : "";
+        const message = `验证码模型 ${position}/${total}：${modelId} · ${action}${retry}`;
         const counters = ready ? { completed, total, unit: "个" } : fileTotalBytes !== undefined && fileBytes !== undefined
           ? { completed: fileBytes, total: fileTotalBytes, unit: "bytes" } : {};
         const suffix = !ready && fileBytes !== undefined && fileTotalBytes !== undefined

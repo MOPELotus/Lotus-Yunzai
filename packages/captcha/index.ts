@@ -154,6 +154,8 @@ export interface CaptchaModelProgress {
   readonly completed: number
   readonly total: number
   readonly stage?: 'checking' | 'downloading' | 'verifying' | 'ready'
+  readonly attempt?: number
+  readonly maxAttempts?: number
   readonly fileBytes?: number
   readonly fileTotalBytes?: number
   /** Fully validated bytes, excluding a model that is still being prepared. */
@@ -186,7 +188,7 @@ export async function prepareCaptchaModels(options: {
       await store.get(asset.id, options.signal, progress => {
         downloaded ||= progress.stage === 'downloading'
         return report({ modelId: asset.id, stage: progress.stage, completed, total: store.assets.length,
-          fileBytes: progress.bytes, fileTotalBytes: progress.totalBytes, completedBytes, totalBytes })
+          fileBytes: progress.bytes, fileTotalBytes: progress.totalBytes, attempt: progress.attempt, maxAttempts: progress.maxAttempts, completedBytes, totalBytes })
       })
       options.signal?.throwIfAborted()
       completedBytes += asset.size

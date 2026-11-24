@@ -82,3 +82,49 @@ test("取消模型下载后不报告完成且回收临时文件", async () => {
     expect(await readdir(join(directory, ".work"))).toEqual([]);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("模型连接或流中途被重置会有界重试，清理残片后才发布校验完整的文件", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-model-retry-"));
+  const expected = asset("model", "abcdefgh");
+  let calls = 0;
+  const events: ModelAssetProgress[] = [];
+  const store = new ModelStore(directory, [expected], (async () => {
+    calls++;
+    if (calls === 1) throw Object.assign(new Error("socket closed"), { code: "ECONNRESET" });
+    if (calls === 2) {
+      let sent = false;
+      return new Response(new ReadableStream({ pull(controller) {
+        if (!sent) { sent = true; controller.enqueue(Buffer.from("abc")); }
+        else controller.error(Object.assign(new Error("connection reset"), { code: "ECONNRESET" }));
+      } }));
+    }
+    return new Response("abcdefgh");
+  }) as unknown as typeof fetch, join(directory, ".work"), true);
+  try {
+    await store.get("model", undefined, event => events.push(event));
+    expect(calls).toBe(3);
+    expect(await store.valid("model")).toBe(true);
+    expect(await readdir(join(directory, ".work"))).toEqual([]);
+    expect(events.filter(event => event.stage === "downloading" && event.bytes === 0).map(event => event.attempt)).toEqual([1, 2, 3]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("模型非暂时HTTP错误不重试，退避等待中取消不再发请求", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-model-retry-stop-"));
+  const expected = asset("model", "abcdefgh");
+  try {
+    let calls = 0;
+    const missing = new ModelStore(directory, [expected], (async () => {
+      calls++; return new Response("missing", { status: 404 });
+    }) as unknown as typeof fetch, undefined, true);
+    await expect(missing.get("model")).rejects.toThrow("HTTP 404");
+    expect(calls).toBe(1);
+    const controller = new AbortController();
+    const cancelled = new ModelStore(directory, [expected], (async () => {
+      calls++; setTimeout(() => controller.abort(), 50);
+      throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+    }) as unknown as typeof fetch, undefined, true);
+    await expect(cancelled.get("model", controller.signal)).rejects.toBeDefined();
+    expect(calls).toBe(2);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
