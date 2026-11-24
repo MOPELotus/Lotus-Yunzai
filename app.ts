@@ -3223,6 +3223,10 @@ if (import.meta.main) {
           };
         },
         tracking: {
+          accountQuota(target, good, signal, verifyBinding) {
+            const timeout = AbortSignal.timeout(3_000);
+            return catalog.accountQuota(target, good, signal ? AbortSignal.any([signal, timeout]) : timeout, verifyBinding);
+          },
           async catalog(target, game, signal, verifyBinding) {
             const result = [];
             for (let page = 1; page <= 100; page++) {

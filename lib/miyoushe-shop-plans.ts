@@ -45,6 +45,7 @@ const details = {
   redeemed: "用户核对官方兑换记录后确认已兑换。",
   unredeemed: "用户核对官方兑换记录后确认未兑换，可重新预约。",
   stockEmpty: "官方库存已售罄，本轮追踪结束。",
+  accountQuota: "已达本轮账号限购，未提交兑换。",
   pending: "该账号此商品有兑换结果待确认，请先核对米游社兑换记录再预约。",
   verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
   sessionEnded: "发起立即兑换的网页会话已结束，未提交兑换。",
@@ -56,6 +57,7 @@ const trackerMessages = {
   pause: "持续追踪已暂停。",
   booked: "已预约匹配商品，等待官方开放。",
   watching: "等待符合条件的库存及场次。",
+  accountQuota: "匹配商品已达本轮限购，继续追踪后续场次。",
   retry: "暂时无法核验官方商品状态，将在下次轮询重试。",
   changed: "档案绑定已变更，请重新建立追踪。",
   unknown: "有兑换结果待确认，请先核对米游社兑换记录。",
@@ -134,6 +136,8 @@ interface Options {
   readonly receiptRoute?: (qq: string, route: MiyousheShopReceiptRoute, signal?: AbortSignal) =>
     Promise<((message: string) => Promise<unknown>) | undefined>;
   readonly tracking?: {
+    readonly accountQuota?: (target: MiyousheOverviewTarget, good: TrackingGood, signal?: AbortSignal,
+      verifyBinding?: () => Promise<void>) => Promise<{ readonly limit: number; readonly used: number } | undefined>;
     readonly catalog: (target: MiyousheOverviewTarget, game: string, signal?: AbortSignal,
       verifyBinding?: () => Promise<void>) => Promise<readonly TrackingGood[]>;
     readonly destinations: (target: MiyousheOverviewTarget, game: string, itemType: 1 | 2, signal?: AbortSignal,
@@ -532,6 +536,12 @@ export function createMiyousheShopPlans({
     await verifyRole(target, rule);
   }
 
+  async function reachedAccountQuota(target: MiyousheOverviewTarget, good: TrackingGood, signal?: AbortSignal, verify?: Verify) {
+    if (!good.accountLimit || !good.limitCycle || good.limitCycle === "not_limit") return false;
+    const quota = await tracking?.accountQuota?.(target, good, signal, verify);
+    return quota !== undefined && quota.limit === good.accountLimit && quota.used >= quota.limit;
+  }
+
   async function pollRule(rule: ShopTracker & { confirmation: { bindingStamp: string; at: number } }, signal?: AbortSignal) {
     const target = { qq: rule.qq, profileId: rule.profileId };
     const pollRunId = randomUUID();
@@ -572,19 +582,38 @@ export function createMiyousheShopPlans({
       const goods = (await tracking!.catalog(target, rule.game, signal, verifyBinding))
         .filter(good => matchesTrackingGood(rule, good));
       let nearest: number | undefined;
+      let nextWake: number | undefined;
+      let quotaReached = false;
+      function watchOpening(opensAt: number | null, limitReached = false) {
+        if (opensAt === null || opensAt <= now()) return;
+        nearest = Math.min(nearest ?? opensAt, opensAt);
+        const wake = limitReached ? opensAt + 1000 : Math.max(now() + 1000, opensAt - Math.max(preparingLead, rule.leadMs));
+        nextWake = Math.min(nextWake ?? wake, wake);
+      }
+
       for (const candidate of goods) {
         signal?.throwIfAborted();
         if (candidate.status !== "available" && candidate.status !== "scheduled") continue;
-        if (candidate.status === "scheduled" && candidate.opensAt !== null) {
-          nearest = Math.min(nearest ?? candidate.opensAt, candidate.opensAt);
-          if (candidate.opensAt > now() + Math.max(preparingLead, rule.leadMs + 10_000)) continue;
+        const opening = candidate.status === "scheduled" ? candidate.opensAt : null;
+        if (opening !== null && opening > now() + Math.max(preparingLead, rule.leadMs + 10_000)) {
+          watchOpening(opening);
+          continue;
         }
         const snapshot = await inspect(target, candidate.id, signal, verifyBinding);
         const { good, balance } = snapshot;
         if (good.id !== candidate.id || !matchesTrackingGood(rule, good) || !natural(good.price) || !natural(balance) || balance < good.price ||
           (good.status !== "available" && (good.status !== "scheduled" || !natural(good.opensAt))) ||
           (rule.role ? !snapshot.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region)
-            : !snapshot.addresses?.some(address => address.id === rule.addressId))) continue;
+            : !snapshot.addresses?.some(address => address.id === rule.addressId))) {
+          watchOpening(opening);
+          continue;
+        }
+        const full = await reachedAccountQuota(target, good, signal, verifyBinding);
+        watchOpening(good.status === "scheduled" ? good.opensAt : opening, full);
+        if (full) {
+          quotaReached = true;
+          continue;
+        }
         const cycleKey = trackingCycle(good, now());
         if (!cycleKey) continue;
         const created = await store.change(async data => {
@@ -626,10 +655,10 @@ export function createMiyousheShopPlans({
         const current = currentPoll(data);
         if (!current) return;
         current.matchedCount = goods.length;
-        current.message = trackerMessages.watching;
-        if (nearest !== undefined && nearest > now()) {
+        current.message = quotaReached ? trackerMessages.accountQuota : trackerMessages.watching;
+        if (nearest !== undefined && nextWake !== undefined) {
           current.nextOpenAt = nearest;
-          current.nextPollAt = Math.min(now() + rule.pollMs, Math.max(now() + 1000, nearest - Math.max(preparingLead, rule.leadMs)));
+          current.nextPollAt = Math.min(now() + rule.pollMs, Math.max(now() + 1000, nextWake));
         }
       });
     } catch (error) {
@@ -767,6 +796,10 @@ export function createMiyousheShopPlans({
         }
         if (good.status !== "available" || now() > plan.opensAt + maxDelay) {
           await update(plan.id, "preparing", current => finish(current, "missed"));
+          return;
+        }
+        if (plan.trackingId && await reachedAccountQuota(target, good, activeSignal, verifyBinding)) {
+          await update(plan.id, "preparing", current => finish(current, "failed", details.accountQuota));
           return;
         }
         const purchaseCycle = immediate ? trackingCycle(good, now()) : undefined;

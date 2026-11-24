@@ -1,3 +1,4 @@
+import type { TrackingGood } from "./miyoushe-shop-tracking.ts";
 import { createProfileStore, gameRegionDisplayName, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { createProfileHoyoClient, HoyoRequestError, isCookieExpired } from "@lotus-yunzai/hoyo-client";
 import { MiyousheShopError, readMiyousheShop } from "@lotus-yunzai/hoyo-client/miyoushe-shop";
@@ -162,7 +163,7 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
   }
 
   return {
-    async accountQuota(target: MiyousheOverviewTarget, good: Pick<ReturnType<typeof product>, "id" | "accountLimit" | "limitCycle">,
+    async accountQuota(target: MiyousheOverviewTarget, good: Pick<TrackingGood, "id" | "accountLimit" | "limitCycle">,
       signal?: AbortSignal, verifyLogin?: () => Promise<void>,
     ) {
       if (!good.accountLimit || !good.limitCycle || good.limitCycle === "not_limit") return;

@@ -610,3 +610,39 @@ test("追踪提交结果不明后暂停账号规则，人工确认前重启不�
     await expect(restarted.setTracker(target, rule.id, true, true)).rejects.toMatchObject({ status: 409 });
   });
 });
+
+test("追踪同档限购已满不创建计划，预订后满额也不派发", async () => {
+  for (const fullBeforeBooking of [true, false]) {
+    await fixture(async ({ file, profileDirectory }) => {
+      const good = { ...trackedGood, accountLimit: 2 };
+      let quotaReads = 0, attempts = 0;
+      const service = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime, inspect: () => inspection(good),
+        tracking: {
+          async catalog() { return [good]; },
+          async destinations() { return { roles: [planRole] }; },
+          async accountQuota(actual, product, _signal, verify) {
+            expect(actual).toEqual(target);
+            expect(product.id).toBe(good.id);
+            await verify?.();
+            quotaReads++;
+            return { limit: 2, used: fullBeforeBooking || quotaReads > 1 ? 2 : 1 };
+          },
+        },
+        async submit() { attempts++; return "succeeded"; },
+      });
+      await service.createTracker(target, trackingBody);
+      await service.scan();
+      expect(attempts).toBe(0);
+      expect((await service.listTrackers(target)).trackers[0]).toMatchObject({ enabled: true, held: 0, spent: 0 });
+      const items = (await service.list(target)).plans;
+      if (fullBeforeBooking) {
+        expect(quotaReads).toBe(1);
+        expect(items).toEqual([]);
+        expect((await service.listTrackers(target)).trackers[0]?.message).toContain("已达本轮限购");
+      } else {
+        expect(quotaReads).toBe(2);
+        expect(items).toEqual([expect.objectContaining({ attempts: 0, status: "failed", message: "已达本轮账号限购，未提交兑换。" })]);
+      }
+    });
+  }
+});
