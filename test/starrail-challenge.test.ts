@@ -128,6 +128,22 @@ test("historical arbiter fights retain per-period counts and match knight record
   expect(results[0]?.peak[0]?.mobs[0]?.stars).toBe(3);
 });
 
+test("星铁挑战优先显示有效翻译，再读接口原名和旧本地角色词典", () => {
+  const [result] = normalizeStarRailChallenge([{ kind: "hall", schedule: "1", simple: false, data: {
+    all_floor_detail: [{ maze_id: 112, name: "混沌回忆其十二", node_1: { avatars: [
+      { id: 1302, name_mi18n: "已本地化", name: "接口原名" },
+      { id: 1302, name_mi18n: " ", name: "有效的接口原名" },
+      { avatar_id: 1302, name_mi18n: "", name: "" },
+      { id: 99998, name_mi18n: "", name: "新增角色" },
+      { id: 99999 },
+    ] } }],
+  } }], parseChallengeQuery("*混沌")!, id => id === "1302" ? "银枝" : undefined);
+  const [floor] = buildStarRailAbyssSections({ results: [result!] });
+  expect(floor?.nodes?.[0]?.avatars?.map(avatar => avatar.name)).toEqual([
+    "已本地化", "有效的接口原名", "银枝", "新增角色", "角色 99999",
+  ]);
+});
+
 test("expires and renews the selected local profile once", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-sr-challenge-profile-"));
   const qq = "42";
