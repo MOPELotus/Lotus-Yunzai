@@ -114,7 +114,11 @@ for (const failure of ["expired", "temporary"] as const) {
       }).fallback!;
       const reply = await fallback("", {
         user_id: 42, self_id: 51, message_type: "private", isMaster: false, normalizedMessage: "#扫码登录2",
-        isBotMaster: () => false, privateCredentialSignal: new AbortController().signal, reply: async () => true,
+        isBotMaster: () => false, privateCredentialSignal: new AbortController().signal,
+        async reply(_message, _quote, options) {
+          await options?.onDelivered?.(1);
+          return true;
+        },
       });
       expect(reply).toContain("扫码登录完成");
       expect(scheduled).toBe(1);

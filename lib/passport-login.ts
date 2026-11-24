@@ -75,6 +75,15 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           await profiles.verifyLoginSlot(slot);
           deadlineSignal.throwIfAborted();
         }
+        async function savedProfile(revision: string) {
+          deadlineSignal.throwIfAborted();
+          const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
+          deadlineSignal.throwIfAborted();
+          if (current?.revision !== revision) {
+            throw new ProfileError("changed", "登录档案已变更，请重新发起扫码登录。");
+          }
+          return current;
+        }
         await verifyProfile();
         const created = await qr.create(slot.device, { signal: deadlineSignal });
         const expires = Math.min(Date.now() + lifetimeMs, created.expiresAt ?? Infinity);
@@ -87,7 +96,11 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
         }).catch(() => undefined);
         await verifyProfile();
         if (Date.now() >= expires) return "登录二维码已过期，请重新发送扫码指令。";
-        if (await context.reply({ type: "image", file: card?.png ?? markGeneratedImage(qrPng) }) === false) return [];
+        let delivered = false;
+        const accepted = await context.reply({ type: "image", file: card?.png ?? markGeneratedImage(qrPng) }, false, {
+          onDelivered: () => { delivered = true; },
+        });
+        if (!accepted || !delivered) return [];
 
         let scanned = false;
         while (Date.now() < expires) {
@@ -124,8 +137,7 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           let { rolesSynced, revision } = saved;
           if (first.retry && !deadlineSignal.aborted) {
             try {
-              const current = await profiles.accountContext(qq, profileId);
-              if (current.revision !== revision) throw new HoyoRequestError("profile-changed", "登录档案已变更。");
+              const current = await savedProfile(revision);
               if (first.retry === "refresh") {
                 const refreshed = await signedIn.refreshProfile(current, deadlineSignal);
                 rolesSynced = refreshed.rolesSynced;
@@ -140,8 +152,11 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
               // The confirmed login remains usable even when its roles cannot be synchronized.
             }
           }
-          if (!deadlineSignal.aborted) await addLateSchedule?.(qq, profileId, revision).catch(() => undefined);
-          if (deadlineSignal.aborted) return [];
+          if (addLateSchedule) {
+            await savedProfile(revision);
+            await addLateSchedule(qq, profileId, revision).catch(() => undefined);
+          }
+          await savedProfile(revision);
           return rolesSynced ? `[account] profile ${profileId} 扫码登录完成，已保存登录信息。`
             : `[account] profile ${profileId} 登录信息已保存，角色暂未同步，可用 #同步角色${profileId === 1 ? "" : profileId} 重试。`;
         }
