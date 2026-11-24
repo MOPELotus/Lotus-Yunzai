@@ -266,7 +266,11 @@ export function createHoyoClient(
   }
 
   function rolesFor(data: readonly unknown[], game: Game): GameRole[] {
-    return normalizeGameRoles(data.filter((item) => isRecord(item) && item.game_biz === gameBiz[game]));
+    const matching = data.filter((item) => isRecord(item) && item.game_biz === gameBiz[game]);
+    if (matching.some(item => !normalizeGameRoles([item]).length)) {
+      throw new HoyoRequestError("response", "米游社角色资料不完整。");
+    }
+    return normalizeGameRoles(matching);
   }
 
   async function retrieve<Data>(
@@ -383,17 +387,11 @@ export function createHoyoClient(
   }
 
   function roleCatalog(data: readonly unknown[]) {
-    const roles = {
-      gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz"),
-    };
-    // An unsupported game is omitted, but malformed entries for supported games must not clear saved roles.
-    for (const item of data) {
-      if (!isRecord(item) || !item.game_biz ||
-          (profileGames.some((game) => gameBiz[game] === item.game_biz) && !normalizeGameRoles([item]).length)) {
-        throw new HoyoRequestError("response", "米游社角色资料不完整。");
-      }
+    // An unidentifiable entry must not clear saved roles from a full catalog.
+    if (data.some(item => !isRecord(item) || !item.game_biz)) {
+      throw new HoyoRequestError("response", "米游社角色资料不完整。");
     }
-    return roles;
+    return { gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz") };
   }
 
   function extraCheckinRoles(data: readonly unknown[], biz: string, allowedRegion: (region: string) => boolean) {

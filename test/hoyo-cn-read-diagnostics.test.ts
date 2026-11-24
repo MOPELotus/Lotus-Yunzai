@@ -250,3 +250,30 @@ test("只读计算连接与流的错误保持原分类，普通坏回包和主�
     warn.mockRestore();
   }
 });
+
+test("单游戏绑定目录区分真实空列表和本游戏破损角色，忽略不相关游戏", async () => {
+  const complete = { game_biz: "nap_cn", game_uid: zzz.role.uid, region: zzz.role.region };
+  const broken = { game_biz: "nap_cn", game_uid: "damaged" };
+  const unrelated = [{ game_biz: "hk4e_cn", game_uid: "damaged" }, { game_biz: "unknown_future_game" }];
+  let rows: object[] = [];
+  const client = createHoyoClient(async endpoint => {
+    expect(endpoint.searchParams.get("game_biz")).toBe("nap_cn");
+    return Response.json({ retcode: 0, data: { list: rows } });
+  });
+  const readers = [
+    () => client.listRoles(zzz, "zzz"),
+    () => client.fetchBoundRoles(zzz, "zzz").then(result => result.roles),
+  ];
+  for (const read of readers) {
+    rows = [];
+    expect(await read()).toEqual([]);
+    rows = unrelated;
+    expect(await read()).toEqual([]);
+    rows = [complete, ...unrelated];
+    expect(await read()).toMatchObject([{ uid: zzz.role.uid, region: zzz.role.region }]);
+    rows = [broken];
+    await expect(read()).rejects.toMatchObject({ code: "response" });
+    rows = [complete, broken, ...unrelated];
+    await expect(read()).rejects.toMatchObject({ code: "response" });
+  }
+});
