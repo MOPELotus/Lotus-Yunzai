@@ -337,3 +337,74 @@ test("空缺的可选库存数量保留未知，零数量不丢，也不阻断�
     ...cur_tickets, { ticket_type: "GACHA_TICKET_TYPE_BOOPON", ticket_cnt: 4 },
   ] }), options)).rejects.toThrow("库存数值无效");
 });
+
+test("同一调频服务跨档案协调库存与统计，并丢弃排队时已取消的请求", async () => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const second = { ...source, qq: "43", profileId: 1, role: { ...source.role, uid: "123456780" } };
+  const third = { ...source, qq: "44", profileId: 3, role: { ...source.role, uid: "123456781" } };
+  const requested: string[] = [];
+  const transport: HoyoTransport = async (url) => {
+    const requestedUid = url.searchParams.get("uid")!;
+    requested.push(requestedUid);
+    if (requestedUid === uid) {
+      started.resolve();
+      await release.promise;
+    }
+    const response = await answer(url).json();
+    return ok({ ...response.data, uid: requestedUid });
+  };
+  const controller = new AbortController();
+  const pacing = { intervalMs: 1 };
+  const first = readZzzTuningInventory(source, transport, pacing);
+  await started.promise;
+  const canceled = readZzzTuningInventory(third, transport, { ...pacing, signal: controller.signal });
+  const next = readZzzTuning(second, transport, pacing);
+  const stopped = canceled.catch((error: unknown) => error);
+  try {
+    await Bun.sleep(20);
+    controller.abort();
+    expect(await stopped).toMatchObject({ code: "transport", message: expect.stringContaining("请求已取消") });
+    expect(requested).toEqual([uid]);
+  } finally {
+    release.resolve();
+  }
+  expect((await first).uid).toBe(uid);
+  expect((await next).uid).toBe(second.role.uid);
+  expect(requested.slice(1)).not.toHaveLength(0);
+  expect(requested.slice(1).every(value => value === second.role.uid)).toBe(true);
+});
+
+test("收到合法 Retry-After 后，同一调频出口的新档案也等待，取消前不发请求", async () => {
+  const firstController = new AbortController();
+  const nextController = new AbortController();
+  let reads = 0;
+  const awaitingCooldown = Promise.withResolvers<number>();
+  const transport: HoyoTransport = async () => {
+    if (++reads === 1) return new Response(null, { status: 429, headers: { "Retry-After": "22" } });
+    return ok({ cur_tickets: [] });
+  };
+  const first = {
+    intervalMs: 1, signal: firstController.signal,
+    async sleep() {
+      firstController.abort();
+      throw Error("fixture cancelled first reader while it was waiting to retry");
+    },
+  };
+  await expect(readZzzTuningInventory(source, transport, first)).rejects.toThrow("请求已取消");
+  const second = { ...source, qq: "43", profileId: 1, role: { ...source.role, uid: "123456780" } };
+  const next = readZzzTuningInventory(second, transport, {
+    intervalMs: 1, signal: nextController.signal,
+    async sleep(duration, signal) {
+      awaitingCooldown.resolve(duration);
+      expect(signal).toBe(nextController.signal);
+      nextController.abort();
+      throw Error("fixture cancelled before it left the shared cooldown");
+    },
+  });
+  await expect(next).rejects.toThrow("请求已取消");
+  const delay = await awaitingCooldown.promise;
+  expect(delay).toBeGreaterThan(21_000);
+  expect(delay).toBeLessThanOrEqual(22_000);
+  expect(reads).toBe(1);
+});

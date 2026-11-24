@@ -9,6 +9,17 @@ const referer = `${origin}/zzz/event/gacha-record/index.html`;
 const batchSize = 8;
 const rateLimitBackoff = [15_000, 30_000] as const;
 const rateLimitWaitBudget = 60_000;
+type TuningQueue = { tail: Promise<void>; last: number; cooldown: number };
+const tuningQueues = new WeakMap<HoyoTransport, TuningQueue>();
+
+function tuningQueue(transport: HoyoTransport): TuningQueue {
+  let queue = tuningQueues.get(transport);
+  if (!queue) {
+    queue = { tail: Promise.resolve(), last: -Infinity, cooldown: 0 };
+    tuningQueues.set(transport, queue);
+  }
+  return queue;
+}
 
 export const zzzTuningPools = {
   GACHA_TYPE_WEAPON_UP: { id: 3, name: "音擎频段" },
@@ -270,8 +281,9 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
     throw new HoyoRequestError("invalid-input", "绝区零官方调频档案 Cookie 或请求间隔无效。");
   }
 
+  const canceled = () => new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
   function checkSignal() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
+    if (signal?.aborted) throw canceled();
   }
 
   async function check() {
@@ -284,18 +296,49 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
     try {
       await sleep(durationMs, signal);
     } catch {
-      throw new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
+      throw canceled();
     }
   }
 
-  let requested = false;
+  const queue = intervalMs ? tuningQueue(transport) : undefined;
   let retries = 0;
   let waited = 0;
-  async function request(endpoint: Endpoint, extra?: Record<string, string>) {
-    if (requested && intervalMs) await pause(intervalMs);
-    for (;;) {
+  async function dispatch(endpoint: Endpoint, extra?: Record<string, string>) {
+    checkSignal();
+    if (!queue) return read(endpoint, extra);
+    const job = queue.tail.then(async () => {
+      checkSignal();
+      const delay = Math.ceil(Math.max(queue.last + intervalMs, queue.cooldown) - performance.now());
+      if (delay > rateLimitWaitBudget) throw new ZzzTuningRateLimitError(429, undefined, delay);
+      if (delay > 0) await pause(delay);
       try {
         return await read(endpoint, extra);
+      } catch (error) {
+        if (error instanceof ZzzTuningRateLimitError) {
+          const backoff = rateLimitBackoff[Math.min(retries, rateLimitBackoff.length - 1)]!;
+          queue.cooldown = Math.max(queue.cooldown, performance.now() + Math.max(backoff, error.retryAfterMs ?? 0));
+        }
+        throw error;
+      } finally {
+        queue.last = performance.now();
+      }
+    });
+    queue.tail = job.then(() => undefined, () => undefined);
+    if (!signal) return job;
+    const aborted = Promise.withResolvers<never>();
+    const cancel = () => aborted.reject(canceled());
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      return await Promise.race([job, aborted.promise]);
+    } finally {
+      signal.removeEventListener("abort", cancel);
+    }
+  }
+
+  async function request(endpoint: Endpoint, extra?: Record<string, string>) {
+    for (;;) {
+      try {
+        return await dispatch(endpoint, extra);
       } catch (error) {
         if (!(error instanceof ZzzTuningRateLimitError) || error.status !== 429 ||
             error.retryAfterMs === undefined) throw error;
@@ -316,7 +359,6 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
     url.search = new URLSearchParams({ uid, region, ...extra }).toString();
     const deadline = AbortSignal.timeout(15_000);
     let response: Response;
-    requested = true;
     try {
       response = await transport(url, {
         headers: { Accept: "application/json, text/plain, */*", Cookie: cookie, Origin: origin, Referer: referer },
