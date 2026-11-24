@@ -352,3 +352,14 @@ test("商城认证读遇业务限频、取消或换绑期间不会接着重试",
     expect(calls).toBe(1);
   }
 });
+
+test("商城首次提交在最终账号核验期间关窗，传输层收到零请求", async () => {
+  let open = true, calls = 0;
+  const transport: HoyoTransport = async () => {
+    calls++;
+    return Response.json({ retcode: 0 });
+  };
+  const verify = async () => { open = false; };
+  expect(await submitMiyousheShopExchange(transport, profile, virtual, undefined, verify, undefined, () => open)).toBe("missed");
+  expect(calls).toBe(0);
+});

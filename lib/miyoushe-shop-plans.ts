@@ -132,7 +132,8 @@ interface Options {
   readonly inspect: (target: MiyousheOverviewTarget, goodsId: string, signal?: AbortSignal,
     verifyBinding?: () => Promise<void>) => Promise<MiyousheShopInspection>;
   readonly submit?: (plan: Readonly<MiyousheShopPlan>, signal?: AbortSignal,
-    verifyBinding?: () => Promise<void>, manual?: ShopManualVerification) => Promise<MiyousheShopExchangeResult>;
+    verifyBinding?: () => Promise<void>, manual?: ShopManualVerification,
+    firstDispatchAllowed?: () => boolean) => Promise<MiyousheShopExchangeResult>;
   readonly manualRelay?: () => ManualRelay | undefined;
   readonly receiptRoute?: (qq: string, route: MiyousheShopReceiptRoute, signal?: AbortSignal) =>
     Promise<((message: string) => Promise<unknown>) | undefined>;
@@ -724,6 +725,11 @@ export function createMiyousheShopPlans({
       let message: string = details.unavailable;
       let resumeDeadline: number | undefined;
       let saleClose = Infinity;
+      let firstSaleClose = Infinity;
+      const firstDispatchAllowed = () => {
+        const time = now();
+        return time <= plan.opensAt + maxDelay && time < firstSaleClose;
+      };
       try {
         signal?.throwIfAborted();
         if (plan.manualSessionExpected && (!immediate || activeSignal?.aborted)) {
@@ -756,8 +762,10 @@ export function createMiyousheShopPlans({
         };
         const inspectCurrent = async () => {
           message = details.unavailable;
+          const inspectedAt = now();
           const snapshot = await inspect(target, plan.goodsId, activeSignal, verifyBinding);
           saleClose = localSaleEnd(snapshot.good, now());
+          firstSaleClose = localSaleEnd(snapshot.good, inspectedAt);
           message = details.conditions;
           const trackingStatus = plan.trackingId && (snapshot.good.status === "unknown" || snapshot.good.status === "sold_out");
           const good = trackingStatus ? snapshot.good : validateInspection(snapshot, plan.goodsId, plan.immediate);
@@ -799,7 +807,7 @@ export function createMiyousheShopPlans({
           await update(plan.id, "preparing", current => finish(current, "failed", details.stockEmpty));
           return;
         }
-        if (good.status !== "available" || now() > plan.opensAt + maxDelay) {
+        if (good.status !== "available" || !firstDispatchAllowed()) {
           await update(plan.id, "preparing", current => finish(current, "missed"));
           return;
         }
@@ -846,14 +854,23 @@ export function createMiyousheShopPlans({
         } : undefined;
         const submitted = await update(plan.id, "preparing", (current, data) => {
           if (!trackerIsCurrent(data, current)) finish(current, "cancelled");
+          else if (!firstDispatchAllowed()) finish(current, "missed");
           else Object.assign(current, { status: "submitting", message: statusMessage.submitting, attempts: current.attempts + 1 });
         });
         if (submitted?.status !== "submitting") return;
         submitting = true;
         await verifyBinding();
-        started = true;
-        const result = await submit(Object.freeze(submitted), activeSignal, verifyBinding, manual);
+        let result: MiyousheShopExchangeResult = "missed";
+        if (firstDispatchAllowed()) {
+          started = true;
+          result = await submit(Object.freeze(submitted), activeSignal, verifyBinding, manual, firstDispatchAllowed);
+        }
         await update(plan.id, "submitting", (current, data) => {
+          if (result === "missed") {
+            current.attempts--;
+            finish(current, "missed");
+            return;
+          }
           if (result === "verification" || result === "rate-limited") finish(current, "failed", details[result]);
           else finish(current, result === "succeeded" || result === "failed" ? result : "unknown");
           if (current.status === "unknown" || result === "verification" || result === "rate-limited") {

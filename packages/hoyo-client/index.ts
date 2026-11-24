@@ -467,12 +467,12 @@ export function createHoyoClient(
       }));
     },
     exchangeMiyousheShopGoods(source: ProfileAccountContext, order: MiyousheShopOrder,
-      { signal, verifyBinding, manual }: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void>;
-        readonly manual?: ShopManualVerification } = {}) {
+      { signal, verifyBinding, manual, firstDispatchAllowed }: { readonly signal?: AbortSignal; readonly verifyBinding?: () => Promise<void>;
+        readonly manual?: ShopManualVerification; readonly firstDispatchAllowed?: () => boolean } = {}) {
       return submitMiyousheShopExchange(transport, source, order, signal, async () => {
         await verifyBinding?.();
         await ensureCurrentProfile(source);
-      }, manual);
+      }, manual, firstDispatchAllowed);
     },
     async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal): Promise<{ rolesSynced: boolean; revision?: string }> {
       signal?.throwIfAborted();

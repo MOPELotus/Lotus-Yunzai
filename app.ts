@@ -3261,10 +3261,10 @@ if (import.meta.main) {
           return { good: { ...good, price: good.price }, balance, roles, addresses };
         },
         manualRelay: () => manualCaptcha,
-        async submit(plan, signal, verifyBinding, manual) {
+        async submit(plan, signal, verifyBinding, manual, firstDispatchAllowed) {
           await verifyBinding?.();
           const account = await checkinProfiles.accountContext(plan.qq, plan.profileId);
-          return shopClient.exchangeMiyousheShopGoods(account, plan, { signal, verifyBinding, manual });
+          return shopClient.exchangeMiyousheShopGoods(account, plan, { signal, verifyBinding, manual, firstDispatchAllowed });
         },
       });
       miyousheWeb = createMiyousheWeb({

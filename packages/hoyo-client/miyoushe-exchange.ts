@@ -19,7 +19,7 @@ const responseLimit = 256 * 1024;
 type Classification = "expired" | "verification" | "rate-limited" | "failed";
 type Verify = () => Promise<void>;
 type Json = Record<string, unknown>;
-export type MiyousheShopExchangeResult = "succeeded" | "failed" | "verification" | "rate-limited" | "unknown";
+export type MiyousheShopExchangeResult = "succeeded" | "failed" | "verification" | "rate-limited" | "unknown" | "missed";
 
 export interface MiyousheShopOrder {
   readonly goodsId: string;
@@ -288,7 +288,7 @@ export async function readMiyousheShopAddresses(transport: HoyoTransport, profil
 
 export async function submitMiyousheShopExchange(transport: HoyoTransport, profile: ProfileAccountContext,
   order: MiyousheShopOrder, signal?: AbortSignal, verify?: Verify,
-  manual?: ShopManualVerification): Promise<MiyousheShopExchangeResult> {
+  manual?: ShopManualVerification, firstDispatchAllowed?: () => boolean): Promise<MiyousheShopExchangeResult> {
   if (!idPattern.test(order.goodsId)) invalid("兑换商品编号无效。");
   let body;
   if (order.type === 1 && !order.role && idPattern.test(order.addressId) && Number.isSafeInteger(Number(order.addressId))) {
@@ -301,7 +301,16 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
   const endpoint = new URL("/common/homushop/v1/web/goods/exchange", shopOrigin);
   const payload = JSON.stringify(body);
   const headers = requestHeaders(profile, true);
-  const result = await request(transport, endpoint, profile, signal, verify, payload, headers);
+  let missed = false;
+  const first: HoyoTransport = async (url, init) => {
+    if (firstDispatchAllowed && !firstDispatchAllowed()) {
+      missed = true;
+      throw new Error("商城已关窗，未提交。");
+    }
+    return transport(url, init);
+  };
+  const result = await request(first, endpoint, profile, signal, verify, payload, headers);
+  if (missed) return "missed";
   const initial = submitResult(result);
   const code = retcodeOf(result?.payload);
   const cookie = headers.get("Cookie");

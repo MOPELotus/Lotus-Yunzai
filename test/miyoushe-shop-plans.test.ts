@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createMiyousheShopPlans, type MiyousheShopInspection, type MiyousheShopReceiptRoute } from "../lib/miyoushe-shop-plans.ts";
 import { createManualCaptchaRelay } from "../lib/captcha/manual-relay.ts";
+import { createProfileStore } from "@lotus-yunzai/account";
+import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 
 const target = { qq: "42", profileId: 1 };
 const other = { qq: "42", profileId: 2 };
@@ -673,5 +675,52 @@ test("已预约的追踪发现档案 UID 换绑时立即停止该规则", async 
       id: tracked.id, enabled: false, needsConfirmation: false, message: "档案绑定已变更，请重新建立追踪。",
     });
     await expect(restarted.setTracker(target, tracked.id, true, true)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+test("商城核验期间越过官方关窗时仍明确未派发", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let time = startTime, reads = 0, submits = 0;
+    const service = createMiyousheShopPlans({ file, profileDirectory, now: () => time, async inspect() {
+      if (++reads === 2) time += 21;
+      return inspection({ ...mockGood, serverNow: startTime, endsAt: startTime + 20 });
+    }, async submit() { submits++; return "succeeded"; } });
+    const plan = await service.reserve(target, { ...body, immediate: false });
+    await service.scan();
+    expect(submits).toBe(0);
+    expect((await service.list(target)).plans).toEqual([
+      expect.objectContaining({ id: plan.id, status: "missed", attempts: 0 }),
+    ]);
+  });
+});
+
+
+test("商城最终绑定检查跨过关窗，由原客户端返回明确未派发", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let time = startTime, calls = 0, clientEntries = 0;
+    const source = join(profileDirectory, "42.yaml");
+    const data = Bun.YAML.parse(await readFile(source, "utf8")) as { account: { cookie: string } };
+    data.account.cookie = "cookie_token=synthetic;account_id=123";
+    await writeFile(source, Bun.YAML.stringify(data));
+    const profiles = createProfileStore(profileDirectory);
+    const client = createProfileHoyoClient(profiles, async () => {
+      calls++;
+      return Response.json({ retcode: 0 });
+    });
+    const engine = createMiyousheShopPlans({ file, profileDirectory, now: () => time,
+      inspect: () => inspection({ ...mockGood, serverNow: startTime, endsAt: startTime + 20 }),
+      async submit(plan, signal, verify, manual, firstDispatchAllowed) {
+        clientEntries++;
+        const account = await profiles.accountContext(plan.qq, plan.profileId);
+        return client.exchangeMiyousheShopGoods(account, plan, { signal, manual, firstDispatchAllowed,
+          async verifyBinding() { await verify?.(); time += 21; },
+        });
+      },
+    });
+    const plan = await engine.reserve(target, { ...body, immediate: false });
+    await engine.scan();
+    expect(clientEntries).toBe(1);
+    expect(calls).toBe(0);
+    expect((await engine.list(target)).plans).toEqual([expect.objectContaining({ id: plan.id, status: "missed", attempts: 0 })]);
   });
 });
