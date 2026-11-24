@@ -2,6 +2,7 @@ import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/
 import type { CheckinScheduleProfile } from "./checkin-schedule-plan.ts";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
 import { isCheckinCommandOwner } from "./command-permissions.ts";
+import { checkinSettingsNickname } from "./checkin-profile-commands.ts";
 
 const register = /^#注册自动签到([1-9]\d{0,2})?$/u;
 
@@ -119,7 +120,8 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
         const state = await profiles.checkinSettings(qq, profileId);
         if (!state.loggedIn) return `请先登录 profile ${profileId}。`;
         if (signal.aborted) return;
-        const updated = await profiles.setCheckinEnabled(qq, profileId, state.revision, true);
+        const updated = await profiles.setCheckinEnabled(qq, profileId, state.revision, true,
+          signal, undefined, () => checkinSettingsNickname(context));
         saved = true;
         const current = await profiles.checkinSettings(qq, profileId);
         if (signal.aborted) return;

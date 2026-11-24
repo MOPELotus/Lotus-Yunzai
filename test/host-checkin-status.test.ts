@@ -3,8 +3,24 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { checkinStatus } from "../lib/checkin-registration-commands.ts";
+import { checkinSettingsNickname } from "../lib/checkin-profile-commands.ts";
 import { createProfileStore } from "@lotus-yunzai/account";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
+
+test("只用当前本人有效会话的签到名片和昵称", () => {
+  const context = {
+    user_id: 42, message_type: "group", sub_type: "normal", groupActivitySignal: new AbortController().signal,
+    sender: { user_id: 42, card: "群名片", nickname: "好友昵称" },
+  } as const;
+  expect(checkinSettingsNickname(context)).toBe("群名片");
+  expect(checkinSettingsNickname({ ...context, sender: { ...context.sender, user_id: 43 } })).toBeUndefined();
+  expect(checkinSettingsNickname({ ...context, isDelegated: true })).toBeUndefined();
+  expect(checkinSettingsNickname({ ...context, sub_type: "anonymous" })).toBeUndefined();
+  expect(checkinSettingsNickname({ ...context, groupActivitySignal: AbortSignal.abort() })).toBeUndefined();
+  expect(checkinSettingsNickname({ ...context, message_type: "private", sub_type: "friend" })).toBeUndefined();
+  expect(checkinSettingsNickname({ ...context, message_type: "private", sub_type: "friend",
+    privateCredentialSignal: new AbortController().signal })).toBe("好友昵称");
+});
 
 test("旧签到状态只读取当前已认证 QQ 即时的各档登记", async () => {
   const phone = "13812345678";
@@ -109,22 +125,23 @@ test("旧签到时间仅主人能设置，普通用户仍可管理本人签到�
     }
     expect(await readFile(join(root, "profiles", "43-2.yaml"), "utf8")).toBe(original);
 
-    sendOneBot("#固定签到时间2 9:05");
+    sendOneBot("#固定签到时间2 9:05", { sender: { user_id: 42, nickname: "本人旧名片" } });
     const scheduled = await onebot.next("send_msg");
     expect(scheduled.params.user_id).toBe(42);
     expect(JSON.stringify(scheduled.params.message)).not.toContain(reply);
     scheduled.respond({ message_id: sequence++ });
     expect((await profiles.checkinSettings("42", 2)).schedule.fixedTime).toBe("09:05");
+    expect((await profiles.checkinSettings("42", 2)).displayName).toBe("本人旧名片");
 
-    for (const command of ["#关闭社区签到2", "#禁用崩铁游戏签到2", "#关闭签到通知2"]) {
-      expect((await sendMilky(command)).status).toBe(200);
+    for (const [index, command] of ["#关闭社区签到2", "#禁用崩铁游戏签到2", "#关闭签到通知2"].entries()) {
+      expect((await sendMilky(command, { friend: { user_id: 43, nickname: index === 0 ? "Milky 本人" : "换名不覆盖" } })).status).toBe(200);
       const result = await milky.next("send_private_message");
       expect(result.params.user_id).toBe(43);
       expect(JSON.stringify(result.params.message)).not.toContain(reply);
       result.respond({ message_seq: sequence++ });
     }
     const current = await profiles.checkinSettings("43", 2);
-    expect(current).toMatchObject({ communityForums: [], notify: { enabled: false }, games: { honkai_sr: { enabled: false } } });
+    expect(current).toMatchObject({ displayName: "Milky 本人", communityForums: [], notify: { enabled: false }, games: { honkai_sr: { enabled: false } } });
     expect(current.schedule).toMatchObject({ mode: "fixed", fixedTime: "08:15" });
 
     const owner = { sender_id: 91, peer_id: 91 };
@@ -132,7 +149,14 @@ test("旧签到时间仅主人能设置，普通用户仍可管理本人签到�
     (await milky.next("send_private_message")).respond({ message_seq: sequence++ });
     expect((await profiles.checkinSettings("91", 2)).schedule.mode).toBe("random");
 
-    expect((await sendMilky("#注册本群签到2", { ...owner, message_scene: "group", peer_id: 72 })).status).toBe(200);
+    const group = { ...owner, message_scene: "group", peer_id: 72 };
+    expect((await sendMilky("#绑定通知群2", {
+      ...group, group_member: { group_id: 72, user_id: 91, card: "签到群内名片", nickname: "QQ 昵称", role: "member" },
+    })).status).toBe(200);
+    (await milky.next("send_group_message")).respond({ message_seq: sequence++ });
+    expect((await profiles.checkinSettings("91", 2)).displayName).toBe("签到群内名片");
+
+    expect((await sendMilky("#注册本群签到2", group)).status).toBe(200);
     const roster = await milky.next("get_group_member_list");
     expect(roster.params).toEqual({ group_id: 72, no_cache: true });
     roster.respond({ members: [{ group_id: 72, user_id: 91, nickname: "合成群名片" }] });

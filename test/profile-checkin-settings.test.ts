@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore, type ProfileCheckinSettingsChange } from "../packages/account/index.ts";
+import { lockFile } from "../lib/file-lock.ts";
 
 const qq = "100001";
 const profileId = 2;
@@ -127,6 +128,57 @@ test("个人档案设置与旧版一样要求已登录", async () => {
     expect(await readFile(path, "utf8")).toBe(before);
   }, { ...fixture, account: { cookie: "cookie_token=fixture" } });
 });
+
+test("本人签到设置只填空昵称，并清理控制字符与账号原值", async () => {
+  await withProfile(async (store) => {
+    const change = { type: "notify-enabled", enabled: true } as const;
+    let current = await store.checkinSettings(qq, profileId);
+    await store.setProfileCheckinSettings(qq, profileId, current.revision, change, () => "禁止回写 fixture");
+    current = await store.checkinSettings(qq, profileId);
+    expect(current.displayName).toBe(`QQ ${qq}`);
+    await store.setProfileCheckinSettings(qq, profileId, current.revision, change, () => "  自己\u202e名片  ");
+    current = await store.checkinSettings(qq, profileId);
+    expect(current.displayName).toBe("自己名片");
+    expect(await store.setProfileCheckinSettings(qq, profileId, current.revision, change, () => "后来改名"))
+      .toMatchObject({ changed: false, revision: current.revision });
+  });
+});
+
+test.each([["开关变化", false, false], ["开关重复", true, false], ["本人注册", true, true]] as const)(
+  "%s等档案锁时撤销会话只放弃昵称", async (_label, enabled, register) => {
+    await withProfile(async (store, path, directory) => {
+      const before = await store.checkinSettings(qq, profileId);
+      const receipt = Promise.withResolvers<void>();
+      const session = new AbortController();
+      const nickname = () => {
+        receipt.resolve();
+        return session.signal.aborted ? undefined : "旧会话名片";
+      };
+      const lock = await lockFile(join(directory, `.${qq}-${profileId}.yaml.lotus-profile.sqlite`), "隔离测试档案");
+      const pending = register ? store.setCheckinEnabled(qq, profileId, before.revision, true, undefined, undefined, nickname)
+        : store.setProfileCheckinSettings(qq, profileId, before.revision, { type: "notify-enabled", enabled }, nickname);
+      try {
+        await Promise.race([receipt.promise, pending.then(() => { throw new Error("未等候档案锁。"); })]);
+        let stagedProfile = false;
+        for (let count = 0; count < 50; count++) {
+          const staged = (await readdir(directory)).find(item => item.startsWith(".profile-write-"));
+          if (staged && await Bun.file(join(directory, staged, "profile.yaml")).exists()) {
+            stagedProfile = true;
+            break;
+          }
+          await Bun.sleep(10);
+        }
+        expect(stagedProfile).toBe(true);
+        session.abort();
+      } finally { lock.close(); }
+      const result = await pending;
+      const after = await store.checkinSettings(qq, profileId);
+      expect(after).toMatchObject({ displayName: `QQ ${qq}`, enabled: true, notify: { enabled } });
+      expect(result).toMatchObject({ changed: register || !enabled, revision: after.revision });
+      expect(await readFile(path, "utf8")).not.toContain("旧会话名片");
+    }, register ? { ...fixture, enabled: false } : fixture);
+  },
+);
 
 test("既有异步校验期间外部写入生效，停用也在提交前检查当前授权", async () => {
   await withProfile(async (store, path) => {

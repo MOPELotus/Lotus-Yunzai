@@ -1,6 +1,6 @@
 import { createProfileStore, MAX_PROFILE_ID, ProfileError,
   type ProfileCheckinSettingsChange } from "@lotus-yunzai/account";
-import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
+import type { CommandContext, CommandModule, CommandReply, MessageFallbackContext } from "./commands.ts";
 import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const toggle = /^#(启用|开启|关闭|禁用)((?:原神|星铁|崩铁|绝区零|绝|未定事件簿|未定|崩坏3|崩三|崩坏2|崩二|因缘精灵)(?:游戏)?|全部游戏)签到([1-9]\d{0,2})?$/u;
@@ -18,6 +18,16 @@ const games = new Map<string, CheckinGame>([
   ["崩坏3", "bh3"], ["崩三", "bh3"], ["崩坏2", "bh2"], ["崩二", "bh2"],
   ["因缘精灵", "hna"],
 ]);
+
+export function checkinSettingsNickname({ sender, user_id: user, message_type, sub_type, isDelegated,
+  groupActivitySignal, privateCredentialSignal }: Pick<MessageFallbackContext,
+    "sender" | "user_id" | "message_type" | "sub_type" | "isDelegated" | "groupActivitySignal" | "privateCredentialSignal">) {
+  if (isDelegated || !sender || !user || (sender.user_id !== user && sender.user_id !== String(user))) return;
+  if (message_type === "group" && sub_type === "normal" && groupActivitySignal?.aborted === false) {
+    if (typeof sender.card === "string" && sender.card.trim()) return sender.card;
+  } else if (message_type !== "private" || sub_type !== "friend" || privateCredentialSignal?.aborted !== false) return;
+  if (typeof sender.nickname === "string") return sender.nickname;
+}
 
 function isEnabled(action: string) {
   return action === "启用" || action === "开启";
@@ -77,7 +87,7 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
       try {
         const current = await profiles.checkinSettings(qq, id);
         if (signal.aborted) return;
-        const result = await profiles.setProfileCheckinSettings(qq, id, current.revision, change);
+        const result = await profiles.setProfileCheckinSettings(qq, id, current.revision, change, () => checkinSettingsNickname(context));
         saved = true;
         if (result.changed && change.type === "schedule") await reconcilePlans();
         if (signal.aborted) return;

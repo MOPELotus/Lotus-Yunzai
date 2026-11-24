@@ -296,6 +296,13 @@ function checkinLabel(state: ReturnType<typeof readIdentity>, value: string, fal
   return value.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 80) || fallback;
 }
 
+function fillCheckinNickname(document: Record<string, unknown>, state: ReturnType<typeof readIdentity>, nickname?: string) {
+  const user = record(document.user);
+  if (typeof nickname !== "string" || text(user.nickname)) return document;
+  const name = checkinLabel(state, nickname, "").trim();
+  return name ? { ...document, user: { ...user, nickname: name } } : document;
+}
+
 async function readFileSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -355,14 +362,24 @@ function changedProfile(): ProfileError {
   return new ProfileError("changed", "档案已变更，请重新发起请求。");
 }
 
+type ProfileNickname = () => string | undefined;
+type OptionalProfileNickname = {
+  readonly withoutNickname: Record<string, unknown>;
+  readonly changesWithoutNickname: boolean;
+  readonly isCurrent: () => boolean;
+};
+
 async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal,
-  verify?: () => Promise<void>, canCommit?: () => boolean) {
+  verify?: () => Promise<void>, canCommit?: () => boolean, nickname?: OptionalProfileNickname) {
   const yaml = Bun.YAML.stringify(document);
   if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
   const temporary = await mkdtemp(join(dirname(path), ".profile-write-"));
   try {
     const staged = join(temporary, "profile.yaml");
     await writeFile(staged, yaml, { mode: 0o600 });
+    const withoutNickname = nickname?.changesWithoutNickname ? Bun.YAML.stringify(nickname.withoutNickname) : undefined;
+    const stagedWithoutNickname = join(temporary, "profile-without-nickname.yaml");
+    if (withoutNickname !== undefined) await writeFile(stagedWithoutNickname, withoutNickname, { mode: 0o600 });
     signal?.throwIfAborted();
     // Multiple hosts can share a profile directory. Revision check and publication must share the same OS lock.
     const lock = await lockFile(join(dirname(path), `.${basename(path)}.lotus-profile.sqlite`), "档案");
@@ -380,6 +397,12 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
         if (revisionOf(current) !== expected) throw changedProfile();
         signal?.throwIfAborted();
         if (canCommit && !canCommit()) throw new DOMException("档案写入授权已失效。", "AbortError");
+        // A disconnected chat can lose its optional nickname without losing the settings write.
+        if (nickname && !nickname.isCurrent()) {
+          if (withoutNickname === undefined) return expected;
+          await rename(stagedWithoutNickname, path);
+          return revisionOf(Buffer.from(withoutNickname));
+        }
         await rename(staged, path);
       }
       return revisionOf(Buffer.from(yaml));
@@ -635,7 +658,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   async function updateCheckinProfile(
     qq: string, id: number, expectedRevision: string,
     change: (document: Record<string, unknown>, state: ReturnType<typeof readIdentity>) => Record<string, unknown>,
-    signal?: AbortSignal, verify?: () => Promise<void>, canCommit?: () => boolean,
+    signal?: AbortSignal, verify?: () => Promise<void>, canCommit?: () => boolean, nickname?: ProfileNickname,
   ) {
     const filename = profileFilename(qq, id);
     const directory = await realpath(root).catch((error: unknown) => {
@@ -648,9 +671,16 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { document, state, revision } = await readDocument(qq, id, path);
       if (revision !== expectedRevision) throw changedProfile();
       const updated = change(document, state);
-      if (isDeepStrictEqual(document, updated)) return { changed: false, revision };
-      const saved = await writeProfileDocument(path, updated, revision, signal, verify, canCommit);
-      return { changed: true, revision: saved };
+      const changed = !isDeepStrictEqual(document, updated);
+      const displayName = nickname?.();
+      const named = fillCheckinNickname(updated, state, displayName);
+      if (!changed && named === updated) return { changed: false, revision };
+      const optionalNickname = named === updated ? undefined : {
+        withoutNickname: updated, changesWithoutNickname: changed,
+        isCurrent: () => nickname?.() === displayName,
+      };
+      const saved = await writeProfileDocument(path, named, revision, signal, verify, canCommit, optionalNickname);
+      return { changed: saved !== revision, revision: saved };
     });
   }
 
@@ -1083,12 +1113,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { revision, wallets: [...wallets, ...international] };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean,
-      signal?: AbortSignal, canCommit?: () => boolean) {
+      signal?: AbortSignal, canCommit?: () => boolean, nickname?: ProfileNickname) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         return state.summary.enabled === enabled ? document : { ...document, enabled };
-      }, signal, undefined, canCommit);
+      }, signal, undefined, canCommit, enabled ? nickname : undefined);
       return { enabled, ...result };
     },
     async registerGroupCheckin(qq: string, id: number, expectedRevision: string, groupId: number, nickname?: string) {
@@ -1122,11 +1152,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         return { ...document, profile: { ...profile, notify: { ...notify, fallback_groups: filtered } } };
       }, signal, verify);
     },
-    async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange) {
+    async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange,
+      nickname?: ProfileNickname) {
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         return applyCheckinSettings(document, change);
-      });
+      }, undefined, undefined, undefined, nickname);
     },
     async saveInternationalCookie(qq: string, id: number, expectedRevision: string,
       verified: { readonly cookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
