@@ -1,6 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
+import { observeCnRead } from "./cn-read-diagnostics.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { GameRecordRequestError, genshinCnRecordRegion } from "./game-record.ts";
 
@@ -182,7 +183,8 @@ function transportError(kind: Calculation): never {
   throw new HoyoRequestError("transport", `官方${kind}请求未完成。`);
 }
 
-async function readPayload(response: Response, signal: AbortSignal, kind: Calculation): Promise<Json | undefined> {
+async function readPayload(response: Response, signal: AbortSignal, kind: Calculation,
+  onStreamFailure: (error: unknown) => void): Promise<Json | undefined> {
   if (!response.body) return;
   if (Number(response.headers.get("Content-Length")) > maxResponseBytes) {
     void response.body.cancel().catch(() => undefined);
@@ -197,7 +199,10 @@ async function readPayload(response: Response, signal: AbortSignal, kind: Calcul
   try {
     for (;;) {
       signal.throwIfAborted();
-      const next = await reader.read();
+      const next = await reader.read().catch((error: unknown) => {
+        onStreamFailure(error);
+        throw error;
+      });
       if (next.done) break;
       size += next.value.byteLength;
       if (size > maxResponseBytes) responseError(kind);
@@ -274,10 +279,13 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const method = body === undefined ? "GET" : "POST";
+  const diagnostics = observeCnRead(endpoint.pathname, method, signal, timeout);
   let response: Response;
   try {
-    response = await transport(endpoint, { method: body === undefined ? "GET" : "POST", body, headers, credentials: "omit",
-      redirect: "error", referrerPolicy: "no-referrer", signal: deadline });
+    response = await diagnostics.read(() => transport(endpoint, {
+      method, body, headers, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
+    }));
   } catch {
     transportError(kind);
   }
@@ -294,7 +302,7 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
     if (needsChallenge) throw new GameRecordRequestError(subject, "risk", apiCode, status);
     throw new HoyoRequestError("http", `官方${kind}接口返回 HTTP 错误。`, status);
   }
-  const payload = await readPayload(response, deadline, kind);
+  const payload = await readPayload(response, deadline, kind, error => diagnostics.stream(response, error));
   await guard();
   if (deadline.aborted) transportError(kind);
   const retcode = whole(payload?.retcode);

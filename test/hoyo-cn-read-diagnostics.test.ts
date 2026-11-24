@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
+import { requestGenshinCalculator, requestStarRailCalculator } from "../packages/hoyo-client/genshin-backpack.ts";
 import { createHoyoClient, HoyoRequestError, readGameRecordPayload } from "../packages/hoyo-client/index.ts";
 
 const base = {
@@ -189,4 +190,63 @@ test("原会话在角色目录返回后复核途中取消，不提交报表状�
     },
   })).rejects.toMatchObject({ name: "AbortError" });
   expect(verified).toBe(2);
+});
+
+test("原神与星铁已接只读计算在 HTTP 失败时只记录固定路径、方法和非敏感诊断", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    const query = new URLSearchParams({ share_code: "700000070001", region: "cn_gf01" });
+    const body = JSON.stringify({ private: "fixture-body" });
+    const request = async (url: URL) => {
+      expect(url.origin).toBe("https://api-takumi.mihoyo.com");
+      return new Response("fixture-secret-body", { status: 410, headers: {
+        "content-type": "application/json; response=fixture-private",
+        "x-request-id": "fixture-trace-abc", "x-trace-id": "role100000123",
+      } });
+    };
+    for (const task of [
+      () => requestGenshinCalculator(gs, request, "原神背包", "v3/batch_compute", { body }),
+      () => requestGenshinCalculator(gs, request, "尘歌壶模数", "v1/furniture/blueprint", { query }),
+      () => requestGenshinCalculator(gs, request, "尘歌壶模数", "v1/furniture/compute", { body }),
+      () => requestStarRailCalculator(sr, request, "avatar/detail", { query }),
+      () => requestStarRailCalculator(sr, request, "compute", { body }),
+    ]) await expect(task()).rejects.toMatchObject({ code: "http", status: 410 });
+
+    const events = warn.mock.calls.map(([, event]) => event);
+    expect(events).toEqual([
+      ["/event/e20200928calculate/v3/batch_compute", "POST"],
+      ["/event/e20200928calculate/v1/furniture/blueprint", "GET"],
+      ["/event/e20200928calculate/v1/furniture/compute", "POST"],
+      ["/event/rpgcalc/avatar/detail", "GET"],
+      ["/event/rpgcalc/compute", "POST"],
+    ].map(([route, method]) => ({ route, method, elapsedMs: expect.any(Number), stage: "http", status: 410,
+      contentType: "application/json", requestIds: { "x-request-id": "fixture-trace-abc" },
+    })));
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test("只读计算连接与流的错误保持原分类，普通坏回包和主动取消不误记", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  const call = (transport: Parameters<typeof requestStarRailCalculator>[1], signal?: AbortSignal) =>
+    requestStarRailCalculator(sr, transport, "compute", { body: "{}", signal });
+  try {
+    await expect(call(async () => { throw Object.assign(new Error("fixture-private-url"), { code: "ECONNREFUSED" }); }))
+      .rejects.toMatchObject({ code: "transport" });
+    await expect(call(async () => failureStream("UND_ERR_SOCKET"))).rejects.toMatchObject({ code: "response" });
+    await expect(call(async () => new Response("fixture-invalid-json"))).rejects.toMatchObject({ code: "response" });
+    const controller = new AbortController();
+    await expect(call(async () => {
+      controller.abort();
+      return new Response("fixture-cancelled", { status: 410 });
+    }, controller.signal)).rejects.toMatchObject({ code: "transport" });
+    const events = warn.mock.calls.map(([, event]) => event);
+    expect(events).toEqual([
+      { stage: "connection", networkCode: "ECONNREFUSED", status: null },
+      { stage: "stream", networkCode: "UND_ERR_SOCKET", status: 200, contentType: "application/json" },
+    ].map(detail => ({ route: "/event/rpgcalc/compute", method: "POST", elapsedMs: expect.any(Number), ...detail })));
+  } finally {
+    warn.mockRestore();
+  }
 });
