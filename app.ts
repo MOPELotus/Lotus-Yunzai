@@ -3228,14 +3228,19 @@ if (import.meta.main) {
             return catalog.accountQuota(target, good, signal ? AbortSignal.any([signal, timeout]) : timeout, verifyBinding);
           },
           async catalog(target, game, signal, verifyBinding) {
-            const result = [];
+            const goods = new Map<string, Awaited<ReturnType<typeof catalog.list>>["goods"][number]>();
             for (let page = 1; page <= 100; page++) {
               signal?.throwIfAborted();
               const catalogPage = await catalog.list(target, new URLSearchParams({ game, page: String(page) }), signal, verifyBinding);
-              result.push(...catalogPage.goods);
-              if (page >= catalogPage.totalPages) return result;
+              if (!catalogPage.goods.length) break;
+              const previous = goods.size;
+              for (const good of catalogPage.goods) {
+                if (!goods.has(good.id)) goods.set(good.id, good);
+              }
+              if (goods.size === previous) throw new MiyousheShopPlanError(503, "商城分页未前进，请稍后重试。");
+              if (page >= catalogPage.totalPages) break;
             }
-            return result;
+            return [...goods.values()];
           },
           async destinations(target, game, itemType, signal, verifyBinding) {
             if (itemType === 2) return { roles: trackingGame(game) ? await catalog.trackingRoles(target, trackingGames[game], signal, verifyBinding) : [] };

@@ -34,8 +34,12 @@ export async function readMiyousheShop(transport: HoyoTransport, route: "list" |
   const payload = await readGameRecordPayload(pending, 512 * 1024, deadline);
   signal?.throwIfAborted();
   if (!payload || typeof payload.retcode !== "number") invalidResponse();
-  if (payload.retcode === 429) throw new MiyousheShopError(429, "商城请求频繁，请稍后再试。");
-  if (payload.retcode !== 0) throw new MiyousheShopError(502, "米游社商城暂时不可用。");
+  if (payload.retcode !== 0) {
+    if (payload.retcode === 429 || typeof payload.message === "string" && /频繁|请求过快|操作太快|频率限制/u.test(payload.message)) {
+      throw new MiyousheShopError(429, "商城请求频繁，请稍后再试。");
+    }
+    throw new MiyousheShopError(502, "米游社商城暂时不可用。");
+  }
   const data = payload.data;
   return data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : invalidResponse();
 }

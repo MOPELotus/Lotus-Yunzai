@@ -581,3 +581,21 @@ test("商城追踪目标只刷新当前档案一次，同一网页会话可读�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("商城匿名目录和缺省商品时间详情保留业务限频状态", async () => {
+  for (const limitedRoute of ["list", "detail"]) {
+    const reads: string[] = [];
+    const catalog = createMiyousheShopCatalog({ async transport(source, init) {
+      const url = new URL(String(source));
+      const route = url.pathname.split("/").at(-1)!;
+      reads.push(route);
+      expect(new Headers(init?.headers).has("Cookie")).toBe(false);
+      if (route === limitedRoute) return Response.json({ retcode: -331, message: "请求过快，请稍后再试" });
+      return Response.json({ retcode: 0, data: {
+        total: 1, list: [{ goods_id: 27, goods_name: "等待开放", price: 20, status: "not_in_sell", total: 0 }],
+      } });
+    } });
+    await expect(catalog.list({ qq: "42", profileId: 1 }, new URLSearchParams())).rejects.toMatchObject({ status: 429 });
+    expect(reads).toEqual(limitedRoute === "list" ? ["list"] : ["list", "detail"]);
+  }
+});
