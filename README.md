@@ -19,7 +19,7 @@ bun run start
 
 完整日程见[默认定时任务](docs/default-schedule.md)。默认定时按北京时间运行：程序更新 00:30/12:30，三游面板图库 01:00/13:00，初始化后的图鉴 01:30/13:30，配队攻略 02:00/14:00，其余攻略与表格 05:00/17:00。签到默认提前生成次日随机计划；固定模式需手动选择。网易云登录账号存在后，合伙人任务默认于 01:30 执行。显式配置优先。自动群名片只预置后缀，默认关闭，昵称读取当前 QQ 账号；迁移保留原有启用设置。
 
-前台按 Ctrl+C 停止。Linux 或 macOS 安装 PM2 后，使用 `bun run start:bg` 后台启动，`bun run stop` 停止，`bun run logs` 查看日志，`bun run status` 查看后台状态。后台宿主就绪后异常退出会自动恢复。
+前台按 Ctrl+C 输出「结束运行」并正常停止；查看日志时按 Ctrl+C 只退出查看器，后台继续运行。Linux 或 macOS 安装 PM2 后，使用 `bun run start:bg` 后台启动，`bun run stop` 停止，`bun run logs` 查看日志，`bun run status` 查看后台状态。后台宿主就绪后异常退出会自动恢复。
 
 默认监听 `0.0.0.0:2536`，HTTP 与 OneBot 11 共用端口。协议端反向 WebSocket 地址为 `ws://机器人内网IP:2536/OneBotv11`，内网直连无需令牌；公网接入须配置 `onebot_token`。面板对外地址可在 `config/server.yaml` 设置 `panel_url`（例如 `http://192.168.1.10:2536/`，程序发送的链接自动附加 `panel/`）；`LOTUS_PANEL_PUBLIC_URL` 可覆盖该设置。公网面板使用反代后的 HTTPS 地址，内网 IP 可直接使用 HTTP。HTTPS 可由反向代理提供，程序默认不开启 TLS 端口。隔离测试请覆盖端口，避免与生产冲突。
 
