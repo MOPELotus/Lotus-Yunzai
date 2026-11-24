@@ -155,7 +155,7 @@ test.skipIf(process.platform === "win32")("高日志等级仍显示Ctrl+C结束�
   const terminal=new Bun.Terminal({cols:100,rows:20,data:(_t,chunk)=>output.append(chunk)});
   const child=Bun.spawn([process.execPath,"app.ts"],{cwd:root,env:flags,terminal});
   try {
-   await output.until(startup);terminal.write("\x03");
+   await output.until(startup);await output.until(/>(?:\x1b\[0m)? /u);terminal.write("\x03");
    expect(await child.exited).toBe(0);
    expect(stripVTControlCharacters(output.output()).trimEnd()).toMatch(/结束运行$/u);
   }finally{if(child.exitCode===null)child.kill("SIGKILL");await child.exited;terminal.close();}
