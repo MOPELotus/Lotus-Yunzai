@@ -1,0 +1,6 @@
+The original package declares **MIT** and names author **hshino** in the
+unmodified `UPSTREAM_METADATA.toml` retained here.
+
+No separate LICENSE or copyright notice exists in that source snapshot.
+No original notice has been removed. See `NOTICE` for the exact source commit,
+TypeScript port location and separate pretrained-model provenance.

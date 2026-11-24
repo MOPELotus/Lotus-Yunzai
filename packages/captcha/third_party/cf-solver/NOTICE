@@ -1,0 +1,15 @@
+VeyraAgent/cf-solver-models
+https://huggingface.co/VeyraAgent/cf-solver-models
+Revision: 0257291b5110eeab7d13cab98907ab1347559e22
+File: models/siamese.onnx
+SHA256: 946e3444a7721b4cd3df36c376630934931549a153e86b0979abefe2c3e54540
+Model card declares MIT. Its linked project's original MIT license is retained here:
+https://github.com/VeyraAgent/cf-solver
+Copyright (c) 2026 VeyraAgent.
+
+The unchanged dynamic-batch embedding model is used from native TypeScript ONNX
+Runtime with RGB 96x96 /255 inputs, cosine similarity and one-to-one assignment.
+No browser, Python sidecar, training or weight changes are included.
+
+The separate yolov11n_captcha.onnx was inspected during research but is not
+adopted or redistributed; its AGPL metadata is not relabeled MIT.

@@ -1,0 +1,300 @@
+{
+  "hgnet": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "x",
+        "shape": [
+          "p2o.DynamicDimension.0",
+          3,
+          224,
+          224
+        ]
+      }
+    ]
+  },
+  "dfine": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          "N",
+          3,
+          320,
+          320
+        ]
+      },
+      {
+        "name": "orig_target_sizes",
+        "shape": [
+          "unk__409",
+          2
+        ]
+      }
+    ]
+  },
+  "embedded-detect": {
+    "custom": {
+      "channels": "3",
+      "args": "{'batch': 1, 'half': False, 'dynamic': True, 'simplify': True, 'opset': 14, 'nms': False}",
+      "names": "{0: '0', 1: '1'}",
+      "task": "detect",
+      "stride": "32",
+      "license": "AGPL-3.0 License (https://ultralytics.com/license)",
+      "imgsz": "[384, 384]",
+      "batch": "1",
+      "version": "8.3.168",
+      "date": "2025-11-03T01:17:37.320724",
+      "docs": "https://docs.ultralytics.com",
+      "author": "Ultralytics",
+      "description": "Ultralytics YOLO11n model trained on ./train_config.yml"
+    },
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          "batch",
+          3,
+          "height",
+          "width"
+        ]
+      }
+    ]
+  },
+  "dino": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "pixel_values",
+        "shape": [
+          "s99",
+          3,
+          "s100",
+          "s4"
+        ]
+      }
+    ]
+  },
+  "atten": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "patch_tokens",
+        "shape": [
+          "batch_size",
+          196,
+          384
+        ]
+      }
+    ]
+  },
+  "grid-vision": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "image",
+        "shape": [
+          "batch",
+          3,
+          256,
+          256
+        ]
+      }
+    ]
+  },
+  "grid-head": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "prompt_features",
+        "shape": [
+          "batch",
+          576,
+          8,
+          8
+        ]
+      },
+      {
+        "name": "cell_features",
+        "shape": [
+          "batch",
+          576,
+          8,
+          8
+        ]
+      }
+    ]
+  },
+  "icon-direction": {
+    "custom": {
+      "end2end": "False",
+      "description": "Ultralytics best model trained on E:\\projects\\security\\riskcontroll\\GeekedTest\\training\\dataset\\data.yaml",
+      "channels": "3",
+      "author": "Ultralytics",
+      "docs": "https://docs.ultralytics.com",
+      "head": "Detect",
+      "version": "8.4.160",
+      "batch": "1",
+      "license": "AGPL-3.0 License (https://ultralytics.com/license)",
+      "stride": "32",
+      "task": "detect",
+      "date": "2026-09-25T12:09:22.386852+08:00",
+      "imgsz": "[640, 640]",
+      "names": "{0: 'u', 1: 'd', 2: 'l', 3: 'r', 4: 'lu', 5: 'ld', 6: 'ru', 7: 'rd'}",
+      "args": "{'data': None, 'batch': 1, 'fraction': 1.0, 'quantize': None, 'nms': None, 'dynamic': False, 'simplify': True, 'opset': 12}"
+    },
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          1,
+          3,
+          640,
+          640
+        ]
+      }
+    ]
+  },
+  "word-detect": {
+    "custom": {
+      "nms": "required",
+      "output_layout": "[batch, 4+nc, anchors]",
+      "box_format": "xyxy",
+      "imgsz_h": "320",
+      "dynamic": "True",
+      "imgsz": "320",
+      "names": "{\"0\": \"target\"}",
+      "nb_classes": "1",
+      "supported_tasks": "[\"detect\"]",
+      "task": "detect",
+      "repo": "https://github.com/wulu007/geetest-bypass",
+      "docs": "https://github.com/wulu007/geetest-bypass",
+      "libreyolo_version": "1.6.0",
+      "precision": "fp32",
+      "model_family": "yolo9",
+      "default_task": "detect",
+      "half": "False",
+      "size": "t",
+      "segmentation": "false",
+      "obb": "false",
+      "letterbox_pad": "center",
+      "author": "wulu007",
+      "repo_weights": "https://huggingface.co/wulu007/gt",
+      "nc": "1",
+      "imgsz_w": "320",
+      "version": "261028",
+      "model_size": "t",
+      "arch": "LibreYOLO9t",
+      "description": "wulu007/geetest-bypass \u516c\u5f00\u6743\u91cd | Geetest v4 word\uff08\u6587\u5b57\u70b9\u9009\uff09+ phrase\uff08\u77ed\u8bed\u70b9\u9009\uff09\u901a\u7528\u5355\u5b57\u5b9a\u4f4d\u6a21\u578b\uff08LibreYOLO9t\uff0c\u5355\u7c7b target\uff0c320 \u8f93\u5165\uff0c\u8f93\u51fa\u89d2\u70b9\u683c\u5f0f xyxy\uff09\u3002\u6743\u91cd\u53d1\u5e03\u5730\u5740\uff1ahttps://huggingface.co/wulu007/gt \uff1b\u6e90\u7801\u4ed3\u5e93\uff1ahttps://github.com/wulu007/geetest-bypass \u3002\u672c\u6743\u91cd\u4e3a\u516c\u5f00\u6743\u91cd\uff0c\u4ec5\u4f9b\u5b66\u4e60\u3001\u7814\u7a76\u4e0e\u6280\u672f\u4ea4\u6d41\u4f7f\u7528\uff0c\u7981\u6b62\u4efb\u4f55\u975e\u6cd5\u7528\u9014\uff1b\u8f6c\u8f7d\u3001\u5f15\u7528\u6216\u4e8c\u6b21\u5206\u53d1\u8bf7\u6ce8\u660e\u4f5c\u8005 wulu007 \u4e0e\u4e0a\u8ff0\u6765\u6e90\u3002\u8bf7\u52ff\u5c06\u5176\u7528\u4e8e\u4efb\u4f55\u8fdd\u53cd\u5f53\u5730\u6cd5\u5f8b\u6cd5\u89c4\u6216\u5e73\u53f0\u670d\u52a1\u6761\u6b3e\u7684\u7528\u9014\uff1b\u6743\u91cd\u6309\"\u73b0\u72b6\"\u63d0\u4f9b\uff0c\u4e0d\u9644\u5e26\u4efb\u4f55\u660e\u793a\u6216\u6697\u793a\u7684\u62c5\u4fdd\uff0c\u4e00\u5207\u4f7f\u7528\u98ce\u9669\u4e0e\u540e\u679c\u7531\u4f7f\u7528\u8005\u81ea\u884c\u627f\u62c5\u3002 | Public weights for study and research only. Illegal use is prohibited. Weights: https://huggingface.co/wulu007/gt ; Code: https://github.com/wulu007/geetest-bypass . Provided AS-IS, without warranty of any kind.",
+      "schema_version": "1.0",
+      "license": "MIT",
+      "targets": "word,phrase"
+    },
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          "batch",
+          3,
+          320,
+          320
+        ]
+      }
+    ]
+  },
+  "phrase-detect": {
+    "custom": {
+      "ultralytics_version": "8.4.177",
+      "end2end": "False",
+      "description": "wulu007/geetest-bypass \u516c\u5f00\u6743\u91cd | Geetest v4 phrase\uff08\u77ed\u8bed\u70b9\u9009\uff09\u9a8c\u8bc1\u7801\u5355\u5b57\u68c0\u6d4b\u6a21\u578b\uff08YOLO26n\uff0c\u5355\u7c7b target\uff09\u3002\u6743\u91cd\u53d1\u5e03\u5730\u5740\uff1ahttps://huggingface.co/wulu007/gt \uff1b\u6e90\u7801\u4ed3\u5e93\uff1ahttps://github.com/wulu007/geetest-bypass \u3002\u672c\u6743\u91cd\u4e3a\u516c\u5f00\u6743\u91cd\uff0c\u4ec5\u4f9b\u5b66\u4e60\u3001\u7814\u7a76\u4e0e\u6280\u672f\u4ea4\u6d41\u4f7f\u7528\uff0c\u7981\u6b62\u4efb\u4f55\u975e\u6cd5\u7528\u9014\uff1b\u8f6c\u8f7d\u3001\u5f15\u7528\u6216\u4e8c\u6b21\u5206\u53d1\u8bf7\u6ce8\u660e\u4f5c\u8005 wulu007 \u4e0e\u4e0a\u8ff0\u6765\u6e90\u3002\u8bf7\u52ff\u5c06\u5176\u7528\u4e8e\u4efb\u4f55\u8fdd\u53cd\u5f53\u5730\u6cd5\u5f8b\u6cd5\u89c4\u6216\u5e73\u53f0\u670d\u52a1\u6761\u6b3e\u7684\u7528\u9014\uff1b\u6743\u91cd\u6309\"\u73b0\u72b6\"\u63d0\u4f9b\uff0c\u4e0d\u9644\u5e26\u4efb\u4f55\u660e\u793a\u6216\u6697\u793a\u7684\u62c5\u4fdd\uff0c\u4e00\u5207\u4f7f\u7528\u98ce\u9669\u4e0e\u540e\u679c\u7531\u4f7f\u7528\u8005\u81ea\u884c\u627f\u62c5\u3002 | Public weights for study and research only. Illegal use is prohibited. Weights: https://huggingface.co/wulu007/gt ; Code: https://github.com/wulu007/geetest-bypass . Provided AS-IS, without warranty of any kind.",
+      "repo_weights": "https://huggingface.co/wulu007/gt",
+      "channels": "3",
+      "author": "wulu007",
+      "repo": "https://github.com/wulu007/geetest-bypass",
+      "docs": "https://docs.ultralytics.com",
+      "head": "Detect",
+      "version": "261013",
+      "batch": "1",
+      "license": "AGPL-3.0 License (https://ultralytics.com/license)",
+      "stride": "32",
+      "task": "detect",
+      "date": "2026-10-15T17:36:29.296027+08:00",
+      "imgsz": "[320, 320]",
+      "names": "{0: 'target'}",
+      "args": "{'data': None, 'batch': 1, 'fraction': 1.0, 'quantize': None, 'nms': None, 'dynamic': False, 'simplify': True, 'opset': 20}"
+    },
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          1,
+          3,
+          320,
+          320
+        ]
+      }
+    ]
+  },
+  "phrase-order": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "input_ids",
+        "shape": [
+          "batch",
+          "seq"
+        ]
+      },
+      {
+        "name": "attention_mask",
+        "shape": [
+          "batch",
+          "seq"
+        ]
+      }
+    ]
+  },
+  "text-recognize": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "x",
+        "shape": [
+          "DynamicDimension.0",
+          3,
+          48,
+          "DynamicDimension.1"
+        ]
+      }
+    ]
+  },
+  "symbol-detect": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          1,
+          3,
+          416,
+          416
+        ]
+      }
+    ]
+  },
+  "symbol-embedding": {
+    "custom": {},
+    "inputs": [
+      {
+        "name": "input",
+        "shape": [
+          "batch_size",
+          3,
+          96,
+          96
+        ]
+      }
+    ]
+  }
+}

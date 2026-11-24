@@ -4381,7 +4381,7 @@ if (import.meta.main) {
     if (!stopping) throw error;
   } finally {
     stopping = true;
-    captchaService?.close();
+    await captchaService?.close();
     setDefaultCaptchaSolver(undefined);
     manualCaptcha?.close();
     publicFiles.close();

@@ -1,0 +1,120 @@
+# Third-party notices
+
+Third-party code, weights and data retain their original licenses. The project's
+integration license does not relicense them. Exact source snapshots are listed
+in `UPSTREAM.json`; models are downloaded to ignored local storage, with fixed
+URLs, lengths and SHA256 checks in `resources/models.json`.
+
+## V3 implementation and resources
+
+- [MOPELotus/Lotus-ReFactor](https://github.com/MOPELotus/Lotus-ReFactor): V3 wire
+  protocol, preprocessing, original five-model recognition and external provider
+  clients were ported to TypeScript at the copyright owner's request. Original
+  terms: `licenses/Lotus-ReFactor-LICENSE`.
+- [Pillow](https://github.com/python-pillow/Pillow): RGB resize semantics in
+  `src/infrastructure/resize.ts`; original notice retained at
+  `resources/captcha/Pillow-LICENSE.txt`.
+- [luguoyixiazi/test_nine](https://github.com/luguoyixiazi/test_nine) and
+  [luguoyixiazi/model_save](https://huggingface.co/luguoyixiazi/model_save):
+  original inference reference and unchanged V3 HGNet, D-FINE, YOLO, DINO and
+  attention weights. The model repository API declares no model-card license;
+  no blanket MIT grant is inferred. Weight files are not committed to Git.
+
+## wulu GeeTest V4 ports
+
+[wulu007/geetest-bypass](https://github.com/wulu007/geetest-bypass) is MIT;
+original copyright/license is preserved in `third_party/wulu-geetest-bypass/LICENSE`.
+The protocol, PoW, encryption, track, image and voice implementations have been
+ported/adapted into their corresponding TypeScript modules. Original third-party
+notices and each extension's LICENSE/NOTICE are retained under that directory.
+The original Python programs are not part of the runtime distribution.
+
+Voice NPZ arrays were losslessly serialized into JSON. This is a format change,
+not training or modification of learned values. Phrase OCR character data was
+extracted from the model already used by RapidOCR; its license remains applicable.
+
+The original notices distinguish GeekedTest icon material (MIT), PP-OCRv6
+(Apache-2.0), LibreYOLO9t-derived character detection (MIT), and UER Chinese
+RoBERTa derivatives (base model card declares no license). Preserve those
+individual declarations rather than applying the HuggingFace repository's
+Apache-2.0 card to every underlying resource.
+
+Inspection of the actual downloaded **icon-direction** and old **phrase-detect**
+files additionally reveals **AGPL-3.0 model metadata**. That metadata is retained
+in `resources/model-metadata.json`; these weights are not relabeled MIT here.
+The public LibreYOLO character detector records MIT in its own metadata.
+The Apache-2.0 text is preserved at `licenses/Apache-2.0.txt`.
+
+## Public nine-grid matcher
+
+[hshinosa/geetest-solver-nine](https://github.com/hshinosa/geetest-solver-nine)
+declares MIT and author hshino in its original package metadata. Upstream has no
+separate LICENSE file. Its unmodified declaration is retained as
+`third_party/nine-matcher/UPSTREAM_METADATA.toml`, with provenance in NOTICE.
+`GridMatcher` is a TypeScript port of the local ONNX matcher; no browser token,
+site registration, external AI API or Python component is used.
+
+The two pretrained weights are fetched from public `wulu007/gt`, fixed revision
+27b45196526af62c661c87b86a90c3899b85afce, `nine/261017/`, under that model card's
+Apache-2.0 declaration. Their hashes exactly match the matcher project's bundled
+files. This is distinct from wulu's unavailable private nine classifier, whose
+weight is not included, fetched or selected by this runtime.
+
+## PyPasser improvements
+
+[xHossein/PyPasser](https://github.com/xHossein/PyPasser), fixed commit
+910c3def3d69e68d42d86ccba5a1b4cf105ee1ed: MIT, Copyright (c) 2021 xHossein.
+Original license: `third_party/pypasser/LICENSE`.
+
+The data-only RSA keyring, automatic risk-type detection, voice fallback strategy
+and alternative Canny slide matcher reference or port its GeeTest implementation.
+Downloaded JavaScript is never executed. Key changes are followed by a fresh
+challenge; repeated candidate submissions against the same lot are not adopted.
+No Vosk model, browser automation or Python runtime is installed.
+
+## Public phrase lexicon
+
+[fxsjy/jieba](https://github.com/fxsjy/jieba), fixed commit
+67fa2e36e72f69d9134b8a1037b83fbb070b9775, `jieba/dict.txt`: MIT,
+Copyright (c) 2013 Sun Junyi. Original license: `third_party/jieba/LICENSE`.
+The unchanged dictionary is fetched as a SHA256-verified data asset. Only a unique
+four-character anagram may supplement phrase ordering; verified upstream entries
+take precedence and ambiguous cases defer to the original ranker. No model was trained.
+
+## Similarity icon recognition
+
+- [sml2h3/ddddocr](https://github.com/sml2h3/ddddocr), pinned commit
+  c40f56f95412e10bcb9bd0bd24411e92f896d238: MIT. The YOLOX decoder and input
+  convention were ported to TypeScript. The unchanged model matches the 1.6.1 wheel.
+  Original license and notice: `third_party/ddddocr/`.
+- [VeyraAgent/cf-solver-models](https://huggingface.co/VeyraAgent/cf-solver-models),
+  revision 0257291b5110eeab7d13cab98907ab1347559e22: model card declares MIT for
+  the unchanged embedding weight. Linked project license: `third_party/cf-solver/`.
+  Its separate detector was researched but not adopted; its AGPL metadata is not
+  relabeled MIT.
+- [zscmmm/yzm_captcha](https://github.com/zscmmm/yzm_captcha): MIT code,
+  Copyright (c) 2024 caisxg. The candidate preprocessing and matching port is
+  confined to `scripts/benchmarks/candidates/`; the Apache-2.0 model-card weight
+  is in that research catalog, not the production model download list.
+  Original license and notice: `third_party/yzm-captcha/`.
+- [LeapYa/geetest-captcha-solver](https://github.com/LeapYa/geetest-captcha-solver)
+  was consulted for its published contour-matching approach. No source or weights
+  were copied: it has no standalone permissive license. The benchmark's standard
+  chamfer implementation was written independently and is not a default solver.
+
+All selected weights remain unchanged. No training, Python runtime or unlicensed
+copy of the research-only detector/classifier is shipped.
+
+## Runtime libraries
+
+Package-manager distributions retain their own notices. Direct dependencies
+include ONNX Runtime (MIT), sharp (Apache-2.0), OpenCV.js (Apache-2.0),
+resvg-js (MPL-2.0), sm-crypto (MIT), fft.js (MIT), fflate (MIT),
+fast-xml-parser (MIT), and mpg123-decoder (MIT JavaScript wrapper; its underlying
+compiled decoder retains its separate upstream notices). Native libraries and
+WASM artifacts remain unmodified inside the installed package distributions.
+
+Model comparison reports do not grant redistribution rights for research-only
+candidates. Candidates with unavailable weights, undeclared preprocessing or
+unclear model licenses are identified separately and not silently promoted to
+production defaults.

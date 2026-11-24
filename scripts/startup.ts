@@ -193,6 +193,10 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
     if (!ready) await initializePublicAtlas(root, directory, channel, signal, locale, config.atlas);
   }
   await prepareThemes(root, signal, !ready || initialize);
+  if ((!ready || initialize) && await Bun.file(new URL("packages/captcha/index.ts", root)).exists()) {
+    const { initializeCaptchaModels } = await import("../lib/captcha/initialize.ts");
+    await initializeCaptchaModels(root, signal);
+  }
 }
 
 if (import.meta.main) {

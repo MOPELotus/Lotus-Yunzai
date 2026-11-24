@@ -12,19 +12,20 @@ export interface CaptchaServiceOptions {
   readonly fetchImpl?: typeof fetch;
   readonly now?: () => number;
   readonly wait?: (ms: number, signal: AbortSignal) => Promise<unknown>;
-  readonly providers?: { available(id: ProviderId): boolean; solve(id: "local" | "ttocr", challenge: CaptchaChallenge, signal: AbortSignal): Promise<CaptchaProof> };
+  readonly providers?: { available(id: ProviderId): boolean; solve(id: "local" | "ttocr", challenge: CaptchaChallenge, signal: AbortSignal): Promise<CaptchaProof>; close?(): Promise<void> };
   readonly report?: (entry: { provider: ProviderId; round: number; attempt: number; reason: string }) => void;
 }
-export function createCaptchaService(options: CaptchaServiceOptions = {}): CaptchaSolver & { readonly config: CaptchaConfig; close(): void } {
+export function createCaptchaService(options: CaptchaServiceOptions = {}): CaptchaSolver & { readonly config: CaptchaConfig; close(): Promise<void> } {
   const config = captchaConfig(options.config);
   const now = options.now ?? Date.now;
   const wait = options.wait ?? ((ms, signal) => sleep(ms, undefined, { signal }));
   const providers = options.providers ?? createAutomaticProviders(config, { fetchImpl: options.fetchImpl, now, wait });
   const closed = new AbortController();
   const lifecycle = options.signal ? AbortSignal.any([closed.signal, options.signal]) : closed.signal;
+  options.signal?.addEventListener("abort", () => { void providers.close?.(); }, { once: true });
   return {
     config,
-    close() { closed.abort(); },
+    async close() { closed.abort(); await providers.close?.(); },
     async run<T>(input: CaptchaRun<T>) {
       if (!config.enabled) return { ok: false, reason: "disabled" };
       const operation = new AbortController();

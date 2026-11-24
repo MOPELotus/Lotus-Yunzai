@@ -100,19 +100,31 @@ test("人工票据在完成、通知失败和原操作退出后均取消", async
   expect(scope?.aborted).toBe(true); expect(reads).toBe(1);
 });
 
-test("Lotus-Captcha HTTP协议v3/v4严格分开，signed risk_type完整传入", async () => {
+test("本地v3/v4惰性内部调用、复用识别器且不走HTTP，signed risk_type完整传入", async () => {
   const seen: unknown[] = [];
-  const providers = createAutomaticProviders(captchaConfig({}), { fetchImpl: (async (url, init) => {
-    expect(String(url)).toBe("http://127.0.0.1:9645/solve");
-    const body = JSON.parse(String(init?.body)); seen.push(body);
-    expect(new Headers(init?.headers).has("Cookie")).toBe(false);
-    return Response.json({ ok: true, captchaVersion: body.version, data: body.version === 4 ? wire4("fresh")
-      : { challenge: "updated-sdk-challenge", validate: "validate", seccode: "validate|jordan" } });
-  }) as typeof fetch });
+  let initialized = 0, closed = 0;
+  const providers = createAutomaticProviders(captchaConfig({}), {
+    fetchImpl: (async () => { throw new Error("本地节点不应发送HTTP请求"); }) as unknown as typeof fetch,
+    createLocalSolver: async () => {
+      initialized++;
+      return {
+        async solve(input, signal) {
+          signal.throwIfAborted(); seen.push(input);
+          return input.version === 4 ? { version: 4, ...wire4("fresh") }
+            : { version: 3, challenge: "updated-sdk-challenge", validate: "validate", seccode: "validate|jordan" };
+        },
+        async close() { closed++; },
+      };
+    },
+  });
+  expect(initialized).toBe(0);
   expect(await providers.solve("local", v4, new AbortController().signal)).toEqual(proof4("fresh"));
   expect(await providers.solve("local", { captchaVersion: 3, gt: "gt", challenge: "original" }, new AbortController().signal))
     .toEqual({ challenge: "updated-sdk-challenge", validate: "validate", seccode: "validate|jordan" });
+  expect(initialized).toBe(1);
   expect(seen).toEqual([{ version: 4, captcha_id: v4.captchaId, risk_type: v4.riskType }, { version: 3, gt: "gt", challenge: "original" }]);
+  await providers.close(); expect(closed).toBe(1);
+  await expect(providers.solve("local", v4, new AbortController().signal)).rejects.toMatchObject({ reason: "service_closed" });
 });
 
 test("TTOCR按388/488提交，至少2秒轮询，4039结束本题且IP禁用冷却30分钟", async () => {
@@ -145,14 +157,14 @@ test("TTOCR按388/488提交，至少2秒轮询，4039结束本题且IP禁用冷�
   expect(requestCount).toBe(before); now += 30 * 60_000; expect(providers.available("ttocr")).toBe(true);
 });
 
-test("拒绝版本混合、冲突字段及不完整证明；兼容旧本地endpoint指向solve", () => {
+test("拒绝版本混合、冲突字段及不完整证明；旧本地endpoint不再参与运行", () => {
   for (const proof of [
     { ...wire4("lot"), captchaId: "wrong" }, { ...wire4("lot"), validate: "v3" }, { ...wire4("lot"), version: 3 },
     { lot_number: "lot" }, { ...wire4("lot"), gen_time: "bad" },
   ]) expect(normalizeCaptchaProof(proof, v4)).toBeUndefined();
   const c3 = { captchaVersion: 3, gt: "gt", challenge: "c" } as const;
   expect(normalizeCaptchaProof({ validate: "v", seccode: "wrong", geetest_seccode: "v|jordan" }, c3)).toBeUndefined();
-  expect(captchaConfig({ test_nine: { endpoint: "http://127.0.0.1:9645/pass_uni" } }).local.endpoint).toBe("http://127.0.0.1:9645/solve");
+  expect(captchaConfig({ test_nine: { endpoint: "not-an-address" } }).local).toEqual({ enabled: true, timeoutMs: 120000 });
 });
 
 test("关闭人工节点时不获取人工挑战、不发布链接", async () => {

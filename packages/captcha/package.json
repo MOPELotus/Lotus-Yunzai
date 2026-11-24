@@ -1,0 +1,22 @@
+{
+  "name": "@lotus-yunzai/captcha",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@techstark/opencv-js": "^5.0.0-release.1",
+    "fast-xml-parser": "^5.12.1",
+    "fflate": "^0.8.3",
+    "fft.js": "^4.0.4",
+    "mpg123-decoder": "^1.0.3",
+    "onnxruntime-node": "1.31.1",
+    "sharp": "0.35.5",
+    "sm-crypto": "^0.5.9"
+  },
+  "devDependencies": {
+    "@types/sm-crypto": "^0.3.4"
+  }
+}

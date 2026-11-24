@@ -7,7 +7,7 @@ export interface CaptchaConfig {
   readonly enabled: boolean;
   readonly order: readonly ProviderId[];
   readonly manual: { readonly enabled: boolean };
-  readonly local: { readonly enabled: boolean; readonly endpoint: string; readonly timeoutMs: number };
+  readonly local: { readonly enabled: boolean; readonly timeoutMs: number };
   readonly ttocr: { readonly enabled: boolean; readonly key: string; readonly api: string; readonly resultApi: string;
     readonly timeoutMs: number; readonly pollMs: number; readonly itemid: string; readonly itemidV4: string; readonly referer: string };
 }
@@ -26,7 +26,6 @@ function endpoint(value: unknown, fallback: string) {
   if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) {
     throw new TypeError("验证码服务地址无效。");
   }
-  if (url.pathname === "/pass_uni") { url.pathname = "/solve"; url.search = ""; }
   return url.href;
 }
 export function captchaConfig(input: unknown): CaptchaConfig {
@@ -39,8 +38,7 @@ export function captchaConfig(input: unknown): CaptchaConfig {
   if (!order.length) throw new TypeError("验证码提供方顺序无效。");
   return {
     enabled: source.enable !== false, order, manual: { enabled: manual.enable !== false },
-    local: { enabled: local.enable !== false, endpoint: endpoint(local.endpoint, "http://127.0.0.1:9645/solve"),
-      timeoutMs: duration(local.timeout_ms, 120_000) },
+    local: { enabled: local.enable !== false, timeoutMs: duration(local.timeout_ms, 120_000) },
     ttocr: { enabled: ttocr.enable !== false && typeof ttocr.key === "string" && !!ttocr.key.trim() && ttocr.key !== "脱敏",
       key: typeof ttocr.key === "string" ? ttocr.key.trim() : "",
       api: endpoint(ttocr.api, "http://api.ttocr.com/api/recognize"),
@@ -77,9 +75,18 @@ export function normalizeCaptchaProof(raw: unknown, challenge: CaptchaChallenge)
   if (!field(returnedChallenge, 1024) || !field(validate) || seccode !== `${validate}|jordan`) return;
   return { challenge: returnedChallenge, validate, seccode };
 }
-export function createAutomaticProviders(config: CaptchaConfig, { fetchImpl = fetch, now = Date.now,
+type LocalSolver = ReturnType<typeof import("@lotus-yunzai/captcha").createLocalCaptchaSolver>;
+export function createAutomaticProviders(config: CaptchaConfig, { fetchImpl = fetch, now = Date.now, createLocalSolver,
   wait = (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal }),
-}: { fetchImpl?: typeof fetch; now?: () => number; wait?: (ms: number, signal: AbortSignal) => Promise<unknown> } = {}) {
+}: { fetchImpl?: typeof fetch; now?: () => number; wait?: (ms: number, signal: AbortSignal) => Promise<unknown>;
+  createLocalSolver?: () => Promise<LocalSolver> } = {}) {
+  let local: Promise<LocalSolver> | undefined;
+  let closed = false;
+  function localSolver() {
+    if (closed) throw new ProviderFailure("service_closed", false);
+    return local ??= (createLocalSolver ? createLocalSolver() : import("@lotus-yunzai/captcha").then(module => module.createLocalCaptchaSolver()))
+      .catch(error => { local = undefined; throw error; });
+  }
   let cooldownUntil = 0;
   const polls = new Map<string, Promise<void>>();
   const fatal = new Set([4001,4002,4003,4004,4005,4006,4007,4008,4009,4010,4011,4012,4013,4018,4021,4023,4038,4100,4101,4103,4106,4030]);
@@ -110,16 +117,23 @@ export function createAutomaticProviders(config: CaptchaConfig, { fetchImpl = fe
     return data;
   }
   return {
-    available(id: ProviderId) { return id === "local" ? config.local.enabled : id === "ttocr" && config.ttocr.enabled && now() >= cooldownUntil; },
+    async close() {
+      closed = true;
+      if (local) await local.then(solver => solver.close()).catch(() => undefined);
+    },
+    available(id: ProviderId) { return !closed && (id === "local" ? config.local.enabled : id === "ttocr" && config.ttocr.enabled && now() >= cooldownUntil); },
     async solve(id: "local" | "ttocr", challenge: CaptchaChallenge, outer: AbortSignal): Promise<CaptchaProof> {
+      if (closed) throw new ProviderFailure("service_closed", false);
       const settings = config[id];
       const signal = AbortSignal.any([outer, AbortSignal.timeout(settings.timeoutMs)]);
+      signal.throwIfAborted();
       if (id === "local") {
-        const body = challenge.captchaVersion === 3 ? { version: 3, gt: challenge.gt, challenge: challenge.challenge }
-          : { version: 4, captcha_id: challenge.captchaId, ...(challenge.riskType !== undefined && { risk_type: challenge.riskType }) };
-        const result = await json(config.local.endpoint, JSON.stringify(body), "application/json", signal);
-        if (result.ok !== true || result.captchaVersion !== challenge.captchaVersion) throw new ProviderFailure("local_failed", result.retryable !== false);
-        const proof = normalizeCaptchaProof(result.data, challenge);
+        const input = challenge.captchaVersion === 3 ? { version: 3 as const, gt: challenge.gt, challenge: challenge.challenge }
+          : { version: 4 as const, captcha_id: challenge.captchaId, ...(challenge.riskType !== undefined && { risk_type: challenge.riskType }) };
+        const engine = await localSolver();
+        signal.throwIfAborted();
+        const result = await engine.solve(input, signal);
+        const proof = normalizeCaptchaProof(result, challenge);
         if (!proof) throw new ProviderFailure("local_invalid_proof");
         return proof;
       }

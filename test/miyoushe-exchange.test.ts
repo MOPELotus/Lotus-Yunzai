@@ -373,6 +373,7 @@ test("商城自动验证码每次新建 v4 挑战，二次校验拒绝后不提�
     for (let attempt = 0; attempt < 2; attempt++) {
       const challenge = await options.challenge();
       if ("completed" in challenge) return { ok: true, value: challenge.completed };
+      expect(challenge.captchaVersion === 4 && challenge.riskType).toBe(`signed-full-${attempt + 1}-` + "x".repeat(512));
       const result = await options.accept({ ...v4Proof, lotNumber: `fresh-lot-${attempt}` }, challenge);
       if (result.accepted) return { ok: true, value: result.value };
     }
@@ -388,7 +389,7 @@ test("商城自动验证码每次新建 v4 挑战，二次校验拒绝后不提�
       }
       if (url.pathname.endsWith("createVerification")) {
         creates++;
-        return Response.json({ retcode: 0, data: { captcha_id: v4Proof.captchaId, risk_type: `signed-full-${creates}` } });
+        return Response.json({ retcode: 0, data: { captcha_id: v4Proof.captchaId, risk_type: `signed-full-${creates}-` + "x".repeat(512) } });
       }
       accepts++;
       expect(orders).toBe(1);

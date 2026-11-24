@@ -1,0 +1,155 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type * as ort from 'onnxruntime-node'
+import { CaptchaError } from '../domain/errors.ts'
+import { rootPath } from './paths.ts'
+
+export interface ModelAsset {
+  id: string
+  file: string
+  url: string
+  sha256: string
+  size: number
+}
+export class ModelStore {
+  private readonly verified = new Map<string, { size: number; mtime: number }>()
+  private readonly pending = new Map<string, Promise<string>>()
+  private activeSignal?: AbortSignal
+  useSignal(signal: AbortSignal | undefined) { this.activeSignal = signal }
+  constructor(
+    readonly directory: string,
+    readonly assets: readonly ModelAsset[],
+    readonly fetchImpl: typeof fetch = fetch,
+    readonly temporaryDirectory?: string,
+    readonly allowDownload = false,
+  ) {}
+  static async create(directory = 'data/models', temporaryDirectory?: string, allowDownload = false): Promise<ModelStore> {
+    const assets = JSON.parse(
+      await fs.readFile(path.join(rootPath, 'resources/models.json'), 'utf8'),
+    ) as ModelAsset[]
+    return new ModelStore(path.resolve(rootPath, directory), assets, fetch, temporaryDirectory, allowDownload)
+  }
+  asset(id: string): ModelAsset {
+    const asset = this.assets.find((a) => a.id === id)
+    if (!asset || path.basename(asset.file) !== asset.file || !/^[a-f\d]{64}$/.test(asset.sha256))
+      throw new Error(`Invalid model asset: ${id}`)
+    return asset
+  }
+  async valid(id: string): Promise<boolean> {
+    const asset = this.asset(id),
+      target = path.join(this.directory, asset.file)
+    const stat = await fs.stat(target).catch((e) => {
+      if (e.code !== 'ENOENT') throw e
+      return null
+    })
+    if (!stat?.isFile() || stat.size !== asset.size) return false
+    const cached = this.verified.get(id)
+    if (cached?.size === stat.size && cached.mtime === stat.mtimeMs) return true
+    const hash = createHash('sha256')
+    for await (const chunk of createReadStream(target)) hash.update(chunk)
+    if (hash.digest('hex') !== asset.sha256) return false
+    this.verified.set(id, { size: stat.size, mtime: stat.mtimeMs })
+    return true
+  }
+  async get(id: string, signal?: AbortSignal): Promise<string> {
+    signal ??= this.activeSignal
+    signal?.throwIfAborted()
+    if (await this.valid(id)) return path.join(this.directory, this.asset(id).file)
+    if (!this.allowDownload) throw new CaptchaError('model_missing', '本地验证码模型尚未初始化。', true)
+    let promise = this.pending.get(id)
+    if (!promise) {
+      promise = this.download(id, signal)
+      this.pending.set(id, promise)
+    }
+    try {
+      return await promise
+    } finally {
+      if (this.pending.get(id) === promise) this.pending.delete(id)
+    }
+  }
+  private async download(id: string, signal?: AbortSignal): Promise<string> {
+    const asset = this.asset(id),
+      url = new URL(asset.url),
+      fromHuggingFace = url.hostname === 'huggingface.co'
+    if (process.env.HF_ENDPOINT && fromHuggingFace) {
+      const endpoint = new URL(process.env.HF_ENDPOINT)
+      url.host = endpoint.host
+      url.protocol = endpoint.protocol
+    }
+    const headers: Record<string, string> = {}
+    if (process.env.HF_TOKEN && fromHuggingFace)
+      headers.Authorization = `Bearer ${process.env.HF_TOKEN}`
+    const response = await this.fetchImpl(url, {
+      headers,
+      signal: signal || AbortSignal.timeout(600000),
+    })
+    if (!response.ok || !response.body) throw new Error(`Model ${id}: HTTP ${response.status}`)
+    await fs.mkdir(this.directory, { recursive: true })
+    if (this.temporaryDirectory) await fs.mkdir(this.temporaryDirectory, { recursive: true })
+    const target = path.join(this.directory, asset.file),
+      temp = path.join(this.temporaryDirectory ?? this.directory, `${asset.file}.${randomUUID()}.part`),
+      hash = createHash('sha256')
+    let size = 0
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
+        new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            size += chunk.length
+            hash.update(chunk)
+            callback(size > asset.size ? new Error('Model exceeds expected size') : null, chunk)
+          },
+        }),
+        createWriteStream(temp, { flags: 'wx' }),
+        { signal },
+      )
+      if (size !== asset.size || hash.digest('hex') !== asset.sha256)
+        throw new Error(`Model ${id}: checksum mismatch`)
+      await fs.rename(temp, target)
+      return target
+    } finally {
+      await fs.rm(temp, { force: true })
+    }
+  }
+  async status() {
+    return Promise.all(this.assets.map(async (a) => ({ id: a.id, ok: await this.valid(a.id) })))
+  }
+  async json<T>(id: string): Promise<T> {
+    return JSON.parse(await fs.readFile(await this.get(id), 'utf8')) as T
+  }
+}
+export class ModelPool {
+  private readonly sessions = new Map<string, Promise<ort.InferenceSession>>()
+  constructor(readonly store: ModelStore) {}
+  async session(id: string): Promise<ort.InferenceSession> {
+    if (!this.sessions.has(id))
+      this.sessions.set(
+        id,
+        this.store
+          .get(id)
+          .then(async (file) => {
+            const runtime = await import('onnxruntime-node')
+            return runtime.InferenceSession.create(file, {
+              executionProviders: ['cpu'],
+              intraOpNumThreads: 2,
+              interOpNumThreads: 1,
+            })
+          })
+          .catch((error) => {
+            this.sessions.delete(id)
+            throw error
+          }),
+      )
+    return this.sessions.get(id)!
+  }
+  async close(): Promise<void> {
+    const sessions = await Promise.allSettled(this.sessions.values())
+    this.sessions.clear()
+    for (const session of sessions)
+      if (session.status === 'fulfilled') await session.value.release()
+  }
+}

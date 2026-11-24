@@ -1,0 +1,66 @@
+# Third-party notices
+
+Parts of this project are third-party material and stay under their original
+licenses. Those licenses cover the items listed below, not the rest of the
+project.
+
+Third-party material that is used by a single workspace member is documented
+inside that member and ships with its own wheel, because members are installed
+independently:
+
+| Member | Own notices |
+| --- | --- |
+| `wulu-geetest-bypass-word` | [`extensions/wulu-geetest-bypass-word/NOTICE`](extensions/wulu-geetest-bypass-word/NOTICE) — PP-OCRv6 small rec (Apache-2.0), LibreYOLO9t base weights (MIT) |
+
+## icon_yolo.onnx
+
+| | |
+| --- | --- |
+| Source | [gaogzhen/GeekedTest](https://github.com/gaogzhen/GeekedTest) — `geeked/models/icon_yolo.onnx` |
+| Used by | `wulu-geetest-bypass-icon` (fetched at runtime from HuggingFace) |
+| License | MIT |
+
+The ONNX file is redistributed unmodified. The direction table in
+`_config.py` (`DIR_HASHES`) is derived from that project's `ICON_MAPPING`, and
+the detection thresholds follow its `YOLO_CONF_THRES` / `YOLO_IOU_THRES` /
+`YOLO_MAX_DET`.
+
+### MIT License
+
+```text
+MIT License
+
+Copyright (c) 2025
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## uer/chinese_roberta_L-2_H-128
+
+| | |
+| --- | --- |
+| Source | [uer/chinese_roberta_L-2_H-128](https://huggingface.co/uer/chinese_roberta_L-2_H-128) — one of the *Chinese RoBERTa Miniatures*, pre-trained by [UER-py](https://github.com/dbiir/UER-py) on CLUECorpusSmall |
+| Used by | `wulu-geetest-bypass-phrase` — `order.onnx` is a fine-tune of it, with a 4-way scoring head in place of the masked-LM head |
+| License | **Not declared.** The upstream model card states no license; the UER-py toolkit that pre-trained these weights is Apache-2.0. |
+
+`tokenizer.json` is built from the base model's 21128-token WordPiece vocabulary.
+Only the fine-tuned ONNX export and that vocabulary are redistributed here, not the
+original weights. Because the upstream card declares no license, no license text is
+reproduced above — this notice should be revisited if upstream adds one. The model
+card also asks that the UER-py and RoBERTa papers be cited.

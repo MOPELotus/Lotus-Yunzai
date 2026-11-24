@@ -1,0 +1,128 @@
+[
+  {
+    "id": "hgnet",
+    "file": "PP-HGNetV2-B4.onnx",
+    "sha256": "96a67fada4a7289143fc279764cb0d976bcc194bb3c2ddb32ae0795478d00f2e",
+    "size": 71987007,
+    "url": "https://huggingface.co/luguoyixiazi/model_save/resolve/5b1a5c666954704136ddbbb2f144167ddf880eed/PP-HGNetV2-B4.onnx"
+  },
+  {
+    "id": "dfine",
+    "file": "d-fine-n.onnx",
+    "sha256": "e6508cd52b016f826ce2437e007d1f35c34a3fe2502ca69da5d448a07410e832",
+    "size": 15379470,
+    "url": "https://huggingface.co/luguoyixiazi/model_save/resolve/5b1a5c666954704136ddbbb2f144167ddf880eed/d-fine-n.onnx"
+  },
+  {
+    "id": "embedded-detect",
+    "file": "yolo11n.onnx",
+    "sha256": "6443ec74e0756f64d3aaf75d5b6baffb3a5c2ae5789104b91ff701de31f94149",
+    "size": 10458940,
+    "url": "https://huggingface.co/luguoyixiazi/model_save/resolve/5b1a5c666954704136ddbbb2f144167ddf880eed/yolo11n.onnx"
+  },
+  {
+    "id": "dino",
+    "file": "dinov3-small.onnx",
+    "sha256": "f0729237db38a442aa377f45ba38a223d9e11ea27f5bc9b6d5a71588d9ae3c2c",
+    "size": 86474453,
+    "url": "https://huggingface.co/luguoyixiazi/model_save/resolve/5b1a5c666954704136ddbbb2f144167ddf880eed/dinov3-small.onnx"
+  },
+  {
+    "id": "atten",
+    "file": "atten.onnx",
+    "sha256": "9f2544b549e6c259c0f7df5e95dc88fe09ceb63867b5206f0166a49e0d3239b8",
+    "size": 792689,
+    "url": "https://huggingface.co/luguoyixiazi/model_save/resolve/5b1a5c666954704136ddbbb2f144167ddf880eed/atten.onnx"
+  },
+  {
+    "id": "grid-vision",
+    "file": "grid-vision.onnx",
+    "sha256": "3f1db4cf0db7414f7e00740cb45536b5ff41eaf65d7843daf5075b51c0215f80",
+    "size": 3716895,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/nine/261017/vision_backbone.onnx"
+  },
+  {
+    "id": "grid-head",
+    "file": "grid-head.onnx",
+    "sha256": "da25e3eaca02a6376e9a318beff798bb62efb640cf4cc0d60f6f7c4034e76df4",
+    "size": 5318473,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/nine/261017/match_head.onnx"
+  },
+  {
+    "id": "icon-direction",
+    "file": "icon-direction.onnx",
+    "sha256": "eedbfd46480c347a7901cad6d06637d5e4e10336bd8c496c02b3df2a1d9112c8",
+    "size": 12271302,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/icon_t1_261010"
+  },
+  {
+    "id": "word-detect",
+    "file": "word-detect.onnx",
+    "sha256": "7c576268d6c8a4ced7e9248df569378bb971fd666c974b11816fb915230e0519",
+    "size": 8300015,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/yolo-text/261028/locate.onnx"
+  },
+  {
+    "id": "phrase-detect",
+    "file": "phrase-detect.onnx",
+    "sha256": "f5b75b31d35a37076feefa1bc7ebc4381bb096bf87b100bda341675467aa8f80",
+    "size": 9727083,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/phrase/261013/detect.onnx"
+  },
+  {
+    "id": "phrase-order",
+    "file": "phrase-order.onnx",
+    "sha256": "3d4c93760e9c7a1113ee987ed36ecb409a3cf148a50f6dde9fe9616d6296c9c4",
+    "size": 12970848,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/phrase/261013/order.onnx"
+  },
+  {
+    "id": "phrase-tokens",
+    "file": "phrase-tokens.json",
+    "sha256": "ea906002125edc849e0946e1528f91d72de4fbe9767d3af5879a44e229035b37",
+    "size": 439274,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/phrase/261013/tokenizer.json"
+  },
+  {
+    "id": "phrase-dictionary",
+    "file": "phrase-dictionary.json",
+    "sha256": "672510c09114f4f6cb338731ad0c22efbb629ff8dbe4e6f291f04c2296b258a9",
+    "size": 23731,
+    "url": "https://huggingface.co/wulu007/gt/resolve/27b45196526af62c661c87b86a90c3899b85afce/phrase/261013/dict.json"
+  },
+  {
+    "id": "text-recognize",
+    "file": "text-recognize.onnx",
+    "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+    "size": 21159378,
+    "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx"
+  },
+  {
+    "id": "phrase-recognize",
+    "file": "phrase-recognize.onnx",
+    "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    "size": 21234383,
+    "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"
+  },
+  {
+    "id": "phrase-lexicon",
+    "file": "phrase-lexicon.txt",
+    "url": "https://raw.githubusercontent.com/fxsjy/jieba/67fa2e36e72f69d9134b8a1037b83fbb070b9775/jieba/dict.txt",
+    "sha256": "7197c3211ddd98962b036cdf40324d1ea2bfaa12bd028e68faa70111a88e12a8",
+    "size": 5071852
+  },
+  {
+    "id": "symbol-detect",
+    "file": "symbol-detect.onnx",
+    "sha256": "6faa8ea85a8c1a634e5050c4a138fca10f30194e0d7abbe9ade1fcd423af6ed6",
+    "size": 20127694,
+    "url": "https://raw.githubusercontent.com/sml2h3/ddddocr/c40f56f95412e10bcb9bd0bd24411e92f896d238/ddddocr/common_det.onnx"
+  },
+  {
+    "id": "symbol-embedding",
+    "file": "symbol-embedding.onnx",
+    "sha256": "946e3444a7721b4cd3df36c376630934931549a153e86b0979abefe2c3e54540",
+    "size": 58865882,
+    "url": "https://huggingface.co/VeyraAgent/cf-solver-models/resolve/0257291b5110eeab7d13cab98907ab1347559e22/models/siamese.onnx"
+  }
+]

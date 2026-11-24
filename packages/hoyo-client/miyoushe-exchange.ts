@@ -197,7 +197,7 @@ async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAcc
       throw new Error("商城验证码申请未完成。");
     }
     return { captchaVersion: 4, captchaId: data.captcha_id,
-      ...(verifiedField(data.risk_type, 128) && { riskType: data.risk_type }) };
+      ...(verifiedField(data.risk_type, 8192) && { riskType: data.risk_type }) };
   }
   async function accept(proof: CaptchaProof, challenge: CaptchaChallenge) {
     if (challenge.captchaVersion !== 4 || !("captchaId" in proof) || proof.captchaVersion !== 4 ||

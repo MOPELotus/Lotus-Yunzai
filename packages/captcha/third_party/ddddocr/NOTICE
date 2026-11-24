@@ -1,0 +1,18 @@
+sml2h3/ddddocr
+https://github.com/sml2h3/ddddocr
+Repository commit: c40f56f95412e10bcb9bd0bd24411e92f896d238
+PyPI reference: ddddocr 1.6.1, MIT. Unmodified wheel LICENSE retained here.
+
+TypeScript port of core/detection_engine.py's YOLOX input convention and decoder:
+BGR values 0..255, top-left padding 114, strides 8/16/32, class-agnostic suppression.
+Standardized Box output is shared with other image solvers; Python is not required.
+
+Unchanged common_det.onnx SHA256:
+6faa8ea85a8c1a634e5050c4a138fca10f30194e0d7abbe9ade1fcd423af6ed6
+The pinned repository download was verified byte-identical to the 1.6.1 wheel model.
+No training or weight modifications performed.
+
+The upstream YOLOX preprocessing/postprocessing lineage is Apache-2.0;
+its original LICENSE is additionally retained under yolox/LICENSE.
+
+YOLOX: Copyright (c) Megvii Inc. All rights reserved.

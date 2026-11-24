@@ -93,3 +93,15 @@ if (!process.exitCode) {
     process.exitCode = build;
   }
 }
+
+
+if (!process.exitCode && await Bun.file(new URL("packages/captcha/index.ts", root)).exists()) {
+  // Installation may have created the workspace link after this process started.
+  const prepared = await Bun.spawn([process.execPath, "--eval",
+    'const { initializeCaptchaModels } = await import("./lib/captcha/initialize.ts"); const { pathToFileURL } = await import("node:url"); await initializeCaptchaModels(pathToFileURL(process.cwd() + "/"), AbortSignal.timeout(1800000));',
+  ], options).exited;
+  if (prepared !== 0) {
+    console.error("[初始化] 验证码模型未准备完成，请检查网络后重新运行 bun run bootstrap 或 bun run init。");
+    process.exitCode = prepared;
+  }
+}

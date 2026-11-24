@@ -1,0 +1,12 @@
+Source: https://github.com/hshinosa/geetest-solver-nine
+Commit: e96c91a856678ccddd20660937533a18e6e2be06
+Attribution: hshino, as declared in upstream package metadata.
+License: MIT, declared in the unmodified UPSTREAM_METADATA.toml.
+No separate LICENSE/copyright notice exists in the source snapshot.
+
+The matcher was ported to TypeScript at src/solvers/grid.ts. Python runtime,
+browser token acquisition and site-registration code are not distributed.
+The two models are fetched from wulu007/gt, revision
+27b45196526af62c661c87b86a90c3899b85afce, nine/261017/, under its model-card
+Apache-2.0 declaration. Their hashes match the source project's bundled files.
+The Apache-2.0 text is at ../../licenses/Apache-2.0.txt.

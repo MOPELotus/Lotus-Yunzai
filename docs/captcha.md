@@ -1,12 +1,14 @@
 # 验证码
 
-机器人遇到已支持的米游社风险挑战后，依次使用 Lotus-Captcha、本地配置的 TTOCR、人工验证页。两个自动节点每轮分别最多尝试 5 次，人工节点每轮最多一个链接，整条链最多 2 轮。未启用、未配置、额度不足或处于冷却期的节点会跳过。
+机器人遇到已支持的米游社风险挑战后，依次使用内置本地识别、配置的 TTOCR、人工验证页。两个自动节点每轮分别最多尝试 5 次，人工节点每轮最多一个链接，整条链最多 2 轮。未启用、未配置、额度不足或处于冷却期的节点会跳过。
 
 每次识别或业务明确拒绝后，下一次尝试重新获取挑战。v3 的 challenge、validate 和 v4 的 lot_number 均不复用。身份失效、账号风险码 10041、请求限频、网络故障和业务写入结果不明会停止续交。验证证明仍须由原业务接受；页面显示已提交不等于签到或兑换成功。
 
 ## 自动验证配置
 
-在 `config/global.yaml` 增加配置，重启机器人生效：
+本地识别随机器人一起安装，默认启用。遇到验证码时直接内部调用，不需要启动识别服务、配置端口或填写本地地址。
+
+如需调整开关或使用 TTOCR，在 `config/global.yaml` 配置，重启机器人生效：
 
 ```yaml
 captcha:
@@ -14,7 +16,6 @@ captcha:
   providers: [local, ttocr, manual]
   local:
     enable: true
-    endpoint: http://127.0.0.1:9645/solve
     timeout_ms: 120000
   ttocr:
     enable: false
@@ -29,22 +30,13 @@ captcha:
     enable: true
 ```
 
-默认启用本地节点，TTOCR 需要填写自己的 key。`providers` 可调整顺序或移除不使用的节点；旧名称 `test_nine`、`gtmanual` 分别映射到 `local`、`manual`。旧 `test_nine.endpoint` 的 `/pass_uni` 会改用新服务的 `/solve`，因为旧端点只支持 v3。
+默认启用本地节点，TTOCR 需要填写自己的 key。`providers` 可调整顺序或移除不使用的节点；旧名称 `test_nine`、`gtmanual` 分别映射到 `local`、`manual`。旧本地 `endpoint` 字段不再使用。
 
-本地节点连接独立的 [Lotus-Captcha](https://github.com/MOPELotus/Lotus-Captcha) HTTP 服务，需要有该私有仓库的读取权限。按其 README 安装、下载模型并启动服务；机器人不会下载模型或启动另一个识别进程。服务地址默认 `http://127.0.0.1:9645`，`GET /healthz` 可检查服务。新服务 v3、v4 都参与本地识别，业务提供的 v4 `risk_type` 原样传入。
+本地识别器取自 [Lotus-Captcha](https://github.com/MOPELotus/Lotus-Captcha) 的 v3/v4 协议、识别算法和必要资源，已移入 `packages/captcha`。无需另行克隆该仓库、安装识别服务或维护第二份配置。
 
-宿主负责重试与回退。独立 Lotus-Captcha 应仅开启本地提供方并将其内部尝试数设为 1，避免两层重试叠加。在该服务的 `config/local.json` 合并：
+模型在整体初始化阶段下载：`bun run bootstrap`、首次部署初始化或 `bun run init` 会检查所有运行模型，下载缺失文件并按固定大小及 SHA256 校验，保存在 `data/captcha/models/`。已有有效缓存直接复用。主人发送 `#初始化环境`（兼容 `#初始化工具环境`、`#初始化签到环境`）也会准备模型。
 
-```json
-{
-  "providers": {
-    "order": ["local"],
-    "attempts": 1,
-    "attemptsByProvider": { "local": 1 },
-    "chainAttempts": 1
-  }
-}
-```
+正常处理验证码时只读取本地模型，不启动下载。缺少模型会进入现有有限重试与回退，并可重新执行整体初始化补齐。计算在机器人内部按需启动的 worker 中执行，取消和停机时释放；没有本地 HTTP 中转。每次调用只执行一次本地识别，五次尝试与两轮回退统一由宿主控制。业务提供的 v4 `risk_type` 原样传入。
 
 TTOCR 的 v3 使用项目 388，v4 使用 488；v4 表单中的 `gt` 是 `captcha_id`，同时传递完整 `ts_risktype`。轮询间隔至少 2 秒，同一结果 ID 串行查询。4039 表示本题连接主机或代理失败，会结束该题；明确 IP 封禁会让本进程内的 TTOCR 冷却 30 分钟，其他节点继续。key 和服务原始响应不进入用户通知或重试日志。
 
