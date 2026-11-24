@@ -75,10 +75,11 @@ function product(value: unknown, now: number) {
   const unlimited = raw.unlimit === true;
   const serverNow = milliseconds(raw.now_time) ?? now;
   const endsAt = milliseconds(raw.end);
-  const candidates = [milliseconds(raw.sale_start_time), milliseconds(raw.next_time)]
+  const saleStartsAt = milliseconds(raw.sale_start_time);
+  const candidates = [saleStartsAt, milliseconds(raw.next_time)]
     .filter((time): time is number => time !== null && time > serverNow && (endsAt === null || time < endsAt));
   const opensAt = candidates.length ? Math.min(...candidates) : null;
-  const missingStart = raw.status === "not_in_sell" && opensAt === null;
+  const missingStart = raw.status === "not_in_sell" && saleStartsAt === null;
   let status: ProductStatus = "unknown";
   if (endsAt !== null && endsAt <= serverNow) status = "ended";
   else if (raw.status === "online" && (unlimited || (stock !== null && stock > 0))) status = "available";
@@ -87,7 +88,7 @@ function product(value: unknown, now: number) {
   return {
     id, name, price, icon: icon(raw.icon), type: count(raw.type), gameBiz: text(raw.game_biz, 32), game: text(raw.game, 32),
     limitCycle: text(raw.account_cycle_type, 32), roleCycle: text(raw.role_cycle_type, 32),
-    saleStartsAt: milliseconds(raw.sale_start_time), startsAt: milliseconds(raw.start),
+    saleStartsAt, startsAt: milliseconds(raw.start),
     stock, unlimited, nextStock: count(raw.next_num), opensAt: status === "scheduled" ? opensAt : null, endsAt, status,
     serverNow, missingStart,
     accountLimit: raw.account_cycle_type === "not_limit" ? null : count(raw.account_cycle_limit),
@@ -197,8 +198,14 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
       const optional = signal ? AbortSignal.any([signal, optionalTimeout]) : optionalTimeout;
       for (let offset = 0; offset < incomplete.length && !optional.aborted; offset += 4) {
         await Promise.all(incomplete.slice(offset, offset + 4).map(async item => {
-          try { Object.assign(item, await getProduct(item.id, optional)); }
-          catch (error) { if (error instanceof MiyousheShopError && error.status === 429) throw error; }
+          try {
+            const detail = await getProduct(item.id, optional);
+            const listingTime = detail.status === "unknown" && item.status === "scheduled"
+              ? { status: item.status, opensAt: item.opensAt } : {};
+            Object.assign(item, { ...detail, game: detail.game || item.game, ...listingTime });
+          } catch (error) {
+            if (error instanceof MiyousheShopError && error.status === 429) throw error;
+          }
         }));
       }
       const games = new Map<string, string>();

@@ -599,3 +599,23 @@ test("商城匿名目录和缺省商品时间详情保留业务限频状态", as
     expect(reads).toEqual(limitedRoute === "list" ? ["list"] : ["list", "detail"]);
   }
 });
+
+test("商城列表缺正式开放时间时使用详情补全，已有的下次时间可在失败时保留", async () => {
+  const time = 1_792_000_000_000;
+  for (const detailResponse of ["known", "no-time", "failed"]) {
+    const reads: string[] = [];
+    const same = { goods_id: 27, goods_name: "等待开放", price: 20, status: "not_in_sell", total: 0,
+      game: "hk4e", next_time: (time + 90_000) / 1000 };
+    const catalog = createMiyousheShopCatalog({ now: () => time, async transport(source) {
+      const route = new URL(String(source)).pathname.split("/").at(-1)!;
+      reads.push(route);
+      if (route === "detail" && detailResponse === "failed") return new Response(null, { status: 503 });
+      return Response.json({ retcode: 0, data: route === "list" ? { total: 1, list: [same] } :
+        { ...same, game: "", next_time: undefined,
+          ...(detailResponse === "known" && { sale_start_time: (time + 60_000) / 1000 }) } });
+    } });
+    const page = await catalog.list({ qq: "42", profileId: 1 }, new URLSearchParams());
+    expect(reads).toEqual(["list", "detail"]);
+    expect(page.goods[0]).toMatchObject({ game: "hk4e", status: "scheduled", opensAt: time + (detailResponse === "known" ? 60_000 : 90_000) });
+  }
+});
