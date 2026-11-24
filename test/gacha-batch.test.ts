@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { ProfileError } from "@lotus-yunzai/account";
 import { GameRecordRequestError, HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia";
 import { createGachaUpdater } from "../packages/gacha/update.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import { createGachaBatch, type GachaGame } from "../lib/gacha-batch.ts";
@@ -193,6 +194,35 @@ test("uses bounded forwarding nodes above 18 rows and keeps every profile visibl
   expect(result.nodes[2]).toBe([
     "P9 原神：游戏插件未加载，跳过", "P9 星铁：游戏插件未加载，跳过", "P9 绝区零：游戏插件未加载，跳过",
   ].join("\n"));
+});
+
+test("抽卡批量回执只发送能送达的整图，低配和超限时保留全部结果", async () => {
+  const preset = nativeImageRasterScale() === 1 ? "low" : "standard";
+  const scales: number[] = [];
+  const batch = createGachaBatch({
+    listIds: async () => [2], signal: new AbortController().signal,
+    render: async (_title, _lead, _rows, _at, scale) => {
+      scales.push(scale);
+      return { png: Uint8Array.of(...Array<number>(scale).fill(scale)) };
+    },
+  });
+  try {
+    setImageRenderPreset("standard");
+    expect(await batch.fallback(command, { ...context(command), inlineImageByteLimit: 4 }))
+      .toEqual({ type: "image", file: Uint8Array.of(4, 4, 4, 4) });
+    expect(await batch.fallback(command, { ...context(command), inlineImageByteLimit: 2 }))
+      .toEqual({ type: "image", file: Uint8Array.of(2, 2) });
+    const text = await batch.fallback(command, { ...context(command), inlineImageByteLimit: 1 });
+    expect(text).toContain("P2 原神：游戏插件未加载，跳过");
+    expect(text).toContain("P2 星铁：游戏插件未加载，跳过");
+    expect(text).toContain("P2 绝区零：游戏插件未加载，跳过");
+    setImageRenderPreset("low");
+    expect(await batch.fallback(command, { ...context(command), inlineImageByteLimit: 1 }))
+      .toEqual({ type: "image", file: Uint8Array.of(1) });
+    expect(scales).toEqual([4, 4, 2, 4, 2, 1]);
+  } finally {
+    setImageRenderPreset(preset);
+  }
 });
 
 test("reports empty archives without starting work and stops on abort before later providers", async () => {

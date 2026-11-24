@@ -1,5 +1,6 @@
 import { ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { GameRecordRequestError, HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import type { MessageFallback } from "./commands.ts";
 import { segment } from "./messages.ts";
 
@@ -7,7 +8,8 @@ export type GachaGame = Game;
 export type GachaUpdater = (qq: string, profileId: number, notify?: () => unknown,
   isDelegated?: boolean, signal?: AbortSignal) => Promise<{ readonly uid: string } | undefined>;
 
-type Render = (title: string, lead: string, rows: readonly string[], at: Date) => Promise<{ readonly png: Uint8Array }>;
+type Render = (title: string, lead: string, rows: readonly string[], at: Date,
+  scale: 1 | 2 | 4) => Promise<{ readonly png: Uint8Array }>;
 type Entry = { readonly updater: GachaUpdater };
 type Outcome = { readonly status: "done" | "skipped" | "failed"; readonly text: string };
 
@@ -61,9 +63,9 @@ async function update(entry: Entry | undefined, qq: string, profileId: number, s
   }
 }
 
-const renderBatch: Render = async (title, lead, rows, at) => {
+const renderBatch: Render = async (title, lead, rows, at, scale) => {
   const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
-  return renderStatusCard(title, lead, rows, at);
+  return renderStatusCard(title, lead, rows, at, { scale });
 };
 
 export function createGachaBatch({ listIds, signal, render = renderBatch }: {
@@ -123,12 +125,19 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
         return { type: "forward", nodes };
       }
 
+      const scale = nativeImageRasterScale();
+      const limit = context.inlineImageByteLimit ?? Infinity;
+      const now = new Date();
       try {
-        const { png } = await render(title, lead, rows, new Date());
-        if (!workflow.aborted) return segment.image(png);
+        let { png } = await render(title, lead, rows, now, scale);
+        if (workflow.aborted) return;
+        if (png.byteLength > limit && scale === 4) ({ png } = await render(title, lead, rows, now, 2));
+        if (workflow.aborted) return;
+        if (png.byteLength <= limit) return segment.image(png);
       } catch {
-        if (!workflow.aborted) return [title, lead, ...rows].join("\n");
+        // The complete result remains available in text if image rendering fails.
       }
+      if (!workflow.aborted) return [title, lead, ...rows].join("\n");
     } finally {
       active.delete(qq);
     }
