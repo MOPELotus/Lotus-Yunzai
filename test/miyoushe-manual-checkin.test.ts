@@ -20,13 +20,13 @@ function gate() { return Promise.withResolvers<void>(); }
 async function fixture(run: (options: {
   web: ReturnType<typeof createMiyousheWeb>; ticket: (profileId: number) => Promise<string>;
   revise: (next: string) => void; job: { started: ReturnType<typeof gate>; finish: ReturnType<typeof gate>; writes: number;
-    signal?: AbortSignal };
+    failures: number; signal?: AbortSignal };
 }) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), "lotus-manual-checkin-web-"));
   const controller = new AbortController();
   const signal = controller.signal;
   let revision = firstRevision;
-  const job = { started: gate(), finish: gate(), writes: 0, signal: undefined as AbortSignal | undefined };
+  const job = { started: gate(), finish: gate(), writes: 0, failures: 0, signal: undefined as AbortSignal | undefined };
   const web = createMiyousheWeb({
     publicBase: () => origin, databasePath: join(directory, "sessions.sqlite"), assetDirectory: "web/miyoushe", signal,
     async loginIdentity(qq, profileId) { return qq + ":" + profileId; },
@@ -41,6 +41,10 @@ async function fixture(run: (options: {
         job.started.resolve();
         await job.finish.promise;
         await verify();
+        if (job.failures > 0) {
+          job.failures--;
+          throw Error("fixture-sensitive-upstream-error");
+        }
         job.writes++;
         return { status: "completed", revision, message: "原神 · 游戏 成功 · 社区 关闭" };
       },
@@ -107,5 +111,29 @@ test("用户退出时，后台手动签到不能继续通过会话核验", async
     const session = await ticket(2);
     expect(await (await web.handle(get("checkin-run", session)))?.json()).toEqual({ status: "idle" });
     expect(job.writes).toBe(0);
+  });
+});
+
+test("手动签到失败只向启动会话返回简短回执，同档可重试", async () => {
+  await fixture(async ({ web, ticket, job }) => {
+    const own = await ticket(2), other = await ticket(2);
+    const readStatus = async (wanted: string) => {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const result = await (await web.handle(get("checkin-run", own)))?.json();
+        if (result?.status === wanted) return result;
+        await Bun.sleep(10);
+      }
+      throw new Error(`未收到签到状态 ${wanted}`);
+    };
+    job.failures = 1;
+    expect((await web.handle(post("checkin-run", own, {})))?.status).toBe(202);
+    await job.started.promise;
+    job.finish.resolve();
+    expect(await readStatus("failed")).toMatchObject({ message: "本次签到未完成，请核对米游社状态。" });
+    expect(await (await web.handle(get("checkin-run", other)))?.json()).toEqual({ status: "idle" });
+    expect(job.writes).toBe(0);
+    expect((await web.handle(post("checkin-run", own, {})))?.status).toBe(202);
+    expect(await readStatus("completed")).toMatchObject({ message: "原神 · 游戏 成功 · 社区 关闭" });
+    expect(job.writes).toBe(1);
   });
 });
