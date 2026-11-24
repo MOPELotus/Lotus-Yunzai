@@ -215,3 +215,34 @@ test("拒绝符号链接的 QQ 目录与历史文件，保留损坏的旧 JSON",
     expect(await readFile(file, "utf8")).toBe("{损坏: true}");
   });
 });
+
+test("同 QQ 同 UID 的两个档号只启动一轮，失败后释放", async () => {
+  await withFixture(async ({ profiles, history, profileFile, file }) => {
+    await writeFile(profileFile.replace("-2.yaml", ".yaml"), initialProfile.replace("id: 2", "id: 1"));
+    const credentialUp = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const valid = mockedClient(profiles).client;
+    let calls = 0;
+    const client = { async fetchStarRailGacha(...args: Parameters<typeof valid.fetchStarRailGacha>) {
+      if (++calls === 1) {
+        credentialUp.resolve();
+        await release.promise;
+        throw Error("隔离请求失败");
+      }
+      return valid.fetchStarRailGacha(...args);
+    } };
+    const service = createStarRailGachaSync(profiles, client, history);
+    const first = service.sync(qq, 1, { intervalMs: 0 });
+    const failure = first.catch(error => error);
+    try {
+      await Promise.race([credentialUp.promise, first]);
+      await expect(service.sync(qq, 2, { intervalMs: 0 })).rejects.toThrow("该账号的星铁抽卡记录正在更新");
+      expect(calls).toBe(1);
+    } finally { release.resolve(); }
+    expect(await failure).toMatchObject({ message: "隔离请求失败" });
+    expect(await history.read(qq, uid)).toBeNull();
+    expect(await service.sync(qq, 2, { intervalMs: 0 })).toMatchObject({ added: 1 });
+    expect(await Bun.file(file).exists()).toBe(true);
+    expect(calls).toBe(2);
+  });
+});

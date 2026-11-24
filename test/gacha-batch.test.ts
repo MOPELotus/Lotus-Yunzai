@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProfileError } from "@lotus-yunzai/account";
-import { HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { GameRecordRequestError, HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import { createGachaUpdater } from "../packages/gacha/update.ts";
 import type { MessageFallbackContext } from "../lib/commands.ts";
 import { createGachaBatch, type GachaGame } from "../lib/gacha-batch.ts";
@@ -80,15 +80,20 @@ test("only exact batch aliases bypass Git management and batch and direct work s
 
 test("returns distinct fixed auth and profile errors and retains every result if status rendering fails", async () => {
   const batch = createGachaBatch({
-    listIds: async () => [3], signal: new AbortController().signal, render: async () => { throw Error("fixture-render"); },
+    listIds: async () => [3, 4], signal: new AbortController().signal, render: async () => { throw Error("fixture-render"); },
   });
   batch.register("gs", async () => { throw new HoyoRequestError("api", "authkey=fixture-secret", 200, -100); });
-  batch.register("sr", async () => { throw new ProfileError("changed", "fixture-profile-data"); });
+  batch.register("sr", async (_qq, id) => {
+    if (id === 3) throw new ProfileError("changed", "fixture-profile-data");
+    throw new GameRecordRequestError("星铁抽卡查询", "rate-limited", "api", 200, -100);
+  });
   batch.register("zzz", async () => { throw new Error("fixture-transport-secret"); });
   expect(await batch.fallback(command, context(command))).toBe([
-    "全部抽卡记录", "QQ 42", "部分失败 · 完成 0 项，跳过 0 项，失败 3 项。",
+    "全部抽卡记录", "QQ 42", "部分失败 · 完成 0 项，跳过 0 项，失败 6 项。",
     "P3 原神：失败：登录凭据已失效，请刷新登录或重新扫码",
     "P3 星铁：失败：档案已变更，请重新发起", "P3 绝区零：失败：更新未完成，请稍后再试",
+    "P4 原神：失败：登录凭据已失效，请刷新登录或重新扫码",
+    "P4 星铁：失败：访问过于频繁，请稍后再试", "P4 绝区零：失败：更新未完成，请稍后再试",
   ].join("\n"));
 });
 

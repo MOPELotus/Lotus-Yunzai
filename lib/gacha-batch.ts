@@ -1,5 +1,5 @@
 import { ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
-import { HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
+import { GameRecordRequestError, HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import type { MessageFallback } from "./commands.ts";
 import { segment } from "./messages.ts";
 
@@ -37,7 +37,10 @@ function rejected(error: unknown, profileId: number): Outcome {
   }
   if (error instanceof HoyoRequestError) {
     if (error.code === "profile-changed") return failed("档案已变更，请重新发起");
-    if (error instanceof ZzzTuningRateLimitError || error.status === 429) return failed("访问过于频繁，请稍后再试");
+    if (error instanceof ZzzTuningRateLimitError || error.status === 429 ||
+        (error instanceof GameRecordRequestError && error.reason === "rate-limited")) {
+      return failed("访问过于频繁，请稍后再试");
+    }
     if (error.code === "refresh" || error.status === 401 ||
         (error.code === "api" && error.retcode !== undefined && expiredCodes.has(error.retcode))) {
       return failed("登录凭据已失效，请刷新登录或重新扫码");

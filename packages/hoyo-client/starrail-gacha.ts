@@ -2,7 +2,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { readGameRecordPayload } from "./game-record.ts";
+import { GameRecordRequestError, readGameRecordPayload } from "./game-record.ts";
 
 export const starRailGachaPools = Object.freeze({
   GachaType_AvatarUp: "角色活动跃迁",
@@ -31,6 +31,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function responseRetcode(value: unknown): number | undefined {
   const number = typeof value === "string" && /^-?\d{1,16}$/u.test(value) ? Number(value) : value;
   if (typeof number === "number" && Number.isSafeInteger(number)) return number;
+}
+
+function reportsRateLimit(payload: Record<string, unknown> | undefined) {
+  const message = [payload?.message, payload?.msg].filter((value): value is string => typeof value === "string").join(" ");
+  return /visit too frequently|too frequent|rate limit|频繁/iu.test(message) &&
+    !/验证码|captcha|geetest|challenge|风控/iu.test(message);
 }
 
 function requiredArray(value: unknown, label: string): unknown[] {
@@ -199,10 +205,17 @@ export async function readStarRailGacha(
       throw new HoyoRequestError("transport", "星铁抽卡请求未完成。");
     }
     if (!response.ok) {
+      if (response.status === 429) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new GameRecordRequestError("星铁抽卡查询", "rate-limited", "http", response.status);
+      }
       if (response.status === 401) {
         const payload = await readGameRecordPayload(response, 16 * 1024, deadline);
         const message = [payload?.msg, payload?.message].filter((value): value is string => typeof value === "string").join(" ");
         const challenge = response.headers.get("x-rpc-aigis")?.trim();
+        if ((!challenge || challenge === "{}") && !deadline.aborted && reportsRateLimit(payload)) {
+          throw new GameRecordRequestError("星铁抽卡查询", "rate-limited", "http", response.status, responseRetcode(payload?.retcode));
+        }
         if ((!challenge || challenge === "{}") && !/验证码|captcha|geetest|challenge|风控/iu.test(message) &&
             !deadline.aborted && responseRetcode(payload?.retcode) === -100) {
           throw new HoyoRequestError("api", "星铁抽卡接口拒绝请求。", response.status, -100);
@@ -218,6 +231,9 @@ export async function readStarRailGacha(
       throw new HoyoRequestError("response", "星铁抽卡接口响应格式有误。");
     }
     if (retcode !== 0) {
+      if (reportsRateLimit(payload)) {
+        throw new GameRecordRequestError("星铁抽卡查询", "rate-limited", "api", response.status, retcode);
+      }
       throw new HoyoRequestError("api", "星铁抽卡接口拒绝请求。", response.status, retcode);
     }
     for (const value of response.headers.getSetCookie()) {

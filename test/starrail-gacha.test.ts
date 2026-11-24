@@ -232,3 +232,26 @@ test("海外角色不发国服请求，调用中换绑后不返回旧档案结�
     expect(calls).toBe(2);
   });
 });
+
+test("星铁 HTTP 和业务层限频都保留限频语义，不交换 Cookie 或透传官方返回内容", async () => {
+  await withProfile(async ({ context, profiles }) => {
+    let result: () => Response = () => new Response(null, { status: 429 });
+    let refreshes = 0;
+    const client = createHoyoClient(async () => result(), { profiles, async exchange() {
+      refreshes++;
+      throw Error("限频不能触发凭据刷新");
+    } });
+    await expect(client.fetchStarRailGacha(context, options)).rejects.toMatchObject({
+      code: "http", status: 429, reason: "rate-limited",
+    });
+    result = () => Response.json({ retcode: -100, message: "visit too frequently, cookie_token=withheld" });
+    await expect(client.fetchStarRailGacha(context, options)).rejects.toMatchObject({
+      code: "api", status: 200, reason: "rate-limited", message: "官方星铁抽卡查询请求过于频繁，请稍后重试。",
+    });
+    result = () => Response.json({ retcode: -100, msg: "操作过于频繁" }, { status: 401 });
+    await expect(client.fetchStarRailGacha(context, options)).rejects.toMatchObject({
+      code: "http", status: 401, reason: "rate-limited",
+    });
+    expect(refreshes).toBe(0);
+  });
+});

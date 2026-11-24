@@ -743,7 +743,8 @@ export function createHoyoClient(
       return readForProfile(source, options, readStarRailPanel, isGameRecordCookieExpired);
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
-      return readForProfile(source, options, readStarRailGacha);
+      return readForProfile(source, options, readStarRailGacha, error =>
+        error instanceof GameRecordRequestError ? isGameRecordCookieExpired(error) : isCookieExpired(error));
     },
     fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForZzzTuning(source, options, readZzzTuning);
