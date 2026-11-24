@@ -14,7 +14,7 @@ const group = {
 };
 const preload = `
 import assert from "node:assert/strict";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_DAILY_NOTE_RESOURCES = "./unavailable-artwork-for-text-fallback";
 const roles = ${JSON.stringify(group)};
@@ -70,6 +70,11 @@ globalThis.fetch = Object.assign(async (input, init) => {
     assert.ok(cookie.includes("account_id_v2=" + account + ";"));
     const renewed = cookie.includes("v2_fresh_cookie_42");
     event("note", uid, renewed ? "fresh" : "stored");
+    if (uid === defaultUid && existsSync("./cancel-daily-note")) {
+      await Bun.sleep(350);
+      event("note-after-disconnect", init.signal.aborted);
+      return Response.json({ retcode: -100 });
+    }
     if (uid === expired && !renewed) return Response.json({ retcode: -100 });
     if (uid === starRail) return ok({ current_stamina: 37, max_stamina: 300 });
     if (uid === zzz || uid === otherZzz) return ok({
@@ -151,5 +156,27 @@ test("全部体力续期后只查仍绑定的 UID，其他角色与档案结果�
     expect(Bun.YAML.parse(await Bun.file(join(root, "profiles/42-2.yaml")).text())).toMatchObject({
       account: { cookie: expect.stringContaining("v2_fresh_cookie_42"), game_roles: { gs: [{ uid: retained }] } },
     });
+  }, 8_000, preload, prepare);
+}, 25_000);
+
+test("群会话断开后取消进行中的体力请求，迟到的过期结果不触发续期或后续档案", async () => {
+  await withDualGatewayFixture("daily-note-disconnect-fixture", "disablePrivate: false\n", async ({
+    root, ws, sendOneBot, onebot,
+  }) => {
+    await Bun.write(join(root, "cancel-daily-note"), "");
+    sendOneBot("#树脂", { message_type: "group", sub_type: "normal", group_id: 11 });
+    const progress = await onebot.next("send_msg");
+    expect(progress.params).toMatchObject({ group_id: 11, message: expect.stringContaining("所有 profile") });
+    progress.respond({ message_id: 41 });
+    async function trace() {
+      return Bun.file(join(root, "requests.jsonl")).text().catch(() => "");
+    }
+    for (let i = 0; i < 100 && !(await trace()).includes(defaultUid); i++) await Bun.sleep(10);
+    expect(await trace()).toContain(defaultUid);
+    ws.close();
+    for (let i = 0; i < 120 && !(await trace()).includes("note-after-disconnect"); i++) await Bun.sleep(10);
+    expect((await trace()).trim().split("\n").map(line => JSON.parse(line))).toEqual([
+      ["note", defaultUid, "stored"], ["note-after-disconnect", true],
+    ]);
   }, 8_000, preload, prepare);
 }, 25_000);

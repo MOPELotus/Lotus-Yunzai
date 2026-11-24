@@ -151,20 +151,24 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
       if (profileId !== undefined && profileId > MAX_PROFILE_ID) return;
       const { user_id } = context;
       if (!user_id || !Number.isSafeInteger(user_id) || user_id < 1) return "请从登录档案对应的 QQ 会话查询体力。";
+      const privateSession = context.message_type === "private" && !context.isDelegated
+        ? context.privateCredentialSignal : undefined;
+      const session = context.isDelegated ? context.delegationSignal : context.message_type === "group"
+        ? context.groupActivitySignal : privateSession;
+      const active = session ? AbortSignal.any([signal, session]) : signal;
+      if (active.aborted) return [];
       const qq = String(user_id);
       await context.reply(profileId
         ? `[account] 正在查询 profile ${profileId} 的体力。`
         : "[account] 正在查询当前 QQ 的所有 profile 体力。");
+      if (active.aborted) return [];
       const ids = profileId ? [profileId] : await profiles.listIds(qq).catch(() => undefined);
-      if (signal.aborted) return;
+      if (active.aborted) return [];
       if (!ids) return "无法读取档案列表，请稍后再试。";
       if (!ids.length) return "[account] 没有找到可查询的 profile，请先扫码登录并同步 UID。";
 
       const groups: DailyNoteCardModel["groups"][number][] = [];
       const verifyDelivery: (() => Promise<void>)[] = [];
-      const session = context.message_type === "private" && !context.isDelegated
-        ? context.privateCredentialSignal : undefined;
-      const active = session ? AbortSignal.any([signal, session]) : signal;
       const changed = "[account] 登录状态已变化，本次体力查询已停止，请重新发送原指令。";
       for (const id of ids) {
         if (active.aborted) return [];
@@ -180,6 +184,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
             includeStarRailCheckin: true,
             onCredentialRefresh(refreshed) { revision = refreshed.revision; },
           });
+          if (active.aborted) return [];
           if (revision && results.some(result => result.status === "fulfilled")) {
             verifyDelivery.push(verifyReadOnly ?? (async () => {
               if ((await profiles.checkinSettings(qq, id)).revision !== revision) {
@@ -199,7 +204,7 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
               const international = await profiles.internationalRoleContext(qq, id, "zzz");
               if (international && (/^[1-9]\d{9}$/u.test(international.selectedUid) ||
                   (!international.selectedUid && items.length === start))) {
-                if (!session) {
+                if (!privateSession) {
                   items.push({ game, gameName: names[game], ok: false, error: "绝区零国际服便笺请从本人私聊查询。" });
                 } else {
                   const verifyProfile = async () => {
