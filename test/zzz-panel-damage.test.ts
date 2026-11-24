@@ -24,7 +24,12 @@ test("伤害入口保留技能编号，可明确选择同 QQ 的档案", () => {
   expect(zzzPanelCommand("%安比伤害")).toEqual({ kind: "damage", profileId: 1, name: "安比", skill: undefined });
   expect(zzzPanelCommand("#zzz安东伤害3 档案2")).toEqual({ kind: "damage", profileId: 2, name: "安东", skill: 3 });
   expect(zzzPanelCommand("%安比伤害0")).toEqual({ kind: "damage", profileId: 1, name: "安比", skill: 0 });
-  expect(zzzPanelCommand("%11号伤害4")).toEqual({ kind: "damage", profileId: 1, name: "11号", skill: 4 });
+  expect(zzzPanelCommand("%11号伤害4")).toEqual({ kind: "damage", profileId: 4, name: "11号", skill: undefined });
+  expect(zzzPanelCommand("%11号伤害技能4")).toEqual({ kind: "damage", profileId: 1, name: "11号", skill: 4 });
+  expect(zzzPanelCommand("#绝区零安比伤害255")).toEqual({ kind: "damage", profileId: 255, name: "安比", skill: undefined });
+  expect(zzzPanelCommand("%安比伤害256")).toEqual({ kind: "damage", profileId: 1, name: "安比", skill: 256 });
+  expect(zzzPanelCommand("%安比伤害档案2")).toEqual({ kind: "damage", profileId: 2, name: "安比", skill: undefined });
+  expect(zzzPanelCommand("%安比伤害 技能2 档案3")).toEqual({ kind: "damage", profileId: 3, name: "安比", skill: 2 });
   expect(zzzPanelCommand("%柳伤害7 档案2")).toEqual({ kind: "damage", profileId: 2, name: "柳", skill: 7 });
   for (const invalid of ["安比伤害3", "%伤害3", "%安比伤害1 档案0", "%安比伤害3 2", "%安比伤害1 档案256"]) {
     expect(zzzPanelCommand(invalid)).toBeUndefined();
