@@ -129,6 +129,15 @@ test("状态异常和写入拒绝分类不泄露远端消息、不把全局状�
   }
   const state = await readBbsMissionState(fixture, async () => Response.json({ retcode: 0, data: { states: [], total_points: null } }));
   expect(state).toEqual({ states: [] });
+  const pointsOnly = async () => Response.json({
+    retcode: 0, data: { states: null, total_points: "0", can_get_points: 0 },
+  });
+  await expect(readBbsMissionState(fixture, pointsOnly)).rejects.toMatchObject({ code: "response" });
+  const partial = await readBbsMissionState(fixture, pointsOnly, { allowPointsOnly: true });
+  expect(partial).toEqual({ states: [], totalPoints: 0, remainingPoints: 0 });
+  await expect(readBbsMissionState(fixture, async () => Response.json({
+    retcode: 0, data: { states: "invalid", total_points: 42 },
+  }), { allowPointsOnly: true })).rejects.toMatchObject({ code: "response" });
 });
 
 test("中途档案变化屏蔽任何结果，取消、失败、畸形或超大响应均不重放写入", async () => {

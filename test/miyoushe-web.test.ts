@@ -681,3 +681,53 @@ test("匿名商城读取消、已返回 HTTP 错误和耗尽重读分别结束",
   await expect(offline.list(target, new URLSearchParams())).rejects.toMatchObject({ status: 502 });
   expect(calls).toBe(3);
 });
+
+test("退出米游社网页后，迟到的过期响应不换票或重读原档案", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-mission-logout-"));
+  const profiles = createProfileStore(root);
+  const filename = join(root, "42-2.yaml");
+  const profile = Bun.YAML.stringify({
+    user: { qq: "42" }, profile: { id: 2 },
+    account: { cookie: "account_id=42;cookie_token=fixture-old;ltuid=42;ltoken=fixture", stuid: "42", ltuid: "42", stoken: "fixture-stoken" },
+  });
+  const start = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const reads: string[] = [];
+  const overview = createMiyousheOverview({
+    profileDirectory: root,
+    async transport(url, options) {
+      reads.push(url.origin + url.pathname);
+      expect(options.method).toBe("GET");
+      expect(url.hostname).toBe("bbs-api.miyoushe.com");
+      start.resolve(undefined);
+      await release.promise;
+      return Response.json({ retcode: -100 });
+    },
+  });
+  const web = createMiyousheWeb({
+    publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe",
+    signal: session.signal, loginIdentity: profiles.loginIdentity, overview,
+  });
+  try {
+    await writeFile(filename, profile, { mode: 0o600 });
+    const reply = await web.commands.fallback!(command, message());
+    const token = /#ticket=([\w-]{43})/u.exec(String(reply))?.[1];
+    expect(token).toBeString();
+    const authorization = await web.handle(claim(token!));
+    const cookie = authorization!.headers.get("Set-Cookie")!.split(";", 1)[0]!;
+    const pending = web.handle(read(cookie));
+    await start.promise;
+    try {
+      const response = await web.handle(request("api/logout", { method: "POST", headers: { Origin: origin.origin, Cookie: cookie } }));
+      expect(response?.status).toBe(204);
+    } finally {
+      release.resolve(undefined);
+    }
+    expect((await pending)?.status).toBe(401);
+    expect(reads).toEqual(["https://bbs-api.miyoushe.com/apihub/wapi/getUserMissionsState"]);
+    expect(await readFile(filename, "utf8")).toBe(profile);
+  } finally {
+    web.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

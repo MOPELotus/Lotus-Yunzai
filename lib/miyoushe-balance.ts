@@ -36,7 +36,7 @@ export function createMiyousheBalanceQuery(directory: string | undefined, transp
     try {
       const source = await profiles.accountContext(qq, profileId);
       if (signal.aborted) return;
-      const result = await client.fetchBbsMissionState(source, { signal });
+      const result = await client.fetchBbsMissionState(source, { signal, allowPointsOnly: true });
       const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
       if (signal.aborted) return;
       if (current?.revision !== result.revision) return "档案已变更，请重新查询米游币。";

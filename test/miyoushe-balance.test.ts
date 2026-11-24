@@ -82,7 +82,7 @@ globalThis.fetch = async (input, init) => {
     : account === "8301" ? { total_points: 520, can_get_points: 11 }
     : account === "8204" ? { total_points: 646464, can_get_points: 2 }
     : { total_points: 245, can_get_points: -1 };
-  return Response.json({ retcode: 0, data: { uid: account, states: [], ...fields } });
+  return Response.json({ retcode: 0, data: { uid: account, ...fields } });
 };
 `;
   const initial = new Map([

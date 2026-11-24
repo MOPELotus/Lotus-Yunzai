@@ -114,7 +114,7 @@ export function createMiyousheOverview({ profileDirectory, readTodaySchedule,
       secrets.push(...profileSecrets(account));
       try {
         const data = await client.fetchBbsMissionState(account, {
-          signal,
+          signal, allowPointsOnly: true, verifyBinding: verifyLogin,
           onCredentialRefresh(refreshed) {
             secrets.push(...profileSecrets(refreshed));
             revision = refreshed.revision;
@@ -124,6 +124,7 @@ export function createMiyousheOverview({ profileDirectory, readTodaySchedule,
         revision = data.revision;
       } catch (error) {
         signal?.throwIfAborted();
+        await verifyLogin?.();
         if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
         missionError = missionProblem(error);
       }

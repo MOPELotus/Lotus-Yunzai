@@ -635,12 +635,20 @@ export function createHoyoClient(
       return submitCnGameCheckin(source, transport, options, () => ensureCurrentProfile(source));
     },
     async fetchBbsMissionState(source: ProfileAccountContext,
-      options: { readonly signal?: AbortSignal; readonly recoverCookie?: boolean;
+      options: Parameters<typeof readBbsMissionState>[2] & { readonly recoverCookie?: boolean;
+        readonly verifyBinding?: () => Promise<void>;
         readonly onCredentialRefresh?: (profile: ProfileAccountContext) => void } = {}) {
       const { context, data } = await retrieve(source,
-        (profile) => {
-          if (profile.revision !== source.revision) options.onCredentialRefresh?.(profile);
-          return readBbsMissionState(profile, transport, options, () => ensureCurrentProfile(profile));
+        async (profile) => {
+          if (profile.revision !== source.revision) {
+            await options.verifyBinding?.();
+            options.signal?.throwIfAborted();
+            options.onCredentialRefresh?.(profile);
+          }
+          return readBbsMissionState(profile, transport, options, async () => {
+            await options.verifyBinding?.();
+            await ensureCurrentProfile(profile);
+          });
         },
         options.signal,
         (error) => options.recoverCookie !== false && error instanceof BbsCheckinRequestError && error.reason === "cookie-expired");

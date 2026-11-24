@@ -32,6 +32,10 @@ interface BbsCheckinOptions {
   readonly signal?: AbortSignal;
 }
 
+interface BbsMissionReadOptions extends BbsCheckinOptions {
+  readonly allowPointsOnly?: boolean;
+}
+
 type CheckinReason = "cookie-expired" | "login-expired" | "risk" | "rate-limited";
 
 export class BbsCheckinRequestError extends HoyoRequestError {
@@ -180,11 +184,19 @@ function verifyResponseIdentity(data: Json, login: ReturnType<typeof credentials
   }
 }
 
-function missionState(data: Json): BbsMissionState {
-  if (!Array.isArray(data.states)) invalidResponse(false);
+function missionState(data: Json, allowPointsOnly: boolean): BbsMissionState {
+  const totalPoints = count(data.total_points);
+  const rawRemainingPoints = integer(data.can_get_points);
+  const remainingPoints = rawRemainingPoints !== undefined && rawRemainingPoints >= 0 ? rawRemainingPoints : undefined;
+  const receivedPoints = count(data.already_received_points);
+  const todayTotalPoints = count(data.today_total_points);
+  const points = { totalPoints, receivedPoints, todayTotalPoints, remainingPoints };
+  // Display reads can keep known points even if the optional task list is absent.
+  const rows = data.states ?? (allowPointsOnly && Object.values(points).some(value => value !== undefined) ? [] : undefined);
+  if (!Array.isArray(rows)) invalidResponse(false);
   const states: BbsMissionProgress[] = [];
   const ids = new Set<number>();
-  for (const value of data.states) {
+  for (const value of rows) {
     const row = object(value) ?? invalidResponse(false);
     const missionId = count(row.mission_id);
     if (!missionId || ids.has(missionId)) invalidResponse(false);
@@ -203,11 +215,6 @@ function missionState(data: Json): BbsMissionState {
       ...(award != null && { isGetAward: award === true || award === 1 }),
     });
   }
-  const totalPoints = count(data.total_points);
-  const rawRemainingPoints = integer(data.can_get_points);
-  const remainingPoints = rawRemainingPoints !== undefined && rawRemainingPoints >= 0 ? rawRemainingPoints : undefined;
-  const receivedPoints = count(data.already_received_points);
-  const todayTotalPoints = count(data.today_total_points);
   return {
     states, ...(totalPoints !== undefined && { totalPoints }), ...(receivedPoints !== undefined && { receivedPoints }),
     ...(todayTotalPoints !== undefined && { todayTotalPoints }), ...(remainingPoints !== undefined && { remainingPoints }),
@@ -281,9 +288,9 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
 }
 
 export async function readBbsMissionState(source: ProfileAccountContext, transport: HoyoTransport,
-  options: BbsCheckinOptions = {}, verifyProfile?: () => Promise<void>): Promise<BbsMissionState> {
+  options: BbsMissionReadOptions = {}, verifyProfile?: () => Promise<void>): Promise<BbsMissionState> {
   const { data } = await request(source, transport, undefined, options, verifyProfile);
-  return missionState(data ?? invalidResponse(false));
+  return missionState(data ?? invalidResponse(false), options.allowPointsOnly === true);
 }
 
 export async function submitBbsCheckin(source: ProfileAccountContext, transport: HoyoTransport, forum: BbsCheckinForum,
