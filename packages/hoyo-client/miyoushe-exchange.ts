@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
@@ -135,17 +136,29 @@ function retcodeOf(payload: Json | undefined) {
 }
 
 async function request(transport: HoyoTransport, url: URL, profile: ProfileAccountContext,
-  signal?: AbortSignal, verify?: Verify, body?: string, headers = requestHeaders(profile, body !== undefined)) {
+  signal?: AbortSignal, verify?: Verify, body?: string, headers = requestHeaders(profile, body !== undefined),
+  retryRead = false) {
   signal?.throwIfAborted();
   await verify?.();
   signal?.throwIfAborted();
   const timeout = AbortSignal.timeout(10_000);
   const deadline = signal ? AbortSignal.any([timeout, signal]) : timeout;
-  const response = await transport(url, {
+  const options: RequestInit = {
     method: body === undefined ? "GET" : "POST", headers, credentials: "omit", redirect: "error",
     referrerPolicy: "no-referrer", signal: deadline,
     ...(body === undefined ? {} : { body }),
-  }).catch(() => undefined);
+  };
+  let response: Response | undefined;
+  const attempts = retryRead && body === undefined ? 3 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) {
+      await delay(150 * attempt, undefined, { signal: deadline });
+      await verify?.();
+      deadline.throwIfAborted();
+    }
+    response = await transport(url, options).catch(() => undefined);
+    if (response || deadline.aborted) break;
+  }
   if (!response || response.redirected || (response.url && response.url !== url.href)) return;
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
@@ -206,7 +219,7 @@ async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAcc
 async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountContext,
   signal?: AbortSignal, verify?: Verify, headers?: Headers,
 ) {
-  const result = await request(transport, url, profile, signal, verify, undefined, headers);
+  const result = await request(transport, url, profile, signal, verify, undefined, headers, true);
   signal?.throwIfAborted();
   await verify?.();
   signal?.throwIfAborted();

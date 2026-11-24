@@ -308,3 +308,47 @@ test("账号限购只向固定商品详情读同档最小 Cookie，省略未验�
   await expect(readMiyousheShopAccountQuota(transport, profile, "424242", undefined, revokedInFlight)).rejects.toThrow("撤销");
   expect(requests).toBe(5);
 });
+
+test("商城已授权的读取遇网络瞬断沿用同档重试并在每次请求前复核", async () => {
+  let calls = 0, guards = 0;
+  const seen = new Set<AbortSignal | null | undefined>();
+  const transport: HoyoTransport = async (_url, init) => {
+    calls++;
+    expect(init.method).toBe("GET");
+    expect(init.redirect).toBe("error");
+    expect(new Headers(init.headers).get("Cookie")).toBe("cookie_token_v2=v2_fixture; account_id_v2=123; account_mid_v2=fake-mid");
+    seen.add(init.signal);
+    if (calls < 3) throw new Error("合成短时断线");
+    return Response.json({ retcode: 0, data: { points: 42 } });
+  };
+  expect(await readMiyousheShopBalance(transport, profile, undefined, async () => { guards++; })).toBe(42);
+  expect(calls).toBe(3);
+  expect(guards).toBe(4);
+  expect(seen.size).toBe(1);
+});
+
+test("商城认证读遇业务限频、取消或换绑期间不会接着重试", async () => {
+  let calls = 0;
+  const rate: HoyoTransport = async () => {
+    calls++;
+    return Response.json({ retcode: 429 });
+  };
+  await expect(readMiyousheShopBalance(rate, profile)).rejects.toMatchObject({ reason: "rate-limited" });
+  expect(calls).toBe(1);
+  for (const mode of ["abort", "rebind"]) {
+    const controller = new AbortController();
+    const halted = new Error(mode);
+    let changed = false;
+    calls = 0;
+    const fail: HoyoTransport = async () => {
+      calls++;
+      changed = true;
+      if (mode === "abort") controller.abort(halted);
+      throw new Error("合成短时断线");
+    };
+    await expect(readMiyousheShopBalance(fail, profile, controller.signal, async () => {
+      if (changed) throw halted;
+    })).rejects.toBe(halted);
+    expect(calls).toBe(1);
+  }
+});
