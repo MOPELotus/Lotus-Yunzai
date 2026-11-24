@@ -13,6 +13,7 @@ test("delegate exposes roster only for the active authorized group and rejects s
   const delivered: number[] = [];
   let owner = true;
   let lastRoster: MessageEvent[typeof legacyGroupMemberRoster];
+  let lastReply: MessageEvent["reply"] | undefined;
   let returned: readonly MemberRosterEntry[] | undefined;
   let mode: "present" | "absent" | "disconnect" = "present";
 
@@ -26,6 +27,7 @@ test("delegate exposes roster only for the active authorized group and rejects s
       expect(event.privateCredentialSignal).toBeUndefined();
       expect(event[delegationSession]).toBeUndefined();
       lastRoster = event[legacyGroupMemberRoster];
+      lastReply = event.reply;
       returned = await lastRoster?.();
       handled();
       await event.reply("fixture");
@@ -71,6 +73,8 @@ test("delegate exposes roster only for the active authorized group and rejects s
   expect(await dispatchSelected(request(701))).toBe("handled");
   expect(returned).toEqual([{ id:43,card:"target" }]);
   expect(await lastRoster?.()).toBeUndefined();
+  expect(await lastReply?.("已退出的目标回调")).toBe(false);
+  expect(delivered).toEqual([701]);
   expect(locations).toEqual([701]);
 
   expect(await dispatchSelected(request("私聊"))).toBe("handled");

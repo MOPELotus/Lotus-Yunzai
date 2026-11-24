@@ -94,8 +94,8 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
         ...(role && { member: { is_admin: role === "admin", is_owner: role === "owner" } }),
         sender: { user_id: userId, ...(role && { role }) },
         async reply(content) {
+          if (!dispatching || !current(actor, cancellation)) return false;
           match = true;
-          if (!current(actor, cancellation)) return false;
           if (request.hold) return true;
           return await session.send(target, content) !== "rejected";
         },
