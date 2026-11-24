@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProfileStore } from "@lotus-yunzai/account";
@@ -71,6 +71,59 @@ test("扫码入口只使用当前的好友会话，断开会取消尚在创建�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("二维码送达后扫描提醒被拒仍可确认登录，档案填入可信好友昵称", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-passport-scan-notice-"));
+  const originalFetch = globalThis.fetch;
+  const profiles = createProfileStore(root);
+  const notices: string[] = [];
+  const ticket = "fixture-scan-notice-ticket";
+  const aid = "8001";
+  let polls = 0;
+  try {
+    await writeFile(join(root, "42-2.yaml"), "user: { qq: '42' }\nprofile: { id: 2 }\ndevice: { id: fixture-bound-device }\n");
+    globalThis.fetch = (async (url, init) => {
+      const { pathname } = new URL(String(url));
+      const ok = (data: unknown) => Response.json({ retcode: 0, data });
+      if (pathname.endsWith("/createQRLogin")) {
+        expect(new Headers(init?.headers).get("x-rpc-device_id")).toBe("fixture-bound-device");
+        return ok({ ticket, url: `https://user.mihoyo.com/login-platform/mobile.html?tk=${ticket}` });
+      }
+      if (pathname.endsWith("/queryQRLoginStatus")) {
+        polls++;
+        return polls < 3 ? ok({ status: "Scanned" }) : ok({ status: "Confirmed", user_info: { aid, mid: "fixture-mid" },
+          tokens: [{ token_type: 1, token: "v2_fixture-stoken" }] });
+      }
+      if (pathname.endsWith("/exchange")) {
+        const { dst_token_type } = JSON.parse(String(init?.body));
+        return ok({ aid, token: { token: `v2_fixture-${dst_token_type}` } });
+      }
+      expect(pathname).toBe("/binding/api/getUserGameRolesByCookie");
+      return ok({ list: [{ game_biz: "hk4e_cn", game_uid: "100000001", region: "cn_gf01" }] });
+    }) as typeof fetch;
+    const fallback = passportLoginCommands(root, new AbortController().signal).fallback!;
+    const result = await fallback("#扫码登录2", {
+      user_id: 42, self_id: 51, message_type: "private", sub_type: "friend", isMaster: false,
+      normalizedMessage: "#扫码登录2", isBotMaster: () => false, sender: { user_id: 42, nickname: "档案昵称\u0000 " },
+      privateCredentialSignal: new AbortController().signal,
+      async reply(message, _quote, options) {
+        if (typeof message === "string" && message.startsWith("二维码已扫描")) {
+          notices.push(message);
+          return false;
+        }
+        await options?.onDelivered?.(1);
+        return true;
+      },
+    });
+    expect(result).toContain("扫码登录完成");
+    expect(polls).toBe(3);
+    expect(notices).toHaveLength(1);
+    expect(await profiles.describe("42", 2)).toMatchObject({ loggedIn: true, nickname: "档案昵称", activeRoles: { gs: "100000001" } });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(root, { recursive: true, force: true });
+  }
+}, 23_000);
 
 for (const failure of ["expired", "temporary"] as const) {
   test(`扫码已保存后重试角色同步（${failure}），补位沿用保存后的档案`, async () => {

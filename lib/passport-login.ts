@@ -3,6 +3,7 @@ import { createProfileStore, MAX_PROFILE_ID, ProfileError, type ProfileAccountCo
 import { createCredentialExchange, createHoyoClient, createPassportQr, createProfileHoyoClient, HoyoRequestError,
   isCookieExpired } from "@lotus-yunzai/hoyo-client";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
+import { checkinSettingsNickname } from "./checkin-profile-commands.ts";
 import type { CommandModule } from "./commands.ts";
 
 const start = /^(?:#(?:扫码|二维码|辅助)(?:登录|绑定|登陆)|#?(?:米哈?游社?登[录陆入]|登[录陆入]米哈?游社?))([1-9]\d{0,2})?$/u;
@@ -111,7 +112,12 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           if (Date.now() >= expires) break;
           if (result.status === "scanned" && !scanned) {
             scanned = true;
-            if (await context.reply("二维码已扫描，请在米游社 App 内确认登录。") === false) return [];
+            try {
+              await context.reply("二维码已扫描，请在米游社 App 内确认登录。");
+            } catch {
+              // The confirmation can continue while the original friend session is active.
+              deadlineSignal.throwIfAborted();
+            }
           }
           if (result.status === "expired") break;
           if (result.status === "cancelled") return "已在米游社 App 取消扫码登录。";
@@ -133,7 +139,9 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
           }));
           await verifyProfile();
           session.saving = true;
-          const saved = await profiles.saveLogin(slot, { stuid, stoken, mid, credentials, roles: first.roles }, deadlineSignal);
+          const saved = await profiles.saveLogin(slot, {
+            stuid, stoken, mid, credentials, roles: first.roles, nickname: checkinSettingsNickname(context),
+          }, deadlineSignal);
           let { rolesSynced, revision } = saved;
           if (first.retry && !deadlineSignal.aborted) {
             try {

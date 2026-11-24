@@ -339,6 +339,7 @@ export interface ProfileLoginResult {
   readonly mid?: string;
   readonly credentials: RefreshedCredentials;
   readonly roles?: GameRoles;
+  readonly nickname?: string;
 }
 
 const writes = new Map<string, Promise<void>>();
@@ -732,7 +733,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
             name: device.name, model: device.model, android_version: device.androidVersion,
           },
         };
-        const revision = await writeProfileDocument(path, updated, slot.revision, signal);
+        const nickname = result.nickname && checkinLabel(previous, result.nickname, "");
+        const named = nickname ? fillCheckinNickname(updated, readIdentity(updated, qq, profileId), nickname) : updated;
+        const revision = await writeProfileDocument(path, named, slot.revision, signal);
         loginSlots.delete(slot);
         return { rolesSynced: result.roles !== undefined, revision };
       });
