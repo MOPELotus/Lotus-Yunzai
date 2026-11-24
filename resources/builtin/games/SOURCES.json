@@ -1,7 +1,7 @@
 [
   {
     "repository": "https://github.com/MOPELotus/miao-plugin.git",
-    "revision": "8a83182f1a2103734e28e37ee611a673f692f9c9",
+    "revision": "87b09ace82526f35eb7b0e39890ecd4246ff0c4b",
     "destination": "miao",
     "sourcePrefix": "resources",
     "files": [
@@ -162,13 +162,13 @@
       },
       {
         "path": "character/profile-detail.css",
-        "bytes": 23567,
-        "sha256": "745fc7b221e86ad2705f6fddc47d87572296a325820d5060e040484aed6d9f86"
+        "bytes": 23882,
+        "sha256": "807b53faadb08cadc62ec239ca85baadd121bdd978f16304b055355031a2e081"
       },
       {
         "path": "character/profile-detail.html",
-        "bytes": 25374,
-        "sha256": "a4f8290d6ca00d9de3239c339a4ba1a2e65c0094d6069f106702afec91efa806"
+        "bytes": 25795,
+        "sha256": "2b4ae378c2753b8b0fb3914951f754e61ad48f288aa074451a13eaf0db398f62"
       },
       {
         "path": "character/profile-detail.less",
@@ -207,18 +207,18 @@
       },
       {
         "path": "character/rank-profile-list.css",
-        "bytes": 7127,
-        "sha256": "f2c7da3c9c04d07ca7e64da95d15511b06ef1ff2ad55c3c99bf135424d76ac53"
+        "bytes": 7603,
+        "sha256": "ceb306ae1855f78f1b489a51a5e41ab0f2c127438c912ddccb212a3930575557"
       },
       {
         "path": "character/rank-profile-list.html",
-        "bytes": 5900,
-        "sha256": "3414714e4f0d334d3903b4ef32661c1b459352c9ce9e6b8326d8c55e80d59c56"
+        "bytes": 5935,
+        "sha256": "ab8c95baf80cb7be0248f087078c05fc54362885995240c5da99b04333faca0a"
       },
       {
         "path": "character/rank-profile-list.less",
-        "bytes": 6860,
-        "sha256": "e10a1ffe9dd6a98245a4a9b7368efd5931affc8c960193b1f59f8641e47add1c"
+        "bytes": 7397,
+        "sha256": "eaac68fe3a1e5b22c5a108a926641b07f3420bf34828e0d4b3f53138d8471a91"
       },
       {
         "path": "common/base.css",
@@ -667,8 +667,8 @@
       },
       {
         "path": "meta-gs/artifact/alias.js",
-        "bytes": 3907,
-        "sha256": "fa7dc5c1858b3139592c176d8543d037589a810bf4e6019a7eef4d9438a72c80"
+        "bytes": 4030,
+        "sha256": "e1a28a1324902cfcc0dfe32ba5238b43f8a69a0cbf84b78d6f11b108d0fae37f"
       },
       {
         "path": "meta-gs/artifact/artis-mark.js",
@@ -677,13 +677,13 @@
       },
       {
         "path": "meta-gs/artifact/calc.js",
-        "bytes": 15931,
-        "sha256": "74824b99dcef6d2a62e9f0d6b89262b000bfeee28a5e944876fd26b3cfffadd4"
+        "bytes": 16458,
+        "sha256": "03eb8dd55ef6d4a7a0e7680a4cdaf1e45445a1e767c7a74d8e1aa4cc5c5b8693"
       },
       {
         "path": "meta-gs/artifact/data.json",
-        "bytes": 46573,
-        "sha256": "a9ffba3b9ea19ae23583255f65c5b51340dd43b77f0226958b5335dbec1b724e"
+        "bytes": 48189,
+        "sha256": "73d70bf4e3924ab623ea22488bf2c68872faab517e2e7841547dc5c12b6231fd"
       },
       {
         "path": "meta-gs/artifact/extra.js",
@@ -1761,6 +1761,31 @@
         "sha256": "d482cfeb8aaeb09a49c6f050d38c35fffc3d8ed196f939081cf117aced9b4275"
       },
       {
+        "path": "meta-gs/artifact/imgs/肇史之遗/1.webp",
+        "bytes": 23044,
+        "sha256": "fac01bf835229e05a783628ee79a7e94fb3bcbd622ee18bb6b0faf3a53eea778"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/肇史之遗/2.webp",
+        "bytes": 16168,
+        "sha256": "787eb4c287bd04d729cc8926593eed1ee4d5cbc5a239153287a0147629de9d12"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/肇史之遗/3.webp",
+        "bytes": 24652,
+        "sha256": "fec020a945f856e77bce7a1bc5c3db81c05aa749c0fa8086b00d404bdf0cb5a7"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/肇史之遗/4.webp",
+        "bytes": 21692,
+        "sha256": "eaad2364fec096ea5d7a5bc3ac854fc1e14437c7d8c3f3eec79ae0adb471bfce"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/肇史之遗/5.webp",
+        "bytes": 22166,
+        "sha256": "fd69ebc28dedf85f1fb60de5c46286144dda998acae899050e57cdd0c43bced7"
+      },
+      {
         "path": "meta-gs/artifact/imgs/花海甘露之光/1.webp",
         "bytes": 22634,
         "sha256": "f4668627b8ce473840b739f85d49c2d87e3fca2c37230fcf772736b2869c6e0e"
@@ -2061,6 +2086,31 @@
         "sha256": "81d46974a9bac319f0cd36d6e78f2dcb5c66b66ba9d6b46096a30094b420a068"
       },
       {
+        "path": "meta-gs/artifact/imgs/遥天奉翠华引/1.webp",
+        "bytes": 23722,
+        "sha256": "6b0db65e691a8aaecdd412d92b43103b0b591d741d8621be486e26e1b5fc1ecf"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/遥天奉翠华引/2.webp",
+        "bytes": 17964,
+        "sha256": "107fd1524a8d248d186a5647053e77b2815e07402be1b5d15d6264ea8cb523a8"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/遥天奉翠华引/3.webp",
+        "bytes": 23334,
+        "sha256": "ae092db7f1615a3322824c88bd649010ac4c37af354a1c6838b7d0967bcdda7c"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/遥天奉翠华引/4.webp",
+        "bytes": 20734,
+        "sha256": "6b279104ea950566add02dcf86a9512dd3ce6bb7b576709d7b06fd1566e09e56"
+      },
+      {
+        "path": "meta-gs/artifact/imgs/遥天奉翠华引/5.webp",
+        "bytes": 19416,
+        "sha256": "c5304b080b19754a2efcb0f209f9b8c6d4e681136143869c0c67a594d730cd82"
+      },
+      {
         "path": "meta-gs/artifact/imgs/长夜之誓/1.webp",
         "bytes": 19026,
         "sha256": "d55fd1da817b7368a2ed2decd2d1054d8a9fbef4479b9d70a6049cfd8da64a5e"
@@ -2227,8 +2277,8 @@
       },
       {
         "path": "meta-gs/character/七七/data.json",
-        "bytes": 30090,
-        "sha256": "68f7b53b199220979bb40bb13cb156eaacce12d0738da7ce4eebdc2aad6f95b4"
+        "bytes": 30089,
+        "sha256": "55940533c0531e0abd07d88f03b8936c47f0b9d8dd4f0ba69fd9bbde6331846a"
       },
       {
         "path": "meta-gs/character/七七/icons/cons-1.webp",
@@ -2707,8 +2757,8 @@
       },
       {
         "path": "meta-gs/character/云堇/data.json",
-        "bytes": 22443,
-        "sha256": "9a6c3027f5414d814eeb655eb153c7ece9e133ee9d0baf04ebfbe36c6f60eb79"
+        "bytes": 22442,
+        "sha256": "0283ea1031e8c4c40767f4ac798f4aef8512bc3aa7989b90f9e532097750c681"
       },
       {
         "path": "meta-gs/character/云堇/icons/cons-1.webp",
@@ -3662,8 +3712,8 @@
       },
       {
         "path": "meta-gs/character/凯亚/data.json",
-        "bytes": 16665,
-        "sha256": "f25436ed6f3e4f4cd2840de42896a594a928c192749787cbbef6334103eb7489"
+        "bytes": 16664,
+        "sha256": "e18ee169f19c23bda93d75bf3582b9bf7b2e801e8450ca937500eae48c446dc6"
       },
       {
         "path": "meta-gs/character/凯亚/icons/cons-1.webp",
@@ -6507,8 +6557,8 @@
       },
       {
         "path": "meta-gs/character/希诺宁/artis.js",
-        "bytes": 473,
-        "sha256": "90e63a9b0169e0df8e16e69f0d5c014e7b689f39768285bfdeae41438c31e993"
+        "bytes": 502,
+        "sha256": "24a9daab53bcf8a21821e99eca93f607041bedb999e7387a767ccfcb653a7fd9"
       },
       {
         "path": "meta-gs/character/希诺宁/calc.js",
@@ -7687,8 +7737,8 @@
       },
       {
         "path": "meta-gs/character/枫原万叶/data.json",
-        "bytes": 23313,
-        "sha256": "18c365afc860eaf377c2f554224e5a53a8307527063f62711e32fe8143fdf6e7"
+        "bytes": 23311,
+        "sha256": "69f8a29dc427a490ecddb82c0180b8459f209a0593e263f8f7d56c15e04dde07"
       },
       {
         "path": "meta-gs/character/枫原万叶/icons/cons-1.webp",
@@ -7977,8 +8027,8 @@
       },
       {
         "path": "meta-gs/character/梦见月瑞希/data.json",
-        "bytes": 24267,
-        "sha256": "fd54e58fe211bb6c10c12f6909074be346f628821b5380389f988d5c50e4c8da"
+        "bytes": 24265,
+        "sha256": "950d08604a3124dfc410b573ab660bdb5eb403a226aa1becd2a4dfc51c5fe080"
       },
       {
         "path": "meta-gs/character/梦见月瑞希/icons/cons-1.webp",
@@ -8544,11 +8594,6 @@
         "path": "meta-gs/character/流浪者/imgs/splash0.webp",
         "bytes": 307340,
         "sha256": "110eb5174b8d2bba48d14fed839d08a9b2b52104e96d3c9bd1cd0b512103a8c9"
-      },
-      {
-        "path": "meta-gs/character/流浪者/meta.json",
-        "bytes": 6141,
-        "sha256": "7ce19988247e889f2f3799fca540578617a21f61622554a0c47bd2feb1f2ffb1"
       },
       {
         "path": "meta-gs/character/温迪/calc.js",
@@ -9327,8 +9372,8 @@
       },
       {
         "path": "meta-gs/character/班尼特/data.json",
-        "bytes": 24146,
-        "sha256": "cb69dc0c4a7b6e0552831e93f4769cd8ed55d603f5f2585b7b0d1cc872b5b3d4"
+        "bytes": 24145,
+        "sha256": "75759de7a4d6fc2d55e0bc7ae8492b7588dfe23d373201f1f346627138387496"
       },
       {
         "path": "meta-gs/character/班尼特/icons/cons-1.webp",
@@ -9532,8 +9577,8 @@
       },
       {
         "path": "meta-gs/character/琴/data.json",
-        "bytes": 20760,
-        "sha256": "f932591995d4c05b1b1e40c7513bd9b9d982f8fa01b814b27df81b24c7946960"
+        "bytes": 20759,
+        "sha256": "6c2c22d04909ccb09b42d930f79fecfd29dde7cdc5808f20355e22f453c8926d"
       },
       {
         "path": "meta-gs/character/琴/icons/cons-1.webp",
@@ -9742,8 +9787,8 @@
       },
       {
         "path": "meta-gs/character/瓦列里/data.json",
-        "bytes": 27075,
-        "sha256": "e8ec56c5ba05bed193ba58e77809bf80c8d200fd1222222065e920ac2efb9413"
+        "bytes": 27073,
+        "sha256": "2258c5a4f9abcc5ccec66114bce04845e4b2b1bc79a5adf97f917c4e6a6afb38"
       },
       {
         "path": "meta-gs/character/瓦列里/icons/cons-1.webp",
@@ -10847,8 +10892,8 @@
       },
       {
         "path": "meta-gs/character/纳西妲/data.json",
-        "bytes": 24819,
-        "sha256": "26be1c6418e093c2b72568ff08a18798ae885bfc00b8b605f7223d0b80968183"
+        "bytes": 24817,
+        "sha256": "ac26eaf3d2864b56645090705d11e10ee7156fd0bcd48f7c607d0815baf56a80"
       },
       {
         "path": "meta-gs/character/纳西妲/icons/cons-1.webp",
@@ -11662,8 +11707,8 @@
       },
       {
         "path": "meta-gs/character/茜特菈莉/data.json",
-        "bytes": 24107,
-        "sha256": "f3c36b94f76ef4f746f54f7a077aa7bf42d44892b08a8ebc86ace1f7dcb91b57"
+        "bytes": 24105,
+        "sha256": "fad01e78c4e42c193b14ee595c8b24adbdd799e35f49c872fd891827e865244f"
       },
       {
         "path": "meta-gs/character/茜特菈莉/icons/cons-1.webp",
@@ -12307,8 +12352,8 @@
       },
       {
         "path": "meta-gs/character/菈乌玛/data.json",
-        "bytes": 29244,
-        "sha256": "711f46fd4e142666ece93ede3ac46be2aa0736e27698fbf10734ba254f9a26c3"
+        "bytes": 29242,
+        "sha256": "bd4c26f86e85f0eca7eebdce99162195ad935593a2e1a25512b820db7a1bdaa8"
       },
       {
         "path": "meta-gs/character/菈乌玛/icons/cons-1.webp",
@@ -14272,8 +14317,8 @@
       },
       {
         "path": "meta-gs/character/阿罗夏/data.json",
-        "bytes": 21840,
-        "sha256": "9e24d764b53d459efce6816897582ef7e93c7479a9fd9969628712a42cb4e86c"
+        "bytes": 21839,
+        "sha256": "a084213020cfe35e9d439cf73813f87ea9340795490da9ebbfe28c75f6298231"
       },
       {
         "path": "meta-gs/character/阿罗夏/icons/cons-1.webp",
@@ -14562,8 +14607,8 @@
       },
       {
         "path": "meta-gs/character/雅珂达/data.json",
-        "bytes": 30111,
-        "sha256": "c3319f8e20812c287ffdcee42a189108a57b3cb06e26886a421842f0c2c69d97"
+        "bytes": 30110,
+        "sha256": "603b3973693b27e9208c0a054961c38c55e6a8be5c4c67e3bef8412b652e0aa0"
       },
       {
         "path": "meta-gs/character/雅珂达/icons/cons-1.webp",
@@ -17757,8 +17802,8 @@
       },
       {
         "path": "meta-gs/weapon/alias.js",
-        "bytes": 11667,
-        "sha256": "44c3ba3ee7772fad3d50f5eeaac6613de1c30b9d7ffd7e2a1165740ed335c95e"
+        "bytes": 11693,
+        "sha256": "fbfaa2124c2cc3f115824fcb6293a2978fe231c50deaf76240d012f12b9f212d"
       },
       {
         "path": "meta-gs/weapon/bow/calc.js",
@@ -19967,8 +20012,8 @@
       },
       {
         "path": "meta-gs/weapon/claymore/data.json",
-        "bytes": 3637,
-        "sha256": "b0b5c5c1fc9a97090fe8f6189e524da6f24a81e3b614fba93984d7702c6212f6"
+        "bytes": 3714,
+        "sha256": "17ad029a63792ed2dca6f3eabd12d70dd167b38d1ae78d3c56c17c5e25fcca2b"
       },
       {
         "path": "meta-gs/weapon/claymore/「究极霸王超级魔剑」/awaken.webp",
@@ -20369,6 +20414,21 @@
         "path": "meta-gs/weapon/claymore/浪影阔剑/icon.webp",
         "bytes": 15960,
         "sha256": "d3b9a80e3d7a2f398e3e294d2dc8254681f8a9396b51f1ab4549b48e75f0fda2"
+      },
+      {
+        "path": "meta-gs/weapon/claymore/炎烈狮牙/awaken.webp",
+        "bytes": 11530,
+        "sha256": "cedf47026944fd74b6d98411f559f9bf46eb32309aba2aad9dc3bd381ed0f822"
+      },
+      {
+        "path": "meta-gs/weapon/claymore/炎烈狮牙/data.json",
+        "bytes": 1457,
+        "sha256": "a8956ad1f5987524290153aa2a8bde15a269da861cf73c1c0c06aa1198bde2c1"
+      },
+      {
+        "path": "meta-gs/weapon/claymore/炎烈狮牙/icon.webp",
+        "bytes": 11304,
+        "sha256": "e209b3376607f9bab38aa9b75112620140f566eefabda6df841ece0716a23a43"
       },
       {
         "path": "meta-gs/weapon/claymore/焚曜千阳/awaken.webp",
@@ -23007,8 +23067,8 @@
       },
       {
         "path": "meta-sr/artifact/alias.js",
-        "bytes": 7282,
-        "sha256": "3b6db281a2ef475a191751fbf6a18dcb7ad3ead2c5e1c4fc6f56f8052a3d73c2"
+        "bytes": 7526,
+        "sha256": "16b0ba8fac423fd4d0fae83b81ad02b2180b1ae4148d2c72519df3f6d1ccc0d8"
       },
       {
         "path": "meta-sr/artifact/artis-mark.js",
@@ -23018,7 +23078,7 @@
       {
         "path": "meta-sr/artifact/calc.js",
         "bytes": 14742,
-        "sha256": "0f4419e6dff5e5539603818e07b7a22e8b345a528b696422254c443caaa2dee7"
+        "sha256": "d1ccb85499b5e63e91cb3dd3c47b1cb156175df1116fee298d5d5385a4bc9e52"
       },
       {
         "path": "meta-sr/artifact/data.json",
@@ -24517,8 +24577,8 @@
       },
       {
         "path": "meta-sr/character/alias.js",
-        "bytes": 10459,
-        "sha256": "e528a6a950b9174f765ccdeede1b2f2ec57242033238fae849a707fea161cf0a"
+        "bytes": 10473,
+        "sha256": "65fceded816f72882c75ef8c9386b32d1fb9702b4966ba3a05897060101a697d"
       },
       {
         "path": "meta-sr/character/common/imgs/banner.webp",
@@ -25062,13 +25122,13 @@
       },
       {
         "path": "meta-sr/character/丹恒•饮月/calc.js",
-        "bytes": 6868,
-        "sha256": "4f7454e4b8ebd4745fbdd23184980ae6ad7cee32cf609f3bb8b7808e07e0c56c"
+        "bytes": 7213,
+        "sha256": "1df3f4ffe1a134a92a9ba318adeef746e92adaa31e3c9a09da487cd289c6d216"
       },
       {
         "path": "meta-sr/character/丹恒•饮月/data.json",
-        "bytes": 17518,
-        "sha256": "96869631bcdc12726f09eeab7012c4b3f09c4702be75581855512a50063022c5"
+        "bytes": 18028,
+        "sha256": "95c7d1a7d3275c896e4ab3a75428377e73b1f2019632bb19ea7fde870e59f265"
       },
       {
         "path": "meta-sr/character/丹恒•饮月/imgs/cons-1.webp",
@@ -25089,6 +25149,11 @@
         "path": "meta-sr/character/丹恒•饮月/imgs/cons-6.webp",
         "bytes": 7788,
         "sha256": "67e47b6711043fd80d3e165819c4fb6df2fdada93894ab5be1bdba6ca2ca98ed"
+      },
+      {
+        "path": "meta-sr/character/丹恒•饮月/imgs/cons-ex.webp",
+        "bytes": 11024,
+        "sha256": "414debb2bd9e8cd46f4562cb42e6b980c081ea2c18cb9bdaf7c5c7d6dc776c4d"
       },
       {
         "path": "meta-sr/character/丹恒•饮月/imgs/face.webp",
@@ -28212,13 +28277,13 @@
       },
       {
         "path": "meta-sr/character/景元/calc.js",
-        "bytes": 1759,
-        "sha256": "b7d3044fb04ce3a704e5e093dcb2d4df8c4f87900c899de08e99d462dbbc7b4d"
+        "bytes": 2798,
+        "sha256": "d8470b815772acbe2ff38f151fff05b7e69255ec23dfe1402c7dd0d514da9676"
       },
       {
         "path": "meta-sr/character/景元/data.json",
-        "bytes": 13619,
-        "sha256": "e0305916caf140ae96c35b8f623247c0b32c9f868972ea67f11bfbc39ef8e9ea"
+        "bytes": 14089,
+        "sha256": "d7fe30a13ca35426efb6f7c9f341d22e25ab6411ad84624fcea0b43c119c6e55"
       },
       {
         "path": "meta-sr/character/景元/imgs/cons-1.webp",
@@ -28239,6 +28304,11 @@
         "path": "meta-sr/character/景元/imgs/cons-6.webp",
         "bytes": 11728,
         "sha256": "c98ce895e2b32885bebfcf8f08505c93bdc0c3bdf67c95f23fbeced918e25b1f"
+      },
+      {
+        "path": "meta-sr/character/景元/imgs/cons-ex.webp",
+        "bytes": 10240,
+        "sha256": "5076b00acadd436fa296c921ee5f7bfb686e3979d7495ee0e7f9de72f70eaf78"
       },
       {
         "path": "meta-sr/character/景元/imgs/face.webp",
@@ -33552,13 +33622,13 @@
       },
       {
         "path": "meta-sr/character/黄泉/calc.js",
-        "bytes": 2013,
-        "sha256": "54ddd4866516e5d7ca433c849798c8b348f4aea79870eb0fd62c8b8ac5c65bc2"
+        "bytes": 2256,
+        "sha256": "cd1b5f7a42e544597da34a007d6a27f4ad68d8fe6c7449bfef897836d6bc8f9c"
       },
       {
         "path": "meta-sr/character/黄泉/data.json",
-        "bytes": 18203,
-        "sha256": "c77974596519750d17669192c28b51100eace0a06ebcc7a23cd44a67e69fedab"
+        "bytes": 18933,
+        "sha256": "c4f748f20ae2b1f9e337150770974366d46671ed730644b5680433a810b9d130"
       },
       {
         "path": "meta-sr/character/黄泉/imgs/cons-1.webp",
@@ -33579,6 +33649,11 @@
         "path": "meta-sr/character/黄泉/imgs/cons-6.webp",
         "bytes": 9856,
         "sha256": "9f7e6f45b53794ad65b897579f3155f648b8848b707acb0af3222ec97327b4e5"
+      },
+      {
+        "path": "meta-sr/character/黄泉/imgs/cons-ex.webp",
+        "bytes": 9534,
+        "sha256": "8b5fc122fddaddf6ad2c7bde2a34d9e24beddafabda72a8ce3b0583ba7937472"
       },
       {
         "path": "meta-sr/character/黄泉/imgs/face.webp",
@@ -38662,13 +38737,13 @@
       },
       {
         "path": "wiki/character-talent.css",
-        "bytes": 7061,
-        "sha256": "9bdac103d17912c9afc379bbcf267073db4f94802695761c243e92d8334276cd"
+        "bytes": 7458,
+        "sha256": "660df39fa8f4af140f4c207b2b58dd941203b3562b94f4c1f6ac91eb3a96f336"
       },
       {
         "path": "wiki/character-talent.html",
-        "bytes": 3242,
-        "sha256": "5639e6559d1d045093c5ba996800edf59940de6d37ffb722f613cfd4a8ff47a2"
+        "bytes": 3546,
+        "sha256": "c554fe4cfbb21f29f2fde4467d42098dc87af71817b5a75eaa085729d2e7c98b"
       },
       {
         "path": "wiki/character-talent.less",
