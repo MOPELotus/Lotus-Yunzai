@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { HoyoTransport } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
@@ -18,11 +19,18 @@ export async function readMiyousheShop(transport: HoyoTransport, route: "list" |
   url.search = new URLSearchParams({ app_id: "1", point_sn: "myb", ...params }).toString();
   const timeout = AbortSignal.timeout(8_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  const pending = await transport(url, {
+  const request: RequestInit = {
     method: "GET", credentials: "omit", redirect: "error", signal: deadline,
     headers: { Accept: "application/json", Origin: "https://user.mihoyo.com", Referer: "https://user.mihoyo.com/",
       "x-rpc-client_type": "5" },
-  }).catch(() => undefined);
+  };
+  let pending: Response | undefined;
+  // Only repeat an anonymous GET whose transport failed before an HTTP response.
+  for (let attempt = 0; attempt < 3 && !deadline.aborted; attempt++) {
+    pending = await transport(url, request).catch(() => undefined);
+    if (pending || deadline.aborted || attempt === 2) break;
+    await delay(150 * (attempt + 1), undefined, { signal: deadline }).catch(() => undefined);
+  }
   signal?.throwIfAborted();
   if (!pending) throw new MiyousheShopError(502, "暂时无法连接米游社商城。");
   if (!pending.ok) {

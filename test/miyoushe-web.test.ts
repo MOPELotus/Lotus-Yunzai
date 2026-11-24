@@ -619,3 +619,58 @@ test("商城列表缺正式开放时间时使用详情补全，已有的下次�
     expect(page.goods[0]).toMatchObject({ game: "hk4e", status: "scheduled", opensAt: time + (detailResponse === "known" ? 60_000 : 90_000) });
   }
 });
+
+test("匿名商城仅在传输瞬断后重读，目录和详情仍按当前会话查询", async () => {
+  const calls: string[] = [];
+  const signal = new AbortController().signal;
+  const time = 1_792_000_000_000;
+  const catalog = createMiyousheShopCatalog({
+    now: () => time,
+    async transport(input, init) {
+      const url = new URL(String(input));
+      const route = url.pathname.split("/").at(-1)!;
+      calls.push(route);
+      expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+      expect(init?.signal?.aborted).toBe(false);
+      expect(new Headers(init?.headers).has("Cookie")).toBe(false);
+      expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+      if (calls.filter(value => value === route).length <= 2) throw new TypeError("fixture connection closed");
+      const row = { goods_id: 27, goods_name: "临时断线样本", price: 20, status: "not_in_sell", total: 0 };
+      return Response.json({ retcode: 0, data: route === "list"
+        ? { total: 1, list: [row] } : { ...row, sale_start_time: (time + 90_000) / 1000 } });
+    },
+  });
+  const page = await catalog.list({ qq: "42", profileId: 1 }, new URLSearchParams(), signal);
+  expect(page.goods[0]).toMatchObject({ id: "27", status: "scheduled", opensAt: time + 90_000 });
+  expect(calls).toEqual(["list", "list", "list", "detail", "detail", "detail"]);
+});
+
+test("匿名商城读取消、已返回 HTTP 错误和耗尽重读分别结束", async () => {
+  const target = { qq: "42", profileId: 1 };
+  for (const status of [429, 503]) {
+    let calls = 0;
+    const catalog = createMiyousheShopCatalog({ async transport() {
+      calls++;
+      return new Response(null, { status });
+    } });
+    await expect(catalog.list(target, new URLSearchParams())).rejects.toMatchObject({ status: status === 429 ? 429 : 502 });
+    expect(calls).toBe(1);
+  }
+  const controller = new AbortController();
+  let calls = 0;
+  const cancelled = createMiyousheShopCatalog({ async transport() {
+    calls++;
+    controller.abort();
+    throw new TypeError("fixture connection cancelled");
+  } });
+  await expect(cancelled.list(target, new URLSearchParams(), controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  await expect(cancelled.list(target, new URLSearchParams(), controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  expect(calls).toBe(1);
+  calls = 0;
+  const offline = createMiyousheShopCatalog({ async transport() {
+    calls++;
+    throw new TypeError("fixture unreachable");
+  } });
+  await expect(offline.list(target, new URLSearchParams())).rejects.toMatchObject({ status: 502 });
+  expect(calls).toBe(3);
+});
