@@ -35,6 +35,7 @@ export interface MiyousheOverview {
     readonly balance?: number;
     readonly received?: number;
     readonly todayTotal?: number;
+    readonly remaining?: number;
     readonly items: readonly MissionRow[];
   } | null;
   readonly missionError?: string;
@@ -64,6 +65,7 @@ function projectMissions(state: BbsMissionState): NonNullable<MiyousheOverview["
     balance: state.totalPoints,
     received: state.receivedPoints,
     todayTotal: state.todayTotalPoints,
+    remaining: state.remainingPoints,
     items: state.states.flatMap(({ missionId, missionKey, happenedTimes, threshold, isGetAward }) => {
       const label = missionLabel(missionId, missionKey ?? "");
       return label ? [{ missionId, label, happenedTimes, threshold, isGetAward }] : [];

@@ -402,6 +402,7 @@ test("本人社区总览只读现行任务，隐藏官方已下线的任务并�
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-missions-"));
   const profiles = createProfileStore(root);
   const reads: URL[] = [];
+  let remainingPoints: number | undefined = 0;
   const web = createMiyousheWeb({
     publicBase: () => origin, databasePath: join(root, "auth.sqlite"), assetDirectory: "web/miyoushe", signal: session.signal,
     loginIdentity: profiles.loginIdentity,
@@ -410,7 +411,8 @@ test("本人社区总览只读现行任务，隐藏官方已下线的任务并�
       expect(options?.body).toBeUndefined();
       expect(new Headers(options?.headers).get("Cookie")).toContain("account_id=42");
       reads.push(new URL(url));
-      return Response.json({ retcode: 0, data: { total_points: 712, already_received_points: 26, today_total_points: 42, states: [
+      return Response.json({ retcode: 0, data: { total_points: 712, already_received_points: 26,
+        today_total_points: 42, can_get_points: remainingPoints, states: [
         { mission_id: 58, happened_times: 1, is_get_award: 1 },
         { mission_id: 59, mission_key: "read_post", happened_times: 0 },
         { mission_id: 60, happened_times: 3 },
@@ -438,7 +440,7 @@ test("本人社区总览只读现行任务，隐藏官方已下线的任务并�
     const response = await web.handle(read(cookie));
     expect(response?.status).toBe(200);
     expect((await response!.json()).missions).toEqual({
-      balance: 712, received: 26, todayTotal: 42,
+      balance: 712, received: 26, todayTotal: 42, remaining: 0,
       items: [
         { missionId: 58, label: "社区连续签到", happenedTimes: 1, isGetAward: true },
         { missionId: 72, label: "绑定游戏角色", happenedTimes: 0, threshold: 1, isGetAward: false },
@@ -446,7 +448,12 @@ test("本人社区总览只读现行任务，隐藏官方已下线的任务并�
         { missionId: 74, label: "社区任务 74" },
       ],
     });
-    expect(reads.map(url => url.href)).toEqual(["https://bbs-api.miyoushe.com/apihub/wapi/getUserMissionsState?point_sn=myb"]);
+    remainingPoints = undefined;
+    const unknown = await web.handle(read(cookie));
+    expect(unknown?.status).toBe(200);
+    expect((await unknown!.json()).missions).not.toHaveProperty("remaining");
+    const endpoint = "https://bbs-api.miyoushe.com/apihub/wapi/getUserMissionsState?point_sn=myb";
+    expect(reads.map(url => url.href)).toEqual([endpoint, endpoint]);
   } finally {
     web.close();
     await rm(root, { recursive: true, force: true });

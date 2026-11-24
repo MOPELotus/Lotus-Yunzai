@@ -158,6 +158,8 @@ function showLogin(message: string, help = false, retry = false) {
   get("session-expiry").textContent = "";
   get("account-state").textContent = "";
   get("today-schedule").textContent = "";
+  get("missions-remaining").hidden = true;
+  get("missions-remaining").textContent = "";
   get("missions-empty").textContent = "";
   for (const id of ["balance", "received", "today-total"]) get(id).textContent = "—";
   for (const id of ["roles", "missions"]) get(id).replaceChildren();
@@ -428,6 +430,10 @@ function showOverview(data: Overview) {
   get("balance").textContent = point(missions?.balance);
   get("received").textContent = point(missions?.received);
   get("today-total").textContent = point(missions?.todayTotal);
+  const remaining = missions?.remaining;
+  const remainingLine = get("missions-remaining");
+  remainingLine.hidden = remaining === undefined;
+  remainingLine.textContent = remaining === undefined ? "" : `剩余可领 ${point(remaining)} 米游币`;
   get("missions-empty").hidden = Boolean(missions?.items.length);
   get("missions-empty").textContent = missionError || (missions ? "当前没有可展示的社区任务。" : "暂时无法读取社区任务和余额。");
   get("missions").replaceChildren(...(missions?.items.map(missionRow) ?? []));
