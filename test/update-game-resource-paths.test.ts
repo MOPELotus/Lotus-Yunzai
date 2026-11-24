@@ -15,6 +15,7 @@ test("受管更新保留有效游戏主题、旧个人卡池与绝区零相邻�
   const zzz = "portable/zzz/resources ";
   const paths = {
     LOTUS_GENSHIN_WISH_LEGACY_DIR: `  ${wish}  `,
+    LOTUS_GENSHIN_GACHA_RESOURCES_DIR: "  portable/genshin/resources  ",
     LOTUS_GENSHIN_RANK_THEME_DIR: "  themes/original  ",
     LOTUS_GENSHIN_ARK_THEME_DIR: "themes/unused",
     LOTUS_STAR_RAIL_CHALLENGE_THEME_DIR: "  themes/challenge  ",
@@ -29,6 +30,10 @@ test("受管更新保留有效游戏主题、旧个人卡池与绝区零相邻�
     ["portable/zzz/dist/model/damage/character/ellen.json", "原伤害配置"],
     [join(wish, "resources/single/img/bg.png"), "原祈愿主题"],
     ["genshin/defSet/element/role.yaml", "菲林斯: 电\n"],
+    ["portable/genshin/resources/img/overview.png", "原神主题"],
+    ["portable/genshin/defSet/role/index.yaml", "common_chest: 4000\n"],
+    ["portable/genshin/defSet/weapon/other.yaml", "actWeapon: [铁蜂刺]\n"],
+    ["portable/genshin/config/role.index.yaml", "common_chest: 2\n"],
   ]);
   try {
     await mkdir(candidate);
@@ -43,7 +48,10 @@ test("受管更新保留有效游戏主题、旧个人卡池与绝区零相邻�
 
     const selected = await readUpdateRuntimePaths(active, AbortSignal.timeout(3_000), { PATH: process.env.PATH });
     expect(selected).toEqual([
-      "genshin/defSet/element/role.yaml", `${wish}/data`, `${wish}/resources`, "portable/zzz/config/alias.yaml",
+      "genshin/defSet/element/role.yaml",
+      "portable/genshin/defSet/role/index.yaml", "portable/genshin/defSet/weapon/other.yaml", "portable/genshin/resources",
+      `${wish}/data`, `${wish}/resources`,
+      "portable/zzz/config/alias.yaml",
       "portable/zzz/config/rank.yaml", paths.LOTUS_ZZZ_PANEL_CONFIG, "portable/zzz/dist/model/damage/character",
       zzz, "themes/challenge", "themes/original",
     ]);
@@ -54,9 +62,12 @@ test("受管更新保留有效游戏主题、旧个人卡池与绝区零相邻�
       expect(zzzRoleAlias(aliases, "隔离鲨鱼")).toBe("艾莲");
       expect(await readFile(join(root, paths.LOTUS_ZZZ_PANEL_CONFIG), "utf8")).toBe("interval: 30\n");
       expect(await readFile(join(root, "themes/challenge/floor12.png"), "utf8")).toBe("旧深渊主题");
+      expect(await readFile(join(root, "portable/genshin/defSet/role/index.yaml"), "utf8")).toBe("common_chest: 4000\n");
+      expect(await readFile(join(root, "portable/genshin/defSet/weapon/other.yaml"), "utf8")).toBe("actWeapon: [铁蜂刺]\n");
     }, selected);
     await expect(verifyMovedRuntimePaths(active, moved.previous, paths)).resolves.toBeUndefined();
     expect(await Bun.file(join(moved.previous, "themes/unused/bg.png")).exists()).toBe(true);
+    expect(await Bun.file(join(moved.previous, "portable/genshin/config/role.index.yaml")).exists()).toBe(true);
     expect(await Bun.file(join(moved.previous, "portable/zzz/config/panel.yaml")).exists()).toBe(true);
   } finally {
     await rm(fixture, { recursive: true, force: true });

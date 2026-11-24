@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 // These overrides are read as-is by their modules, including spaces in local paths.
 const rawPaths = [
@@ -31,6 +31,12 @@ export function configuredGameResourcePaths(env: Readonly<Record<string, string 
     env.LOTUS_GENSHIN_RANK_THEME_DIR?.trim() || env.LOTUS_GENSHIN_ARK_THEME_DIR?.trim(),
     env.LOTUS_STAR_RAIL_RANK_THEME_DIR?.trim() || env.LOTUS_STAR_RAIL_ARK_THEME_DIR?.trim(),
   ];
+
+  const genshinResources = env.LOTUS_GENSHIN_GACHA_RESOURCES_DIR?.trim();
+  if (genshinResources && basename(genshinResources) === "resources") {
+    const defaults = join(dirname(genshinResources), "defSet");
+    paths.push(join(defaults, "role", "index.yaml"), join(defaults, "weapon", "other.yaml"));
+  }
 
   const resources = env.LOTUS_ZZZ_LEGACY_RESOURCES_DIR;
   if (resources) {
