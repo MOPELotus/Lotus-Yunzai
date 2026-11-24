@@ -1,3 +1,4 @@
+import { reportResourceProgress, type ResourceProgressCallback } from "./resource-progress.ts";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -21,6 +22,7 @@ export interface FixedThemeOptions {
   readonly override?: string;
   readonly download?: boolean | Download;
   readonly signal?: AbortSignal;
+  readonly onProgress?: ResourceProgressCallback;
 }
 
 function missing(error: NodeJS.ErrnoException) {
@@ -81,8 +83,10 @@ function downloadOriginal(asset: Asset, raw: string, request: Download, signal: 
 
 /** Prepare static artwork once, during initialization or from an existing installation copy. */
 export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoots, raw, assets }: FixedTheme, {
-  source = checkout, override, download, signal,
+  source = checkout, override, download, signal, onProgress,
 }: FixedThemeOptions = {}): Promise<Status> {
+  const report = (message: string, completed?: number, total?: number) => reportResourceProgress(onProgress, signal, "theme", message, completed, total);
+  report("检查本地主题");
   signal?.throwIfAborted();
   if (override) return "configured";
   const root = await realpath(fileURLToPath(checkout));
@@ -96,12 +100,14 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   const downloadSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const request = typeof download === "function" ? download : fetch;
   const contents: { path: string; bytes: Uint8Array }[] = [];
-  for (const asset of assets) {
+  for (const [index, asset] of assets.entries()) {
+    report(`准备 ${asset[0]}`, index, assets.length);
     const bytes = await readOriginal(asset, donor, sourceRoots, signal) ??
       (download ? await downloadOriginal(asset, raw, request, downloadSignal) : undefined);
     signal?.throwIfAborted();
     if (!bytes) return "missing";
     contents.push({ path: asset[0], bytes });
+    report(`已取得 ${asset[0]}`, index + 1, assets.length);
   }
 
   for (const directory of [join(root, "data"), dirname(target)]) {
@@ -112,7 +118,8 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   }
   const stage = await mkdtemp(join(dirname(target), ".theme-"));
   try {
-    for (const { path, bytes } of contents) {
+    for (const [index, { path, bytes }] of contents.entries()) {
+      reportResourceProgress(onProgress, signal, "theme-write", `保存 ${path}`, index, contents.length);
       const file = join(stage, path);
       await mkdir(dirname(file), { mode: 0o700, recursive: true });
       await writeFile(file, bytes, { mode: 0o600, flag: "wx", signal });
@@ -128,6 +135,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
       if (code === "EEXIST" || code === "ENOTEMPTY") return await localTheme(target, assets) ?? "missing";
       throw error;
     }
+    reportResourceProgress(onProgress, signal, "theme-write", "主题已保存", contents.length, contents.length);
     return "installed";
   } finally {
     await rm(stage, { recursive: true, force: true });

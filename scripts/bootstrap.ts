@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import manifest from "../package.json";
+import { createInitializationProgress } from "../lib/initialization-progress.ts";
 
 const requiredVersion = manifest.packageManager.slice("bun@".length);
 if (Bun.version !== requiredVersion) {
@@ -20,6 +21,23 @@ const channel = channels[0];
 const root = new URL("..", import.meta.url);
 const options = { cwd: fileURLToPath(root), stdout: "inherit", stderr: "inherit" } as const;
 
+async function command(message: string, argv: string[], stdin: "inherit" | "ignore" = "ignore", nested = false) {
+  // Subprocesses retain their own terminal progress; parent stages use full log lines.
+  const progress = createInitializationProgress("初始化", { isTTY: false,
+    ...(nested && { heartbeatMs: Number.MAX_SAFE_INTEGER }) });
+  progress.update({ stage: message, message });
+  try {
+    const code = await Bun.spawn(argv, { ...options, stdin }).exited;
+    if (code === 0) progress.complete(`${message}完成`);
+    else progress.fail(`${message}失败（退出码 ${code}）`);
+    return code;
+  } catch (error) {
+    progress.fail(`${message}失败`);
+    throw error;
+  } finally { progress.close(); }
+}
+
+
 if (await Bun.file(new URL(".gitmodules", root)).exists()) {
   const git = Bun.which("git");
   if (!git) {
@@ -28,20 +46,22 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
   }
   let initialized = false;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const update = await Bun.spawn(
-      [git, "submodule", "update", "--init", "--recursive", "--checkout"], options,
-    ).exited;
+    const update = await command(`同步 Git 子模块（第 ${attempt}/2 次）`,
+      [git, "submodule", "update", "--init", "--recursive", "--checkout"]);
     if (update === 0) {
       // An interrupted clone can leave HEAD at the requested commit before any files are checked out.
-      const checkout = await Bun.spawn([
+      const checkout = await command("检查子模块工作文件", [
         git, "submodule", "foreach", "--quiet", "--recursive",
         'index=$(git rev-parse --git-path index) && { test -f "$index" || git read-tree -m -u HEAD; }',
-      ], options).exited;
+      ]);
       if (checkout !== 0) break;
 
+      console.info("[初始化] 核对子模块固定提交。");
       const status = Bun.spawn([git, "submodule", "status", "--recursive"], { ...options, stdout: "pipe" });
       const [code, revisions] = await Promise.all([status.exited, new Response(status.stdout).text()]);
       if (code === 0 && !/^[-+U]/m.test(revisions)) {
+        const count = revisions.split(/\r?\n/u).filter(Boolean).length;
+        console.info(`[初始化] 子模块固定提交核对完成：${count}/${count} 个。`);
         initialized = true;
         break;
       }
@@ -55,20 +75,28 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
 }
 
 const installArgs = [process.execPath, "install", "--frozen-lockfile"];
-let installCode = await Bun.spawn(installArgs, options).exited;
-const prepared = installCode === 0 ? 0 : await Bun.spawn([...installArgs, "--ignore-scripts"], options).exited;
+let installCode = await command("安装锁定依赖", installArgs);
+const prepared = installCode === 0 ? 0 : await command("重新准备依赖（跳过安装脚本）", [...installArgs, "--ignore-scripts"]);
 // Load each probe in a fresh Bun process so a failed import does not survive native recovery.
 const loadSkiaNative = () => Bun.spawn(
   [process.execPath, "--eval", 'await import("./packages/skia/index.ts")'],
   { ...options, stdout: "ignore", stderr: "ignore" },
 ).exited.then(code => code === 0);
+console.info("[初始化] 检查图片原生库。" );
 let skiaReady = prepared === 0 && await loadSkiaNative();
 if (prepared === 0 && !skiaReady) {
   try {
     const { recoverSkiaBinary } = await import("./skia-binary.ts");
-    if (await recoverSkiaBinary(root)) {
+    const repair = createInitializationProgress("初始化");
+    let recovered: boolean;
+    try {
+      repair.update({ stage: "skia", message: "准备图片原生库" });
+      recovered = await recoverSkiaBinary(root, { onTaskProgress: repair.update });
+      if (recovered) repair.complete("图片原生库已恢复"); else repair.fail("图片原生库恢复失败");
+    } finally { repair.close(); }
+    if (recovered) {
       console.log("[初始化] 已重新下载并校验 Skia 原生库。");
-      if (installCode !== 0) installCode = await Bun.spawn(installArgs, options).exited;
+      if (installCode !== 0) installCode = await command("重新安装锁定依赖", installArgs);
       if (installCode === 0) skiaReady = await loadSkiaNative();
     }
   } catch {
@@ -97,7 +125,7 @@ if (!process.exitCode && Bun.argv.includes("--verify-v3-renderer")) {
 }
 
 if (!process.exitCode) {
-  const build = await Bun.spawn([process.execPath, "run", "build:panel"], options).exited;
+  const build = await command("构建管理面板", [process.execPath, "run", "build:panel"]);
   if (build !== 0) {
     console.error("管理面板构建失败，请检查构建日志。");
     process.exitCode = build;
@@ -108,9 +136,7 @@ if (!process.exitCode) {
 if (!process.exitCode && !buildOnly) {
   // Run after dependency installation in a new process, with the same terminal
   // for first-run choices. The launcher keeps the startup lock and prepares models once.
-  const initialized = await Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "init", ...(channel ? [channel] : [])], {
-    ...options, stdin: "inherit",
-  }).exited;
+  const initialized = await command("准备运行资料", [process.execPath, "--no-env-file", "scripts/launcher.ts", "init", ...(channel ? [channel] : [])], "inherit", true);
   if (initialized !== 0) {
     console.error("[初始化] 运行资料未准备完成，请排查上述错误后重新运行 bun run bootstrap。");
     process.exitCode = initialized;

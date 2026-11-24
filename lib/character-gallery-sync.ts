@@ -1,3 +1,4 @@
+import { reportResourceProgress, type ResourceProgressCallback } from "./resource-progress.ts";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -12,6 +13,7 @@ export interface CharacterGallerySyncOptions {
   readonly signal?: AbortSignal;
   readonly fetch?: (input: URL, init: RequestInit) => Promise<Response>;
   readonly githubToken?: string;
+  readonly onProgress?: ResourceProgressCallback;
 }
 
 export interface CharacterGallerySyncResult {
@@ -109,6 +111,8 @@ async function applyParallel<T>(values: readonly T[], controller: AbortControlle
 }
 
 export async function syncCharacterGallery(options: CharacterGallerySyncOptions): Promise<CharacterGallerySyncResult> {
+  const report = (stage: string, message: string, completed?: number, total?: number) => reportResourceProgress(options.onProgress, options.signal, stage, message, completed, total);
+  report("gallery-plan", "读取角色图库版本与文件清单");
   const controller = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   signal.throwIfAborted();
@@ -127,11 +131,15 @@ export async function syncCharacterGallery(options: CharacterGallerySyncOptions)
     const previousImages = new Map(previous?.manifest.images.map(image => [image.path, image]));
     const images = [...plan.images.values()];
     const reusable = new Map<string, string>();
+    let checked = 0;
+    report("gallery-check", "核对已有图库", 0, images.length);
     await applyParallel(images, controller, signal, async image => {
-      const old = previousImages.get(image.path);
-      if (!previous || !old || old.sha !== image.sha) return;
-      const path = join(previous.directory, image.path);
-      if (await reusableImage(path, image, signal)) reusable.set(image.path, path);
+      try {
+        const old = previousImages.get(image.path);
+        if (!previous || !old || old.sha !== image.sha) return;
+        const path = join(previous.directory, image.path);
+        if (await reusableImage(path, image, signal)) reusable.set(image.path, path);
+      } finally { report("gallery-check", "核对图库文件", ++checked, images.length); }
     });
     const result: CharacterGallerySyncResult = {
       downloaded: images.length - reusable.size,
@@ -157,17 +165,21 @@ export async function syncCharacterGallery(options: CharacterGallerySyncOptions)
     try {
       await mkdir(staged, { mode: 0o700 });
       await Promise.all(galleryDirectories.map(directory => mkdir(join(staged, directory), { mode: 0o700 })));
+      let completed = 0;
+      report("gallery-download", "同步图库文件", 0, images.length);
       await applyParallel(images, controller, signal, async image => {
         const destination = join(staged, image.path);
         await mkdir(dirname(destination), { recursive: true });
         const reuse = reusable.get(image.path);
         if (reuse) await link(reuse, destination);
         else await writeFile(destination, await source.image(image, plan.revisions), { flag: "wx", signal });
+        report("gallery-download", "同步图库文件", ++completed, images.length);
       });
       const manifest: GalleryManifest = { revisions: plan.revisions, images };
       await writeFile(join(staged, manifestFile), JSON.stringify(manifest) + "\n", { flag: "wx", signal });
       await symlink(join(snapshotDirectory, generation), next, "dir");
       signal.throwIfAborted();
+      report("gallery-publish", "发布已校验图库");
       await rename(next, syncedCharacterGalleryPath(root));
       published = true;
     } finally {

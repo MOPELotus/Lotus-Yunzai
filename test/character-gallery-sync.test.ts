@@ -1,3 +1,4 @@
+import type { ResourceProgress } from "../lib/resource-progress.ts";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -131,7 +132,9 @@ test("图库按旧索引的来源和清洁等级下载，完整快照发布、�
   const root = join(workspace, "character-gallery-synced");
   const source = sourceFixture();
   const active = syncedCharacterGalleryPath(root);
-  const run = () => syncCharacterGallery({ root, fetch: source.transport, githubToken: "test-token" });
+  const progress: ResourceProgress[] = [];
+  const run = () => syncCharacterGallery({ root, fetch: source.transport, githubToken: "test-token",
+    onProgress(event) { progress.push(event); throw new Error("progress sink unavailable"); } });
   try {
     const initial = await run();
     expect(initial).toMatchObject({ downloaded: 4, reused: 0, removed: 0, files: 4,
@@ -139,6 +142,9 @@ test("图库按旧索引的来源和清洁等级下载，完整快照发布、�
     expect(source.downloads).toContainEqual({ path: fileA, source: genshin, revision: sha(101) });
     expect(source.downloads).toContainEqual({ path: fileE, source: zzz, revision: sha(103) });
     expect(new Set(source.downloads.map(entry => entry.path))).toEqual(new Set([fileA, fileB, fileD, fileE]));
+    expect(progress.filter(event => event.stage === "gallery-download").map(event => event.completed)).toEqual([0, 1, 2, 3, 4]);
+    expect(progress.findLast(event => event.stage === "gallery-check")).toMatchObject({ completed: initial.files, total: initial.files });
+    expect(progress.at(-1)?.stage).toBe("gallery-publish");
     const original = await readlink(active);
     expect(await readFile(join(active, fileA))).toEqual(webp(1));
     expect(await readFile(join(active, fileB))).toEqual(webp(2));

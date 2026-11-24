@@ -4,15 +4,52 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-async function downloadArchive(url: string): Promise<Uint8Array<ArrayBuffer>> {
+export interface SkiaProgress {
+  stage: string;
+  message: string;
+  completed?: number;
+  total?: number;
+  unit?: string;
+}
+interface RecoveryOptions { onTaskProgress?: (event: SkiaProgress) => unknown }
+function report(options: RecoveryOptions, event: SkiaProgress) {
+  try { void Promise.resolve(options.onTaskProgress?.(event)).catch(() => undefined); } catch {}
+}
+async function readArchive(stream: ReadableStream<Uint8Array>, options: RecoveryOptions, total?: number): Promise<Uint8Array<ArrayBuffer>> {
+  const chunks: Uint8Array[] = [];
+  let completed = 0;
+  const update = () => report(options, { stage: "skia-download", message: "正在下载 Skia 原生库", completed, total, unit: "bytes" });
+  update();
+  const reader = stream.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      completed += value.byteLength;
+      update();
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(completed);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+async function downloadArchive(url: string, options: RecoveryOptions): Promise<Uint8Array<ArrayBuffer>> {
   const deadline = AbortSignal.timeout(90_000);
   for (let attempt = 1; ; attempt++) {
+    report(options, { stage: "skia-request", message: `正在获取 Skia 原生库（尝试 ${attempt}/3）` });
     let retryable = true;
     let failure: unknown;
     try {
       const signal = AbortSignal.any([deadline, AbortSignal.timeout(45_000)]);
       const response = await fetch(url, { signal });
-      if (response.ok) return new Uint8Array(await response.arrayBuffer());
+      if (response.ok) {
+        const length = Number(response.headers.get("content-length"));
+        const total = !response.headers.get("content-encoding") && length > 0 && Number.isFinite(length) ? length : undefined;
+        if (response.body) return await readArchive(response.body, options, total);
+        return new Uint8Array(await response.arrayBuffer());
+      }
 
       await response.body?.cancel().catch(() => undefined);
       retryable = response.status >= 500 || response.status === 408 || response.status === 429;
@@ -24,13 +61,14 @@ async function downloadArchive(url: string): Promise<Uint8Array<ArrayBuffer>> {
         if (!curl) throw error;
 
         // The same release asset is still verified against the package digest before installation.
+        report(options, { stage: "skia-fallback", message: "正在使用备用下载方式获取 Skia 原生库" });
         const download = Bun.spawn([
           curl, "--disable", "--fail", "--silent", "--location",
           "--proto", "=https", "--proto-redir", "=https",
           "--connect-timeout", "10", "--max-time", "30", "--retry", "2", "--retry-all-errors",
           "--retry-max-time", "40", url,
         ], { stdout: "pipe", stderr: "ignore" });
-        const [code, bytes] = await Promise.all([download.exited, new Response(download.stdout).arrayBuffer()]);
+        const [code, bytes] = await Promise.all([download.exited, readArchive(download.stdout, options)]);
         if (code === 0) return new Uint8Array(bytes);
       }
     }
@@ -39,7 +77,8 @@ async function downloadArchive(url: string): Promise<Uint8Array<ArrayBuffer>> {
   }
 }
 
-export async function recoverSkiaBinary(root: URL): Promise<boolean> {
+export async function recoverSkiaBinary(root: URL, options: RecoveryOptions = {}): Promise<boolean> {
+  report(options, { stage: "skia-check", message: "正在核对 Skia 原生库" });
   for (const path of ["packages/skia/node_modules/skia-canvas/", "node_modules/skia-canvas/"]) {
     const directory = new URL(path, root);
     const metadata = new URL("package.json", directory);
@@ -57,10 +96,13 @@ export async function recoverSkiaBinary(root: URL): Promise<boolean> {
     if (typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(digest)) return false;
 
     const url = `https://github.com/samizdatco/skia-canvas/releases/download/v${version}/${artifact}`;
-    const bytes = await downloadArchive(url);
+    const bytes = await downloadArchive(url, options);
+    report(options, { stage: "skia-verify", message: "正在校验 Skia 发布资源 SHA-256", completed: 0, total: bytes.byteLength, unit: "bytes" });
     if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== digest) {
       throw new Error("Skia 发布资源的 SHA-256 校验失败。");
     }
+    report(options, { stage: "skia-verify", message: "Skia 发布资源 SHA-256 校验通过", completed: bytes.byteLength, total: bytes.byteLength, unit: "bytes" });
+    report(options, { stage: "skia-extract", message: "正在解压并安装已校验的 Skia 原生库" });
     const temp = await mkdtemp(fileURLToPath(new URL("lib/.lotus-skia-", directory)));
     try {
       const staged = join(temp, "skia.node");
@@ -69,6 +111,7 @@ export async function recoverSkiaBinary(root: URL): Promise<boolean> {
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
+    report(options, { stage: "skia-ready", message: "Skia 原生库下载、校验及安装完成" });
     return true;
   }
   return false;

@@ -1,3 +1,4 @@
+import type { ResourceProgress } from "../lib/resource-progress.ts";
 import { expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,9 @@ test("普通启动不下载便笺原素材，首次初始化只请求固定文�
     const target = join(directory, dailyNoteResourcePath);
     expect(await prepareDailyNoteTheme(root)).toBe("missing");
     const requested: string[] = [];
+    const progress: ResourceProgress[] = [];
     expect(await prepareDailyNoteTheme(root, {
+      onProgress(event) { progress.push(event); },
       async download(url, init) {
         expect(url.origin).toBe("https://raw.githubusercontent.com");
         expect(init).toMatchObject({ credentials: "omit", redirect: "error" });
@@ -29,6 +32,8 @@ test("普通启动不下载便笺原素材，首次初始化只请求固定文�
     const [firstAsset] = dailyNoteAssets[0]!;
     expect(requested).toEqual([firstAsset, firstAsset]);
     await expect(lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(progress.some(event => event.completed === 0 && event.total === dailyNoteAssets.length)).toBe(true);
+    expect(progress.some(event => event.total && event.completed === event.total)).toBe(false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

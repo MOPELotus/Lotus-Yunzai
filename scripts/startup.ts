@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { AtlasLocale } from "../plugins/atlas/locale.ts";
 import type { AtlasChannel } from "../lib/atlas-channel.ts";
 import type { ImageRenderPreset } from "../lib/startup-render-preset.ts";
+import { createInitializationProgress, runInitializationStage, type InitializationProgressCallback } from "../lib/initialization-progress.ts";
 
 async function askStartupOptions(chooseAtlas: boolean, chooseRender: boolean, signal: AbortSignal, allowDefaultChannel = false):
   Promise<{ channel?: AtlasChannel; renderPreset?: ImageRenderPreset }> {
@@ -90,19 +91,21 @@ async function loadStartupConfig(root: URL) {
 }
 
 async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean) {
+  const prepare = <T>(message: string, task: (onProgress: InitializationProgressCallback) => Promise<T>) =>
+    firstSetup ? runInitializationStage(message, task, { signal }) : task(() => {});
   const { prepareAtlasTheme } = await import("../plugins/atlas/prepare-theme.ts");
-  const { copied, missing } = await prepareAtlasTheme(root, {
-    override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal,
-  });
+  const { copied, missing } = await prepare("准备图鉴主题", onProgress => prepareAtlasTheme(root, {
+    override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal, onProgress,
+  }));
   if (copied.length) console.log(`[图鉴] 已从本地恢复 ${copied.length} 个原主题文件。`);
   if (missing.length) {
     console.warn(`[图鉴] 缺少 ${missing.length} 个原主题文件。可在 data/atlas/theme/ 放入已获授权的素材后重启，或用 LOTUS_ATLAS_THEME_DIR 选定已有主题。`);
   }
 
   const { prepareDailyNoteTheme } = await import("../lib/daily-note-theme.ts");
-  const dailyNote = await prepareDailyNoteTheme(root, {
-    override: Bun.env.LOTUS_DAILY_NOTE_RESOURCES, signal, download: firstSetup,
-  }).catch(() => {
+  const dailyNote = await prepare("准备体力便笺素材", onProgress => prepareDailyNoteTheme(root, {
+    override: Bun.env.LOTUS_DAILY_NOTE_RESOURCES, signal, download: firstSetup, onProgress,
+  })).catch(() => {
     signal.throwIfAborted();
     console.warn("[体力] 原便笺主题读取或写入失败。体力查询将使用文字回执，请检查项目下的 data/daily-note/resources。");
   });
@@ -115,9 +118,9 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
 
   if (await Bun.file(new URL("plugins/zzz/tuning-detail-card.ts", root)).exists()) {
     const { prepareZzzTuningTheme } = await import("../lib/zzz-tuning-theme.ts");
-    const zzzTuning = await prepareZzzTuningTheme(root, {
-      override: Bun.env.LOTUS_ZZZ_GACHA_THEME_DIR?.trim(), signal, download: firstSetup,
-    }).catch(() => {
+    const zzzTuning = await prepare("准备绝区零调频素材", onProgress => prepareZzzTuningTheme(root, {
+      override: Bun.env.LOTUS_ZZZ_GACHA_THEME_DIR?.trim(), signal, download: firstSetup, onProgress,
+    })).catch(() => {
       signal.throwIfAborted();
       console.warn("[绝区零] 调频原主题读写失败，请检查 data/zzz/gacha-theme 的文件权限。");
     });
@@ -131,7 +134,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
 
   if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
     const { prepareGenshinWishCalendar } = await import("../plugins/genshin/wish-calendar.ts");
-    const wishCalendar = await prepareGenshinWishCalendar(root, { signal, download: firstSetup });
+    const wishCalendar = await prepare("准备原神祈愿日历", onProgress => prepareGenshinWishCalendar(root, { signal, download: firstSetup, onProgress }));
     if (wishCalendar === "installed") console.log("[原神] 已准备原祈愿日历。");
     if (wishCalendar === "missing" && firstSetup) {
       console.warn("[原神] 原祈愿日历暂不可用，可重新运行 bun run bootstrap 重试。");
@@ -140,9 +143,9 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
 
   if (await Bun.file(new URL("plugins/starrail/challenge-theme.ts", root)).exists()) {
     const { prepareStarRailChallengeTheme } = await import("../plugins/starrail/challenge-theme.ts");
-    const starrail = await prepareStarRailChallengeTheme(root, {
-      override: Bun.env.LOTUS_STAR_RAIL_CHALLENGE_THEME_DIR, signal, download: firstSetup,
-    });
+    const starrail = await prepare("准备星铁挑战素材", onProgress => prepareStarRailChallengeTheme(root, {
+      override: Bun.env.LOTUS_STAR_RAIL_CHALLENGE_THEME_DIR, signal, download: firstSetup, onProgress,
+    }));
     if (starrail.templates || starrail.portraits) {
       console.log(`[星铁] 已恢复 ${starrail.templates} 个原挑战模板文件和 ${starrail.portraits} 张本地原头像。`);
     }
@@ -150,9 +153,9 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   }
   if (await Bun.file(new URL("plugins/starrail/simulation/reincarnation-theme.ts", root)).exists()) {
     const { prepareStarRailReincarnationTheme } = await import("../plugins/starrail/simulation/reincarnation-theme.ts");
-    const relife = await prepareStarRailReincarnationTheme(root, {
-      override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup,
-    });
+    const relife = await prepare("准备星铁转生素材", onProgress => prepareStarRailReincarnationTheme(root, {
+      override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup, onProgress,
+    }));
     if (relife.installed) console.log(`[星铁] 已恢复 ${relife.installed} 个原转生主题文件。`);
     if (relife.missing.length && firstSetup) console.warn(`[星铁] 缺少 ${relife.missing.length} 个原转生主题文件，可重新运行 bun run bootstrap 补齐。`);
   }
@@ -172,7 +175,8 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   const { defaultAtlasLocale, parseAtlasLocale } = await import("../plugins/atlas/locale.ts");
   const config = await readLotusGlobalConfig(root);
   const locale = parseAtlasLocale((config.atlas as { locale?: unknown } | undefined)?.locale) ?? defaultAtlasLocale;
-  const atlas = await atlasReadiness(directory, locale);
+  const atlas = await (initialize ? runInitializationStage("核对现有图鉴", () => atlasReadiness(directory, locale), { signal })
+    : atlasReadiness(directory, locale));
   signal.throwIfAborted();
   if (atlas === "reset" && !initialize && requested === undefined) {
     console.warn("[图鉴] 保持重置状态。可运行 bun run bootstrap 或使用 #全量更新图鉴 恢复。");
@@ -229,17 +233,26 @@ async function initializePublicAtlas(root: URL, directory: string, channel: Atla
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
   const workspace = fileURLToPath(new URL("data/atlas-download/", root));
   const failure = "图鉴初始化失败。下载记录已保留，可重新运行 bun run bootstrap。";
-  const result = await initializeAtlasFromPublic(directory, workspace, signal, channel, {
-    locale, publication: atlasUpdatePublicationOptions(config),
-  }).catch((cause: unknown) => {
+  const progress = createInitializationProgress("图鉴", { signal });
+  progress.update({ stage: "atlas", message: `准备${channel === "live" ? "正式版" : "最新版"}图鉴` });
+  try {
+    const result = await initializeAtlasFromPublic(directory, workspace, signal, channel, {
+      locale, publication: atlasUpdatePublicationOptions(config), onProgress: progress.update,
+    }).catch((cause: unknown) => {
+      signal.throwIfAborted();
+      if (cause instanceof Error) console.warn(`[图鉴] ${cause.message}`);
+      throw new Error(failure, { cause });
+    });
     signal.throwIfAborted();
-    if (cause instanceof Error) console.warn(`[图鉴] ${cause.message}`);
-    throw new Error(failure, { cause });
-  });
-  signal.throwIfAborted();
-  if (result.status === "prepared") {
-    throw new Error(`图鉴候选已保存至第 ${result.version} 版。当前关闭了图鉴同步，启用同步后再运行 bun run bootstrap。`);
-  }
-  if (result.status === "invalid" && result.issues[0]) console.warn(`[图鉴] ${result.issues[0]}`);
-  if (await atlasReadiness(directory, locale) !== "ready") throw new Error(failure);
+    if (result.status === "prepared") {
+      throw new Error(`图鉴候选已保存至第 ${result.version} 版。当前关闭了图鉴同步，启用同步后再运行 bun run bootstrap。`);
+    }
+    if (result.status === "invalid" && result.issues[0]) console.warn(`[图鉴] ${result.issues[0]}`);
+    progress.update({ stage: "readiness", message: "核对图鉴发布结果" });
+    if (await atlasReadiness(directory, locale) !== "ready") throw new Error(failure);
+    progress.complete("图鉴已准备完成");
+  } catch (error) {
+    progress.fail(signal.aborted ? "图鉴准备已中止" : "图鉴准备失败，下载记录已保留");
+    throw error;
+  } finally { progress.close(); }
 }

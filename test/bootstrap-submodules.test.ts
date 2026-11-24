@@ -26,6 +26,8 @@ test("普通clone后一次bootstrap补拉缺失子模块并锁定主仓指定提
     await git(source, "init", "--quiet", "-b", "main");
     await mkdir(join(source, "scripts")); await mkdir(join(source, "packages/skia"), { recursive: true });
     await cp(new URL("../scripts/bootstrap.ts", import.meta.url), join(source, "scripts/bootstrap.ts"));
+    await mkdir(join(source, "lib"));
+    await cp(new URL("../lib/initialization-progress.ts", import.meta.url), join(source, "lib/initialization-progress.ts"));
     await writeFile(join(source, "packages/skia/index.ts"), "export {};");
     await writeFile(join(source, "package.json"), JSON.stringify({ packageManager: `bun@${Bun.version}`,
       scripts: { "build:panel": "bun build-panel.ts" } }));
@@ -59,5 +61,9 @@ test("普通clone后一次bootstrap补拉缺失子模块并锁定主仓指定提
     expect(await git(join(checkout, "plugins/fixture"), "rev-parse", "HEAD")).toBe(locked);
     expect(await git(checkout, "submodule", "status", "--recursive")).not.toMatch(/^[-+U]/mu);
     expect(output).toContain("全部准备完成");
+    expect(error).toContain("同步 Git 子模块");
+    expect(error).toContain("安装锁定依赖完成");
+    expect(error).toContain("构建管理面板完成");
+    expect(error).toContain("准备运行资料完成");
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }, 20_000);

@@ -109,6 +109,7 @@ import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectatio
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { createCaptchaService } from "./lib/captcha/service.ts";
+import { runInitializationStage } from "./lib/initialization-progress.ts";
 import { setDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { startImagePreviews } from "./lib/image-previews.ts";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
@@ -4208,7 +4209,9 @@ if (import.meta.main) {
           readConfig: () => readLotusGlobalConfig(root),
           async synchronize(signal) {
             const { syncCharacterGallery } = await import("./lib/character-gallery-sync.ts");
-            return syncCharacterGallery({ root: fileURLToPath(new URL("data/character-gallery-synced/", root)), signal });
+            return runInitializationStage("同步角色图库", onProgress => syncCharacterGallery({
+              root: fileURLToPath(new URL("data/character-gallery-synced/", root)), signal, onProgress,
+            }), { label: "图库", signal });
           },
           report: ({ downloaded, reused, removed }) => {
             console.info(`[atlas] 角色图库已同步，新增或变更 ${downloaded} 张，复用 ${reused} 张，撤下 ${removed} 张。`);
