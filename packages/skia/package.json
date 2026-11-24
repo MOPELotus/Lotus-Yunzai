@@ -6,6 +6,7 @@
     ".": "./index.ts",
     "./checkin-receipt": "./checkin-receipt-card.ts",
     "./daily-note": "./daily-note-card.ts",
+    "./daily-note-assets": "./daily-note-assets.ts",
     "./daily-note-reminder": "./daily-note-reminder-card.ts",
     "./donation": "./donation-card.ts",
     "./genshin-backpack": "./genshin-backpack-card.ts",

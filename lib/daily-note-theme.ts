@@ -1,8 +1,8 @@
+import { dailyNoteAssets, dailyNoteResourcePath, dailyNoteSourceRevision } from "@lotus-yunzai/skia/daily-note-assets";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dailyNoteAssets, dailyNoteResourcePath, dailyNoteSourceRevision } from "../packages/skia/daily-note-assets.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 

@@ -1,10 +1,10 @@
+import { dailyNoteAssets } from "@lotus-yunzai/skia/daily-note-assets";
 import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isUpdateDotenvPath, persistentDirectories } from "./update-activation.ts";
 import { configuredGameResourcePaths, gameResourcePathKeys } from "./update-game-resource-paths.ts";
 import { readPathLink, resolveLinkedPath } from "./update-linked-path.ts";
-import { dailyNoteAssets } from "../packages/skia/daily-note-assets.ts";
 
 const pathKeys = [
   "LOTUS_ATLAS_DATA_DIR", "LOTUS_PROFILE_DIR", "LOTUS_ZZZ_PANEL_DIR", "LOTUS_ZZZ_SHOWCASE_DIR",
