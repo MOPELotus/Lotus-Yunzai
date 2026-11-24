@@ -66,3 +66,16 @@ test("公共 HTTP 地址拒绝相对地址、认证信息、查询和片段", as
     }
   });
 });
+
+test("面板链接可持久配置内网HTTP或反代HTTPS，环境覆盖优先且不启用TLS端口", async () => {
+  await withConfig(async (root, writeConfig) => {
+    await writeConfig("panel_url: http://192.168.1.10:2536/bot/\n");
+    const lan = await readServerSettings(root, {});
+    expect(lan.panelPublicUrl?.href).toBe("http://192.168.1.10:2536/bot/");
+    expect(lan.https).toBeUndefined();
+    const override = await readServerSettings(root, { LOTUS_PANEL_PUBLIC_URL: "https://bot.example/" });
+    expect(override.panelPublicUrl?.href).toBe("https://bot.example/");
+    await writeConfig("panel_url: http://203.0.113.1/\n");
+    await expect(readServerSettings(root, {})).rejects.toThrow("面板公开地址");
+  });
+});

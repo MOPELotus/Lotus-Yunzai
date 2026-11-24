@@ -1,3 +1,5 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -69,6 +71,7 @@ async function originalPng(directory: string, relative: string) {
 }
 
 async function loadTheme(directory: string, game: Game): Promise<Theme> {
+  prepareBuiltinFonts();
   const design = designs[game];
   const [background, icon] = await Promise.all([
     originalPng(directory, design.background),
@@ -111,7 +114,7 @@ function fillRounded(ctx: Context, x: number, y: number, width: number, height: 
 }
 
 function text(ctx: Context, value: string, x: number, y: number, size: number, font: string, color: string) {
-  ctx.font = `${size}px "${font}", sans-serif`;
+  ctx.font = `${size}px "${font}", ${builtinFontFallback}`;
   ctx.fillStyle = color;
   ctx.textBaseline = "alphabetic";
   ctx.fillText(value, x, y);
@@ -122,9 +125,9 @@ function ratio(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme,
 ) {
   const current = String(model.current);
   const suffix = `/${model.max}`;
-  ctx.font = `${size}px "${theme.numberFont}", sans-serif`;
+  ctx.font = `${size}px "${theme.numberFont}", ${builtinFontFallback}`;
   const mainWidth = ctx.measureText(current).width;
-  ctx.font = `${Math.round(size * 0.66)}px "${theme.numberFont}", sans-serif`;
+  ctx.font = `${Math.round(size * 0.66)}px "${theme.numberFont}", ${builtinFontFallback}`;
   const suffixWidth = ctx.measureText(suffix).width;
   const fit = Math.min(1, width / (mainWidth + suffixWidth));
   text(ctx, current, x, y, size * fit, theme.numberFont, color);
@@ -169,7 +172,7 @@ function paintZenless(ctx: Context, model: DailyNoteReminderCardModel, theme: Th
 }
 
 export async function renderDailyNoteReminderCard(model: DailyNoteReminderCardModel,
-  { resourceDirectory, inlineImageByteLimit = Infinity, mode = "auto" }: DailyNoteReminderCardOptions = {},
+  { resourceDirectory = Bun.env.LOTUS_DAILY_NOTE_REMINDER_THEME_DIR?.trim() || builtinResourceDirectory("core/daily-note-reminder"), inlineImageByteLimit = Infinity, mode = "auto" }: DailyNoteReminderCardOptions = {},
 ): Promise<(PngRender & { readonly scale: 4 | 2 | 1 }) | undefined> {
   const { game, current, max } = model;
   if (!resourceDirectory || !(inlineImageByteLimit > 0) || !Object.hasOwn(designs, game)

@@ -1,3 +1,7 @@
+import { prepareBuiltinFonts, builtinFontFallback } from "./builtin-fonts.ts";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context } from "skia-canvas";
@@ -7,6 +11,9 @@ export interface InfoCardOptions {
   readonly mode?: "auto" | "gpu" | "cpu";
   readonly scale?: number;
   readonly themeDirectory?: string;
+  readonly backgroundPath?: string;
+  readonly bodyFontPath?: string;
+  readonly titleFontPath?: string;
   readonly allowHalfScale?: boolean;
   readonly typography?: { readonly body: string; readonly title: string };
 }
@@ -50,9 +57,10 @@ export const infoCardColors = {
   rule: "rgba(211,188,142,.35)",
   tile: "rgba(255,255,255,.08)",
 } as const;
-const font = '"LotusInfoText", "LotusInfoMiSans", sans-serif';
+const font = `"LotusInfoText", "LotusInfoMiSans", ${builtinFontFallback}`;
 const textStyles = new WeakMap<Context, NonNullable<InfoCardOptions["typography"]>>();
-const defaultTheme = fileURLToPath(new URL("../../data/atlas/theme", import.meta.url));
+const cachedTheme = fileURLToPath(new URL("../../data/atlas/theme", import.meta.url));
+const defaultTheme = existsSync(join(cachedTheme, "bg/bg-hydro.webp")) ? cachedTheme : builtinResourceDirectory("templates/atlas");
 const themes = new Map<string, ReturnType<typeof loadTheme>>();
 
 async function loadTheme(directory: string) {
@@ -116,12 +124,23 @@ export function drawInfoText(ctx: Context, rows: readonly string[], x: number, y
 
 async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: InfoCardHeader,
   buildBody: (layout: InfoCardBodyLayout) => InfoCardBody,
-  { themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme, typography }: InfoCardOptions) {
+  { themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme, backgroundPath, bodyFontPath, titleFontPath, typography }: InfoCardOptions) {
+  prepareBuiltinFonts();
+  if (typography) typography = { body: `${typography.body}, ${builtinFontFallback}`, title: `${typography.title}, ${builtinFontFallback}` };
   if (!Number.isFinite(width) || width < 300) throw new RangeError("信息卡逻辑宽度最小为 300px。");
   const [background, badge] = await Promise.all([
-    themeImage(themeDirectory),
+    backgroundPath ? loadImage(backgroundPath) : themeImage(themeDirectory),
     icon ? loadImage(Buffer.from(icon.buffer, icon.byteOffset, icon.byteLength)).catch(() => undefined) : undefined,
   ]);
+  if (bodyFontPath || titleFontPath) {
+    const use = (path: string | undefined, fallback: string) => {
+      if (!path) return fallback;
+      const family = "LotusInfoCustom" + createHash("sha256").update(path).digest("hex").slice(0, 16);
+      FontLibrary.use(family, [path]);
+      return `"${family}", ${builtinFontFallback}`;
+    };
+    typography = { body: use(bodyFontPath, typography?.body ?? font), title: use(titleFontPath, typography?.title ?? font) };
+  }
   const metrics = new Canvas(1, 1);
   metrics.gpu = false;
   const measure = metrics.getContext("2d");

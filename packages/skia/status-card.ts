@@ -1,3 +1,4 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderPng, type PngRender } from "./index.ts";
@@ -13,10 +14,11 @@ export interface StatusCardOptions {
 // Miao help/version-info, as drawn by Lotus-ReFactor's Skia status template.
 const width = 600;
 const panelWidth = 575;
-const font = '"LotusStatusBody", "LotusStatusMiSans", sans-serif';
+const font = `"LotusStatusBody", "LotusStatusMiSans", ${builtinFontFallback}`;
 const defaultTheme = fileURLToPath(new URL("../../data/atlas/theme", import.meta.url));
 
 async function loadTheme(directory: string) {
+  prepareBuiltinFonts();
   for (const [family, file] of [
     ["LotusStatusBody", "HYWH-65W.ttf"], ["LotusStatusMiSans", "MiSans-VF.ttf"],
   ] as const) {

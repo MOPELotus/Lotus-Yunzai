@@ -44837,5 +44837,51 @@
         "sha256": "4823d7c70aa5c9fc8973366984e610d5c2051191d40720b0b6963ad80b439729"
       }
     ]
+  },
+  {
+    "repository": "https://gitee.com/Nwflower/flower-plugin.git",
+    "revision": "32139ee8b48c9bbea85f2ce48dd36007811b35c2",
+    "destination": "flower-fonts",
+    "sourcePrefix": "resources",
+    "files": [
+      {
+        "path": "font/HYWH-65W.ttf",
+        "bytes": 3293520,
+        "sha256": "a93c5d18d5feb4c8f9c2c6697742c1c54b41a2c73554f7b668c52c6e788c34d0"
+      },
+      {
+        "path": "font/HYWH-85W.ttf",
+        "bytes": 11452600,
+        "sha256": "9485436201b7214ba7945ec4e61d2e44db2e716d63e0364b29bfa9c8d63e1002"
+      },
+      {
+        "path": "font/NZBZ.ttf",
+        "bytes": 1502040,
+        "sha256": "26e130f37e0f59f8d0eaa7c96662de0545595bf04675c01e037e49de84de6bc3"
+      },
+      {
+        "path": "font/SHCN-Bold.otf",
+        "bytes": 11772444,
+        "sha256": "90118f6c20e798e12ea9e5b476ce920de94de2f505fc83fe641989d32da38a65"
+      },
+      {
+        "path": "font/tttgbnumber.ttf",
+        "bytes": 20056,
+        "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+      }
+    ]
+  },
+  {
+    "repository": "https://github.com/MOPELotus/Lotus-Yunzai-StarRail",
+    "revision": "1ff8eab6ea0d00b2c7c81e3c5bc4fcddea2ad1a9",
+    "destination": "starrail-grid",
+    "sourcePrefix": "rogue-theme",
+    "files": [
+      {
+        "path": "SR.ttf",
+        "bytes": 12089904,
+        "sha256": "fa22f43829cf0bd0e27273ee3f5e23cc35ae0f0d4ee4f3f748acc2e5fd548e43"
+      }
+    ]
   }
 ]

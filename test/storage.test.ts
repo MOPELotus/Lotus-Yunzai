@@ -9,6 +9,10 @@ import { takeLegacyProcessReceipt } from "../lib/legacy-process-receipts.ts";
 const valkeyServer = Bun.which("valkey-server");
 
 async function runStorageHost(root: string, input: string, storageUrl?: string) {
+  await mkdir(join(root, "config"), { recursive: true });
+  const serverFile = join(root, "config/server.yaml");
+  const previousServer = await Bun.file(serverFile).exists() ? await Bun.file(serverFile).text() : undefined;
+  await writeFile(serverFile, "onebot_enable: false\n");
   const host = Bun.spawn([process.execPath, "app.ts"], {
     cwd: root,
     env: { PATH: process.env.PATH, ...(storageUrl === undefined ? {} : { LOTUS_VALKEY_URL: storageUrl }) },
@@ -18,6 +22,8 @@ async function runStorageHost(root: string, input: string, storageUrl?: string) 
   const [stdout, stderr, exit] = await Promise.all([
     new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
   ]);
+  if (previousServer === undefined) await rm(serverFile);
+  else await writeFile(serverFile, previousServer);
   return { stdout, stderr, exit };
 }
 
@@ -317,18 +323,18 @@ test.skipIf(!valkeyServer)("独立 Valkey 实例验证新旧键空间、过期�
     await writeFile(join(config, "config", "redis.yaml"), yaml(3));
     const nested = await runStorageHost(root, "#状态\n");
     expect(nested.exit).toBe(0);
-    expect(nested.stderr).toBe("");
+    expect(nested.stderr.replace(/^.*\[更新\] 定时更新需要通过 bun run start 启动宿主。\n/gm, "")).toBe("");
     expect(nested.stdout).toContain("插件读取：旧版/原神");
 
     await writeFile(flat, yaml(4));
     const flattened = await runStorageHost(root, "#状态\n");
     expect(flattened.exit).toBe(0);
-    expect(flattened.stderr).toBe("");
+    expect(flattened.stderr.replace(/^.*\[更新\] 定时更新需要通过 bun run start 启动宿主。\n/gm, "")).toBe("");
     expect(flattened.stdout).toContain("插件读取：优先配置/四号库");
 
     const { stdout, stderr, exit } = await runStorageHost(root, "#状态\n#公告\n#发布公告 未授权\n", url);
     expect(exit).toBe(0);
-    expect(stderr).toBe("");
+    expect(stderr.replace(/^.*\[更新\] 定时更新需要通过 bun run start 启动宿主。\n/gm, "")).toBe("");
     expect(stdout).toContain("[存储] Valkey 已连接。");
     expect(stdout).toContain("Lotus-Yunzai 正在运行");
     expect(stdout).toContain("插件读取：旧版/原神");

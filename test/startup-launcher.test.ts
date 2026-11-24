@@ -470,7 +470,7 @@ async function fixture() {
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
     writeFile(join(cwd, "plugins/atlas/update-policy.ts"),
       `export { atlasUpdatePublicationOptions } from ${JSON.stringify(join(source, "plugins/atlas/update-policy.ts"))};\n`),
-    writeFile(join(cwd, "plugins/atlas/prepare-theme.ts"), 'export async function prepareAtlasTheme() { return { copied: [], missing: Array(12).fill("fixture") }; }\n'),
+    writeFile(join(cwd, "plugins/atlas/prepare-theme.ts"), 'export async function prepareAtlasTheme() { return { copied: [], missing: [] }; }\n'),
     writeFile(join(cwd, "lib/daily-note-theme.ts"), 'export async function prepareDailyNoteTheme() { return "available"; }\n'),
     writeFile(join(cwd, "scripts/run-managed.ts"),
       'export async function runManaged(_root, ready) { await ready?.(); console.log("fixture host ready"); return 0; }\n'),
@@ -606,7 +606,7 @@ test("an already prepared installation starts without choosing a channel and rej
   const [code, output, warning] = await start(["start"]);
   expect(code).toBe(0);
   expect(output).toContain("fixture host ready");
-  expect(warning).toContain("12 个图鉴卡片背景或字体尚未备齐");
+  expect(warning).not.toContain("图鉴卡片背景或字体尚未备齐");
   expect(await Bun.file(config).exists()).toBe(false);
 
   await writeFile(config, "atlas: [\n");
@@ -685,7 +685,7 @@ test("first initialization can fetch the original Star Rail theme while a prepar
   expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
 });
 
-test("原神祈愿日历首装可联网，离线后启动保持可用且暖启不请求", async () => {
+test("原神祈愿日历首装缺失阻止初始化，普通启动不重复请求", async () => {
   const { cwd, start } = await fixture();
   const directory = join(cwd, "plugins/genshin");
   const attempts = join(cwd, "wish-calendar-attempts");
@@ -698,8 +698,8 @@ test("原神祈愿日历首装可联网，离线后启动保持可用且暖启�
     }
   `);
   const [init, , warning] = await start(["init", "live"]);
-  expect(init).toBe(0);
-  expect(warning).toContain("原祈愿日历暂不可用");
+  expect(init).toBe(1);
+  expect(warning).toContain("原神祈愿日历准备失败");
   const [warm, output, warmWarning] = await start(["start"]);
   expect(warm).toBe(0);
   expect(output).toContain("fixture host ready");

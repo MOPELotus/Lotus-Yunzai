@@ -1,7 +1,8 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 import { renderPng, type PngRender } from "./index.ts";
 
@@ -29,9 +30,10 @@ const textWidth = cardWidth - 40;
 const qrSize = 360;
 const white = "#fff";
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const defaultResources = fileURLToPath(new URL("../../data/passport/resources", import.meta.url));
+const defaultResources = builtinResourceDirectory("core/passport");
 
 async function loadTheme(directory: string) {
+  prepareBuiltinFonts();
   const alias = createHash("sha256").update(directory).digest("hex").slice(0, 12);
   const body = `PassportQrBody${alias}`;
   const title = `PassportQrTitle${alias}`;
@@ -52,7 +54,7 @@ async function loadTheme(directory: string) {
     loadImage(join(themePath, "bg-01.jpg")),
     loadImage(join(themePath, "main-01.png")),
   ]);
-  const textFont = `"${body}", "${miSans}", sans-serif`;
+  const textFont = `"${body}", "${miSans}", ${builtinFontFallback}`;
   return { background, foreground, textFont, titleFont: `"${title}", ${textFont}` };
 }
 
@@ -138,7 +140,7 @@ function paintImage(ctx: Context, img: Image, x: number, y: number, w: number, h
 }
 
 export async function renderPassportQrCard(model: PassportQrCardModel,
-  { mode = "auto", scale = 4, resourceDirectory = defaultResources }: PassportQrCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: PassportQrCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("登录卡缩放比例须在 1 至 4 之间。");
 
   const png = pngBytes(model.qrPng);

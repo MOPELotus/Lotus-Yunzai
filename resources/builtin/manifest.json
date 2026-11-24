@@ -40358,8 +40358,8 @@
     },
     {
       "path": "resources/builtin/core/SOURCES.md",
-      "bytes": 1249,
-      "sha256": "3735d4b1bf0bf7558aa4a3071c4021ee19f7b00a0c019f0fb7f51e407581ab1e"
+      "bytes": 1453,
+      "sha256": "61fd8a7269456e9ad464063444850eb399462078806fda789cf4d897b32b40ab"
     },
     {
       "path": "resources/builtin/core/daily-note-reminder/SOURCES.json",
@@ -40477,9 +40477,54 @@
       "sha256": "83dc908b1a6c9d02056a4e6cd46611a61d983467c5eb0142f248a0b6a7a8e8ee"
     },
     {
+      "path": "resources/builtin/core/rank-fonts/LICENSE",
+      "bytes": 4301,
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+    },
+    {
+      "path": "resources/builtin/core/rank-fonts/NotoSansCJKsc-Bold.otf",
+      "bytes": 17002248,
+      "sha256": "b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a"
+    },
+    {
+      "path": "resources/builtin/core/rank-fonts/NotoSansCJKsc-Regular.otf",
+      "bytes": 16437364,
+      "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+    },
+    {
+      "path": "resources/builtin/core/rank-fonts/SOURCES.json",
+      "bytes": 657,
+      "sha256": "dc10629c5724958b6df6b3e8b51389374ca8f51ee608babf0eaedf8b5f5fbd2b"
+    },
+    {
       "path": "resources/builtin/games/SOURCES.json",
-      "bytes": 1679730,
-      "sha256": "a73b6df999e2811dbb23799bec39c348408962582ea4cae4eea8351b9f92edbc"
+      "bytes": 1681165,
+      "sha256": "8421c391118cd67482205db4cf89c6d9ae27b0fba7a2d38840af3a9f999c0a6d"
+    },
+    {
+      "path": "resources/builtin/games/flower-fonts/font/HYWH-65W.ttf",
+      "bytes": 3293520,
+      "sha256": "a93c5d18d5feb4c8f9c2c6697742c1c54b41a2c73554f7b668c52c6e788c34d0"
+    },
+    {
+      "path": "resources/builtin/games/flower-fonts/font/HYWH-85W.ttf",
+      "bytes": 11452600,
+      "sha256": "9485436201b7214ba7945ec4e61d2e44db2e716d63e0364b29bfa9c8d63e1002"
+    },
+    {
+      "path": "resources/builtin/games/flower-fonts/font/NZBZ.ttf",
+      "bytes": 1502040,
+      "sha256": "26e130f37e0f59f8d0eaa7c96662de0545595bf04675c01e037e49de84de6bc3"
+    },
+    {
+      "path": "resources/builtin/games/flower-fonts/font/SHCN-Bold.otf",
+      "bytes": 11772444,
+      "sha256": "90118f6c20e798e12ea9e5b476ce920de94de2f505fc83fe641989d32da38a65"
+    },
+    {
+      "path": "resources/builtin/games/flower-fonts/font/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
     },
     {
       "path": "resources/builtin/games/flower/LICENSE",
@@ -83552,6 +83597,11 @@
       "sha256": "fd945b7684bf670df5c7e9289914e9a8a6cd46fe6ffa62979376d2eae7e7c6f2"
     },
     {
+      "path": "resources/builtin/games/starrail-grid/SR.ttf",
+      "bytes": 12089904,
+      "sha256": "fa22f43829cf0bd0e27273ee3f5e23cc35ae0f0d4ee4f3f748acc2e5fd548e43"
+    },
+    {
       "path": "resources/builtin/games/starrail-grid/entry-bg-top.253f0fd5.webp",
       "bytes": 53988,
       "sha256": "bc92622cf44d2711c463532f2715cf9d976f853b74ae0192fa42f83087215ff1"
@@ -85568,8 +85618,13 @@
     },
     {
       "path": "resources/builtin/social/sources.json",
-      "bytes": 11338,
-      "sha256": "1230924945b1b75d5747ac053bb893d8b6e5764b9a911858f72e7bd64f72562b"
+      "bytes": 11389,
+      "sha256": "bc662e152d1c013e314210f57340faf2fe2da9576510dc0e316e2054214ceb7a"
+    },
+    {
+      "path": "resources/builtin/social/yuki/fonts/OPSans.woff2",
+      "bytes": 4726668,
+      "sha256": "5aa91b1d7b9ee92e122a09fcabdc75d895c44597805b43d2644c305a92f14015"
     },
     {
       "path": "resources/builtin/social/yuki/img/icon/puplic/archaic_stone.png",

@@ -1,13 +1,23 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 // Ark's graph layout is based on e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See lib/rank-statistics.LICENSE.
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { loadImage } from "skia-canvas";
+import { FontLibrary, loadImage } from "skia-canvas";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { rankPercentiles, type DamageRankStats } from "../../lib/rank-statistics.ts";
 import { renderPng } from "./index.ts";
 
 type Context = Parameters<Parameters<typeof renderPng>[2]>[0];
 type RenderMode = Parameters<typeof renderPng>[3];
-const font = '"Noto Sans CJK SC", sans-serif';
+const font = `"LotusRankStats", ${builtinFontFallback}`;
+let fontRegistered = false;
+function prepareFont() {
+  if (!fontRegistered) {
+    FontLibrary.use("LotusRankStats", ["NotoSansCJKsc-Regular.otf", "NotoSansCJKsc-Bold.otf"].map(file =>
+      join(builtinResourceDirectory("core/rank-fonts"), file)));
+    fontRegistered = true;
+  }
+}
 const cyan = "#67e8f9";
 const format = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const date = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "short" });
@@ -51,6 +61,7 @@ async function readBackground(game: Game, themeDirectory: string) {
 export async function renderDamageRankStatsCard(game: Game, name: string, stats: DamageRankStats, {
   mode = "auto", now = new Date(), themeDirectories = [], footer = "Lotus-Yunzai",
 }: { readonly mode?: RenderMode; readonly now?: Date; readonly themeDirectories?: readonly string[]; readonly footer?: string } = {}) {
+  prepareFont();
   let background: Awaited<ReturnType<typeof readBackground>>;
   for (const directory of new Set(themeDirectories)) {
     background = await readBackground(game, directory);

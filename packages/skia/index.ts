@@ -1,3 +1,4 @@
+import { prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { Canvas, loadImage, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
 import { encodeBandedPng, ImageSizeLimitError } from "./banded-png.ts";
 import { markGeneratedImage } from "./generated-image.ts";
@@ -81,6 +82,7 @@ async function* readBands(canvas: Canvas, width: number, height: number, mode: "
 }
 
 function createSurface(width: number, height: number, mode: "gpu" | "cpu") {
+  prepareBuiltinFonts();
   try {
     const canvas = new Canvas(width, height);
     canvas.gpu = mode === "gpu";

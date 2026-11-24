@@ -22,10 +22,14 @@ test("一次初始化完成面板和运行资料，构建候选不改运行资�
     }));
     await Bun.write(join(root, "build-panel.ts"), 'await Bun.write("panel-built", "ok");');
     await Bun.write(join(root, "packages/skia/index.ts"), "export {};");
-    await Promise.all(["scripts/bootstrap.ts", "lib/renderer/shotium.ts", "lib/initialization-progress.ts", "lib/terminal-log-format.ts", "lib/terminal-output.ts", "lib/runtime-logs.ts", "lib/shanghai-date.ts"].map(async file => {
+    await Promise.all(["scripts/bootstrap.ts", "scripts/verify-builtin-resources.ts", "lib/builtin-resource-validation.ts", "lib/resource-progress.ts", "lib/renderer/shotium.ts", "lib/initialization-progress.ts", "lib/terminal-log-format.ts", "lib/terminal-output.ts", "lib/runtime-logs.ts", "lib/shanghai-date.ts"].map(async file => {
       await mkdir(dirname(join(root, file)), { recursive: true });
       await cp(new URL(`../${file}`, import.meta.url), join(root, file));
     }));
+    await Bun.write(join(root, "resources/builtin/test.txt"), "asset");
+    await Bun.write(join(root, "resources/builtin/manifest.json"), JSON.stringify({ format: 1, files: [{
+      path: "resources/builtin/test.txt", bytes: 5, sha256: new Bun.CryptoHasher("sha256").update("asset").digest("hex"),
+    }] }));
     await Bun.write(join(root, "scripts/launcher.ts"), `
       if (Bun.argv[2] !== "init") throw Error("必须通过统一初始化入口");
       const child = Bun.spawn([process.execPath, "scripts/startup.ts", "--initialize", ...Bun.argv.slice(3)], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });

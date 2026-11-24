@@ -1,10 +1,12 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { FontLibrary, loadImage } from "skia-canvas";
 import { nativeImageRasterScale, renderPng } from "./index.ts";
 
 const assets = new URL("../../resources/donation/", import.meta.url);
-const defaultFonts = fileURLToPath(new URL("../../data/passport/resources/", import.meta.url));
+const defaultFonts = builtinResourceDirectory("core/passport");
 const methods = [
   { title: "微信支付", file: "wechat-lotus.png", notice: "使用微信扫一扫" },
   { title: "支付宝", file: "alipay-lotus.jpg", notice: "使用支付宝扫一扫" },
@@ -15,6 +17,7 @@ const posterWidth = 354;
 
 // Lotus-ReFactor 6e374cd uses the Miao help/index template for these two posters.
 async function loadResources() {
+  prepareBuiltinFonts();
   const fontDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultFonts;
   for (const [family, relative] of [
     ["LotusDonationBody", "miao-theme/fonts/HYWH-65W.ttf"],
@@ -55,7 +58,7 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
   const panelHeight = 126 + posterHeight;
   const contentHeight = panelTop + panelHeight + 70;
   const zoom = 720 * scale / width;
-  const bodyFont = '"LotusDonationBody", "Noto Sans CJK SC", sans-serif';
+  const bodyFont = `"LotusDonationBody", ${builtinFontFallback}`;
   const titleFont = '"LotusDonationTitle", ' + bodyFont;
 
   return renderPng(720 * scale, Math.ceil(contentHeight * zoom), (ctx) => {

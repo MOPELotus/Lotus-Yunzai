@@ -1,7 +1,8 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context } from "skia-canvas";
 import { renderPng, type PngRender } from "./index.ts";
 
@@ -32,9 +33,10 @@ const panelWidth = 575;
 const columnWidths = [160, 207.5, 207.5] as const;
 const gold = "#d3bc8e";
 const white = "#fff";
-const defaultResources = fileURLToPath(new URL("../../data/passport/resources", import.meta.url));
+const defaultResources = builtinResourceDirectory("core/passport");
 
 async function loadTheme(directory: string) {
+  prepareBuiltinFonts();
   const key = createHash("sha256").update(directory).digest("hex").slice(0, 12);
   const body = `CheckinReceiptBody${key}`;
   const title = `CheckinReceiptTitle${key}`;
@@ -49,7 +51,7 @@ async function loadTheme(directory: string) {
     FontLibrary.use(font, [filename]);
   }
   const background = await loadImage(join(directory, "miao-theme/bg/bg-hydro.webp"));
-  const textFont = `"${body}", "${miSans}", sans-serif`;
+  const textFont = `"${body}", "${miSans}", ${builtinFontFallback}`;
   return { background, textFont, titleFont: `"${title}", ${textFont}` };
 }
 
@@ -120,7 +122,7 @@ function clipPanel(ctx: Context, top: number, height: number) {
 }
 
 export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
-  { mode = "auto", scale = 4, resourceDirectory = defaultResources }: CheckinReceiptCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: CheckinReceiptCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("签到回执缩放比例须在 1 至 4 之间。");
 
   const { background, textFont, titleFont } = await themeAt(await realpath(resourceDirectory));

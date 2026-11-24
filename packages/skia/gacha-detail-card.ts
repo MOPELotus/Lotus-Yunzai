@@ -1,3 +1,4 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
@@ -125,7 +126,7 @@ async function loadTheme(root: string, game: Game, qFace: boolean) {
     throw new Error(`${config.name}抽卡记录的原主题图片不可用。`);
   }
   const { Number: number, Title: title, Han: han } = aliases;
-  const families = { body: `${number}, ${han}, sans-serif`, title: `${number}, ${title}, ${han}, sans-serif` };
+  const families = { body: `${number}, ${han}, ${builtinFontFallback}`, title: `${number}, ${title}, ${han}, ${builtinFontFallback}` };
   const preferred = qFace ? await themeImage(root, `meta-${game}/character/${config.face}/imgs/face-q.webp`) : undefined;
   return { background, face: preferred ?? regularFace ?? empty, banner, sprite, star, empty, families };
 }

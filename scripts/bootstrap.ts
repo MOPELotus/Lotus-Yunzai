@@ -137,6 +137,8 @@ if (!process.exitCode) {
 
 
 if (!process.exitCode && !buildOnly) {
+  const resources = await command("核对内置程序资源", [process.execPath, "--no-env-file", "scripts/verify-builtin-resources.ts"]);
+  if (resources !== 0) process.exit(resources);
   // Run after dependency installation in a new process, with the same terminal
   // for first-run choices. The launcher keeps the startup lock and prepares models once.
   const initialized = await command("准备运行资料", [process.execPath, "--no-env-file", "scripts/launcher.ts", "init", ...(channel ? [channel] : [])], "inherit", true);

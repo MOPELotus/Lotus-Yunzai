@@ -1,3 +1,4 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 // The layout follows Miao's gacha/gacha-info template and its common element styles.
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";

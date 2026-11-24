@@ -1,3 +1,4 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -79,6 +80,7 @@ const icons = Object.keys(dailyNoteIcons) as Icon[];
 type Row = DailyNoteCardDetail & { readonly icon?: Icon };
 
 async function loadTheme(directory: string) {
+  prepareBuiltinFonts();
   const alias = createHash("sha256").update(directory).digest("hex").slice(0, 12);
   const body = `DailyNoteBody${alias}`;
   const number = `DailyNoteNumber${alias}`;
@@ -99,7 +101,7 @@ async function loadTheme(directory: string) {
     const file = join(directory, dailyNoteIcons[icon][0]);
     images.set(icon, await loadImage(file));
   }));
-  const textFont = `"${body}", "${miSans}", sans-serif`;
+  const textFont = `"${body}", "${miSans}", ${builtinFontFallback}`;
   return { images, textFont, numberFont: `"${number}", ${textFont}` };
 }
 

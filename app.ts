@@ -1,3 +1,5 @@
+import { ensureManagedValkey } from "./lib/managed-valkey.ts";
+import { builtinResourceDirectory } from "./lib/builtin-resources.ts";
 import { isDirectInternalRequest, listenerOrigins } from "./lib/network-access.ts";
 import { installTerminalLogging, formatTerminalLog } from "./lib/terminal-log-format.ts";
 import { withDefaultUpdateSchedule } from "./lib/update-schedule-settings.ts";
@@ -3051,7 +3053,7 @@ if (import.meta.main) {
     });
     const restoredStorage = await handoff.restoreStorage(lifecycle.signal);
     const valkey = restoredStorage !== undefined ? restoredStorage ?? undefined
-      : probingUpdate ? undefined : await readStorageConnection(root, Bun.env.LOTUS_VALKEY_URL);
+      : probingUpdate ? undefined : (await ensureManagedValkey(root, { signal: lifecycle.signal })).connection;
     handoff.verifyStorage(valkey ?? null);
     const segmentCounts = botConfig.msg_type_count === true || botConfig.msg_type_count === 1 || botConfig.msg_type_count === "1";
     onlineCooldown = onlineNoticeSeconds(botConfig.online_msg_exp);
@@ -3144,7 +3146,7 @@ if (import.meta.main) {
     if (!probingUpdate) {
       const settings = globalConfig.daily_note_reminders as { readonly enable?: boolean; readonly cooldown_hours?: unknown; readonly cron?: unknown; readonly message?: unknown } | undefined;
       const reminderThemeDirectory = Bun.env.LOTUS_DAILY_NOTE_REMINDER_THEME_DIR?.trim() ||
-        fileURLToPath(new URL("backup/plugins/bujidao/resources/", root));
+        builtinResourceDirectory("core/daily-note-reminder", root);
       dailyNoteReminders = createDailyNoteReminders({
         directory: profileDirectory, file: fileURLToPath(new URL("data/daily-note/reminders.sqlite", root)),
         signal: lifecycle.signal, enabled: settings?.enable === true, activeSignal: nativeOperationSignal,
@@ -3796,7 +3798,7 @@ if (import.meta.main) {
     const storedLikeAssets = new URL("data/group/like-assets/", root);
     const likeAssets = Bun.env.LOTUS_GROUP_LIKE_ASSETS_DIR?.trim() ||
       (await stat(storedLikeAssets).then(info => info.isDirectory(), () => false)
-        ? fileURLToPath(storedLikeAssets) : fileURLToPath(new URL("plugins/yenai-plugin/resources/memes/", root)));
+        ? fileURLToPath(storedLikeAssets) : builtinResourceDirectory("social/likes", root));
     const groupTransport = groups.transport();
     const noticeActive = () => handoff.accepting && !stopping && !lifecycle.signal.aborted;
     commands.registerModule(legacyCharacterAliases);

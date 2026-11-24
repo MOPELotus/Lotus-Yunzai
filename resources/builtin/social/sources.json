@@ -256,14 +256,15 @@
       "originalPath": "resources/img/icon/puplic/romaritime_flower.png",
       "sha256": "8daf28832a0cce489ad69655ff3f88b42f4ad1a97f959911a45f9e03c82ba711",
       "size": 49152
-    }
-  ],
-  "fontSubstitutions": [
+    },
     {
-      "consumer": "plugins/media/services/subscriptions/bilibili/login-card.ts",
-      "original": "OPSans.woff2",
-      "replacement": "resources/builtin/core/passport/fonts/MiSans-VF.ttf",
-      "reason": "旧Yuki字体不在当前依赖，固定内置MiSans提供中文覆盖，不依赖系统字体"
+      "path": "yuki/fonts/OPSans.woff2",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/fonts/OPSans.woff2",
+      "sha256": "5aa91b1d7b9ee92e122a09fcabdc75d895c44597805b43d2644c305a92f14015",
+      "gitBlob": "09d51b986d9c05ac7680b8ea565cea6328a42a67",
+      "size": 4726668
     }
   ]
 }

@@ -468,7 +468,14 @@ async function run() {
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);
   try {
-    if (command.action === "stop") return await pm2(Bun.which("pm2") ?? undefined, directory, "stop");
+    if (command.action === "stop") {
+      const result = await pm2(Bun.which("pm2") ?? undefined, directory, "stop");
+      if (result === 0 && await Bun.file(new URL("lib/managed-valkey.ts", Bun.pathToFileURL(directory + "/"))).exists()) {
+        const { stopManagedValkey } = await import("../lib/managed-valkey.ts");
+        await stopManagedValkey(Bun.pathToFileURL(directory + "/"));
+      }
+      return result;
+    }
     await recoverMigrationPublicationForStartup(directory);
     if (command.action === "start:bg" || command.action === "restart") {
       return await pm2(pm2Executable(), directory, command.action, [], {
@@ -489,7 +496,13 @@ async function run() {
     releaseStartup();
   }
   const { runManaged } = await import("./run-managed.ts");
-  return runManaged(directory);
+  try { return await runManaged(directory); }
+  finally {
+    if (await Bun.file(new URL("lib/managed-valkey.ts", Bun.pathToFileURL(directory + "/"))).exists()) {
+      const { stopManagedValkey } = await import("../lib/managed-valkey.ts");
+      await stopManagedValkey(Bun.pathToFileURL(directory + "/"));
+    }
+  }
 }
 
 if (import.meta.main) {

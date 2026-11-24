@@ -1,7 +1,8 @@
+import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { Canvas, FontLibrary, loadImage, type CanvasRenderingContext2D as Context, type Image } from "skia-canvas";
 import { renderPng, type PngRender } from "./index.ts";
 
@@ -47,9 +48,10 @@ const panelWidth = width - 25;
 const gold = "#d3bc8e";
 const white = "#fff";
 const ink = "#414e64";
-const defaultResources = fileURLToPath(new URL("../../data/passport/resources", import.meta.url));
+const defaultResources = builtinResourceDirectory("core/passport");
 
 async function loadTheme(directory: string) {
+  prepareBuiltinFonts();
   const key = createHash("sha256").update(directory).digest("hex").slice(0, 12);
   const body = `PassportProfileBody${key}`;
   const title = `PassportProfileTitle${key}`;
@@ -66,7 +68,7 @@ async function loadTheme(directory: string) {
     FontLibrary.use(name, [fontPath]);
   }
   const background = await loadImage(join(directory, "miao-theme/bg/bg-hydro.webp"));
-  const text = `"${body}", "${miSans}", sans-serif`;
+  const text = `"${body}", "${miSans}", ${builtinFontFallback}`;
   return { background, text, number: `"${number}", ${text}`, title: `"${title}", ${text}` };
 }
 
@@ -85,7 +87,7 @@ function themeAt(directory: string) {
   return theme;
 }
 
-export async function openProfileCardTheme(resourceDirectory = defaultResources) {
+export async function openProfileCardTheme(resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources) {
   return themeAt(await realpath(resourceDirectory));
 }
 
@@ -223,7 +225,7 @@ function fieldTexts(fields: readonly ProfileCardField[] | undefined): string[] {
 }
 
 export async function renderProfileCard(model: ProfileCardModel,
-  { mode = "auto", scale = 4, resourceDirectory = defaultResources }: ProfileCardOptions = {}): Promise<PngRender> {
+  { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: ProfileCardOptions = {}): Promise<PngRender> {
   if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("资料卡缩放比例须在 1 至 4 之间。");
   const theme = await openProfileCardTheme(resourceDirectory);
   const layout = new ProfileLayout(theme);

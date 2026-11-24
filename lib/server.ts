@@ -1,3 +1,4 @@
+import { isInternalAddress } from "./network-access.ts";
 import { isAbsolute } from "node:path";
 import { readLocalConfig } from "./config.ts";
 import { isReservedServerPath, readServerRedirect } from "./server-redirect.ts";
@@ -75,7 +76,7 @@ export function panelPublicPage(base: URL | undefined) {
   if (!base || base.username || base.password || base.search || base.hash ||
     !base.pathname.endsWith("/") || base.pathname.startsWith("//") || base.pathname.includes(";")) return;
   if (base.protocol !== "https:" && (base.protocol !== "http:" ||
-    !["127.0.0.1", "[::1]", "localhost"].includes(base.hostname))) return;
+    !(base.hostname === "localhost" || isInternalAddress(base.hostname.replace(/^\[|\]$/gu, ""))))) return;
   return new URL("panel/", base);
 }
 
@@ -161,9 +162,9 @@ export function parseServerSettings(config: Readonly<Record<string, unknown>>, e
     env.LOTUS_ONEBOT_TOKEN === undefined ? "config/server.yaml 的 onebot_token" : "LOTUS_ONEBOT_TOKEN");
   const panelToken = env.LOTUS_PANEL_TOKEN;
   withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
-  const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL, "LOTUS_PANEL_PUBLIC_URL");
+  const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL ?? config.panel_url, "LOTUS_PANEL_PUBLIC_URL 或 server.panel_url");
   if (panelPublicUrl && !panelPublicPage(panelPublicUrl)) {
-    throw new Error("LOTUS_PANEL_PUBLIC_URL 须为 HTTPS 地址，本机测试可用 HTTP 回环地址。");
+    throw new Error("面板公开地址须为 HTTPS，内网及本机地址可用 HTTP。");
   }
   const captcha = config.captcha;
   const manualCaptchaUrl = env.LOTUS_CAPTCHA_PUBLIC_URL ?? (record(captcha) && typeof captcha.url === "string" ? captcha.url : undefined);

@@ -3,7 +3,7 @@ import { prepareFixedTheme, type FixedThemeOptions } from "./fixed-theme.ts";
 const resourcePath = "data/zzz/gacha-theme";
 const theme = {
   resourcePath,
-  sourceRoots: [resourcePath, "plugins/ZZZ-Plugin/resources"],
+  sourceRoots: ["resources/builtin/templates/zzz-tuning", resourcePath, "plugins/ZZZ-Plugin/resources"],
   raw: "https://raw.githubusercontent.com/ZZZure/ZZZ-Plugin/20575991eb9cd51461d6a10b186c66b2fc8e2309/resources/",
   assets: [
     ["common/fonts/inpinhongmengti.ttf", 1925852, "d2ac904501673027d6ca891abdcd346d2ae6527a713fcb477a151b47162185b2"],

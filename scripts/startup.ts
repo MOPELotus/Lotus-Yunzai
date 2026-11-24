@@ -100,18 +100,21 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   }));
   if (copied.length) console.log(`[图鉴] 已准备 ${copied.length} 个图鉴卡片素材文件。`);
   if (missing.length) {
+    if (firstSetup) throw new Error(`图鉴内置素材缺失：${missing.join("、")}`);
     console.warn(`[图鉴] ${missing.length} 个图鉴卡片背景或字体尚未备齐，可能无法完整还原原样式。可重新运行 bun run bootstrap 补齐；自备素材仍可放入 data/atlas/theme/。`);
   }
 
   const { prepareDailyNoteTheme } = await import("../lib/daily-note-theme.ts");
   const dailyNote = await prepare("准备体力便笺素材", onProgress => prepareDailyNoteTheme(root, {
     override: Bun.env.LOTUS_DAILY_NOTE_RESOURCES, signal, download: firstSetup, onProgress,
-  })).catch(() => {
+  })).catch((cause: unknown) => {
     signal.throwIfAborted();
+    if (firstSetup) throw new Error("体力便笺素材准备失败。", { cause });
     console.warn("[体力] 原便笺主题读取或写入失败。体力查询将使用文字回执，请检查项目下的 data/daily-note/resources。");
   });
   signal.throwIfAborted();
   if (dailyNote === "installed") console.log("[体力] 已准备三游原便笺主题。");
+  if (firstSetup && (dailyNote === "missing" || dailyNote === "incomplete")) throw new Error("体力便笺素材不完整，请恢复内置资源后重试。");
   if (dailyNote === "incomplete") {
     console.warn("[体力] 本地原便笺主题不完整。可将原字体和图标补齐到 data/daily-note/resources，或设置 LOTUS_DAILY_NOTE_RESOURCES 指向完整主题。");
   }
@@ -121,12 +124,14 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     const { prepareZzzTuningTheme } = await import("../lib/zzz-tuning-theme.ts");
     const zzzTuning = await prepare("准备绝区零调频素材", onProgress => prepareZzzTuningTheme(root, {
       override: Bun.env.LOTUS_ZZZ_GACHA_THEME_DIR?.trim(), signal, download: firstSetup, onProgress,
-    })).catch(() => {
+    })).catch((cause: unknown) => {
       signal.throwIfAborted();
+      if (firstSetup) throw new Error("绝区零调频素材准备失败。", { cause });
       console.warn("[绝区零] 调频原主题读写失败，请检查 data/zzz/gacha-theme 的文件权限。");
     });
     signal.throwIfAborted();
     if (zzzTuning === "installed") console.log("[绝区零] 已准备原调频与逐抽主题。");
+    if (firstSetup && (zzzTuning === "missing" || zzzTuning === "incomplete")) throw new Error("绝区零调频素材不完整，请恢复内置资源后重试。");
     if (zzzTuning === "incomplete") {
       console.warn("[绝区零] 本地调频原主题不完整。可补齐 data/zzz/gacha-theme，或设置 LOTUS_ZZZ_GACHA_THEME_DIR 指向完整主题。");
     }
@@ -138,7 +143,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     const wishCalendar = await prepare("准备原神祈愿日历", onProgress => prepareGenshinWishCalendar(root, { signal, download: firstSetup, onProgress }));
     if (wishCalendar === "installed") console.log("[原神] 已准备原祈愿日历。");
     if (wishCalendar === "missing" && firstSetup) {
-      console.warn("[原神] 原祈愿日历暂不可用，可重新运行 bun run bootstrap 重试。");
+      throw new Error("原神祈愿日历准备失败。");
     }
   }
 
@@ -150,6 +155,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     if (starrail.templates || starrail.portraits) {
       console.log(`[星铁] 已恢复 ${starrail.templates} 个原挑战模板文件和 ${starrail.portraits} 张本地原头像。`);
     }
+    if (firstSetup && starrail.missing.length) throw new Error(`星铁挑战素材缺失：${starrail.missing.join("、")}`);
     if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可重新运行 bun run bootstrap 补齐。`);
   }
   if (await Bun.file(new URL("plugins/starrail/simulation/reincarnation-theme.ts", root)).exists()) {
@@ -158,7 +164,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
       override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup, onProgress,
     }));
     if (relife.installed) console.log(`[星铁] 已恢复 ${relife.installed} 个原转生主题文件。`);
-    if (relife.missing.length && firstSetup) console.warn(`[星铁] 缺少 ${relife.missing.length} 个原转生主题文件，可重新运行 bun run bootstrap 补齐。`);
+    if (relife.missing.length && firstSetup) throw new Error(`星铁转生素材缺失：${relife.missing.join("、")}`);
   }
 }
 
@@ -204,6 +210,11 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   if ((!ready || initialize) && await Bun.file(new URL("packages/captcha/index.ts", root)).exists()) {
     const { initializeCaptchaModels } = await import("../lib/captcha/initialize.ts");
     await initializeCaptchaModels(root, signal);
+  }
+  if (initialize && await Bun.file(new URL("lib/managed-valkey.ts", root)).exists()) {
+    const { initializeValkey } = await import("../lib/managed-valkey.ts");
+    await runInitializationStage("准备项目 Valkey", progress => initializeValkey(root, signal,
+      message => progress({ stage: "valkey", message })), { signal });
   }
   if (initialize) {
     const { initializeRuntimeResources } = await import("../lib/initialize-resources.ts");

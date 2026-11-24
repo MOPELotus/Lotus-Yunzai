@@ -5,7 +5,7 @@ import { prepareFixedTheme, type FixedThemeOptions } from "./fixed-theme.ts";
 
 const theme = {
   resourcePath: dailyNoteResourcePath,
-  sourceRoots: [dailyNoteResourcePath, ...legacyLotusDirectories.map(name => join("plugins", name, "resources"))],
+  sourceRoots: ["resources/builtin/templates/daily-note", dailyNoteResourcePath, ...legacyLotusDirectories.map(name => join("plugins", name, "resources"))],
   raw: `https://raw.githubusercontent.com/MOPELotus/Lotus-ReFactor/${dailyNoteSourceRevision}/resources/`,
   assets: dailyNoteAssets,
 };

@@ -1,3 +1,4 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
@@ -121,7 +122,7 @@ async function readTheme(root: string, game: Game, qFace: boolean) {
   if (!background || !banner || !face || !five || (game === "gs" && !four)) {
     throw new Error(`${config.label}版本统计的原主题图片不可用。`);
   }
-  return { background, banner, face, four, five, family: aliases.join(", ") + ", sans-serif" };
+  return { background, banner, face, four, five, family: aliases.join(", ") + ", " + builtinFontFallback };
 }
 
 const themes = new Map<string, ReturnType<typeof readTheme>>();

@@ -1,3 +1,4 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 import { realpath, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { loadImage, type CanvasRenderingContext2D as Context } from "skia-canvas";
@@ -36,7 +37,7 @@ export async function genshinSummaryOptions({ miaoResourceDirectory, ...options 
     }
   }));
   if (!han && !number && !title) return options;
-  const fallback = '"LotusInfoText", "LotusInfoMiSans", sans-serif';
+  const fallback = `"LotusInfoText", "LotusInfoMiSans", ${builtinFontFallback}`;
   return { ...options, typography: {
     body: [number, han, fallback].filter(Boolean).join(", "),
     title: [number, title, han, fallback].filter(Boolean).join(", "),

@@ -27,8 +27,14 @@ test("普通clone后一次bootstrap补拉缺失子模块并锁定主仓指定提
     await mkdir(join(source, "scripts")); await mkdir(join(source, "packages/skia"), { recursive: true });
     await cp(new URL("../scripts/bootstrap.ts", import.meta.url), join(source, "scripts/bootstrap.ts"));
     await mkdir(join(source, "lib"));
-    for (const name of ["initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date"])
+    for (const name of ["initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "builtin-resource-validation", "resource-progress"])
       await cp(new URL(`../lib/${name}.ts`, import.meta.url), join(source, `lib/${name}.ts`));
+    await cp(new URL("../scripts/verify-builtin-resources.ts", import.meta.url), join(source, "scripts/verify-builtin-resources.ts"));
+    await mkdir(join(source, "resources/builtin"), { recursive: true });
+    await writeFile(join(source, "resources/builtin/fixture.txt"), "asset");
+    await writeFile(join(source, "resources/builtin/manifest.json"), JSON.stringify({ format: 1, files: [{
+      path: "resources/builtin/fixture.txt", bytes: 5, sha256: new Bun.CryptoHasher("sha256").update("asset").digest("hex"),
+    }] }));
     await writeFile(join(source, "packages/skia/index.ts"), "export {};");
     await writeFile(join(source, "package.json"), JSON.stringify({ packageManager: `bun@${Bun.version}`,
       scripts: { "build:panel": "bun build-panel.ts" } }));

@@ -1,3 +1,4 @@
+import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
@@ -103,8 +104,8 @@ async function loadTheme(genshin: string, characterTheme: string, game: Game) {
     image(genshin, "img/other/bg5.png"),
   ]);
   if (!banner || !logo || !star) throw new Error(`${config.label}特殊池记录的原版图片不可用。`);
-  const wenHei = aliases[1] + ", sans-serif";
-  const han = game === "gs" ? 'PingFangSC-Medium, "PingFang SC", "Droid Sans Fallback", sans-serif' : wenHei;
+  const wenHei = aliases[1] + ", " + builtinFontFallback;
+  const han = wenHei;
   return { banner, logo, star, fonts: { han, number: aliases[0] + ", " + han, wenHei } };
 }
 

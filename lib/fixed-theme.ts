@@ -1,6 +1,6 @@
 import { reportResourceProgress, type ResourceProgressCallback } from "./resource-progress.ts";
-import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, lstat, mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readMigrationSourceFile } from "./migration-files.ts";
@@ -81,6 +81,34 @@ function downloadOriginal(asset: Asset, raw: string, request: Download, signal: 
   });
 }
 
+async function repairTheme(target: string, contents: readonly { path: string; bytes: Uint8Array }[], signal?: AbortSignal): Promise<Status> {
+  if (!(await lstat(target)).isDirectory() || await realpath(target) !== target) return "incomplete";
+  for (const asset of contents) {
+    signal?.throwIfAborted();
+    const parts = asset.path.split("/");
+    let parent = target;
+    for (const part of parts.slice(0, -1)) {
+      parent = join(parent, part);
+      await mkdir(parent, { mode: 0o700 }).catch(error => { if (error.code !== "EEXIST") throw error; });
+      if (!(await lstat(parent)).isDirectory() || await realpath(parent) !== parent) return "incomplete";
+    }
+    const file = join(parent, parts.at(-1)!);
+    const old = await lstat(file).catch(missing);
+    if (old?.isFile() && old.size > 0) continue;
+    if (old && (!old.isFile() || old.size !== 0)) return "incomplete";
+    const temporary = join(parent, `.builtin-${randomUUID()}`);
+    try {
+      await writeFile(temporary, asset.bytes, { mode: 0o600, flag: "wx", signal });
+      if (old) {
+        const current = await lstat(file);
+        if (current.ino !== old.ino || current.mtimeMs !== old.mtimeMs || current.size !== 0) return "incomplete";
+        await rename(temporary, file);
+      } else await link(temporary, file).catch(error => { if (error.code !== "EEXIST") throw error; });
+    } finally { await rm(temporary, { force: true }); }
+  }
+  return "installed";
+}
+
 /** Prepare static artwork once, during initialization or from an existing installation copy. */
 export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoots, raw, assets }: FixedTheme, {
   source = checkout, override, download, signal, onProgress,
@@ -94,7 +122,8 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   // A complete local theme, including an administrator's linked directory, stays in use.
   const existing = await localTheme(target, assets);
   signal?.throwIfAborted();
-  if (existing) return existing;
+  if (existing === "available") return existing;
+  if (existing === "incomplete" && (!(await lstat(target)).isDirectory() || await realpath(target) !== target)) return "incomplete";
   const donor = await realpath(fileURLToPath(source));
   const deadline = AbortSignal.timeout(30_000);
   const downloadSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -110,6 +139,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
     report(`已取得 ${asset[0]}`, index + 1, assets.length);
   }
 
+  if (existing === "incomplete") return repairTheme(target, contents, signal);
   for (const directory of [join(root, "data"), dirname(target)]) {
     await mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error;
@@ -127,7 +157,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
     signal?.throwIfAborted();
     const concurrent = await localTheme(target, assets);
     signal?.throwIfAborted();
-    if (concurrent) return concurrent;
+    if (concurrent) return concurrent === "incomplete" ? repairTheme(target, contents, signal) : concurrent;
     try {
       await rename(stage, target);
     } catch (error) {
