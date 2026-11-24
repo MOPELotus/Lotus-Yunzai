@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rename, rm, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createProfileStore, forGameCommandSender, gameCommandProfileId, withGameCommandProfiles } from "@lotus-yunzai/account";
@@ -9,7 +9,7 @@ import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const gameRoles = {
   gs: ["100000101", "100000102"],
-  sr: ["800000101", "800000103"],
+  sr: ["100001101", "100001103"],
   zzz: ["82000101", "82000104"],
 } as const;
 const groups = ["gs", "sr", "zzz"] as const;
@@ -85,9 +85,19 @@ test("OneBot 与 Milky 切三游本人账号档案，重启保留，指定档案
   const preload = `
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_PASSPORT_QR_RESOURCES = "./missing-render-fixture";
+Bun.env.LOTUS_GENSHIN_SHOWCASE_SERVER = "0";
+Bun.env.LOTUS_STAR_RAIL_SHOWCASE_SERVER = "0";
 const builtinFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(async (input, options) => {
-  if (new URL(input instanceof Request ? input.url : input).hostname === "127.0.0.1") return builtinFetch(input, options);
+  const url = new URL(input instanceof Request ? input.url : input);
+  if (url.hostname === "127.0.0.1") return builtinFetch(input, options);
+  const publicUid = url.pathname.split("/").at(-1);
+  if (["profile.microgg.cn", "api.mihomo.me"].includes(url.hostname) && /^[0-9]+$/.test(publicUid ?? "")) {
+    const headers = new Headers(options?.headers);
+    if (headers.has("Cookie") || headers.has("Authorization")) throw Error("public queries must have no credentials");
+    await Bun.write("./queried-public-uid.txt", publicUid);
+    return new Response(null, { status: 404 });
+  }
   await Bun.write("./unexpected-network.txt", "attempted");
   throw Error("fixture forbids outbound network");
 }, { preconnect: builtinFetch.preconnect });
@@ -102,21 +112,40 @@ globalThis.fetch = Object.assign(async (input, options) => {
     }
   };
   let sequence = 200;
+  async function checkReply(
+    root: string,
+    next: () => Promise<{ params: unknown; respond: (data: unknown) => void }>,
+    expected: string,
+    confirm: () => { message_id: number } | { message_seq: number },
+  ) {
+    const queried = join(root, "queried-public-uid.txt");
+    await writeFile(queried, "");
+    let reply = await next();
+    const message = JSON.stringify(reply.params);
+    if (message.includes("仅发送游戏 UID") || message.includes("查询此绑定 UID 的公开展板")) {
+      reply.respond(confirm());
+      reply = await next();
+      expect(await readFile(queried, "utf8")).toBe(expected);
+      expect(JSON.stringify(reply.params)).toMatch(/暂无原神角色面板|公开星铁展板未找到此角色/u);
+    } else {
+      expect(message).toContain(expected);
+    }
+    expect(JSON.stringify(reply.params)).not.toContain("fixture-cookie");
+    reply.respond(confirm());
+  }
   try {
     await withDualGatewayFixture("game-account-default-contract", "disablePrivate: false\n", async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       const one = async (command: string, expected: string) => {
         sendOneBot(command);
-        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`OneBot 未处理 ${command} 预期 ${expected} 序列 ${sequence}`, { cause: error }); });
-        expect(JSON.stringify(reply.params)).toContain(expected);
-        reply.respond({ message_id: sequence++ });
+        await checkReply(root, () => onebot.next("send_msg"), expected, () => ({ message_id: sequence++ }));
       };
       const milkyReply = async (command: string, expected: string, user = 42) => {
         expect((await sendMilky(command, { sender_id: user, peer_id: user })).status).toBe(200);
-        const reply = await milky.next("send_private_message");
-        expect(reply.params).toMatchObject({ user_id: user });
-        expect(JSON.stringify(reply.params)).toContain(expected);
-        expect(JSON.stringify(reply.params)).not.toContain("fixture-cookie");
-        reply.respond({ message_seq: sequence++ });
+        await checkReply(root, async () => {
+          const reply = await milky.next("send_private_message");
+          expect(reply.params).toMatchObject({ user_id: user });
+          return reply;
+        }, expected, () => ({ message_seq: sequence++ }));
       };
       await one("#面板", gameRoles.gs[0]);
       await milkyReply("*面板", gameRoles.sr[0]);
@@ -150,9 +179,7 @@ globalThis.fetch = Object.assign(async (input, options) => {
     await withDualGatewayFixture("game-account-default-restart", "disablePrivate: false\n", async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       const one = async (command: string, expected: string) => {
         sendOneBot(command);
-        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`OneBot 未处理 ${command} 预期 ${expected} 序列 ${sequence}`, { cause: error }); });
-        expect(JSON.stringify(reply.params)).toContain(expected);
-        reply.respond({ message_id: sequence++ });
+        await checkReply(root, () => onebot.next("send_msg"), expected, () => ({ message_id: sequence++ }));
       };
       await one("#面板", gameRoles.gs[1]);
       await one("*面板", gameRoles.sr[1]);
