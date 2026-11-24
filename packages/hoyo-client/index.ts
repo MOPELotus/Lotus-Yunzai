@@ -34,7 +34,7 @@ import { readStarRailPersonalRoster, type StarRailRosterOptions } from "./starra
 import { readStarRailPersonalRecord } from "./starrail-record.ts";
 import { readStarRailMonthly, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
 import { readStarRailLedger, readStarRailOnline, type StarRailLedgerOptions, type StarRailOnlineOptions } from "./starrail-ledger.ts";
-import { readStarRailGacha, type StarRailGachaOptions } from "./starrail-gacha.ts";
+import { readStarRailGacha, resolveStarRailGachaRegion, type StarRailGachaOptions } from "./starrail-gacha.ts";
 import { isZzzGachaAuthExpired, readZzzGachaAuthKey } from "./zzz-gacha-auth.ts";
 import { resolveZzzGachaLinkRole } from "./zzz-gacha-link.ts";
 import { readZzzDeadly } from "./zzz-deadly.ts";
@@ -755,8 +755,18 @@ export function createHoyoClient(
       return readForProfile(source, options, readStarRailPanel, isGameRecordCookieExpired);
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
-      return readForProfile(source, options, readStarRailGacha, error =>
-        error instanceof GameRecordRequestError ? isGameRecordCookieExpired(error) : isCookieExpired(error));
+      return readForProfile(source, options, async (current, request, sameOptions, guard) => {
+        const profiles = recovery?.profiles;
+        if (current.revision === source.revision || !profiles?.requestContexts) {
+          return readStarRailGacha(current, request, sameOptions, guard);
+        }
+        const changed = new HoyoRequestError("profile-changed", "续期后星铁档案的角色已变更，请重新更新抽卡记录。");
+        const roles = await profiles.requestContexts(current.qq, current.profileId, ["sr"]).catch(() => { throw changed; });
+        const role = roles.find(candidate => candidate.role.uid === source.role.uid);
+        if (!role || role.revision !== current.revision ||
+            resolveStarRailGachaRegion(role) !== resolveStarRailGachaRegion(source)) throw changed;
+        return readStarRailGacha(role, request, sameOptions, guard);
+      }, error => error instanceof GameRecordRequestError ? isGameRecordCookieExpired(error) : isCookieExpired(error));
     },
     fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
       return readForZzzTuning(source, options, readZzzTuning);

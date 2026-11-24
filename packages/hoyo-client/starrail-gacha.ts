@@ -92,7 +92,7 @@ function parseFiveStar(row: Record<string, unknown>) {
   };
 }
 
-function cnRegion(source: ProfileRequestContext): string {
+export function resolveStarRailGachaRegion(source: ProfileRequestContext): string {
   const { uid, gameBiz } = source.role;
   const explicit = source.role.region.trim();
   const inferred = /^[125]\d{8}$/u.test(uid) ? uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn" : "";
@@ -149,7 +149,7 @@ export async function readStarRailGacha(
   { signal, intervalMs = 300 }: StarRailGachaOptions,
   verifyProfile?: () => Promise<void>,
 ) {
-  const region = cnRegion(source);
+  const region = resolveStarRailGachaRegion(source);
   const uid = source.role.uid;
   const initialCookie = source.account.cookie;
   if (!initialCookie.trim() || /[\r\n\0]/u.test(initialCookie) ||

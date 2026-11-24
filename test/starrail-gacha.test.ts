@@ -255,3 +255,48 @@ test("星铁 HTTP 和业务层限频都保留限频语义，不交换 Cookie 或
     expect(refreshes).toBe(0);
   });
 });
+
+test("星铁六池续期后只重试同档中仍属于原国服区服的角色", async () => {
+  for (const renewedRegion of [undefined, "prod_gf_cn", "prod_qd_cn"]) {
+    await withProfile(async ({ context, profiles }) => {
+      const newUid = "123456789";
+      const badgeReads: string[] = [];
+      const client = createHoyoClient(async (url, init) => {
+        if (url.pathname === "/binding/api/getUserGameRolesByCookie") {
+          const list = [{ game_uid: newUid, region: "prod_gf_cn", game_biz: "hkrpg_cn" }];
+          if (renewedRegion) list.push({ game_uid: uid, region: renewedRegion, game_biz: "hkrpg_cn" });
+          return ok({ list });
+        }
+        if (url.pathname.endsWith("/account")) {
+          badgeReads.push(JSON.parse(String(init.body)).uid);
+          if (badgeReads.length === 1) return Response.json({ retcode: -100 });
+        }
+        return emptyResponse(url.pathname);
+      }, { profiles, syncRoles: true, exchange: async () => ({ ltoken: "new-ltoken", cookie: "cookie_token=renewed" }) });
+
+      const update = client.fetchStarRailGacha(context, options);
+      if (renewedRegion === "prod_qd_cn") {
+        expect(await update).toMatchObject({ uid, region: "prod_qd_cn", refreshedCookie: true });
+        expect(badgeReads).toEqual([uid, uid]);
+      } else {
+        await expect(update).rejects.toMatchObject({ code: "profile-changed" });
+        expect(badgeReads).toEqual([uid]);
+        expect((await profiles.requestSelectedContext("42", 2, "sr")).role.uid).toBe(renewedRegion ? uid : newUid);
+      }
+      expect((await profiles.accountContext("42", 2)).account.cookie).toBe("cookie_token=renewed");
+    });
+  }
+});
+
+test("星铁六池在档案 Cookie 和登录账号冲突时不启用活动会话", async () => {
+  await withProfile(async ({ context, profiles }) => {
+    const conflicted = { ...context, account: { ...context.account, cookie: "ltuid=43;cookie_token=fixture" } };
+    let calls = 0;
+    const client = createHoyoClient(async (url) => {
+      calls++;
+      return emptyResponse(url.pathname);
+    }, { profiles, async exchange() { throw new Error("不应刷新"); } });
+    await expect(client.fetchStarRailGacha(conflicted, options)).rejects.toMatchObject({ code: "invalid-input" });
+    expect(calls).toBe(0);
+  });
+});
