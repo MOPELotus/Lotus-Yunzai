@@ -80,7 +80,7 @@ export function checkinPlanNotice(entry: CheckinScheduleEntry, date: string, tit
   const message = late ? `新注册档案已补入签到计划，预计 ${entry.time} 左右执行。` :
     `明日自动签到将在 ${entry.time} 左右执行。`;
   return statusMessage(title, `${date} · profile ${entry.profileId}\n${message}`, [
-    `签到时间：${entry.time}`, `模式：${late && entry.mode === "late_random" ? "新注册补位" : entry.mode}`, `日期：${date}`,
+    `签到时间：${entry.time}`, `模式：${late ? "新注册补位" : entry.mode}`, `日期：${date}`,
   ], signal);
 }
 
