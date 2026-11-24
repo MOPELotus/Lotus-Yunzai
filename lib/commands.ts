@@ -1,6 +1,6 @@
 import { forGameCommandSender } from "@lotus-yunzai/account";
 import type { LegacyPanelRecoveryOffer } from "./legacy-panel-recovery-flow.ts";
-import { sendBatchedImageForward, type BatchedImageForward } from "@lotus-yunzai/skia/forward-images";
+import { sendBatchedImageForward, type BatchedImageForward, type StreamedImageForward } from "@lotus-yunzai/skia/forward-images";
 import type { MessageEvent, MessageReply, ReplyOptions } from "./messages.ts";
 import type { OwnGroupCardAccount } from "./adapters/own-group-card.ts";
 import type { NoticeSettingsContext } from "../plugins/group/notice-settings.ts";
@@ -72,7 +72,8 @@ export interface RecallableCommandReply {
   readonly seconds: number;
 }
 
-export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply | RecallableCommandReply | BatchedImageForward;
+export type CommandReply = MessageReply | CommandForward | QuotedCommandReply | DeliveryCommandReply | RecallableCommandReply |
+  BatchedImageForward | StreamedImageForward;
 export type CommandHandler = (argument: string, context: CommandContext) => CommandReply | Promise<CommandReply>;
 export type MessageFallback = (
   message: string,

@@ -28,7 +28,7 @@ import { createGenshinChallengeReader, createGenshinPersonalRecordReader, readGe
 import { readStarRailGridFight, type StarRailGridFightOptions } from "./starrail-grid-fight.ts";
 import { readStarRailGrowth, type StarRailGrowthOptions } from "./starrail-growth.ts";
 import { readStarRailRogue, type StarRailRogueOptions } from "./starrail-rogue.ts";
-import { readStarRailChallenge, type StarRailChallengeOptions } from "./starrail-challenge.ts";
+import { readStarRailChallenge, starRailChallengeRegion, type StarRailChallengeOptions } from "./starrail-challenge.ts";
 import { readStarRailPanel, type StarRailPanelOptions } from "./starrail-panel.ts";
 import { readStarRailPersonalRoster, type StarRailRosterOptions } from "./starrail-roster.ts";
 import { readStarRailPersonalRecord } from "./starrail-record.ts";
@@ -91,6 +91,7 @@ export type { StarRailLedgerKind, StarRailLedgerRow, StarRailLedgerOptions, Star
 export { defaultStarRailGrowthLevels, type StarRailGrowthSnapshot, type StarRailGrowthOptions } from "./starrail-growth.ts";
 export { normalizeStarRailMonthly, type StarRailMonthlySnapshot, type StarRailMonthlyOptions } from "./starrail-monthly.ts";
 export type { StarRailChallengeKind, StarRailChallengeOptions, StarRailChallengePeriod } from "./starrail-challenge.ts";
+export { starRailChallengeRegion } from "./starrail-challenge.ts";
 export { starRailGachaPools, type StarRailGachaOptions, type StarRailGachaPool } from "./starrail-gacha.ts";
 export { resolveZzzTuningRegion, zzzTuningPools, ZzzTuningRateLimitError, type ZzzTuningOptions, type ZzzTuningSnapshot } from "./zzz-tuning.ts";
 export { isZzzGachaLinkMessage, parseZzzGachaLink, readZzzGachaLink, resolveZzzGachaLinkRole, ZzzGachaLinkError,
@@ -729,8 +730,7 @@ export function createHoyoClient(
         const changed = new HoyoRequestError("profile-changed", "续期后星铁档案角色已变更，请重新查询。");
         const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "sr").catch(() => { throw changed; });
         if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
-            (!isUnspecifiedCnRecordRegion(source.role.region) && selected.role.region !== source.role.region) ||
-            (source.role.gameBiz && selected.role.gameBiz !== source.role.gameBiz)) throw changed;
+            starRailChallengeRegion(selected.role) !== starRailChallengeRegion(source.role)) throw changed;
         return readStarRailChallenge(selected, request, attempt, guard);
       }, isGameRecordCookieExpired);
     },

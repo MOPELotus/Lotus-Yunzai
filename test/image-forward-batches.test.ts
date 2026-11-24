@@ -54,3 +54,36 @@ test("每批发送前重新核对档案，并区分权限变化和传输回执�
   expect(attempts).toEqual(["第 1 段"]);
   expect(replies).toEqual(["会话或档案已变更，余下图片已停止发送。"]);
 });
+
+test("生成下一批图片前等待上一批回执，回执失败后关闭生成器", async () => {
+  const trace: string[] = [];
+  const firstAck = Promise.withResolvers<boolean>();
+  const firstSent = Promise.withResolvers<void>();
+  const dispatch = sendCommandReply({
+    async forward(nodes) {
+      const title = String(nodes[0]);
+      trace.push(`发送 ${title}`);
+      if (title !== "1") return false;
+      firstSent.resolve();
+      return firstAck.promise;
+    },
+    async reply() { return true; },
+  }, {
+    type: "forward-image-batches",
+    batches: (async function* () {
+      try {
+        for (const title of ["1", "2", "3"]) {
+          trace.push(`生成 ${title}`);
+          yield [title];
+        }
+      } finally {
+        trace.push("收尾");
+      }
+    })(),
+  });
+  await firstSent.promise;
+  expect(trace).toEqual(["生成 1", "发送 1"]);
+  firstAck.resolve(true);
+  await dispatch;
+  expect(trace).toEqual(["生成 1", "发送 1", "生成 2", "发送 2", "收尾"]);
+});

@@ -20,7 +20,7 @@ export interface StarRailChallengeOptions {
 type Json = Record<string, unknown>;
 type Source = Pick<ProfileRequestContext, "game" | "role" | "device">;
 
-function starRailChallengeRegion({ uid, region, gameBiz }: Source["role"]) {
+export function starRailChallengeRegion({ uid, region, gameBiz }: Source["role"]) {
   if (!/^[1-5]\d{8}$/u.test(uid) || (gameBiz && gameBiz !== "hkrpg_cn")) return;
   const inferred = uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn";
   if (isUnspecifiedCnRecordRegion(region) || region === inferred) return inferred;

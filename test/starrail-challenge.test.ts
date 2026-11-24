@@ -245,3 +245,47 @@ test("星铁战绩只在续期后仍是原选角时发出重试", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("仲裁按上期官方组匹配，保留第 4 期与缺失场次的原摘要", () => {
+  const row = (title: string, status?: string, battles?: number) => ({
+    group: { name_mi18n: title, status }, battle_num: battles,
+  });
+  const four = [row("当前", "New"), row("上一期", "End"), row("较早一期", "End", 0), row("第四期", "End", 8)];
+  const read = (command: string, rows: typeof four) => normalizeStarRailChallenge([{
+    kind: "peak", schedule: "3", simple: false, data: {
+      challenge_peak_records: rows, challenge_peak_best_record_brief: { total_battle_num: 6 },
+    },
+  }], parseChallengeQuery(command)!, () => undefined)[0]!;
+  expect(read("*往期仲裁", four).peak.map(({ title, battleNum }) => [title, battleNum])).toEqual([
+    ["当前", 6], ["上一期", 6], ["较早一期", 0], ["第四期", 8],
+  ]);
+  expect(read("*上期仲裁", four).peak.map(({ title }) => title)).toEqual(["上一期"]);
+  expect(read("*上期仲裁", [four[1]!]).peak.map(({ title }) => title)).toEqual(["上一期"]);
+  expect(read("*上期仲裁", [row("无状态的历史记录")]).peak.map(({ title }) => title)).toEqual(["无状态的历史记录"]);
+  expect(read("*上期仲裁", [four[0]!]).peak).toEqual([]);
+  expect(read("*往期仲裁", []).peak).toEqual([]);
+  expect(buildStarRailAbyssSections({ results: [read("*往期仲裁", four)] })[3]?.metrics).toContainEqual(["战斗次数", "8 次"]);
+});
+
+test("最新深渊无日期时按固定十四天轮转，自主三项保留现有顺序", () => {
+  const records = (["hall", "story", "boss"] as const).map(kind => ({ kind,
+    schedule: "1" as const, simple: true, data: { groups: [] } }));
+  const rotation = ["boss", "story", "hall"] as const;
+  for (const [offset, kind] of rotation.entries()) {
+    const now = Date.parse("2024-06-24T04:00:00+08:00") + offset * 14 * 86_400_000;
+    expect(normalizeStarRailChallenge(records, parseChallengeQuery("*最新深渊")!, () => undefined, now)
+      .map(({ kind }) => kind)).toEqual([kind]);
+  }
+  expect(normalizeStarRailChallenge(records, parseChallengeQuery("*深渊")!, () => undefined)
+    .map(({ kind }) => kind)).toEqual(["hall", "story", "boss"]);
+});
+
+
+test("简易战绩用旧字段补足空译名、出战时间和关卡名", () => {
+  const [result] = normalizeStarRailChallenge([{ kind: "hall", schedule: "2", simple: true, data: {
+    max_floor_detail: { name: "", floor: "关底", star_num: 0, node_1: {
+      challenge_time: {}, challengeTime: "2026-11-02 10:15", buff: { name_mi18n: "", name: "原增益", desc_mi18n: "原说明" },
+    } },
+  } }], parseChallengeQuery("*上期简易混沌")!, () => undefined);
+  expect(result?.floors).toMatchObject([{ title: "关底", stars: 0, nodes: [{ time: "2026.11.02 10:15", buff: "原增益：原说明" }] }]);
+});
