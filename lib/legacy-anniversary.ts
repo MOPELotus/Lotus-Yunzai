@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
+import { mkdir, lstat, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProfileStore, type Game, type GameRole, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { CommandModule } from "./commands.ts";
@@ -73,17 +75,71 @@ function readEntry(value: unknown, role: GameRole, game: Game) {
   if (registeredAt) return { registeredAt, queriedAt: dateTime.format(queriedAt) };
 }
 
-async function readArchive(root: string, game: Game, qq: string, signal: AbortSignal) {
-  for (const location of ["backup/plugins", "plugins"]) {
-    const path = join(root, location, "xiaofei-plugin", "data", folders[game], qq + ".json");
-    const file = await readMigrationSourceFile(root, path, maxArchiveBytes, signal);
-    if (file) return object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)));
-  }
+const anniversaryWrites = new Map<string, Promise<void>>();
+
+export function createAnniversaryStore(root: string) {
+  const path = (game: Game, qq: string) => {
+    if (!/^[1-9]\d{0,15}$/u.test(qq)) throw new Error("注册时间账号无效。");
+    return join(root, "data", "anniversary", game, qq + ".json");
+  };
+  return {
+    async read(game: Game, qq: string, signal: AbortSignal) {
+      const file = await readMigrationSourceFile(root, path(game, qq), maxArchiveBytes, signal);
+      return file ? object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes))) : undefined;
+    },
+    save(game: Game, qq: string, role: GameRole, value: unknown, signal: AbortSignal): Promise<void> {
+      const key = path(game, qq);
+      const work = (anniversaryWrites.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
+      if (!readEntry(value, role, game)) throw new Error("注册时间数据与当前角色不匹配。");
+      const file = path(game, qq), directory = dirname(file);
+      for (const part of [join(root, "data"), join(root, "data/anniversary"), directory]) {
+        await mkdir(part, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== "EEXIST") throw error; });
+        if (!(await lstat(part)).isDirectory() || (await lstat(part)).isSymbolicLink()) throw new Error("注册时间存储目录无效。");
+      }
+      const current = await this.read(game, qq, signal) ?? {};
+      const entry = object(value)!;
+      // Only the activity payload and role identity are retained; never copy account credentials or legacy user labels.
+      current[role.uid] = { info_data: { game_uid: role.uid, region: role.region, game_biz: role.gameBiz },
+        game_data: entry.game_data, query_time: entry.query_time };
+      const text = JSON.stringify(current);
+      if (Buffer.byteLength(text) > maxArchiveBytes) throw new Error("注册时间存档过大。");
+      const temporary = file + "." + crypto.randomUUID() + ".tmp";
+      try {
+        signal.throwIfAborted();
+        await writeFile(temporary, text, { flag: "wx", mode: 0o600, signal });
+        signal.throwIfAborted();
+        await rename(temporary, file);
+      } finally { await rm(temporary, { force: true }); }
+      });
+      anniversaryWrites.set(key, work);
+      return work.finally(() => { if (anniversaryWrites.get(key) === work) anniversaryWrites.delete(key); });
+    },
+  };
 }
 
-export function legacyAnniversaryCommands(root: URL, directory: string | undefined, signal: AbortSignal): CommandModule {
+async function readArchive(root: string, game: Game, qq: string, signal: AbortSignal) {
+  const native = await createAnniversaryStore(root).read(game, qq, signal) ?? {};
+  for (const location of ["plugins", "backup/plugins"]) {
+    const path = join(root, location, "xiaofei-plugin", "data", folders[game], qq + ".json");
+    const file = await readMigrationSourceFile(root, path, maxArchiveBytes, signal);
+    if (file) {
+      const legacy = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)));
+      for (const [key, value] of Object.entries(legacy ?? {})) if (!Object.hasOwn(native, key)) native[key] = value;
+    }
+  }
+  return native;
+}
+
+export interface AnniversaryOptions {
+  /** Provider performs the activity login/read using the existing account transport; no credentials are persisted here. */
+  readonly request?: (source: ProfileRequestContext, game: Game, signal: AbortSignal) => Promise<unknown>;
+}
+
+export function legacyAnniversaryCommands(root: URL, directory: string | undefined, signal: AbortSignal, options: AnniversaryOptions = {}): CommandModule {
   const installation = fileURLToPath(root);
   const profiles = createProfileStore(directory);
+  const client = createProfileHoyoClient(profiles);
+  const request = options.request ?? ((source: ProfileRequestContext, _game: Game, active: AbortSignal) => client.fetchRegistrationTime(source, { signal: active }));
   return {
     name: "@lotus-yunzai/legacy-anniversary",
     commands: {},
@@ -110,25 +166,35 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
         }
         active.throwIfAborted();
         if (!contexts.length) return "请先登录并同步本人的游戏档案。";
-        const hint = refresh ? "\n当前只可查询旧缓存，活动在线更新尚未接入。" : "";
+        const hint = "";
         const archive = await readArchive(installation, game, qq, active);
-        const entries = contexts.flatMap(({ profileId, role, revision }) => {
-          const cached = readEntry(archive?.[role.uid], role, game);
-          return cached ? [{ profileId, role, revision, ...cached }] : [];
-        });
-        if (!entries.length) return `未找到与当前档案匹配的${name}注册时间旧缓存。${hint}`;
-        for (const { profileId, role, revision } of entries) {
+        const entries = [];
+        for (const source of contexts) {
+          active.throwIfAborted();
+          let value = archive?.[source.role.uid];
+          if (refresh || !readEntry(value, source.role, game)) {
+            value = await request(source, game, active);
+          }
+          const cached = readEntry(value, source.role, game);
+          if (cached) {
+            const updated = object(value)?.revision;
+            entries.push({ ...source, ...(typeof updated === "string" && { revision: updated }), value, ...cached });
+          }
+        }
+        if (!entries.length) return `未找到与当前档案匹配的${name}注册时间记录。${hint}`;
+        for (const { profileId, role, revision, value } of entries) {
           active.throwIfAborted();
           const current = await profiles.requestContext(qq, profileId, game, role.uid).catch(() => undefined);
           if (current?.revision !== revision) return;
+          await createAnniversaryStore(installation).save(game, qq, role, value, active);
         }
         active.throwIfAborted();
         return [
-          `${name}注册时间（旧缓存，UTC+8）`,
+          `${name}注册时间（UTC+8）`,
           ...entries.map(({ profileId, registeredAt, queriedAt }) => `档案 ${profileId} · 注册时间 ${registeredAt} · 缓存查询时间 ${queriedAt}`),
         ].join("\n") + hint;
       } catch {
-        return active.aborted ? undefined : "无法安全读取游戏注册时间旧缓存。";
+        return active.aborted ? undefined : "注册时间查询失败，请检查登录状态或稍后重试；已有记录已保留。";
       }
     },
   };

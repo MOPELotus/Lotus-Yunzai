@@ -1,3 +1,5 @@
+import { readRegistrationTime } from "./registration-time.ts";
+export { readRegistrationTime } from "./registration-time.ts";
 import { withMiyousheCaptcha } from "./captcha-business.ts";
 export type { HoyoTransport } from "./credentials.ts";
 export { requestDeviceFingerprint, DeviceFingerprintError } from "./device-fingerprint.ts";
@@ -622,6 +624,9 @@ export function createHoyoClient(
     },
     fetchGenshinWorldBoss(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
       return readForProfile(source, options, readGenshinWorldBoss, isGameRecordCookieExpired);
+    },
+    fetchRegistrationTime(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, readRegistrationTime, isGameRecordCookieExpired);
     },
     fetchGenshinBackpack(source: ProfileRequestContext, options: GenshinBackpackOptions) {
       return readForProfile(source, options, readGenshinBackpack, isGameRecordCookieExpired);

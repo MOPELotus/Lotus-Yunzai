@@ -47,6 +47,8 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
 
   try {
     await copyHost(root);
+    const appFile = join(root, "app.ts");
+    await writeFile(appFile, 'globalThis.fetch = async () => Response.json({retcode:-1,message:"fixture activity unavailable"});\n' + await readFile(appFile, "utf8"));
     for (const path of [profile, gs, sr, zzz]) await mkdir(dirname(path), { recursive: true });
     await writeFile(profile, profileContents);
     await writeFile(gs, gsContents);
@@ -98,13 +100,13 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
       expect(replies[count]).toContain(expected);
       return replies[count]!;
     }
-    const saved = await reply("#刷新我的原神注册时间", "注册时间 2024-01-03");
+    const saved = await reply("#我的原神注册时间", "注册时间 2024-01-03");
     expect(saved).toContain("缓存查询时间 2025-01-13 00:00:00");
-    expect(saved).toContain("活动在线更新尚未接入");
+    await reply("#刷新我的原神注册时间", "注册时间查询失败");
     expect(saved).not.toContain(gsUid);
     expect(saved).not.toContain("不应回显的旧资料");
     await reply("*我的注册时间", "注册时间 2024-01-07");
-    await reply("%注册时间", "未找到与当前档案匹配");
+    await reply("%注册时间", "注册时间查询失败");
     await writeFile(zzz, exactZzz);
     await reply("%我的注册时间", "注册时间 2024-01-03 00:00:00");
     await reply("#注册时间", "请先登录并同步本人的游戏档案", 43);
@@ -115,9 +117,14 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
     expect(replies).toHaveLength(count);
     await rm(zzz);
     await symlink(gs, zzz);
-    await reply("#绝区零刷新注册时间", "无法安全读取");
-    expect(await readFile(gs, "utf8")).toBe(gsContents);
-    expect(await readFile(sr, "utf8")).toBe(srContents);
+    await reply("#绝区零刷新注册时间", "注册时间查询失败");
+    await rm(zzz);
+    await rm(gs);
+    await rm(sr);
+    await reply("#原神我的注册时间", "注册时间 2024-01-03");
+    await reply("#我的星铁注册时间", "注册时间 2024-01-07");
+    expect(await readFile(join(root, "data/anniversary/gs/42.json"), "utf8")).not.toContain("不应回显的旧资料");
+
     expect(await readFile(profile, "utf8")).toBe(profileContents);
   } finally {
     gateway?.close();
