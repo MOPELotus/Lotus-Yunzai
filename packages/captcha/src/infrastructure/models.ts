@@ -15,6 +15,29 @@ export interface ModelAsset {
   sha256: string
   size: number
 }
+export interface ModelAssetProgress {
+  readonly modelId: string
+  readonly stage: 'checking' | 'downloading' | 'verifying'
+  readonly bytes: number
+  readonly totalBytes: number
+}
+export type ModelAssetProgressListener = (progress: ModelAssetProgress) => unknown
+
+function modelProgress(asset: ModelAsset, signal?: AbortSignal, onProgress?: ModelAssetProgressListener) {
+  let lastStage: ModelAssetProgress['stage'] | undefined
+  let lastTime = -Infinity
+  return (stage: ModelAssetProgress['stage'], bytes: number, force = false) => {
+    if (!onProgress || signal?.aborted) return
+    const time = Date.now()
+    if (!force && stage === lastStage && bytes !== asset.size && time - lastTime < 250) return
+    lastStage = stage
+    lastTime = time
+    try {
+      void Promise.resolve(onProgress({ modelId: asset.id, stage, bytes, totalBytes: asset.size })).catch(() => {})
+    } catch { /* A progress display must not interrupt model preparation. */ }
+  }
+}
+
 export class ModelStore {
   private readonly verified = new Map<string, { size: number; mtime: number }>()
   private readonly pending = new Map<string, Promise<string>>()
@@ -39,30 +62,46 @@ export class ModelStore {
       throw new Error(`Invalid model asset: ${id}`)
     return asset
   }
-  async valid(id: string): Promise<boolean> {
+  async valid(id: string, signal?: AbortSignal, onProgress?: ModelAssetProgressListener): Promise<boolean> {
+    signal ??= this.activeSignal
+    signal?.throwIfAborted()
     const asset = this.asset(id),
       target = path.join(this.directory, asset.file)
+    const progress = modelProgress(asset, signal, onProgress)
+    progress('checking', 0, true)
     const stat = await fs.stat(target).catch((e) => {
       if (e.code !== 'ENOENT') throw e
       return null
     })
+    signal?.throwIfAborted()
     if (!stat?.isFile() || stat.size !== asset.size) return false
     const cached = this.verified.get(id)
-    if (cached?.size === stat.size && cached.mtime === stat.mtimeMs) return true
+    if (cached?.size === stat.size && cached.mtime === stat.mtimeMs) {
+      progress('verifying', stat.size, true)
+      return true
+    }
     const hash = createHash('sha256')
-    for await (const chunk of createReadStream(target)) hash.update(chunk)
+    let checked = 0
+    progress('verifying', 0, true)
+    for await (const chunk of createReadStream(target, { signal })) {
+      signal?.throwIfAborted()
+      hash.update(chunk)
+      checked += chunk.length
+      progress('verifying', checked)
+    }
+    signal?.throwIfAborted()
     if (hash.digest('hex') !== asset.sha256) return false
     this.verified.set(id, { size: stat.size, mtime: stat.mtimeMs })
     return true
   }
-  async get(id: string, signal?: AbortSignal): Promise<string> {
+  async get(id: string, signal?: AbortSignal, onProgress?: ModelAssetProgressListener): Promise<string> {
     signal ??= this.activeSignal
     signal?.throwIfAborted()
-    if (await this.valid(id)) return path.join(this.directory, this.asset(id).file)
+    if (await this.valid(id, signal, onProgress)) return path.join(this.directory, this.asset(id).file)
     if (!this.allowDownload) throw new CaptchaError('model_missing', '本地验证码模型尚未初始化。', true)
     let promise = this.pending.get(id)
     if (!promise) {
-      promise = this.download(id, signal)
+      promise = this.download(id, signal, onProgress)
       this.pending.set(id, promise)
     }
     try {
@@ -71,10 +110,14 @@ export class ModelStore {
       if (this.pending.get(id) === promise) this.pending.delete(id)
     }
   }
-  private async download(id: string, signal?: AbortSignal): Promise<string> {
+  private async download(id: string, signal?: AbortSignal, onProgress?: ModelAssetProgressListener): Promise<string> {
+    signal ??= AbortSignal.timeout(600000)
     const asset = this.asset(id),
       url = new URL(asset.url),
       fromHuggingFace = url.hostname === 'huggingface.co'
+    const progress = modelProgress(asset, signal, onProgress)
+    progress('downloading', 0, true)
+    signal.throwIfAborted()
     if (process.env.HF_ENDPOINT && fromHuggingFace) {
       const endpoint = new URL(process.env.HF_ENDPOINT)
       url.host = endpoint.host
@@ -83,10 +126,7 @@ export class ModelStore {
     const headers: Record<string, string> = {}
     if (process.env.HF_TOKEN && fromHuggingFace)
       headers.Authorization = `Bearer ${process.env.HF_TOKEN}`
-    const response = await this.fetchImpl(url, {
-      headers,
-      signal: signal || AbortSignal.timeout(600000),
-    })
+    const response = await this.fetchImpl(url, { headers, signal })
     if (!response.ok || !response.body) throw new Error(`Model ${id}: HTTP ${response.status}`)
     await fs.mkdir(this.directory, { recursive: true })
     if (this.temporaryDirectory) await fs.mkdir(this.temporaryDirectory, { recursive: true })
@@ -100,15 +140,20 @@ export class ModelStore {
         new Transform({
           transform(chunk: Buffer, _encoding, callback) {
             size += chunk.length
+            if (size > asset.size) { callback(new Error('Model exceeds expected size')); return }
             hash.update(chunk)
-            callback(size > asset.size ? new Error('Model exceeds expected size') : null, chunk)
+            progress('downloading', size)
+            callback(null, chunk)
           },
         }),
         createWriteStream(temp, { flags: 'wx' }),
         { signal },
       )
+      signal.throwIfAborted()
+      progress('verifying', 0, true)
       if (size !== asset.size || hash.digest('hex') !== asset.sha256)
         throw new Error(`Model ${id}: checksum mismatch`)
+      signal.throwIfAborted()
       await fs.rename(temp, target)
       return target
     } finally {

@@ -148,22 +148,51 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
 }
 
 
+export interface CaptchaModelProgress {
+  readonly modelId: string
+  /** Models fully validated and ready for use. */
+  readonly completed: number
+  readonly total: number
+  readonly stage?: 'checking' | 'downloading' | 'verifying' | 'ready'
+  readonly fileBytes?: number
+  readonly fileTotalBytes?: number
+  /** Fully validated bytes, excluding a model that is still being prepared. */
+  readonly completedBytes?: number
+  readonly totalBytes?: number
+  readonly cached?: boolean
+}
+
 /** Called by the host's overall initialization, never by solve(). */
 export async function prepareCaptchaModels(options: {
   readonly signal?: AbortSignal
   readonly modelsDirectory?: string
-  readonly onProgress?: (progress: { readonly modelId: string; readonly completed: number; readonly total: number }) => unknown
+  readonly onProgress?: (progress: CaptchaModelProgress) => unknown
 } = {}): Promise<void> {
   const { ModelStore } = await import('./src/infrastructure/models.ts')
   const directory = options.modelsDirectory ?? defaultModelsDirectory
   const temporaryDirectory = join(directory, '.work', `prepare-${randomUUID()}`)
   const store = await ModelStore.create(directory, temporaryDirectory, true)
+  const totalBytes = store.assets.reduce((sum, asset) => sum + asset.size, 0)
+  const report = async (event: CaptchaModelProgress) => {
+    if (options.signal?.aborted) return
+    try { await options.onProgress?.(event) }
+    catch { /* Progress observers cannot decide whether a model is usable. */ }
+  }
   try {
-    let completed = 0
+    let completed = 0, completedBytes = 0
     for (const asset of store.assets) {
       options.signal?.throwIfAborted()
-      await store.get(asset.id, options.signal)
-      await options.onProgress?.({ modelId: asset.id, completed: ++completed, total: store.assets.length })
+      let downloaded = false
+      await store.get(asset.id, options.signal, progress => {
+        downloaded ||= progress.stage === 'downloading'
+        return report({ modelId: asset.id, stage: progress.stage, completed, total: store.assets.length,
+          fileBytes: progress.bytes, fileTotalBytes: progress.totalBytes, completedBytes, totalBytes })
+      })
+      options.signal?.throwIfAborted()
+      completedBytes += asset.size
+      await report({ modelId: asset.id, stage: 'ready', completed: ++completed, total: store.assets.length,
+        fileBytes: asset.size, fileTotalBytes: asset.size, completedBytes, totalBytes, cached: !downloaded })
+      options.signal?.throwIfAborted()
     }
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)

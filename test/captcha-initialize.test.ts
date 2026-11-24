@@ -38,3 +38,21 @@ test("模型准备失败或取消不能报告初始化成功", async () => {
     expect(calls).toBe(mode === "already-cancelled" ? 0 : 1);
   }
 });
+
+test("模型阶段进度传给统一显示，正在校验的字节不等同于模型已就绪", async () => {
+  const events: import("../lib/captcha/initialize.ts").CaptchaInitializationProgress[] = [];
+  await initializeCaptchaModels(new URL("file:///tmp/captcha-progress-fixture/"), new AbortController().signal, {
+    async prepare({ onProgress }) {
+      onProgress({ modelId: "fixture", stage: "downloading", completed: 0, total: 2, fileBytes: 4, fileTotalBytes: 8 });
+      onProgress({ modelId: "fixture", stage: "verifying", completed: 0, total: 2, fileBytes: 0, fileTotalBytes: 8 });
+      onProgress({ modelId: "fixture", stage: "ready", completed: 1, total: 2, cached: false, fileBytes: 8, fileTotalBytes: 8 });
+    },
+    onProgress: event => { events.push(event); },
+  });
+  expect(events.find(event => event.stage.endsWith(":downloading")))
+    .toMatchObject({ message: "验证码模型 1/2：fixture · 下载", completed: 4, total: 8, unit: "bytes" });
+  expect(events.find(event => event.stage.endsWith(":verifying"))?.message).toContain("校验");
+  expect(events.find(event => event.stage.endsWith(":ready")))
+    .toMatchObject({ completed: 1, total: 2, unit: "个" });
+  expect(events.at(-1)?.message).toContain("已就绪");
+});
