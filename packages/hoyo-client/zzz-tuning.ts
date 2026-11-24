@@ -7,6 +7,8 @@ const apiRoot = "https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zz
 const origin = "https://act.mihoyo.com";
 const referer = `${origin}/zzz/event/gacha-record/index.html`;
 const batchSize = 8;
+const rateLimitBackoff = [15_000, 30_000] as const;
+const rateLimitWaitBudget = 60_000;
 
 export const zzzTuningPools = {
   GACHA_TYPE_WEAPON_UP: { id: 3, name: "音擎频段" },
@@ -35,6 +37,7 @@ export interface ZzzTuningOptions {
   readonly signal?: AbortSignal;
   readonly intervalMs?: number;
   readonly now?: () => Date;
+  readonly sleep?: (durationMs: number, signal?: AbortSignal) => Promise<void>;
 }
 
 export type ZzzTuningInventory = Partial<Record<Ticket, number>>;
@@ -178,7 +181,9 @@ function inventoryOf(index: Json): ZzzTuningInventory {
     const row = object(entry);
     const type = text(row?.ticket_type);
     if (!Object.hasOwn(tickets, type)) continue;
-    const count = uint(row?.ticket_cnt);
+    const amount = row?.ticket_cnt;
+    if (amount == null || (typeof amount === "string" && !amount.trim())) continue;
+    const count = uint(amount);
     const key = tickets[type as keyof typeof tickets];
     if (count === null || (result[key] !== undefined && result[key] !== count)) invalid("绝区零官方调频库存数值无效。");
     result[key] = count;
@@ -228,7 +233,7 @@ export function resolveZzzTuningRegion(source: Pick<ProfileRequestContext, "game
   return region;
 }
 
-function retryAfter(response: Response): number | undefined {
+function retryAfter(response: Response, now: () => Date): number | undefined {
   const value = response.headers.get("retry-after");
   if (!value) return;
   if (/^\d+$/u.test(value)) {
@@ -236,7 +241,7 @@ function retryAfter(response: Response): number | undefined {
     return Number.isSafeInteger(time) ? time : undefined;
   }
   const time = Date.parse(value);
-  if (Number.isFinite(time)) return Math.max(0, time - Date.now());
+  if (Number.isFinite(time) && new Date(time).toUTCString() === value) return Math.max(0, time - now().getTime());
 }
 
 function apiError(payload: Json, status: number, retcode: number): HoyoRequestError {
@@ -253,7 +258,10 @@ function apiError(payload: Json, status: number, retcode: number): HoyoRequestEr
 }
 
 function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, options: ZzzTuningOptions, guard?: Guard) {
-  const { intervalMs = 1200, signal } = options;
+  const {
+    intervalMs = 1200, signal, now = () => new Date(),
+    sleep = (durationMs: number) => wait(durationMs, undefined, { signal }),
+  } = options;
   const region = resolveZzzTuningRegion(source);
   const { uid } = source.role;
   const cookie = source.account.cookie;
@@ -272,15 +280,37 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
     checkSignal();
   }
 
+  async function pause(durationMs: number) {
+    try {
+      await sleep(durationMs, signal);
+    } catch {
+      throw new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
+    }
+  }
+
   let requested = false;
+  let retries = 0;
+  let waited = 0;
   async function request(endpoint: Endpoint, extra?: Record<string, string>) {
-    if (requested && intervalMs) {
+    if (requested && intervalMs) await pause(intervalMs);
+    for (;;) {
       try {
-        await wait(intervalMs, undefined, { signal });
-      } catch {
-        throw new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
+        return await read(endpoint, extra);
+      } catch (error) {
+        if (!(error instanceof ZzzTuningRateLimitError) || error.status !== 429 ||
+            error.retryAfterMs === undefined) throw error;
+        const backoff = rateLimitBackoff[retries];
+        if (backoff === undefined) throw error;
+        const delay = Math.max(backoff, error.retryAfterMs, intervalMs);
+        if (!Number.isFinite(delay) || waited + delay > rateLimitWaitBudget) throw error;
+        retries++;
+        waited += delay;
+        await pause(delay);
       }
     }
+  }
+
+  async function read(endpoint: Endpoint, extra?: Record<string, string>) {
     await check();
     const url = new URL(endpoint, apiRoot);
     url.search = new URLSearchParams({ uid, region, ...extra }).toString();
@@ -299,7 +329,7 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       await check();
-      if (response.status === 429) throw new ZzzTuningRateLimitError(429, undefined, retryAfter(response));
+      if (response.status === 429) throw new ZzzTuningRateLimitError(429, undefined, retryAfter(response, now));
       throw new HoyoRequestError("http", "绝区零官方调频接口返回 HTTP 错误。", response.status);
     }
     const payload = object(await response.json().catch(() => undefined));

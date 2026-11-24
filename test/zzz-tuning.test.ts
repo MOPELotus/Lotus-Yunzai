@@ -194,7 +194,7 @@ test("keeps real duplicate pulls when required by the official S total", async (
   ]);
 });
 
-test("classifies authentication failures, rate limits, and risk controls without retrying inside the reader", async () => {
+test("区分认证、业务限频及风控，且不提前重试超出预算的 HTTP 429", async () => {
   async function fail(response: Response) {
     let calls = 0;
     let failure: unknown;
@@ -214,9 +214,9 @@ test("classifies authentication failures, rate limits, and risk controls without
   expect(isZzzTuningCookieExpired(await fail(Response.json({ retcode: 12, message: "invalid parameters" })))).toBe(false);
   expect(isZzzTuningCookieExpired(await fail(Response.json({ retcode: 10041, message: "请登录" })))).toBe(false);
   expect(isZzzTuningCookieExpired(await fail(new Response(null, { status: 403 })))).toBe(false);
-  const limit = await fail(new Response(null, { status: 429, headers: { "Retry-After": "17" } }));
+  const limit = await fail(new Response(null, { status: 429, headers: { "Retry-After": "65" } }));
   expect(limit).toBeInstanceOf(ZzzTuningRateLimitError);
-  expect(limit).toMatchObject({ code: "http", status: 429, retryAfterMs: 17_000 });
+  expect(limit).toMatchObject({ code: "http", status: 429, retryAfterMs: 65_000 });
   const apiLimit = await fail(Response.json({ retcode: 12, message: "visit too frequently" }));
   expect(apiLimit).toBeInstanceOf(ZzzTuningRateLimitError);
   expect(apiLimit).toMatchObject({ code: "api", retcode: 12 });
@@ -253,4 +253,87 @@ test("guards credentials and revision before and after transport, including inve
     return ok({ cur_tickets: [{ ticket_type: "GACHA_TICKET_TYPE_BOOPON", ticket_cnt: 0 }] });
   }, options);
   expect(inventory).toEqual({ uid, fetchedAt: now.toISOString(), inventory: { boopon: 0 } });
+});
+
+test("只按服务器允许的 Retry-After 等待同一读取，受退避与总预算约束", async () => {
+  let clock = now.getTime();
+  const waits: number[] = [];
+  const requests: string[] = [];
+  const clockOptions = {
+    ...options, now: () => new Date(clock),
+    async sleep(delay: number) { waits.push(delay); clock += delay; },
+  };
+  function tooSoon(retryAfter?: string) {
+    return new Response(null, { status: 429, headers: retryAfter === undefined ? {} : { "Retry-After": retryAfter } });
+  }
+  const latest = await readZzzTuningInventory(source, async (url, init) => {
+    expect(new Headers(init.headers).get("Cookie")).toBe(source.account.cookie);
+    requests.push(url.href);
+    if (requests.length === 1) return tooSoon("7");
+    if (requests.length === 2) return tooSoon(new Date(clock + 32_000).toUTCString());
+    return ok({ cur_tickets: [{ ticket_type: "GACHA_TICKET_TYPE_BOOPON", ticket_cnt: 0 }] });
+  }, clockOptions);
+  expect(waits).toEqual([15_000, 32_000]);
+  expect(requests).toHaveLength(3);
+  expect(new Set(requests).size).toBe(1);
+  expect(latest).toMatchObject({ inventory: { boopon: 0 }, fetchedAt: new Date(now.getTime() + 47_000).toISOString() });
+
+  for (const retryAfter of [undefined, "07x", "1.5", "100", new Date(now.getTime() + 5_000).toISOString()]) {
+    let attempts = 0;
+    waits.length = 0;
+    await expect(readZzzTuningInventory(source, async () => { attempts++; return tooSoon(retryAfter); }, clockOptions))
+      .rejects.toBeInstanceOf(ZzzTuningRateLimitError);
+    expect(waits).toEqual([]);
+    expect(attempts).toBe(1);
+  }
+
+  let attempts = 0;
+  await expect(readZzzTuningInventory(source, async () => {
+    attempts++;
+    return tooSoon(attempts === 1 ? "36" : "2");
+  }, clockOptions)).rejects.toBeInstanceOf(ZzzTuningRateLimitError);
+  expect(attempts).toBe(2);
+  expect(waits).toEqual([36_000]);
+});
+
+test("等待期间档案变化或取消会拦截同一 URL 的第二次读取", async () => {
+  for (const abort of [false, true]) {
+    const controller = new AbortController();
+    const changed = new HoyoRequestError("profile-changed", "档案已变化。");
+    let calls = 0;
+    let stale = false;
+    await expect(readZzzTuningInventory(source, async () => {
+      calls++;
+      return new Response(null, { status: 429, headers: { "Retry-After": "1" } });
+    }, {
+      ...options, signal: controller.signal,
+      async sleep(milliseconds, signal) {
+        expect(milliseconds).toBe(15_000);
+        expect(signal).toBe(controller.signal);
+        if (abort) controller.abort();
+        else stale = true;
+      },
+    }, async () => { if (stale) throw changed; }))
+      .rejects.toMatchObject({ code: abort ? "transport" : "profile-changed" });
+    expect(calls).toBe(1);
+  }
+});
+
+test("空缺的可选库存数量保留未知，零数量不丢，也不阻断六频段调频", async () => {
+  const cur_tickets = [
+    { ticket_type: "GACHA_TICKET_TYPE_RECHARGE_MONOCHROME", ticket_cnt: "0" },
+    { ticket_type: "GACHA_TICKET_TYPE_POLYCHROME", ticket_cnt: "" },
+    { ticket_type: "GACHA_TICKET_TYPE_ENCRYPTED_MASTER_TAPE", ticket_cnt: null },
+    { ticket_type: "GACHA_TICKET_TYPE_MASTER_TAPE" },
+    { ticket_type: "GACHA_TICKET_TYPE_BOOPON", ticket_cnt: 18 },
+  ];
+  const inventory = { monochrome: 0, boopon: 18 };
+  const snapshot = await readZzzTuning(source, async url => url.pathname.endsWith("/index")
+    ? ok({ ...index(), cur_tickets }) : answer(url), options);
+  expect(snapshot.pools).toHaveLength(6);
+  expect(snapshot.inventory).toEqual(inventory);
+  expect(await readZzzTuningInventory(source, async () => ok({ cur_tickets }), options)).toMatchObject({ inventory });
+  await expect(readZzzTuningInventory(source, async () => ok({ cur_tickets: [
+    ...cur_tickets, { ticket_type: "GACHA_TICKET_TYPE_BOOPON", ticket_cnt: 4 },
+  ] }), options)).rejects.toThrow("库存数值无效");
 });
