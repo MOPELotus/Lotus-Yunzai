@@ -1,0 +1,66 @@
+{
+  "repository": "https://github.com/kissnavel/bujidaoRUN",
+  "revision": "158ef95861fd05f7bc5bd519e9e28d2b69f621d3",
+  "files": [
+    {
+      "path": "genshin/img/dailyNote/bg/bg.png",
+      "source": "resources/genshin/img/dailyNote/bg/bg.png",
+      "bytes": 643074,
+      "sha256": "2a65e856afa7b86b7478ad2fda7fda94d87e16b5d863addcd256c6e757d94511"
+    },
+    {
+      "path": "genshin/img/dailyNote/树脂.png",
+      "source": "resources/genshin/img/dailyNote/树脂.png",
+      "bytes": 6038,
+      "sha256": "1170f60230c2308fc2b409c2c9acf51a1d26bcd40de60e944de8e2f1e8075c9a"
+    },
+    {
+      "path": "StarRail/img/dailyNote/bg.png",
+      "source": "resources/StarRail/img/dailyNote/bg.png",
+      "bytes": 246494,
+      "sha256": "932109754878c0513a40bbbab7fef52962c8fb0a4bee753bff4c0860a667764a"
+    },
+    {
+      "path": "ZZZero/img/dailyNote/bg.png",
+      "source": "resources/ZZZero/img/dailyNote/bg.png",
+      "bytes": 63214,
+      "sha256": "45dad72347c1527a5801e624ec3ebaf0dc7e786d0bf86f0d82b8bc629beaa40f"
+    },
+    {
+      "path": "ZZZero/img/dailyNote/电池.png",
+      "source": "resources/ZZZero/img/dailyNote/电池.png",
+      "bytes": 13032,
+      "sha256": "4e4df34578d336dd8a5e35f632342b5316e017bfe05821c9d937929d5c93c863"
+    },
+    {
+      "path": "fonts/MiSans-Regular.ttf",
+      "source": "resources/fonts/MiSans-Regular.ttf",
+      "bytes": 7924400,
+      "sha256": "7172aa1b5c703780ee12df3fe4c50481dde01f3b125a045a398000a88d032ae5"
+    },
+    {
+      "path": "fonts/HYWenHei.ttf",
+      "source": "resources/fonts/HYWenHei.ttf",
+      "bytes": 7232220,
+      "sha256": "fcc8454a5ea27e2cd5a0e435ca83e0b5a87af31c95a2e57e74975c3e9df96d23"
+    },
+    {
+      "path": "fonts/HYWenHei-55W.ttf",
+      "source": "resources/fonts/HYWenHei-55W.ttf",
+      "bytes": 3243096,
+      "sha256": "29e982b71514c7000f9e726cf354c5dabc686a1ceae5961713d0b07e9528a60c"
+    },
+    {
+      "path": "fonts/tttgbnumber.ttf",
+      "source": "resources/fonts/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+    },
+    {
+      "path": "fonts/ZZZ.ttf",
+      "source": "resources/fonts/ZZZ.ttf",
+      "bytes": 1925852,
+      "sha256": "d2ac904501673027d6ca891abdcd346d2ae6527a713fcb477a151b47162185b2"
+    }
+  ]
+}

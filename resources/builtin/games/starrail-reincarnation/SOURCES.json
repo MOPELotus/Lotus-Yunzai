@@ -1,0 +1,178 @@
+{
+  "manifest": "plugins/starrail/simulation/reincarnation-assets.ts",
+  "images": {
+    "repository": "https://github.com/jiuyixian/StarRail",
+    "revision": "7ce226b6c2374996249ca54ac2acac1a549bb860"
+  },
+  "fonts": {
+    "repository": "https://github.com/Nwflower/flower-plugin",
+    "revision": "32139ee8b48c9bbea85f2ce48dd36007811b35c2"
+  },
+  "files": [
+    {
+      "path": "img/bg/bg1.png",
+      "bytes": 89158,
+      "sha256": "7df9e1aa54dc8176aad8cc66be781bfda864f9a6181c89eab7ef1590d230e619"
+    },
+    {
+      "path": "img/icon/allegiance/仙舟「罗浮」.png",
+      "bytes": 348589,
+      "sha256": "fecb364703fc3a369441b7dae701a02610a70d01f5ee698104f93d185878c459"
+    },
+    {
+      "path": "img/icon/allegiance/仙舟联盟.png",
+      "bytes": 376971,
+      "sha256": "8e44febbde1631c5a121d3fd7d7e8f1142a99980d022a412ade3337b1b012643"
+    },
+    {
+      "path": "img/icon/allegiance/匹诺康尼.png",
+      "bytes": 351005,
+      "sha256": "afc69b9cadd5c6948350e23555d28b02037a1bac12584e82ddf471662a8be58f"
+    },
+    {
+      "path": "img/icon/allegiance/博识学会.png",
+      "bytes": 334324,
+      "sha256": "f2ed3c6764dffb750ab113c5d3d73db6f4d5c1bf6305276b5cd35459d5fc8d67"
+    },
+    {
+      "path": "img/icon/allegiance/家族.png",
+      "bytes": 317986,
+      "sha256": "d01057667c51fe3db3ec481a58b8a8cd728eadc226713271b7609a4ff1ab29b8"
+    },
+    {
+      "path": "img/icon/allegiance/巡海游侠.png",
+      "bytes": 363492,
+      "sha256": "cbabf020391e3af0a91f45f802142d758cfa9439b7ad639e5b7b16477353e395"
+    },
+    {
+      "path": "img/icon/allegiance/星核猎手.png",
+      "bytes": 263173,
+      "sha256": "f8704b6d195241c78171a8cb4ee3c501c8dfc9def2d5c1e9838e3d772856c638"
+    },
+    {
+      "path": "img/icon/allegiance/星神.png",
+      "bytes": 33786,
+      "sha256": "bb753e39f803e7d8c62b9b7dbe920adfa56a9a09ef0f53e10b4484208d862a0c"
+    },
+    {
+      "path": "img/icon/allegiance/星际和平公司.png",
+      "bytes": 291074,
+      "sha256": "5955f0e3c46b2ad9bff62a60289296670c1a5ea32a1f2e27c90a24262087a5bc"
+    },
+    {
+      "path": "img/icon/allegiance/空间站「黑塔」.png",
+      "bytes": 378181,
+      "sha256": "b9d8070752b983654cfcb5496ef8026038ef9e22d7269bf3c4521fe0b099573c"
+    },
+    {
+      "path": "img/icon/allegiance/翁法罗斯.png",
+      "bytes": 561196,
+      "sha256": "0a3ffb9a73b09a33364aad1a35b1986ae0371df21543ebd7a1ef453bc1e488af"
+    },
+    {
+      "path": "img/icon/allegiance/贝洛伯格.png",
+      "bytes": 380403,
+      "sha256": "4345231c8d67043eb5e8657a96ae0ffb23a01c3dcbe29e6013e8b71288a0f06a"
+    },
+    {
+      "path": "img/icon/other/IX.png",
+      "bytes": 189102,
+      "sha256": "d29d27477ea1a2562cb6c7db4f0ab3eb64e76aaeb8b912bf6927002a36b9f88f"
+    },
+    {
+      "path": "img/icon/other/互.png",
+      "bytes": 64386,
+      "sha256": "12fc9be411efdc18d2031e13c83e1ac3f7153131ea6feb35fb2e1f22329362b6"
+    },
+    {
+      "path": "img/icon/other/克里珀.png",
+      "bytes": 124696,
+      "sha256": "72a69dcab6ef5a93bf59d655c54f1e94e42b39ac472ad00613c1fe1d812360e4"
+    },
+    {
+      "path": "img/icon/other/博识尊.png",
+      "bytes": 187360,
+      "sha256": "810a1e8bc7c8a64165a41dfc438fff299e398929fc6cf0985a1e5f274d017d03"
+    },
+    {
+      "path": "img/icon/other/塔伊兹育罗斯.png",
+      "bytes": 131732,
+      "sha256": "c8729ec425406a43cf109d45ea910ac3db0b43f1caaf7a764d17951abd784a9a"
+    },
+    {
+      "path": "img/icon/other/太一.png",
+      "bytes": 174394,
+      "sha256": "803e2380b006a99c9d11c72fc6ebbf8643fc295a18e49a0f7821e76be610ce7e"
+    },
+    {
+      "path": "img/icon/other/奥博洛斯.png",
+      "bytes": 113588,
+      "sha256": "27a8957e31df5250228d3562345891861a26bb4be83a94a1ae065eab44f19ea8"
+    },
+    {
+      "path": "img/icon/other/岚.png",
+      "bytes": 225522,
+      "sha256": "20b1078fc362517a97b413824dec53e6bf6d23108808cfd42768e007ce5a40f6"
+    },
+    {
+      "path": "img/icon/other/希佩.png",
+      "bytes": 200770,
+      "sha256": "2b57a4284f225a044b772c6af965f3c13187be01a8df662ce6496d02d9c26128"
+    },
+    {
+      "path": "img/icon/other/浮黎.png",
+      "bytes": 203010,
+      "sha256": "d23baa9981de39ee2be886d29903412aa138ca763454855679e0f621dbf21e70"
+    },
+    {
+      "path": "img/icon/other/纳努克.png",
+      "bytes": 203562,
+      "sha256": "8d067f5d0040940a7d591b772789578b35d22aa8fe263489517f3679233bd98f"
+    },
+    {
+      "path": "img/icon/other/药师.png",
+      "bytes": 198068,
+      "sha256": "bb3b3fb60407e9e3ef0186625e853c1114b3d27571268eb7a112e72c17862391"
+    },
+    {
+      "path": "img/icon/other/迷思.png",
+      "bytes": 257084,
+      "sha256": "f81474f9305567029a3f08e77fdd1e74ad6daa44cd6b42836fd1a24ff6deaed9"
+    },
+    {
+      "path": "img/icon/other/阿哈.png",
+      "bytes": 176492,
+      "sha256": "bec10271cf5c16b9d6c8a66ec3c8fba2bc4ab3750a48fe7634779d64590fb5cd"
+    },
+    {
+      "path": "img/icon/other/龙.png",
+      "bytes": 318960,
+      "sha256": "4f767b0da884de85b48590bfba32d3f1976be57f56f642de9505835f7941eba1"
+    },
+    {
+      "path": "yaml/color.yaml",
+      "bytes": 239,
+      "sha256": "772440f77798a0c50892a5e68c3d8e034db1838cad4f632ff500d01bbdd4ef2c"
+    },
+    {
+      "path": "yaml/identity.yaml",
+      "bytes": 20294,
+      "sha256": "12c76a16b9429a45fedb7c8a8769256aac842bd0a135a321c1576aeced201f23"
+    },
+    {
+      "path": "yaml/other.yaml",
+      "bytes": 4836,
+      "sha256": "f44bcfc8d43a56abcf734ea827d86c6262ad81390fdd7e666ce318e84eb3412a"
+    },
+    {
+      "path": "font/NZBZ.ttf",
+      "bytes": 1502040,
+      "sha256": "26e130f37e0f59f8d0eaa7c96662de0545595bf04675c01e037e49de84de6bc3"
+    },
+    {
+      "path": "font/SHCN-Bold.otf",
+      "bytes": 11772444,
+      "sha256": "90118f6c20e798e12ea9e5b476ce920de94de2f505fc83fe641989d32da38a65"
+    }
+  ]
+}

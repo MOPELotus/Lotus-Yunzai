@@ -1,0 +1,116 @@
+<script src="../../../../../Yunzai-Botconfig/miao-diy/app/main.js"></script>{{extend defaultLayout}}
+
+{{block 'css'}}
+<link rel="stylesheet" type="text/css" href="{{_res_path}}/stat/common.css?v=1.0"/>
+<link rel="stylesheet" type="text/css" href="{{_res_path}}/common/tpl.css?v=1.0"/>
+<link rel="stylesheet" type="text/css" href="{{_res_path}}/stat/role-summary.css?v=1.1"/>
+{{/block}}
+
+{{block 'main'}}
+{{set difficultyName = {1:'简单', 2:'普通', 3:'困难', 4:'卓越', 5:'月谕'} }}
+{{set stat = role.stat || {} }}
+{{set heraldry = [0,1,2,3,4,5,6].includes(+stat.heraldry) ? +stat.heraldry : 0 }}
+{{set medals = stat.get_medal_round_list || [] }}
+{{set cardTypes = {1:['wide wide2'], 2:['wide','wide'], 3:['wide','mini','mini'], 4:['mini','mini','mini','mini']} }}
+<div class="head-box type">
+  <div class="title">#幻想真境剧诗<span>{{role.month}}月 · {{difficultyName[stat.difficulty_id] || '未知'}}模式</span></div>
+  <div class="uid">UID:{{uid}}</div>
+</div>
+<div class="info_box">
+  <div class="role-overview">
+    <div class="cont overview-highlights">
+      <div class="overview-record">
+        <img class="record-trophy" src="{{_res_path}}/stat/imgs/role-record-heraldry-{{heraldry}}.png" alt="剧诗奖杯"/>
+        <div class="record-info">
+          <span class="record-label">最佳记录</span>
+          <strong class="record-progress"><span><small>第</small>{{stat.max_round_id || '—'}}<small>幕</small></span>{{if stat.difficulty_id == 5}}<span class="record-tarot">圣牌 {{stat.tarot_finished_cnt ?? '—'}}</span>{{/if}}</strong>
+        </div>
+      </div>
+      <div class="role-medals">
+        {{set medalGroups = stat.difficulty_id == 5 && medals.length > 10 ? [medals.slice(0, 10), medals.slice(10)] : [medals] }}
+        {{each medalGroups group}}
+        <div class="medal-group" style="flex-grow:{{group.length || 1}}">
+          {{each group medal}}
+          <img class="{{medal ? '' : 'is-missing'}}" src="{{_res_path}}/stat/imgs/{{medal ? 'medal' : 'nomedal'}}.png" alt=""/>
+          {{/each}}
+        </div>
+        {{/each}}
+        {{if !medals.length}}<span class="empty-text">暂无星章数据</span>{{/if}}
+      </div>
+      <div class="overview-label"><strong>{{medals.filter(value => value == 1).length}}<small>/{{medals.length}}</small></strong></div>
+    </div>
+    <div class="cont overview-item"><span>总耗时</span><strong>{{stat.total_use_time || 0}}<small>秒</small></strong></div>
+    <div class="cont overview-item"><span>消耗幻剧之花</span><strong>{{stat.coin_num || 0}}</strong></div>
+    <div class="cont overview-item"><span>场外观众声援</span><strong>{{stat.avatar_bonus_num || 0}}<small>次</small></strong></div>
+    <div class="cont overview-item"><span>支援其他玩家</span><strong>{{stat.rent_cnt || 0}}<small>次</small></strong></div>
+  </div>
+  {{each role.rounds || [] round}}
+  {{set currentAvatars = round.avatars || [] }}
+  {{set buffs = round.splendour_buff?.buffs || [] }}
+  {{set blessingLevel = round.splendour_buff?.summary?.total_level || 0 }}
+  {{set choiceCards = round.choice_cards || [] }}
+  {{set enemy = round.enemies?.[0] }}
+  <div class="cont role-round {{round.is_tarot ? 'is-tarot' : ''}}">
+    <div class="cont-body">
+      <div class="role-title">
+        <img class="role-star" src="{{_res_path}}/stat/imgs/{{round.is_get_medal ? 'medal' : 'nomedal'}}.png" alt=""/>
+        <strong>{{round.title}}</strong>
+        <span class="round-time">{{round.finish_time}}</span>
+      </div>
+      <div class="role-round-grid">
+        <div class="role-team">
+          {{each currentAvatars avatar idx}}
+          <% include(_tpl_path+'/avatar-card.html', [avatars[avatar.card_key || avatar.avatar_id], {_res_path, cardType:cardTypes[currentAvatars.length]?.[idx] || 'mini'}]) %>
+          {{/each}}
+          {{if !currentAvatars.length}}<div class="role-team-empty">暂无队伍数据</div>{{/if}}
+        </div>
+        <div class="role-round-details">
+          <div class="role-blessings">
+            <div class="role-section-title">辉彩祝福</div>
+            <div class="blessing-list" style="--blessing-columns:{{buffs.length >= 3 ? 4 : buffs.length + 1}}">
+              <div class="blessing-item {{blessingLevel ? '' : 'is-zero'}}">
+                <img class="blessing-icon blessing-crown" src="{{_res_path}}/stat/imgs/role-splendour-crown.png" alt="辉彩祝福总等级"/>
+                <div class="blessing-level"><span>Lv.</span>{{blessingLevel}}</div>
+              </div>
+              {{each buffs buff}}
+              <div class="blessing-item {{buff.level ? '' : 'is-zero'}}">
+                {{if buff.icon}}<img class="blessing-icon" src="{{buff.icon}}" alt=""/>
+                {{else}}<div class="blessing-icon missing-icon">◇</div>{{/if}}
+                <div class="blessing-level"><span>Lv.</span>{{buff.level || 0}}</div>
+              </div>
+              {{/each}}
+            </div>
+          </div>
+          <div class="role-support">
+            <div class="role-enemy">
+              <div class="role-section-title">敌人</div>
+              {{if enemy?.icon}}<img class="enemy-icon" src="{{enemy.icon}}" alt=""/>
+              {{else}}<div class="enemy-icon missing-icon">—</div>{{/if}}
+            </div>
+            <div class="role-harvest">
+              <div class="role-section-title">神秘收获<span>×{{choiceCards.length}}</span></div>
+              <div class="harvest-list">
+                {{each choiceCards card}}
+                {{if card.icon}}<img class="harvest-icon" src="{{card.icon}}" alt=""/>{{/if}}
+                {{/each}}
+                {{if !choiceCards.length}}<span class="empty-text">暂无收获</span>{{/if}}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{/each}}
+  <div class="cont role-notice">
+    <div class="cont-body">
+      <ul class="cont-msg">
+        <li><strong>明星挑战星章</strong>不仅作为展示用，<strong>也会</strong>影响挑战的奖励领取~</li>
+        <li>各关卡按照<strong>挑战时间顺序</strong>展示</li>
+        <li>仅展示<strong>已挑战成功</strong>的<strong>圣牌挑战</strong>，未挑战成功的<strong>圣牌挑战</strong>不会被展示</li>
+        <li>自有角色装备与圣遗物为当前最新状态，试用与助演角色仅显示占位图标</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{{/block}}

@@ -1,0 +1,30 @@
+{
+  "repository": "https://github.com/MOPELotus/Lotus-ReFactor",
+  "revision": "eaf7675324dae64e51652bf9669ef93247d02b42",
+  "files": [
+    {
+      "path": "floor12.png",
+      "source": "img/abyss/floor12.png",
+      "bytes": 53663,
+      "sha256": "294d635062bfff1d0cb6e5a30259b8119b8a33eec46e9b97dd5e9bb5446bca2f"
+    },
+    {
+      "path": "star.png",
+      "source": "img/abyss/star.png",
+      "bytes": 2586,
+      "sha256": "76b9e65b21309733d0e5720a819d0a3a924de4babf7abd3dea272457e9116e7f"
+    },
+    {
+      "path": "fonts/HYWenHei-55W.ttf",
+      "source": "font/HYWenHei-55W.ttf",
+      "bytes": 3243096,
+      "sha256": "29e982b71514c7000f9e726cf354c5dabc686a1ceae5961713d0b07e9528a60c"
+    },
+    {
+      "path": "fonts/tttgbnumber.ttf",
+      "source": "font/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+    }
+  ]
+}

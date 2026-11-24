@@ -1,0 +1,53 @@
+{
+  "definition": "packages/skia/daily-note-assets.ts",
+  "provenance": "Exact fixed-revision originals already identified and hashed by this source manifest.",
+  "files": [
+    {
+      "path": "miao-theme/fonts/HYWH-65W.ttf",
+      "bytes": 3155072,
+      "sha256": "809ab0683bff573c55305c2c723c1692c64d6ecfdb78620b6b99d7a66d662dff"
+    },
+    {
+      "path": "source-templates/miao-stat/fonts/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+    },
+    {
+      "path": "fonts/MiSans-VF.ttf",
+      "bytes": 20000736,
+      "sha256": "5daf8d5447bfd423cfdec94a0e07c53b205892223ccc6ea21b7b8a37248b44d9"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/树脂.png",
+      "bytes": 2039,
+      "sha256": "785d2c7ae3db6fcef67dbd52c7defa18a1d22292c475a1eb07482294b3a92b52"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/洞天宝钱.png",
+      "bytes": 1822,
+      "sha256": "f0ac130be40dd3d38025c527d9e27c5fd7dcc4eb8a42ea04caaddcd20ff90e07"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/委托.png",
+      "bytes": 1948,
+      "sha256": "fee48af414a9cb5083de09c3834ed2d53f5455fbecde021a2d48b7a6a537ffde"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/派遣.png",
+      "bytes": 8091,
+      "sha256": "8a5daea24a26cca3d92a83f6367b18d1f755118c32d0ee1668b54331fbbe93c2"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/周本.png",
+      "bytes": 991,
+      "sha256": "7899305b74a4bad2bcfe3f05f348185727a4cf684f6725c2939bd4aff0d7d7e3"
+    },
+    {
+      "path": "source-templates/genshin/note-icons/gs/参量质变仪.png",
+      "bytes": 2084,
+      "sha256": "6e1a454a3143106e5b1d03dc8a88a4e9738f8c1a1101e310a588e3c49f35f4f6"
+    }
+  ],
+  "repository": "https://github.com/MOPELotus/Lotus-ReFactor",
+  "revision": "e28c6df5fd6212ce5943b4a9f7fba6e2bca32653"
+}

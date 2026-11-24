@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/MemeCrafters/meme-generator-rs",
+  "revision": "9c0607407675a2a92d4d24b5fbbeaf0cc119db67",
+  "files": [
+    {
+      "path": "NotoColorEmoji.ttf",
+      "source": "resources/fonts/NotoColorEmoji.ttf",
+      "bytes": 10643852,
+      "sha256": "39ee3c587e10e89669b9ff32703261d10d5f9c4dd5ad147b6b5a1c5200591817",
+      "license": "OFL-1.1"
+    }
+  ]
+}

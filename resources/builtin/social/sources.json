@@ -1,0 +1,269 @@
+{
+  "format": 1,
+  "files": [
+    {
+      "path": "likes/ganyu/0.png",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/ganyu/0.png",
+      "sha256": "6c2ba3b5b8091b20d6092fd442a2264ca7ac95d48358dc99c4d3209f43269b36",
+      "size": 285179
+    },
+    {
+      "path": "likes/bixin/0.png",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/bixin/0.png",
+      "sha256": "f657ef6a9da5d0ce9c158d7005e5852f7229d1f8e5ec4b6f5a5181b84cef2e80",
+      "size": 352137
+    },
+    {
+      "path": "likes/bixin/1.png",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/bixin/1.png",
+      "sha256": "6a8ec09cb82b758aa428e21a417b723c369ae0b7eeeab5d53bcb3193f264b101",
+      "size": 512452
+    },
+    {
+      "path": "likes/bixin/52.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/bixin/52.jpg",
+      "sha256": "b7c2b715be2c0824ac8e055e47e08e4acc6b44f799952d42dc6997079ee00188",
+      "size": 53038
+    },
+    {
+      "path": "likes/crawl/1.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/1.jpg",
+      "sha256": "e52a11d32e8c5f93a475004807c9c0d197b56202f93e8ba45de41f48718f362d",
+      "size": 36461
+    },
+    {
+      "path": "likes/crawl/2.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/2.jpg",
+      "sha256": "c3a1971981f09ef178e90c35266850efc3f76201c8b893dae3f33c7d98ecb833",
+      "size": 146527
+    },
+    {
+      "path": "likes/crawl/3.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/3.jpg",
+      "sha256": "0136ada6d5dfc757d2228a826aed4093c97334e91103809a10fd82ae9d7da59a",
+      "size": 118341
+    },
+    {
+      "path": "likes/crawl/4.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/4.jpg",
+      "sha256": "6c0656fafba997cf37274cebb75db9045b6393cb74e6fb1eeeb08c85353cbc20",
+      "size": 34892
+    },
+    {
+      "path": "likes/crawl/5.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/5.jpg",
+      "sha256": "129707bc86df4d5c9d54ba30cab72756307a272727cc4cdb32d96e759c7b96c8",
+      "size": 40993
+    },
+    {
+      "path": "likes/crawl/6.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/6.jpg",
+      "sha256": "71f545f9d2f27d6c2bf1539ad8a0a671a33977bf0b094d9e3f1e270a74fac2fa",
+      "size": 38582
+    },
+    {
+      "path": "likes/crawl/7.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/7.jpg",
+      "sha256": "bd103a4bc982fc872aab808bddfe42eaa5e564b0d6d84b4c3a33b50f0aea5433",
+      "size": 33718
+    },
+    {
+      "path": "likes/crawl/8.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/8.jpg",
+      "sha256": "271d4bdb55db44fdd8d8632d000b4947ebce3db9a739c4b295c56f60bdf3fd65",
+      "size": 113883
+    },
+    {
+      "path": "likes/crawl/9.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/9.jpg",
+      "sha256": "623279fb1f5078042bd1e5de2e5aaf3a6cd1128e726fd690d659524df4b3909c",
+      "size": 57655
+    },
+    {
+      "path": "likes/crawl/10.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/10.jpg",
+      "sha256": "9dbb17a970d9e8a6b8cad178dd0e8d75fa82dd5101e9f5ca8a7ab92202d69159",
+      "size": 55447
+    },
+    {
+      "path": "likes/crawl/11.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/11.jpg",
+      "sha256": "245a5cb8003146a7d3df697633bf5d81983d6c5946934e51a700fd0c088422c7",
+      "size": 58774
+    },
+    {
+      "path": "likes/crawl/12.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/12.jpg",
+      "sha256": "3340704c8f0f51f1b1410fbd44e94251ed68ecebed6a85b263c449bb969a9ad8",
+      "size": 53697
+    },
+    {
+      "path": "likes/crawl/13.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/13.jpg",
+      "sha256": "22bd115732435ec7001697a638a41c46895751b0b6380907ae899d89ece336cd",
+      "size": 150789
+    },
+    {
+      "path": "likes/crawl/14.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/14.jpg",
+      "sha256": "c95b87ca069bb200b02a3697d1819c39c370c2ddd60b94ab976eefdb071c7f7c",
+      "size": 75702
+    },
+    {
+      "path": "likes/crawl/15.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/memes/crawl/15.jpg",
+      "sha256": "d0b63588053ff69eff0cca3db8695d1d34f17233d3f5522482011c03b7f9e571",
+      "size": 100888
+    },
+    {
+      "path": "group/admin/imgs/bg/default.jpg",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/admin/imgs/bg/default.jpg",
+      "sha256": "fff8e17d03ad48fc4ef841627db05271e5f8f0695383716948b9f090cb633236",
+      "size": 718506
+    },
+    {
+      "path": "group/common/font/FZB.ttf",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/common/font/FZB.ttf",
+      "sha256": "84c7f9bcded4e086c7c0fd14e51dfcd96f21a3ea948b91b16043a25c6a39b1c5",
+      "size": 1813432
+    },
+    {
+      "path": "group/common/font/NZBZ.ttf",
+      "source": "https://github.com/MOPELotus/yenai-plugin.git",
+      "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+      "originalPath": "resources/common/font/NZBZ.ttf",
+      "sha256": "26e130f37e0f59f8d0eaa7c96662de0545595bf04675c01e037e49de84de6bc3",
+      "size": 1502040
+    },
+    {
+      "path": "guides/img/AkashaHelp.png",
+      "source": "https://gitee.com/Rrrrrrray/mora-plugin.git",
+      "revision": "8667289b51a70e144336a968008f46ded1fbcc91",
+      "originalPath": "resources/img/AkashaHelp.png",
+      "sha256": "c53dea1fbc0966b18a503aa0d6706b860c5634ee0a9563ec6756c73bc1da7fc3",
+      "size": 205150
+    },
+    {
+      "path": "notice/gs-header.png",
+      "source": "https://github.com/TimeRainStarSky/Yunzai-genshin.git",
+      "revision": "0290a17cd42c52671e3130fe4a0a5aa38a64faa4",
+      "originalPath": "resources/html/mysNews-list/蒙德.png",
+      "sha256": "c0d83c63ec43f554f396504f102165887f093c8b45a7931df68b208b9542336d",
+      "size": 22651
+    },
+    {
+      "path": "yuki/img/icon/puplic/diagram.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/diagram.png",
+      "sha256": "880d034710c797008fd4963a77ce2143d1bc63645b7834c9877b13addf82f1a3",
+      "size": 57344
+    },
+    {
+      "path": "yuki/img/icon/puplic/tourbillon_device.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/tourbillon_device.png",
+      "sha256": "aa461795bd3081fd0cb5e668e7a6fd2161bbc394721653ee7dc9b65045aaa4c4",
+      "size": 57344
+    },
+    {
+      "path": "yuki/img/icon/puplic/restaurant_smoothie.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/restaurant_smoothie.png",
+      "sha256": "39d6963d2854be14c96d5b4158c20939ddec31779ecf0b5b83f85f9faeec340d",
+      "size": 69632
+    },
+    {
+      "path": "yuki/img/icon/puplic/archaic_stone.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/archaic_stone.png",
+      "sha256": "fe3a96ee8eb18a919ede02b770b703b3622e96321448c56a6550c4f56d08506b",
+      "size": 57344
+    },
+    {
+      "path": "yuki/img/icon/puplic/kamera.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/kamera.png",
+      "sha256": "333923fdedd69e4932b75c0666bb57072e421b621137356e6c429aca5a6bf0de",
+      "size": 61440
+    },
+    {
+      "path": "yuki/img/icon/puplic/flower_2.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/flower_2.png",
+      "sha256": "6371786d38b1bd3c3b1b5244a8ee61e054d48b65c243feecb5d0d8058fc69b47",
+      "size": 32768
+    },
+    {
+      "path": "yuki/img/icon/puplic/shell.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/shell.png",
+      "sha256": "208b61632c9110cd36a6e36104e6230c8442f2856c7f16be11e1d4259e62c7ab",
+      "size": 57344
+    },
+    {
+      "path": "yuki/img/icon/puplic/romaritime_flower.png",
+      "source": "https://github.com/snowtafir/yuki-plugin",
+      "revision": "b1d8fecf41d03f92746bb2404b0b0381a24103a5",
+      "originalPath": "resources/img/icon/puplic/romaritime_flower.png",
+      "sha256": "8daf28832a0cce489ad69655ff3f88b42f4ad1a97f959911a45f9e03c82ba711",
+      "size": 49152
+    }
+  ],
+  "fontSubstitutions": [
+    {
+      "consumer": "plugins/media/services/subscriptions/bilibili/login-card.ts",
+      "original": "OPSans.woff2",
+      "replacement": "resources/builtin/core/passport/fonts/MiSans-VF.ttf",
+      "reason": "旧Yuki字体不在当前依赖，固定内置MiSans提供中文覆盖，不依赖系统字体"
+    }
+  ]
+}

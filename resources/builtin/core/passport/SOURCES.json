@@ -1,0 +1,48 @@
+{
+  "repository": "https://github.com/MOPELotus/Lotus-ReFactor",
+  "revision": "6e374cd871283f70995bd609fe20566cf2f3d9c6",
+  "files": [
+    {
+      "path": "miao-theme/fonts/HYWH-65W.ttf",
+      "source": "resources/miao-theme/fonts/HYWH-65W.ttf",
+      "bytes": 3155072,
+      "sha256": "809ab0683bff573c55305c2c723c1692c64d6ecfdb78620b6b99d7a66d662dff"
+    },
+    {
+      "path": "source-templates/miao-stat/fonts/NZBZ.ttf",
+      "source": "resources/source-templates/miao-stat/fonts/NZBZ.ttf",
+      "bytes": 1501200,
+      "sha256": "979eb11a284220d6e3077d2ff63ed6398dec84ef90a0908c4d9fa28f37bf5dc9"
+    },
+    {
+      "path": "source-templates/miao-stat/fonts/tttgbnumber.ttf",
+      "source": "resources/source-templates/miao-stat/fonts/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+    },
+    {
+      "path": "fonts/MiSans-VF.ttf",
+      "source": "resources/fonts/MiSans-VF.ttf",
+      "bytes": 20000736,
+      "sha256": "5daf8d5447bfd423cfdec94a0e07c53b205892223ccc6ea21b7b8a37248b44d9"
+    },
+    {
+      "path": "miao-theme/bg/bg-hydro.webp",
+      "source": "resources/miao-theme/bg/bg-hydro.webp",
+      "bytes": 60760,
+      "sha256": "5ce05fb55269df615bea9cff080729d46774048fb8e180db4d11b4d7d9ad1ffd"
+    },
+    {
+      "path": "source-templates/miao/common/theme/bg-01.jpg",
+      "source": "resources/source-templates/miao/common/theme/bg-01.jpg",
+      "bytes": 38498,
+      "sha256": "d5b490544270e277ad531f80dda8fc99f7891d19ad2c89f42fb022f4b114dfbe"
+    },
+    {
+      "path": "source-templates/miao/common/theme/main-01.png",
+      "source": "resources/source-templates/miao/common/theme/main-01.png",
+      "bytes": 761092,
+      "sha256": "83dc908b1a6c9d02056a4e6cd46611a61d983467c5eb0142f248a0b6a7a8e8ee"
+    }
+  ]
+}

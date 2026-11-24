@@ -1,0 +1,123 @@
+{
+  "definition": "plugins/atlas/prepare-theme.ts",
+  "provenance": "Exact fixed-revision originals already identified and hashed by this source manifest.",
+  "files": [
+    {
+      "path": "bg/bg-anemo.webp",
+      "bytes": 62392,
+      "sha256": "bcba9f3b53596d40b2e83148d17894ee83d7b7aa07c0519d5f29bc2de7c79ee7"
+    },
+    {
+      "path": "bg/bg-cryo.webp",
+      "bytes": 54930,
+      "sha256": "893b8c56ded4ffc5cf74e9cd018539ff7fd56c0b1ed98db6742cce46819bd2c6"
+    },
+    {
+      "path": "bg/bg-dendro.webp",
+      "bytes": 64558,
+      "sha256": "f532a38940e0a34a5f03f58e2b1280d6009e5bf203f4f9a9303fb96abff45a3b"
+    },
+    {
+      "path": "bg/bg-electro.webp",
+      "bytes": 50528,
+      "sha256": "bacce219687c54479b455324fbefea20545e1458263e690a7a3b3a8d672d6699"
+    },
+    {
+      "path": "bg/bg-geo.webp",
+      "bytes": 58854,
+      "sha256": "9e681eb0c7d923ae99da5dbbe0856a365efbf0ffc72481930a424863b5543e00"
+    },
+    {
+      "path": "bg/bg-hydro.webp",
+      "bytes": 60760,
+      "sha256": "5ce05fb55269df615bea9cff080729d46774048fb8e180db4d11b4d7d9ad1ffd"
+    },
+    {
+      "path": "bg/bg-pyro.webp",
+      "bytes": 57284,
+      "sha256": "48e21bd1ba01db1466a47b3c7f1866d07f1caee82f9493037860b1fd4d5cd44c"
+    },
+    {
+      "path": "bg/bg-quantum.webp",
+      "bytes": 268292,
+      "sha256": "1c2549c787db19660615d4f87621fb16a41648fc41ba7c9595f049b117806629"
+    },
+    {
+      "path": "bg/bg-sr.webp",
+      "bytes": 322836,
+      "sha256": "cf98007bc4ba9f56138104319ece79856b4aa6c4cb6ac12271724ac4c482ed5f"
+    },
+    {
+      "path": "card-bg.png",
+      "bytes": 2594,
+      "sha256": "b7476ae9954e8d884df881dfb398fc701cce1a91ea091ecd895d8449437ff2af"
+    },
+    {
+      "path": "fonts/HYWH-65W.ttf",
+      "bytes": 3155072,
+      "sha256": "809ab0683bff573c55305c2c723c1692c64d6ecfdb78620b6b99d7a66d662dff"
+    },
+    {
+      "path": "fonts/MiSans-VF.ttf",
+      "bytes": 20000736,
+      "sha256": "5daf8d5447bfd423cfdec94a0e07c53b205892223ccc6ea21b7b8a37248b44d9"
+    },
+    {
+      "path": "bg/talent-anemo.webp",
+      "bytes": 8412,
+      "sha256": "e40653924caa342a853f34deb868379f13857e3b6bf9131a706724f1a5762dfb"
+    },
+    {
+      "path": "bg/talent-cryo.webp",
+      "bytes": 8476,
+      "sha256": "658ff147b66a76fc9e47ac9dc7a2e64240f381cc2c70e582baf43e35abd5db3d"
+    },
+    {
+      "path": "bg/talent-dendro.webp",
+      "bytes": 8586,
+      "sha256": "5ba55c58bad8f9fceb39f7ce4c06a77f20899c1a8dea48dde70020c2f215ed43"
+    },
+    {
+      "path": "bg/talent-electro.webp",
+      "bytes": 8378,
+      "sha256": "ea9df5f47448539b7d2d9715df72f73ca14ac0714ddd73ec9715efcc28f8b4dd"
+    },
+    {
+      "path": "bg/talent-geo.webp",
+      "bytes": 8600,
+      "sha256": "e1e0d89b75645a928e1ef0923a8b1a9e0fd935bb61ad87ce36ef8d9804f611f0"
+    },
+    {
+      "path": "bg/talent-hydro.webp",
+      "bytes": 8704,
+      "sha256": "433fba81b7e8593e22342b989cb5ae77e4a24820edba2ad400c33b532f72ca5d"
+    },
+    {
+      "path": "bg/talent-pyro.webp",
+      "bytes": 8396,
+      "sha256": "45af3ce09e32b6fd70c558db48616dd6a2c58b24591b4295ab54a8a86d692b11"
+    },
+    {
+      "path": "bg/talent-quantum.webp",
+      "bytes": 8244,
+      "sha256": "6a941aa38c9278c75aed74ac830d238c5fa3a136d59792387f37e4c3813370f0"
+    },
+    {
+      "path": "bg/talent-sr.webp",
+      "bytes": 6752,
+      "sha256": "3ae8f639e1cbbb3a1c225fec5f40712846b3f18f8e64745eddce7b7d17ff875a"
+    },
+    {
+      "path": "fonts/tttgbnumber.ttf",
+      "bytes": 20056,
+      "sha256": "2397a53ac610214da8a6823968c9573c99704b767759d9781707cdb4efde1005"
+    }
+  ],
+  "repository": "https://github.com/MOPELotus/Lotus-ReFactor",
+  "revision": "278a607f564dc9e468e178918268c65ab2bfb51a",
+  "numericFontSource": {
+    "repository": "https://github.com/yoimiya-kokomi/miao-plugin",
+    "revision": "28607618",
+    "path": "resources/common/font/tttgbnumber.ttf"
+  }
+}

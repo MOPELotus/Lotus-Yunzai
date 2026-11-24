@@ -1,0 +1,246 @@
+{
+  "repository": "https://github.com/MOPELotus/yenai-plugin",
+  "revision": "fe42a6fabcf13fe610f6d6d15e9e087940d15d27",
+  "files": [
+    {
+      "path": "state/icon/11.png",
+      "source": "resources/state/icon/11.png",
+      "bytes": 2512,
+      "sha256": "c8efdaf019ad79844b45d4621463d8a567d1d2452c78993b6326d61e1e32c499"
+    },
+    {
+      "path": "state/icon/31.png",
+      "source": "resources/state/icon/31.png",
+      "bytes": 2595,
+      "sha256": "5801fe116f375287923b854e12443f703261ecf56b9f26c252472f3f972416fa"
+    },
+    {
+      "path": "state/icon/41.png",
+      "source": "resources/state/icon/41.png",
+      "bytes": 11314,
+      "sha256": "940f8048d661fae6a7d2482358654edf5a09b44fc99ca2dc7d909b71f91db167"
+    },
+    {
+      "path": "state/icon/50.png",
+      "source": "resources/state/icon/50.png",
+      "bytes": 2568,
+      "sha256": "65a62fd3dc39f1831536515664471ea86c8fdfa9f2bd88e0f197055906b6ee0f"
+    },
+    {
+      "path": "state/icon/60.png",
+      "source": "resources/state/icon/60.png",
+      "bytes": 4065,
+      "sha256": "e1be3260c8222a57f6f0ce73b6133e99ce40b4b3f1198ae8add5615dae365488"
+    },
+    {
+      "path": "state/icon/70.png",
+      "source": "resources/state/icon/70.png",
+      "bytes": 3363,
+      "sha256": "c4d5fca7ebb338f03a3ff250cd26e8f646a03e3137af94460c874dea05f56f4e"
+    },
+    {
+      "path": "state/icon/friend.png",
+      "source": "resources/state/icon/friend.png",
+      "bytes": 3571,
+      "sha256": "28a4488c53c5805f47a3dd4a71766ade6d0e491b72630c69abff4a8cfbe2831a"
+    },
+    {
+      "path": "state/icon/group.png",
+      "source": "resources/state/icon/group.png",
+      "bytes": 4392,
+      "sha256": "e2ee389d5b0a3e3c23749637e2f1a536cac4ed8c73ba50ad7f9e888ea1dc85cc"
+    },
+    {
+      "path": "state/icon/groupMember.png",
+      "source": "resources/state/icon/groupMember.png",
+      "bytes": 4965,
+      "sha256": "5c0c2f6f8254d6660b971affb10176c3b6ef982412987672382cad52a47837e1"
+    },
+    {
+      "path": "state/icon/platform.png",
+      "source": "resources/state/icon/platform.png",
+      "bytes": 4257,
+      "sha256": "e5da6426e0641222fd2ac6c6434465dff68447de6cab28a2faee0843e89141e5"
+    },
+    {
+      "path": "state/icon/recv.png",
+      "source": "resources/state/icon/recv.png",
+      "bytes": 3788,
+      "sha256": "ae97ee0c5a22e066aea8faababdcb96d4309e788dfe0c564e3fcd0ba60152427"
+    },
+    {
+      "path": "state/icon/redis.png",
+      "source": "resources/state/icon/redis.png",
+      "bytes": 7416,
+      "sha256": "acf5732877535ced3c30d3189705ac0b31ba262c203e2a8ee22536303c324ef8"
+    },
+    {
+      "path": "state/icon/screenshot.png",
+      "source": "resources/state/icon/screenshot.png",
+      "bytes": 3430,
+      "sha256": "df86d15fb5c955274744c465966a507d7593af18658a781e37e521ee9093dc46"
+    },
+    {
+      "path": "state/icon/sent.png",
+      "source": "resources/state/icon/sent.png",
+      "bytes": 3756,
+      "sha256": "0480ad1c28d61eb4046de83b6b60a0acacce15cfd9def430d2b39745c41ffdfa"
+    },
+    {
+      "path": "state/icon/time.png",
+      "source": "resources/state/icon/time.png",
+      "bytes": 6488,
+      "sha256": "4c5d37af759700e1a8fce3a6b044ac9d6b0bb531a4cf8f44a80d067ac592b521"
+    },
+    {
+      "path": "state/icon/上传.png",
+      "source": "resources/state/icon/上传.png",
+      "bytes": 6791,
+      "sha256": "2103d1bff24e11df27b853fc9d11068373ab540c7ceb2daaec39f7c68732c9ae"
+    },
+    {
+      "path": "state/icon/上传流量.png",
+      "source": "resources/state/icon/上传流量.png",
+      "bytes": 4968,
+      "sha256": "98d312198f4ff01fef35fbf59e5c5b34c7395f67d0f54dc7ace8f968dddefd5d"
+    },
+    {
+      "path": "state/icon/下载.png",
+      "source": "resources/state/icon/下载.png",
+      "bytes": 6758,
+      "sha256": "e24d692a0279e7b1bf03780f3c653eda5142fd275d3563d1c7c73a411a68a9a8"
+    },
+    {
+      "path": "state/icon/下载流量.png",
+      "source": "resources/state/icon/下载流量.png",
+      "bytes": 4949,
+      "sha256": "50b5e6627523fd2049ef7e032b0608231173659bf6791b4949ac41eccbdbf2f0"
+    },
+    {
+      "path": "state/icon/主机名.png",
+      "source": "resources/state/icon/主机名.png",
+      "bytes": 4376,
+      "sha256": "0087164ad1eb2efe91b69a18f60d76b4769aad61077ce2dbd88344edea4cbd18"
+    },
+    {
+      "path": "state/icon/内存.png",
+      "source": "resources/state/icon/内存.png",
+      "bytes": 3040,
+      "sha256": "59ea4306c2786c055b6ec63c90b79798238b88730514365c80faafe388481595"
+    },
+    {
+      "path": "state/icon/插件.png",
+      "source": "resources/state/icon/插件.png",
+      "bytes": 5434,
+      "sha256": "f860af543f6a123ff137580c6255a57005139668c06934ac9f5c8f137f49481f"
+    },
+    {
+      "path": "state/icon/时间.png",
+      "source": "resources/state/icon/时间.png",
+      "bytes": 5812,
+      "sha256": "4ce53927fdf5fb751ec040011279f40835f302a89f26abcf744aebe210dbd2eb"
+    },
+    {
+      "path": "state/icon/服务器.png",
+      "source": "resources/state/icon/服务器.png",
+      "bytes": 4929,
+      "sha256": "fa87aa57501f662f6bdf0ce1f83c543f4b0a265cfea52a6fe1bc2c6acae28b10"
+    },
+    {
+      "path": "state/icon/机器人.png",
+      "source": "resources/state/icon/机器人.png",
+      "bytes": 3299,
+      "sha256": "a721f5ff69d80a0ba1a5fafe3f24c8bc416b9eed2bc8e9ba67a42757fdcd40c0"
+    },
+    {
+      "path": "state/icon/温度计.png",
+      "source": "resources/state/icon/温度计.png",
+      "bytes": 3372,
+      "sha256": "3b96331cd836a0859ef759d720e7b081778749a07a1d1be18b99a3bc6e6635bf"
+    },
+    {
+      "path": "state/icon/磁盘.png",
+      "source": "resources/state/icon/磁盘.png",
+      "bytes": 5068,
+      "sha256": "0bddd45d94a75bc9a6d483253bfcb159cd9c47da12feab7f9840c1a865cb4642"
+    },
+    {
+      "path": "state/icon/系统.png",
+      "source": "resources/state/icon/系统.png",
+      "bytes": 3335,
+      "sha256": "2239f17fba88035bf12a83542998b11e7f51c237850bb5d542cbe89ab872600c"
+    },
+    {
+      "path": "state/icon/统计图.png",
+      "source": "resources/state/icon/统计图.png",
+      "bytes": 5925,
+      "sha256": "68344180c1e702fa312a653c96f0606fddc2307dbadc27b7e337f4001be7a1e8"
+    },
+    {
+      "path": "state/icon/网络.png",
+      "source": "resources/state/icon/网络.png",
+      "bytes": 8107,
+      "sha256": "2135caaead5afea7970499eb847fb2f3124092b824d50ad9072b2f54757c08d0"
+    },
+    {
+      "path": "state/icon/网络测试.png",
+      "source": "resources/state/icon/网络测试.png",
+      "bytes": 6861,
+      "sha256": "a0e6b96e799ce6a2bba119f25ba0c0d2d418522f0a1db1ccb57e13741f150afe"
+    },
+    {
+      "path": "state/icon/设置.png",
+      "source": "resources/state/icon/设置.png",
+      "bytes": 7081,
+      "sha256": "625ef79a95592be4a3b141569d3fd9237e3fa52e9021d84634e28ce483d59d17"
+    },
+    {
+      "path": "state/icon/资源.png",
+      "source": "resources/state/icon/资源.png",
+      "bytes": 3030,
+      "sha256": "5b2b861b47dab9387dcdd6cdadf187441351548475081d05429d0f39144cf33f"
+    },
+    {
+      "path": "state/icon/进程信息.png",
+      "source": "resources/state/icon/进程信息.png",
+      "bytes": 4614,
+      "sha256": "f784c623c5fc1f09e8db5dc9747d67029c1dada26bfe951a1f8c43dc34435a17"
+    },
+    {
+      "path": "state/icon/进程列表.png",
+      "source": "resources/state/icon/进程列表.png",
+      "bytes": 3447,
+      "sha256": "24bb5ade03df55f4750a5d6a3961336ed2b576c6356b9a8cbe15bf94717ecc64"
+    },
+    {
+      "path": "state/img/bg/1.jpg",
+      "source": "resources/state/img/bg/1.jpg",
+      "bytes": 874182,
+      "sha256": "914459f119245b7b0dc8d40793b2a5154928d8cefc968ee331adfa13f27631b8"
+    },
+    {
+      "path": "state/img/bg/2.jpg",
+      "source": "resources/state/img/bg/2.jpg",
+      "bytes": 1128354,
+      "sha256": "b77109cad0b34c752afe198e67485027a590c02f49ef6937e9c7dcf2f819768e"
+    },
+    {
+      "path": "state/img/default_avatar.jpg",
+      "source": "resources/state/img/default_avatar.jpg",
+      "bytes": 104954,
+      "sha256": "e043e837a16062bfa01305f9b8efe15224e413a812318f572a2cda8cc0b490dc"
+    },
+    {
+      "path": "common/font/FZB.ttf",
+      "source": "resources/common/font/FZB.ttf",
+      "bytes": 1813432,
+      "sha256": "84c7f9bcded4e086c7c0fd14e51dfcd96f21a3ea948b91b16043a25c6a39b1c5"
+    },
+    {
+      "path": "common/font/NZBZ.ttf",
+      "source": "resources/common/font/NZBZ.ttf",
+      "bytes": 1502040,
+      "sha256": "26e130f37e0f59f8d0eaa7c96662de0545595bf04675c01e037e49de84de6bc3"
+    }
+  ]
+}
