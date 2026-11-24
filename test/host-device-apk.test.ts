@@ -9,16 +9,18 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
   const source = "synthetic APK attachment bytes";
   const profiles = "data/users";
   const apkName = "copy_device_info_1.2.apk";
-  const stored = `data/passport/resources/apk/${apkName}`;
-  const hint = "可继续发送设备 JSON，或联系机器人主人获取设备信息工具。";
-  await withDualGatewayFixture("device-apk-fixture", 'master: ["99:42", "100:43"]\n',
+  const stored = `resources/device-binding/${apkName}`;
+  const hint = "可继续发送设备 JSON。需要工具时，可直接下载：";
+  await withDualGatewayFixture("device-apk-fixture", 'master: ["99:420", "100:430"]\ndisablePrivate: true\n',
     async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       sendOneBot(command);
       const prompt = await onebot.next("send_msg");
       expect(prompt.params).toMatchObject({ user_id: 42, message: expect.stringContaining("请发送 profile 2 的设备 JSON") });
       prompt.respond({ message_id: 1 });
       const unavailable = await onebot.next("send_msg");
-      expect(unavailable.params).toMatchObject({ user_id: 42, message: "设备信息工具文件暂不可用。" + hint });
+      expect(unavailable.params.user_id).toBe(42);
+      expect(unavailable.params.message).toContain("设备信息工具文件暂不可用。" + hint);
+      expect(unavailable.params.message).toContain("/resources/apk/" + apkName);
       unavailable.respond({ message_id: 2 });
 
       const path = join(root, stored);
@@ -30,7 +32,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       expect(file.params).toMatchObject({ user_id: 42, name: apkName, file: `base64://${Buffer.from(source).toString("base64")}` });
       file.respond(null, "failed");
       const onebotRejected = await onebot.next("send_msg");
-      expect(onebotRejected.params).toMatchObject({ user_id: 42, message: "设备信息工具未能发送。" + hint });
+      expect(onebotRejected.params).toMatchObject({ user_id: 42, message: expect.stringContaining("设备信息工具未能发送。" + hint) });
       onebotRejected.respond({ message_id: 4 });
 
       await sendMilky(command);
@@ -41,7 +43,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       expect(attached.params).toMatchObject({ user_id: 43, file_name: apkName, file_uri: `base64://${Buffer.from(source).toString("base64")}` });
       attached.respond(null, "failed");
       const milkyRejected = await milky.next("send_private_message");
-      expect(milkyRejected.params).toMatchObject({ user_id: 43, message: [{ data: { text: "设备信息工具未能发送。" + hint } }] });
+      expect(milkyRejected.params).toMatchObject({ user_id: 43, message: [{ data: { text: expect.stringContaining("设备信息工具未能发送。" + hint) } }] });
       milkyRejected.respond({ message_seq: 6 });
 
       await sendMilky("#绑定设备信息2");
@@ -59,8 +61,17 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       const onebotCancelled = await onebot.next("send_msg");
       expect(onebotCancelled.params).toMatchObject({ user_id: 42, message: "已取消绑定设备。" });
       onebotCancelled.respond({ message_id: 10 });
+
+      const pair = { device_id: "fixture-user-device", device_fp: "0123456789abc" };
+      sendOneBot(command + " " + JSON.stringify(pair));
+      const saved = await onebot.next("send_msg");
+      expect(saved.params.message).toContain("设备已绑定");
+      expect(saved.params.message).toContain("自行撤回");
+      expect(saved.params.message).not.toContain(pair.device_fp);
+      saved.respond({ message_id: 11 });
+      expect(Bun.YAML.parse(await readFile(join(root, profiles, "42-2.yaml"), "utf8")))
+        .toMatchObject({ device: { bound: true, id: pair.device_id, fp: pair.device_fp } });
       expect(milky.calls).toEqual([]);
-      expect(onebot.calls).toEqual([]);
     }, 4_000, undefined, async root => {
       await mkdir(join(root, profiles), { recursive: true });
       await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${join(root, profiles)}\n`);
@@ -112,6 +123,8 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
         expect((await sendMilky("*绑定设备2 " + payload)).status).toBe(200);
         const bound = await milky.next("send_private_message");
         expect(bound.params.user_id).toBe(43);
+        expect(JSON.stringify(bound.params.message)).toContain("自行撤回刚才那条消息");
+        expect(JSON.stringify(bound.params.message)).not.toContain("dc00112233445");
         bound.respond({ message_seq: 25 });
         expect(Bun.YAML.parse(await readFile(join(directory, "43-2.yaml"), "utf8")))
           .toMatchObject({ device: { id: "fixture-replacement", fp: "dc00112233445", bound: true } });
@@ -127,7 +140,7 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
 }, 12_000);
 
 
-test("旧 APK 的设备元数据不交给通用插件，只在本人私聊提示所需字段", async () => {
+test("群内设备资料按权限撤回且不流入通用插件，好友私聊识别旧 APK 导出", async () => {
   const metadata = JSON.stringify({
     deviceBoard: "fixture-board", deviceFingerprint: "fixture-firmware", deviceModel: "fixture-model",
     deviceName: "fixture-name", deviceProduct: "fixture-product",
@@ -138,13 +151,32 @@ test("旧 APK 的设备元数据不交给通用插件，只在本人私聊提示
       const group = { message_type: "group", sub_type: "normal", group_id: 77, sender: { user_id: 42, role: "member" } };
       sendOneBot(control, group);
       (await onebot.next("send_msg")).respond({ message_id: 31 });
-      sendOneBot(metadata, group);
-      // A later matching command confirms that the protocol and plug-in remain available.
-      await Bun.sleep(50);
+      sendOneBot("#绑定设备2", group);
+      const guide = await onebot.next("send_msg");
+      expect(guide.params.message).toContain("好友私聊发送 #绑定设备2");
+      guide.respond({ message_id: 32 });
+
+      for (const botRole of ["admin", "member"]) {
+        sendOneBot(metadata, { ...group, message_id: botRole === "admin" ? 104 : 105 });
+        for (let index = 0; index < 2; index++) {
+          const lookup = await onebot.next("get_group_member_info");
+          lookup.respond({ ...lookup.params, role: lookup.params.user_id === 99 ? botRole : "member" });
+        }
+        if (botRole === "admin") {
+          const recall = await onebot.next("delete_msg");
+          expect(recall.params).toEqual({ message_id: 104 });
+          recall.respond(null);
+        }
+        const notice = await onebot.next("send_msg");
+        expect(notice.params.message).toContain(botRole === "admin" ? "已撤回" : "请立即自行撤回");
+        expect(notice.params.message).not.toContain("fixture-firmware");
+        notice.respond({ message_id: botRole === "admin" ? 33 : 34 });
+      }
+
       sendOneBot(control, group);
       const next = await onebot.next("send_msg");
       expect(next.params.message).toBe("通用插件对照");
-      next.respond({ message_id: 32 });
+      next.respond({ message_id: 35 });
       expect(onebot.calls).toHaveLength(0);
 
       expect((await sendMilky(metadata)).status).toBe(200);

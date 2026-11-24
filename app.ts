@@ -91,7 +91,7 @@ import { readRequestOtherPolicies } from "./lib/request-other-policies.ts";
 import { legacyLotusDirectories, readLotusGlobalConfig } from "./lib/lotus-global-config.ts";
 import { dailyNoteCommands } from "./lib/daily-note.ts";
 import { createDailyNoteReminders, dailyNoteReminderFeatureNames } from "./lib/daily-note-reminders.ts";
-import { deviceCommands, isDeviceBindingInput, normalizeDeviceInfoCommand } from "./lib/device-commands.ts";
+import { deviceCommands, isDeviceBindingInput, isDeviceBindingPayload, normalizeDeviceInfoCommand } from "./lib/device-commands.ts";
 import { createDispatchPower, formatElapsed, isProcessMaster, readLegacyDispatchPause } from "./lib/dispatch-power.ts";
 import { groupRecallPermission, quotedRecallSessions, readGroupRecallPermissions } from "./lib/quoted-recall.ts";
 import { scheduleDispatchPower } from "./lib/dispatch-power-schedule.ts";
@@ -1164,6 +1164,28 @@ if (import.meta.main) {
   async function routeEvent(event: BotEvent) {
     if (event.post_type === "message") {
       const normalized = groupDispatch.commandText(event);
+      if (event.message_type === "group" && [normalized, event.raw_message].some(isDeviceBindingPayload)) {
+        if (!event.isDelegated && !dispatchPower.paused && groupDispatch.admit(event) &&
+            groupDispatch.allows(event, ["@lotus-yunzai/device"])) {
+          const moderation = groupModerationSession(event);
+          const active = moderation && nativeOperationSignal(moderation.signal);
+          const message = moderation?.memberMessage;
+          let recalled = false;
+          if (active && message) {
+            try {
+              recalled = await message.canAct(active) && !active.aborted && await message.recall(active) === "confirmed";
+            } catch {
+              // Fall back to asking the sender to withdraw the message.
+            }
+          }
+          if (!active?.aborted) {
+            await event.reply(recalled
+              ? "已撤回群里的设备资料。请加机器人好友后，在好友私聊发 #绑定设备。"
+              : "请立即自行撤回群里的设备资料。请加机器人好友后，在好友私聊发 #绑定设备。");
+          }
+        }
+        return;
+      }
       if ([normalized, event.raw_message].some(isBotVerificationInput)) {
         const receipt = `#机器人验证:${event.adapter ?? "onebot"}:${event.message_type}:${event.group_id ?? ""}:${event.message_id ?? ""}`;
         if (isBotVerificationInput(normalized) && botOperationCommand(normalized) &&
