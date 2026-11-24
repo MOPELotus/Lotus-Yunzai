@@ -1,3 +1,4 @@
+import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaProof } from "./captcha.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -45,6 +46,7 @@ interface ShopManualProof {
 }
 
 export interface ShopManualVerification {
+  readonly allowManual?: boolean;
   readonly waitForProof: (challenge: ShopManualChallenge, signal: AbortSignal) => Promise<ShopManualProof | undefined>;
   readonly prepareResume: () => Promise<void>;
 }
@@ -181,39 +183,60 @@ function verifiedField(value: unknown, limit: number): value is string {
 }
 
 async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAccountContext, code: 1028 | 1034,
-  cookie: string, signal: AbortSignal, verify: Verify, waitForProof: ShopManualVerification["waitForProof"]) {
-  const headers = new Headers({
-    Accept: "application/json, text/plain, */*",
-    Cookie: cookie,
-    Origin: webOrigin,
-    Referer: `${webOrigin}/`,
-  });
-  const create = new URL("/misc/wapi/createVerification", shopOrigin);
-  create.search = new URLSearchParams({ point_sn: app.point_sn, is_high: String(code === 1034), captcha_version: "v4" }).toString();
-  const created = await request(transport, create, profile, signal, verify, undefined, headers);
-  signal.throwIfAborted();
-  await verify();
-  signal.throwIfAborted();
-  const data = object(created?.payload?.data);
-  if (created?.status !== 200 || retcodeOf(created.payload) !== 0 || !verifiedField(data?.captcha_id, 256)) return;
-  const challenge: ShopManualChallenge = { captchaVersion: 4, captchaId: data.captcha_id,
-    ...(verifiedField(data.risk_type, 128) && { riskType: data.risk_type }) };
-  const proof = await waitForProof(challenge, signal);
-  if (proof?.captchaVersion !== 4 || proof.captchaId !== challenge.captchaId ||
-      ![proof.lotNumber, proof.captchaOutput, proof.passToken].every(value => verifiedField(value, 2048)) ||
-      typeof proof.genTime !== "string" || !/^\d{1,32}$/u.test(proof.genTime)) return;
-  const validate = new URL("/misc/wapi/verifyVerfication", shopOrigin);
-  validate.search = new URLSearchParams({
-    captcha_version: "v4", lot_number: proof.lotNumber, captcha_output: proof.captchaOutput,
-    pass_token: proof.passToken, gen_time: proof.genTime,
-  }).toString();
-  headers.set("Content-Type", "application/json;charset=utf-8");
-  const accepted = await request(transport, validate, profile, signal, verify, JSON.stringify({ point_sn: app.point_sn }), headers);
-  signal.throwIfAborted();
-  await verify();
-  signal.throwIfAborted();
-  const rpcChallenge = object(accepted?.payload?.data)?.challenge;
-  if (accepted?.status === 200 && retcodeOf(accepted.payload) === 0 && verifiedField(rpcChallenge, 2048)) return rpcChallenge;
+  cookie: string, signal: AbortSignal, verify: Verify, manual: ShopManualVerification) {
+  const headers = new Headers({ Accept: "application/json, text/plain, */*", Cookie: cookie,
+    Origin: webOrigin, Referer: `${webOrigin}/` });
+  async function createChallenge(): Promise<ShopManualChallenge> {
+    const create = new URL("/misc/wapi/createVerification", shopOrigin);
+    create.search = new URLSearchParams({ point_sn: app.point_sn, is_high: String(code === 1034), captcha_version: "v4" }).toString();
+    const created = await request(transport, create, profile, signal, verify, undefined, headers);
+    signal.throwIfAborted();
+    await verify();
+    const data = object(created?.payload?.data);
+    if (created?.status !== 200 || retcodeOf(created.payload) !== 0 || !verifiedField(data?.captcha_id, 256)) {
+      throw new Error("商城验证码申请未完成。");
+    }
+    return { captchaVersion: 4, captchaId: data.captcha_id,
+      ...(verifiedField(data.risk_type, 128) && { riskType: data.risk_type }) };
+  }
+  async function accept(proof: CaptchaProof, challenge: CaptchaChallenge) {
+    if (challenge.captchaVersion !== 4 || !("captchaId" in proof) || proof.captchaVersion !== 4 ||
+        proof.captchaId !== challenge.captchaId ||
+        ![proof.lotNumber, proof.captchaOutput, proof.passToken].every(value => verifiedField(value, 2048)) ||
+        typeof proof.genTime !== "string" || !/^\d{1,32}$/u.test(proof.genTime)) return { accepted: false as const };
+    const validate = new URL("/misc/wapi/verifyVerfication", shopOrigin);
+    validate.search = new URLSearchParams({ captcha_version: "v4", lot_number: proof.lotNumber,
+      captcha_output: proof.captchaOutput, pass_token: proof.passToken, gen_time: proof.genTime }).toString();
+    const signed = new Headers(headers);
+    signed.set("Content-Type", "application/json;charset=utf-8");
+    const result = await request(transport, validate, profile, signal, verify, JSON.stringify({ point_sn: app.point_sn }), signed);
+    signal.throwIfAborted();
+    await verify();
+    const retcode = retcodeOf(result?.payload);
+    const rpcChallenge = object(result?.payload?.data)?.challenge;
+    if (result?.status !== 200 || retcode === undefined || retcode === 10041 ||
+        [-100, 10001, 10101, 10102, 10103].includes(retcode)) throw new Error("商城验证码校验未完成。");
+    if (classification(retcode, result.status, result.payload?.message) === "rate-limited" || retcode === -10000) {
+      throw new Error("商城验证码业务账号或频率限制，停止重试。");
+    }
+    if (retcode !== 0) return { accepted: false as const };
+    if (!verifiedField(rpcChallenge, 2048)) throw new Error("商城验证码校验响应无效。");
+    return { accepted: true as const, value: rpcChallenge };
+  }
+  const solver = getDefaultCaptchaSolver();
+  if (solver) {
+    const solved = await solver.run<string>({ signal, verify,
+      context: { qq: profile.qq, profileId: profile.profileId }, allowManual: manual.allowManual !== false,
+      challenge: createChallenge, accept,
+      manualProof: (challenge, scope) => challenge.captchaVersion === 4 ? manual.waitForProof(challenge, scope) : Promise.resolve(undefined),
+    });
+    return solved.ok ? solved.value : undefined;
+  }
+  const challenge = await createChallenge();
+  const proof = await manual.waitForProof(challenge, signal);
+  if (!proof) return;
+  const result = await accept(proof, challenge);
+  return result.accepted ? result.value : undefined;
 }
 
 async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountContext,
@@ -318,7 +341,7 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
   // The first request was explicitly refused. Until the next dispatch starts,
   // any failure still leaves a known non-purchase.
   try {
-    const rpcChallenge = await verifyShopChallenge(transport, profile, code, cookie, signal, verify, manual.waitForProof);
+    const rpcChallenge = await verifyShopChallenge(transport, profile, code, cookie, signal, verify, manual);
     if (!rpcChallenge) return initial;
     await manual.prepareResume();
     headers.set("x-rpc-challenge", rpcChallenge);

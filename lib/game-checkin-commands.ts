@@ -1,3 +1,4 @@
+import { getDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileCookieAccountId, type ProfileAccountContext } from "@lotus-yunzai/account";
@@ -175,10 +176,56 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   }
 
   async function submit(source: CnGameCheckinSource, verifyCurrent: () => Promise<void>,
-    notify: ((message: string) => unknown) | undefined, label: string, signal: AbortSignal) {
+    notify: ((message: string) => unknown) | undefined, label: string, signal: AbortSignal, allowManual: boolean) {
     try {
       return await client.submitCnGameCheckin(source, { signal });
     } catch (error) {
+      const solver = getDefaultCaptchaSolver();
+      if (solver && error instanceof GameCheckinChallengeError) {
+        let first = true;
+        const solved = await solver.run<"already" | "accepted">({
+          signal, verify: verifyCurrent, context: { qq: source.qq, profileId: source.profileId },
+          allowManual,
+          notify: notify ? event => notify(event.type === "manual"
+            ? `请打开链接完成${label}签到的人工验证。链接只可使用一次。\n${event.link}`
+            : event.type === "automatic" ? `正在自动验证${label}签到。`
+            : event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+          async challenge() {
+            if (first) { first = false; return error.challenge; }
+            const state = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
+            await verifyCurrent();
+            if (state.signed) return { completed: "already" };
+            if (state.firstBind) throw error;
+            try {
+              const result = await client.submitCnGameCheckin(source, { signal });
+              return { completed: result };
+            } catch (fresh) {
+              if (fresh instanceof GameCheckinChallengeError) return fresh.challenge;
+              throw fresh;
+            }
+          },
+          async accept(proof) {
+            if (!("validate" in proof)) return { accepted: false };
+            const state = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
+            await verifyCurrent();
+            if (state.signed) return { accepted: true, value: "already" };
+            if (state.firstBind) throw error;
+            try {
+              const value = await client.submitCnGameCheckin(source, { signal, proof });
+              await verifyCurrent();
+              const confirmed = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
+              if (!confirmed.signed) throw new Error("签到结果未确认，停止重复提交。");
+              return { accepted: true, value };
+            } catch (rejected) {
+              if (rejected instanceof GameRecordRequestError && rejected.reason === "risk" &&
+                  [0, 1034, 10035].includes(rejected.retcode ?? -1)) return { accepted: false };
+              throw rejected;
+            }
+          },
+        });
+        if (solved.ok) return solved.value;
+        throw error;
+      }
       const relay = notify && error instanceof GameCheckinChallengeError ? manualRelay?.() : undefined;
       if (!relay || !notify || !(error instanceof GameCheckinChallengeError)) throw error;
       await verifyCurrent();
@@ -270,6 +317,13 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         verifyDay();
         if (current?.revision !== revision) throw new ProfileError("changed", changed);
       }
+      const captchaOptions = {
+        allowManualCaptcha: input.source === "manual", verifyBinding: verifyCurrent,
+        notifyCaptcha: input.notify ? (event: import("@lotus-yunzai/hoyo-client").CaptchaEvent) => input.notify!(
+          event.type === "manual" ? `请打开链接完成签到验证。\n${event.link}` :
+          event.type === "automatic" ? "正在自动验证签到。" :
+          event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+      };
       const { manualTarget } = input;
       let rows = rowsFor(settings);
       const notes: string[] = [];
@@ -425,7 +479,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               const readState = async () => {
                 await verifyCurrent();
                 return client.fetchBbsMissionState(account, {
-                  signal, recoverCookie: recoverCommunityCookie,
+                  signal, ...captchaOptions, recoverCookie: recoverCommunityCookie,
                   onCredentialRefresh(current) {
                     recoverCommunityCookie = false;
                     account = current;
@@ -455,7 +509,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           await verifyCurrent();
           let result: "accepted" | "already";
           try {
-            result = await client.submitBbsCheckin(account, row.forum, { signal });
+            result = await client.submitBbsCheckin(account, row.forum, { signal, ...captchaOptions });
           } catch (error) {
             await verifyCurrent();
             if (journal && error instanceof BbsCheckinRequestError && error.status === 429 && error.reason === "rate-limited") {
@@ -490,7 +544,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         if (accepted && !notes.length) {
           try {
             receivedBefore = state?.receivedPoints;
-            state = await client.fetchBbsMissionState(account, { signal, recoverCookie: false });
+            state = await client.fetchBbsMissionState(account, { signal, ...captchaOptions, recoverCookie: false });
           } catch {
             await verifyCurrent();
             return;
@@ -555,7 +609,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             const result = await runGame(gameTarget(key, role), {
               signal, verifyCurrent,
               readInfo: () => client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false }),
-              submit: () => submit(source, verifyCurrent, input.notify, row.label, signal),
+              submit: () => submit(source, verifyCurrent, input.notify, row.label, signal, input.source === "manual"),
             }, { legacyGame: key });
             results.push(result);
             count(result.status);
@@ -593,7 +647,14 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           }
           activeOverseas.add(overseasKey);
           try {
-            const options = { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId };
+            const options = { signal, verifyProfile: verifyCurrent, deviceId: overseasDeviceId,
+              allowManualCaptcha: input.source === "manual",
+              captchaContext: { qq, profileId },
+              notifyCaptcha: input.notify ? (event: import("@lotus-yunzai/hoyo-client").CaptchaEvent) => input.notify!(
+                event.type === "manual" ? `请打开链接完成国际服签到验证。\n${event.link}` :
+                event.type === "automatic" ? "正在自动验证国际服签到。" :
+                event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+            };
             const blocked = new Set(overseas.blacklist);
             const results: GameCheckinResult[] = [];
             const family = `${game}:os:`;

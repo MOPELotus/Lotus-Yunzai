@@ -108,6 +108,8 @@ import { createPanelRebuild } from "./lib/panel-rebuild.ts";
 import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectationInput } from "./lib/gacha-expectation-commands.ts";
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
+import { createCaptchaService } from "./lib/captcha/service.ts";
+import { setDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { startImagePreviews } from "./lib/image-previews.ts";
 import { markGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import { readGroupDispatch } from "./lib/group-dispatch.ts";
@@ -462,6 +464,7 @@ if (import.meta.main) {
   const unregisterCheckin = checkinUnregistration(Bun.env.LOTUS_PROFILE_DIR || undefined,
     async () => { await checkinRuntime?.reconcileExistingPlans(); });
   let dailyNoteReminders: ReturnType<typeof createDailyNoteReminders> | undefined;
+  let captchaService: ReturnType<typeof createCaptchaService> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
   let panelOwnerSession: ReturnType<typeof createPanelOwnerSession> | undefined;
@@ -3094,6 +3097,38 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    if (!probingUpdate) {
+      try {
+        captchaService = createCaptchaService({
+          config: globalConfig.captcha, signal: lifecycle.signal, manualRelay: () => manualCaptcha,
+          async notify({ qq, profileId }, event, signal) {
+            const userId = Number(qq);
+            if (!Number.isSafeInteger(userId) || userId < 1 || signal.aborted || stopping || !handoff.accepting) return false;
+            const message = event.type === "manual"
+              ? `档案 ${profileId} 需要人工验证，请在有效期内打开链接：\n${event.link}`
+              : event.type === "automatic" ? `档案 ${profileId} 正在自动验证。`
+              : event.type === "accepted" ? `档案 ${profileId} 验证已通过，继续处理原请求。`
+              : `档案 ${profileId} 验证未通过，请稍后重新发送原指令。`;
+            const candidates = [...groups.checkinNotifications(), ...(milkyOnline ? [milkyOnline.checkinNotify] : [])]
+              .filter((transport): transport is NonNullable<typeof transport> => transport !== undefined);
+            for (const transport of candidates) {
+              if (signal.aborted || stopping) return false;
+              if (!await transport.friendship?.(userId)) continue;
+              if (signal.aborted || stopping) return false;
+              return await transport.sendPrivate(userId, message) === "confirmed";
+            }
+            return false;
+          },
+          report({ provider, round, attempt, reason }) {
+            console.info(`[验证码] ${provider} 第${round}轮第${attempt}次：${reason}`);
+          },
+        });
+        setDefaultCaptchaSolver(captchaService);
+      } catch {
+        console.warn("[验证码] 配置无效，自动验证链暂不可用。");
+      }
+    }
+
     cloudGenshinWallet = createCloudGenshinWalletQuery({
       readDomesticCloud: checkinProfiles.domesticCloudGenshin, readProfile: checkinProfiles.checkinSettings, transport: hoyoTransport,
     });
@@ -4346,6 +4381,8 @@ if (import.meta.main) {
     if (!stopping) throw error;
   } finally {
     stopping = true;
+    captchaService?.close();
+    setDefaultCaptchaSolver(undefined);
     manualCaptcha?.close();
     publicFiles.close();
     lifecycle.abort();

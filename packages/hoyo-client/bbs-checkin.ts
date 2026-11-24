@@ -1,3 +1,5 @@
+import { withMiyousheCaptcha } from "./captcha-business.ts";
+import type { CaptchaEvent } from "./captcha.ts";
 import { createHash, randomInt } from "node:crypto";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -30,6 +32,9 @@ export interface BbsMissionState {
 
 interface BbsCheckinOptions {
   readonly signal?: AbortSignal;
+  readonly notifyCaptcha?: (event: CaptchaEvent) => unknown;
+  readonly allowManualCaptcha?: boolean;
+  readonly verifyBinding?: () => Promise<void>;
 }
 
 interface BbsMissionReadOptions extends BbsCheckinOptions {
@@ -263,6 +268,10 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
   const messages = [payload?.message, payload?.msg].filter((value): value is string => typeof value === "string");
   const risk = data?.is_risk === true || (integer(data?.is_risk) ?? 0) > 0 ||
     integer(data?.risk_code) === 375 || (writing && integer(data?.success) === 1);
+  if (data && (retcode === 0 || retcode === 1034 || retcode === 10035)) {
+    verifyResponseIdentity(data, login, writing);
+    if (writing && data.gids != null && data.gids !== forum && data.gids !== Number(forum)) invalidResponse(true);
+  }
   if ((retcode !== undefined && riskCodes.includes(retcode)) || (retcode === 0 && risk) ||
       messages.some(message => /验证码|captcha|geetest|风控/iu.test(message))) {
     throw new BbsCheckinRequestError("risk", status, retcode);
@@ -289,7 +298,10 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
 
 export async function readBbsMissionState(source: ProfileAccountContext, transport: HoyoTransport,
   options: BbsMissionReadOptions = {}, verifyProfile?: () => Promise<void>): Promise<BbsMissionState> {
-  const { data } = await request(source, transport, undefined, options, verifyProfile);
+  const { data } = await withMiyousheCaptcha(transport, active => request(source, active, undefined, options, verifyProfile), {
+    signal: options.signal, verify: async () => { await options.verifyBinding?.(); await verifyProfile?.(); }, context: { qq: source.qq, profileId: source.profileId },
+    notify: options.notifyCaptcha, allowManual: options.allowManualCaptcha, verificationCookie: () => credentials(source, true).cookie,
+  });
   return missionState(data ?? invalidResponse(false), options.allowPointsOnly === true);
 }
 
@@ -298,6 +310,9 @@ export async function submitBbsCheckin(source: ProfileAccountContext, transport:
   if (typeof forum !== "string" || !Object.hasOwn(bbsCheckinForums, forum)) {
     throw new HoyoRequestError("invalid-input", "请选择支持的社区签到分区。");
   }
-  const result = await request(source, transport, forum, options, verifyProfile);
+  const result = await withMiyousheCaptcha(transport, active => request(source, active, forum, options, verifyProfile), {
+    signal: options.signal, verify: async () => { await options.verifyBinding?.(); await verifyProfile?.(); }, context: { qq: source.qq, profileId: source.profileId },
+    notify: options.notifyCaptcha, allowManual: options.allowManualCaptcha, verificationCookie: () => credentials(source, true).cookie,
+  });
   return result.already ? "already" : "accepted";
 }

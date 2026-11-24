@@ -363,3 +363,42 @@ test("商城首次提交在最终账号核验期间关窗，传输层收到零�
   expect(await submitMiyousheShopExchange(transport, profile, virtual, undefined, verify, undefined, () => open)).toBe("missed");
   expect(calls).toBe(0);
 });
+
+test("商城自动验证码每次新建 v4 挑战，二次校验拒绝后不提前兑换", async () => {
+  const { setDefaultCaptchaSolver } = await import("../packages/hoyo-client/captcha.ts");
+  let creates = 0, accepts = 0, orders = 0;
+  const signal = new AbortController().signal;
+  setDefaultCaptchaSolver({ async run(options) {
+    expect(options.allowManual).toBe(false);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const challenge = await options.challenge();
+      if ("completed" in challenge) return { ok: true, value: challenge.completed };
+      const result = await options.accept({ ...v4Proof, lotNumber: `fresh-lot-${attempt}` }, challenge);
+      if (result.accepted) return { ok: true, value: result.value };
+    }
+    return { ok: false, reason: "rejected" };
+  } });
+  try {
+    const transport: HoyoTransport = async (url, init) => {
+      if (url.pathname.endsWith("/goods/exchange")) {
+        orders++;
+        if (orders === 1) return Response.json({ retcode: 1034 });
+        expect(new Headers(init.headers).get("x-rpc-challenge")).toBe("new-rpc-challenge");
+        return Response.json({ retcode: 0 });
+      }
+      if (url.pathname.endsWith("createVerification")) {
+        creates++;
+        return Response.json({ retcode: 0, data: { captcha_id: v4Proof.captchaId, risk_type: `signed-full-${creates}` } });
+      }
+      accepts++;
+      expect(orders).toBe(1);
+      return Response.json(accepts === 1 ? { retcode: 1034 } : { retcode: 0, data: { challenge: "new-rpc-challenge" } });
+    };
+    expect(await submitMiyousheShopExchange(transport, profile, physical, signal, async () => {}, {
+      allowManual: false,
+      async waitForProof() { throw new Error("后台不可人工验证"); },
+      async prepareResume() {},
+    })).toBe("succeeded");
+    expect([creates, accepts, orders]).toEqual([2, 2, 2]);
+  } finally { setDefaultCaptchaSolver(undefined); }
+});

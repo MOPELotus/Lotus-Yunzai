@@ -1,3 +1,4 @@
+import { withMiyousheCaptcha } from "./captcha-business.ts";
 export type { HoyoTransport } from "./credentials.ts";
 export { requestDeviceFingerprint, DeviceFingerprintError } from "./device-fingerprint.ts";
 import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";
@@ -332,7 +333,11 @@ export function createHoyoClient(
     const { context, data } = await retrieve(source, async (profile) => {
       onAttempt?.(profile);
       const guard = recovery && (() => ensureCurrentProfile(profile));
-      return reader({ ...source, ...profile }, transport, options, guard);
+      const current = { ...source, ...profile };
+      return withMiyousheCaptcha(transport, request => reader(current, request, options, guard), {
+        signal: options.signal, verify: guard, context: { qq: profile.qq, profileId: profile.profileId },
+        game: "game" in current && (current.game === "gs" || current.game === "sr" || current.game === "zzz") ? current.game : undefined,
+      });
     }, options.signal, isExpired);
     return { ...data, revision: context.revision, refreshedCookie: context.revision !== source.revision };
   }
@@ -574,7 +579,9 @@ export function createHoyoClient(
         options.signal?.throwIfAborted();
         try {
           verifyCookieIdentity(source);
-          const note = options.verifyReadOnly ? await readDailyNote(source, transport, options, verify)
+          const note = options.verifyReadOnly ? await withMiyousheCaptcha(transport, request => readDailyNote(source, request, options, verify), {
+            signal: options.signal, verify, context: { qq: source.qq, profileId: source.profileId }, game: source.game,
+          })
             : await readWithCurrentRole(source, readDailyNote);
           let starRailCheckin: DailyNoteSnapshot["starRailCheckin"];
           if (game === "sr" && options.includeStarRailCheckin) {
@@ -879,3 +886,5 @@ export function createProfileHoyoClient(
   return createHoyoClient(transport, { profiles, exchange: createCredentialExchange(transport),
     scope: profiles.credentialRefreshScope, syncRoles: true });
 }
+
+export { getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaSolver, type CaptchaRun, type CaptchaChallenge, type CaptchaProof, type CaptchaEvent } from "./captcha.ts";

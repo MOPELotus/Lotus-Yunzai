@@ -2,7 +2,7 @@ import { projectGroupCleanupConfig } from "./group-cleanup-config.ts";
 import { readOptionalLocalConfig } from "./config.ts";
 
 export const legacyLotusDirectories = ["Lotus-Plugin", "Lotus-ReFactor"] as const;
-const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "groups", "music", "bilibili", "douyin", "netease_partner"] as const;
+const inheritedSections = ["atlas", "scheduler", "coin_shop", "permissions", "groups", "music", "bilibili", "douyin", "netease_partner", "captcha"] as const;
 
 type Config = Record<string, unknown>;
 

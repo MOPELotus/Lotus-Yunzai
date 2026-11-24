@@ -1,3 +1,5 @@
+import { withMiyousheCaptcha } from "./captcha-business.ts";
+import type { CaptchaEvent } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { GameRecordRequestError, readGameRecordPayload } from "./game-record.ts";
@@ -39,6 +41,9 @@ export interface HoYoLabCheckinOptions {
   readonly signal?: AbortSignal;
   readonly verifyProfile: () => Promise<void>;
   readonly deviceId?: string;
+  readonly captchaContext?: { readonly qq: string; readonly profileId: number };
+  readonly notifyCaptcha?: (event: CaptchaEvent) => unknown;
+  readonly allowManualCaptcha?: boolean;
 }
 
 function object(value: unknown): Json | undefined {
@@ -92,8 +97,8 @@ function officialRoute(url: URL, writing: boolean, credential: Credential, zzzRe
 }
 
 export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport,
-  { signal, verifyProfile, deviceId }: HoYoLabCheckinOptions, credential: Credential = "cookie") {
-  return openHoYoLabTransport(source, transport, { signal, verifyProfile, deviceId }, credential, false);
+  options: HoYoLabCheckinOptions, credential: Credential = "cookie") {
+  return openHoYoLabTransport(source, transport, options, credential, false);
 }
 
 export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
@@ -115,7 +120,7 @@ export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, tra
 }
 
 function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport,
-  { signal, verifyProfile, deviceId }: HoYoLabCheckinOptions, credential: Credential, zzzRecord: boolean) {
+  { signal, verifyProfile, deviceId, captchaContext, notifyCaptcha, allowManualCaptcha }: HoYoLabCheckinOptions, credential: Credential, zzzRecord: boolean) {
   const auth = validateSource(source, credential);
   if (deviceId !== undefined && (typeof deviceId !== "string" || !browserUuid.test(deviceId))) {
     throw new HoyoRequestError("invalid-input", "国际服浏览器会话 ID 无效。");
@@ -124,6 +129,12 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
     Origin: officialOrigin, Referer: `${officialOrigin}/` };
 
   async function request(url: URL, headers: HeadersInit, subject: string, body?: string): Promise<Json> {
+    return withMiyousheCaptcha(transport, active => requestRaw(url, headers, subject, body, active), {
+      signal, verify: verifyProfile, context: captchaContext, notify: notifyCaptcha, allowManual: allowManualCaptcha,
+    });
+  }
+
+  async function requestRaw(url: URL, headers: HeadersInit, subject: string, body: string | undefined, active: HoyoTransport): Promise<Json> {
     const writing = body !== undefined;
     if (url.username || url.password || url.hash || !officialRoute(url, writing, credential, zzzRecord)) {
       throw new HoyoRequestError("invalid-input", "HoYoLAB 请求地址无效。");
@@ -143,7 +154,7 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
 
     let response: Response;
     try {
-      response = await transport(url, {
+      response = await active(url, {
         method: writing ? "POST" : "GET", headers: signedHeaders, ...(writing && { body }),
         credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
       });
@@ -172,8 +183,9 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
     const data = object(payload?.data);
     const message = typeof payload?.message === "string" ? payload.message : "";
     const nestedRisk = object(data?.gt_result);
+    if (data && (retcode === 0 || retcode === 1034 || retcode === 10035)) checkAccount(data, auth, subject);
     if ((typeof retcode === "number" && riskCodes.includes(retcode)) ||
-        [data?.is_risk, nestedRisk?.is_risk].some(flag => flag === true || flag === 1) ||
+        (retcode === 0 && [data?.is_risk, nestedRisk?.is_risk, data?.success, nestedRisk?.success].some(flag => flag === true || flag === 1)) ||
         /验证码|captcha|geetest|风控/iu.test(message)) {
       throw new GameRecordRequestError(subject, "risk", code, status, typeof retcode === "number" ? retcode : undefined);
     }

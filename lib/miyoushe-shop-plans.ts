@@ -749,6 +749,7 @@ export function createMiyousheShopPlans({
         if (booked.accountId !== plan.accountId || booked.stamp !== plan.bindingStamp) conflict(details.changed);
         const verifyBinding = async () => {
           activeSignal?.throwIfAborted();
+          if (!immediate && now() >= Math.min(plan.opensAt + maxDelay, saleClose)) conflict(details.verification);
           if (resumeDeadline !== undefined && now() >= resumeDeadline) conflict(details.verification);
           if (immediate && activeSignal) await immediate.session.verify(activeSignal);
           await verifyCurrent(target, booked);
@@ -816,12 +817,13 @@ export function createMiyousheShopPlans({
           return;
         }
         const purchaseCycle = immediate ? trackingCycle(good, now()) : undefined;
-        const manual: ShopManualVerification | undefined = immediate && activeSignal ? {
+        const manual: ShopManualVerification | undefined = activeSignal ? {
+          allowManual: Boolean(immediate),
           async waitForProof(challenge, requestSignal) {
             const relay = manualRelay?.();
-            if (!relay || now() > plan.opensAt + maxDelay) return;
+            if (!immediate || !relay || now() > plan.opensAt + maxDelay) return;
             const time = now();
-            const deadline = Math.min(time + manualVerificationTimeout, saleClose);
+            const deadline = Math.min(resumeDeadline ?? time + manualVerificationTimeout, saleClose);
             if (deadline <= time) return;
             const scope = AbortSignal.any([requestSignal, AbortSignal.timeout(deadline - time)]);
             const registration = await relay.register(challenge, scope);
@@ -846,7 +848,7 @@ export function createMiyousheShopPlans({
             if (updated.status !== "available" ||
                 (purchaseCycle !== undefined && trackingCycle(updated, now()) !== purchaseCycle)) conflict(details.conditions);
             const time = now();
-            resumeDeadline = Math.min(resumeDeadline ?? time, saleClose);
+            resumeDeadline = Math.min(resumeDeadline ?? plan.opensAt + maxDelay, saleClose);
             if (time >= resumeDeadline) conflict(details.verification);
             const marked = await update(plan.id, "submitting", current => { current.attempts++; });
             if (!marked) conflict(details.conditions);
