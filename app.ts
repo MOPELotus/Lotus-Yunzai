@@ -16,7 +16,7 @@ import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
 import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia";
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
-import { closeStorage, connectStorage, storage } from "@lotus-yunzai/storage";
+import { closeStorage, connectStorage, readStorageCommand, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
 import { accountCookieStatusFeatures, createAccountCookieStatus, matchesAccountCookieStatus } from "./lib/account-cookie-status.ts";
 import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-profile-defaults.ts";
@@ -3816,8 +3816,8 @@ if (import.meta.main) {
       statusPhotoStorage: statusStorage("status-photo"),
       statusMonitorStorage: statusStorage("status-monitor"),
       statusMonitorRedisClients: valkey === undefined ? undefined : (signal: AbortSignal) =>
-        readRuntimeStatusRedisClients(request => globalThis.redis?.sendCommand<string>(["INFO", "clients"], { signal: request })
-          ?? Promise.resolve(""), signal),
+        readRuntimeStatusRedisClients(request => globalThis.redis
+          ? readStorageCommand<string>(globalThis.redis, ["INFO", "clients"], request) : Promise.resolve(""), signal),
       runtimeStatus: createRuntimeStatus({
         accounts() {
           const accounts = groups.onlineAccounts().map(account => ({ ...account, adapter: "onebot" as const }));
@@ -3829,7 +3829,7 @@ if (import.meta.main) {
         readCounts: counts.read,
         countImages: segmentCounts,
         readRedisStatus: valkey === undefined ? undefined : (signal) =>
-          globalThis.redis?.sendCommand<string>(["INFO"], { signal }) ?? Promise.resolve(""),
+          globalThis.redis ? readStorageCommand<string>(globalThis.redis, ["INFO"], signal) : Promise.resolve(""),
         loadedNames: () => plugins?.records.filter(record => record.status === "loaded").map(record => record.name),
       }),
       runtimeDiagnostics(context: CommandContext) {
