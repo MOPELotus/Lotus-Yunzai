@@ -35,8 +35,11 @@ test("UID 区分角色序号、实际 UID 和独立的签名验证", () => {
   expect(matchOwnRoleSelection("#切换崩铁UID2 800000044")).toEqual({ game: "sr", profileId: 2, uid: "800000044" });
   expect(matchOwnRoleSelection("#切换星铁UID2800000044")).toEqual({ game: "sr", profileId: 1, uid: "2800000044" });
   expect(matchOwnRoleSelection("#设置绝UID 82000044")).toEqual({ game: "zzz", profileId: 1, uid: "82000044" });
+  expect(matchOwnRoleSelection("#绑定绝区零UID82000042")).toEqual({ game: "zzz", profileId: 1, uid: "82000042" });
+  expect(matchOwnRoleSelection("#绑定绝uid2　82000044")).toEqual({ game: "zzz", profileId: 2, uid: "82000044" });
   for (const text of ["#UID100000042", "#UID 42", "#UID-1", "#UID 档案0", "#UID 档案02", "#解绑uid2",
     "#绑定UID", "#绑定UID100000042", "#绑定原神UID100000042", "#验证UID100000042", "#取消验证UID100000042",
+    "#绑定星铁UID800000042", "#绑定绝区零uId82000044", "#绑定绝区零 UID82000044", "#绝区零绑定UID82000044",
     "#切换星铁UID255800000044", "#设置原神UID02 100000042", "#切换绝区零UID2 82000044 多余参数"]) {
     expect(matchOwnRoleSelection(text)).toBeUndefined();
   }
@@ -150,14 +153,17 @@ globalThis.fetch = async (input, options) => {
     expect(all).not.toContain("100000099");
     await replies("#设置原神UID100000044", "档案 1 没有此原神角色");
     await replies("#切换原神UID2 100000099", "档案 2 没有此原神角色");
-    await replies("#切换绝区零UID2 82000044", "请私聊机器人查看或切换本人游戏角色", {
+    await replies("#绑定绝区零UID2 82000044", "请私聊机器人查看或切换本人游戏角色", {
       message_type: "group", sub_type: "normal", group_id: 701,
     });
     const ownProfiles = createProfileStore(join(root, "profiles"));
     expect((await ownProfiles.roleCatalog("42", 2)).active).toEqual({ gs: games.gs[0], sr: games.sr[0], zzz: games.zzz[0] });
     await replies("#设置原神UID2 100000042", "档案 2 · 原神当前角色已选为 100000042");
     await replies("#切换崩铁uid2 800000044", "档案 2 · 星铁当前角色已选为 800000044");
-    await replies("#切换绝UID2 82000044", "档案 2 · 绝区零当前角色已选为 82000044");
+    await replies("#绑定绝区零UID2 89900042", "档案 2 没有此绝区零角色");
+    await replies("#绑定绝区零UID2 82000042", "档案 2 · 绝区零当前角色已选为 82000042");
+    await replies("#绑定绝UID2　82000044", "档案 2 · 绝区零当前角色已选为 82000044");
+    expect((await ownProfiles.roleCatalog("42", 2)).catalog.zzz.map(({ uid }) => uid)).toEqual([...games.zzz]);
     await replies("#UID3", "档案 2 · 原神当前角色已选为 100000044");
     expect((await ownProfiles.requestContext("42", 2, "gs")).role.uid).toBe(games.gs[1]);
     expect((await ownProfiles.requestContext("42", 1, "gs")).role.uid).toBe("100000041");
@@ -178,6 +184,11 @@ globalThis.fetch = async (input, options) => {
     expect(choice.params).toMatchObject({ user_id: 43 });
     expect(JSON.stringify(choice.params)).toContain(games.sr[1]);
     choice.respond({ message_seq: sequence++ });
+    expect((await sendMilky("#绑定绝区零uid82000044")).status).toBe(200);
+    const zenless = await milky.next("send_private_message");
+    expect(zenless.params).toMatchObject({ user_id: 43 });
+    expect(JSON.stringify(zenless.params)).toContain("档案 1 · 绝区零当前角色已选为 82000044");
+    zenless.respond({ message_seq: sequence++ });
     const profiles = createProfileStore(join(root, "profiles"));
     expect((await profiles.roleCatalog("42", 1)).active.gs).toBe("100000041");
     expect((await profiles.roleCatalog("42", 2)).active).toEqual({ gs: games.gs[1], sr: games.sr[1], zzz: games.zzz[1] });
@@ -187,6 +198,7 @@ globalThis.fetch = async (input, options) => {
     const milkyRoles = (await profiles.roleCatalog("43", 1)).active;
     expect(milkyRoles.gs).toBe("100000099");
     expect(milkyRoles.sr).toBe(games.sr[1]);
+    expect(milkyRoles.zzz).toBe(games.zzz[1]);
 
     await replies("#删除CK", "多个登录档案（1、2）");
     expect((await profiles.describe("42", 1)).loggedIn).toBe(true);

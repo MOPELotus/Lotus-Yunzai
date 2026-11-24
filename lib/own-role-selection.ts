@@ -6,7 +6,7 @@ import { segment } from "./messages.ts";
 import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
 
 const command = /^#(原神|星铁|绝区零)?(?:我的)?uid([0-9]{1,3})?(?:[ \t]+档案[ \t]*([1-9][0-9]{0,2}))?$/iu;
-const directUidCommand = /^#(?:设置|切换)(原神|星铁|崩铁|绝区零|绝)uid(?:([1-9]\d{0,2})?[ \t]+)?([1-9]\d{7,9})$/iu;
+const directUidCommand = /^#(?:(?:设置|切换)(原神|星铁|崩铁|绝区零|绝)|绑定(绝区零|绝))(?:uid|UID)(?:([1-9]\d{0,2})?\s+)?([1-9]\d{7,9})$/u;
 const gameCodes = { 原神: "gs", 星铁: "sr", 崩铁: "sr", 绝区零: "zzz", 绝: "zzz" } as const;
 const gameLabels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
 const prefixes = { gs: "#", sr: "*", zzz: "%" } as const;
@@ -24,7 +24,8 @@ export function matchOwnRoleSelection(message: string): Selection | undefined {
   }
   const direct = directUidCommand.exec(message.trim());
   if (!direct) return;
-  return { game: gameCodes[direct[1] as keyof typeof gameCodes], profileId: Number(direct[2] ?? 1), uid: direct[3]! };
+  const label = (direct[1] ?? direct[2]) as keyof typeof gameCodes;
+  return { game: gameCodes[label], profileId: Number(direct[3] ?? 1), uid: direct[4]! };
 }
 
 type Scope = { readonly user: number; readonly signal: AbortSignal; readonly isCurrent: () => boolean };
