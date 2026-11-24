@@ -464,7 +464,7 @@ async function fixture() {
       "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
     ...["atlas-channel", "lotus-global-config", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
-      "migration-publication", "startup-render-preset", "update-activation", "initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "initialize-resources", "initialize-terminal-owner"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+      "migration-publication", "startup-render-preset", "update-activation", "initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "initialize-resources", "initialize-terminal-owner", "initialization-state"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),

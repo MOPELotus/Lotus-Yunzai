@@ -1,3 +1,4 @@
+import { assertInitializationComplete } from "../lib/initialization-state.ts";
 import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -169,6 +170,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
 }
 
 export async function prepareStartup(root: URL, requested: AtlasChannel | undefined, signal: AbortSignal, initialize = requested !== undefined) {
+  if (!initialize) await assertInitializationComplete(root);
   const { persistAtlasChannel, readAtlasChannel } = await loadStartupConfig(root);
   if (await Bun.file(new URL("config/server.yaml", root)).exists()) {
     const { prepareMigratedOneBot } = await import("../lib/migrated-onebot-setup.ts");

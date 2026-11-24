@@ -1,3 +1,4 @@
+import { beginInitialization, finishInitialization } from "../lib/initialization-state.ts";
 import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { fileURLToPath } from "node:url";
 import manifest from "../package.json";
@@ -23,6 +24,7 @@ const channel = channels[0];
 
 const root = new URL("..", import.meta.url);
 const options = { cwd: fileURLToPath(root), stdout: "inherit", stderr: "inherit" } as const;
+const initializationRun = buildOnly ? undefined : await beginInitialization(root);
 
 async function command(message: string, argv: string[], stdin: "inherit" | "ignore" = "ignore", nested = false) {
   // Subprocesses retain their own terminal progress; parent stages use full log lines.
@@ -146,6 +148,7 @@ if (!process.exitCode && !buildOnly) {
     console.error("[初始化] 运行资料未准备完成，请排查上述错误后重新运行 bun run bootstrap。");
     process.exitCode = initialized;
   } else {
+    if (initializationRun) await finishInitialization(root, initializationRun);
     console.log("[初始化] 全部准备完成，运行 bun run start 即可启动机器人。");
   }
 }
