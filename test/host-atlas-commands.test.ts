@@ -29,8 +29,12 @@ async function writeCatalog(directory: string) {
       gi: game({
         weapon: page(record("101", "西风剑", "四星"), record("102", "共用样例", "五星"), record("104", "更新", "四星")),
         artifact: page(record("103", "103")),
+        leyline: page(record("5269013", "鲸波之役"), record("5269014", "霜锋之役")),
       }),
-      hsr: game({ lightcone: page(record("201", "锋镝", "三星"), record("202", "共用样例", "四星")) }),
+      hsr: game({
+        lightcone: page(record("201", "锋镝", "三星"), record("202", "共用样例", "四星")),
+        maze_peak: page(record("10", "落叶归根"), record("11", "隐藏关卡"), record("12", "喜笑与悲泣")),
+      }),
       zzz: game({ weapon: page(record("301", "深海访客")) }),
     } })),
     detail("gi", "weapon", "101", { list: { type: "WEAPON_SWORD_ONE_HAND" },
@@ -44,6 +48,9 @@ async function writeCatalog(directory: string) {
     detail("hsr", "lightcone", "201", { list: { baseType: "Rogue" } }),
     detail("hsr", "lightcone", "202", { list: { baseType: "Rogue" } }),
     detail("zzz", "weapon", "301", { list: { type: 7, rank: 2 } }),
+    detail("gi", "leyline", "5269013", { list: { live_begin: "2026-11-11 10:00:00", live_end: "2026-12-23 09:59:59" } }),
+    detail("gi", "leyline", "5269014", { list: { begin: "2026-11-03 10:00:00", end: "2026-12-01 03:59:59" } }),
+    ...["10", "11", "12"].map(id => detail("hsr", "maze_peak", id, { list: {} })),
   ]);
 }
 
@@ -182,6 +189,14 @@ test("Atlas 传统图鉴指令在实际宿主保留游戏前缀、分类和匹�
       expect(await query("#未知样例命座")).toContain("未找到匹配的角色资料");
       expect(await query("#图鉴 本期深渊")).toContain("本期轮换时间待核对");
       expect(await query("#图鉴上期末日2026年2月29日")).toContain("日期无效");
+      expect(await query("#图鉴 星铁 2026-11-24本期异相")).toContain("记录 ID 11");
+      expect(await query("#图鉴 星铁 2026-11-24上期异相")).toContain("记录 ID 10");
+      const arbitrationPreview = await query("#图鉴 星铁 2026-11-24下期异相");
+      expect(arbitrationPreview).toContain("记录 ID 12");
+      expect(arbitrationPreview).toContain("下期预览");
+      const onslaughtPreview = await query("#图鉴 原神 2026-11-24下期幽境");
+      expect(onslaughtPreview).toContain("记录 ID 5269014");
+      expect(onslaughtPreview).toContain("下期预览 · 导出时间");
 
       const recovered = join(data, "items/简体中文/原神/武器/一星");
       await mkdir(recovered, { recursive: true });
