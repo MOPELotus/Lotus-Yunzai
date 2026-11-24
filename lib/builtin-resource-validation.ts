@@ -14,7 +14,7 @@ export async function verifyBuiltinResources(root: URL, signal?: AbortSignal, on
   let checked = 0, bytes = 0;
   for (const entry of manifest.files) {
     signal?.throwIfAborted();
-    if (typeof entry.path !== "string" || !/^(?:resources\/builtin|plugins\/[^/]+\/resources|packages\/skia\/assets)\//u.test(entry.path) ||
+    if (typeof entry.path !== "string" || !/^(?:resources\/|packages\/[^/]+\/(?:assets|resources)\/|plugins\/[^/]+\/(?:assets|resources|[^/]*theme)\/|plugins\/[^/]+\/(?:[^/]+\/)*[^/]*-assets\/|vendor\/gt-manual\/public\/)/u.test(entry.path) ||
         entry.path.split("/").some(part => !part || part === "." || part === "..") || /[\\\0]/u.test(entry.path) ||
         !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || !/^[a-f0-9]{64}$/u.test(entry.sha256)) throw new Error("内置资源清单条目无效。");
     const file = join(directory, entry.path);

@@ -4,8 +4,12 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const directories = ["resources/builtin", "packages/skia/assets"];
-for (const plugin of await readdir(join(root, "plugins"))) directories.push(`plugins/${plugin}/resources`);
+const directories = ["resources/builtin"];
+// Only tracked support files outside the dedicated bundle: never inventory private overrides.
+const listed = Bun.spawn(["git", "ls-files", "--recurse-submodules", "-z"], { cwd: root, stdout: "pipe", stderr: "inherit" });
+const tracked = (await new Response(listed.stdout).text()).split("\0");
+if (await listed.exited !== 0) throw new Error("无法读取公共资源的 Git 清单。");
+const supportFile = /^(?:resources\/|packages\/[^/]+\/(?:assets|resources)\/|plugins\/[^/]+\/(?:assets|resources|[^/]*theme)\/|plugins\/[^/]+\/(?:[^/]+\/)*[^/]*-assets\/|vendor\/gt-manual\/public\/)/u;
 const paths: string[] = [];
 async function walk(path: string) {
   for (const entry of await readdir(path, { withFileTypes: true }).catch(error => {
@@ -20,8 +24,11 @@ async function walk(path: string) {
   }
 }
 for (const path of directories) await walk(join(root, path));
+for (const path of tracked) {
+  if (supportFile.test(path) && path !== "resources/builtin/manifest.json") paths.push(join(root, path));
+}
 const files = [];
-for (const file of paths.sort()) {
+for (const file of [...new Set(paths)].sort()) {
   const bytes = await readFile(file);
   files.push({ path: relative(root, file).replaceAll("\\", "/"), bytes: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex") });

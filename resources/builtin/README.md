@@ -10,4 +10,4 @@
 
 各组 SOURCES / sources 文件记录来源仓库、固定提交、原路径、大小与摘要；许可证随组保留。没有复制生产账号、Cookie、个人头像缓存、订阅记录或私有配置。用户显式指定的资源目录仍优先使用。
 
-`manifest.json` 同时覆盖本目录和各插件已有的公共 resources。`bun run bootstrap` 对清单逐件验证大小及 SHA256，缺失或损坏即失败，不再将固定资源缺失降为警告。维护资源时，核对来源与许可证后运行 `bun scripts/update-builtin-resource-manifest.ts` 更新清单，再运行 `bun scripts/verify-builtin-resources.ts`。
+`manifest.json` 同时覆盖本目录、各插件已有公共素材与模板、包内词表配置、设备 APK 和人工验证页面。专用内置包之外只收录 Git 跟踪的公共文件，不收录私有覆盖。`bun run bootstrap` 对清单逐件验证大小及 SHA256，缺失或损坏即失败，不再将固定资源缺失降为警告。维护资源时，核对来源与许可证后运行 `bun scripts/update-builtin-resource-manifest.ts` 更新清单，再运行 `bun scripts/verify-builtin-resources.ts`。
