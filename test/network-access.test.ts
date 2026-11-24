@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isInternalAddress, authorizedProtocolRequest } from "../lib/network-access.ts";
+import { isInternalAddress, authorizedProtocolRequest, listenerOrigins } from "../lib/network-access.ts";
 import { parseServerSettings } from "../lib/server.ts";
 import { startOneBot } from "../lib/adapters/onebot.ts";
 import { OneBotGroups } from "../lib/adapters/onebot-groups.ts";
@@ -7,6 +7,7 @@ import { OneBotGroups } from "../lib/adapters/onebot-groups.ts";
 test("默认和TRSS共用2536，监听所有网卡，内网免令牌且公网须认证", () => {
   const config = parseServerSettings({}, {});
   expect(config.hostname).toBe("0.0.0.0");
+  expect(listenerOrigins(config.hostname, 2536, "ws")).toEqual(["ws://0.0.0.0:2536"]);
   expect(config.http?.port).toBe(2536);
   expect(config.oneBot?.port).toBe(2536);
   expect([...config.oneBot!.auth]).toEqual([]);

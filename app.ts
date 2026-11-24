@@ -3707,7 +3707,7 @@ if (import.meta.main) {
       });
       servers.push(server);
       for (const origin of listenerOrigins(hostname, server.port, tls ? "wss" : "ws"))
-        listenerMessages.push(`[ONEBOT V11] OneBot 11 正在监听 ${origin}/OneBotv11（反向 WebSocket，绑定 ${hostname}:${server.port}）`);
+        listenerMessages.push(`[ONEBOT V11] OneBot 11 正在监听 ${origin}/OneBotv11`);
       listenerMessages.push([...auth.keys()].length ? "[ONEBOT V11] 内网可直接连接；公网连接须携带已配置的令牌。" : "[ONEBOT V11] 仅限本机及内网直接连接，无需令牌；公网接入须先配置 onebot_token。");
       return server;
     }
@@ -3722,7 +3722,7 @@ if (import.meta.main) {
       const server = shared && socketServer ? socketServer : listenHttp(http.port, httpHandler(http.auth));
       fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
       for (const origin of listenerOrigins(hostname, server.port, "http"))
-        listenerMessages.push(`[HTTP] HTTP 正在监听 ${origin}/status（绑定 ${hostname}:${server.port}）`);
+        listenerMessages.push(`[HTTP] HTTP 正在监听 ${origin}/status`);
     }
     if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
     let tlsListener: ManagedTlsListener | undefined;
@@ -3742,7 +3742,7 @@ if (import.meta.main) {
           tlsPort = port;
           fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
           for (const origin of listenerOrigins(hostname, server.port, "https"))
-            listenerMessages.push(`[HTTPS] HTTPS 正在监听 ${origin}/status（绑定 ${hostname}:${server.port}）`);
+            listenerMessages.push(`[HTTPS] HTTPS 正在监听 ${origin}/status`);
         }
       } catch {
         if (!stopping) console.warn("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");

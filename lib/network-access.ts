@@ -1,5 +1,4 @@
 import { isIP } from "node:net";
-import { networkInterfaces } from "node:os";
 
 /** Only loopback, RFC1918, link-local and IPv6 ULA are trusted without a token. */
 export function isInternalAddress(address: string | undefined): boolean {
@@ -33,8 +32,5 @@ export function authorizedProtocolRequest(request: Request, required: Headers, p
 }
 export function listenerOrigins(hostname: string, port: number | undefined, protocol: "http" | "https" | "ws" | "wss"): string[] {
   if (port === undefined) return [];
-  const wildcard = ["0.0.0.0", "::", "[::]"].includes(hostname);
-  const addresses = wildcard ? ["127.0.0.1", ...Object.values(networkInterfaces()).flatMap(entries =>
-    (entries ?? []).filter(entry => !entry.internal && isInternalAddress(entry.address)).map(entry => entry.address))] : [hostname];
-  return [...new Set(addresses)].map(address => `${protocol}://${address.includes(":") && !address.startsWith("[") ? `[${address}]` : address}:${port}`);
+  return [`${protocol}://${hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname}:${port}`];
 }

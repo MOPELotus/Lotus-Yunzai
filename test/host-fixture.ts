@@ -13,7 +13,9 @@ export function disableMemberPrewarm(root: string) {
 
 export async function copyHost(root: string) {
   await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
-  await cp(new URL("../app.ts", import.meta.url), join(root, "app.ts"));
+  // Keep test listeners on loopback unless a case explicitly selects another bind address.
+  await Bun.write(join(root, "app.ts"), 'process.env.LOTUS_LISTEN_HOST ??= "127.0.0.1";\n' +
+    await Bun.file(new URL("../app.ts", import.meta.url)).text());
   await symlink(join(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir");
   const system = join(root, "plugins", "system");
   const source = join(import.meta.dir, "../plugins/system");
