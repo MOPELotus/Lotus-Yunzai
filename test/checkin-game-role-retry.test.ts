@@ -93,7 +93,7 @@ test("实际定时运行可同档持久保存待查角色和社区补跑，两�
         },
       });
       const runtime = createCheckinScheduleRuntime({
-        store, signal: abort.signal, config: { fixed_time: "18:00" }, now: () => at,
+        store, signal: abort.signal, config: { mode: "fixed", fixed_time: "18:00" }, now: () => at,
         listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => gameCheckin.runScheduled(entry.qq, entry.profileId, context),
       });
       try {
@@ -164,7 +164,7 @@ test("签到提交状态未知不会入队，日末补跑拒绝换绑后的档�
         },
       });
       const runtime = createCheckinScheduleRuntime({
-        store, signal: abort.signal, config: { fixed_time: "18:00" }, now: () => at,
+        store, signal: abort.signal, config: { mode: "fixed", fixed_time: "18:00" }, now: () => at,
         listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
       });
       try {
@@ -215,7 +215,7 @@ test("社区提交未知时，仅同档未提交的其他分区进入当天补�
       },
     });
     const runtime = createCheckinScheduleRuntime({
-      store, signal: signal.signal, config: { fixed_time: "18:00" }, now: () => at,
+      store, signal: signal.signal, config: { mode: "fixed", fixed_time: "18:00" }, now: () => at,
       listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
     });
     try {
@@ -277,7 +277,7 @@ test("游戏提交后中止，重新领取时只回读该角色，其余从未�
         },
       });
       const runtime = createCheckinScheduleRuntime({
-        store, signal: controller.signal, config: { fixed_time: "18:00" }, now: () => scheduled,
+        store, signal: controller.signal, config: { mode: "fixed", fixed_time: "18:00" }, now: () => scheduled,
         listProfiles: profiles.listCheckinProfiles, runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
       });
       try { return await runtime.runDue(); }
