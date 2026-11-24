@@ -104,7 +104,7 @@ export async function buildUpdateCheckout(
   signal?.throwIfAborted();
   const env = await buildEnvironment(cacheDirectory);
   const command = [process.execPath, "run", "--no-env-file", "--no-orphans"];
-  await run(directory, env, [...command, "scripts/bootstrap.ts"], 15 * 60_000, "更新候选初始化失败。", signal);
+  await run(directory, env, [...command, "scripts/bootstrap.ts", "--build-only"], 15 * 60_000, "更新候选初始化失败。", signal);
   signal?.throwIfAborted();
   await preparePlugins?.();
   signal?.throwIfAborted();

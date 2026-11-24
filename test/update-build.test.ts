@@ -34,6 +34,7 @@ test("候选实际运行初始化和 typecheck，隔离宿主环境和本地缓�
       assert.equal(process.env.GIT_TERMINAL_PROMPT, "0");
     `;
     await writeFile(join(checkout, "scripts", "bootstrap.ts"), `${checkEnv}
+      assert.deepEqual(Bun.argv.slice(2), ["--build-only"]);
       const testProtocol = Bun.spawnSync([Bun.which("git"), "ls-remote", "ext::false"]);
       assert.notEqual(testProtocol.exitCode, 0);
       assert.match(testProtocol.stderr.toString(), /transport 'ext' not allowed/);

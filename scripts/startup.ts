@@ -6,12 +6,12 @@ import type { AtlasLocale } from "../plugins/atlas/locale.ts";
 import type { AtlasChannel } from "../lib/atlas-channel.ts";
 import type { ImageRenderPreset } from "../lib/startup-render-preset.ts";
 
-async function askStartupOptions(chooseAtlas: boolean, chooseRender: boolean, signal: AbortSignal):
+async function askStartupOptions(chooseAtlas: boolean, chooseRender: boolean, signal: AbortSignal, allowDefaultChannel = false):
   Promise<{ channel?: AtlasChannel; renderPreset?: ImageRenderPreset }> {
   if (!chooseAtlas && !chooseRender) return {};
   if (!process.stdin.isTTY) {
-    if (chooseAtlas) throw new Error("还未选择图鉴版本来源。请先运行 bun run init latest 或 bun run init live。");
-    return { renderPreset: "standard" };
+    if (chooseAtlas && !allowDefaultChannel) throw new Error("尚未完成初始化，请先运行 bun run bootstrap。");
+    return { ...(chooseAtlas && { channel: "latest" }), renderPreset: "standard" };
   }
   const input = createInterface({ input: process.stdin, output: process.stderr });
   const interactive = new AbortController();
@@ -111,7 +111,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   if (dailyNote === "incomplete") {
     console.warn("[体力] 本地原便笺主题不完整。可将原字体和图标补齐到 data/daily-note/resources，或设置 LOTUS_DAILY_NOTE_RESOURCES 指向完整主题。");
   }
-  if (dailyNote === "missing" && firstSetup) console.warn("[体力] 原便笺主题暂不可用，可运行 bun run init 重试。");
+  if (dailyNote === "missing" && firstSetup) console.warn("[体力] 原便笺主题暂不可用，可重新运行 bun run bootstrap 重试。");
 
   if (await Bun.file(new URL("plugins/zzz/tuning-detail-card.ts", root)).exists()) {
     const { prepareZzzTuningTheme } = await import("../lib/zzz-tuning-theme.ts");
@@ -126,7 +126,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     if (zzzTuning === "incomplete") {
       console.warn("[绝区零] 本地调频原主题不完整。可补齐 data/zzz/gacha-theme，或设置 LOTUS_ZZZ_GACHA_THEME_DIR 指向完整主题。");
     }
-    if (zzzTuning === "missing" && firstSetup) console.warn("[绝区零] 调频原主题暂不可用，可运行 bun run init 重试。");
+    if (zzzTuning === "missing" && firstSetup) console.warn("[绝区零] 调频原主题暂不可用，可重新运行 bun run bootstrap 重试。");
   }
 
   if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
@@ -134,7 +134,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     const wishCalendar = await prepareGenshinWishCalendar(root, { signal, download: firstSetup });
     if (wishCalendar === "installed") console.log("[原神] 已准备原祈愿日历。");
     if (wishCalendar === "missing" && firstSetup) {
-      console.warn("[原神] 原祈愿日历暂不可用，可运行 bun run init 重试。");
+      console.warn("[原神] 原祈愿日历暂不可用，可重新运行 bun run bootstrap 重试。");
     }
   }
 
@@ -146,7 +146,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
     if (starrail.templates || starrail.portraits) {
       console.log(`[星铁] 已恢复 ${starrail.templates} 个原挑战模板文件和 ${starrail.portraits} 张本地原头像。`);
     }
-    if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可运行 bun run init 补齐。`);
+    if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可重新运行 bun run bootstrap 补齐。`);
   }
   if (await Bun.file(new URL("plugins/starrail/simulation/reincarnation-theme.ts", root)).exists()) {
     const { prepareStarRailReincarnationTheme } = await import("../plugins/starrail/simulation/reincarnation-theme.ts");
@@ -154,7 +154,7 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
       override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup,
     });
     if (relife.installed) console.log(`[星铁] 已恢复 ${relife.installed} 个原转生主题文件。`);
-    if (relife.missing.length && firstSetup) console.warn(`[星铁] 缺少 ${relife.missing.length} 个原转生主题文件，可运行 bun run init 补齐。`);
+    if (relife.missing.length && firstSetup) console.warn(`[星铁] 缺少 ${relife.missing.length} 个原转生主题文件，可重新运行 bun run bootstrap 补齐。`);
   }
 }
 
@@ -175,14 +175,14 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   const atlas = await atlasReadiness(directory, locale);
   signal.throwIfAborted();
   if (atlas === "reset" && !initialize && requested === undefined) {
-    console.warn("[图鉴] 保持重置状态。可运行 bun run init 或使用 #全量更新图鉴 恢复。");
+    console.warn("[图鉴] 保持重置状态。可运行 bun run bootstrap 或使用 #全量更新图鉴 恢复。");
     await prepareThemes(root, signal, false);
     return;
   }
   const ready = atlas === "ready";
   const { needsInitialRenderPreset, persistInitialRenderPreset } = await import("../lib/startup-render-preset.ts");
   const options = await askStartupOptions(!ready && requested === undefined && previous === null,
-    (!ready || initialize) && await needsInitialRenderPreset(root), signal);
+    (!ready || initialize) && await needsInitialRenderPreset(root), signal, initialize);
   if (options.renderPreset) await persistInitialRenderPreset(root, options.renderPreset, signal);
   if (!ready || requested !== undefined) {
     const channel = requested ?? previous ?? options.channel!;
@@ -228,7 +228,7 @@ async function initializePublicAtlas(root: URL, directory: string, channel: Atla
   await mkdir(directory, { recursive: true, mode: 0o700 });
   console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
   const workspace = fileURLToPath(new URL("data/atlas-download/", root));
-  const failure = "图鉴初始化失败。下载记录已保留，可重新运行 bun run init。";
+  const failure = "图鉴初始化失败。下载记录已保留，可重新运行 bun run bootstrap。";
   const result = await initializeAtlasFromPublic(directory, workspace, signal, channel, {
     locale, publication: atlasUpdatePublicationOptions(config),
   }).catch((cause: unknown) => {
@@ -238,7 +238,7 @@ async function initializePublicAtlas(root: URL, directory: string, channel: Atla
   });
   signal.throwIfAborted();
   if (result.status === "prepared") {
-    throw new Error(`图鉴候选已保存至第 ${result.version} 版。当前关闭了图鉴同步，启用同步后再运行 bun run init。`);
+    throw new Error(`图鉴候选已保存至第 ${result.version} 版。当前关闭了图鉴同步，启用同步后再运行 bun run bootstrap。`);
   }
   if (result.status === "invalid" && result.issues[0]) console.warn(`[图鉴] ${result.issues[0]}`);
   if (await atlasReadiness(directory, locale) !== "ready") throw new Error(failure);

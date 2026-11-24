@@ -8,7 +8,7 @@ export async function prepareMigratedOneBot(root: URL, env: ServerEnvironment, i
   signal?.throwIfAborted();
   const config = await readOptionalConfigFile(root, "config/server.yaml");
   if (config?.onebot_token !== null || parseServerSettings(config, env).oneBot) return false;
-  if (!initialize) throw new Error("旧 OneBot 网关使用无令牌连接。请先运行 bun run init 配置接入令牌。");
+  if (!initialize) throw new Error("旧 OneBot 网关使用无令牌连接。请先运行 bun run bootstrap 配置接入令牌。");
 
   return updateLocalConfiguration(root, "server", {
     signal,

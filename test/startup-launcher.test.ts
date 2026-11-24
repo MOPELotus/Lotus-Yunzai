@@ -514,10 +514,25 @@ test("noninteractive first start requires a source choice before starting the ho
   const [code, output, error] = await start(["start"]);
   expect(code).toBe(1);
   expect(output).toBe("");
-  expect(error).toContain("bun run init latest");
+  expect(error).toContain("bun run bootstrap");
   expect(await Bun.file(config).exists()).toBe(false);
   expect(await Bun.file(join(cwd, "config/bot.yaml")).exists()).toBe(false);
   expect(await Bun.file(attempts).exists()).toBe(false);
+});
+
+test("非交互完整初始化默认最新版并完成首次设置，随后启动不再要求初始化", async () => {
+  const { cwd, config, attempts, start } = await fixture();
+  const [code, output, error] = await start(["init"]);
+  expect(code).toBe(0);
+  expect(error).not.toContain("尚未完成初始化");
+  expect(output).toContain("已就绪");
+  expect((await Bun.file(config).text())).toContain("latest");
+  expect((await Bun.file(join(cwd, "config/bot.yaml")).text())).toContain("standard");
+  expect(await Bun.file(attempts).text()).toBe("latest\n");
+  const [started, ready] = await start(["start"]);
+  expect(started).toBe(0);
+  expect(ready).toContain("fixture host ready");
+  expect(await Bun.file(attempts).text()).toBe("latest\n");
 });
 
 test.skipIf(process.platform === "win32")("首次前台启动用一个实际终端选择图鉴与低配档，暖启保留配置", async () => {
@@ -698,7 +713,7 @@ test("a migrated OneBot listener without authentication gets one private token t
   const [unprepared, output, error] = await start(["start"]);
   expect(unprepared).toBe(1);
   expect(output).not.toContain("fixture host ready");
-  expect(error).toContain("bun run init");
+  expect(error).toContain("bun run bootstrap");
   expect((await start(["start"], { LOTUS_ONEBOT_TOKEN: "provided-fixture-token" }))[0]).toBe(0);
   expect(await readFile(file, "utf8")).toBe(legacy);
   const [prepared, initialization] = await start(["init"]);

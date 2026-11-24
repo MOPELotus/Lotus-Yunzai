@@ -11,7 +11,7 @@ bun run bootstrap
 bun run start
 ```
 
-首次启动时可选择最新版或正式版图鉴。非交互环境先运行 `bun run init latest` 或 `bun run init live`。
+`bootstrap` 一次完成子模块补拉与固定版本核对、依赖安装、管理面板构建、图鉴与主题素材及验证码模型准备。交互终端会询问尚未设置的选项；非交互首次安装默认选择最新版图鉴，也可在同一条命令指定 `bun run bootstrap live` 或 `bun run bootstrap latest`。已有设置和有效缓存会复用。初始化成功后直接启动，不需要另跑 `init`。
 
 前台按 Ctrl+C 停止。Linux 或 macOS 安装 PM2 后，使用 `bun run start:bg` 后台启动，`bun run stop` 停止，`bun run logs` 查看日志，`bun run status` 查看后台状态。后台宿主就绪后异常退出会自动恢复。
 

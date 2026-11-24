@@ -7,6 +7,16 @@ if (Bun.version !== requiredVersion) {
   process.exit(1);
 }
 
+const args = Bun.argv.slice(2);
+const buildOnly = args.includes("--build-only");
+const channels = args.filter(arg => arg !== "--verify-v3-renderer" && arg !== "--build-only");
+if (channels.length > 1 || (channels[0] !== undefined && channels[0] !== "latest" && channels[0] !== "live") ||
+    (buildOnly && channels.length)) {
+  console.error("用法：bun run bootstrap [latest|live]。");
+  process.exit(1);
+}
+const channel = channels[0];
+
 const root = new URL("..", import.meta.url);
 const options = { cwd: fileURLToPath(root), stdout: "inherit", stderr: "inherit" } as const;
 
@@ -95,13 +105,16 @@ if (!process.exitCode) {
 }
 
 
-if (!process.exitCode && await Bun.file(new URL("packages/captcha/index.ts", root)).exists()) {
-  // Installation may have created the workspace link after this process started.
-  const prepared = await Bun.spawn([process.execPath, "--eval",
-    'const { initializeCaptchaModels } = await import("./lib/captcha/initialize.ts"); const { pathToFileURL } = await import("node:url"); await initializeCaptchaModels(pathToFileURL(process.cwd() + "/"), AbortSignal.timeout(1800000));',
-  ], options).exited;
-  if (prepared !== 0) {
-    console.error("[初始化] 验证码模型未准备完成，请检查网络后重新运行 bun run bootstrap 或 bun run init。");
-    process.exitCode = prepared;
+if (!process.exitCode && !buildOnly) {
+  // Run after dependency installation in a new process, with the same terminal
+  // for first-run choices. The launcher keeps the startup lock and prepares models once.
+  const initialized = await Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "init", ...(channel ? [channel] : [])], {
+    ...options, stdin: "inherit",
+  }).exited;
+  if (initialized !== 0) {
+    console.error("[初始化] 运行资料未准备完成，请排查上述错误后重新运行 bun run bootstrap。");
+    process.exitCode = initialized;
+  } else {
+    console.log("[初始化] 全部准备完成，运行 bun run start 即可启动机器人。");
   }
 }
