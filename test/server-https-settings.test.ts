@@ -44,15 +44,15 @@ test("旧 HTTPS 配置只解析文件路径，省略端口使用随机端口，�
   expect(secure.oneBotAuth).not.toBe(settings.oneBot?.auth);
 }));
 
-test("有效 TLS 可单独启用，没有 OneBot 鉴权时保留仅 HTTPS", () => fixture(async (root, configure) => {
+test("有效 TLS 可选启用，默认保留内网 HTTP 与 OneBot", () => fixture(async (root, configure) => {
   await configure({ https: { ...pair, port: "8443", url: "http://proxy.example/lotus" } });
   const settings = await readServerSettings(root, {});
   expect(settings.https?.port).toBe(8443);
   expect(settings.https?.publicUrl?.href).toBe("http://proxy.example/lotus/");
-  expect(settings.https?.oneBotAuth).toBeUndefined();
+  expect([...settings.https!.oneBotAuth!]).toEqual([]);
   expect(settings.https?.auth.get("Authorization")).toBeNull();
-  expect(settings.http).toBeUndefined();
-  expect(settings.oneBot).toBeUndefined();
+  expect(settings.http?.port).toBe(2536);
+  expect(settings.oneBot?.port).toBe(2536);
   expect(settings.publicUrl).toBeUndefined();
 }));
 

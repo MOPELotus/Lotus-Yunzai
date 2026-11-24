@@ -118,7 +118,7 @@ test.each([["共享", true], ["分离", false]] as const)("%s监听区分公共 
       "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "MDEyMzQ1Njc4OWFiY2RlZg==",
     };
     expect((await request(http, "/unknown", { headers: upgrade })).status).toBe(404);
-    expect((await request(oneBotHttp, "/OneBotv11", { headers: upgrade })).status).toBe(401);
+    expect((await request(oneBotHttp, "/OneBotv11", { headers: { ...upgrade, "X-Forwarded-For": "203.0.113.1" } })).status).toBe(401);
     expect((await request(oneBotHttp, "/OneBotv11", {
       headers: { ...bearer(oneBotToken), "X-Client-Role": "Universal" },
     })).status).toBe(426);
@@ -126,7 +126,7 @@ test.each([["共享", true], ["分离", false]] as const)("%s监听区分公共 
 
     const legacyPath = "/OneBotv11/gateways/qq?instance=primary";
     expect((await request(oneBotHttp, legacyPath)).status).toBe(404);
-    expect((await request(oneBotHttp, legacyPath, { headers: upgrade })).status).toBe(401);
+    expect((await request(oneBotHttp, legacyPath, { headers: { ...upgrade, "X-Forwarded-For": "203.0.113.1" } })).status).toBe(401);
     expect((await request(oneBotHttp, legacyPath, {
       headers: { ...upgrade, ...bearer(oneBotToken), "X-Client-Role": "API" },
     })).status).toBe(400);

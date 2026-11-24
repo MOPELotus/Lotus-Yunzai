@@ -1,3 +1,4 @@
+import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -184,6 +185,9 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
     return;
   }
   const ready = atlas === "ready";
+  if (!ready && !initialize) throw new Error("尚未完成初始化，请先运行 bun run bootstrap。");
+  const { initializeTerminalOwner } = await import("../lib/initialize-terminal-owner.ts");
+  if (await initializeTerminalOwner(root, signal)) console.info("[初始化] 已授予本机 stdin 主人权限。");
   const { needsInitialRenderPreset, persistInitialRenderPreset } = await import("../lib/startup-render-preset.ts");
   const options = await askStartupOptions(!ready && requested === undefined && previous === null,
     (!ready || initialize) && await needsInitialRenderPreset(root), signal, initialize);
@@ -201,9 +205,14 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
     const { initializeCaptchaModels } = await import("../lib/captcha/initialize.ts");
     await initializeCaptchaModels(root, signal);
   }
+  if (initialize) {
+    const { initializeRuntimeResources } = await import("../lib/initialize-resources.ts");
+    await initializeRuntimeResources(root, signal, config);
+  }
 }
 
 if (import.meta.main) {
+  installTerminalLogging();
   const args = Bun.argv.slice(2);
   const initialize = args[0] === "--initialize";
   const [channel, ...remaining] = initialize ? args.slice(1) : args;

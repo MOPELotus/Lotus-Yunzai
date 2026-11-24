@@ -27,7 +27,8 @@ test("普通clone后一次bootstrap补拉缺失子模块并锁定主仓指定提
     await mkdir(join(source, "scripts")); await mkdir(join(source, "packages/skia"), { recursive: true });
     await cp(new URL("../scripts/bootstrap.ts", import.meta.url), join(source, "scripts/bootstrap.ts"));
     await mkdir(join(source, "lib"));
-    await cp(new URL("../lib/initialization-progress.ts", import.meta.url), join(source, "lib/initialization-progress.ts"));
+    for (const name of ["initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date"])
+      await cp(new URL(`../lib/${name}.ts`, import.meta.url), join(source, `lib/${name}.ts`));
     await writeFile(join(source, "packages/skia/index.ts"), "export {};");
     await writeFile(join(source, "package.json"), JSON.stringify({ packageManager: `bun@${Bun.version}`,
       scripts: { "build:panel": "bun build-panel.ts" } }));

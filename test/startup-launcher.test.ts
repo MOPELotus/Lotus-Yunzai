@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, expect, test } from "bun:test";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -194,7 +195,7 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
   await writeFile(join(legacy, "pm2.pid"), "999");
   const [emptyStatus, emptyOutput] = await start(["status"], env);
   expect(emptyStatus).toBe(0);
-  expect(emptyOutput).toContain("当前目录未启动后台托管");
+  expect(emptyOutput).toContain("Lotus-Yunzai 未在后台运行");
 
   const listeners = [current, legacy].map((path) => Bun.listen({
     unix: join(path, "rpc.sock"), socket: { data() {} },
@@ -222,7 +223,7 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     await setApp(legacy, 101, "online");
     const [oldStart, oldOutput] = await start(["start:bg"], env);
     expect(oldStart).toBe(0);
-    expect(oldOutput).toContain("后台宿主已运行");
+    expect(oldOutput).toContain("已在后台运行");
 
     await setApp(legacy, 0, "stopped");
     expect((await start(["logs", "--nostream"], env))[1].trim()).toBe(legacy);
@@ -234,7 +235,7 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
     await writeFile(join(atlas, "map.json"), "fixture index temporarily unavailable\n");
     const [currentStart, currentOutput] = await start(["start:bg"], env);
     expect(currentStart).toBe(0);
-    expect(currentOutput).toContain("后台宿主已运行");
+    expect(currentOutput).toContain("已在后台运行");
     expect(await readFile(join(atlas, "map.json"), "utf8")).toBe("fixture index temporarily unavailable\n");
 
     await rm(join(current, "host-ready"));
@@ -259,8 +260,8 @@ test.skipIf(process.platform === "win32")("PM2 运维优先选择实际登记的
         }
         const [code, stdout, stderr] = await output;
         expect(code).toBe(outcome === "same" ? 0 : 1);
-        if (outcome === "same") expect(stdout).toContain("后台宿主已运行");
-        else expect(stdout).not.toContain("后台宿主已运行");
+        if (outcome === "same") expect(stdout).toContain("已在后台运行");
+        else expect(stdout).not.toContain("已在后台运行");
         if (outcome === "replaced") expect(stderr).toContain("等待期间后台宿主已停止或被替换");
         if (outcome === "interrupted") expect(stderr).toContain("启动操作已中止");
       } finally {
@@ -371,7 +372,7 @@ test.skipIf(process.platform === "win32")("取消后台启动只停止本次注�
       expect(await Bun.file(join(home, "stopped")).text()).toBe("8");
       expect(await Bun.file(join(home, "host-start-attempt")).exists()).toBe(false);
       expect(await Bun.file(join(home, "apps.json")).json()).toEqual([other, {
-        name: "lotus-yunzai", pm_id: 8, pid: 0,
+        name: "LOTUS-YUNZAI", pm_id: 8, pid: 0,
         pm2_env: { status: "stopped", env: {
           LOTUS_PM2_START_TOKEN: expect.any(String), LOTUS_PM2_WORKER_READINESS: "1",
         } },
@@ -424,7 +425,7 @@ test.skipIf(process.platform === "win32")("后台重启只触及本安装的已�
     await writeApps([]);
     const [emptyCode, , emptyError] = await start(["restart"], env);
     expect(emptyCode).toBe(1);
-    expect(emptyError).toContain("未启动后台托管");
+    expect(emptyError).toContain("未在后台运行");
     await writeApps([{ ...record, pm2_env: { ...record.pm2_env, args: ["/another/service.js"] } }]);
     const [foreignCode, , foreignError] = await start(["restart"], env);
     expect(foreignCode).toBe(1);
@@ -443,7 +444,7 @@ test.skipIf(process.platform === "win32")("后台重启只触及本安装的已�
     await writeFile(join(home, "host-start-attempt"), attempt);
     const [code, output, error] = await start(["restart"], env);
     expect({ code, error }).toEqual({ code: 0, error: "" });
-    expect(output).toContain("后台宿主已重启");
+    expect(output).toContain("重启成功");
     expect(await readFile(join(home, "restarted-id"), "utf8")).toBe("3");
     expect(await readFile(join(home, "host-ready"), "utf8")).toBe("404");
   } finally {
@@ -463,7 +464,7 @@ async function fixture() {
       "plugins/atlas/theme-directories.ts"].map((path) =>
       copyFile(join(source, path), join(cwd, path))),
     ...["atlas-channel", "lotus-global-config", "file-lock", "foreground-control", "managed-dispatch-pause", "managed-exit", "migrated-onebot-setup",
-      "migration-publication", "startup-render-preset", "update-activation", "initialization-progress"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
+      "migration-publication", "startup-render-preset", "update-activation", "initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "initialize-resources", "initialize-terminal-owner"].map((name) => writeFile(join(cwd, "lib", `${name}.ts`),
       `export * from ${JSON.stringify(join(source, "lib", `${name}.ts`))};\n`)),
     writeFile(join(cwd, "plugins/atlas/catalog.ts"),
       `export { createAtlasRuntimeCatalog } from ${JSON.stringify(join(source, "plugins/atlas/catalog.ts"))};\n`),
@@ -536,14 +537,14 @@ test("非交互完整初始化默认最新版并完成首次设置，随后启�
   expect(await Bun.file(attempts).text()).toBe("latest\n");
 });
 
-test.skipIf(process.platform === "win32")("首次前台启动用一个实际终端选择图鉴与低配档，暖启保留配置", async () => {
+test.skipIf(process.platform === "win32")("显式初始化用一个实际终端选择图鉴与低配档，普通启动只复用配置", async () => {
   const { cwd, config, start } = await fixture();
   const ready = Promise.withResolvers<void>();
   let output = "";
   let answeredAtlas = false;
   let answeredRender = false;
   const decoder = new TextDecoder();
-  const launcher = Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "start"], {
+  const launcher = Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "init"], {
     cwd, env: { PATH: process.env.PATH },
     terminal: { data(terminal, bytes) {
       output += decoder.decode(bytes, { stream: true });
@@ -555,7 +556,7 @@ test.skipIf(process.platform === "win32")("首次前台启动用一个实际终�
         answeredRender = true;
         terminal.write("low\n");
       }
-      if (output.includes("fixture host ready")) ready.resolve();
+      if (stripVTControlCharacters(output).includes("[初始化] 已就绪")) ready.resolve();
     } },
   });
   const deadline = setTimeout(() => ready.reject(new Error("终端初始化未完成。\n" + output)), 4_000);
@@ -651,6 +652,9 @@ test("first start retries incomplete preparation, preserves config, and reuses p
   const [failed, , failure] = await start(["init", "live"], { FAIL_FIXTURE: "1" });
   expect(failed).toBe(1);
   expect(failure).toContain("下载记录已保留");
+  expect((await start(["start"]))[0]).toBe(1);
+  expect(await readFile(attempts, "utf8")).toBe("live\n");
+  expect((await start(["init", "live"]))[0]).toBe(0);
   const [started, output] = await start(["start"]);
   expect(started).toBe(0);
   expect(output).toContain("fixture host ready");
@@ -703,35 +707,20 @@ test("原神祈愿日历首装可联网，离线后启动保持可用且暖启�
   expect(await readFile(attempts, "utf8")).toBe("download\nlocal\n");
 });
 
-test("a migrated OneBot listener without authentication gets one private token through init", async () => {
+test("a migrated LAN OneBot listener keeps its address and does not generate a token", async () => {
   const { cwd, start } = await fixture();
-  const atlas = join(cwd, "data/atlas/data");
-  await mkdir(atlas, { recursive: true });
-  await writeFile(join(atlas, "map.json"), index);
+  await mkdir(join(cwd, "data/atlas/data"), { recursive: true });
+  await writeFile(join(cwd, "data/atlas/data/map.json"), index);
   const file = join(cwd, "config/server.yaml");
   const legacy = "port: 9020 # retain the previous listener\nonebot_token: null\n";
   await writeFile(file, legacy, { mode: 0o600 });
-  const [unprepared, output, error] = await start(["start"]);
-  expect(unprepared).toBe(1);
-  expect(output).not.toContain("fixture host ready");
-  expect(error).toContain("bun run bootstrap");
-  expect((await start(["start"], { LOTUS_ONEBOT_TOKEN: "provided-fixture-token" }))[0]).toBe(0);
-  expect(await readFile(file, "utf8")).toBe(legacy);
-  const [prepared, initialization] = await start(["init"]);
-  expect(prepared).toBe(0);
-  const content = await readFile(file, "utf8");
-  const settings = Bun.YAML.parse(content) as { port: number; onebot_token: string };
-  expect(settings.port).toBe(9020);
-  expect(settings.onebot_token).toMatch(/^[\w-]{43}$/u);
-  expect(content).toContain("# retain the previous listener");
-  expect(initialization).not.toContain(settings.onebot_token);
-  const network = await readServerSettings(Bun.pathToFileURL(`${cwd}/`), {});
-  expect(network.oneBot?.auth.get("Authorization")).toBe(`Bearer ${settings.onebot_token}`);
-  expect(network.http?.auth.has("Authorization")).toBe(false);
-  expect((await lstat(file)).mode & 0o777).toBe(0o600);
-  expect((await start(["init"]))[0]).toBe(0);
-  expect(await readFile(file, "utf8")).toBe(content);
   expect((await start(["start"]))[0]).toBe(0);
+  expect((await start(["init"]))[0]).toBe(0);
+  expect(await readFile(file, "utf8")).toBe(legacy);
+  const network = await readServerSettings(Bun.pathToFileURL(`${cwd}/`), {});
+  expect(network.oneBot?.port).toBe(9020);
+  expect(network.oneBot?.auth.has("Authorization")).toBe(false);
+  expect((await lstat(file)).mode & 0o777).toBe(0o600);
 });
 
 test("simultaneous startup and initialization publish only once", async () => {
@@ -832,4 +821,30 @@ test("绝区零调频主题随首次初始化准备，普通暖启只尝试本�
   expect((await start(["start"], { LOTUS_ZZZ_GACHA_THEME_DIR: "./custom-theme" }))[0]).toBe(0);
   const requests = (await Bun.file(calls).text()).trim().split("\n").map(line => JSON.parse(line));
   expect(requests).toEqual([{ download: true }, { override: "./custom-theme", download: false }]);
+});
+
+test("初始化准备图库攻略媒体，后续普通启动不再调用任何下载入口", async () => {
+  const { cwd, start } = await fixture();
+  await mkdir(join(cwd, "plugins/guides"), { recursive: true });
+  await mkdir(join(cwd, "plugins/media/services/tools"), { recursive: true });
+  const common = `import { appendFile } from "node:fs/promises";
+    const record = async (root, name) => {
+      if (Bun.env.FORBID_RESOURCE_DOWNLOAD === "1") throw Error("普通启动不得下载");
+      await appendFile(new URL("prepared-resources", root), name + "\\n");
+    };\n`;
+  await writeFile(join(cwd, "plugins/guides/initialize-resources.ts"), common + `export async function prepareGuideResources(root) { await record(root,"guides"); }`);
+  await writeFile(join(cwd, "plugins/media/services/tools/initialize.ts"), common + `export async function prepareMediaEnvironment(root) { await record(root,"media"); }`);
+  await writeFile(join(cwd, "lib/character-gallery-sync.ts"), `
+    export async function syncCharacterGallery(options) {
+      if (Bun.env.FORBID_RESOURCE_DOWNLOAD === "1") throw Error("普通启动不得下载");
+      await Bun.write(options.root + "/prepared", "gallery"); return {};
+    }
+  `);
+  expect((await start(["init"]))[0]).toBe(0);
+  expect(await Bun.file(join(cwd, "data/character-gallery-synced/prepared")).text()).toBe("gallery");
+  expect(await Bun.file(join(cwd, "prepared-resources")).text()).toBe("guides\nmedia\n");
+  const [code, ready] = await start(["start"], { FORBID_RESOURCE_DOWNLOAD: "1" });
+  expect(code).toBe(0);
+  expect(ready).toContain("fixture host ready");
+  expect(await Bun.file(join(cwd, "prepared-resources")).text()).toBe("guides\nmedia\n");
 });

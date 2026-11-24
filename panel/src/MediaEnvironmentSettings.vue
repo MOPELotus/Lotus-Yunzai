@@ -53,7 +53,7 @@ async function sync(mode: "load" | "save") {
       return;
     }
     if (response.status === 400) {
-      error.value = "请填写有效的正整数。时间设置最多为 2147483647 毫秒。";
+      error.value = "请填写整数，检查延迟可设为 0，其余须大于 0。时间设置最多为 2147483647 毫秒。";
       return;
     }
     if (!response.ok) {
@@ -63,7 +63,7 @@ async function sync(mode: "load" | "save") {
     const result = await response.json() as MediaEnvironmentSnapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || !result.settings || !mediaEnvironmentGroups.every(group =>
-      group.fields.every(({ key, max }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] >= 1 && result.settings[key] <= max))) {
+      group.fields.every(({ key, max }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] >= (key === "update_delay_ms" ? 0 : 1) && result.settings[key] <= max))) {
       error.value = "宿主返回了无法识别的媒体环境设置。";
       return;
     }
@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
         <legend>{{ group.label }}</legend>
         <template v-for="field in group.fields" :key="field.key">
           <label :for="`media-environment-${field.key}`">{{ field.label }}</label>
-          <input :id="`media-environment-${field.key}`" v-model.number="draft[field.key]" type="number" min="1"
+          <input :id="`media-environment-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.key === 'update_delay_ms' ? 0 : 1"
             :max="field.max" step="1" required
             :aria-describedby="field.key === 'update_delay_ms' ? 'media-startup-delay-note' : undefined" />
           <p v-if="field.key === 'update_delay_ms'" id="media-startup-delay-note" class="subtitle">

@@ -50,9 +50,9 @@ test("面板可只改安装与请求参数，旧路径、服务来源与已存�
       expect(raw).not.toContain(hidden);
     }
     const before = JSON.parse(raw);
-    expect(before.settings).toEqual({ tool_timeout_ms: 300000, download_retries: 4, request_timeout_ms: 22000, update_delay_ms: 180000 });
+    expect(before.settings).toEqual({ tool_timeout_ms: 300000, download_retries: 4, request_timeout_ms: 22000, update_delay_ms: 0 });
     for (const patch of [{ api_url: "https://fixture.invalid/" }, { tools_path: "fixture" }, { ffmpeg: { command: "fixture" } },
-      { update_delay_ms: 0 }, { update_delay_ms: "1000" }, { request_timeout_ms: 0 }, { tool_timeout_ms: 2_147_483_648 }, { download_retries: 1.5 }]) {
+      { update_delay_ms: -1 }, { update_delay_ms: "1000" }, { request_timeout_ms: 0 }, { tool_timeout_ms: 2_147_483_648 }, { download_retries: 1.5 }]) {
       expect((await admin(request("PUT", { patch, revision: before.revision })))?.status).toBe(400);
     }
     const patch = { tool_timeout_ms: 7500, download_retries: 2, request_timeout_ms: 15 };
@@ -169,7 +169,7 @@ test("面板只保存下次启动的首轮维护等待，保留已开始的维�
           return {
             localUrl: () => new URL("http://127.0.0.1:7832"),
             async resume() { resumed++; return { skipped: true }; },
-            async initialize() { throw new Error("No TuneWeave connection in this fixture"); },
+            async status() { throw new Error("No TuneWeave connection in this fixture"); },
           };
         },
         async prepareTools() { prepared++; throw new Error("No install in this fixture"); },

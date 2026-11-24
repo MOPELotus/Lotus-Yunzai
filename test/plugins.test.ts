@@ -1,3 +1,4 @@
+function plainOutput(text: string) { return text.replace(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[[A-Z]+\] (?:\[LOTUS-YUNZAI\] )?/gm, ""); }
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -120,6 +121,8 @@ test("宿主导入正常模块，并在执行入口前拒载库洛游戏插件�
         }
       }
     `);
+    await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config/server.yaml"), "onebot_enable: false\n");
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
@@ -131,14 +134,14 @@ test("宿主导入正常模块，并在执行入口前拒载库洛游戏插件�
       new Response(host.stdout).text(), new Response(host.stderr).text(), host.exited,
     ]);
     expect(exit).toBe(0);
-    expect(stdout).toContain("你好，Lotus");
-    expect(stdout).toContain("普通插件正常加载");
-    expect(stdout).toContain("请输入内容\n收到 Lotus\n");
-    expect(stdout).toContain("请输入内容\n模块收到退出信号\n会话已结束\n模块完成清理\n");
-    expect(stdout).toContain("失败模块完成清理");
-    expect(stdout).toContain("Lotus-Yunzai 正在运行");
-    expect(stdout).toContain("https://www.lotusshared.cn/yunzai/");
-    expect(stdout).not.toContain("拒载入口已执行");
+    expect(plainOutput(stdout)).toContain("你好，Lotus");
+    expect(plainOutput(stdout)).toContain("普通插件正常加载");
+    expect(plainOutput(stdout)).toContain("请输入内容\n收到 Lotus\n");
+    expect(plainOutput(stdout)).toContain("请输入内容\n模块收到退出信号\n会话已结束\n模块完成清理\n");
+    expect(plainOutput(stdout)).toContain("失败模块完成清理");
+    expect(plainOutput(stdout)).toContain("Lotus-Yunzai 正在运行");
+    expect(plainOutput(stdout)).toContain("https://www.lotusshared.cn/yunzai/");
+    expect(plainOutput(stdout)).not.toContain("拒载入口已执行");
     expect(stderr).toContain("拒绝加载 b-duplicate：与 a-hello 重复");
     expect(stderr).toContain("拒绝加载 c-renamed");
     expect(stderr).toContain("拒绝加载 d-mixed（mixed-games）：包含鸣潮功能");
@@ -375,7 +378,7 @@ failsMsg: 协议拒绝
     await writeFile(join(profiles, "51.yaml"), "account: { cookie: other-user, stoken: other-secret }");
     const backend = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
-      env: { PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles, LOTUS_PANEL_TOKEN: "group-settings-fixture" },
+      env: { LOTUS_HTTP_PORT: "0", PATH: process.env.PATH, LOTUS_PROFILE_DIR: profiles, LOTUS_PANEL_TOKEN: "group-settings-fixture" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -854,7 +857,7 @@ failsMsg: 协议拒绝
     const logs = await Promise.all([...new Bun.Glob("command.*.log").scanSync(logDirectory)]
       .map(file => Bun.file(join(logDirectory, file)).text()));
     expect(logs.join("\n")).toContain("[INFO] V3 夹具载入");
-    expect(logs.join("\n")).toContain("[INFO] V3 夹具查询完成");
+    expect(logs.join("\n")).toContain("[MARK] V3 夹具查询完成");
   } finally {
     upstream.stop(true);
     for (const gateway of sockets) gateway.close();
@@ -917,6 +920,8 @@ test("V3 初始化失败和跳过会清理资源，正常退出按初始化的�
         handle() { return this.reply("trace:dispatch"); }
       };
     `);
+    await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config/server.yaml"), "onebot_enable: false\n");
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
@@ -939,8 +944,8 @@ test("V3 初始化失败和跳过会清理资源，正常退出按初始化的�
     expect(stderr).toContain("初始化失败样例");
     expect(stderr).toContain("清理失败样例");
     expect(stderr).toContain("插件初始化请求跳过");
-    expect(stdout).not.toContain("不应执行");
-    expect(stdout.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+    expect(plainOutput(stdout)).not.toContain("不应执行");
+    expect(plainOutput(stdout).split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
       "trace:rollback-broken", "trace:rollback-first", "trace:skip",
       "trace:init", "trace:dispatch", "trace:active-second", "trace:active-first",
     ]);
@@ -1032,6 +1037,8 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
         }
       };
     `);
+    await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config/server.yaml"), "onebot_enable: false\n");
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
       env: { PATH: process.env.PATH },
@@ -1044,7 +1051,7 @@ test("V3 Handler 由宿主按优先级调用，初始化回滚不会留下注册
     ]);
     expect(exit).toBe(0);
     const unsupported = "旧接口 mys.req.err 不受支持，插件需要适配 Lotus Yunzai 才能使用。";
-    expect(stdout.trim().split("\n").slice(-7)).toEqual([
+    expect(plainOutput(stdout).trim().split("\n").slice(-7)).toEqual([
       unsupported, unsupported,
       "第一项交给下一项", "未命名插件:#调用:参数",
       "第一项交给下一项", "最后", "[false,false,false,false,false]",
@@ -1101,7 +1108,7 @@ test("V3 定时任务去重，调度失败回滚，退出等待正在运行的�
 
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root,
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_TOKEN: "test-token", LOTUS_ONEBOT_PORT: "0" },
+      env: { LOTUS_HTTP_PORT: "0", PATH: process.env.PATH, LOTUS_ONEBOT_TOKEN: "test-token", LOTUS_ONEBOT_PORT: "0" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -1123,8 +1130,8 @@ test("V3 定时任务去重，调度失败回滚，退出等待正在运行的�
       const stderr = await errors;
       expect(stderr).toContain("任务 无效样例 的 cron 无效");
       expect(stderr).toContain("跳过重复任务 秒任务");
-      expect(stdout).not.toContain("不应");
-      expect(stdout.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+      expect(plainOutput(stdout)).not.toContain("不应");
+      expect(plainOutput(stdout).split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
         "trace:rollback", "trace:start:任务样例", "trace:end:可调用", "trace:cleanup",
       ]);
     } finally {
@@ -1161,7 +1168,7 @@ test("宿主启动期间停止，清理已加载和正在初始化的模块", as
     `);
     await writeFile(join(root, "plugins/c-next/index.js"), `console.log("trace:unexpected-entry");`);
     const child = Bun.spawn([process.execPath, "app.ts"], {
-      cwd: root, env: { PATH: process.env.PATH }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      cwd: root, env: { LOTUS_HTTP_PORT: "0", PATH: process.env.PATH }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     });
     const deadline = setTimeout(() => child.kill("SIGKILL"), 5_000);
     const errors = new Response(child.stderr).text();
@@ -1179,7 +1186,7 @@ test("宿主启动期间停止，清理已加载和正在初始化的模块", as
       expect(await child.exited).toBe(143);
       expect(await errors).toBe("");
       expect(output).not.toContain("Lotus-Yunzai 已启动");
-      expect(output.split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
+      expect(plainOutput(output).split("\n").filter((line) => line.startsWith("trace:"))).toEqual([
         "trace:pending", "trace:dispose-legacy", "trace:dispose-pending", "trace:dispose-loaded",
       ]);
     } finally {

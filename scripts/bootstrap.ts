@@ -1,6 +1,9 @@
+import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { fileURLToPath } from "node:url";
 import manifest from "../package.json";
 import { createInitializationProgress } from "../lib/initialization-progress.ts";
+
+installTerminalLogging();
 
 const requiredVersion = manifest.packageManager.slice("bun@".length);
 if (Bun.version !== requiredVersion) {

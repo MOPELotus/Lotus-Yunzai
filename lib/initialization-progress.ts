@@ -1,3 +1,5 @@
+import { interactiveTerminalInputActive } from "./terminal-output.ts";
+import { formatTerminalLog, terminalColorsEnabled } from "./terminal-log-format.ts";
 export interface InitializationProgress {
   readonly stage: string;
   readonly message: string;
@@ -39,7 +41,13 @@ export function createInitializationProgress(label = "初始化", options: Optio
   let lastSignature = "";
   let rendered = false;
   let closed = false;
-  const output = (text: string) => { try { void Promise.resolve(write(text)).catch(() => undefined); } catch {} };
+  const output = (text: string) => {
+    if (interactiveTerminalInputActive() && text.startsWith("\r\x1b[2K")) {
+      text = text.slice(5);
+      if (!text) return;
+      if (!text.endsWith("\n")) text += "\n";
+    }
+    try { void Promise.resolve(write(text)).catch(() => undefined); } catch {} };
   function line(event: InitializationProgress) {
     const done = valid(event.completed) ? event.completed : undefined;
     const total = valid(event.total) && event.total > 0 ? event.total : undefined;
@@ -49,12 +57,12 @@ export function createInitializationProgress(label = "初始化", options: Optio
     const counts = done === undefined ? "" : event.unit === "bytes"
       ? total === undefined ? bytes(done) : `${bytes(Math.min(done, total))}/${bytes(total)}`
       : total === undefined ? `${Math.floor(done)}${clean(event.unit ?? "项")}` : `${Math.floor(Math.min(done, total))}/${Math.floor(total)}${clean(event.unit ?? "项")}`;
-    return `[${clean(label)}] ${clean(event.message)}${counts ? ` · ${bar}${percent === undefined ? "" : `${percent}% `}${counts}` : ""} · 已耗时${elapsed(now() - startedAt)}`;
+    return formatTerminalLog("info", `[${clean(label)}] ${clean(event.message)}${counts ? ` · ${bar}${percent === undefined ? "" : `${percent}% `}${counts}` : ""} · 已耗时${elapsed(now() - startedAt)}`, { now: new Date(now()), color: tty && terminalColorsEnabled() });
   }
   function render(force = false, pulse = false) {
     if (closed || !current || options.signal?.aborted) return;
     const signature = JSON.stringify(current);
-    if (!force && now() - lastWrite < (pulse ? heartbeat : interval)) return;
+    if (!force && now() - lastWrite < (pulse ? Math.max(heartbeat, interactiveTerminalInputActive() ? 10000 : 0) : Math.max(interval, interactiveTerminalInputActive() ? 2000 : 0))) return;
     if (!force && !pulse && signature === lastSignature) return;
     output(tty ? `\r\x1b[2K${line(current)}` : `${line(current)}\n`);
     rendered = true;
@@ -63,7 +71,7 @@ export function createInitializationProgress(label = "初始化", options: Optio
   }
   const timer = setInterval(() => render(false, true), Math.max(100, Math.min(heartbeat, 1000)));
   timer.unref();
-  const abort = () => finish("已中止");
+  const abort = () => finish("已中止", "warn");
   options.signal?.addEventListener("abort", abort, { once: true });
   function close() {
     if (closed) return;
@@ -72,10 +80,10 @@ export function createInitializationProgress(label = "初始化", options: Optio
     options.signal?.removeEventListener("abort", abort);
     if (tty && rendered) output("\n");
   }
-  function finish(message: string) {
+  function finish(message: string, level: "info" | "warn" | "error" = "info") {
     if (closed) return;
     if (tty && rendered) output("\r\x1b[2K");
-    output(`[${clean(label)}] ${clean(message)} · 耗时${elapsed(now() - startedAt)}\n`);
+    output(formatTerminalLog(level, `[${clean(label)}] ${clean(message)} · 耗时${elapsed(now() - startedAt)}`, { now: new Date(now()), color: tty && terminalColorsEnabled(level) }) + "\n");
     rendered = false;
     close();
   }
@@ -90,7 +98,7 @@ export function createInitializationProgress(label = "初始化", options: Optio
       render(changedStage || newlyReached);
     },
     complete(message = "准备完成") { finish(options.signal?.aborted ? "已中止" : message); },
-    fail(message = "准备失败") { finish(message); },
+    fail(message = "准备失败") { finish(message, "error"); },
     close,
   };
 }

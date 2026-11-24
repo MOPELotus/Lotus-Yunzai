@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,8 +24,12 @@ async function withTerminalFixture<T>(run: (root: string) => Promise<T>) {
       export default class extends plugin {
         constructor() { super({ event: "message.terminal", rule: [
           { reg: "^#终端样本$", fnc: "show" },
+          { reg: "^#后台日志$", fnc: "delayed" },
+          { reg: "^#stdin权限$", fnc: "owner", permission: "master" },
           { reg: "^#样本口令 ${proofInput}$", fnc: "received" },
         ] }); }
+        delayed(e) { setTimeout(() => console.info("terminal-asynchronous-log"), 100); return e.reply("后台日志已排队"); }
+        owner(e) { return e.reply("stdin-master-" + e.isMaster); }
         received(e) { return e.reply("终端口令测试已收件"); }
         show(e) { return e.reply([
           "测试首行\\n测试次行",
@@ -104,6 +109,17 @@ test.skipIf(process.platform === "win32")("交互终端上下键只召回本次�
     const child = Bun.spawn([process.execPath, "app.ts"], { cwd: root, env: flags, terminal });
     try {
       await output.until(startup);
+      terminal.write("#stdin权限\r");
+      await output.until(/stdin-master-true/u);
+      terminal.write("#后台日志\r");
+      await output.until(/后台日志已排队/u);
+      const before = output.output().length;
+      terminal.write("#状");
+      await output.until(/terminal-asynchronous-log/u);
+      await Bun.sleep(20);
+      expect(stripVTControlCharacters(output.output().slice(before))).toContain("> #状");
+      terminal.write("态\r");
+      await output.until(status);
       terminal.write("#帮助\r");
       await output.until(help);
       terminal.write("#状态\r");

@@ -167,12 +167,13 @@ export function parseServerSettings(config: Readonly<Record<string, unknown>>, e
   }
   const captcha = config.captcha;
   const manualCaptchaUrl = env.LOTUS_CAPTCHA_PUBLIC_URL ?? (record(captcha) && typeof captcha.url === "string" ? captcha.url : undefined);
-  const wsPort = [...wsAuth.keys()].length > 0 ? oneBotOverride ?? configured ?? 25360 : undefined;
+  if (config.onebot_enable !== undefined && typeof config.onebot_enable !== "boolean") throw new Error("server.onebot_enable 须为布尔值。");
+  const wsPort = config.onebot_enable === false ? undefined : oneBotOverride ?? configured ?? 2536;
   const httpPort = configured ?? wsPort ??
     (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined || panelPublicUrl !== undefined ? 2536 : undefined);
 
   return {
-    hostname: env.LOTUS_LISTEN_HOST ?? "127.0.0.1",
+    hostname: env.LOTUS_LISTEN_HOST ?? "0.0.0.0",
     http: httpPort === undefined ? undefined : { port: httpPort, auth: httpAuth },
     oneBot: wsPort === undefined ? undefined : { port: wsPort, auth: wsAuth },
     panelToken,

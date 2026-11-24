@@ -14,8 +14,8 @@ function record(value: unknown): Config | undefined {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) return value as Config;
 }
 
-function positiveInteger(value: unknown, max: number): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= max;
+function positiveInteger(value: unknown, max: number, min = 1): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
 function snapshot(document: Config): MediaEnvironmentSnapshot {
@@ -25,7 +25,7 @@ function snapshot(document: Config): MediaEnvironmentSnapshot {
     for (const { key, field, defaultValue, max } of group.fields) {
       const configured = section?.[field];
       const number = typeof configured === "string" ? Number(configured) : configured;
-      settings[key] = positiveInteger(number, max) ? number : defaultValue;
+      settings[key] = positiveInteger(number, max, key === "update_delay_ms" ? 0 : 1) ? number : defaultValue;
     }
   }
   return { settings, revision: createHash("sha256").update(JSON.stringify(settings)).digest("hex") };
@@ -37,7 +37,7 @@ function readChanges(value: unknown): Patch {
   const patch: Patch = {};
   for (const [key, number] of Object.entries(proposed)) {
     const field = fields.find(field => field.key === key);
-    if (!field || !positiveInteger(number, field.max)) throw new Error();
+    if (!field || !positiveInteger(number, field.max, key === "update_delay_ms" ? 0 : 1)) throw new Error();
     patch[field.key] = number;
   }
   return patch;

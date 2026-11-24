@@ -11,10 +11,10 @@ test("retains old server routing and header auth, with explicit split ingress ov
   };
   const { config, notes, deferred } = projectLegacyNetworkConfig({ server });
   expect(config.server).toEqual({ url: server.url, port: server.port, auth: server.auth, redirect: server.redirect, https: null });
-  expect(notes).toEqual(["server.listeners.shared", "server.listeners.loopback-default", "server.authorization.headers-only"]);
+  expect(notes).toEqual(["server.listeners.shared", "server.listeners.all-interfaces-default", "server.authorization.headers-only"]);
   expect(deferred).toEqual([]);
   const defaults = parseServerSettings(config.server!, {});
-  expect(defaults.hostname).toBe("127.0.0.1");
+  expect(defaults.hostname).toBe("0.0.0.0");
   expect(defaults.http?.port).toBe(defaults.oneBot?.port);
   expect(defaults.publicUrl?.pathname).toBe("/relay/");
   expect(authorized(new Request("http://127.0.0.1/status?Authorization=Bearer%20sample-token"), defaults.http!.auth)).toBe(false);
@@ -36,7 +36,7 @@ test("holds TLS file material and flags only nonzero collisions", () => {
   };
   const result = projectLegacyNetworkConfig({ server });
   expect(result.config.server?.https).toBeUndefined();
-  expect(result.deferred).toEqual(["server.onebot.authorization", "server.https.port-collision", "server.https.files"]);
+  expect(result.deferred).toEqual(["server.https.port-collision", "server.https.files"]);
   expect(JSON.stringify(result.deferred)).not.toContain("synthetic");
   const dynamic = projectLegacyNetworkConfig({ server: { ...server, port: 0, https: { ...server.https, port: 0 } } });
   expect(dynamic.deferred).not.toContain("server.https.port-collision");

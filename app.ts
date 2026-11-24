@@ -1,3 +1,5 @@
+import { isDirectInternalRequest, listenerOrigins } from "./lib/network-access.ts";
+import { installTerminalLogging, formatTerminalLog } from "./lib/terminal-log-format.ts";
 import { withDefaultUpdateSchedule } from "./lib/update-schedule-settings.ts";
 import { createLegacyPanelRecoveryFlow, matchLegacyPanelRecoveryConfirmation, readLegacyPanelRecoveryEnabled } from "./lib/legacy-panel-recovery-flow.ts";
 import { createHash } from "node:crypto";
@@ -243,7 +245,8 @@ declare global {
 }
 
 const commands = new CommandRegistry();
-const terminalOutput = console.log.bind(console);
+if (import.meta.main) installTerminalLogging();
+const terminalOutput = (message: string) => { process.stdout.write(message + "\n"); };
 const keywordFeatureNames = ["添加消息", "group", "@lotus-yunzai/group"];
 const leaveBlacklistNoticeNames = ["退群自动拉黑", "group", "@lotus-yunzai/group"];
 const leaveBlacklistRequestNames = ["退群黑名单入群拦截", "group", "@lotus-yunzai/group"];
@@ -2966,6 +2969,7 @@ if (import.meta.main) {
     panelTransfer = configurePanelTransfer(botConfig.panelTransfer, lifecycle.signal);
     setImageRenderPreset(botConfig.imageRenderPreset);
     runtimeLogConfig = botConfig;
+    installTerminalLogging(botConfig);
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;
     const [network, permissions, globalConfig, access, requestPolicies, routing,
       runtimeVersion, milky] = await Promise.all([
@@ -2999,6 +3003,8 @@ if (import.meta.main) {
     privateAccess = access;
     try {
       runtimeLog = await attachRuntimeLog(root, botConfig);
+      console.info(formatTerminalLog("mark", "----^_^----"));
+      console.info(formatTerminalLog("mark", `Lotus-Yunzai${runtimeVersion.version || runtimeVersion.revision ? " " + (runtimeVersion.version ?? runtimeVersion.revision?.slice(0, 7)) : ""} 启动中...`));
     } catch {
       console.warn("[日志] 无法启用本地日志写入。");
     }
@@ -3663,7 +3669,9 @@ if (import.meta.main) {
     const listenerMessages: string[] = [];
     function httpHandler(auth: Headers) {
       const statusRoute = httpStatus(auth, runtimeVersion);
-      return async (request: Request) => {
+      return async (request: Request, server?: { requestIP(request: Request): { address: string } | null }) => {
+        const publicConfigured = [...auth.keys()].length > 0 || network.publicUrl || network.panelPublicUrl || network.manualCaptchaUrl || network.https?.publicUrl;
+        if (!publicConfigured && !isDirectInternalRequest(request, server?.requestIP(request)?.address)) return new Response(null, { status: 403 });
         if (stopping || !handoff.accepting || !publicRoutes) return new Response(null, { status: 503 });
         return await publicRoutes(request, auth) ?? statusRoute(request);
       };
@@ -3698,7 +3706,9 @@ if (import.meta.main) {
         tls,
       });
       servers.push(server);
-      listenerMessages.push(`OneBot 11 正在监听 ${server.url.origin.replace(/^http/u, "ws")}/OneBotv11`);
+      for (const origin of listenerOrigins(hostname, server.port, tls ? "wss" : "ws"))
+        listenerMessages.push(`[ONEBOT V11] OneBot 11 正在监听 ${origin}/OneBotv11（反向 WebSocket，绑定 ${hostname}:${server.port}）`);
+      listenerMessages.push([...auth.keys()].length ? "[ONEBOT V11] 内网可直接连接；公网连接须携带已配置的令牌。" : "[ONEBOT V11] 仅限本机及内网直接连接，无需令牌；公网接入须先配置 onebot_token。");
       return server;
     }
     function listenHttp(port: number, fetch: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
@@ -3711,7 +3721,8 @@ if (import.meta.main) {
     if (http) {
       const server = shared && socketServer ? socketServer : listenHttp(http.port, httpHandler(http.auth));
       fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
-      listenerMessages.push(`HTTP 正在监听 ${server.url.origin}/status`);
+      for (const origin of listenerOrigins(hostname, server.port, "http"))
+        listenerMessages.push(`[HTTP] HTTP 正在监听 ${origin}/status（绑定 ${hostname}:${server.port}）`);
     }
     if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
     let tlsListener: ManagedTlsListener | undefined;
@@ -3730,7 +3741,8 @@ if (import.meta.main) {
           tlsListener = oneBotAuth ? "wss" : "https";
           tlsPort = port;
           fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
-          listenerMessages.push(`HTTPS 正在监听 ${server.url.origin}/status`);
+          for (const origin of listenerOrigins(hostname, server.port, "https"))
+            listenerMessages.push(`[HTTPS] HTTPS 正在监听 ${origin}/status（绑定 ${hostname}:${server.port}）`);
         }
       } catch {
         if (!stopping) console.warn("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");
@@ -4193,7 +4205,7 @@ if (import.meta.main) {
             jobs.push(registerModuleTask(name, task.cron, async () => {
               const summary = await task.run();
               if (summary) console.log(`${name}\n${summary}`);
-            }, kind === "challenge"));
+            }));
           }
           return async () => { await Promise.all(jobs.map(stopJob => stopJob())); };
         },
@@ -4222,7 +4234,7 @@ if (import.meta.main) {
           },
         });
         registerModuleTask("[atlas] 角色图库", characterGalleryCron,
-          () => gallery.run(nativeOperationSignal()), () => gallery.startup(nativeOperationSignal()));
+          () => gallery.run(nativeOperationSignal()));
       }
       const fallback = createServerRedirect(network.redirect);
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
@@ -4298,7 +4310,7 @@ if (import.meta.main) {
           await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
           await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       };
-      for (const message of listenerMessages) console.log(message);
+      for (const message of listenerMessages) console.info(formatTerminalLog("mark", message));
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
         // Port 0 is an ephemeral binding and may get a different allocated port on each process.
         httpPort: http?.port, oneBotPort: socketServer ? oneBot?.port : undefined, tls: tlsListener, tlsPort,
@@ -4355,7 +4367,7 @@ if (import.meta.main) {
       else if (botConfig.update_time || botConfig.update_cron) {
         console.warn("[更新] 定时更新需要通过 bun run start 启动宿主。");
       }
-      console.log("Lotus-Yunzai 已启动。输入 #状态 查询运行状态。");
+      console.info(formatTerminalLog("mark", "Lotus-Yunzai 已启动。输入 #状态 查询运行状态。"));
       queueStartupMessages();
 
       const terminalReply = createTerminalReply(fileToUrl, terminalOutput);
@@ -4378,6 +4390,7 @@ if (import.meta.main) {
           console.error("处理终端指令失败。");
         });
         await Promise.race([handling, waiting.promise]);
+        if (!stopping && process.stdin.isTTY) consoleInput.prompt(true);
       }
       if (servers.length || milkyTransport) await shutdown.promise;
     }

@@ -1,3 +1,4 @@
+import { formatTerminalLog, formattedLogLevel, installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { basename, dirname, join } from "node:path";
@@ -8,7 +9,8 @@ import { stopForeground } from "../lib/foreground-control.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 import { recoverMigrationPublicationForStartup } from "../lib/migration-publication.ts";
 
-const name = "lotus-yunzai";
+const name = "LOTUS-YUNZAI";
+const legacyName = "lotus-yunzai";
 const startToken = "LOTUS_PM2_START_TOKEN";
 const workerReadiness = "LOTUS_PM2_WORKER_READINESS";
 const listenTimeoutMs = 120_000;
@@ -60,12 +62,34 @@ async function present(path: string) {
   });
 }
 
-async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited">): Promise<number> {
+async function relayLogOutput(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader(), decoder = new TextDecoder();
+  let pending = "";
+  const emit = (line: string) => process.stdout.write(
+    /^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[[A-Z]+\]/u.test(line)
+      ? formatTerminalLog(formattedLogLevel(line, "info"), line) + "\n" : line + "\n");
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      let end: number;
+      while ((end = pending.indexOf("\n")) >= 0) { emit(pending.slice(0, end)); pending = pending.slice(end + 1); }
+      if (pending.length > 64_000) { process.stdout.write(pending); pending = ""; }
+      if (done) break;
+    }
+    if (pending) emit(pending);
+  } finally { reader.releaseLock(); }
+}
+
+async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited"> & { stdout?: ReadableStream<Uint8Array> | number | null }): Promise<number> {
   const interrupt = () => child.kill("SIGINT");
   const terminate = () => child.kill("SIGTERM");
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
-  try { return await child.exited; }
+  try {
+    const [code] = await Promise.all([child.exited, child.stdout && typeof child.stdout !== "number" ? relayLogOutput(child.stdout) : undefined]);
+    return code;
+  }
   finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
@@ -75,8 +99,8 @@ async function waitForLogs(child: Pick<Bun.Subprocess, "kill" | "exited">): Prom
 async function readBackgroundLogFiles(home: string, options: readonly string[]): Promise<number | undefined> {
   const directory = join(home, "logs");
   if (!(await present(directory))?.isDirectory()) return;
-  const out = join(directory, `${name}-out.log`);
-  const error = join(directory, `${name}-error.log`);
+  const out = (await present(join(directory, `${name}-out.log`)))?.isFile() ? join(directory, `${name}-out.log`) : join(directory, `${legacyName}-out.log`);
+  const error = (await present(join(directory, `${name}-error.log`)))?.isFile() ? join(directory, `${name}-error.log`) : join(directory, `${legacyName}-error.log`);
   const files = [];
   const errorsOnly = options.includes("--err");
   if (!errorsOnly && (await present(out))?.isFile()) files.push(out);
@@ -99,7 +123,7 @@ async function readBackgroundLogFiles(home: string, options: readonly string[]):
   const tail = Bun.which("tail");
   if (!tail) throw new Error("读取 PM2 历史日志需要 PATH 中的 tail。");
   return waitForLogs(Bun.spawn([tail, "-n", lines, ...(follow ? ["-F"] : []), ...files], {
-    stdin: "ignore", stdout: "inherit", stderr: "inherit",
+    stdin: "ignore", stdout: "pipe", stderr: "inherit",
   }));
 }
 
@@ -173,7 +197,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     try { processes = JSON.parse(result); }
     catch { throw new Error("无法读取 PM2 应用状态。"); }
     if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
-    const named = processes.filter((item) => item?.name === name);
+    const named = processes.filter((item) => item?.name === name || item?.name === legacyName);
     if ((action === "restart" || action === "stop") && named.length > 1) {
       throw new Error("PM2 中存在多个同名登记，无法确认要操作的宿主。");
     }
@@ -207,7 +231,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   if (action === "stop") {
     if (!active) {
       const stopped = await stopForeground(root);
-      console.log(stopped ? "当前目录的前台宿主已停止。" : "当前目录未启动托管宿主。");
+      console.log(stopped ? "Lotus-Yunzai 已停止。" : "Lotus-Yunzai 未运行。");
       return 0;
     }
     if (!binary || !active.owned || active.id === undefined) throw new Error("无法核实当前目录的 PM2 登记。");
@@ -231,11 +255,11 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   const executable = binary;
   if (action !== "start:bg" && action !== "restart") {
     if (!selected) {
-      console.log("当前目录未启动后台托管。");
+      console.log("Lotus-Yunzai 未在后台运行。");
       return 0;
     }
-    const args = action === "status" ? ["status"] : [action, name, ...options];
-    const client = Bun.spawn([binary, ...args], spawnOptions(selected.path));
+    const args = action === "status" ? ["status"] : [action, selected.id ?? name, ...(action === "logs" && !options.includes("--raw") ? ["--raw"] : []), ...options];
+    const client = Bun.spawn([binary, ...args], { ...spawnOptions(selected.path), ...(action === "logs" && { stdout: "pipe" as const }) });
     return action === "logs" ? waitForLogs(client) : client.exited;
   }
 
@@ -269,13 +293,13 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     if (!ready) {
       throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
     }
-    console.log("当前目录的后台宿主已运行。");
+    console.log("Lotus-Yunzai 已在后台运行。");
     return 0;
   }
   if (action === "restart") {
     if ((current && !current.owned) || (legacy && !legacy.owned)) throw new Error("同名 PM2 登记不属于当前安装目录。");
     if (current?.active && legacy?.active) throw new Error("新旧 PM2 目录均有活动登记，无法确认要重启的宿主。");
-    if (!active?.id || !active.pid) throw new Error("当前目录未启动后台托管。请运行 bun run start:bg。");
+    if (active?.id === undefined || !active.pid) throw new Error("Lotus-Yunzai 未在后台运行。请运行 bun run start:bg。");
     if (active.status !== "online" || await readyPid(active.path) !== active.pid) {
       throw new Error("当前后台工作进程尚未就绪。请运行 bun run status 查看状态。");
     }
@@ -304,7 +328,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
         if (!restarted?.owned || !restarted.active || restarted.id !== active.id) break;
         if (restarted.status === "online" && restarted.pid && restarted.pid !== active.pid &&
             restarted.pid === await readyPid(active.path)) {
-          console.log("当前目录的后台宿主已重启。");
+          console.log("Lotus-Yunzai 重启成功。");
           return 0;
         }
         await Bun.sleep(100);
@@ -339,7 +363,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     env: { [startToken]: attempt, [workerReadiness]: "1" }, interpreter: "none", autorestart: true,
     stop_exit_codes: [backgroundCleanStop, backgroundStartupFailure],
     min_uptime: 5_000, max_restarts: 5, wait_ready: true, listen_timeout: listenTimeoutMs,
-    kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: true,
+    kill_timeout: 20_000, vizion: false, pmx: false, treekill: false, time: false,
   }] }), { mode: 0o600 });
   signal?.throwIfAborted();
 
@@ -405,7 +429,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     const ready = await readyPid(home);
     signal?.throwIfAborted();
     if (launched?.status === "online" && launched.pid && launched.pid === ready) {
-      if (action === "restart") console.log("当前目录的后台宿主已重启。");
+      if (action === "restart") console.log("Lotus-Yunzai 重启成功。");
       return 0;
     }
     if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) await stopOwnedApplication(launched.id);
@@ -469,6 +493,7 @@ async function run() {
 }
 
 if (import.meta.main) {
+  installTerminalLogging();
   try {
     process.exitCode = await run();
   } catch (error) {

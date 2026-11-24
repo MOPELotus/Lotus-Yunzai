@@ -112,7 +112,7 @@ test("加载超时后继续启动，迟到的现代工厂和 V3 初始化不会�
     const token = crypto.randomUUID();
     const startup: number[] = [];
     const host = Bun.spawn([process.execPath, "app.ts"], {
-      cwd: root, env: { PATH: process.env.PATH, [pluginProbeTokenEnvironment]: token },
+      cwd: root, env: { LOTUS_HTTP_PORT: "0", PATH: process.env.PATH, [pluginProbeTokenEnvironment]: token },
       stdin: "pipe", stdout: "pipe", stderr: "pipe",
       timeout: 8_000, killSignal: "SIGKILL",
       ipc(message: unknown) {
@@ -170,8 +170,8 @@ test("加载超时后继续启动，迟到的现代工厂和 V3 初始化不会�
       const recorded = await events();
       for (const event of [...cleanup, "healthy-signal-abort"]) expect(recorded.filter((item) => item === event)).toHaveLength(1);
       for (const event of ["modern-command", "legacy-command", "legacy-task"]) expect(recorded).not.toContain(event);
-      expect(await stderr).toMatch(/a-slow-modern[^\n]*超时/u);
-      expect(await stderr).toMatch(/b-slow-legacy[^\n]*超时/u);
+      expect(await stderr).toMatch(/加载插件超时 \[a-slow-modern\]/u);
+      expect(await stderr).toMatch(/加载插件超时 \[b-slow-legacy/u);
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill("SIGKILL");
       await host.exited;

@@ -14,7 +14,7 @@ type NetworkConfig = Partial<Record<"server" | "milky" | "redis", Fields>>;
 type Deferred = "server.https.files" | "server.https.port-collision" | "server.https.invalid" |
   "server.https.unsafe-files" | "server.https.invalid-key-pair" |
   "server.onebot.authorization" | "milky.remote" | "milky.webhook.authorization" | "redis.remote";
-type Note = "server.listeners.shared" | "server.listeners.separate" | "server.listeners.loopback-default" |
+type Note = "server.listeners.shared" | "server.listeners.separate" | "server.listeners.all-interfaces-default" |
   "server.authorization.headers-only" | "milky.ws.authorization-header" |
   "redis.existing-service";
 
@@ -79,7 +79,7 @@ export function projectLegacyNetworkConfig(source: NetworkConfig, policy: Networ
     } else if (server.http && !server.oneBot) {
       deferred.push("server.onebot.authorization");
     }
-    if ((server.http || server.oneBot) && env.LOTUS_LISTEN_HOST === undefined) notes.push("server.listeners.loopback-default");
+    if ((server.http || server.oneBot) && env.LOTUS_LISTEN_HOST === undefined) notes.push("server.listeners.all-interfaces-default");
     if (server.http?.auth.keys().next().value || server.oneBot?.auth.keys().next().value) {
       notes.push("server.authorization.headers-only");
     }

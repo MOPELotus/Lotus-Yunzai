@@ -245,7 +245,7 @@ test.each([["仅 HTTPS", false], ["显式 HTTP", true]] as const)(
       const directory = join(root, "config");
       await mkdir(directory, { recursive: true });
       await writeFile(join(directory, "server.yaml"), Bun.YAML.stringify({
-        ...(explicitHttp && { port: 0 }),
+        ...(explicitHttp ? { port: 0 } : { onebot_enable: false }),
         https: { port: 0, key: "missing-fixture.key", cert: "missing-fixture.crt" },
       }));
       await writeFile(join(directory, "milky.yaml"), Bun.YAML.stringify({
@@ -314,7 +314,7 @@ test.skipIf(!openssl)("TRSS HTTPS 端口被占用时保留 HTTP 和原公开文�
       await checkStatus(http);
       await checkPublishedFile(http, plainPublicBase);
     }, occupied.port);
-    expect(diagnostics.split("\n").filter((line) => line.includes("[HTTPS]")))
+    expect(diagnostics.split("\n").filter((line) => line.includes("[HTTPS]")).map(line => line.slice(line.indexOf("[HTTPS]"))))
       .toEqual(["[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。"]);
   } finally {
     occupied.stop(true);

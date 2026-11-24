@@ -1,3 +1,4 @@
+import { authorizedProtocolRequest } from "../network-access.ts";
 import { sanitizeRuntimeLog } from "../runtime-logs.ts";
 import { createHash } from "node:crypto";
 import { chatFileRelaySource, isChatFileName, maxChatFileBytes, qqChatFileUrl, readQqChatFile, type ChatFileRelaySource, type IncomingChatFile } from "../chat-files.ts";
@@ -12,7 +13,6 @@ import { bindQuotedOwnerFriendReply, friendMessageNoticeSession, type FriendMess
 import { notifyOwnReply, notifyReplyDelivery, replyRecallSeconds, segment, type BotEvent, type FileUploadNotice, type FriendPoke, type FriendRequest, type GroupNotice, type GroupPoke,
   type GroupRequest, type MessageEvent, type MessageRecallNotice, type MessageReply, type OneBotGroupCompatibilityNotice, type OneBotLegacySignal,
   type OneBotPokeRecallNotice, type OneBotProfileLikeNotice, type QuotedMessage } from "../messages.ts";
-import { authorized } from "../server.ts";
 import { bindGroupCard } from "./group-card.ts";
 import { bindGroupName } from "./group-name.ts";
 import { bindGroupAvatar, groupAvatarSession } from "./group-avatar.ts";
@@ -174,9 +174,6 @@ function sendFrame(socket: Bun.ServerWebSocket<ConnectionData>, output: string):
   return socket.readyState === WebSocket.OPEN && socket.send(output) !== 0;
 }
 
-function isLoopback(address?: string): boolean {
-  return address === "::1" || /^(?:::ffff:)?127(?:\.\d{1,3}){3}$/u.test(address ?? "");
-}
 
 interface MessageIdentity {
   self_id?: number;
@@ -1280,10 +1277,9 @@ export function startOneBot(
     onBind?: (botId: number, signal?: AbortSignal) => void;
     onLegacySignal?: (event: OneBotLegacySignal, signal: AbortSignal) => void;
     onSent?: (identity: MessageIdentity, message?: unknown) => void;
-    http?: (request: Request) => Response | Promise<Response>;
+    http?: (request: Request, server?: { requestIP(request: Request): { address: string } | null }) => Response | Promise<Response>;
   },
 ) {
-  const authenticated = [...options.auth].length > 0;
 
   function sender(socket: Bun.ServerWebSocket<ConnectionData>, source: MessageIdentity): Send {
     return (frame) => {
@@ -1384,10 +1380,10 @@ export function startOneBot(
       // TRSS routed reverse WebSockets by the first path segment.
       const legacyUpgrade = path.startsWith("/OneBotv11/") && request.headers.get("Upgrade")?.toLowerCase() === "websocket";
       if (path !== "/OneBotv11" && path !== "/OneBotv11/" && !legacyUpgrade) {
-        return options.http?.(request) ?? new Response(null, { status: 404 });
+        return options.http?.(request, server) ?? new Response(null, { status: 404 });
       }
       if (options.accepting?.() === false) return new Response(null, { status: 503 });
-      if (!authorized(request, options.auth)) {
+      if (!authorizedProtocolRequest(request, options.auth, server.requestIP(request)?.address)) {
         return new Response(null, { status: 401 });
       }
       if (request.headers.get("X-Client-Role")?.toLowerCase() !== "universal") {
@@ -1396,7 +1392,7 @@ export function startOneBot(
       const header = request.headers.get("X-Self-ID");
       const id = header !== null && /^[1-9]\d*$/u.test(header) ? Number(header) : undefined;
       const data = { calls: new OneBotCalls(), mutes: new OneBotMutes(), botId: isId(id) ? id : undefined,
-        attachmentSession: authenticated || isLoopback(server.requestIP(request)?.address) ? new AbortController() : undefined };
+        attachmentSession: new AbortController() };
       if (!server.upgrade(request, { data })) {
         return new Response(null, { status: 426 });
       }

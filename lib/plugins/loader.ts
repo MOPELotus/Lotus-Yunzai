@@ -298,6 +298,7 @@ export async function loadPlugins(
     };
   } = {},
 ): Promise<PluginLoadReport> {
+  console.info("[Plugin] 加载插件中...");
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
@@ -572,11 +573,11 @@ export async function loadPlugins(
       signal.throwIfAborted();
       if (result !== "loaded") {
         const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
-        console.warn(`[插件] 跳过 ${label}：${reason}`);
+        console.warn(`[Plugin] 跳过插件 [${label}] ${reason}`);
         records.push({ name: label, status: "skipped", reason });
         continue;
       }
-      console.log(`[插件] 已加载 ${label}。`);
+      console.debug(`[Plugin] 加载插件 [${label}]`);
       recordLoaded(label, started, directory, packageName, moduleName === undefined);
       if (isManagedLegacyScript(declaredScript)) declaredScripts.add(declaredScript);
       const watch = directory && watched.get(directory);
@@ -588,12 +589,12 @@ export async function loadPlugins(
     } catch (error) {
       if (services.signal.aborted) break;
       if (deadline.signal.aborted) {
-        console.warn(`[插件] ${label} 加载超时。`);
+        console.warn(`[Plugin] 加载插件超时 [${label}]`);
         records.push({ name: label, status: "failed", reason: "插件加载超时。" });
         continue;
       }
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[插件] 加载 ${label} 失败：${message}`);
+      console.warn(`[Plugin] 加载插件错误 [${label}] ${message}`);
       records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
     } finally {
       clearTimeout(timer);
@@ -710,6 +711,7 @@ export async function loadPlugins(
   for (const [script, replacement] of retiredScripts) {
     if (replacementReady(replacement)) readyScripts.add(script);
   }
+  console.info(`[Plugin] 加载插件[${records.filter(record => record.status === "loaded").length}个]`);
   return {
     records, directories, timings, readyDirectories: [...readyDirectories], readyScripts: [...readyScripts],
     loadedScripts: () => [...loadedScripts],

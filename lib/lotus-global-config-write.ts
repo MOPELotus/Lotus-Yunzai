@@ -34,7 +34,7 @@ interface Location {
   readonly exists: boolean;
 }
 
-type ConfigurationName = "global" | "bot" | "server" | "system-status" | "genshin-damage" |
+type ConfigurationName = "other" | "global" | "bot" | "server" | "system-status" | "genshin-damage" |
   "remote" | "panel-rank" | "notice" | "mys.pushNews" | "guides" | "zzz-rank" | "zzz-panel" |
   "gacha-display" | "genshin-wish" | "group" | "groupAdmin" | "auto-group-card" | "group-leave-blacklist";
 

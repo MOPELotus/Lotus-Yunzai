@@ -489,7 +489,7 @@ test("宿主兼容插件日志格式、原 ID 对齐和选项，不影响普通�
     for (const [configuration, expected] of [
       ['log_object: false\nlog_align: abcde\n', ["[  42 ]", "[long.] fixture-align", "[abcde] fixture-default", "[object Object]"]],
       ['log_object: { depth: 2, length: 32 }\nlog_align: "  TRSSYz  "\n',
-        ["[    42    ]", "[long-iden.] fixture-align", "[  Lotus-Yunzai  ] fixture-default", "structure-visible"]],
+        ["[    42    ]", "[long-iden.] fixture-align", "[  LOTUS-YUNZAI  ] fixture-default", "structure-visible"]],
     ] as const) {
       await writeFile(config, configuration);
       const host = Bun.spawn([process.execPath, "app.ts"], {
@@ -508,7 +508,7 @@ test("宿主兼容插件日志格式、原 ID 对齐和选项，不影响普通�
         for (const value of expected) expect(log).toContain(value);
         expect(log).toContain("literal %o");
         expect(log).toContain("fixture-native-error");
-        expect(log).toContain(" [INFO] fixture-no-id\n");
+        expect(log).toContain("][INFO] fixture-no-id\n");
         expect(log).toContain("[long-identity] fixture-no-align");
         expect(log).toContain("fixture-direct token=[已隐藏]");
         expect(log).toContain("[MARK] fixture-plugin-mark");

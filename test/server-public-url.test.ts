@@ -33,14 +33,14 @@ test("公共 HTTP 地址保留代理路径，以及原有的监听地址和端�
   });
 });
 
-test("旧配置路径可发布地址，地址本身不启用监听", async () => {
+test("旧配置路径可发布地址，默认仍使用TRSS内网监听", async () => {
   await withConfig(async (root, writeConfig) => {
     expect((await readServerSettings(root, {})).publicUrl).toBeUndefined();
     await writeConfig("url: http://[::1]:2536/@lotus\n", true);
     const settings = await readServerSettings(root, {});
     expect(settings.publicUrl?.href).toBe("http://[::1]:2536/@lotus/");
-    expect(settings.http).toBeUndefined();
-    expect(settings.oneBot).toBeUndefined();
+    expect(settings.http?.port).toBe(2536);
+    expect(settings.oneBot?.port).toBe(2536);
 
     await writeConfig("url:\nport: 8000\n");
     const primary = await readServerSettings(root, {});

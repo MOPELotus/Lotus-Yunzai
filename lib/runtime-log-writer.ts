@@ -1,3 +1,5 @@
+import { withTerminalOutput } from "./terminal-output.ts";
+import { formatTerminalLog, formattedLogLevel } from "./terminal-log-format.ts";
 import { constants } from "node:fs";
 import { mkdir, open, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,7 +12,7 @@ import { runtimeLogDirectory, runtimeLogFilename, sanitizeRuntimeLog } from "./r
 const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "mark", "off"];
 const consoleLevels = { debug: "debug", log: "info", info: "info", warn: "warn", error: "error" } as const;
 const pendingLimit = 512;
-const defaultLabel = "Lotus-Yunzai";
+const defaultLabel = "LOTUS-YUNZAI";
 
 function minimumLevel(config: Readonly<Record<string, unknown>>) {
   const level = typeof config.log_level === "string" ? priorities.indexOf(config.log_level.toLowerCase()) : -1;
@@ -29,8 +31,7 @@ type PluginLogLevel = keyof typeof compatibilityLevels;
 
 export function runtimePluginLogger(config: Readonly<Record<string, unknown>>,
   write?: (level: PluginLogLevel, message: string) => void) {
-  // The global V3 logger historically exposed mark as INFO in the host's files.
-  const log = createPluginLog(config, write && ((level, message) => write(level === "mark" ? "info" : level, message)));
+  const log = createPluginLog(config, write);
   const levels = Object.keys(compatibilityLevels) as PluginLogLevel[];
   return Object.freeze(Object.fromEntries(levels.map(level => [level, (...args: unknown[]) => log(level, args, false)])));
 }
@@ -43,7 +44,7 @@ export function createPluginLog(config: Readonly<Record<string, unknown>>,
   const options = { depth: 10, maxArrayLength: 100, maxStringLength: 1_000, ...objectOptions,
     colors: false, customInspect: false, getters: false, showHidden: false, showProxy: false } as const;
   const label = typeof config.log_align === "string" ? sanitizeRuntimeLog(config.log_align, 64) : defaultLabel;
-  const projectLabel = /^(?:TRSSYz|TRSS-Yunzai)$/iu.test(label.trim()) ? label.replace(label.trim(), defaultLabel) : label;
+  const projectLabel = /^(?:TRSSYz|TRSS-Yunzai|Lotus-Yunzai)$/iu.test(label.trim()) ? label.replace(label.trim(), defaultLabel) : label;
 
   function identifier(id: unknown, force: unknown) {
     if (id === false) return "";
@@ -114,10 +115,10 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
   let archiveWarned = false;
   let closed = false;
 
-  function enqueue(level: PluginLogLevel, message: string) {
+  function enqueue(level: PluginLogLevel, message: string, project = true) {
     if (closed || queued >= pendingLimit || !message) return;
     const time = new Date();
-    const line = `${time.toISOString()} [${level.toUpperCase()}] ${message}\n`;
+    const line = formatTerminalLog(level, message, { now: time, color: false, fullLevel: true, label: project ? typeof config.log_align === "string" ? config.log_align : undefined : false }) + "\n";
     const exceptional = level === "error" || level === "fatal";
     queued++;
     tail = tail.then(async () => {
@@ -146,11 +147,14 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
     const original = originalConsole[method];
     const level = consoleLevels[method];
     const proxy = (...args: unknown[]) => {
-      original.apply(console, args);
-      if (closed || queued >= pendingLimit || priorities.indexOf(level) < minimumLevel(config)) return;
+      const terminal = formatWithOptions({ colors: false, customInspect: false, getters: false }, ...args);
+      const severity = formattedLogLevel(terminal, level);
+      if (priorities.indexOf(severity) >= minimumLevel(config) || priorities.indexOf(severity) >= priorities.indexOf("warn"))
+        withTerminalOutput(() => original.call(console, formatTerminalLog(severity, terminal, { label: typeof config.log_align === "string" ? config.log_align : undefined })));
+      if (closed || queued >= pendingLimit || priorities.indexOf(severity) < minimumLevel(config) && priorities.indexOf(severity) < priorities.indexOf("warn")) return;
       try {
         const formatted = formatWithOptions({ colors: false, customInspect: false, getters: false }, ...args);
-        enqueue(level, sanitizeRuntimeLog(formatted.replace(/[\r\n]+/gu, " "), maxLength));
+        enqueue(severity, sanitizeRuntimeLog(formatted.replace(/[\r\n]+/gu, " "), maxLength));
       } catch { return; }
     };
     console[method] = proxy;
@@ -161,8 +165,8 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
 
   return {
     writePluginLog(level: PluginLogLevel, message: string) {
-      originalConsole[compatibilityLevels[level]].call(console, message);
-      enqueue(level, message);
+      withTerminalOutput(() => originalConsole[compatibilityLevels[level]].call(console, formatTerminalLog(level, message, { label: false })));
+      enqueue(level, message, false);
     },
     flush: () => tail,
     async close() {
