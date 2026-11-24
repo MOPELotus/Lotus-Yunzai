@@ -25,7 +25,7 @@ async function walk(path: string) {
 }
 for (const path of directories) await walk(join(root, path));
 for (const path of tracked) {
-  if (supportFile.test(path) && path !== "resources/builtin/manifest.json") paths.push(join(root, path));
+  if (supportFile.test(path) && !path.startsWith("resources/builtin/")) paths.push(join(root, path));
 }
 const files = [];
 for (const file of [...new Set(paths)].sort()) {
