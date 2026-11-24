@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { lockFile } from "../../lib/file-lock.ts";
 import type { DeviceBinding } from "./device-binding.ts";
 import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
-export { parseDeviceBinding, type DeviceBinding } from "./device-binding.ts";
+export { parseDeviceBinding, parseAndroidDeviceInfo, type AndroidDeviceInfo, type DeviceBinding } from "./device-binding.ts";
 export { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
 export { loadOfficialArtwork, loadPublicQqAvatar, rasterImageSize } from "./official-artwork.ts";
 export { createGroupRankRefresh, type GroupRankRefreshResult } from "./group-rank-refresh.ts";
@@ -739,6 +739,15 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         loginSlots.delete(slot);
         return { rolesSynced: result.roles !== undefined, revision };
       });
+    },
+    async verifyDeviceBindingTarget(qq: string, profileId: number, expected: DeviceBindingSnapshot) {
+      const current = await readLoggedIn(qq, profileId).catch(() => { throw changedProfile(); });
+      if (expected.qq !== qq || expected.profileId !== profileId ||
+          (current.revision !== expected.revision &&
+            (!sameDeviceBindingLogin(expected.account, current.account) || !isDeepStrictEqual(expected.device, current.device)))) {
+        throw changedProfile();
+      }
+      if (hasConflictingProfileCookieIdentity(current.account)) throw new ProfileError("invalid", "档案账号不一致，请重新扫码后绑定。");
     },
     async saveBoundDevice(qq: string, profileId: number, expected: string | DeviceBindingSnapshot, binding: DeviceBinding,
       signal?: AbortSignal) {

@@ -3073,7 +3073,7 @@ if (import.meta.main) {
         message_type, self_id, user_id, group_id, isMaster, inlineImageByteLimit, groupActivitySignal, privateCredentialSignal,
       });
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      viewProfile));
+      viewProfile, undefined, { transport: hoyoTransportForBot(botConfig.proxyAddress) }));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(legacyAnniversaryCommands(root, Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));

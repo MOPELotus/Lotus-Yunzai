@@ -1,3 +1,5 @@
+export type { HoyoTransport } from "./credentials.ts";
+export { requestDeviceFingerprint, DeviceFingerprintError } from "./device-fingerprint.ts";
 import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";
 import { hasConflictingProfileCookieIdentity, normalizeGameRoles, profileCookieAccountId, profileGames, type Game, type GameRole, type ProfileAccountContext, type ProfileRequestContext, type RefreshedCredentials, createProfileStore } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, readBbsMissionState, submitBbsCheckin, type BbsCheckinForum } from "./bbs-checkin.ts";

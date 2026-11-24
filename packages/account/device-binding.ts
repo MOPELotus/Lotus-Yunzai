@@ -97,14 +97,18 @@ function friendlyLabel(value: string | undefined): string | undefined {
   if (value && /^[A-Za-z0-9][A-Za-z0-9 ._+()-]{0,63}$/u.test(value)) return value;
 }
 
-export function parseDeviceBinding(input: string): DeviceBinding {
+function bindingInput(input: string): Fields {
   if (typeof input !== "string" || Buffer.byteLength(input) > maxInputBytes) formatError();
   const text = input.trim();
   const fenced = /^\x60{3}(?:json)?\r?\n([\s\S]*)\r?\n\x60{3}$/iu.exec(text);
   const firstLabel = /^([\w-]+)\s*[:=：]/u.exec(text)?.[1]?.toLowerCase();
   const embedded = firstLabel && labels.has(firstLabel) ? undefined : /\{[\s\S]*\}/u.exec(text)?.[0];
   const json = fenced?.[1] ?? embedded;
-  const root = json === undefined ? readText(text) : readJson(json);
+  return json === undefined ? readText(text) : readJson(json);
+}
+
+export function parseDeviceBinding(input: string): DeviceBinding {
+  const root = bindingInput(input);
   const nested = object(root.data);
   const source = nested ?? root;
   for (const candidate of [root, source]) {
@@ -136,4 +140,54 @@ export function parseDeviceBinding(input: string): DeviceBinding {
   const version = metadata("androidVersion")?.replace(/^Android\s+/iu, "");
   const androidVersion = version && /^\d{1,2}(?:L|(?:\.\d{1,2}){0,2})$/iu.test(version) ? version : undefined;
   return { id, fp, ...(name ? { name } : {}), ...(model ? { model } : {}), ...(androidVersion ? { androidVersion } : {}) };
+}
+
+
+export interface AndroidDeviceInfo {
+  readonly deviceName: string;
+  readonly deviceModel: string;
+  readonly deviceFingerprint: string;
+  readonly deviceProduct: string;
+  readonly deviceBoard: string;
+  readonly oaid: string;
+  readonly [key: string]: string | undefined;
+}
+
+// Only APK metadata without an existing identity may start fingerprint issuance.
+// Complete pairs, partial pairs and getFp requests/responses keep the strict
+// direct-binding checks, rather than silently replacing their device identity.
+export function parseAndroidDeviceInfo(input: string): AndroidDeviceInfo | undefined {
+  const root = bindingInput(input);
+  if (root.data !== undefined || root.retcode !== undefined || root.code !== undefined ||
+      root.ext_fields !== undefined || root.seed_id !== undefined || root.app_name !== undefined ||
+      Object.keys(root).some(key => [...aliases.id, ...aliases.fp].includes(key.toLowerCase()))) return;
+  const required = ["deviceName", "deviceModel", "deviceFingerprint", "deviceProduct", "deviceBoard", "oaid"] as const;
+  if (!required.some(field => Object.hasOwn(root, field))) return;
+  const result: Record<string, string> = Object.create(null);
+  for (const field of required) {
+    const value = root[field];
+    if (typeof value !== "string" || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)) {
+      throw new TypeError("安卓设备参数不完整或无效，请重新复制 APK 导出的完整 JSON（含 OAID）。");
+    }
+    result[field] = value.trim();
+  }
+  if (result.oaid!.startsWith("error_")) throw new TypeError("APK 未取得有效 OAID，请重新获取设备参数。");
+  const optional = ["deviceBrand", "manufacturer", "hardware", "romCapacity", "romRemain", "screenSize", "sdCapacity", "sdRemain",
+    "buildTime", "buildUser", "ramCapacity", "ramRemain", "sdkVersion", "display", "packageVersion"];
+  for (const field of optional) {
+    const value = root[field];
+    if (value === undefined || value === null || value === "") continue;
+    const text = typeof value === "number" && Number.isFinite(value) ? String(value) : value;
+    if (typeof text !== "string" || text.length > 1024 || /[\u0000-\u001f\u007f]/u.test(text)) {
+      throw new TypeError("安卓设备参数格式无效，请重新复制 APK 导出的完整 JSON。");
+    }
+    result[field] = text.trim();
+  }
+  const version = single(values(root, "androidVersion")) ?? /:([^/]+)\//u.exec(result.deviceFingerprint!)?.[1];
+  if (version) {
+    const normalized = version.replace(/^Android\s+/iu, "");
+    if (!/^\d{1,2}(?:L|(?:\.\d{1,2}){0,2})$/iu.test(normalized)) throw new TypeError("安卓系统版本格式无效。");
+    result.osVersion = normalized;
+  }
+  return result as unknown as AndroidDeviceInfo;
 }

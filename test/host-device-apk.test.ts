@@ -182,7 +182,7 @@ test("群内设备资料按权限撤回且不流入通用插件，好友私聊�
       expect((await sendMilky(metadata)).status).toBe(200);
       const own = await milky.next("send_private_message");
       expect(own.params.user_id).toBe(43);
-      expect(JSON.stringify(own.params.message)).toContain("已签发的 device_fp");
+      expect(JSON.stringify(own.params.message)).toContain("请先私聊发送 #绑定设备");
       expect(JSON.stringify(own.params.message)).not.toContain("fixture-firmware");
       own.respond({ message_seq: 33 });
     }, 3_000, undefined, async root => {
@@ -197,3 +197,55 @@ test("群内设备资料按权限撤回且不流入通用插件，好友私聊�
       } };`);
     });
 }, 9_000);
+
+
+test("OneBot 与 Milky 从 APK 安卓 JSON 申请指纹并绑定原档案，瞬时失败沿用同一设备", async () => {
+  const metadata = {
+    deviceName: "Fixture Pixel", deviceModel: "Pixel 7", deviceFingerprint: "google/panther/panther:13/TQ1A/fixture:user/release-keys",
+    deviceProduct: "panther", deviceBoard: "panther", oaid: "0123456789abcdef0123456789abcdef", osVersion: "13", sdkVersion: "33",
+    cookie: "must-not-forward", stoken: "must-not-forward",
+  };
+  const preload = `
+import { appendFileSync } from "node:fs";
+const nativeFetch = globalThis.fetch;
+const issued = new Set();
+globalThis.fetch = Object.assign(async (input, init) => {
+  const url = String(input instanceof Request ? input.url : input);
+  if (url === "https://public-data-api.mihoyo.com/device-fp/api/getFp") {
+    const body = JSON.parse(String(init.body));
+    appendFileSync("getfp.jsonl", JSON.stringify({ body, headers: Object.fromEntries(new Headers(init.headers)) }) + "\\n");
+    if (!issued.has(body.device_id)) { issued.add(body.device_id); return new Response(null, { status: 503 }); }
+    return Response.json({ retcode: 0, data: { code: 200, device_fp: "a1b2c3d4e5f67" } });
+  }
+  return nativeFetch(input, init);
+}, nativeFetch);
+`;
+  await withDualGatewayFixture("device-android-issuance", "disablePrivate: false\n",
+    async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+      for (const protocol of ["onebot", "milky"] as const) {
+        const input = "#绑定设备2 " + JSON.stringify(metadata);
+        if (protocol === "onebot") sendOneBot(input);
+        else expect((await sendMilky(input)).status).toBe(200);
+        const message = protocol === "onebot" ? await onebot.next("send_msg") : await milky.next("send_private_message");
+        expect(JSON.stringify(message.params.message)).toContain("设备已绑定");
+        expect(JSON.stringify(message.params.message)).not.toContain("a1b2c3d4e5f67");
+        message.respond(protocol === "onebot" ? { message_id: 51 } : { message_seq: 52 });
+        const saved = Bun.YAML.parse(await readFile(join(root, "data/users", (protocol === "onebot" ? "42" : "43") + "-2.yaml"), "utf8"));
+        expect(saved).toMatchObject({ device: { bound: true, fp: "a1b2c3d4e5f67", android_version: "13", model: "Pixel 7" } });
+      }
+      const requests = (await readFile(join(root, "getfp.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+      expect(requests).toHaveLength(4);
+      for (let index = 0; index < requests.length; index += 2) {
+        expect(requests[index].body).toEqual(requests[index + 1].body);
+        expect(requests[index].headers).not.toHaveProperty("cookie");
+        expect(JSON.stringify(requests[index])).not.toContain("must-not-forward");
+        expect(JSON.parse(requests[index].body.ext_fields)).toMatchObject({ oaid: metadata.oaid, deviceInfo: metadata.deviceFingerprint });
+      }
+    }, 5_000, preload, async root => {
+      const profiles = join(root, "data/users");
+      await mkdir(profiles, { recursive: true });
+      await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${profiles}\n`);
+      for (const qq of [42, 43]) await writeFile(join(profiles, qq + "-2.yaml"),
+        'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\n');
+    });
+}, 15_000);

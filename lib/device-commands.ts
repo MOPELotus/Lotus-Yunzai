@@ -1,4 +1,6 @@
-import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding, type ProfileAccountContext } from "@lotus-yunzai/account";
+import { DeviceFingerprintError, requestDeviceFingerprint } from "@lotus-yunzai/hoyo-client";
+import type { HoyoTransport } from "@lotus-yunzai/hoyo-client";
+import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding, parseAndroidDeviceInfo, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { maxChatFileBytes } from "./chat-files.ts";
 import type { CommandModule, MessageFallbackContext, CommandReply } from "./commands.ts";
 
@@ -53,6 +55,7 @@ interface BindingRequest {
 export function deviceCommands(directory: string | undefined, signal: AbortSignal,
   showProfile: (profileId: number, context: MessageFallbackContext) => Promise<CommandReply> | CommandReply,
   apk?: string | URL,
+  options: { readonly transport?: HoyoTransport } = {},
 ): CommandModule {
   const profiles = createProfileStore(directory);
   const pending = new Map<string, BindingRequest>();
@@ -85,7 +88,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         return [
           `加机器人好友并登录该档案后，好友私聊发送 #绑定设备${suffix}。`,
           "按提示在同一条私聊消息中发送该设备的 JSON，或配对的 device_id 和 device_fp。",
-          "旧安卓工具可能只复制设备参数，绑定仍需配对的 ID 和已签发的 FP。等待有效期为两分钟，发送「取消」退出。",
+          "APK 只有安卓参数时会自动补齐设备 ID 并申请指纹。等待有效期为两分钟，发送「取消」退出。",
           `绑定后可用 #设备信息${suffix} 查看。`,
         ].join("\n");
       }
@@ -104,7 +107,6 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         return;
       }
       const active = AbortSignal.any([signal, connection]);
-      if (legacyMetadata) return "这份 JSON 只有设备参数。请在本人私聊提供同一设备的 device_id 和已签发的 device_fp。";
       if (unbound) {
         const waiting = pending.get(scope);
         if (waiting?.profileId === id) cancelRequest(scope, waiting);
@@ -153,7 +155,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           setTimeout(() => {
             if (!current.writing) cancelRequest(scope, current);
           }, timeout).unref();
-          const prompt = `请发送 profile ${id} 的设备 JSON，或同一设备的 device_id 和 device_fp。旧工具只有安卓参数时，还需要这两个字段。发送「取消」可退出，两分钟内有效。`;
+          const prompt = `请发送 profile ${id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。`;
           if (await context.reply(prompt) === false || active.aborted) {
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
@@ -187,14 +189,22 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       }
       const writeSignal = AbortSignal.any([active, request.operation.signal]);
       try {
-        const device = parseDeviceBinding(opened?.[2] ?? text);
+        const input = opened?.[2] ?? text;
+        const android = parseAndroidDeviceInfo(input);
+        const direct = android ? undefined : parseDeviceBinding(input);
         request.writing = true;
+        const target = request;
+        const device = direct ?? await requestDeviceFingerprint(android!, {
+          transport: options.transport, signal: writeSignal,
+          verify: () => profiles.verifyDeviceBindingTarget(qq, target.profileId, target.snapshot!.account),
+        });
         await profiles.saveBoundDevice(qq, request.profileId, request.snapshot.account, device, writeSignal);
         if (writeSignal.aborted) return [];
       } catch (error) {
         if (writeSignal.aborted) return [];
         if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发起设备绑定。";
         if (error instanceof ProfileError && error.code === "invalid") return error.message;
+        if (error instanceof DeviceFingerprintError || error instanceof TypeError) return error.message;
         return "设备绑定未完成，请在同一份信息中提供匹配的设备 ID 和 FP。";
       } finally {
         if ((opened || request.writing) && pending.get(scope) === request) pending.delete(scope);
