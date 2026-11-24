@@ -3045,10 +3045,10 @@ if (import.meta.main) {
     });
     commands.registerModule(accounts);
     commands.registerModule(donationCommands(lifecycle.signal));
-    const viewProfile = (id: number, { message_type, self_id, user_id, group_id, isMaster,
+    const viewProfile = (id: number, { message_type, self_id, user_id, group_id, isMaster, inlineImageByteLimit,
       groupActivitySignal, privateCredentialSignal }: CommandContext) =>
       accounts.commands[`#配置${id === 1 ? "" : id}`]!("", {
-        message_type, self_id, user_id, group_id, isMaster, groupActivitySignal, privateCredentialSignal,
+        message_type, self_id, user_id, group_id, isMaster, inlineImageByteLimit, groupActivitySignal, privateCredentialSignal,
       });
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       viewProfile));

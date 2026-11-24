@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
+import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import type { CommandContext, CommandHandler, CommandModule } from "./commands.ts";
 import { segment } from "./messages.ts";
 
@@ -207,14 +208,22 @@ export function accountCommands(
         const { loadProfileRoleArtwork } = await import("./profile-role-artwork.ts");
         const artwork = await loadProfileRoleArtwork(roleGroups.flatMap(({ rows }) => rows.map(({ avatar }) => avatar)), { signal });
         if (signal?.aborted) return [];
-        const { png } = await renderProfileCard({
+        const model = {
           title, subtitle, summary, account, settings, warnings,
           roleGroups: roleGroups.map(({ label, rows }) => ({
             label, rows: rows.map(({ avatar, ...row }) => ({ ...row, ...(avatar ? { image: artwork.get(avatar) } : {}) })),
           })),
           generatedAt: new Date().toLocaleString("sv-SE", { hour12: false }),
-        }, { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined });
-        if (png.byteLength) image = png;
+        };
+        const scale = nativeImageRasterScale();
+        const limit = context.inlineImageByteLimit ?? Infinity;
+        const resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES || undefined;
+        let card = await renderProfileCard(model, { resourceDirectory, scale });
+        if (signal?.aborted) return [];
+        if (card.png.byteLength > limit && scale === 4 && !card.reducedScaleReason) {
+          card = await renderProfileCard(model, { resourceDirectory, scale: 2 });
+        }
+        if (card.png.byteLength && card.png.byteLength <= limit) image = card.png;
       } catch {
         // Settings stay readable if the original resources are absent.
       }
