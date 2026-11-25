@@ -94,7 +94,8 @@ async function setup() {
   }
   const trusted = { Origin: origin, "X-Lotus-Panel-Session": "1" };
   const link = await session.commands.fallback?.("#管理面板",
-    { self_id: 42, user_id: 7, message_type: "private", privateCredentialSignal: new AbortController().signal } as MessageFallbackContext);
+    { self_id: 42, user_id: 7, message_type: "private", normalizedMessage: "#管理面板",
+      privateCredentialSignal: new AbortController().signal } as MessageFallbackContext);
   const ticket = new URLSearchParams(new URL(String(link).split("\n")[1]!).hash.slice(1)).get("ticket");
   const claim = await request("/panel/api/session/claim", "POST", { ticket }, trusted);
   expect(claim.status).toBe(204);

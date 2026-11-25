@@ -115,7 +115,7 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     sendOneBot("#扫码登录2", { message_type: "group", sub_type: "normal", group_id: 77 });
     await nextOneBot("请私聊发送");
     sendOneBot("#扫码登录2");
-    await nextOneBot("创建米游社登录二维码");
+    await nextOneBot("生成米游社登录二维码");
     await nextOneBot('"type":"image"');
     sendOneBot("#二维码登录2");
     await nextOneBot("该档案已有二维码");
@@ -136,7 +136,7 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     });
 
     expect((await sendMilky("#辅助登录3")).status).toBe(200);
-    await nextMilky("创建米游社登录二维码");
+    await nextMilky("生成米游社登录二维码");
     await nextMilky('"type":"image"');
     await nextMilky("扫码登录完成");
     expect(await read(43, 3)).toMatchObject({ account: {
@@ -146,11 +146,11 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     } });
 
     sendOneBot("#二维码登陆3");
-    await nextOneBot("创建米游社登录二维码");
+    await nextOneBot("生成米游社登录二维码");
     await nextOneBot('"type":"image"');
     await nextOneBot("登录二维码已过期");
     sendOneBot("#扫码登录4");
-    await nextOneBot("创建米游社登录二维码");
+    await nextOneBot("生成米游社登录二维码");
     await nextOneBot('"type":"image"');
     expect((await sendMilky("#取消扫码登录4", { sender_id: 42, peer_id: 42 })).status).toBe(200);
     await nextMilky("当前私聊没有该档案的扫码等待");
@@ -158,7 +158,7 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     await nextOneBot("已取消扫码登录");
     for (const [id, outcome] of [[5, "failed"], [6, "unconfirmed"]] as const) {
       sendOneBot(`#扫码登录${id}`);
-      await nextOneBot("创建米游社登录二维码");
+      await nextOneBot("生成米游社登录二维码");
       await nextOneBot('"type":"image"', outcome);
       await Bun.sleep(60);
       sendOneBot(`#取消扫码登录${id}`);

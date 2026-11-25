@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-test.skipIf(process.platform === "win32")("前台主管Ctrl+C提示结束运行并退出0，自发130和SIGTERM保持失败码",async()=>{
+test.skipIf(process.platform === "win32")("前台主管Ctrl+C及显式SIGTERM正常结束并退出0，自发130保持失败码",async()=>{
  const root=await mkdtemp(join(tmpdir(),"lotus-foreground-interrupt-"));
  await writeFile(join(root,"app.ts"),`
  process.on("SIGINT",()=>process.exit(130));process.on("SIGTERM",()=>process.exit(143));
@@ -24,8 +24,28 @@ test.skipIf(process.platform === "win32")("前台主管Ctrl+C提示结束运行�
   } finally {if(child.exitCode===null)child.kill("SIGKILL");await child.exited;terminal.close();}
   const failure=Bun.spawn([process.execPath,script,root],{cwd:root,env:{PATH:process.env.PATH,FIXTURE_FAIL:"1"},stdin:"ignore",stdout:"ignore",stderr:"ignore"});
   expect(await failure.exited).toBe(130);
-  const term=Bun.spawn([process.execPath,script,root],{cwd:root,env:{PATH:process.env.PATH},stdin:"ignore",stdout:"pipe",stderr:"ignore"});
-  try {const reader=term.stdout.getReader();while(true){const {done,value}=await reader.read();if(done)throw Error("worker exited before ready");if(new TextDecoder().decode(value).includes("foreground-interrupt-ready"))break;}reader.releaseLock();term.kill("SIGTERM");expect(await term.exited).toBe(143);}
+  const term=Bun.spawn([process.execPath,script,root],{cwd:root,env:{PATH:process.env.PATH},stdin:"ignore",stdout:"pipe",stderr:"pipe"});
+  const errors = new Response(term.stderr).text();
+  try {
+   const reader = term.stdout.getReader();
+   const decoder = new TextDecoder();
+   let output = "";
+   while (!output.includes("foreground-interrupt-ready")) {
+    const { done, value } = await reader.read();
+    if (done) throw Error("worker exited before ready");
+    output += decoder.decode(value, { stream: true });
+   }
+   term.kill("SIGTERM");
+   for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    output += decoder.decode(value, { stream: true });
+   }
+   reader.releaseLock();
+   expect(await term.exited).toBe(0);
+   expect(output.match(/结束运行/gu)).toHaveLength(1);
+   expect(await errors).not.toContain("exited with code");
+  }
   finally {if(term.exitCode===null)term.kill("SIGKILL");await term.exited;}
  }finally{await rm(root,{recursive:true,force:true});}
 },20_000);

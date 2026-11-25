@@ -271,7 +271,11 @@ test("Milky 自动退群核实实时群信息、保护主人和群主，并按�
       await host.exited;
     }
     const warnings = await stderr;
-    expect(warnings.split("\n").filter((line) => line === unknownWarning)).toHaveLength(1);
+    const resultWarnings = warnings.split("\n").filter(line => line.includes(unknownWarning));
+    expect(resultWarnings).toHaveLength(1);
+    const prefix = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[WARN\] /u;
+    expect(resultWarnings[0]).toMatch(prefix);
+    expect(resultWarnings[0]!.replace(prefix, "")).toBe(unknownWarning);
     expect(warnings).not.toContain(token);
   } finally {
     mock.stop();
