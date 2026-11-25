@@ -143,20 +143,20 @@ function headersFor(source: CnGameCheckinSource, route: SignRoute) {
   return headers;
 }
 
-function checkResponseRole(data: Json, uid: string, region: string, route: SignRoute) {
+function checkResponseRole(data: Json, uid: string, region: string, route: SignRoute, allowEmptyRegion = false) {
   for (const key of ["uid", "game_uid", "role_id"]) {
     if (!Object.hasOwn(data, key)) continue;
     const value = data[key];
     if (value !== uid && !(typeof value === "number" && Number.isSafeInteger(value) && String(value) === uid)) invalidResponse(route);
   }
   for (const key of ["region", "server"]) {
-    if (Object.hasOwn(data, key) && data[key] !== region) invalidResponse(route);
+    if (Object.hasOwn(data, key) && data[key] !== region && !(allowEmptyRegion && data[key] === "")) invalidResponse(route);
   }
   if (Object.hasOwn(data, "game_biz") && data.game_biz !== route.biz) invalidResponse(route);
 }
 
-function checkDataRole(data: Json, uid: string, region: string, route: SignRoute) {
-  checkResponseRole(data, uid, region, route);
+function checkDataRole(data: Json, uid: string, region: string, route: SignRoute, allowEmptyRegion = false) {
+  checkResponseRole(data, uid, region, route, allowEmptyRegion);
   if (data.role != null) checkResponseRole(object(data.role) ?? invalidResponse(route), uid, region, route);
 }
 
@@ -196,7 +196,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   try {
     response = await transport(url, {
       method: writing ? "POST" : "GET", headers, body: writing ? JSON.stringify(legacyLuna ? identity : params) : undefined,
-      credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
+      credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline, keepalive: false,
     });
   } catch {
     await guard();
@@ -227,7 +227,8 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
       throw new GameCheckinChallengeError(subject, status, inline);
     }
   }
-  if (retcode === 1034 || retcode === 10035 || retcode === 10041 || /验证码|captcha|geetest|风控/iu.test(message) || inlineRisk) {
+  if (retcode === 10041) throw new GameRecordRequestError(subject, "account", code, status, retcode);
+  if (retcode === 1034 || retcode === 10035 || /验证码|captcha|geetest|风控/iu.test(message) || inlineRisk) {
     throw new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
   if (/频繁|too frequent|rate limit/iu.test(message)) {
@@ -243,7 +244,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   }
   if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
   if (legacyLuna && payload?.data != null && !data) invalidResponse(route);
-  if (data) checkDataRole(data, uid, region, route);
+  if (data) checkDataRole(data, uid, region, route, !writing);
   return { route, data };
 }
 

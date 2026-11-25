@@ -84,7 +84,7 @@ test("只接受已校验的角色状态，过期、风险、限流和已经提�
     [{ retcode: 0, data: { is_sign: false, total_sign_day: 32 } }, { code: "response" }],
     [{ retcode: 0, data: { is_risk: true, success: 0 } }, { reason: "risk" }],
     [{ retcode: 0, data: { is_risk: false, success: 1 } }, { reason: "risk" }],
-    [{ retcode: 10041 }, { reason: "risk" }],
+    [{ retcode: 10041 }, { reason: "account" }],
     [{ retcode: -100 }, { reason: "expired" }],
     [{ retcode: -100, message: "请求过于频繁" }, { reason: "rate-limited" }],
   ] as const) {
@@ -353,4 +353,22 @@ test("未定状态失败和风控保留清楚分类，换绑中止后不再处�
     if (!valid) throw changed;
   })).rejects.toBe(changed);
   expect(calls).toBe(1);
+});
+
+
+test("三游 info 顶层空区服是未提供身份，明确异区及嵌套异区仍拒绝", async () => {
+  for (const route of routes) {
+    const source = fixture(route);
+    const response = { is_sign: false, total_sign_day: 0, region: "", send_first: false };
+    expect(await readCnGameCheckinInfo(source, async () => Response.json({ retcode: 0, data: response })))
+      .toEqual({ signed: false, firstBind: false, totalSignDays: 0 });
+    for (const invalid of [
+      { ...response, region: "other_server" },
+      { ...response, role: { uid: source.role.uid, region: "" } },
+      { ...response, role: { uid: "999999999", region: source.role.region } },
+    ]) {
+      await expect(readCnGameCheckinInfo(source, async () => Response.json({ retcode: 0, data: invalid })))
+        .rejects.toMatchObject({ code: "response" });
+    }
+  }
 });
