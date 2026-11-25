@@ -65,8 +65,8 @@ async function canonicalDirectory(path: string): Promise<string> {
 
 async function effectiveFile(root: URL, name: ConfigurationName, override?: string): Promise<Location> {
   const primary = override ? resolve(override) : fileURLToPath(new URL(`config/${name}.yaml`, root));
-  const legacy = ["global", "bot", "auto-group-card", "group-leave-blacklist"].includes(name)
-    ? [fileURLToPath(new URL(`config/config/${name}.yaml`, root))] : [];
+  // 与 readLocalConfig 保持一致；显式覆盖路径不得回落到另一份配置。
+  const legacy = override ? [] : [fileURLToPath(new URL(`config/config/${name}.yaml`, root))];
   for (const source of [primary, ...legacy]) {
     const state = await named(source);
     if (!state) continue;
