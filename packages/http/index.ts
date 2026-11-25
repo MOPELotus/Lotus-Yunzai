@@ -1,4 +1,11 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const managedRetry = new AsyncLocalStorage<boolean>();
+/** Preserve an existing caller's retry budget instead of nesting another loop. */
+export function withoutReadRetries<T>(operation: () => T): T {
+  return managedRetry.run(true, operation);
+}
 
 export type ReadTransportInit = RequestInit & {
   readonly proxy?: false;
@@ -77,7 +84,7 @@ export function withReadRetries(transport: ReadTransport, { canRetry = defaultRe
   if (existing) return existing;
   const request: ReadTransport = async (endpoint, init) => {
     const { readRetry, readRetryGuard, ...outgoing } = init;
-    const retry = readRetry !== false && canRetry(endpoint, (init.method ?? "GET").toUpperCase()) &&
+    const retry = !managedRetry.getStore() && readRetry !== false && canRetry(endpoint, (init.method ?? "GET").toUpperCase()) &&
       (init.body === undefined || init.body === null || typeof init.body === "string");
     const attempts = retry ? limit : 1;
     for (let attempt = 0; ; attempt++) {

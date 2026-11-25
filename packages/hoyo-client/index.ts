@@ -3,7 +3,7 @@ export { readRegistrationTime } from "./registration-time.ts";
 import { withMiyousheCaptcha } from "./captcha-business.ts";
 import { withHoyoReadRetries } from "./read-retry.ts";
 export { withHoyoReadRetries } from "./read-retry.ts";
-export { withReadRetries } from "@lotus-yunzai/http";
+export { withReadRetries, withoutReadRetries } from "@lotus-yunzai/http";
 export type { HoyoTransport } from "./credentials.ts";
 export { requestDeviceFingerprint, DeviceFingerprintError } from "./device-fingerprint.ts";
 import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";

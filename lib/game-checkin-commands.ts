@@ -1,4 +1,4 @@
-import { CaptchaBusinessRejectedError, getDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
+import { CaptchaBusinessRejectedError, getDefaultCaptchaSolver, withoutReadRetries } from "@lotus-yunzai/hoyo-client";
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileCookieAccountId, type ProfileAccountContext } from "@lotus-yunzai/account";
@@ -149,7 +149,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted();
       try {
-        return await read();
+        return await withoutReadRetries(read);
       } catch (error) {
         const delay = delays[attempt];
         if (delay === undefined || !mayRetry(error) || (error instanceof HoyoRequestError && error.status === 429)) throw error;
