@@ -16,6 +16,17 @@ function parse(bytes: Buffer): Fields {
   return value as Fields;
 }
 
+function assertDailySchedule(value: unknown) {
+  if (value === undefined) return;
+  if (typeof value !== "string") invalid();
+  const parts = value.trim().split(/\s+/u);
+  const clock = parts.length === 5 ? parts.slice(0, 2) : parts.slice(1, 3);
+  const suffix = parts.slice(parts.length === 5 ? 2 : 3);
+  if (![5, 6, 7].includes(parts.length) || !clock.every(part => /^\d{1,2}$/u.test(part)) ||
+      Number(clock[0]) > 59 || Number(clock[1]) > 23 ||
+      parts.length > 5 && Number(parts[0]) !== 0 || suffix.some(part => part !== "*" && part !== "?")) invalid();
+}
+
 /** A directory name alone cannot distinguish Lotus 1 from a renamed ReFactor checkout. */
 export async function hasFirstGenerationLayout(source: string, prefix: string) {
   const path = join(source, prefix, "MihoyoBBSTools/config");
@@ -37,11 +48,22 @@ export async function readFirstGenerationGlobal(source: string, prefix: string, 
   const file = await readMigrationSourceFile(source, join(source, prefix, path), 256 * 1024, signal);
   if (!file) return;
   const raw = parse(file.bytes);
+  // A weekly/interval rule cannot be represented by a single daily fixed time.
+  // Reject it instead of silently scheduling additional sign-in executions.
+  assertDailySchedule(raw.schedule);
   if (stage) await preserve(stage, prefix, path, file.bytes);
   const projected = normalizeLotusGlobalConfig(raw);
   const partner = fields(raw.neteasePartner);
   if (Object.keys(partner).length && !Object.hasOwn(projected, "netease_partner")) {
     projected.netease_partner = { ...partner, auto_catch_up: partner.autoCatchUp ?? partner.auto_catch_up };
+  }
+  // The first-generation task actually reads comment.example as its configured corpus.
+  const comments = await readMigrationSourceFile(source, join(source, prefix, "config/comment.example"), 256 * 1024, signal);
+  if (comments && Object.keys(partner).length && !Object.hasOwn(fields(projected.netease_partner), "comments")) {
+    let text: string;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(comments.bytes); } catch { invalid(); }
+    projected.netease_partner = { ...fields(projected.netease_partner), comments: text.split(/\r?\n/u).filter(line => line.trim()) };
+    if (stage) await preserve(stage, prefix, "config/comment.example", comments.bytes);
   }
   return { raw, projected };
 }

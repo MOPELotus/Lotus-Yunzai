@@ -115,3 +115,44 @@ test.skipIf(!Bun.which("git"))("一代从纯净候选安装完整迁移，签到
   expect(await readFile(join(target,`backup/legacy-lotus-v1/${prefix}/MihoyoBBSTools/config/42.yaml`),"utf8")).toBe(bytes);
   expect(await migrateInstallation(source,target)).toMatchObject({status:"already-published"});
 }));
+
+for (const [bilibili, expected] of [
+  [{ sessData: "abc=" }, "SESSDATA=abc="],
+  [{ sessdata: "abc==" }, "SESSDATA=abc=="],
+  [{ sessData: "bili_jct=fixture; SESSDATA=abc=" }, "bili_jct=fixture; SESSDATA=abc="],
+  [{ cookie: "SESSDATA=abc=; bili_jct=fixture" }, "SESSDATA=abc=; bili_jct=fixture"],
+] as const) {
+  test("一代 B站裸 SESSDATA 的等号 padding 不应被误当作 Cookie 键", () => fixture(async(source,stage)=>{
+    const prefix="plugins/Lotus-Plugin";
+    await put(source,`${prefix}/MihoyoBBSTools/config/42.yaml`,legacy);
+    await put(source,`${prefix}/config/config.yaml`,{bilibili});
+    await stageLegacyMediaState(source,stage);
+    const service=new BilibiliService({accountFile:join(stage,"data/bilibili/account.yaml"),fetch:async()=>{throw Error("no network");}});
+    expect((await service.loadAccount())?.cookie).toBe(expected);
+  }));
+}
+
+test("一代合伙人保留当日执行标记与实际 comment.example 乐评",()=>fixture(async(source,stage)=>{
+  const { NeteasePartnerTask }=await import("../plugins/media/services/music/partner-task.ts");
+  const prefix="plugins/Lotus-Plugin";
+  await put(source,`${prefix}/MihoyoBBSTools/config/42.yaml`,legacy);
+  await put(source,`${prefix}/config/config.yaml`,{neteasePartner:{enable:true,accounts:[{uid:"34",qq:42,cookie:"MUSIC_U=fixture"}]}});
+  await writeFile(join(source,prefix,"config/comment.example"),"第一条乐评\r\n\r\n第二条乐评\r\n");
+  await mkdir(join(source,prefix,"data/netease"),{recursive:true});
+  await writeFile(join(source,prefix,"data/netease/lastRun-nep.log"),"2026-11-25");
+  await stageLegacyGlobalConfig(source,stage);await stageLegacyMediaState(source,stage);
+  const config=Bun.YAML.parse(await readFile(join(stage,"config/global.yaml"),"utf8")) as any;
+  expect(config.netease_partner.comments).toEqual(["第一条乐评","第二条乐评"]);
+  expect(await readFile(join(stage,"backup/legacy-lotus-v1",prefix,"config/comment.example"),"utf8"))
+    .toBe("第一条乐评\r\n\r\n第二条乐评\r\n");
+  const task=new NeteasePartnerTask({stateFile:join(stage,"data/netease/state.yaml")});
+  expect((await task.state()).last_run_date).toBe("2026-11-25");
+}));
+
+test("一代非每日固定 cron 不能被悄悄改为每日签到",()=>fixture(async(source,stage)=>{
+  const prefix="plugins/Lotus-Plugin";
+  await put(source,`${prefix}/MihoyoBBSTools/config/42.yaml`,legacy);
+  await put(source,`${prefix}/config/config.yaml`,{schedule:"0 5 3 * * 1"});
+  await expect(stageLegacyGlobalConfig(source,stage)).rejects.toThrow();
+  expect(await Bun.file(join(stage,"config/global.yaml")).exists()).toBe(false);
+}));

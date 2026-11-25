@@ -108,22 +108,30 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
   const sourceSettings = new Map<string, Fields | undefined>();
   const firstGenerationSettings = new Map<string, Awaited<ReturnType<typeof readFirstGenerationGlobal>>>();
   async function firstGenerationBytes(prefix: string, path: string) {
-    if (path !== "data/netease/accounts.yaml" && path !== "data/bilibili/account.yaml") return;
+    if (path !== "data/netease/accounts.yaml" && path !== "data/netease/state.yaml" && path !== "data/bilibili/account.yaml") return;
     if (!firstGenerationSettings.has(prefix)) {
       firstGenerationSettings.set(prefix, await readFirstGenerationGlobal(source, prefix, undefined, signal));
     }
     const raw = firstGenerationSettings.get(prefix)?.raw;
     if (!raw) return;
-    if (path === "data/netease/accounts.yaml") {
+    if (path === "data/netease/state.yaml") {
+      const file = await read(join(prefix, "data/netease/lastRun-nep.log"), 1024);
+      const date = file && decode(file.bytes).trim();
+      const parsed = date ? Date.parse(`${date}T00:00:00Z`) : NaN;
+      if (date && /^\d{4}-\d{2}-\d{2}$/u.test(date) && Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === date) {
+        return Buffer.from(Bun.YAML.stringify({ last_run_date: date }));
+      }
+    } else if (path === "data/netease/accounts.yaml") {
       const partner = mapping(raw.neteasePartner) ? raw.neteasePartner : undefined;
       if (Array.isArray(partner?.accounts) && partner.accounts.length) {
         return Buffer.from(Bun.YAML.stringify({ accounts: partner.accounts }));
       }
     } else {
       const bilibili = mapping(raw.bilibili) ? raw.bilibili : undefined;
-      const cookie = bilibili?.cookie ?? bilibili?.sessdata ?? bilibili?.sessData;
+      const fullCookie = typeof bilibili?.cookie === "string" && bilibili.cookie.trim() ? bilibili.cookie : undefined;
+      const cookie = fullCookie ?? bilibili?.sessdata ?? bilibili?.sessData;
       if (typeof cookie === "string" && cookie.trim()) {
-        return Buffer.from(Bun.YAML.stringify({ cookie: cookie.includes("=") ? cookie : `SESSDATA=${cookie}` }));
+        return Buffer.from(Bun.YAML.stringify({ cookie: fullCookie || /(?:^|;)\s*SESSDATA=/iu.test(cookie) ? cookie : `SESSDATA=${cookie}` }));
       }
     }
   }
