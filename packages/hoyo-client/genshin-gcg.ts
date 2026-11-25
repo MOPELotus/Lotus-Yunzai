@@ -1,3 +1,4 @@
+import { genshinResponseRegion } from "./genshin-response-region.ts";
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -34,10 +35,13 @@ export interface GenshinDeckList {
 }
 
 function verify(data: Json, uid: string, region: string) {
+  if (Object.hasOwn(data, "role") && data.role !== null && !record(data.role)) {
+    throw new HoyoRequestError("response", "七圣召唤响应的角色信息无效。");
+  }
   for (const row of [data, record(data.role)]) {
     if (!row) continue;
     if (["uid", "role_id", "game_uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
-        ["server", "region"].some(key => Object.hasOwn(row, key) && row[key] !== region) ||
+        ["server", "region"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
         (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
       throw new HoyoRequestError("response", "七圣召唤响应的账号角色或区服与已选档案不一致。");
     }
