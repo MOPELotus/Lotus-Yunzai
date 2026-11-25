@@ -193,3 +193,45 @@ test('真实Node CLI批准交接，仓库根目录尾斜杠不误判不安全', 
   assert.equal(approved.handoffApproved, true); assert.equal(approved.marker, 'preserved');
   assert.equal(approved.phase, 'ready-to-stop'); assert.equal(x.running(), true);
 }));
+test('真实PM2 CLI输出版本banner时仍识别尾部jlist进程数组', () => fixture(async x => {
+  await updateMigrationState(x.statePath, { oldHost: { ...x.old, pm2: { id: 9, cli: process.execPath } } });
+  await writeFile(join(x.source, 'jlist'), `console.log('>>>> In-memory PM2 is out-of-date');console.log(JSON.stringify([{pm_id:9,pid:${x.old.pid},pm2_env:{status:'online'}}]));`);
+  let running = true;
+  delete x.dependencies.capture;
+  x.dependencies.identity = async pid => running ? { ...x.old, pid } : null;
+  x.dependencies.execute = async (_, args) => {
+    if (args[0] === 'stop') running = false;
+    if (args[0] === 'restart') running = true;
+    if (args[1] === 'bootstrap') throw Error('fixture failure');
+  };
+  await assert.rejects(runLegacyMigration(x, x.dependencies));
+  assert.equal(JSON.parse(await readFile(x.statePath, 'utf8')).recovery, 'old-restored');
+}));
+
+test('真实Node改title后使用restoreArgv恢复，不能以空身份argv启动', () => fixture(async x => {
+  const script = join(x.source, 'titled.mjs'), marker = join(x.source, 'running.json');
+  await writeFile(script, `import{writeFile}from'node:fs/promises';process.title='lotus-title-fixture';await writeFile(${JSON.stringify(marker)},JSON.stringify({pid:process.pid}));setInterval(()=>{},1000);`);
+  const child = spawn(process.execPath, [script], { cwd: x.source, stdio: 'ignore' });
+  await once(child, 'spawn');
+  let restoredPid;
+  try {
+    for(let i=0;i<100&&!await readFile(marker).catch(()=>null);i++)await new Promise(done=>setTimeout(done,10));
+    const original = await processIdentity(child.pid);
+    assert.deepEqual(original.argv, []);
+    await updateMigrationState(x.statePath, { oldHost: { ...original, restoreArgv: [script] } });
+    delete x.dependencies.identity; delete x.dependencies.kill; delete x.dependencies.restore;
+    x.dependencies.sleep = async ms => {
+      const state = JSON.parse(await readFile(x.statePath, 'utf8'));
+      if (state.phase === 'ready-to-stop') await updateMigrationState(x.statePath, { handoffApproved: true });
+      await new Promise(done=>setTimeout(done,Math.min(ms,100)));
+    };
+    x.dependencies.execute = async (_,args) => { if(args[1]==='bootstrap')throw Error('fixture failure'); };
+    await assert.rejects(runLegacyMigration(x, x.dependencies));
+    assert.equal(JSON.parse(await readFile(x.statePath, 'utf8')).recovery, 'old-restored');
+    restoredPid=JSON.parse(await readFile(marker,'utf8')).pid;
+    assert.notEqual(restoredPid, child.pid); assert.ok(await processIdentity(restoredPid));
+  }finally{
+    if(restoredPid)try{process.kill(restoredPid,'SIGTERM')}catch{}
+    if(child.exitCode===null&&!child.killed)child.kill('SIGTERM');
+  }
+}));

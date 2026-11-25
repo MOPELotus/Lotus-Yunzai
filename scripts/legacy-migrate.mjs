@@ -27,6 +27,19 @@ function matching(actual, old) {
     actual.execPath === old.execPath && actual.cwd === old.cwd && JSON.stringify(actual.argv) === JSON.stringify(old.argv);
 }
 
+export function parsePm2ProcessList(output) {
+  const textValue = output.trim();
+  for (let start = textValue.lastIndexOf('['); start >= 0; start = textValue.lastIndexOf('[', start - 1)) {
+    try {
+      const value = JSON.parse(textValue.slice(start));
+      if (Array.isArray(value) && value.every(row => row && typeof row === 'object' &&
+          Number.isSafeInteger(row.pm_id) && Number.isSafeInteger(row.pid) && typeof row.pm2_env?.status === 'string')) return value;
+    } catch {}
+    if (start === 0) break;
+  }
+  throw Error(text('identity'));
+}
+
 export async function updateMigrationState(path, patch) {
   const lock = path + '.write-lock';
   let acquired = false;
@@ -110,7 +123,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
   const logFile = await open(join(dirname(statePath), 'worker.log'), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
   const io = { execute, capture, identity: processIdentity, kill: (pid, sig) => process.kill(pid, sig), sleep, prepareBun,
     restore: async old => {
-      const child = spawn(old.execPath, old.argv, { cwd: old.cwd, env: old.env || process.env, detached: true,
+      const child = spawn(old.execPath, old.restoreArgv || old.argv, { cwd: old.cwd, env: old.env || process.env, detached: true,
         stdio: ['ignore', logFile.fd, logFile.fd] });
       await new Promise((done, reject) => { child.once('spawn', done); child.once('error', reject); });
       child.unref(); return child.pid;
@@ -135,6 +148,8 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     old = result.oldHost;
     if (!old || !Array.isArray(old.argv) || old.argv.some(x => typeof x !== 'string')) throw Error(text('identity'));
     if (old.cwd !== source) throw Error(text('identity'));
+    if (old.restoreArgv !== undefined && (!Array.isArray(old.restoreArgv) || !old.restoreArgv.length ||
+        old.restoreArgv.some(value => typeof value !== 'string'))) throw Error(text('identity'));
     const actual = await io.identity(old.pid);
     if (!actual || actual.zombie || actual.execPath !== old.execPath || actual.cwd !== old.cwd ||
         JSON.stringify(actual.argv) !== JSON.stringify(old.argv) || old.startTimeTicks && actual.startTimeTicks !== old.startTimeTicks) throw Error(text('identity'));
@@ -171,7 +186,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     await stage('stopping-old', 'stopping');
     if (!await alive()) throw Error(text('identity'));
     if (old.pm2) {
-      const entries = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: source, env: oldOptions.env }));
+      const entries = parsePm2ProcessList(await io.capture(old.pm2.cli, ['jlist'], { cwd: source, env: oldOptions.env }));
       const registered = entries.find(entry => String(entry.pm_id) === String(old.pm2.id));
       if (registered?.pid !== old.pid || registered.pm2_env?.status !== 'online') throw Error(text('identity'));
     }
@@ -197,7 +212,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
         if (await alive()) recovery = 'old-still-running';
         else if (old.pm2) {
           await io.execute(old.pm2.cli, ['restart', String(old.pm2.id)], oldOptions);
-          const rows = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: old.cwd, env: oldOptions.env }));
+          const rows = parsePm2ProcessList(await io.capture(old.pm2.cli, ['jlist'], { cwd: old.cwd, env: oldOptions.env }));
           const record = rows.find(row => String(row.pm_id) === String(old.pm2.id));
           if (record?.pm2_env?.status !== 'online' || !await io.identity(record.pid)) throw Error(text('recovery'));
           recovery = 'old-restored';
@@ -206,7 +221,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
           await io.sleep(1000);
           const restored = await io.identity(pid);
           if (!restored || restored.zombie || restored.execPath !== old.execPath || restored.cwd !== old.cwd ||
-              JSON.stringify(restored.argv) !== JSON.stringify(old.argv)) throw Error(text('recovery'));
+              !([old.argv, old.restoreArgv].filter(Boolean).some(argv => JSON.stringify(restored.argv) === JSON.stringify(argv)))) throw Error(text('recovery'));
           recovery = 'old-restored';
         }
       } catch { recovery = 'failed'; }
