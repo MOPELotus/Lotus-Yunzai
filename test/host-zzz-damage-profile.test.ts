@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostBuiltinResources, linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -53,6 +53,7 @@ async function prepare(root: string) {
   await cp(modulePath, target, { recursive: true, filter: item => ![".git", "node_modules", "test"].includes(basename(item)) });
   await symlink(join(modulePath, "node_modules"), join(target, "node_modules"), "dir");
   await linkHostPackages(root);
+  await linkHostBuiltinResources(root);
   for (const [qq, id, uid] of [[42, 1, first], [42, 2, second], [43, 1, second]] as const) {
     await write(root, `profiles/${qq}${id === 1 ? "" : "-" + id}.yaml`, Bun.YAML.stringify({ user: { qq: String(qq) },
       profile: { id }, account: { game_roles: { zzz: [{ uid, region, game_biz: "nap_cn" }] }, current_uid: { zzz: uid } },
@@ -63,7 +64,7 @@ async function prepare(root: string) {
 
 function bytes(frame: unknown) {
   const content = /base64:\/\/([A-Za-z\d+/=]+)/u.exec(JSON.stringify(frame))?.[1];
-  expect(content).toBeDefined();
+  expect(content, JSON.stringify(frame)).toBeDefined();
   const png = Buffer.from(content!, "base64");
   expect(png.readUInt32BE(16)).toBe(3360);
   return png;
@@ -83,11 +84,11 @@ test("绝区零伤害旧裸档号和显式技能经过真实双协议，按 QQ �
     expect((await sendMilky("#绝区零安比伤害1")).status).toBe(200);
     const missing = await milky.next("send_private_message");
     expect(missing.params.user_id).toBe(43);
-    expect(JSON.stringify(missing.params)).toContain("角色安比不存在");
+    expect(JSON.stringify(missing.params)).toContain("暂无角色安比面板数据");
     missing.respond({ message_seq: 13 });
     sendOneBot("%安比伤害1");
     const firstProfile = await onebot.next("send_msg");
-    expect(JSON.stringify(firstProfile.params)).toContain("角色安比不存在");
+    expect(JSON.stringify(firstProfile.params)).toContain("暂无角色安比面板数据");
     firstProfile.respond({ message_id: 14 });
     expect(await readFile(join(root, path), "utf8")).toBe(panelData);
     if (proof) {

@@ -15,7 +15,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
     async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       sendOneBot(command);
       const prompt = await onebot.next("send_msg");
-      expect(prompt.params).toMatchObject({ user_id: 42, message: expect.stringContaining("请发送 profile 2 的设备 JSON") });
+      expect(prompt.params).toMatchObject({ user_id: 42, message: expect.stringContaining("请发送 档案 2 的设备 JSON") });
       prompt.respond({ message_id: 1 });
       const unavailable = await onebot.next("send_msg");
       expect(unavailable.params.user_id).toBe(42);
@@ -37,7 +37,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
 
       await sendMilky(command);
       const milkyPrompt = await milky.next("send_private_message");
-      expect(JSON.stringify(milkyPrompt.params.message)).toContain("请发送 profile 2 的设备 JSON");
+      expect(JSON.stringify(milkyPrompt.params.message)).toContain("请发送 档案 2 的设备 JSON");
       milkyPrompt.respond({ message_seq: 5 });
       const attached = await milky.next("upload_private_file");
       expect(attached.params).toMatchObject({ user_id: 43, file_name: apkName, file_uri: `base64://${Buffer.from(source).toString("base64")}` });
@@ -77,7 +77,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${join(root, profiles)}\n`);
       for (const qq of [42, 43]) {
         await writeFile(join(root, profiles, `${qq}-2.yaml`),
-          'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\n');
+          'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\ndevice: { id: fixture-existing-device, fp: "0123456789abc", bound: true }\n');
       }
     });
 }, 15_000);
@@ -92,14 +92,14 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
     async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       sendOneBot("/绝区零绑定设备2");
       const prompt = await onebot.next("send_msg");
-      expect(prompt.params.message).toContain("profile 2 的设备 JSON");
+      expect(prompt.params.message).toContain("档案 2 的设备 JSON");
       prompt.respond({ message_id: 21 });
       const apk = await onebot.next("send_msg");
       expect(apk.params.message).toContain("设备信息工具文件暂不可用");
       apk.respond({ message_id: 22 });
       sendOneBot("#绝区零zzz设备信息3");
       const viewer = await onebot.next("send_msg");
-      expect(viewer.params.message).toBe("请先扫码登录 profile 3。");
+      expect(viewer.params.message).toBe("请先扫码登录档案 3。");
       viewer.respond({ message_id: 24 });
 
       const directory = join(root, "data/users");
@@ -246,6 +246,6 @@ globalThis.fetch = Object.assign(async (input, init) => {
       await mkdir(profiles, { recursive: true });
       await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${profiles}\n`);
       for (const qq of [42, 43]) await writeFile(join(profiles, qq + "-2.yaml"),
-        'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\n');
+        'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\ndevice: { id: fixture-existing-device, fp: "0123456789abc", bound: true }\n');
     });
 }, 15_000);

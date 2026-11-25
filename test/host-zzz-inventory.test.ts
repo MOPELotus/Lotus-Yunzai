@@ -3,6 +3,7 @@ import { cp, mkdir, readdir, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { zzzTuningPools } from "../packages/hoyo-client/index.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
+import { linkHostBuiltinResources } from "./host-fixture.ts";
 
 const avatar = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const preload = `
@@ -37,6 +38,7 @@ globalThis.fetch = async (address, options) => {
 `;
 
 async function sources(root: string) {
+  await linkHostBuiltinResources(root);
   const source = join(import.meta.dir, "../plugins/zzz");
   const destination = join(root, "plugins", "zzz");
   await cp(source, destination, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
@@ -94,7 +96,7 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
     async ({ root, onebot, sendOneBot }) => {
       sendOneBot("%抽卡记录3");
       const cleared = await onebot.next("send_msg");
-      expect(JSON.stringify(cleared.params)).toContain("请先登录 profile 3");
+      expect(JSON.stringify(cleared.params)).toContain("请先登录档案 3");
       expect(await Bun.file(join(root, "requests.json")).exists()).toBe(false);
 
       sendOneBot("%抽卡统计2");
@@ -111,7 +113,7 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       expect(accepted.echo).toBeString();
       accepted.respond({ message_id: 160 });
       const summary = await onebot.next("send_msg");
-      expect(JSON.stringify(summary.params)).toContain("Profile 2");
+      expect(JSON.stringify(summary.params)).toContain("档案 2");
       expect(JSON.stringify(summary.params)).toContain("原装母带");
       expect(await Bun.file(join(root, "requests.json")).json()).toEqual(["123456789"]);
 
