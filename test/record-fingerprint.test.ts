@@ -72,3 +72,28 @@ test("战绩连接重置后有限重读，换档立即停止重试", async () =>
   }, {}, async () => { if (changed) throw Error("profile changed"); })).rejects.toThrow("profile changed");
   expect(calls).toBe(1);
 });
+
+test("指纹和只读战绩遇到 HTML 网关错误可重试，同一次指纹申请保持原请求体", async () => {
+  const headers = new Headers({ "x-rpc-device_id": randomUUID() });
+  const bodies: unknown[] = [];
+  await addRecordFingerprint(headers, async (_url, init) => {
+    bodies.push(init.body);
+    return bodies.length === 1 ? new Response("<html>410 Gone - Tengine</html>", { status: 410, headers: { "Content-Type": "text/html" } })
+      : Response.json({ retcode: 0, data: { code: 200, device_fp: "123456789abcd" } });
+  }, AbortSignal.timeout(3000), async () => {});
+  expect(bodies).toHaveLength(2);
+  expect(bodies[0]).toBe(bodies[1]);
+  const source = { game: "sr", role: { uid: "123456789", region: "prod_gf_cn", gameBiz: "hkrpg_cn" },
+    account: { cookie: "ltuid=fixture; ltoken=fixture" }, device: { id: "gateway-device", fp: "issued-fp" } } as ProfileRequestContext;
+  let calls = 0;
+  const result = await readStarRailPanel(source, async () => ++calls === 1
+    ? new Response("<html>410 Gone - Tengine</html>", { status: 410, headers: { "Content-Type": "text/html" } })
+    : Response.json({ retcode: 0, data: { avatar_list: [{ id: 1001 }] } }), {});
+  expect(calls).toBe(2);
+  expect(result.avatars).toEqual([{ id: 1001 }]);
+  calls = 0;
+  await expect(readStarRailPanel(source, async () => {
+    calls++; return Response.json({ retcode: -100 }, { status: 410 });
+  }, {})).rejects.toMatchObject({ code: "http", status: 410 });
+  expect(calls).toBe(1);
+});

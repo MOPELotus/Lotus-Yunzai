@@ -97,10 +97,17 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
     await guard();
     const key = requestKey(url, init), previous = cache.get(key);
     if (replaying && previous) return previous.clone();
-    const headers = new Headers(init.headers);
-    if (rpc?.key === key) for (const [name, value] of new Headers(rpc.headers)) headers.set(name, value);
-    const response = await transport(url, { ...init, headers });
+    // Bun's proxied connections must not outlive retained replay response branches.
+    // Keep each official attempt independent while preserving the original headers.
+    let outgoing = { ...init, keepalive: false };
+    if (rpc?.key === key) {
+      const headers = new Headers(init.headers);
+      for (const [name, value] of new Headers(rpc.headers)) headers.set(name, value);
+      outgoing = { ...outgoing, headers };
+    }
+    const response = await transport(url, outgoing);
     await guard();
+    if (url.origin === "https://public-data-api.mihoyo.com" && url.pathname === "/device-fp/api/getFp") return response;
     if (!response.ok || response.redirected || (response.url && response.url !== url.href)) return response;
     const route = ["GET", "POST"].includes((init.method ?? "GET").toUpperCase()) && (init.body === undefined || typeof init.body === "string") ? registered(url, options.game) : undefined;
     // Do not await cancellation of an oversized tee before the business can read its branch.

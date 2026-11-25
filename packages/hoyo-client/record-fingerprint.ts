@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { setTimeout as wait } from "node:timers/promises";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 
@@ -33,7 +34,7 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
     let response: Response;
     try {
       response = await transport(endpoint, { method: "POST", headers: { "User-Agent": "okhttp/4.9.3", "Content-Type": "application/json" },
-        body, signal, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
+        body, signal, keepalive: false, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
     } catch {
       signal.throwIfAborted();
       await verify();
@@ -43,7 +44,11 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
     await verify();
     if (response.redirected || (response.url && response.url !== endpoint.href) || !response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      if ((response.status === 408 || response.status >= 500) && attempt < 2) continue;
+      const gatewayGone = response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "");
+      if ((response.status === 408 || response.status >= 500 || gatewayGone) && attempt < 2) {
+        await wait(250 * (attempt + 1), undefined, { signal });
+        continue;
+      }
       throw failed();
     }
     // Reuse the bounded official JSON reader without a static game-record import cycle.
