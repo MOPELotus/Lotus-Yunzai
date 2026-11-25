@@ -10,7 +10,7 @@ const command = /^#(全部)?(安?静)?(强制)?更新/u;
 const legacyStarRailWarpUpdate = /^#?(?:\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)抽卡(?:插件)?(强制)?更新$/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
 const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
-  checking: "开始更新，正在检查上游。",
+  checking: "开始更新，正在检查。",
   building: "正在准备候选版本。",
   switching: "正在切换到候选版本。",
   busy: "已有更新或进程切换正在进行，请稍后再试。",
@@ -90,7 +90,7 @@ export function createUpdateCommand(request: RequestUpdate) {
     let pending = Promise.resolve();
     const report = (status: ManagedUpdateProgress) => {
       if (quiet && quietStatuses.has(status)) return;
-      const reply = force && status === "checking" ? "开始强制更新，正在检查上游。" : replies[status];
+      const reply = force && status === "checking" ? "开始强制更新，正在检查。" : replies[status];
       pending = pending.then(async () => { await event.reply(reply); }).catch(() => undefined);
     };
     let sent: boolean;

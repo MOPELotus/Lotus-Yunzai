@@ -49,6 +49,17 @@ captcha:
   url: https://你的验证域名
 ```
 
+验证码与主服务可使用不同域名，例如：
+
+```yaml
+url: https://bot.example.com
+panel_url: https://bot.example.com
+captcha:
+  url: https://gt.example.com
+```
+
+两个域名均可反代到同一个 HTTP 监听端口；验证码域名须转发 `/captcha/manual/` 路径。`url`、`panel_url` 和 `captcha.url` 分别控制主服务、面板与人工验证的外部链接。
+
 也可使用 `LOTUS_CAPTCHA_PUBLIC_URL` 覆盖。公开地址必须为 HTTPS，本机回环测试允许 HTTP。反向代理需要保留公开域名的 Host，并转发 `/captcha/manual/`；公开地址包含额外路径时，代理应先剥去这段额外路径。
 
 人工页面与机器人共用监听端口，不需要启动独立 GT-Manual 服务。链接默认 180 秒有效，点击开始后只认领一次，终态结果领取后删除。取消原操作、账号变化或进程重启都会使旧操作无法继续。页面只取得验证参数，不取得账号 Cookie；创建任务和领取结果的内部接口不对公网开放。

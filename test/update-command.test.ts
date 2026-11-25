@@ -205,7 +205,7 @@ test("强制更新兼容静默、单项和全量写法，沿用权限与目标�
     { target: undefined, quiet: true, type: "private", all: true, force: true },
   ]);
   expect(replies).toEqual([
-    "开始强制更新，正在检查上游。", "开始强制更新，正在检查上游。",
+    "开始强制更新，正在检查。", "开始强制更新，正在检查。",
     "暂无权限，只有主人才能操作", "暂无权限，只有主人才能操作",
     "请输入有效的插件名，例如 #强制更新 system 或 #强制更新 @lotus-yunzai/system。",
     "请只发送 #全部强制更新、#全部静强制更新 或 #全部安静强制更新。",
@@ -244,7 +244,7 @@ test("Milky 更新只使用专用权限和有效会话，授权校验沿用更�
   ]) await dispatch("#更新", event);
   expect(calls.map(({ type }) => type)).toEqual(["private", "group"]);
   expect(replies).toEqual([
-    "开始更新，正在检查上游。", "开始更新，正在检查上游。",
+    "开始更新，正在检查。", "开始更新，正在检查。",
     ...Array(5).fill("暂无权限，只有主人才能操作"),
   ]);
   for (const text of ["#更新", " #静更新system", "#更新 @lotus-yunzai/system", "#全部强制更新"]) {
@@ -262,7 +262,7 @@ test("进度消息按收到顺序发送，静默仅省略正常进度和已是�
   await regular.dispatch("#更新");
   expect(regular.replies).toHaveLength(statuses.length);
   expect(regular.replies.slice(0, 4)).toEqual([
-    "开始更新，正在检查上游。", "正在准备候选版本。", "正在切换到候选版本。", "当前已是最新版本。",
+    "开始更新，正在检查。", "正在准备候选版本。", "正在切换到候选版本。", "当前已是最新版本。",
   ]);
   const quiet = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
   await quiet.dispatch("#静更新");
@@ -289,10 +289,10 @@ test("进度消息按收到顺序发送，静默仅省略正常进度和已是�
   reportLater!("checking");
   reportLater!("failed");
   await began.promise;
-  expect(replies).toEqual(["开始更新，正在检查上游。"]);
+  expect(replies).toEqual(["开始更新，正在检查。"]);
   release.resolve();
   await done.promise;
-  expect(replies).toEqual(["开始更新，正在检查上游。", "更新失败，请检查宿主日志。"]);
+  expect(replies).toEqual(["开始更新，正在检查。", "更新失败，请检查宿主日志。"]);
 });
 
 test("IPC 不可用给出受管启动方式，异常不回显底层内容", async () => {
