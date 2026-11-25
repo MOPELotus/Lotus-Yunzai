@@ -32,7 +32,7 @@ test("绝区零设备帮助保留档号，不打开设备绑定窗口", async ()
     expect(aliases?.["#设备信息2"]).toBeDefined();
     expect(commands[aliases!["#设备信息2"]!]).toBeFunction();
     const payload = JSON.stringify({ device_id: id, device_fp: fp });
-    expect(await module.fallback!(payload, { ...context, normalizedMessage: payload })).toBe("请先私聊发送 #绑定设备。");
+    expect(await module.fallback!(payload, { ...context, normalizedMessage: payload })).toBe("请先在本会话发送 #绑定设备。");
     expect(isDeviceBindingInput("%解绑设备")).toBe(true);
     for (const prefix of ["/绝区零", "#绝区零zzz", "#ZzzZZZ", "％绝区零"]) {
       expect(isDeviceBindingInput(prefix + "绑定设备信息2")).toBe(true);
@@ -201,7 +201,7 @@ test("设备 APK 缺失、不支持或发送未确认时保持同档 JSON 绑定
     const reconnected = { privateCredentialSignal: new AbortController().signal };
     connection.abort();
     expect(await device(payload)).toBeUndefined();
-    expect(await device(payload, reconnected)).toBe("请先私聊发送 #绑定设备。");
+    expect(await device(payload, reconnected)).toBe("请先在本会话发送 #绑定设备。");
     expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).not.toHaveProperty("device");
     expect(await device(`${command} ${payload}`, reconnected)).toBe("档案 2 已绑定");
     expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).toMatchObject({
@@ -330,6 +330,25 @@ test("设备等待只可跨同一登录的 Cookie 更新和无关配置改动", 
     }
   } finally {
     lifetime.abort();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("群设备配对只绑定原群发令者，其他群消息不会消费窗口", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-group-device-"));
+  try {
+    await writeFile(join(root, "42-2.yaml"), Bun.YAML.stringify({ account: { cookie: "fixture-cookie", stoken: "fixture-token" } }));
+    const signal = new AbortController().signal;
+    const module = deviceCommands(root, signal, () => "unexpected");
+    const ctx = { message_type: "group" as const, self_id: 99, user_id: 42, group_id: 61, message_id: 3,
+      isMaster: false, isBotMaster: () => false, reply: () => true, groupActivitySignal: signal };
+    await module.fallback!("", { ...ctx, normalizedMessage: "#绑定设备2" });
+    const payload = JSON.stringify({ device_id: id, device_fp: fp });
+    await module.fallback!("", { ...ctx, group_id: 62, normalizedMessage: payload });
+    expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).not.toHaveProperty("device.bound", true);
+    await module.fallback!("", { ...ctx, normalizedMessage: payload });
+    expect(Bun.YAML.parse(await readFile(join(root, "42-2.yaml"), "utf8"))).toHaveProperty("device.bound", true);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

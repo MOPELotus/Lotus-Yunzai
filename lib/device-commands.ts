@@ -1,3 +1,4 @@
+import { ownOperationSession } from "./own-operation-session.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -95,20 +96,18 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           $t("lib.device-commands.text_c5b7b89c39", { "suffix": suffix }),
         ].join("\n");
       }
-      if (message_type !== "private" || !user_id || !Number.isSafeInteger(user_id) || user_id < 1 ||
-          !self_id || !Number.isSafeInteger(self_id) || self_id < 1) {
+      if (context.isDelegated || context.privateCredentialSignal?.aborted || context.groupActivitySignal?.aborted) return;
+      const operation = ownOperationSession(context);
+      if (!operation) {
+        if (message_type === "private" && user_id && self_id && !context.isDelegated && !context.privateCredentialSignal) {
+          return opened && !opened[2] ? $t("lib.device-commands.text_534d8303ef") : undefined;
+        }
         if (unbound && !context.isDelegated) return $t("lib.device-commands.text_e99ac1feff");
         if (opened || cancelled) return $t("lib.device-commands.text_68b51087b3", { "value1": id === 1 ? "" : id });
         return;
       }
-      const qq = String(user_id);
-      const scope = `${adapter ?? "onebot"}:${self_id}:${qq}`;
-      const connection = context.privateCredentialSignal;
-      if (context.isDelegated || connection?.aborted) return;
-      if (!connection) {
-        if (opened && !opened[2]) return $t("lib.device-commands.text_534d8303ef");
-        return;
-      }
+      const qq = String(operation.user);
+      const { scope, signal: connection } = operation;
       const active = AbortSignal.any([signal, connection]);
       if (unbound) {
         const waiting = pending.get(scope);

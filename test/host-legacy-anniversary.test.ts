@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { copyHost } from "./host-fixture.ts";
 
-test("旧注册时间只给本人好友私聊读取与当前档案匹配的三游缓存", async () => {
+test("旧注册时间在本人群聊与好友私聊读取当前档案匹配的三游缓存", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-legacy-anniversary-"));
   const token = "legacy-anniversary-fixture";
   const profiles = join(root, "profiles");
@@ -111,7 +111,8 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
     await writeFile(zzz, exactZzz);
     await reply("%我的注册时间", "注册时间 2024-01-03 00:00:00");
     await reply("#注册时间", "请先登录并同步本人的游戏档案", 43);
-    await reply("#注册时间", "请在本人好友私聊查询", 42, "group");
+    await reply("#注册时间", "注册时间 2024-01-03", 42, "group");
+    await reply("#注册时间", "请先登录并同步本人的游戏档案", 43, "group");
     const count = replies.length;
     send("#注册时间", 42, "group_temp");
     await Bun.sleep(100);

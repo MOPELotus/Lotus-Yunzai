@@ -112,8 +112,6 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
       return Bun.YAML.parse(await Bun.file(join(root, `profiles/${qq}-${profile}.yaml`)).text());
     }
 
-    sendOneBot("#扫码登录2", { message_type: "group", sub_type: "normal", group_id: 77 });
-    await nextOneBot("请私聊发送");
     sendOneBot("#扫码登录2");
     await nextOneBot("生成米游社登录二维码");
     await nextOneBot('"type":"image"');
@@ -153,7 +151,7 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     await nextOneBot("生成米游社登录二维码");
     await nextOneBot('"type":"image"');
     expect((await sendMilky("#取消扫码登录4", { sender_id: 42, peer_id: 42 })).status).toBe(200);
-    await nextMilky("当前私聊没有该档案的扫码等待");
+    await nextMilky("没有该档案的扫码等待");
     sendOneBot("#取消扫码登录4");
     await nextOneBot("已取消扫码登录");
     for (const [id, outcome] of [[5, "failed"], [6, "unconfirmed"]] as const) {
@@ -162,7 +160,7 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
       await nextOneBot('"type":"image"', outcome);
       await Bun.sleep(60);
       sendOneBot(`#取消扫码登录${id}`);
-      await nextOneBot("当前私聊没有该档案的扫码等待");
+      await nextOneBot("没有该档案的扫码等待");
     }
     for (const id of [3, 4, 5, 6]) expect(await Bun.file(join(root, `profiles/42-${id}.yaml`)).exists()).toBe(false);
 
@@ -176,3 +174,56 @@ test("实际好友扫码核对换票落盘、过期与取消，已清除档案�
     ]);
   }, 12_000, preload, prepare);
 }, 42_000);
+
+test("关闭私聊时双协议群扫码可完成，异群不能取消且回复执行定时撤回", async () => {
+  const groupPreload = preload.replace('const flows = ["race", "success", "expired", "cancel", "undelivered", "unconfirmed"];', 'const flows = ["success", "success"];') + `
+const nativeTimer = globalThis.setTimeout;
+globalThis.setTimeout = Object.assign((fn, delay, ...args) => nativeTimer(fn, delay === 120000 ? 30 : delay, ...args), nativeTimer);
+`;
+  await withDualGatewayFixture("passport-group-recall", "disablePrivate: true\n", async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+    const replies: { protocol: string; group: unknown; text: string; id: number }[] = [];
+    const recalled = new Set<number>();
+    let sequence = 900, stopped = false;
+    const pump = (async () => {
+      while (!stopped) {
+        for (const [protocol, queue] of [["onebot", onebot], ["milky", milky]] as const) {
+          let call;
+          while ((call = queue.calls.shift())) {
+            if (call.action === "send_msg" || call.action === "send_group_message") {
+              const id = ++sequence;
+              replies.push({ protocol, group: call.params.group_id, text: JSON.stringify(call.params.message), id });
+              call.respond(protocol === "onebot" ? { message_id: id } : { message_seq: id });
+            } else if (call.action === "delete_msg" || call.action === "recall_group_message") {
+              recalled.add(Number(call.params.message_id ?? call.params.message_seq)); call.respond({});
+            } else throw new Error(`unexpected ${protocol} ${call.action}`);
+          }
+        }
+        await Bun.sleep(5);
+      }
+    })();
+    async function until(check: () => boolean) {
+      for (const deadline = Date.now() + 8000; !check();) {
+        if (Date.now() > deadline) throw new Error(JSON.stringify(replies));
+        await Bun.sleep(10);
+      }
+    }
+    try {
+      for (const protocol of ["onebot", "milky"] as const) {
+        const qq = protocol === "onebot" ? 42 : 43;
+        const send = (text: string, group = 77) => protocol === "onebot"
+          ? sendOneBot(text, { message_type: "group", sub_type: "normal", group_id: group, sender: { user_id: qq, role: "member" } })
+          : sendMilky(text, { message_scene: "group", peer_id: group, sender_id: qq });
+        await send("#扫码登录2");
+        await until(() => replies.some(r => r.protocol === protocol && r.text.includes('"type":"image"')));
+        await send("#取消扫码登录2", 78);
+        await until(() => replies.some(r => r.protocol === protocol && r.group === 78 && r.text.includes("没有该档案")));
+        await until(() => replies.some(r => r.protocol === protocol && r.group === 77 && r.text.includes("扫码登录完成")));
+        const saved = Bun.YAML.parse(await Bun.file(join(root, `profiles/${qq}-2.yaml`)).text());
+        expect(saved).toMatchObject({ account: { stuid: "8003", ltoken: "v2_fixture-2-8003" } });
+        const image = replies.find(r => r.protocol === protocol && r.text.includes('"type":"image"'))!;
+        await until(() => recalled.has(image.id));
+        expect(replies.filter(r => r.protocol === protocol).every(r => [77, 78].includes(Number(r.group)))).toBe(true);
+      }
+    } finally { stopped = true; await pump; }
+  }, 8000, groupPreload, prepare);
+}, 23000);

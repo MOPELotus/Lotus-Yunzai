@@ -7,6 +7,8 @@ import { createProfileStore } from "@lotus-yunzai/account";
 import { matchGameLoginRemoval, removeSelectedGameLogin } from "../lib/account-commands.ts";
 import { matchOwnRoleSelection } from "../lib/own-role-selection.ts";
 import { matchPanelSignatureCommand } from "../lib/panel-signature.ts";
+import { createGameProfileDefaults, gameProfileDefaultsPath } from "../lib/game-profile-defaults.ts";
+import { lockFile } from "../lib/file-lock.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const games = {
@@ -114,8 +116,16 @@ test("角色选择只修改本人所选档案和游戏，过期授权、档案�
   }
 });
 
-test("OneBot 与 Milky 宿主实际派发三游 UID 列表与选槽，群内没有角色资料", async () => {
+test("OneBot 与 Milky 宿主在本人群聊与私聊派发三游 UID 列表和选槽", async () => {
   const preload = `
+import { appendFileSync } from "node:fs";
+const fixtureSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((callback, delay, ...args) => {
+  if (delay === 120_000 && new Error().stack?.includes("onebot-calls.ts")) {
+    appendFileSync("./role-recall-delays.txt", String(delay) + "\\n");
+  }
+  return fixtureSetTimeout(callback, delay, ...args);
+});
 const fetchInHost = globalThis.fetch;
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_PASSPORT_QR_RESOURCES = "./missing-render-fixture";
@@ -142,11 +152,15 @@ globalThis.fetch = async (input, options) => {
     for (const game of ["原神", "星铁", "绝区零"]) expect(text).toContain(game);
     for (const uid of [games.gs[0], games.sr[0], games.zzz[0]]) expect(text).toContain(uid!);
     expect(text).not.toContain("100000099");
-    const group = await replies("#UID2 档案2", "请私聊机器人查看或切换本人游戏角色", {
+    const group = await replies("#UID 档案2", "本人游戏角色 · 档案 2", {
       message_type: "group", sub_type: "normal", group_id: 701,
     });
     expect(group).toMatchObject({ message_type: "group", group_id: 701 });
-    expect(JSON.stringify(group)).not.toContain(games.gs[1]!);
+    expect(JSON.stringify(group)).toContain(games.gs[1]!);
+    expect(JSON.stringify(group)).not.toContain("100000099");
+    const recallDeadline = performance.now() + 1_000;
+    while (!await Bun.file(join(root, "role-recall-delays.txt")).exists() && performance.now() < recallDeadline) await Bun.sleep(10);
+    expect(await Bun.file(join(root, "role-recall-delays.txt")).text()).toContain("120000\n");
     const all = JSON.stringify(await replies("#UID", "本人游戏角色 · 全部档案"));
     for (const uid of ["100000041", games.gs[0], games.gs[1], games.sr[0], games.zzz[0]]) expect(all).toContain(uid);
     expect(all.match(/800000042/gu)).toHaveLength(1);
@@ -154,20 +168,32 @@ globalThis.fetch = async (input, options) => {
     expect(all).not.toContain("100000099");
     await replies("#设置原神UID100000044", "档案 1 没有此原神角色");
     await replies("#切换原神UID2 100000099", "档案 2 没有此原神角色");
-    await replies("#绑定绝区零UID2 82000044", "请私聊机器人查看或切换本人游戏角色", {
+    await replies("#绑定绝区零UID2 82000044", "档案 2 · 绝区零当前角色已选为 82000044", {
       message_type: "group", sub_type: "normal", group_id: 701,
     });
     const ownProfiles = createProfileStore(join(root, "profiles"));
-    expect((await ownProfiles.roleCatalog("42", 2)).active).toEqual({ gs: games.gs[0], sr: games.sr[0], zzz: games.zzz[0] });
+    expect((await ownProfiles.roleCatalog("42", 2)).active).toEqual({ gs: games.gs[0], sr: games.sr[0], zzz: games.zzz[1] });
+    await replies("#设置原神UID2 100000099", "档案 2 没有此原神角色", {
+      message_type: "group", sub_type: "normal", group_id: 701,
+    });
+    expect((await ownProfiles.roleCatalog("42", 2)).active.gs).toBe(games.gs[0]);
     await replies("#设置原神UID2 100000042", "档案 2 · 原神当前角色已选为 100000042");
     await replies("#切换崩铁uid2 800000044", "档案 2 · 星铁当前角色已选为 800000044");
     await replies("#绑定绝区零UID2 89900042", "档案 2 没有此绝区零角色");
     await replies("#绑定绝区零UID2 82000042", "档案 2 · 绝区零当前角色已选为 82000042");
     await replies("#绑定绝UID2　82000044", "档案 2 · 绝区零当前角色已选为 82000044");
     expect((await ownProfiles.roleCatalog("42", 2)).catalog.zzz.map(({ uid }) => uid)).toEqual([...games.zzz]);
-    await replies("#UID3", "档案 2 · 原神当前角色已选为 100000044");
+    await replies("#UID3", "档案 2 · 原神当前角色已选为 100000044", {
+      message_type: "group", sub_type: "normal", group_id: 701,
+    });
     expect((await ownProfiles.requestContext("42", 2, "gs")).role.uid).toBe(games.gs[1]);
     expect((await ownProfiles.requestContext("42", 1, "gs")).role.uid).toBe("100000041");
+    const defaults = createGameProfileDefaults(join(root, gameProfileDefaultsPath), ownProfiles, lockFile);
+    expect((await defaults.read("42")).gs).toBe(2);
+    sendOneBot("#UID1 档案2", { message_type: "group", sub_type: "anonymous", group_id: 701 });
+    await Bun.sleep(50);
+    expect(onebot.calls).toEqual([]);
+    expect((await ownProfiles.requestContext("42", 2, "gs")).role.uid).toBe(games.gs[1]);
     await replies("#UID02 档案2", games.gs[1]!);
     await replies("*UID2 档案2", games.sr[1]!);
     await replies("％UID2 档案2", games.zzz[1]!);

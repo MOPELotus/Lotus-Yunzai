@@ -1,3 +1,4 @@
+import { ownOperationSession } from "./own-operation-session.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -48,16 +49,14 @@ export function passportLoginCommands(directory: string | undefined, signal: Abo
       if (!matched) return password.test(command) ? $t("lib.passport-login.text_e2dd9bb438") : undefined;
       const profileId = Number(matched[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return $t("lib.passport-login.text_3dd62228d2");
-      const { user_id, self_id, adapter, privateCredentialSignal: connection } = context;
       const commandForProfile = `#扫码登录${profileId === 1 ? "" : profileId}`;
-      if (context.message_type !== "private" || !validId(user_id) || !validId(self_id)) {
+      const operation = ownOperationSession(context);
+      if (!operation) {
+        if (context.message_type === "private" && validId(context.user_id) && validId(context.self_id)) return $t("lib.passport-login.text_f6522654a3");
         return $t("lib.passport-login.text_7fd1c4df47", { "commandForProfile": commandForProfile });
       }
-      if (!connection || connection.aborted || context.isDelegated) {
-        return $t("lib.passport-login.text_f6522654a3");
-      }
-      const qq = String(user_id);
-      const scope = `${adapter ?? "onebot"}/${self_id}/${qq}`;
+      const { signal: connection, scope } = operation;
+      const qq = String(operation.user);
       const key = `${qq}/${profileId}`;
       const existing = active.get(key);
       if (cancellation) {

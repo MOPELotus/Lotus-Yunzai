@@ -14,7 +14,7 @@ test("旧米游社登录紧连凭据仍由登录入口处理，合法档号保�
     expect(isPassportLoginInput(normalizedMessage)).toBe(true);
     expect(await command("", { ...context, normalizedMessage })).toBe("请使用 #扫码登录，账号密码登录已停用。");
   }
-  expect(await command("", { ...context, normalizedMessage: "#米游社登录2" })).toBe("请私聊发送 #扫码登录2。");
+  expect(await command("", { ...context, normalizedMessage: "#米游社登录2" })).toBe("请在机器人所在群聊或好友私聊中发送 #扫码登录2。");
 });
 
 test("两协议宿主直接处理旧的紧连登录写法，只回复扫码入口", async () => {
@@ -32,7 +32,7 @@ test("两协议宿主直接处理旧的紧连登录写法，只回复扫码入�
   });
 });
 
-test("扫码入口只使用当前的好友会话，断开会取消尚在创建的二维码", async () => {
+test("扫码入口拒绝无活动会话，断开会取消尚在创建的二维码", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-passport-command-"));
   const originalFetch = globalThis.fetch;
   try {
@@ -56,7 +56,7 @@ test("扫码入口只使用当前的好友会话，断开会取消尚在创建�
     const closed = AbortSignal.abort();
     expect(await fallback("", context)).toContain("当前连接");
     expect(await fallback("", { ...context, privateCredentialSignal: closed })).toContain("当前连接");
-    expect(await fallback("", { ...context, message_type: "terminal" })).toContain("请私聊");
+    expect(await fallback("", { ...context, message_type: "terminal" })).toContain("群聊或好友私聊");
     expect(requests).toHaveLength(0);
     const connection = new AbortController();
     const pending = fallback("", { ...context, privateCredentialSignal: connection.signal });
@@ -185,3 +185,34 @@ for (const failure of ["expired", "temporary"] as const) {
     }
   }, 12_000);
 }
+
+test("群扫码会话绑定原群，其他群不能取消，断线不落盘", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-passport-group-"));
+  const originalFetch = globalThis.fetch;
+  const started = Promise.withResolvers<void>();
+  const connection = new AbortController();
+  try {
+    globalThis.fetch = (async (_url, init) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error("missing signal");
+      started.resolve();
+      return new Promise<Response>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    }) as typeof fetch;
+    const fallback = passportLoginCommands(root, new AbortController().signal).fallback!;
+    const context = { user_id: 42, self_id: 51, group_id: 61, message_id: 10, message_type: "group", groupActivitySignal: connection.signal,
+      normalizedMessage: "#扫码登录2", isMaster: false, isBotMaster: () => false, reply: async () => true } as const;
+    const pending = fallback("", context);
+    await started.promise;
+    const other = await fallback("", { ...context, group_id: 62, normalizedMessage: "#取消扫码登录2" });
+    expect(other).toBeDefined();
+    expect(connection.signal.aborted).toBe(false);
+    const cancelled = await fallback("", { ...context, normalizedMessage: "#取消扫码登录2" });
+    expect(cancelled).toBeDefined();
+    expect(await pending).toEqual([]);
+    expect(await readdir(root)).toEqual([]);
+  } finally {
+    connection.abort();
+    globalThis.fetch = originalFetch;
+    await rm(root, { recursive: true, force: true });
+  }
+});

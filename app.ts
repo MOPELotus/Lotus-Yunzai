@@ -29,6 +29,7 @@ import { accountCookieStatusFeatures, createAccountCookieStatus, matchesAccountC
 import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-profile-defaults.ts";
 import { createOwnRoleLegacyArtwork } from "./lib/own-role-legacy-artwork.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
+import { withGroupPersonalReplies } from "./lib/group-personal-replies.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
 import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "./lib/public-role-registration.ts";
 import { donationCommands } from "./lib/donation-command.ts";
@@ -1198,10 +1199,9 @@ if (import.meta.main) {
               // Fall back to asking the sender to withdraw the message.
             }
           }
-          if (!active?.aborted) {
-            await event.reply(recalled
-              ? $t("app.text_ed62433799")
-              : $t("app.text_a0eeffed8f"));
+          if (active && !active.aborted) {
+            if (!recalled) await event.reply($t("app.group-device-recall"), false, { recallMsg: 120, recallOriginal: false });
+            await dispatchMessage(event);
           }
         }
         return;
@@ -2107,9 +2107,28 @@ if (import.meta.main) {
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
-    const prepared = groupDispatch.prepare(incoming);
+    let prepared = groupDispatch.prepare(incoming);
     const { event, allowNew } = prepared;
     const scope = allowNew && event.msg ? ownCheckinSession(event, []) : undefined;
+    if (scope && event.message_type === "group") {
+      const command = normalizeGameCommand(event).msg;
+      const personal = isPassportLoginInput(event.msg) || isDeviceBindingInput(command) || isDeviceBindingPayload(event.msg) ||
+        isDeviceBindingPayload(event.raw_message) || !!matchOwnRoleSelection(command) || !!matchArkSelfRank(event.msg) ||
+        (!!matchPanelSignatureCommand(event.msg) && matchPanelSignatureCommand(event.msg)?.action !== "export") ||
+        /^#?(?:原神)?(?:留影(?:叙佳期)?|领?(?:角色)?生日卡?)(?:\s|$)/u.test(command) ||
+        /^(?:#?(?:星铁|星穹铁道|星轨|穹轨|星穹|崩铁|铁道)|[*＊])\s*(?:(?:本期|上期)?(?:模拟)?宇宙|(?:寰宇)?蝗灾|差分|(?:常规|本期|上期|本周|上周|周期)(?:差分|演算))/u.test(command) ||
+        /^#?(?:原神|星铁|绝区零)?(?:刷新)?(?:我的)?(?:原神|星铁|绝区零)?注册时间$/u.test(command) ||
+        /^(?:#原神|#)?幽境群榜(?:授权|确认|撤回)/u.test(command) ||
+        /^#绝区零(?:(?:card|卡片|个人信息|角色)\s*|(?:刷新|更新)?(?:月报|菲林月报|绳网月报))/iu.test(command);
+      const wrapped = personal ? withGroupPersonalReplies(event, scope.isCurrent) : event;
+      prepared = { ...prepared, event: { ...wrapped,
+        verifyOwnGroupMembership: async (group, signal) => {
+          if (group !== event.group_id || signal.aborted || !scope.isCurrent() || !event.listCurrentGroupMembers) return false;
+          const members = await event.listCurrentGroupMembers().catch(() => undefined);
+          return !signal.aborted && scope.isCurrent() && !!members?.some(member => member.id === scope.user);
+        },
+      } };
+    }
     const dispatch = () => dispatchPreparedMessage(incoming, prepared, handled);
     if (!scope) return withGameCommandProfiles(undefined, dispatch);
     const profiles = await gameProfileDefaults.read(String(scope.user));
@@ -2270,7 +2289,7 @@ if (import.meta.main) {
     const gameAccountCommand = normalizeGameCommand(event).msg;
     const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
       : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
-      : isDeviceBindingInput(event.msg) || isDeviceBindingInput(gameAccountCommand) ? "@lotus-yunzai/device" : undefined;
+      : isDeviceBindingInput(event.msg) || isDeviceBindingInput(gameAccountCommand) || isDeviceBindingPayload(event.msg) || isDeviceBindingPayload(event.raw_message) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
         const connection = protectedModule === "@lotus-yunzai/passport-login" ? event.privateCredentialSignal : undefined;
@@ -2416,10 +2435,7 @@ if (import.meta.main) {
     if (ownRoleSelection) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
       const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
-      if (!scope?.privateFriend) {
-        if (event.message_type === "group" && scope) await event.reply($t("app.text_a4b11570e9"));
-        return;
-      }
+      if (!scope) return;
       const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
       const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic, gameProfileDefaults,
         createOwnRoleLegacyArtwork(roleProfiles, lockFile));
@@ -2431,7 +2447,7 @@ if (import.meta.main) {
       const features = panelSignatureFeatures[panelSignature.game];
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
       const scope = ownCheckinSession(event, features);
-      if (!scope?.privateFriend || event.self_id === undefined) {
+      if (!scope || event.self_id === undefined || (panelSignature.action === "export" && !scope.privateFriend)) {
         await event.reply($t("app.text_bdae5bcc73"));
         return;
       }

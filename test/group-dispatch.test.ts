@@ -182,14 +182,14 @@ test("群别名和 @ 允许新命令，活动上下文的无 @ 消息仍能通�
   expect(policy.prepare(message({ group_id: 22, atBot: true, msg: "#荷花#状态" })).event.msg).toBe("#荷花#状态");
 });
 
-test("旧群配置继承默认冷却，群和个人冷却跨 Bot 共享，重复按 Bot、用户、原始消息区分", async () => {
+test("旧群配置继承默认冷却，群和个人冷却跨 Bot 共享，重复按群、Bot、用户、原始消息区分", async () => {
   const policy = await fixture({ "group.yaml": '20: {groupCD: 0, singleCD: 10000}\n21: {groupCD: 0, singleCD: 0}\n' });
   const first = message();
   expect(policy.admit(first)).toBe(true);
   expect(policy.prepare(first).allowNew).toBe(true);
   expect(policy.admit(message({ self_id: 11, raw_message: "变更" }))).toBe(false);
   expect(policy.admit(message({ user_id: 31 }))).toBe(true);
-  expect(policy.admit(message({ group_id: 21 }))).toBe(false);
+  expect(policy.admit(message({ group_id: 21 }))).toBe(true);
   expect(policy.admit(message({ group_id: 21, self_id: 11 }))).toBe(true);
   expect(policy.admit(message({ group_id: 21, raw_message: "变更" }))).toBe(true);
   const defaults = message({ group_id: 22, raw_message: "默认群" });
@@ -200,7 +200,7 @@ test("旧群配置继承默认冷却，群和个人冷却跨 Bot 共享，重复
   expect(policy.admit(message({ group_id: 21 }))).toBe(true);
 });
 
-test("普通私聊沿用旧的一秒同文去重，按机器人和用户跨协议及群聊共享", async () => {
+test("同一会话跨协议保留一秒同文去重，群与私聊及不同群互不抢占", async () => {
   const policy = await fixture({ "config/group.yaml": "default: {groupCD: 0, singleCD: 0}" });
   const privateMessage = message({
     message_type: "private", isPrivate: true, isGroup: false, group_id: undefined, message_id: 11, boundAccount: true,
@@ -208,11 +208,14 @@ test("普通私聊沿用旧的一秒同文去重，按机器人和用户跨协�
   expect(policy.admit(privateMessage)).toBe(true);
   expect(policy.admit(privateMessage)).toBe(false);
   expect(policy.admit({ ...privateMessage, adapter: "milky", message_id: 12 })).toBe(false);
+  expect(policy.admit(message())).toBe(true);
   expect(policy.admit(message())).toBe(false);
+  expect(policy.admit(message({ group_id: 21 }))).toBe(true);
+  expect(policy.admit(message({ group_id: 21 }))).toBe(false);
   expect(policy.admit({ ...privateMessage, self_id: 11 })).toBe(true);
   expect(policy.admit({ ...privateMessage, user_id: 31 })).toBe(true);
   expect(policy.admit(message({ raw_message: "群先到" }))).toBe(true);
-  expect(policy.admit({ ...privateMessage, raw_message: "群先到" })).toBe(false);
+  expect(policy.admit({ ...privateMessage, raw_message: "群先到" })).toBe(true);
   await Bun.sleep(1_020);
   expect(policy.admit({ ...privateMessage, adapter: "milky" })).toBe(true);
 });

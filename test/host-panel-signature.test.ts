@@ -50,7 +50,7 @@ function attachment(uri: unknown, uid: string) {
   return panel.avatars;
 }
 
-test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查询明确 UID 并隔离权限", async () => {
+test("真实群聊和好友会话可签名验证，口令需确认送达且面板导出仅限本人私聊", async () => {
   const signatures = new Map<string, string>();
   const requests: { path: string; method: string; cookie: string | null; authorization: string | null; referer: string | null; body: string }[] = [];
   const publicProfiles = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
@@ -62,6 +62,14 @@ test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查�
     return new Response(null, { status: 404 });
   } });
   const preload = `
+    import { appendFileSync } from "node:fs";
+    const fixtureSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((callback, delay, ...args) => {
+      if (delay === 120_000 && new Error().stack?.includes("onebot-calls.ts")) {
+        appendFileSync("./signature-recall-delays.txt", String(delay) + "\\n");
+      }
+      return fixtureSetTimeout(callback, delay, ...args);
+    });
     Bun.env.LOTUS_PROFILE_DIR = "./profiles";
     const nativeFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(async (input, init) => {
@@ -84,7 +92,7 @@ test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查�
       const { onebot, milky, root, sendOneBot, sendMilky } = gateway;
       let receipt = 1;
       async function onebotReply(expected: string, user = 42) {
-        const reply = await onebot.next("send_msg");
+        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`未收到私聊回执：${expected}`, { cause: error }); });
         expect(reply.params).toMatchObject({ message_type: "private", user_id: user });
         expect(JSON.stringify(reply.params.message)).toContain(expected);
         reply.respond({ message_id: receipt++ });
@@ -94,6 +102,12 @@ test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查�
         expect(reply.params.user_id).toBe(42);
         expect(JSON.stringify(reply.params.message)).toContain(expected);
         reply.respond({ message_seq: receipt++ });
+      }
+      async function groupReply(expected: string) {
+        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`未收到群回执：${expected}`, { cause: error }); });
+        expect(reply.params).toMatchObject({ message_type: "group", group_id: 701 });
+        expect(JSON.stringify(reply.params.message)).toContain(expected);
+        reply.respond({ message_id: receipt++ });
       }
       async function waitForReceipt(relativePath: string, code: string) {
         const file = join(root, "data/panel-signatures", relativePath);
@@ -107,11 +121,32 @@ test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查�
       }
 
       sendOneBot(`#原神绑定UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
-      const blocked = await onebot.next("send_msg");
-      expect(blocked.params.group_id).toBe(701);
-      expect(JSON.stringify(blocked.params.message)).toContain("好友私聊");
-      expect(JSON.stringify(blocked.params.message)).not.toMatch(challenge);
-      blocked.respond({ message_id: receipt++ });
+      const groupChallenge = await onebot.next("send_msg");
+      expect(groupChallenge.params).toMatchObject({ message_type: "group", group_id: 701 });
+      expect(JSON.stringify(groupChallenge.params.message)).toMatch(challenge);
+      const groupCode = JSON.stringify(groupChallenge.params.message).match(challenge)?.[0];
+      if (!groupCode) throw new Error("群聊未收到本人签名验证口令。");
+      groupChallenge.respond({ message_id: receipt++ });
+      await waitForReceipt("onebot/gs/42/99.json", groupCode);
+      expect(await Bun.file(join(root, "signature-recall-delays.txt")).text()).toContain("120000\n");
+      signatures.set(gs, groupCode);
+      sendOneBot(`#验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701, user_id: 43 });
+      await groupReply("没有对应的待验证口令");
+      expect(requests).toEqual([]);
+      sendOneBot(`#验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
+      await groupReply(`已验证 UID ${gs}`);
+      const groupRequests = [...requests];
+      expect(groupRequests).toEqual([{ path: `/api/uid/${gs}/?info`, method: "GET", cookie: null,
+        authorization: null, referer: null, body: "" }]);
+      sendOneBot(`#原神导出面板 ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
+      await groupReply("好友私聊");
+      expect(onebot.calls.some(call => call.action === "upload_group_file")).toBe(false);
+      sendOneBot(`#取消验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
+      await groupReply("已撤回");
+      sendOneBot(`#原神导出面板 ${gs}`);
+      await onebotReply("请先签名验证");
+      expect(requests).toEqual(groupRequests);
+      requests.length = 0;
 
       sendOneBot(`#绑定原神UID ${gs}`);
       const unconfirmed = await onebot.next("send_msg");
@@ -195,7 +230,7 @@ test("真实 OneBot 与 Milky 好友会话需确认送达，签名导出仅查�
 
       sendOneBot(`#取消验证原神UID ${gs}`);
       await onebotReply("已撤回");
-      sendOneBot(`#原神导出面板 ${gs}`);
+      sendOneBot(`#原神导出面板 UID ${gs}`);
       await onebotReply("请先签名验证");
       await sendMilky(`*取消验证UID ${sr}`, friend);
       await milkyReply("已撤回");

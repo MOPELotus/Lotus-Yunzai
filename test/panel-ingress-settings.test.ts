@@ -130,6 +130,24 @@ test("面板修改自动审批及退群设置，兼容旧语义并立即作用�
   expect(await readFile(legacy, "utf8")).toBe(changedLegacy);
 }));
 
+test("禁私聊保留主人豁免、固定提示和白名单，商城链接无需开放其他命令", () => withConfig(async (root, legacy) => {
+  await writeFile(legacy, "disablePrivate: true\ndisableMsg: '请在群内使用机器人。'\ndisableAdopt: ['^#自定义放行$']\n");
+  const access = await readPrivateAccess(root);
+  const tips: unknown[] = [];
+  const blocked = (msg: string, owner = false) => access.blocked({ msg, raw_message: msg, message: msg,
+    post_type: "message", message_type: "private", isGroup: false, isPrivate: true, self_id: 100, user_id: 41,
+    isMaster: owner, reply: async value => { tips.push(value); return true; } });
+  expect(await blocked("#状态")).toBe(true);
+  expect(tips).toEqual(["请在群内使用机器人。"]);
+  expect(await blocked("#自定义放行")).toBe(false);
+  for (const entry of ["#米游币商城", "#米游币商城2", "#米游币兑换2", "#米游社功能2"]) {
+    expect(await blocked(entry)).toBe(false);
+  }
+  expect(await blocked("#米游币商城2 多余参数")).toBe(true);
+  expect(await blocked("#未放行命令", true)).toBe(false);
+  expect(tips).toHaveLength(1);
+}));
+
 test("宿主业务设置提交前重验授权，关闭文件监听也能刷新现行策略", () => withConfig(async (root, _legacy, modern) => {
   await writeFile(modern, "master: [\"100:42\"]\n");
   const routing = await readGroupDispatch(root);

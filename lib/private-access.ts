@@ -6,6 +6,7 @@ import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { normalizeGameCommand } from "./command-prefix.ts";
 import type { MessageEvent } from "./messages.ts";
 import { isSystemHelpAlias } from "../plugins/system/help-command.ts";
+import { isMiyousheWebCommand } from "./miyoushe-web.ts";
 
 const legacyEntry = /ltoken|_MHYUUID|authkey=|导出记录|(?:记录|安卓|苹果|ck|cookie|体力)帮助|^#?帮助$|^#*(?:删除|我的)ck$|^#(?:我的)?(?:uid|UID)[0-9]{0,2}$/u;
 const accountEntry = /^#(?:登录列表|账号列表|(?:清除|删除)(?:登录|扫码登录|[cC]ookie)[0-9]{0,2})$/u;
@@ -91,7 +92,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
         const filename = typeof name === "string" ? name : file;
         return typeof filename === "string" && allowedFile.test(filename);
       })
-      : help || legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
+      : isMiyousheWebCommand(event.msg) || help || legacyEntry.test(text) || accountEntry.test(event.msg) || gachaImportEntry.test(event.msg) ||
         zzzLinkEntry.test(event.msg) || zzzLinkedViewEntry.test(event.msg) || starRailLinkEntry.test(event.msg) || custom?.test(text);
     if (allowed) return false;
     if (event.isDelegated) return true;

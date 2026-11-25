@@ -91,7 +91,7 @@ test("好友私聊 APK 导出自动申请后绑定指定档案，已有配对数
       isBotMaster: () => false, reply: () => true, privateCredentialSignal: lifecycle.signal };
     const send = (text: string, override = {}) => module.fallback!(text, { ...context, normalizedMessage: text, ...override });
     const payload = JSON.stringify(android);
-    expect(await send(payload)).toBe("请先私聊发送 #绑定设备。");
+    expect(await send(payload)).toBe("请先在本会话发送 #绑定设备。");
     await send("#绑定设备2", { message_type: "group" });
     await send("#绑定设备2 " + payload, { privateCredentialSignal: undefined });
     await send("#绑定设备2 " + payload, { isDelegated: true });

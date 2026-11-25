@@ -69,7 +69,7 @@
       "source": "lib/ark-rank-credentials.ts"
     },
     "lib.ark-self-rank": {
-      "description": "原神与星穹铁道本人角色全服伤害排名私聊查询命令与结果格式化",
+      "description": "原神与星穹铁道本人角色全服伤害排名查询，支持群聊与好友私聊",
       "source": "lib/ark-self-rank.ts"
     },
     "lib.auto-quit": {
@@ -197,7 +197,7 @@
       "source": "lib/daily-note-reminders.ts"
     },
     "lib.device-commands": {
-      "description": "档案设备信息的私聊绑定、解绑与帮助命令处理",
+      "description": "本人档案设备信息的绑定、解绑与帮助命令，支持群聊与好友私聊",
       "source": "lib/device-commands.ts"
     },
     "lib.dispatch-power": {
@@ -1594,7 +1594,7 @@
     "lib.ark-self-rank.text_2a9757d6c3": "暂无本人{gameName}角色面板，请先发送 {prefix}更新面板。",
     "lib.ark-self-rank.text_2cde3022ac": "全服排名服务暂无该档案的排名数据。",
     "lib.ark-self-rank.text_32b3c5b01c": "星铁全服总排名",
-    "lib.ark-self-rank.text_344506218b": "请在当前机器人的好友私聊查询本人全服排名。",
+    "lib.ark-self-rank.text_344506218b": "请在当前机器人的群聊或好友私聊查询本人全服排名。",
     "lib.ark-self-rank.text_34cf4038d4": "全服排名服务拒绝了本次查询。",
     "lib.ark-self-rank.text_462efd86da": "{name}全服伤害排名为 {rank}，伤害评分 {value3}",
     "lib.ark-self-rank.text_4d1e3bc26e": "本人角色面板暂时无法读取。",
@@ -2081,16 +2081,16 @@
     "lib.daily-note.text_f547490015": "每日实训",
     "lib.daily-note.text_fc9b09c792": "周本减半",
     "lib.device-commands.text_174838b9f6": "当前连接无法发送附件。{apkFallback}",
-    "lib.device-commands.text_25b7a89b0a": "设备已绑定。设备资料是你发的私聊消息，请在 QQ 中自行撤回刚才那条消息。",
-    "lib.device-commands.text_28c979db41": "请先私聊发送 #绑定设备。",
+    "lib.device-commands.text_25b7a89b0a": "设备已绑定。请撤回包含设备资料的消息。",
+    "lib.device-commands.text_28c979db41": "请先在本会话发送 #绑定设备。",
     "lib.device-commands.text_2c7bf9448a": "设备信息工具未能发送。{apkFallback}",
     "lib.device-commands.text_2d056c1e65": "设备绑定未完成，请在同一份信息中提供匹配的设备 ID 和 FP。",
     "lib.device-commands.text_3468a4588e": "APK 只有安卓参数时会自动补齐设备 ID 并申请指纹。等待有效期为两分钟，发送「取消」退出。",
     "lib.device-commands.text_3dd62228d2": "档案编号须在 1 到 255 之间。",
-    "lib.device-commands.text_4163fc063d": "按提示在同一条私聊消息中发送该设备的 JSON，或配对的 device_id 和 device_fp。",
-    "lib.device-commands.text_534d8303ef": "请先加机器人好友，再在好友私聊发起设备绑定。",
+    "lib.device-commands.text_4163fc063d": "按提示在同一会话发送设备 JSON，或配对的 device_id 和 device_fp。",
+    "lib.device-commands.text_534d8303ef": "请在机器人所在群聊或好友私聊中发起设备绑定。",
     "lib.device-commands.text_5c992b438d": "请先扫码登录档案 {id}。",
-    "lib.device-commands.text_68b51087b3": "请先加机器人好友，再在好友私聊发送 #绑定设备{value1}。设备资料请只发在好友私聊。",
+    "lib.device-commands.text_68b51087b3": "请在机器人所在群聊或好友私聊中发送 #绑定设备{value1}。",
     "lib.device-commands.text_7186b0924f": "该档案没有已绑定的设备。",
     "lib.device-commands.text_7e161ca2dc": "暂时无法解绑该档案的设备，请确认已登录并稍后重试。",
     "lib.device-commands.text_8085c78af1": "请发送档案 {id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。",
@@ -2100,11 +2100,11 @@
     "lib.device-commands.text_c5b7b89c39": "绑定后可用 #设备信息{suffix} 查看。",
     "lib.device-commands.text_cedbf8227c": "档案已变化，请重新发送解绑指令。",
     "lib.device-commands.text_d02867269e": "档案已变化，请重新发起设备绑定。",
-    "lib.device-commands.text_d996b42581": "当前私聊没有进行中的该档案设备绑定。",
+    "lib.device-commands.text_d996b42581": "当前会话没有进行中的该档案设备绑定。",
     "lib.device-commands.text_dce8c9281f": "可继续发送设备 JSON。需要工具时，可直接下载：\n{apkDownload}",
     "lib.device-commands.text_e4cfc3641a": "设备绑定已超时，请重新发送 #绑定设备。",
-    "lib.device-commands.text_e99ac1feff": "请在本人私聊中解绑设备。",
-    "lib.device-commands.text_fc98247ef3": "加机器人好友并登录该档案后，好友私聊发送 #绑定设备{suffix}。",
+    "lib.device-commands.text_e99ac1feff": "请在本人群聊会话或好友私聊中解绑设备。",
+    "lib.device-commands.text_fc98247ef3": "登录该档案后，在机器人所在群聊或好友私聊中发送 #绑定设备{suffix}。",
     "lib.device-commands.text_fd690683f9": "设备信息工具文件暂不可用。{apkFallback}",
     "lib.dispatch-power-schedule.text_19862731dc": "[任务] 跳过 bot.yaml 中无效的 {field}。",
     "lib.dispatch-power-schedule.text_3a545518bd": "定时关机",
@@ -3659,7 +3659,7 @@
     "lib.panel-runtime-settings.text_fb71acb2ef": "默认 1 分钟，支持小数。填 0 时链接不随时间失效。保存后重启宿主生效。",
     "lib.panel-runtime-settings.text_fe562a50dd": "图片渲染档位",
     "lib.panel-runtime-settings.text_fff8050bff": "标签最多 64 个字符。留空取消对齐。保存后重启宿主生效。",
-    "lib.panel-signature.text_4011c959d7": "请在好友私聊发送 #绑定{gameName}UID 游戏UID。",
+    "lib.panel-signature.text_4011c959d7": "请在机器人所在群聊或好友私聊中发送 #绑定{gameName}UID 游戏UID。",
     "lib.panel-signature.text_442f82413a": "请填写有效的{gameName} UID。",
     "lib.panel-signature.text_48517e574f": "已验证 UID {uid} 的{gameName}签名。可以改回签名，并在 30 分钟内从此好友私聊发送 #{value3}导出面板 {value4}。",
     "lib.panel-signature.text_57675031bd": "本次游戏签名验证已撤回。",
@@ -3837,14 +3837,14 @@
     "lib.passport-login.text_48e0a95bbd": "该档案已有二维码等待确认，请稍后再试。",
     "lib.passport-login.text_4fa98861ab": "已取消扫码登录。",
     "lib.passport-login.text_54d9a57677": "错误码 {retcode}",
-    "lib.passport-login.text_7fd1c4df47": "请私聊发送 {commandForProfile}。",
+    "lib.passport-login.text_7fd1c4df47": "请在机器人所在群聊或好友私聊中发送 {commandForProfile}。",
     "lib.passport-login.text_8318c1c445": "二维码已扫描，请在米游社 App 内确认登录。",
     "lib.passport-login.text_ace2f0d792": "已在米游社 App 取消扫码登录。",
-    "lib.passport-login.text_b25088e14e": "当前私聊没有该档案的扫码等待。",
+    "lib.passport-login.text_b25088e14e": "当前会话没有该档案的扫码等待。",
     "lib.passport-login.text_bc83f6a127": "登录档案已变更，请重新发起扫码登录。",
     "lib.passport-login.text_c5c0b398fb": "档案 {profileId} 登录信息已保存，角色暂未同步，可用 #同步角色{value2} 重试。",
     "lib.passport-login.text_e2dd9bb438": "请使用 #扫码登录，账号密码登录已停用。",
-    "lib.passport-login.text_f6522654a3": "请从当前连接的机器人好友私聊发起或取消扫码登录。",
+    "lib.passport-login.text_f6522654a3": "请从当前连接的机器人群聊或好友私聊发起或取消扫码登录。",
     "lib.passport-login.text_f7b59fea5f": "扫码已确认，档案正在保存。",
     "lib.passport-login.text_fca3f02765": "正在生成米游社登录二维码（档案 {profileId}）。",
     "lib.permission-command-edits.text_0d0e1a86b3": "用户",
@@ -4920,7 +4920,8 @@
     "lib.migration-media-config.invalid_cli_setting": "合伙人 CLI 乐评配置 {field} 无效，请修正后重新迁移。",
     "scripts.migrate.old_data_snapshot": "迁移暂存缺少完整数据快照，请保留原暂存备份并重新准备迁移。",
     "scripts.migrate.old_schedule_policy": "迁移暂存使用旧日程策略，请保留原暂存备份并重新准备迁移。",
-    "scripts.migrate.old_conversion_policy": "迁移暂存使用旧转换规则，请保留原暂存备份并重新准备迁移。"
+    "scripts.migrate.old_conversion_policy": "迁移暂存使用旧转换规则，请保留原暂存备份并重新准备迁移。",
+    "app.group-device-recall": "请撤回包含设备资料的原消息。"
   },
   "parameters": {
     "app.text_242958f459": {
@@ -6977,6 +6978,7 @@
     },
     "lib.migration-media-config.invalid_cli_setting": {
       "field": "无效的 CLI 配置字段名，不包含配置值"
-    }
+    },
+    "app.group-device-recall": {}
   }
 }

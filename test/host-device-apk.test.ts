@@ -66,7 +66,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
       sendOneBot(command + " " + JSON.stringify(pair));
       const saved = await onebot.next("send_msg");
       expect(saved.params.message).toContain("设备已绑定");
-      expect(saved.params.message).toContain("自行撤回");
+      expect(saved.params.message).toContain("请撤回包含设备资料的消息");
       expect(saved.params.message).not.toContain(pair.device_fp);
       saved.respond({ message_id: 11 });
       expect(Bun.YAML.parse(await readFile(join(root, profiles, "42-2.yaml"), "utf8")))
@@ -123,7 +123,7 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
         expect((await sendMilky("*绑定设备2 " + payload)).status).toBe(200);
         const bound = await milky.next("send_private_message");
         expect(bound.params.user_id).toBe(43);
-        expect(JSON.stringify(bound.params.message)).toContain("自行撤回刚才那条消息");
+        expect(JSON.stringify(bound.params.message)).toContain("请撤回包含设备资料的消息");
         expect(JSON.stringify(bound.params.message)).not.toContain("dc00112233445");
         bound.respond({ message_seq: 25 });
         expect(Bun.YAML.parse(await readFile(join(directory, "43-2.yaml"), "utf8")))
@@ -140,63 +140,6 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
 }, 12_000);
 
 
-test("群内设备资料按权限撤回且不流入通用插件，好友私聊识别旧 APK 导出", async () => {
-  const metadata = JSON.stringify({
-    deviceBoard: "fixture-board", deviceFingerprint: "fixture-firmware", deviceModel: "fixture-model",
-    deviceName: "fixture-name", deviceProduct: "fixture-product",
-  });
-  const control = "#设备分类对照";
-  await withDualGatewayFixture("device-apk-privacy", "disablePrivate: false\n",
-    async ({ onebot, milky, sendOneBot, sendMilky }) => {
-      const group = { message_type: "group", sub_type: "normal", group_id: 77, sender: { user_id: 42, role: "member" } };
-      sendOneBot(control, group);
-      (await onebot.next("send_msg")).respond({ message_id: 31 });
-      sendOneBot("#绑定设备2", group);
-      const guide = await onebot.next("send_msg");
-      expect(guide.params.message).toContain("好友私聊发送 #绑定设备2");
-      guide.respond({ message_id: 32 });
-
-      for (const botRole of ["admin", "member"]) {
-        sendOneBot(metadata, { ...group, message_id: botRole === "admin" ? 104 : 105 });
-        for (let index = 0; index < 2; index++) {
-          const lookup = await onebot.next("get_group_member_info");
-          lookup.respond({ ...lookup.params, role: lookup.params.user_id === 99 ? botRole : "member" });
-        }
-        if (botRole === "admin") {
-          const recall = await onebot.next("delete_msg");
-          expect(recall.params).toEqual({ message_id: 104 });
-          recall.respond(null);
-        }
-        const notice = await onebot.next("send_msg");
-        expect(notice.params.message).toContain(botRole === "admin" ? "已撤回" : "请立即自行撤回");
-        expect(notice.params.message).not.toContain("fixture-firmware");
-        notice.respond({ message_id: botRole === "admin" ? 33 : 34 });
-      }
-
-      sendOneBot(control, group);
-      const next = await onebot.next("send_msg");
-      expect(next.params.message).toBe("通用插件对照");
-      next.respond({ message_id: 35 });
-      expect(onebot.calls).toHaveLength(0);
-
-      expect((await sendMilky(metadata)).status).toBe(200);
-      const own = await milky.next("send_private_message");
-      expect(own.params.user_id).toBe(43);
-      expect(JSON.stringify(own.params.message)).toContain("请先私聊发送 #绑定设备");
-      expect(JSON.stringify(own.params.message)).not.toContain("fixture-firmware");
-      own.respond({ message_seq: 33 });
-    }, 3_000, undefined, async root => {
-      const plugin = join(root, "plugins", "native-device-proof");
-      await mkdir(plugin);
-      await writeFile(join(plugin, "package.json"), JSON.stringify({
-        name: "native-device-proof", lotusYunzai: { entry: "./index.ts" },
-      }));
-      await writeFile(join(plugin, "index.ts"), `export default { commands: {}, fallback(message) {
-        if (message === ${JSON.stringify(control)}) return "通用插件对照";
-        if (message === ${JSON.stringify(metadata)}) return "设备元数据到达通用插件";
-      } };`);
-    });
-}, 9_000);
 
 
 test("OneBot 与 Milky 从 APK 安卓 JSON 申请指纹并绑定原档案，瞬时失败沿用同一设备", async () => {
@@ -249,3 +192,67 @@ globalThis.fetch = Object.assign(async (input, init) => {
         'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\ndevice: { id: fixture-existing-device, fp: "0123456789abc", bound: true }\n');
     });
 }, 15_000);
+
+test("关闭私聊时两协议群绑定按群隔离，设备原文撤回且不交通用插件", async () => {
+  await withDualGatewayFixture("group-device-binding", "disablePrivate: true\n", async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
+    let sequence = 500;
+    const replies: { protocol: string; text: string; group: unknown }[] = [];
+    const recalls: unknown[] = [];
+    let stopped = false;
+    const pump = (async () => {
+      while (!stopped) {
+        for (const [protocol, queue] of [["onebot", onebot], ["milky", milky]] as const) {
+          let call;
+          while ((call = queue.calls.shift())) {
+            if (call.action === "get_group_member_info") call.respond({ ...call.params, role: call.params.user_id === 99 ? "admin" : "member" });
+            else if (call.action === "get_group_member_list") call.respond([{ user_id: 99, role: "admin" }, { user_id: 42, role: "member" }]);
+            else if (call.action === "send_msg" || call.action === "send_group_message") {
+              replies.push({ protocol, text: JSON.stringify(call.params.message), group: call.params.group_id });
+              call.respond(protocol === "onebot" ? { message_id: ++sequence } : { message_seq: ++sequence });
+            } else if (call.action === "delete_msg" || call.action === "recall_group_message") { recalls.push(call.params); call.respond({}); }
+            else throw new Error(`unexpected ${protocol} ${call.action}`);
+          }
+        }
+        await Bun.sleep(5);
+      }
+    })();
+    async function until(check: () => boolean | Promise<boolean>) {
+      for (const deadline = Date.now() + 5000; !await check();) {
+        if (Date.now() > deadline) throw new Error(JSON.stringify(replies));
+        await Bun.sleep(10);
+      }
+    }
+    try {
+      for (const protocol of ["onebot", "milky"] as const) {
+        const qq = protocol === "onebot" ? 42 : 43;
+        const file = join(root, "data/users", `${qq}-2.yaml`);
+        const send = (text: string, group = 77) => protocol === "onebot"
+          ? sendOneBot(text, { message_type: "group", sub_type: "normal", group_id: group, sender: { user_id: qq, role: "member" } })
+          : sendMilky(text, { message_scene: "group", peer_id: group, sender_id: qq });
+        await send("#绑定设备2");
+        await until(() => replies.some(r => r.protocol === protocol && r.text.includes("档案 2 的设备 JSON")));
+        const payload = JSON.stringify({ device_id: "fixture-group-device", device_fp: "a1b2c3d4e5f67" });
+        await send(payload, 78);
+        await until(() => replies.some(r => r.protocol === protocol && r.group === 78));
+        expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ device: { id: "fixture-existing-device" } });
+        await send(payload);
+        await until(() => replies.some(r => r.protocol === protocol && r.group === 77 && r.text.includes("设备已绑定")));
+        expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ device: { id: "fixture-group-device", fp: "a1b2c3d4e5f67", bound: true } });
+        expect(replies.filter(r => r.protocol === protocol).map(r => r.text).join("\n")).not.toContain("a1b2c3d4e5f67");
+        await send("#设备分类对照");
+        await until(() => replies.some(r => r.protocol === protocol && r.text.includes("通用插件对照")));
+      }
+      expect(recalls.length).toBeGreaterThanOrEqual(2);
+      expect(replies.some(r => r.text.includes("设备元数据到达通用插件"))).toBe(false);
+    } finally { stopped = true; await pump; }
+  }, 5000, undefined, async root => {
+    const profiles = join(root, "data/users");
+    await mkdir(profiles, { recursive: true });
+    await writeFile(join(root, ".env"), `LOTUS_PROFILE_DIR=${profiles}\n`);
+    for (const qq of [42, 43]) await writeFile(join(profiles, `${qq}-2.yaml`), 'account: { cookie: "fixture-cookie", stoken: "fixture-stoken" }\ndevice: { id: fixture-existing-device, fp: "0123456789abc", bound: true }\n');
+    const plugin = join(root, "plugins/native-device-proof");
+    await mkdir(plugin);
+    await writeFile(join(plugin, "package.json"), JSON.stringify({ name: "native-device-proof", lotusYunzai: { entry: "./index.ts" } }));
+    await writeFile(join(plugin, "index.ts"), 'export default { commands: {}, fallback(message) { if(message === "#设备分类对照") return "通用插件对照"; if(message.includes("device_fp")) return "设备元数据到达通用插件"; } };');
+  });
+}, 15000);

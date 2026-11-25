@@ -187,16 +187,25 @@ games:
     const archive = createZzzMonthlyArchive(join(root, "new"), [old], lockFile);
     const query = createZzzMonthlyCommands(profiles, client, archive, new AbortController().signal);
     const context = { user_id: 42, message_type: "private", privateCredentialSignal: new AbortController().signal };
-    expect(await query({ ...context, message_type: "group" }, 2, { collect: true })).toBe("绝区零国际服月报请从本人私聊查询。");
-    expect(await query({ ...context, privateCredentialSignal: undefined }, 2, { collect: true })).toBe("绝区零国际服月报请从本人私聊查询。");
+    expect(await query({ ...context, message_type: "group" }, 2, { collect: true })).toBe("请在机器人好友私聊或群聊中查询本人国际服月报。");
+    expect(await query({ ...context, privateCredentialSignal: undefined }, 2, { collect: true })).toBe("请在机器人好友私聊或群聊中查询本人国际服月报。");
     expect(await query({ ...context, isDelegated: true }, 2, { collect: true })).toBe("请从登录档案对应的 QQ 会话查询绝区零月报。");
     expect(await query({ ...context, privateCredentialSignal: AbortSignal.abort() }, 2, { collect: true })).toEqual([]);
     expect(requests).toEqual([]);
-    const result = await query(context, 2, { collect: true });
+    const groupSession = new AbortController();
+    const groupContext = { ...context, message_type: "group", privateCredentialSignal: undefined,
+      self_id: 99, group_id: 701, message_id: 1, groupActivitySignal: groupSession.signal };
+    expect(await query({ ...groupContext, sub_type: "anonymous" }, 2, { collect: true })).toContain("本人国际服月报");
+    expect(requests).toEqual([]);
+    const result = await query(groupContext, 2, { collect: true });
     expect(typeof result === "string" ? result.includes("绝区零月报 ·") : "type" in result && result.type === "image").toBe(true);
     expect(requests).toHaveLength(3);
     expect((await archive.read(identity)).map(month => month.data_month)).toEqual(["202601", "202512", "202410"]);
     const saved = await archive.read(identity);
+    groupSession.abort();
+    const requestCount = requests.length;
+    expect(await query(groupContext, 2, { collect: true })).toContain("本人国际服月报");
+    expect(requests).toHaveLength(requestCount);
 
     mismatched = true;
     expect(await query(context, 2, { collect: false, year: "2025", month: "11" })).toMatch(/获取月报数据失败/u);

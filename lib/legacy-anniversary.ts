@@ -1,4 +1,5 @@
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import { ownOperationSession } from "./own-operation-session.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
@@ -152,11 +153,10 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
       if (!match || signal.aborted || context.isDelegated) return;
       const [, prefix, refresh, suffix] = match;
       if (prefix && suffix && prefix !== suffix) return;
-      if (context.message_type === "group") return $t("lib.legacy-anniversary.text_ab514d32b1");
-      const { privateCredentialSignal, user_id: user } = context;
-      if (context.message_type !== "private" || !privateCredentialSignal || privateCredentialSignal.aborted ||
-          user === undefined || !Number.isSafeInteger(user) || user < 1) return;
-      const active = AbortSignal.any([signal, privateCredentialSignal]);
+      const session = ownOperationSession(context);
+      if (!session) return;
+      const { user } = session;
+      const active = AbortSignal.any([signal, session.signal]);
       const name = (prefix ?? suffix ?? $t("lib.legacy-anniversary.text_d1597c51ed")) as keyof typeof games;
       const game = games[name];
       const qq = String(user);

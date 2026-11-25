@@ -283,7 +283,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
       // File notices and attachment delivery have their own message and file identity checks.
       return (event.adapter !== "milky" && event.boundAccount !== true) ||
         event.message_id === undefined || !bot || !user || !event.raw_message || !event.msg || !!event.file ||
-        admitUnique(`${bot}:${user}:${event.raw_message}`, performance.now());
+        admitUnique(`private:${bot}:${user}:${event.raw_message}`, performance.now());
     }
     const group = id(event.group_id);
     if (!groups || event.message_type !== "group" || !group) return true;
@@ -294,7 +294,7 @@ export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {
     if (user && cooldown(config.singleCD) && memberCooldowns.active(`${group}:${user}`, now)) return false;
 
     const bot = id(event.self_id) ?? "";
-    let duplicate = `${bot}:${user ?? ""}:${event.raw_message}`;
+    let duplicate = `group:${group}:${bot}:${user ?? ""}:${event.raw_message}`;
     if (event.message_id !== undefined) {
       const member = groupModerationSession(event)?.memberMessage;
       const input = normalizePrefix(event.msg);

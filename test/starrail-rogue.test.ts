@@ -185,7 +185,7 @@ test("本人受信私聊才读取，回包或出图期间换档即撤回结果",
   const abort = AbortSignal.abort();
   for (const event of [{ ...context, message_type: "group" }, { ...context, isDelegated: true },
     { ...context, privateCredentialSignal: undefined }, { ...context, at: 777 }]) {
-    expect(await query(event, request)).toBe("宇宙战绩只查询本人已绑定档案，请在机器人好友私聊使用。");
+    expect(await query(event, request)).toBe("宇宙战绩只查询本人已绑定档案，请在机器人好友私聊或群聊使用。");
   }
   expect(await query({ ...context, privateCredentialSignal: abort }, request)).toEqual([]);
   expect(await query(context, { ...request, ownUid: "500000887" })).toBe("查询 UID 须与当前本人档案一致，请使用对应的档案编号。");
@@ -193,6 +193,31 @@ test("本人受信私聊才读取，回包或出图期间换档即撤回结果",
   expect(await query(context, request)).toEqual({ type: "image", file: new Uint8Array([1, 2, 3]) });
   expect(await query(context, request)).toBe("星铁档案已变更，请重新查询宇宙战绩。");
   expect(calls).toBe(2);
+});
+
+test("群宇宙战绩只读取原发令者档案，拒绝匿名、代查和失效群会话", async () => {
+  let calls = 0;
+  const request = command("*本期演算 档案2");
+  const group = new AbortController();
+  const event = { user_id: 42, self_id: 55, group_id: 701, message_id: 9, message_type: "group",
+    groupActivitySignal: group.signal };
+  const query = createStarRailRogueQuery({
+    async requestSelectedContext(qq, id) { expect([qq, id]).toEqual(["42", 2]); return source; },
+  }, { async fetchStarRailRogue(_source, route) {
+    calls++;
+    expect(route.signal?.aborted).toBe(false);
+    return { data: fixture, revision: source.revision, refreshedCookie: false };
+  } }, new AbortController().signal, async () => ({ png: new Uint8Array([1, 2, 3]) }));
+  for (const denied of [{ ...event, groupActivitySignal: undefined }, { ...event, sub_type: "anonymous" },
+    { ...event, sender: { user_id: 43 } }, { ...event, isDelegated: true }, { ...event, at: 43 }]) {
+    expect(await query(denied, request)).toContain("本人已绑定档案");
+  }
+  expect(calls).toBe(0);
+  expect(await query(event, request)).toEqual({ type: "image", file: new Uint8Array([1, 2, 3]) });
+  expect(calls).toBe(1);
+  group.abort();
+  expect(await query(event, request)).toContain("本人已绑定档案");
+  expect(calls).toBe(1);
 });
 
 test("固定星铁模块把宇宙命令分派到新入口与正确的关闭标签", async () => {

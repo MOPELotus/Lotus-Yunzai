@@ -70,7 +70,7 @@ test("实际读原铁本人档与本地面板，外发仅该游戏 UID 和实存
     const gs = matchArkSelfRank("#原神总排名 档案2 确认")!;
     const sr = matchArkSelfRank("*总排名 2 确认")!;
     expect(await run(gs)).toContain("好友私聊");
-    expect(await run(gs, { ...privateFriend, privateFriend: false })).toContain("好友私聊");
+    expect(await run(matchArkSelfRank("#总排名2")!, { ...privateFriend, privateFriend: false })).toContain("#总排名 2 确认");
     const notice = await run(matchArkSelfRank("#星铁总排名2")!, privateFriend);
     expect(notice).toContain("UID、游戏类型和本地已保存的角色编号");
     expect(notice).toContain("*总排名 2 确认");
@@ -79,9 +79,11 @@ test("实际读原铁本人档与本地面板，外发仅该游戏 UID 和实存
     expect(calls).toEqual([]);
     expect(await run(gs, privateFriend)).toBe(`UID ${gsUid} 的原神全服排名\n胡桃全服伤害排名为 25，伤害评分 98.12`);
     expect(await run({ ...sr, uid: srUid }, privateFriend)).toBe(`UID ${srUid} 的星铁全服排名\n三月七全服伤害排名为 25，伤害评分 98.12\n1 个角色暂无排名。`);
+    expect(await run(gs, { ...privateFriend, privateFriend: false })).toBe(`UID ${gsUid} 的原神全服排名\n胡桃全服伤害排名为 25，伤害评分 98.12`);
     expect(calls).toEqual([
       { uid: gsUid, type: "gs", ids: ["10000046"], version: "2.1.0" },
       { uid: srUid, type: "sr", ids: ["1001", "1102"], version: "2.1.0" },
+      { uid: gsUid, type: "gs", ids: ["10000046"], version: "2.1.0" },
     ]);
   } finally {
     for (const [key, value] of Object.entries(prior)) {
@@ -143,7 +145,7 @@ test("在读盘与收到排名后各检查一次换绑，也处理速率、错�
   }
 });
 
-test("宿主按实际中文前缀在绑定好友私聊出提示和登录回执，群聊不给档案数据", async () => {
+test("宿主按实际中文前缀在绑定好友私聊与群聊出本人排名提示和登录回执", async () => {
   const noExternal = `
     const localFetch = globalThis.fetch;
     globalThis.fetch = (url, init) => {
@@ -166,7 +168,7 @@ test("宿主按实际中文前缀在绑定好友私聊出提示和登录回执�
       expect(milkyLogin.params).toMatchObject({ user_id: 43, message: [{ data: { text: "请先登录档案 1。" } }] });
       milkyLogin.respond({ message_seq: 605 });
       sendOneBot("#总排名 确认", { message_type: "group", sub_type: "normal", group_id: 701 });
-      expect((await onebot.next("send_msg")).params).toMatchObject({ group_id: 701, message: expect.stringContaining("好友私聊") });
+      expect((await onebot.next("send_msg")).params).toMatchObject({ group_id: 701, message: "请先登录档案 1。" });
       expect(onebot.calls).toEqual([]);
       expect(milky.calls).toEqual([]);
     }, 4_000, noExternal);

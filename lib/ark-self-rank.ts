@@ -128,7 +128,7 @@ export function createArkSelfRankCommand(profiles: ProfileStore,
     const { game, profileId } = command;
     const prefix = game === "gs" ? "#" : "*";
     const gameName = game === "gs" ? $t("lib.ark-self-rank.text_d1597c51ed") : $t("lib.ark-self-rank.text_a2927891f0");
-    if (!session?.privateFriend) return $t("lib.ark-self-rank.text_344506218b");
+    if (!session || !Number.isSafeInteger(session.user) || session.user < 1) return $t("lib.ark-self-rank.text_344506218b");
     const { signal } = session;
     const active = () => !signal.aborted && session.isCurrent();
     if (!active()) return;
