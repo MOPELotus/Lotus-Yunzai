@@ -38,11 +38,11 @@ export function checkinBatchRefreshCommands({
     async fallback(_message, context) {
       if (context.normalizedMessage !== "#批量刷新签到" || signal.aborted) return;
       if (!isCheckinCommandOwner(context)) return "只有 bot 主人可以批量刷新签到账号。";
-      if (running) return "签到账号正在批量刷新，请稍后。";
+      if (running) return "签到账号正在批量刷新。";
       running = true;
       try {
         try {
-          await context.reply("正在批量刷新全部 profile 登录信息。");
+          await context.reply("正在批量刷新所有档案的登录信息。");
         } catch {
           // The authorized request can proceed when the progress message cannot be delivered.
         }
@@ -68,7 +68,7 @@ export function checkinBatchRefreshCommands({
         }
         if (signal.aborted) return;
         const message = targets.length
-          ? `已按 profile 刷新登录信息，角色已同步 ${synced} 个档案。`
+          ? `角色已同步 ${synced} 个档案。`
           : "暂无可刷新的档案。";
         const lead = `Lotus-Yunzai 档案 · Cookie 已刷新 ${refreshed}/${targets.length}\n${message}`;
         try {

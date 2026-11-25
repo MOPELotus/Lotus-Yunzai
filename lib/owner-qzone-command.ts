@@ -72,7 +72,7 @@ export function createOwnerQzoneCommand() {
     const owner = event.user_id;
     const processing = busy.get(connection) ?? new Set<number>();
     if (processing.has(owner)) {
-      await reply("正在处理上一条说说指令，请稍后再试。");
+      await reply("正在处理上一条说说指令。");
       return true;
     }
     processing.add(owner);

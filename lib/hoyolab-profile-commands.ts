@@ -36,7 +36,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
     let saved = false;
     try {
       const current = await profiles.checkinSettings(qq, id);
-      if (!current.loggedIn) return `请先登录 profile ${id}。`;
+      if (!current.loggedIn) return `请先登录档案 ${id}。`;
       async function verifyProfile() {
         scoped.throwIfAborted();
         const latest = await profiles.checkinSettings(qq, id).catch(() => undefined);
@@ -53,7 +53,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       if (scoped.aborted) return;
       if (saved) return `档案 ${id} 的国际服 Cookie 已绑定，暂时无法显示资料卡。`;
       if (error instanceof ProfileError) {
-        if (error.code === "missing" || error.code === "login-required") return `请先登录 profile ${id}。`;
+        if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
         if (error.code === "changed") return "档案已变更，请重新绑定国际服 Cookie。";
       }
       if (error instanceof HoyoRequestError && error.code === "invalid-input") return "请输入归属一致的国际服 Cookie。";
@@ -87,7 +87,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       try {
         const current = await profiles.checkinSettings(qq, id);
         if (signal.aborted) return;
-        if (!current.loggedIn) return `请先登录 profile ${id}。`;
+        if (!current.loggedIn) return `请先登录档案 ${id}。`;
         await profiles.setProfileCheckinSettings(qq, id, current.revision, sign
           ? { type: "international", enabled: sign[1] === "启用" || sign[1] === "开启" }
           : { type: "international-language", language: locale![2]! });
@@ -98,7 +98,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
         if (signal.aborted) return;
         if (saved) return `档案 ${id} 的国际服设置已保存，暂时无法显示资料卡。`;
         if (error instanceof ProfileError) {
-          if (error.code === "missing" || error.code === "login-required") return `请先登录 profile ${id}。`;
+          if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
           if (error.code === "changed") return "档案设置已变化，请重试。";
         }
         return "暂时无法保存国际服设置。";

@@ -118,7 +118,7 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
       let saved = false;
       try {
         const state = await profiles.checkinSettings(qq, profileId);
-        if (!state.loggedIn) return `请先登录 profile ${profileId}。`;
+        if (!state.loggedIn) return `请先登录档案 ${profileId}。`;
         if (signal.aborted) return;
         const updated = await profiles.setCheckinEnabled(qq, profileId, state.revision, true,
           signal, undefined, () => checkinSettingsNickname(context));
@@ -133,7 +133,7 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
         if (signal.aborted) return;
         if (saved) return `档案 ${profileId} 已注册，暂时无法更新本地签到计划或显示资料卡。`;
         if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
-          return `请先登录 profile ${profileId}。`;
+          return `请先登录档案 ${profileId}。`;
         }
         if (error instanceof ProfileError && error.code === "changed") return "档案设置已变化，请重新注册。";
         return "暂时无法注册自动签到。";

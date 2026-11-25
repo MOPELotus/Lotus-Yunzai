@@ -301,12 +301,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       if (signal.aborted) return { status: "busy" };
       await auditResult("precheck", false);
       if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
-        return completedRun("precheck", false, `请先登录 profile ${profileId}。`, knownRevision);
+        return completedRun("precheck", false, `请先登录档案 ${profileId}。`, knownRevision);
       }
       return completedRun("precheck", false, "无法读取签到档案。", knownRevision);
     }
     const key = account.account.ltuid || account.account.stuid || `${qq}/${profileId}`;
-    if (active.has(key)) return { status: "busy", reply: "此账号的签到正在执行，请稍后。" };
+    if (active.has(key)) return { status: "busy", reply: "此账号的签到正在执行。" };
     active.add(key);
     let revision = account.revision;
     try {
@@ -650,7 +650,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           if (activeOverseas.has(overseasKey)) {
             row.game += " · 国际服处理中";
             count("failed");
-            notes.push(`${row.label}国际服：同账号签到正在执行，请稍后查询。`);
+            notes.push(`${row.label}国际服：同账号签到正在执行。`);
             continue;
           }
           activeOverseas.add(overseasKey);
@@ -786,7 +786,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     try {
       const run = await withManualCheckinJournals(scheduleStore, qq, profileId, input.signal,
         scope => runProfile(qq, profileId, { ...input, ...scope, source: "manual" }));
-      return run.acquired ? run.value : { status: "busy", reply: "有签到正在执行，请稍后再试。" };
+      return run.acquired ? run.value : { status: "busy", reply: "有签到正在执行。" };
     } catch (error) {
       if (input.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return { status: "busy" };
       return completedRun("precheck", false, error instanceof CheckinScheduleWriteError ? error.message : "无法核对当天签到记录。");

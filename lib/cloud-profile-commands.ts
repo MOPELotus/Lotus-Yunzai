@@ -60,7 +60,7 @@ export function createCloudGenshinWalletQuery({
     try {
       const current = await readDomesticCloud(qq, id);
       signal.throwIfAborted();
-      if (!current.loggedIn) return `请先登录 profile ${id}。`;
+      if (!current.loggedIn) return `请先登录档案 ${id}。`;
       if (!current.token) return `档案 ${id} 尚未绑定国服云原神凭据。`;
       const verifyProfile = async () => {
         signal.throwIfAborted();
@@ -79,7 +79,7 @@ export function createCloudGenshinWalletQuery({
       ].join("\n");
     } catch (error) {
       if (signal.aborted) return;
-      if (missing(error)) return `请先登录 profile ${id}。`;
+      if (missing(error)) return `请先登录档案 ${id}。`;
       if (error instanceof ProfileError && error.code === "changed") return "档案已变更，请重新查询云原神钱包。";
       if (error instanceof CloudGenshinWalletError) return error.message;
       if (error instanceof HoyoRequestError && error.code === "invalid-input") return `档案 ${id} 的国服云原神凭据无效，请在私聊重新绑定。`;
@@ -109,7 +109,7 @@ export function cloudProfileCommands({
     try {
       const token = (game === "genshin" ? normalizeCloudGenshinComboToken : normalizeCloudZzzComboToken)(input!);
       const current = await readProfile(qq, id);
-      if (!current.loggedIn) return `请先登录 profile ${id}。`;
+      if (!current.loggedIn) return `请先登录档案 ${id}。`;
       const verifyProfile = async () => {
         scoped.throwIfAborted();
         const next = await readProfile(qq, id).catch(() => undefined);
@@ -130,7 +130,7 @@ export function cloudProfileCommands({
     } catch (error) {
       if (scoped.aborted) return;
       if (saved) return `档案 ${id} 的${name}凭据已保存，暂时无法显示资料卡。`;
-      if (missing(error)) return `请先登录 profile ${id}。`;
+      if (missing(error)) return `请先登录档案 ${id}。`;
       if (error instanceof ProfileError && error.code === "changed") return `档案已变更，请重新绑定${name}凭据。`;
       if ((error instanceof CloudGenshinWalletError || error instanceof CloudZzzWalletError) && error.reason === "expired") return error.message;
       if (error instanceof HoyoRequestError && error.code === "invalid-input") return `请输入有效的${name}凭据。`;
@@ -155,14 +155,14 @@ export function cloudProfileCommands({
       try {
         const current = await readProfile(qq, id);
         if (signal.aborted) return;
-        if (!current.loggedIn) return `请先登录 profile ${id}。`;
+        if (!current.loggedIn) return `请先登录档案 ${id}。`;
         await setEnabled(qq, id, current.revision, label === "原神" ? "genshin" : "zzz", action === "启用" || action === "开启");
         saved = true;
         if (!signal.aborted) return await viewProfile(id, context);
       } catch (error) {
         if (signal.aborted) return;
         if (saved) return `档案 ${id} 的云游戏设置已保存，暂时无法显示资料卡。`;
-        if (missing(error)) return `请先登录 profile ${id}。`;
+        if (missing(error)) return `请先登录档案 ${id}。`;
         if (error instanceof ProfileError && error.code === "changed") return "档案设置已变化，请重试。";
         return "暂时无法保存云游戏设置。";
       }

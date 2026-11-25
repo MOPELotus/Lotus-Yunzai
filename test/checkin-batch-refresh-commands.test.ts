@@ -78,7 +78,7 @@ test("非主人不能开始批量刷新，主人按原来的全局顺序逐档�
     expect(calls).toEqual([]);
     expect(messages).toEqual([]);
     const result = await run();
-    expect(messages).toEqual(["正在批量刷新全部 profile 登录信息。"]);
+    expect(messages).toEqual(["正在批量刷新所有档案的登录信息。"]);
     expect(calls).toEqual(["51:1", "51:2", "53:1", "54:1"]);
     expect(result).toContain("Cookie 已刷新 2/5");
     expect(result).toContain("角色已同步 1 个档案");
@@ -104,7 +104,7 @@ test("同一批次执行时不会启动第二批，完成后可再次调用，�
     const first = run();
     try {
       await started.promise;
-      expect(await run()).toBe("签到账号正在批量刷新，请稍后。");
+      expect(await run()).toBe("签到账号正在批量刷新。");
       expect(count).toBe(1);
       expect(messages).toHaveLength(1);
     } finally {

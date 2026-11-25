@@ -113,7 +113,7 @@ test("按顺序回复安装状态，清楚处理关闭管理入口、列表及�
     return true;
   } });
   await progress.dispatch("#安装Atlas");
-  expect(progress.replies).toEqual(["开始安装，正在检查插件目录。", "正在准备插件和依赖。", "正在安装，请稍候再试", "该插件已安装。"]);
+  expect(progress.replies).toEqual(["开始安装，正在检查插件目录。", "正在准备插件和依赖。", "正在安装。", "该插件已安装。"]);
 
   const disabled = fixture({ install: () => false });
   await disabled.dispatch("#安装Atlas");

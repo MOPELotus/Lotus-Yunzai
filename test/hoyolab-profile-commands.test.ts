@@ -75,8 +75,8 @@ test("国际服设置使用当前 QQ 的明确档案，保留原语言大小写�
       expect(await run(command)).toBe("档案编号须在 1 到 255 之间。");
     }
     expect(await run("#设置国际服语言2 en-us/add")).toBeUndefined();
-    expect(await run("#禁用海外服签到3")).toBe("请先登录 profile 3。");
-    expect(await run("#开启海外服255")).toBe("请先登录 profile 255。");
+    expect(await run("#禁用海外服签到3")).toBe("请先登录档案 3。");
+    expect(await run("#开启海外服255")).toBe("请先登录档案 255。");
     expect(await run("#启用国际服签到2", { message_type: "terminal" })).toBe("请从对应的 QQ 会话设置国际服。");
     expect(await run("#绑定国际服cookie2 fixture-value")).toBe("请从当前连接的机器人好友私聊绑定国际服 Cookie。");
     expect(viewed).toEqual([[2, 42], [2, 42], [2, 42], [1, 42]]);

@@ -47,7 +47,7 @@ test("本人资料卡在素材等待期间换档内容时不发送旧角色", as
 
     await sendMilky("#资料2");
     const missing = await milky.next("send_private_message");
-    expect(JSON.stringify(missing.params)).toContain("请先扫码登录 profile 2");
+    expect(JSON.stringify(missing.params)).toContain("请先扫码登录档案 2");
     expect(JSON.stringify(missing.params)).not.toContain("新角色");
   }, 3_000, preload, async root => {
     await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");

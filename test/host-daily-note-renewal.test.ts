@@ -112,21 +112,21 @@ test("全部体力续期后只查仍绑定的 UID，其他角色与档案结果�
   }) => {
     sendOneBot("#全便笺2");
     const progress = await onebot.next("send_msg");
-    expect(progress.params).toMatchObject({ user_id: 42, message: expect.stringContaining("profile 2") });
+    expect(progress.params).toMatchObject({ user_id: 42, message: expect.stringContaining("档案 2") });
     progress.respond({ message_id: 41 });
     const page = await onebot.next("send_msg");
     page.respond({ message_id: 42 });
 
     expect((await sendMilky("%便签")).status).toBe(200);
     const other = await milky.next("send_private_message");
-    expect(JSON.stringify(other.params)).toContain("所有 profile");
+    expect(JSON.stringify(other.params)).toContain("所有档案");
     other.respond({ message_seq: 43 });
     const otherPage = await milky.next("send_private_message");
     otherPage.respond({ message_seq: 44 });
 
     sendOneBot("树脂");
     const all = await onebot.next("send_msg");
-    expect(all.params).toMatchObject({ user_id: 42, message: expect.stringContaining("所有 profile") });
+    expect(all.params).toMatchObject({ user_id: 42, message: expect.stringContaining("所有档案") });
     all.respond({ message_id: 45 });
     const allPage = await onebot.next("send_msg");
     allPage.respond({ message_id: 46 });
@@ -151,8 +151,8 @@ test("全部体力续期后只查仍绑定的 UID，其他角色与档案结果�
       expect(page).toContain("0/400");
       expect(page).toContain("未完成");
     }
-    expect(third).toContain(`Profile 1 · 原神 · UID ${defaultUid}`);
-    expect(third).toContain(`Profile 2 · 原神 · UID ${retained}`);
+    expect(third).toContain(`档案 1 · 原神 · UID ${defaultUid}`);
+    expect(third).toContain(`档案 2 · 原神 · UID ${retained}`);
     expect(Bun.YAML.parse(await Bun.file(join(root, "profiles/42-2.yaml")).text())).toMatchObject({
       account: { cookie: expect.stringContaining("v2_fresh_cookie_42"), game_roles: { gs: [{ uid: retained }] } },
     });
@@ -166,7 +166,7 @@ test("群会话断开后取消进行中的体力请求，迟到的过期结果�
     await Bun.write(join(root, "cancel-daily-note"), "");
     sendOneBot("#树脂", { message_type: "group", sub_type: "normal", group_id: 11 });
     const progress = await onebot.next("send_msg");
-    expect(progress.params).toMatchObject({ group_id: 11, message: expect.stringContaining("所有 profile") });
+    expect(progress.params).toMatchObject({ group_id: 11, message: expect.stringContaining("所有档案") });
     progress.respond({ message_id: 41 });
     async function trace() {
       return Bun.file(join(root, "requests.jsonl")).text().catch(() => "");

@@ -96,7 +96,7 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
         if (signal.aborted) return;
         if (saved) return `档案 ${id} 的签到设置已保存，暂时无法更新计划或显示资料卡。`;
         if (error instanceof ProfileError) {
-          if (error.code === "missing" || error.code === "login-required") return `请先登录 profile ${id}。`;
+          if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
           if (error.code === "changed") return "档案设置已变化，请重试。";
           if (change.type === "schedule" && change.mode === "fixed") return "签到时间需为 0:00 到 23:59。";
         }

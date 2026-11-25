@@ -137,7 +137,7 @@ export function createArkSelfRankCommand(profiles: ProfileStore,
     }
     const qq = String(session.user);
     const key = `${qq}:${game}`;
-    if (running.has(key)) return "该游戏的全服排名正在查询，请稍后再试。";
+    if (running.has(key)) return "该游戏的全服排名正在查询。";
     running.add(key);
     try {
       const selected = await profiles.requestSelectedContext(qq, profileId, game);

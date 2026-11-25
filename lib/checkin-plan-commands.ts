@@ -67,19 +67,19 @@ export function checkinScheduleSettingCommands(root: URL,
 
 function checkinPlanCard(plan: CheckinSchedulePlan, title: string, subtitle: string, signal: AbortSignal, extra: readonly string[] = []) {
   const lines = plan.entries.slice(0, 12).map(entry =>
-    `Profile ${entry.profileId}：${entry.time} · ${entry.stage === legacyUnconfirmedStage ? "旧版签到结果待核对" : entry.mode}`);
-  if (plan.entries.length > 12) lines.push(`更多：另有 ${plan.entries.length - 12} 个 profile`);
+    `档案 ${entry.profileId}：${entry.time} · ${entry.stage === legacyUnconfirmedStage ? "旧版签到结果待核对" : entry.mode}`);
+  if (plan.entries.length > 12) lines.push(`另有 ${plan.entries.length - 12} 个档案`);
   lines.push(...extra);
   const message = plan.mode === "random"
     ? "随机模式已按时间窗口均匀分布，重启会复用已生成计划。"
-    : "固定模式计划已生成，允许用户级随机的 profile 会单独分布。";
+    : "固定签到计划已生成，单独设置随机模式的档案按随机时间执行。";
   return statusMessage(title, `${subtitle}\n${message}`, lines, signal);
 }
 
 export function checkinPlanNotice(entry: CheckinScheduleEntry, date: string, title: string, late: boolean, signal: AbortSignal) {
   const message = late ? `新注册档案已补入签到计划，预计 ${entry.time} 左右执行。` :
     `明日自动签到将在 ${entry.time} 左右执行。`;
-  return statusMessage(title, `${date} · profile ${entry.profileId}\n${message}`, [
+  return statusMessage(title, `${date} · 档案 ${entry.profileId}\n${message}`, [
     `签到时间：${entry.time}`, `模式：${late ? "新注册补位" : entry.mode}`, `日期：${date}`,
   ], signal);
 }
@@ -143,7 +143,7 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
           const plan = await schedule.personalTomorrow(qq, targets);
           if (signal.aborted) return "";
           if (!plan) return "明日签到计划尚未生成，请等待计划生成任务。";
-          if (!plan.entries.length) return "明日计划里没有找到你的 profile。";
+          if (!plan.entries.length) return "明日计划里没有找到本人的档案。";
           return checkinPlanCard(plan, "我的签到时间", `${plan.date} · QQ ${qq}`, signal);
         } catch {
           return signal.aborted ? "" : "明日签到计划暂时无法读取。";

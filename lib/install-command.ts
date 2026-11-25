@@ -16,7 +16,7 @@ const replies: Readonly<Record<InstallProgress, string>> = {
   checking: "开始安装，正在检查插件目录。",
   building: "正在准备插件和依赖。",
   switching: "正在切换到安装后的宿主。",
-  busy: "正在安装，请稍候再试",
+  busy: "正在安装。",
   exists: "该插件已安装。",
   unavailable: "暂无可用的安装目标，请用 #安装插件 查看列表。",
   rejected: "插件候选未通过检查，安装未执行。",

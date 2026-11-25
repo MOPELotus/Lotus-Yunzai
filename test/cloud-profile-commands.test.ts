@@ -141,7 +141,7 @@ test("云原神和云绝区零的旧开关只更新当前档案旗标", async ()
   expect(await run("#禁用云原神2")).toBe("资料卡 2");
   expect(await run("#开启云绝区零")).toBe("资料卡 1");
   expect(await run("#关闭云绝区零签到")).toBe("资料卡 1");
-  expect(await run("#启用云绝区零签到3")).toBe("请先登录 profile 3。");
+  expect(await run("#启用云绝区零签到3")).toBe("请先登录档案 3。");
   expect(await run("#启用云原神签到256")).toBe("档案编号须在 1 到 255 之间。");
   expect(await run("#启用云绝区零", { message_type: "terminal" })).toBe("请从对应的 QQ 会话设置云游戏。");
   expect(writes).toEqual([

@@ -149,13 +149,13 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           const report = isCurrent();
           cancelRequest(scope, current);
           if (!report) return [];
-          return `请先扫码登录 profile ${id}。`;
+          return `请先扫码登录档案 ${id}。`;
         }
         if (!opened[2]?.trim()) {
           setTimeout(() => {
             if (!current.writing) cancelRequest(scope, current);
           }, timeout).unref();
-          const prompt = `请发送 profile ${id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。`;
+          const prompt = `请发送 档案 ${id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。`;
           if (await context.reply(prompt) === false || active.aborted) {
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
@@ -217,7 +217,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       try {
         return await showProfile(request.profileId, context);
       } catch {
-        return `profile ${request.profileId} 设备已绑定。`;
+        return `档案 ${request.profileId} 设备已绑定。`;
       }
     },
   };

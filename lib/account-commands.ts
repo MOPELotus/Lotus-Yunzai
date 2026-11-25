@@ -109,11 +109,11 @@ export function accountCommands(
       if (renderRefreshCard) {
         const message = profileId === undefined
           ? (refreshed === ids.length
-            ? "已按 profile 粒度刷新当前 QQ 的登录信息。"
-            : `已按 profile 粒度处理当前 QQ 的登录信息，刷新成功 ${refreshed}/${ids.length}。`)
-          : (refreshed ? `已刷新 profile ${profileId} 的登录信息。` : `profile ${profileId} 的登录信息未能刷新。`);
+            ? "所有档案的登录信息已刷新。"
+            : `登录信息刷新成功 ${refreshed}/${ids.length}。`)
+          : (refreshed ? `档案 ${profileId} 登录信息已刷新。` : `档案 ${profileId} 的登录信息未能刷新。`);
         try {
-          const contents = outcomes.map(({ id, message }) => `Profile ${id}：${message}`);
+          const contents = outcomes.map(({ id, message }) => `档案 ${id}：${message}`);
           const { png } = await renderRefreshCard(title, `QQ ${qq}\n${message}`, contents, new Date());
           if (png.byteLength) return segment.image(png);
         } catch {
@@ -164,7 +164,7 @@ export function accountCommands(
       const qq = String(context.user_id);
       const profile = await profiles.describe(qq, id).catch(() => undefined);
       if (signal?.aborted) return [];
-      if (!profile?.loggedIn) return `请先扫码登录 profile ${id}。`;
+      if (!profile?.loggedIn) return `请先扫码登录档案 ${id}。`;
       const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
         : profile.schedule.mode === "random" ? "随机" : "跟随全局";
       const device = profile.deviceBound ? profile.device.name || "已绑定" : profile.device.generated
@@ -196,7 +196,7 @@ export function accountCommands(
         { label: "设备信息", value: device },
       ];
       const title = profile.nickname || `QQ ${qq}`;
-      const subtitle = `profile ${id} · ${profile.name || "default"}`;
+      const subtitle = `档案 ${id} · ${profile.name || "default"}`;
       const summary = `签到模式：${mode} · 通知：${switchState(profile.notifications)}。敏感字段已脱敏显示。`;
       const warnings = [
         ...(profile.rolesPending ? ["角色暂未同步，可发送 #同步角色 后重试。"] : []),
@@ -309,16 +309,16 @@ export function accountCommands(
             const profile = await profiles.describe(qq, id);
             const status = profile.loggedIn ? "已登录" : profile.legacyCookie ? "旧 Cookie（仅查询）" : "未登录";
             const selected = `原${profile.activeRoles.gs || "-"} / 铁${profile.activeRoles.sr || "-"} / 绝${profile.activeRoles.zzz || "-"}`;
-            items.push(`Profile ${id}：${status} · ${selected}`);
+            items.push(`档案 ${id}：${status} · ${selected}`);
             lines.push(`档案 ${id} · ${status}`);
           } catch (error) {
             if (!(error instanceof ProfileError)) throw error;
-            items.push(`Profile ${id}：无法读取`);
+            items.push(`档案 ${id}：无法读取`);
             lines.push(`档案 ${id} · 无法读取`);
           }
         }
         if (renderRefreshCard) {
-          const lead = `QQ ${qq}\n${ids.length ? "当前 QQ 已创建的 profile 如下。" : "还没有创建 profile。"}`;
+          const lead = `QQ ${qq}\n${ids.length ? "当前 QQ 已创建的档案。" : "尚未创建档案。"}`;
           try {
             const { png } = await renderRefreshCard("登录列表", lead, items, new Date());
             if (png.byteLength) return segment.image(png);

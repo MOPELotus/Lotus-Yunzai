@@ -148,7 +148,7 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
           return active() ? `没有对应的待验证口令，请先发 #绑定${gameName}UID 游戏UID。` : undefined;
         }
         const key = `${game}:${previous.uid}`;
-        if (inflight.has(key)) return "此游戏 UID 的签名正在查询，请稍后再试。";
+        if (inflight.has(key)) return "此游戏 UID 的签名正在查询。";
         const waited = previous.nextCheck - now();
         if (waited > 0) return `公开资料可能仍在缓存，请在 ${Math.ceil(waited / 1000)} 秒后重试。`;
         inflight.add(key);
