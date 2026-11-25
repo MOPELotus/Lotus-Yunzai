@@ -36,7 +36,11 @@ test.skipIf(!Bun.which("git"))("full install applies maintenance clocks and CLI 
     for(const plan of [today,tomorrow]){const {importedLegacy,...migrated}=JSON.parse(await readFile(join(target,"data/schedules",plan.date+".json"),"utf8"));expect(migrated).toEqual(plan);expect(importedLegacy).toEqual(["Lotus-Plugin"])}
     for(const [p,text]of Object.entries(originals))expect(await readFile(join(source,p),"utf8")).toBe(text);
     expect((await migrateInstallation(source,target)).status).toBe("already-published");
-    const metadata=join(parent,".new.lotus-migration-prepared/plan.json");const stale=JSON.parse(await readFile(metadata,"utf8"));delete stale.report.schedulePolicy;await writeFile(metadata,JSON.stringify(stale),{mode:0o600});
+    const metadata=join(parent,".new.lotus-migration-prepared/plan.json");const stale=JSON.parse(await readFile(metadata,"utf8"));
+    const currentMetadata=JSON.stringify(stale);delete stale.conversionVersion;await writeFile(metadata,JSON.stringify(stale),{mode:0o600});
+    await expect(migrateInstallation(source,target)).rejects.toThrow("旧转换规则");
+    expect((await readLocalConfig(root,"global")).scheduler).toEqual(scheduler);
+    const oldSchedule=JSON.parse(currentMetadata);delete oldSchedule.report.schedulePolicy;await writeFile(metadata,JSON.stringify(oldSchedule),{mode:0o600});
     await expect(migrateInstallation(source,target)).rejects.toThrow("旧日程策略");
     expect((await readLocalConfig(root,"global")).scheduler).toEqual(scheduler);
   }finally{await rm(parent,{recursive:true,force:true})}

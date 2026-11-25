@@ -16,6 +16,7 @@ import { migrationScheduleVersion } from "../lib/migration-default-schedule.ts";
 type Staged = Awaited<ReturnType<typeof stageMigration>>;
 interface PreparedMigration {
   readonly version: 1;
+  readonly conversionVersion: 1;
   readonly source: string;
   readonly target: string;
   readonly plugins: readonly string[];
@@ -69,6 +70,9 @@ async function loadPrepared(directory: string, source: string, target: string): 
       !result.plugins.every(path => typeof path === "string") || !result.report || typeof result.report !== "object") {
     throw new Error($t("scripts.migrate.text_2520464652"));
   }
+  if (result.conversionVersion !== 1) {
+    throw new Error($t("scripts.migrate.old_conversion_policy"));
+  }
   if (result.report.sourceSnapshot?.version !== migrationSourceSnapshotVersion) {
     throw new Error($t("scripts.migrate.old_data_snapshot"));
   }
@@ -95,6 +99,7 @@ async function prepare(source: string, target: string, directory: string, inputs
     if (staged.retained.status === "published") await move(staged.retained.directory, join(payload, "plugins"));
     const prepared = {
       version: 1,
+      conversionVersion: 1,
       source,
       target,
       plugins: staged.retained.retained.map(entry => entry.path),
