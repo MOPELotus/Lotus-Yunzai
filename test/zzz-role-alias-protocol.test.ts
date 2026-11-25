@@ -66,7 +66,8 @@ test.skipIf(!valkey)("双协议别名添加、旧称屏蔽、查询、撤权和�
       if (params.group_id === 77 && revoke) {
         revoke = false;
         await writeFile(ownerFile, 'master: ["99:51"]\nmasterQQ: [51]\n');
-        await Bun.sleep(650);
+        // Keep the member read in flight through the owner's 1s configuration refresh.
+        await Bun.sleep(1_100);
       }
       return Response.json({ status: "ok", retcode: 0, data: { members: membership(params.group_id) } });
     }
@@ -98,7 +99,7 @@ test.skipIf(!valkey)("双协议别名添加、旧称屏蔽、查询、撤权和�
     host = Bun.spawn([process.execPath, "--no-env-file", "app.ts"], { cwd: root,
       stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: { PATH: process.env.PATH, XDG_CACHE_HOME: join(root, "fontconfig-cache"), LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0",
-        LOTUS_ONEBOT_TOKEN: token, LOTUS_VALKEY_URL: redisUrl,
+        LOTUS_ONEBOT_TOKEN: token, LOTUS_PANEL_TOKEN: token, LOTUS_VALKEY_URL: redisUrl,
         LOTUS_ATLAS_DATA_DIR: atlas, LOTUS_ZZZ_LEGACY_RESOURCES_DIR: join(legacy, "resources") },
     });
     errors = new Response(host.stderr).text();
@@ -110,10 +111,15 @@ test.skipIf(!valkey)("双协议别名添加、旧称屏蔽、查询、撤权和�
       banner += new TextDecoder().decode(part.value);
     }
     reader.releaseLock();
-    assert.match(banner, /已加载 zzz/u);
+    assert.match(banner, /\[Plugin\] 加载插件\[[1-9]\d*个\]/u);
     const ws = /ws:\/\/127\.0\.0\.1:\d+\/OneBotv11/u.exec(banner)?.[0];
     const http = /HTTP 正在监听 (http:\/\/127\.0\.0\.1:\d+)\/status/u.exec(banner)?.[1];
     assert(ws && http);
+    const registered = await fetch(http + "/panel/api/plugins", { headers: { Authorization: "Bearer " + token } });
+    assert.equal(registered.status, 200);
+    const { plugins } = await registered.json() as { plugins: { name: string; status: string }[] };
+    assert(plugins.some(plugin => plugin.name === "zzz" && plugin.status === "loaded"));
+    assert(plugins.some(plugin => plugin.name === "atlas" && plugin.status === "loaded"));
     hooks = (event_type, data) => fetch(http + "/milky", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
       body: JSON.stringify({ self_id: 100, time: 1700000000, event_type, data }) });
     for (let i = 0; ; i++) {
@@ -163,9 +169,10 @@ test.skipIf(!valkey)("双协议别名添加、旧称屏蔽、查询、撤权和�
     assert.match(await ask("milky", "%删除别名合成歧义", 52), /唯一/);
     assert.match(await ask("milky", "%删除别名安比", 52), /无法删除/);
     revoke = true;
-    assert.match(await ask("milky", "%删除别名合成新别名", 52), /仅限主人设置/);
+    const revoked = await ask("milky", "%删除别名合成新别名", 52);
+    assert.equal(revoke, false, "the pending membership request must apply the revocation");
+    assert.match(revoked, /仅限主人设置/);
     assert.match(await ask("onebot", "%安比别名"), /合成新别名/);
-    assert.equal(revoke, false);
     await stop();
     await writeFile(ownerFile, owners);
     await start();

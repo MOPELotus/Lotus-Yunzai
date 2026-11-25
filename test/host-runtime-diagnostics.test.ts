@@ -108,7 +108,7 @@ test("OneBot 运行诊断按机器人隔离主人视图并记录成功插件的�
     disableMemberPrewarm(root);
     host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
+      env: { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token },
     });
     const stderr = new Response(host.stderr).text();
     const url = await deadline(oneBotEndpoint(host.stdout), "诊断测试宿主启动超时。");
@@ -151,7 +151,9 @@ test("OneBot 运行诊断按机器人隔离主人视图并记录成功插件的�
 
     host.kill();
     expect(await deadline(host.exited, "诊断测试宿主退出超时。")).toBe(143);
-    expect(await stderr).toContain("加载 diagnostics-failed 失败：诊断夹具加载失败");
+    const failedLogs = (await stderr).split("\n").filter(line => line.includes("[diagnostics-failed]"));
+    expect(failedLogs).toHaveLength(1);
+    expect(failedLogs[0]).toMatch(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[WARN\] \[Plugin\] 加载插件错误 \[diagnostics-failed\] 诊断夹具加载失败$/u);
   } finally {
     for (const { socket } of clients) socket.close();
     if (host && host.exitCode === null && host.signalCode === null) host.kill("SIGKILL");

@@ -108,10 +108,10 @@ test("原神同 QQ 和 UID 的两档案按来源避免重复换票，失败后�
     };
 
     sendOneBot("#更新抽卡记录2");
-    await one("正在更新 Profile 2");
+    await one("正在更新原神抽卡记录（档案 2）。");
     await waitForRequest(root, "auth 4202");
     expect((await sendMilky("#原神更新抽卡记录3", { sender_id: 42, peer_id: 42 })).status).toBe(200);
-    await mil("正在更新 Profile 3");
+    await mil("正在更新原神抽卡记录（档案 3）。");
     await mil("该账号的原神抽卡记录正在更新");
 
     expect((await sendMilky("#同步外部抽卡记录3", { sender_id: 42, peer_id: 42 })).status).toBe(200);
@@ -134,7 +134,7 @@ test("原神同 QQ 和 UID 的两档案按来源避免重复换票，失败后�
     await one();
 
     sendOneBot("#更新抽卡记录3");
-    await one("正在更新 Profile 3");
+    await one("正在更新原神抽卡记录（档案 3）。");
     const sent = await one();
     const calls = (await Bun.file(join(root, "requests.log")).text()).trim().split("\n");
     expect(calls.filter(line => !line.startsWith("pool"))).toEqual([
