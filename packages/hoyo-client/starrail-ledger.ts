@@ -7,6 +7,8 @@ import { gachaAuthHeaders, starRailLedgerStokenCookie } from "./gacha-auth-reque
 
 const types = { dreams: "Dreams", stellar: "Stellar", power: "Power", relic: "Relic", cone: "Cone" } as const;
 const origin = "https://api-takumi.mihoyo.com";
+const ledgerOrigin = "https://public-operation-hkrpg.mihoyo.com";
+const maxLedgerPages = 120;
 const gameBiz = "hkrpg_cn", authAppid = "csc", pageSize = 10;
 const expired = new Set([-100, -101, -105, 10001, 10101, 10102, 10103]);
 const risk = new Set([1034, 10035, 10041]);
@@ -116,7 +118,8 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
     if (code === undefined) throw new HoyoRequestError("response", `官方${action}响应格式无效。`);
     if (code !== 0) throw new HoyoRequestError("api", `官方${action}拒绝请求。`, response.status, code);
     const data = object(payload?.data);
-    if (!data || !matchingRole(data, uid, region) || !matchingRole(object(data.role) ?? {}, uid, region)) {
+    if (!data || (Object.hasOwn(data, "role") && !object(data.role)) ||
+        !matchingRole(data, uid, region) || !matchingRole(object(data.role) ?? {}, uid, region)) {
       throw new HoyoRequestError("response", `官方${action}响应的档案身份或数据无效。`);
     }
     return data;
@@ -133,35 +136,52 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
     throw new HoyoRequestError("response", "星铁流水临时授权无效。");
   }
 
-  return async function readPage(kind: StarRailLedgerKind, page: number, size: number) {
-    const url = new URL(`/common/hkrpg_self_help_inquiry/${types[kind]}/GetList`, origin);
+  return async function readPage(kind: StarRailLedgerKind, cursor: string, size: number) {
+    const url = new URL(`/common/hkrpg_self_help_inquiry/${types[kind]}/GetList`, ledgerOrigin);
     url.search = new URLSearchParams({ sign_type: "2", auth_appid: authAppid, authkey_ver: "1", win_direction: "portrait",
       page_id: "4", bbs_auth_required: "true", bbs_game_role_required: gameBiz, app_client: "bbs", game_biz: gameBiz,
-      lang: "zh-cn", authkey, page: String(page), page_size: String(size) }).toString();
+      lang: "zh-cn", authkey, end_id: cursor, size: String(size) }).toString();
     const data = await request(url, { method: "GET" }, false);
-    if ((Object.hasOwn(data, "page") && integer(data.page) !== page) ||
-        !Array.isArray(data.list) || data.list.length > size) {
-      throw new HoyoRequestError("response", "官方星铁流水响应的页码或记录无效。");
+    if (!Array.isArray(data.list) || data.list.length > size) {
+      throw new HoyoRequestError("response", "官方星铁流水响应的记录无效。");
     }
+    let previous = cursor ? BigInt(cursor) : undefined;
     return data.list.map(entry => {
       const row = object(entry);
       const count = integer(row?.add_num);
-      if (!row || count === undefined || !matchingRole(row, uid, region)) {
-        throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
+      const id = typeof row?.id === "string" ? row.id :
+        typeof row?.id === "number" && Number.isSafeInteger(row.id) ? String(row.id) : "";
+      if (!row || count === undefined || !displayText(row.time, 40) || !displayText(row.action, 120) ||
+          !matchingRole(row, uid, region) ||
+          !/^[1-9]\d{0,39}$/u.test(id)) {
+        throw new HoyoRequestError("response", "官方星铁流水含无效记录或游标。");
       }
-      return { count, time: row.time, action: row.action, id: row.id };
+      const current = BigInt(id);
+      if (previous !== undefined && current >= previous) {
+        throw new HoyoRequestError("response", "官方星铁流水返回了重复或未递进的游标。");
+      }
+      previous = current;
+      return { count, time: row.time, action: row.action, id };
     });
   };
 }
 
 export async function readStarRailLedger(source: ProfileRequestContext, transport: HoyoTransport,
   { kind, page, signal }: StarRailLedgerOptions, verifyProfile?: () => Promise<void>) {
-  if (!Object.hasOwn(types, kind) || !Number.isSafeInteger(page) || page < 1 || page > 999999) {
-    throw new HoyoRequestError("invalid-input", "星铁流水类型或页码无效。");
+  if (!Object.hasOwn(types, kind) || !Number.isSafeInteger(page) || page < 1 || page > maxLedgerPages) {
+    throw new HoyoRequestError("invalid-input", `星铁流水类型或页码无效，最多查询第 ${maxLedgerPages} 页。`);
   }
   const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
+  let cursor = "";
+  let selected: Awaited<ReturnType<typeof readPage>> = [];
+  for (let current = 1; current <= page; current++) {
+    const batch = await readPage(kind, cursor, pageSize);
+    if (current === page) { selected = batch; break; }
+    if (!batch.length) return { rows: [] };
+    cursor = batch.at(-1)!.id;
+  }
   const rows: StarRailLedgerRow[] = [];
-  for (const row of await readPage(kind, page, pageSize)) {
+  for (const row of selected) {
     if (row.count <= (kind === "power" ? 1 : 0)) continue;
     if (!displayText(row.time, 40) || !displayText(row.action, 120)) {
       throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
@@ -180,18 +200,16 @@ export async function readStarRailOnline(source: ProfileRequestContext, transpor
   }
   const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
   const recoveries: StarRailPowerRecovery[] = [];
-  const pages = new Set<string>();
+  let cursor = "";
   for (let page = 1; page <= maxPages; page++) {
-    const rows = await readPage("power", page, 50);
+    const rows = await readPage("power", cursor, 50);
     if (!rows.length) return { recoveries, complete: true };
-    const signature = JSON.stringify(rows.map(({ id, time, action, count }) => [id, time, action, count]));
-    if (pages.has(signature)) throw new HoyoRequestError("response", "官方星铁开拓力流水返回了重复页。");
-    pages.add(signature);
     for (const row of rows) {
       if (row.action !== "随时间回复开拓力" || row.count <= 0) continue;
       if (!displayText(row.time, 40)) throw new HoyoRequestError("response", "官方星铁开拓力流水的恢复时间无效。");
       recoveries.push({ time: row.time, count: row.count });
     }
+    cursor = rows.at(-1)!.id;
     if (page < maxPages && intervalMs) await wait(intervalMs, undefined, { signal });
   }
   return { recoveries, complete: false };

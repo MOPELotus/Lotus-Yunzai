@@ -17,10 +17,10 @@ const source = {
 const response = (data: unknown, retcode = 0) => Response.json({ retcode, data });
 const row = { time: "2000-01-02 03:04:05", action: "任务奖励", add_num: "2", cookie: "private-sentinel", price: 12345 };
 
-test("星铁流水以同档 SToken 获取 csc 短票，一页十项，第二步不携带 Cookie", async () => {
+test("星铁流水以同档 SToken 获取 csc 短票，按末条游标顺序取第三页，各类别不携带 Cookie", async () => {
   const requested: (string | undefined)[] = [];
   const client = createHoyoClient(async (url, init) => {
-    expect(url.origin).toBe("https://api-takumi.mihoyo.com");
+    expect(url.origin).toBe(init.method === "POST" ? "https://api-takumi.mihoyo.com" : "https://public-operation-hkrpg.mihoyo.com");
     expect([init.redirect, init.credentials]).toEqual(["error", "omit"]);
     const headers = new Headers(init.headers);
     if (init.method === "POST") {
@@ -39,10 +39,17 @@ test("星铁流水以同档 SToken 获取 csc 短票，一页十项，第二步�
     expect(url.searchParams.get("authkey")).toBe(ticket);
     expect(url.searchParams.get("auth_appid")).toBe("csc");
     expect(url.searchParams.get("bbs_game_role_required")).toBe("hkrpg_cn");
-    expect(url.searchParams.get("page_size")).toBe("10");
-    expect(url.searchParams.get("page")).toBe("3");
+    expect(url.searchParams.get("size")).toBe("10");
+    expect(url.searchParams.has("page")).toBe(false);
+    expect(url.searchParams.has("page_size")).toBe(false);
+    const cursor = url.searchParams.get("end_id");
+    expect(["", "91", "81"]).toContain(cursor ?? "missing");
+    if (cursor === "" || cursor === "91") {
+      const start = cursor === "" ? 100 : 90;
+      return response({ uid, list: Array.from({ length: 10 }, (_, index) => ({ ...row, id: String(start - index) })) });
+    }
     requested.push(url.pathname.split("/").at(-2));
-    return response({ page: 3, uid, list: [{ ...row, add_num: 0 }, { ...row, add_num: -1 }, { ...row, add_num: 1 }, row, row] });
+    return response({ uid, list: [0, -1, 1, 2, 2].map((add_num, index) => ({ ...row, add_num, id: String(80 - index) })) });
   });
   const expected = { time: row.time, reason: row.action, count: 2 };
   expect((await client.fetchStarRailLedger(source, { kind: "dreams", page: 3 })).rows)
@@ -64,13 +71,13 @@ test("流水显式核对国服区服和凭据身份，错归属或失效中止�
       expect(new Headers(options.headers).get("Cookie")).toBe("stuid=42;stoken=v2_fixture;mid=fixture-mid;");
       return post.clone();
     }
-    expect(url.searchParams.get("page")).toBe("2");
+    expect(url.searchParams.get("end_id") ?? "").toBe("");
     return get.clone();
   });
   const channel = { ...source, role: { ...source.role, uid: qd, region: "prod_qd_cn" },
     account: { ...source.account, stoken: "v2_fixture", mid: "fixture-mid",
       stokenCookie: "stuid=42;stoken=v2_fixture;mid=fixture-mid;ltoken=ignore-this;" } };
-  const request = { kind: "dreams", page: 2 } as const;
+  const request = { kind: "dreams", page: 1 } as const;
   for (const invalid of [
     { ...channel, role: { ...channel.role, region: "" } },
     { ...channel, role: { ...channel.role, region: "prod_official_asia", gameBiz: "hkrpg_global" } },
@@ -90,7 +97,7 @@ test("流水显式核对国服区服和凭据身份，错归属或失效中止�
   get = response(null, -101);
   await expect(client.fetchStarRailLedger(channel, request)).rejects.toThrow("临时授权已失效");
   expect(count).toBe(6);
-  for (const malformed of [{ page: 3, list: [] }, { list: Array(11).fill(row) }, { list: [{ ...row, uid }] }]) {
+  for (const malformed of [{ role: "malformed", list: [] }, { list: Array(11).fill(row) }, { list: [{ ...row, uid }] }]) {
     get = response(malformed);
     await expect(client.fetchStarRailLedger(channel, request)).rejects.toMatchObject({ code: "response" });
   }
@@ -134,4 +141,61 @@ account:
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test("流水目标页有界串行读取，无效/重复/倒退游标或中途失败不返回片段", async () => {
+  let mode: "normal" | "repeat" | "ascending" | "invalid" | "failure" = "normal";
+  let calls = 0;
+  const client = createHoyoClient(async (url, init) => {
+    calls++;
+    if (init.method === "POST") return response({ authkey: ticket });
+    const cursor = url.searchParams.get("end_id");
+    if (mode === "invalid") return response({ list: [{ ...row, id: "opaque" }] });
+    if (mode === "ascending") return response({ list: [{ ...row, id: "10" }, { ...row, id: "11" }] });
+    if (cursor === "") return response({ list: Array.from({ length: 10 }, (_, i) => ({ ...row, id: String(100 - i) })) });
+    if (mode === "repeat") return response({ list: [{ ...row, id: "91" }] });
+    if (mode === "failure") return response({}, 1034);
+    return response({ list: [] });
+  });
+  await expect(client.fetchStarRailLedger(source, { kind: "power", page: 121 })).rejects.toThrow("最多查询第 120 页");
+  expect(calls).toBe(0);
+  expect(await client.fetchStarRailLedger(source, { kind: "power", page: 3 })).toMatchObject({ rows: [] });
+  expect(calls).toBe(3); // Empty second page ends traversal without requesting page three.
+  for (const behavior of ["repeat", "ascending", "invalid", "failure"] as const) {
+    mode = behavior;
+    await expect(client.fetchStarRailLedger(source, { kind: "power", page: 2 })).rejects.toBeDefined();
+  }
+});
+
+
+test("小于请求size仍用游标继续，19位id不丢精度，累计页数上限在授权前拒绝", async () => {
+  const cursors: string[] = [];
+  const client = createHoyoClient(async (url, init) => {
+    if (init.method === "POST") return response({ authkey: ticket });
+    const cursor = url.searchParams.get("end_id")!;
+    cursors.push(cursor);
+    return response({ list: cursor === "" ? [{ ...row, id: "9000000000000000001" }] :
+      cursor === "9000000000000000001" ? [{ ...row, id: "9000000000000000000" }] : [] });
+  });
+  expect((await client.fetchStarRailLedger(source, { kind: "power", page: 2 })).rows).toEqual([
+    { count: 2, time: row.time, reason: row.action },
+  ]);
+  expect(cursors).toEqual(["", "9000000000000000001"]);
+  await expect(client.fetchStarRailLedger(source, { kind: "power", page: 999999 })).rejects.toMatchObject({ code: "invalid-input" });
+  expect(cursors).toHaveLength(2);
+});
+
+test("后续游标页返回期间换档，整个账本查询作废且不返回前页片段", async () => {
+  const { readStarRailLedger } = await import("../packages/hoyo-client/starrail-ledger.ts");
+  let changed = false, calls = 0;
+  await expect(readStarRailLedger(source, async (_url, init) => {
+    calls++;
+    if (init.method === "POST") return response({ authkey: ticket });
+    changed = true;
+    return response({ list: [{ ...row, id: "100" }] });
+  }, { kind: "power", page: 2 }, async () => {
+    if (changed) throw new Error("fixture-profile-changed");
+  })).rejects.toThrow("fixture-profile-changed");
+  expect(calls).toBe(2);
 });
