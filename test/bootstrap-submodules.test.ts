@@ -27,8 +27,12 @@ test("普通clone后一次bootstrap补拉缺失子模块并锁定主仓指定提
     await mkdir(join(source, "scripts")); await mkdir(join(source, "packages/skia"), { recursive: true });
     await cp(new URL("../scripts/bootstrap.ts", import.meta.url), join(source, "scripts/bootstrap.ts"));
     await mkdir(join(source, "lib"));
-    for (const name of ["initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "builtin-resource-validation", "resource-progress", "initialization-state"])
+    for (const name of ["i18n-preload", "initialization-progress", "terminal-log-format", "terminal-output", "runtime-logs", "shanghai-date", "builtin-resource-validation", "resource-progress", "initialization-state"])
       await cp(new URL(`../lib/${name}.ts`, import.meta.url), join(source, `lib/${name}.ts`));
+    await mkdir(join(source, "packages/i18n"));
+    await cp(new URL("../packages/i18n/index.ts", import.meta.url), join(source, "packages/i18n/index.ts"));
+    await mkdir(join(source, "i18n"));
+    await cp(new URL("../i18n/zh-CN.json", import.meta.url), join(source, "i18n/zh-CN.json"));
     await cp(new URL("../scripts/verify-builtin-resources.ts", import.meta.url), join(source, "scripts/verify-builtin-resources.ts"));
     await mkdir(join(source, "resources/builtin"), { recursive: true });
     await writeFile(join(source, "resources/builtin/fixture.txt"), "asset");

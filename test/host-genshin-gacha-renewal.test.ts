@@ -109,14 +109,14 @@ test("原神官方更新依同档续期后只重查仍选中的角色，并保�
   }) => {
     sendOneBot("#更新抽卡记录2");
     const started = await onebot.next("send_msg");
-    expect(started.params).toMatchObject({ user_id: 42, message: expect.stringContaining("更新 Profile 2") });
+    expect(started.params).toMatchObject({ user_id: 42, message: expect.stringContaining("正在更新原神抽卡记录（档案 2）") });
     started.respond({ message_id: 41 });
     const completed = await onebot.next("send_msg");
     completed.respond({ message_id: 42 });
 
     expect((await sendMilky("#原神更新抽卡记录2")).status).toBe(200);
     const otherStarted = await milky.next("send_private_message");
-    expect(JSON.stringify(otherStarted.params)).toContain("更新 Profile 2");
+    expect(JSON.stringify(otherStarted.params)).toContain("正在更新原神抽卡记录（档案 2）");
     otherStarted.respond({ message_seq: 43 });
     const rejected = await milky.next("send_private_message");
     rejected.respond({ message_seq: 44 });

@@ -18,8 +18,19 @@ const legacy = JSON.stringify({
 
 const preload = `
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
+Bun.env.LOTUS_STAR_RAIL_GACHA_THEME_DIR = "./data/starrail/theme";
 const native = globalThis.fetch;
 const { appendFileSync } = require("node:fs");
+const { Canvas } = require("./packages/skia/node_modules/skia-canvas");
+const toBuffer = Canvas.prototype.toBuffer;
+Canvas.prototype.toBuffer = async function (...args) {
+  const output = await toBuffer.call(this, ...args);
+  const engine = this.engine;
+  if (engine.renderer !== "GPU" || !engine.device || /llvmpipe|lavapipe|swiftshader|software/i.test(engine.device))
+    throw Error("fixture requires a physical GPU renderer");
+  appendFileSync("renderers.jsonl", JSON.stringify(engine) + "\\n");
+  return output;
+};
 globalThis.fetch = async (input, options) => {
   const url = new URL(input instanceof Request ? input.url : input);
   if (url.hostname === "127.0.0.1" || url.hostname === "localhost") return native(input, options);
@@ -72,11 +83,11 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     expect(await readFile(join(root, path), "utf8")).toBe(legacy);
     await put(root, "hold-first", "true");
     sendOneBot("*更新抽卡记录");
-    await simulateAck(onebot, "send_msg", 2, "补齐官方");
+    await simulateAck(onebot, "send_msg", 2, "正在更新星铁抽卡记录（档案 1）");
     for (let attempt = 0; attempt < 100 && !await Bun.file(join(root, "seen-badge")).exists(); attempt++) await Bun.sleep(10);
     expect(await Bun.file(join(root, "seen-badge")).exists()).toBe(true);
     sendOneBot("*更新抽卡记录2");
-    await simulateAck(onebot, "send_msg", 3, "补齐官方");
+    await simulateAck(onebot, "send_msg", 3, "正在更新星铁抽卡记录（档案 2）");
     await simulateAck(onebot, "send_msg", 4, "该账号的星铁抽卡记录正在更新");
     expect((await readFile(join(root, "seen-badge"), "utf8")).trim()).toBe(uid);
     await put(root, "release-first", "true");
@@ -87,7 +98,7 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     expect(saved).not.toContain("fixture-ephemeral");
     await put(root, "rate-limit", "true");
     sendOneBot("*更新抽卡记录2");
-    await simulateAck(onebot, "send_msg", 6, "补齐官方");
+    await simulateAck(onebot, "send_msg", 6, "正在更新星铁抽卡记录（档案 2）");
     await png(7);
     expect(await readFile(join(root, current), "utf8")).toBe(saved);
     expect(await readFile(join(root, path), "utf8")).toBe(legacy);
@@ -98,6 +109,11 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     await sendMilky("*抽卡记录");
     const local = await simulateAck(milky, "send_private_message", 10);
     expect(local).toContain("base64://");
+    const engines = (await readFile(join(root, "renderers.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    expect(engines.length).toBeGreaterThan(0);
+    if (Bun.env.LOTUS_SR_UPDATE_EVIDENCE) {
+      await Bun.write(join(Bun.env.LOTUS_SR_UPDATE_EVIDENCE, "renderers.json"), JSON.stringify(engines, null, 2));
+    }
   }, 10_000, preload, async root => {
     const plugin = join(import.meta.dir, "../plugins/starrail");
     const installed = join(root, "plugins/starrail");

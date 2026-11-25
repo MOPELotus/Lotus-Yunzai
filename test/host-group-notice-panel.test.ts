@@ -181,6 +181,9 @@ test("面板群通知用宿主令牌和版本控制保存全部默认开关与�
     const cardFile = join(root, "config/config/auto-group-card.yaml");
     await writeFile(cardFile, 'cron: "0 0 * * * *"\nsuffixes: [旧文案]\nnotGroup: ["88"]\nother: 保留\n');
     const cardPath = base + "group-card";
+    const defaultCard = await (await request("GET", undefined, token, cardPath)).json() as { values: Record<string, unknown> };
+    expect(defaultCard.values).toMatchObject({ enable: false, notGroup: [88], suffixes: ["旧文案"] });
+    await writeFile(cardFile, 'enable: true\ncron: "0 0 * * * *"\nsuffixes: [旧文案]\nnotGroup: ["88"]\nother: 保留\n');
     const card = await (await request("GET", undefined, token, cardPath)).json() as { values: Record<string, unknown> };
     expect(card.values).toMatchObject({ enable: true, notGroup: [88], suffixes: ["旧文案"] });
     expect((await request("PUT", { previous: card.values, values: { ...card.values, cron: "61 0 * * * *" } }, token, cardPath)).status).toBe(400);
