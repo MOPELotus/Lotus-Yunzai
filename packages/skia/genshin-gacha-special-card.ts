@@ -374,6 +374,6 @@ export async function renderGachaSpecialCard(
     if (page) text(ctx, `第 ${page.page}/${page.total} 张 · ${crossPool ? "各池" : ""}第 ${page.from}~${page.to} 条五星记录`,
       width / 2, bottom + 9, 14, muted, "center");
     text(ctx, "Created By Lotus-Yunzai", width / 2 + 5, bottom + (page ? 29.5 : 7.5),
-      12, "#7994a7", "center", "number");
+      12, "#fff", "center", "number");
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

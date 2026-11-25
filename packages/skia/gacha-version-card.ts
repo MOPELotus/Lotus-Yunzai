@@ -520,7 +520,7 @@ export async function renderGachaVersion(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     richLine(ctx, [
-      ["Lotus-Yunzai", "#90ee90"],
+      ["Lotus-Yunzai", "#fff"],
     ], 375, footer + 8.5, 14, true);
     ctx.restore();
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });

@@ -540,7 +540,7 @@ export async function renderGachaDetail(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     inline(ctx, [
-      { value: "Lotus-Yunzai", color: "#90ee90", size: 14, bold: true },
+      { value: "Lotus-Yunzai", color: "#fff", size: 14, bold: true },
     ], 375, bottom + 19, true);
     ctx.restore();
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });

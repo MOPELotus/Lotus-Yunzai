@@ -163,6 +163,6 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
       label(ctx, `TOP ${rankPercentiles[index]}%`, x + 52, 694, 12, "#c9d6e9", 93);
       label(ctx, format.format(value), x + 52, 723, 17, index < 3 ? cyan : "#ffffff", 99);
     }
-    label(ctx, footer, 600, 772, 12, "#c0cbe0");
+    label(ctx, footer, 600, 772, 12, "#fff");
   }, mode, { allowHalfScale: scale === 4 });
 }
