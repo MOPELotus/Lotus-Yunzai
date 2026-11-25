@@ -92,3 +92,19 @@ test("private owner command issues a browser session through the actual host", a
     await rm(root, { recursive: true, force: true });
   }
 }, 9000);
+
+test("未启用管理网页时，两协议的管理命令仍有明确回执", async () => {
+  const { withDualGatewayFixture } = await import("./host-dual-gateway-fixture.ts");
+  await withDualGatewayFixture("disabled-panel-route", 'master: ["99:42", "100:43"]\n', async gateways => {
+    for (const command of ["#管理面板", "#配置面板", "#面板管理"]) {
+      gateways.sendOneBot(command);
+      const onebot = await gateways.onebot.next("send_msg");
+      expect(onebot.params.message).toBe("管理面板尚未配置可用于登录的访问地址。");
+      onebot.respond({ message_id: 1 });
+      expect((await gateways.sendMilky(command)).status).toBe(200);
+      const milky = await gateways.milky.next("send_private_message");
+      expect(JSON.stringify(milky.params)).toContain("管理面板尚未配置可用于登录的访问地址。");
+      milky.respond({ message_seq: 1 });
+    }
+  });
+}, 15_000);

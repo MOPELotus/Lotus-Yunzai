@@ -3551,17 +3551,15 @@ if (import.meta.main) {
     }, "原神和星铁面板重建");
     const { hostname, oneBot, https, panelToken, panelPublicUrl } = network;
     const panelEnabled = panelToken !== undefined || panelPublicUrl !== undefined;
-    if (panelEnabled) {
-      panelOwnerSession = createPanelOwnerSession({
-        databasePath: fileURLToPath(new URL("data/panel/owner-sessions.sqlite", root)),
-        publicBase: () => panelPublicUrl ?? fileBase,
-        isOwner: (bot, user) => masterPermissions.isMaster(bot, user),
-        signal: lifecycle.signal,
-        config: globalConfig.coin_shop,
-        readLoginConfig: readWebLoginConfig,
-      });
-      commands.registerModule(panelOwnerSession.commands);
-    }
+    panelOwnerSession = createPanelOwnerSession({
+      databasePath: fileURLToPath(new URL("data/panel/owner-sessions.sqlite", root)),
+      publicBase: () => panelEnabled ? panelPublicUrl ?? fileBase : undefined,
+      isOwner: (bot, user) => masterPermissions.isMaster(bot, user),
+      signal: lifecycle.signal,
+      config: globalConfig.coin_shop,
+      readLoginConfig: readWebLoginConfig,
+    });
+    commands.registerModule(panelOwnerSession.commands);
     const groupActions = {
       async noticeOwnerIds(botId: number, transport: AbortSignal) {
         const registration = ownerNoticeRecipients;

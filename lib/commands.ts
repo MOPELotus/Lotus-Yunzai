@@ -1,3 +1,4 @@
+import { isPanelOwnerCommand } from "./panel-owner-command.ts";
 import { forGameCommandSender } from "@lotus-yunzai/account";
 import type { LegacyPanelRecoveryOffer } from "./legacy-panel-recovery-flow.ts";
 import { sendBatchedImageForward, type BatchedImageForward, type StreamedImageForward } from "@lotus-yunzai/skia/forward-images";
@@ -356,7 +357,12 @@ export class CommandRegistry {
     onlyModule?: string,
   ): Promise<CommandReply | undefined> {
     const { offerLegacyPanelRecovery, authorizeCheckinOwner, ...sharedCapabilities } = capabilities ?? {};
-    for (const { handler, names, features, trustedLegacyPanelRecovery } of this.#fallbacks.values()) {
+    const panelCommand = isPanelOwnerCommand(normalizedMessage);
+    const panelOwner = this.#fallbacks.get("@lotus-yunzai/panel-owner-session");
+    // A control command must not fall through to a game's fuzzy character matcher,
+    // including when delegated, denied or unavailable.
+    const fallbacks = panelCommand ? (panelOwner ? [panelOwner] : []) : this.#fallbacks.values();
+    for (const { handler, names, features, trustedLegacyPanelRecovery } of fallbacks) {
       if (onlyModule !== undefined && names[0] !== onlyModule) continue;
       if (!features && !allowed(names)) continue;
       const context = {

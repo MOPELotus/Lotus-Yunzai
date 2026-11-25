@@ -209,3 +209,47 @@ test("锅巴群友搜索只使用登录时绑定的私聊网关，断线、退�
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("管理面板精确入口优先于角色面板，拒绝和缺少配置时不穿透", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "panel-command-route-"));
+  const lifecycle = new AbortController();
+  let characterCalls = 0;
+  let configured = true;
+  const registry = new CommandRegistry();
+  const owner = createPanelOwnerSession({
+    databasePath: join(directory, "sessions.sqlite"), signal: lifecycle.signal, config: {},
+    publicBase: () => configured ? new URL("https://panel.test/") : undefined,
+    isOwner: (bot, user) => bot === 99 && user === 42,
+  });
+  registry.registerModule({ name: "@lotus-yunzai/genshin", commands: {}, fallback() {
+    characterCalls++;
+    return "错误的角色面板入口";
+  } });
+  registry.registerModule(owner.commands);
+  const invoke = (message: string, fields: object = {}, allowed = () => true, onlyModule?: string) => registry.dispatchFallback({
+    msg: message, raw_message: message, message, post_type: "message", isGroup: false, isPrivate: true,
+    self_id: 99, user_id: 42, message_type: "private", sub_type: "friend", privateCredentialSignal: lifecycle.signal,
+    isMaster: true, reply: async () => true, ...fields,
+  }, allowed, () => true, message, undefined, onlyModule);
+  try {
+    for (const command of ["#管理面板", "#配置面板", "#面板管理", "管理面板"]) {
+      expect(await invoke(command)).toContain("https://panel.test/panel/#ticket=");
+      expect(await invoke(command, { user_id: 43 })).toContain("主人");
+      expect(await invoke(command, { message_type: "group" })).toContain("私聊");
+      expect(await invoke(command, { isDelegated: true })).toBeUndefined();
+      expect(await invoke(command, {}, () => false)).toBeUndefined();
+      expect(await invoke(command, {}, () => true, "@lotus-yunzai/genshin")).toBeUndefined();
+    }
+    configured = false;
+    expect(await invoke("#管理面板")).toContain("访问地址");
+    expect(characterCalls).toBe(0);
+    expect(await invoke("#芙宁娜面板")).toBe("错误的角色面板入口");
+    expect(characterCalls).toBe(1);
+    const noOwner = new CommandRegistry();
+    noOwner.registerModule({ name: "@lotus-yunzai/genshin", commands: {}, fallback() { throw new Error("不得落到角色面板"); } });
+    expect(await noOwner.dispatchFallback({ msg: "#管理面板", post_type: "message", isGroup: false, isPrivate: true,
+      message_type: "private", reply: async () => true }, () => true, () => true)).toBeUndefined();
+  } finally {
+    lifecycle.abort(); owner.close(); await rm(directory, { recursive: true, force: true });
+  }
+});

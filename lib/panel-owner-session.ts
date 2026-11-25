@@ -6,12 +6,12 @@ import type { CommandModule } from "./commands.ts";
 import { memberDisplayName } from "./adapters/onebot-member-display.ts";
 import { ownerContactListSession, parseFriendList, type OwnerContactListSession } from "./owner-contact-list.ts";
 import { readPanelJson } from "./panel.ts";
+import { isPanelOwnerCommand } from "./panel-owner-command.ts";
 import { panelPublicPage } from "./server.ts";
 
 const cookieName = "lotus_panel";
 const credential = /^[A-Za-z0-9_-]{43}$/u;
 const headers = { "Cache-Control": "no-store" };
-const loginCommand = /^#?(?:管理面板|配置面板)$/u;
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
 const response = (status: number) => new Response(null, { status, headers });
@@ -154,7 +154,7 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
     name: "@lotus-yunzai/panel-owner-session",
     commands: {},
     async fallback(message, context) {
-      if (signal.aborted || !loginCommand.test(message) || context.isDelegated) return;
+      if (signal.aborted || !isPanelOwnerCommand(context.normalizedMessage) || context.isDelegated) return;
       const bot = context.self_id;
       const user = context.user_id;
       if (!bot || !user || !isOwner(bot, user)) return "只有当前机器人主人可以登录管理面板。";
