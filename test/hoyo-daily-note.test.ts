@@ -487,13 +487,13 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
       expect(exchanges).toBe(2);
     }
     queries.length = 0;
-    expect(await dispatch("%查询体力", { ...group, user_id: 43, isMaster: true })).toContain("没有找到可查询的 profile");
+    expect(await dispatch("%查询体力", { ...group, user_id: 43, isMaster: true })).toContain("没有找到可查询的档案");
     expect(await dispatch("*三月七面板")).toBe("角色入口");
     expect(await dispatch("%艾莲面板")).toBe("角色入口");
     expect(await dispatch("*树脂活动")).toBeUndefined();
     expect(await dispatch("%查询体力测试")).toBeUndefined();
     expect(queries).toEqual([]);
-    expect(replies.some(reply => typeof reply === "string" && reply.includes("profile 2"))).toBe(true);
+    expect(replies.some(reply => typeof reply === "string" && reply.includes("档案 2"))).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
     await rm(directory, { recursive: true, force: true });

@@ -102,6 +102,10 @@ export function withReadRetries(transport: ReadTransport, { canRetry = defaultRe
         }
       }
       catch (error) {
+        // Preserve the caller's stream/response error classification after the
+        // retry budget ends; only connection failures have no Response to read.
+        if (response && !init.signal?.aborted && !(error instanceof DOMException && error.name === "TimeoutError") &&
+            (attempt + 1 >= attempts || !transientReadError(error))) return response;
         void response?.body?.cancel().catch(() => undefined);
         if (init.signal?.aborted || attempt + 1 >= attempts || !transientReadError(error)) throw error;
         continue;

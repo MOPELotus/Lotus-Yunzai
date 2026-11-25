@@ -80,7 +80,7 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
   const { date } = checkinScheduleClock();
   const receipt: unknown[] = [];
   const runtime = createCheckinScheduleRuntime({
-    store, signal: controller.signal, config: { fixed_time: "18:00" },
+    store, signal: controller.signal, config: { mode: "fixed", fixed_time: "18:00" },
     now: () => Date.parse(`${date}T18:45:00+08:00`),
     listProfiles: createProfileStore(profileDirectory).listCheckinProfiles,
     runProfile: (entry, context) => module.runScheduled(entry.qq, entry.profileId, context),
@@ -115,7 +115,7 @@ test("迁入的旧国际服云钱包由本人手动和正常定时使用，子�
       normalizedMessage: "#手动签到3", message_type: "private", user_id: 42, reply: message => { progress.push(message); return true; },
       isBotMaster: () => false, isMaster: false, privateCredentialSignal: controller.signal,
     });
-    expect(missing).toContain("请先登录 profile 3");
+    expect(missing).toContain("请先登录档案 3");
     expect(progress).toHaveLength(1);
     response = { free_time: "18", send_freetime: 0 };
     expect(await runtime.runDue()).toMatchObject({ completed: 1 });

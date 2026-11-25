@@ -848,20 +848,20 @@ test("刷新回执保留逐档状态，绘制失败时返回同一批操作的�
     expect(completed).toEqual([1, 2, 3]);
     expect(cards[0]).toEqual({
       title: "Cookie 刷新",
-      lead: "QQ 42\n已按 profile 粒度处理当前 QQ 的登录信息，刷新成功 2/3。",
-      contents: ["Profile 1：刷新成功", "Profile 2：刷新成功，角色同步失败", "Profile 3：刷新失败，请确认登录状态后重试"],
+      lead: "QQ 42\n登录信息刷新成功 2/3。",
+      contents: ["档案 1：刷新成功", "档案 2：刷新成功，角色同步失败", "档案 3：刷新失败，请确认登录状态后重试"],
     });
 
     expect(await registry.dispatch("#刷新自动签到2", owner)).toEqual({ type: "image", file: png });
     expect(cards[1]).toEqual({
       title: "Cookie 刷新",
-      lead: "QQ 42\n已刷新 profile 2 的登录信息。",
-      contents: ["Profile 2：刷新成功，角色同步失败"],
+      lead: "QQ 42\n档案 2 登录信息已刷新。",
+      contents: ["档案 2：刷新成功，角色同步失败"],
     });
 
     renderFailure = true;
     expect(await registry.dispatch("#刷新ck3", owner)).toBe("Cookie 刷新\n档案 3 · 刷新失败，请确认登录状态后重试");
-    expect(cards[2]?.lead).toBe("QQ 42\nprofile 3 的登录信息未能刷新。");
+    expect(cards[2]?.lead).toBe("QQ 42\n档案 3 的登录信息未能刷新。");
     expect(completed).toEqual([1, 2, 3, 2, 3]);
   } finally {
     await rm(root, { recursive: true, force: true });

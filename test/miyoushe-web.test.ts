@@ -640,12 +640,12 @@ test("商城列表缺正式开放时间时使用详情补全，已有的下次�
           ...(detailResponse === "known" && { sale_start_time: (time + 60_000) / 1000 }) } });
     } });
     const page = await catalog.list({ qq: "42", profileId: 1 }, new URLSearchParams());
-    expect(reads).toEqual(["list", "detail"]);
+    expect(reads).toEqual(detailResponse === "failed" ? ["list", "detail", "detail", "detail"] : ["list", "detail"]);
     expect(page.goods[0]).toMatchObject({ game: "hk4e", status: "scheduled", opensAt: time + (detailResponse === "known" ? 60_000 : 90_000) });
   }
 });
 
-test("匿名商城仅在传输瞬断后重读，目录和详情仍按当前会话查询", async () => {
+test("匿名商城临时网络错误可有限重读，目录和详情仍按当前会话查询", async () => {
   const calls: string[] = [];
   const signal = new AbortController().signal;
   const time = 1_792_000_000_000;
@@ -670,7 +670,7 @@ test("匿名商城仅在传输瞬断后重读，目录和详情仍按当前会�
   expect(calls).toEqual(["list", "list", "list", "detail", "detail", "detail"]);
 });
 
-test("匿名商城读取消、已返回 HTTP 错误和耗尽重读分别结束", async () => {
+test("匿名商城读取消、限频及网关重试耗尽分别结束", async () => {
   const target = { qq: "42", profileId: 1 };
   for (const status of [429, 503]) {
     let calls = 0;
@@ -679,7 +679,7 @@ test("匿名商城读取消、已返回 HTTP 错误和耗尽重读分别结束",
       return new Response(null, { status });
     } });
     await expect(catalog.list(target, new URLSearchParams())).rejects.toMatchObject({ status: status === 429 ? 429 : 502 });
-    expect(calls).toBe(1);
+    expect(calls).toBe(status === 503 ? 3 : 1);
   }
   const controller = new AbortController();
   let calls = 0;
