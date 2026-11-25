@@ -1,3 +1,4 @@
+import { ensureLegacyValkey, stopLegacyValkey } from "./legacy-valkey-handoff.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -153,7 +154,11 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
 } = {}): Promise<{ managed: boolean; connection?: string | StorageConnectionOptions }> {
   const explicit = await explicitConnection(root, env);
   if (explicit === false) return { managed: false };
-  if (explicit !== undefined) { await verifyStorageConnection(explicit); return { managed: false, connection: explicit }; }
+  if (explicit !== undefined) {
+    const managed = await ensureLegacyValkey(root, explicit, signal);
+    await verifyStorageConnection(explicit);
+    return { managed, connection: explicit };
+  }
   const directory = location(root);
   await privateDirectory(directory);
   const lock = join(directory, "startup.lock");
@@ -237,8 +242,9 @@ async function managedWriterAlive(root: URL): Promise<boolean> {
   });
   return Boolean(working && current.dev === working.dev && current.ino === working.ino);
 }
-/** Stop only this checkout's authenticated socket. Explicit external Redis is never stopped. */
+/** Stop only this checkout's verified managed instance. Independent external Redis is never stopped. */
 export async function stopManagedValkey(root: URL): Promise<void> {
+  if (await stopLegacyValkey(root)) return;
   const connection = await managedValkeyConnection(root);
   if (!connection) return;
   const socket = connection.socketPath!;
