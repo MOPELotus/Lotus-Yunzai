@@ -5,6 +5,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { importProfiles } from "../packages/account/index.ts";
 import { legacyLotusDirectories } from "./lotus-global-config.ts";
+import { stageFirstGenerationProfiles } from "./migration-lotus-v1.ts";
 
 const sourcePaths = [
   ["data", "users"],
@@ -33,6 +34,10 @@ export async function stageLegacyProfiles(source: string, stateDirectory: string
     result.imported += migrated.imported;
     result.unchanged += migrated.unchanged;
   }
+  const firstGeneration = await stageFirstGenerationProfiles(source, stateDirectory, signal);
+  result.sources += firstGeneration.sources;
+  result.imported += firstGeneration.imported;
+  result.unchanged += firstGeneration.unchanged;
   signal?.throwIfAborted();
-  return result;
+  return { ...result, ...(firstGeneration.sources && { firstGeneration }) };
 }

@@ -11,6 +11,7 @@ import { projectPanelTrialDisplay } from "./migration-panel-trial-display.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
 import { projectShowcaseSettings, type ShowcaseArchive } from "./migration-showcase.ts";
 import { configuredSiteIcpNumber } from "./web-icp.ts";
+import { readFirstGenerationGlobal } from "./migration-lotus-v1.ts";
 
 type Config = Record<string, unknown>;
 
@@ -26,7 +27,7 @@ const supported = {
   daily_note_reminders: ["enable", "cooldown_hours", "cron", "message"],
 } as const;
 
-async function readGlobal(root: string, prefix: string): Promise<Config | undefined> {
+async function readGlobal(root: string, prefix: string, stage?: string, signal?: AbortSignal): Promise<Config | undefined> {
   for (const local of ["config/global.yaml", "config/config/global.yaml"]) {
     const path = join(root, prefix, local);
     const file = await readMigrationSourceFile(root, path, 256 * 1024).catch(error => {
@@ -41,14 +42,15 @@ async function readGlobal(root: string, prefix: string): Promise<Config | undefi
     } catch {}
     throw new Error($t("lib.migration-global-config.text_3de67f465a"));
   }
+  return (await readFirstGenerationGlobal(root, prefix, stage, signal))?.projected;
 }
 
 /** Materialize settings whose running consumers previously reached into rejected plugin directories. */
 export async function stageLegacyGlobalConfig(source: string, stage: string, signal?: AbortSignal,
   legacyDailyNote?: LegacyDailyNoteReminderSettings, showcaseArchive?: ShowcaseArchive) {
   signal?.throwIfAborted();
-  const [local, ...legacy] = await Promise.all([readGlobal(source, ""),
-    ...legacyLotusDirectories.map(id => readGlobal(source, `plugins/${id}`))]);
+  const [local, ...legacy] = await Promise.all([readGlobal(source, "", stage, signal),
+    ...legacyLotusDirectories.map(id => readGlobal(source, `plugins/${id}`, stage, signal))]);
   const effective = await resolveLotusGlobalConfig(local ?? {}, async id => legacy[legacyLotusDirectories.indexOf(id)]);
   const media = projectLegacyMediaConfig(local ?? {}, legacy.filter((config): config is Config => config !== undefined));
   const showcase = await projectShowcaseSettings(local ?? {}, showcaseArchive, signal);

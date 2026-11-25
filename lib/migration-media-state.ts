@@ -9,6 +9,7 @@ import { legacyLotusDirectories } from "./lotus-global-config.ts";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
 import { withinInstallation } from "./plugins/migration-plan.ts";
+import { readFirstGenerationGlobal } from "./migration-lotus-v1.ts";
 
 type Fields = Record<string, unknown>;
 type MediaStateOptions = { tuneweaveUrl?: string; signal?: AbortSignal };
@@ -105,6 +106,27 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
   const held: { path: string; files: number; reason: "format" | "endpoint" | "conflict" }[] = [];
   const read = (path: string, maximum: number) => readMigrationSourceFile(source, join(source, path), maximum, signal);
   const sourceSettings = new Map<string, Fields | undefined>();
+  const firstGenerationSettings = new Map<string, Awaited<ReturnType<typeof readFirstGenerationGlobal>>>();
+  async function firstGenerationBytes(prefix: string, path: string) {
+    if (path !== "data/netease/accounts.yaml" && path !== "data/bilibili/account.yaml") return;
+    if (!firstGenerationSettings.has(prefix)) {
+      firstGenerationSettings.set(prefix, await readFirstGenerationGlobal(source, prefix, undefined, signal));
+    }
+    const raw = firstGenerationSettings.get(prefix)?.raw;
+    if (!raw) return;
+    if (path === "data/netease/accounts.yaml") {
+      const partner = mapping(raw.neteasePartner) ? raw.neteasePartner : undefined;
+      if (Array.isArray(partner?.accounts) && partner.accounts.length) {
+        return Buffer.from(Bun.YAML.stringify({ accounts: partner.accounts }));
+      }
+    } else {
+      const bilibili = mapping(raw.bilibili) ? raw.bilibili : undefined;
+      const cookie = bilibili?.cookie ?? bilibili?.sessdata ?? bilibili?.sessData;
+      if (typeof cookie === "string" && cookie.trim()) {
+        return Buffer.from(Bun.YAML.stringify({ cookie: cookie.includes("=") ? cookie : `SESSDATA=${cookie}` }));
+      }
+    }
+  }
   async function readGlobal(prefix: string): Promise<Fields | undefined> {
     if (sourceSettings.has(prefix)) return sourceSettings.get(prefix);
     for (const name of ["config/global.yaml", "config/config/global.yaml"]) {
@@ -168,6 +190,10 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
     for (const prefix of roots) {
       const current = await read(join(prefix, path), rule.limit);
       if (current) candidates.push({ prefix, bytes: current.bytes });
+      else {
+        const bytes = await firstGenerationBytes(prefix, path);
+        if (bytes) candidates.push({ prefix, bytes });
+      }
     }
     if (!candidates.length) continue;
     const first = candidates[0]!;
