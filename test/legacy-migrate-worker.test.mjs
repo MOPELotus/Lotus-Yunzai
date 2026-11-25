@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { runLegacyMigration, processIdentity, updateMigrationState } from '../scripts/legacy-migrate.mjs';
+import { runLegacyMigration, processIdentity, updateMigrationState, prepareBun } from '../scripts/legacy-migrate.mjs';
 
 async function fixture(run) {
   const parent = await mkdtemp(join(tmpdir(), 'lotus-legacy-worker-'));
@@ -147,4 +147,39 @@ test('旧进程恢复使用私有环境快照，而非已清理的worker环境',
   };
   await assert.rejects(runLegacyMigration(x, x.dependencies));
   assert.equal(JSON.parse(await readFile(x.statePath, 'utf8')).recovery, 'old-restored');
+}));
+
+ test('自动安装Bun只修改隔离HOME，官方入口失败后有限回退', () => fixture(async x => {
+  const work = join(x.source, 'isolated-install'), home = join(x.source, 'original-home');
+  await mkdir(work, { mode: 0o700 }); await mkdir(home, { mode: 0o700 });
+  await writeFile(join(home, '.bashrc'), 'untouched');
+  const executable = join(work, 'bun/bin/bun'), urls = [];
+  const installer = `#!/bin/sh
+set -e
+[ "$SHELL" = /bin/sh ]
+[ "$XDG_CONFIG_HOME" = "$HOME/.config" ]
+printf private-install >> "$HOME/.bashrc"
+mkdir -p "$BUN_INSTALL/bin"
+printf '#!/bin/sh\\nprintf 1.4.4' > "$BUN_INSTALL/bin/bun"
+chmod 700 "$BUN_INSTALL/bin/bun"
+`;
+  const env = { ...process.env, HOME: home, SHELL: '/bin/bash' };
+  const bun = await prepareBun(work, { cwd: work, env, log: 1 }, { candidates: [executable],
+    capture: async (command, args) => {
+      if (command === 'curl') {
+        urls.push(args.at(-1));
+        if (urls.length === 1) throw Error('fixture TLS');
+        await writeFile(args[args.indexOf('--output') + 1], installer);
+        return 'https://bun.sh/install';
+      }
+      const result = spawnSync(command, args, { encoding: 'utf8' });
+      if (result.error || result.status !== 0) throw Error('not installed');
+      return result.stdout.trim();
+    },
+  });
+  assert.equal(bun, executable);
+  assert.deepEqual(urls, ['https://bun.com/install', 'https://bun.sh/install']);
+  assert.equal(await readFile(join(home, '.bashrc'), 'utf8'), 'untouched');
+  assert.equal(await readFile(join(work, 'install-home/.bashrc'), 'utf8'), 'private-install');
+  assert.equal(env.HOME, home); assert.equal(env.SHELL, '/bin/bash');
 }));

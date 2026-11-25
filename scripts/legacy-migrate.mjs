@@ -71,27 +71,31 @@ async function capture(command, args, options = {}) {
     child.once('exit', code => code === 0 ? done(result.trim()) : reject(Error(text('command'))));
   });
 }
-async function prepareBun(work, options) {
+export async function prepareBun(work, options, injected = {}) {
+  const readCommand = injected.capture || capture, runCommand = injected.execute || execute;
   const version = '1.4.4';
-  const candidates = [join(work, 'bun/bin/bun'), join(root, 'data/tools/bin/bun'),
+  const candidates = injected.candidates || [join(work, 'bun/bin/bun'), join(root, 'data/tools/bin/bun'),
     ...(process.env.PATH || '').split(delimiter).filter(Boolean).map(path => resolve(path, 'bun'))];
   for (const executable of candidates) {
-    try { if (await capture(executable, ['--version']) === version) return executable; } catch {}
+    try { if (await readCommand(executable, ['--version']) === version) return executable; } catch {}
   }
   const installer = join(work, 'install-bun.sh');
+  const installerHome = join(work, 'install-home');
+  await mkdir(join(installerHome, '.config'), { recursive: true, mode: 0o700 });
   let last;
   for (let i = 0; i < 3; i++) {
     try {
-      const effective = await capture('curl', ['--fail', '--silent', '--show-error', '--location', '--max-redirs', '3',
+      const effective = await readCommand('curl', ['--fail', '--silent', '--show-error', '--location', '--max-redirs', '3',
         '--proto', '=https', '--proto-redir', '=https', '--connect-timeout', '15', '--max-time', '60',
-        '--output', installer, '--write-out', '%{url_effective}', 'https://bun.com/install'], { env: options.env });
+        '--output', installer, '--write-out', '%{url_effective}', i % 2 === 0 ? 'https://bun.com/install' : 'https://bun.sh/install'], { env: options.env });
       const downloaded = new URL(effective);
       if (downloaded.protocol !== 'https:' || !['bun.com', 'bun.sh'].includes(downloaded.hostname)) throw Error(text('unsafe'));
       const script = await open(installer, 'r');
       try { await script.chmod(0o600); } finally { await script.close(); }
-      await execute('bash', [installer, `bun-v${version}`], { ...options, env: { ...options.env, BUN_INSTALL: join(work, 'bun') } });
+      await runCommand('bash', [installer, `bun-v${version}`], { ...options, env: { ...options.env,
+        BUN_INSTALL: join(work, 'bun'), HOME: installerHome, XDG_CONFIG_HOME: join(installerHome, '.config'), SHELL: '/bin/sh' } });
       const executable = candidates[0];
-      if (await capture(executable, ['--version']) !== version) throw Error(text('version'));
+      if (await readCommand(executable, ['--version']) !== version) throw Error(text('version'));
       return executable;
     } catch (e) { last = e; }
   }
