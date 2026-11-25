@@ -77,7 +77,7 @@ test("自动签到运行意外失败后仅向同档本人通知一次，收件�
     async transport() { throw new Error("本测试不应向米游社发出请求"); },
   });
   const runtime = createCheckinScheduleRuntime({
-    store, signal: controller.signal, config: { fixed_time: "18:00" }, now: () => time,
+    store, signal: controller.signal, config: { mode: "fixed", fixed_time: "18:00" }, now: () => time,
     listProfiles: profiles.listCheckinProfiles,
     runProfile: (entry, context) => commands.runScheduled(entry.qq, entry.profileId, context),
     async onComplete(entry, result) {

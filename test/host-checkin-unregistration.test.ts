@@ -18,6 +18,8 @@ test("旧删除签到按真实两协议停用本人所有档案并保留关键�
     qq, id, file: "profiles/" + qq + (id === 1 ? "" : "-" + id) + ".yaml",
     data: { user: { qq }, profile: { id, notify: { enable: false, fallback_groups: [77] } }, enabled,
       account: { cookie: "account_id=123;cookie_token=fixture", stuid: "123", stoken: "fixture-stoken", game_roles: { gs: [] } },
+      // Keep this deletion fixture independent of startup device generation.
+      device: { bound: true, id: `fixture-device-${qq}-${id}`, fp: "0123456789abc" },
       auto_redeem: { enable: true, games: ["gs"] }, cloud_games: { cn: { genshin: { enable: false } } },
       mihoyobbs: { enable: true, tasks: { checkin: true } },
       games: { cn: { enable: true, genshin: { checkin: true } } },

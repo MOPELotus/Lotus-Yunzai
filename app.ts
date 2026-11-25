@@ -3479,7 +3479,7 @@ if (import.meta.main) {
               targets.forums.length && `社区 ${forumNames(targets.forums)}`,
             ].filter(Boolean).join("，");
             const lines: string[] = [];
-            if (attempt) lines.push(`${attempt.games?.length ? "签到" : "社区签到"}补跑第 ${attempt.number} 次（Profile ${entry.profileId}）`,
+            if (attempt) lines.push(`${attempt.games?.length ? "签到" : "社区签到"}补跑第 ${attempt.number} 次（档案 ${entry.profileId}）`,
               `本轮补跑：${retryNames(attempt)}。`);
             if (entry.communityRetry?.verifiedUnsent) {
               const time = checkinScheduleClock(Date.parse(entry.communityRetry.nextAt)).iso.slice(11, 16);
