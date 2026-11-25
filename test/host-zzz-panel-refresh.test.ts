@@ -27,7 +27,7 @@ globalThis.redis = {
   async mGet(keys) { return keys.map(() => null); },
 };
 const uid = "${uid}", region = "${region}", game_biz = "nap_cn";
-const rows = new Map([[1151, "11号"], [1141, "莱卡恩"]]);
+const rows = new Map([[1041, "「11号」"], [1141, "莱卡恩"]]);
 let first = true;
 globalThis.fetch = Object.assign(async (address, options) => {
   const url = new URL(address instanceof Request ? address.url : String(address));
@@ -66,12 +66,13 @@ async function prepare(root: string) {
   const profiles = join(root, "profiles");
   await mkdir(profiles);
   await writeFile(join(profiles, "42-2.yaml"), Bun.YAML.stringify({
+    device: { id: "fixture-panel-device", fp: "0123456789abc", bound: true },
     user: { qq: "42" }, profile: { id: 2 }, account: { cookie: "cookie_token=synthetic", stoken: "fixture",
       stuid: "82", game_roles: { zzz: [{ uid, region, game_biz: "nap_cn" }] }, current_uid: { zzz: uid } },
   }));
   const maps = join(root, "legacy", "resources", "map");
   await mkdir(maps, { recursive: true });
-  await writeFile(join(maps, "PartnerId2Data.json"), JSON.stringify({ "1151": { name: "11号" } }));
+  await writeFile(join(maps, "PartnerId2Data.json"), JSON.stringify({ "1041": { name: "「11号」" } }));
   await writeFile(join(root, "config", "zzz-panel.yaml"), `interval: 3600\nroleInterval: ${roleInterval}\n`);
 }
 
@@ -119,10 +120,10 @@ test("绝区零各手动面板更新连续触发；同 UID 在途仍拦，逐角
       expect(observed).toHaveLength(19);
       for (let i = 0; i < 18; i += 3) {
         const batch = observed.slice(i, i + 3);
-        expect(batch.map(([part, id]) => [part, id])).toEqual([["basic", 0], ["info", 1151], ["info", 1141]]);
+        expect(batch.map(([part, id]) => [part, id])).toEqual([["basic", 0], ["info", 1041], ["info", 1141]]);
         expect(batch[2]![2] - batch[1]![2]).toBeGreaterThanOrEqual(roleInterval - 20);
       }
-      expect(observed[18]?.slice(0, 2)).toEqual(["info", 1151]);
+      expect(observed[18]?.slice(0, 2)).toEqual(["info", 1041]);
       expect(await Bun.file(join(root, "panel-timestamps.log")).exists()).toBe(false);
       expect(await readFile(join(root, "config", "zzz-panel.yaml"), "utf8")).toContain("interval: 3600");
     }, 8_000, preload, prepare);

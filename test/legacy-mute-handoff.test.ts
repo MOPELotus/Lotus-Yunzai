@@ -7,7 +7,8 @@ import { lockFile } from "../lib/file-lock.ts";
 const valkeyServer = Bun.which("valkey-server");
 const key = "yenai:MuteTasks";
 const scripts = ["scripts/prepare-legacy-mute-tasks.ts", "lib/valkey-config.ts", "lib/config.ts", "lib/file-lock.ts",
-  "plugins/group/group-timed-mute.ts"];
+  "plugins/group/group-timed-mute.ts", "lib/i18n-preload.ts", "packages/i18n/index.ts",
+  "i18n/zh-CN.json", "plugins/group/i18n/zh-CN.json"];
 
 test.skipIf(!valkeyServer)("定时群禁言交还离线预览，原值吻合才更新并保留绝对过期时间", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "lotus-mute-handoff-"));
@@ -41,13 +42,15 @@ test.skipIf(!valkeyServer)("定时群禁言交还离线预览，原值吻合才�
     return { code, stdout, stderr };
   }
   try {
-    for (const directory of ["scripts", "lib", "plugins/group"]) await mkdir(join(root, directory), { recursive: true });
+    for (const directory of ["scripts", "lib", "plugins/group/i18n", "packages/i18n", "i18n"])
+      await mkdir(join(root, directory), { recursive: true });
     await Promise.all([
       ...scripts.map(file => cp(new URL(`../${file}`, import.meta.url), join(root, file))),
       symlink(new URL("../node_modules", import.meta.url).pathname, join(root, "node_modules"), "dir"),
       writeFile(modern, state), writeFile(original, legacy),
     ]);
     const preview = await execute();
+    if (preview.code !== 0) throw new Error(preview.stderr || preview.stdout);
     expect(preview.code).toBe(0);
     expect(JSON.parse(preview.stdout)).toEqual({ mode: "dry-run", removed: 2, changed: false });
     for (let trial = 0; trial < 50 && !redis.connected; trial++) {

@@ -43,6 +43,7 @@ globalThis.fetch = (input, init) => {
 `;
   function profile(qq: number, id: number, token?: string) {
     return Bun.YAML.stringify({
+      device: { id: `fixture-wallet-${qq}-${id}`, fp: "0123456789abc", bound: true },
       user: { qq: String(qq) }, profile: { id }, enabled: false,
       account: { stuid: "71526", ltuid: "71526", stoken: "v2_fixture", mid: "fixture",
         cookie: "ltuid_v2=71526; ltmid_v2=fixture; ltoken_v2=v2_fixture; cookie_token_v2=v2_cookie" },
@@ -77,7 +78,7 @@ globalThis.fetch = (input, init) => {
       expect(requests).toEqual(["fixture-cn-42", "fixture-cn-43"]);
       sendOneBot("#云原神查询", { user_id: 47 });
       const absent = await onebot.next("send_msg");
-      expect(absent.params.message).toContain("请先登录 profile 1");
+      expect(absent.params.message).toContain("请先登录档案 1");
       absent.respond({ message_id: 45 });
       const group = { message_type: "group", sub_type: "normal", group_id: 7701, sender: { user_id: 42, role: "member" } };
       sendOneBot("#云原神查询1", group);

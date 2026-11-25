@@ -104,6 +104,7 @@ async function withHost(probe: boolean, run: (mock: ReturnType<typeof gateway>, 
   try {
     await copyHost(root);
     await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config/server.yaml"), "onebot_enable: false\n");
     await writeFile(join(root, "config", "milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${mock.server.port}`, `prefix: ${prefix}`,
       `access_token: ${token}`, "ws:", "  reconnect_interval: 0.05", "  heartbeat: 0.2",

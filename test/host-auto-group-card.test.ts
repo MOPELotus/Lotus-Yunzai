@@ -118,7 +118,7 @@ async function withHost({ receive, cron, run }: {
     });
     await mkdir(join(root, "config/config"), { recursive: true });
     const config = join(root, "config/config/auto-group-card.yaml");
-    await writeFile(config, `cron: "${cron}"\nnotGroup: ["77"]\nsuffixes: ["${suffix}"]\n`);
+    await writeFile(config, `enable: true\ncron: "${cron}"\nnotGroup: ["77"]\nsuffixes: ["${suffix}"]\n`);
     await writeFile(join(root, "config/config/other.yaml"), `master: ["${botId}:${owner}"]\n`);
     await writeFile(join(root, "config/milky.yaml"), [
       "enable: true", "host: 127.0.0.1", `port: ${milky.port}`, "connection: webhook", `access_token: ${token}`, "",
