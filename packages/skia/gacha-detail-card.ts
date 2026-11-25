@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
@@ -174,7 +175,7 @@ function paint(ctx: Context, value: string | number, x: number, y: number, style
   ctx.font = font(ctx, style);
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
-  ctx.fillStyle = style.color ?? white;
+  ctx.fillStyle = value === "Lotus-Yunzai" ? brandTextColor(ctx, value, x, y, maxWidth) : style.color ?? white;
   if (style.bold) {
     // The original web fonts ship regular faces and Chromium synthesizes their heavy weight.
     ctx.strokeStyle = ctx.fillStyle;

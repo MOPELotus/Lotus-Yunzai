@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
@@ -158,9 +159,9 @@ function text(ctx: Context, value: string | number, x: number, y: number, size =
   ctx.font = `${weight ? "700 " : ""}${size}px ${fontFamilies.get(ctx)!}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
-  ctx.fillStyle = color;
+  ctx.fillStyle = value === "Lotus-Yunzai" ? brandTextColor(ctx, value, x, y, maxWidth) : color;
   if (weight) {
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = ctx.fillStyle;
     ctx.lineWidth = size * 0.022;
     ctx.strokeText(String(value), x, y, maxWidth);
   }

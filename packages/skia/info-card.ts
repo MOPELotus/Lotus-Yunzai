@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { prepareBuiltinFonts, builtinFontFallback } from "./builtin-fonts.ts";
 import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { createHash } from "node:crypto";
@@ -119,7 +120,10 @@ export function drawInfoText(ctx: Context, rows: readonly string[], x: number, y
   ctx.textBaseline = "top";
   ctx.textAlign = align;
   ctx.fillStyle = color;
-  for (const [index, row] of rows.entries()) ctx.fillText(row, x, y + index * leading);
+  for (const [index, row] of rows.entries()) {
+    ctx.fillStyle = row.includes("Lotus-Yunzai") ? brandTextColor(ctx, row, x, y + index * leading) : color;
+    ctx.fillText(row, x, y + index * leading);
+  }
 }
 
 async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: InfoCardHeader,

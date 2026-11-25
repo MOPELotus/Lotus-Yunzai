@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,6 +86,7 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
       ctx.textBaseline = "top";
       ctx.textAlign = align;
       ctx.fillStyle = color;
+      if (text.startsWith("Lotus-Yunzai")) ctx.fillStyle = brandTextColor(ctx, text, x, y);
       ctx.fillText(text, x, y);
     }
 

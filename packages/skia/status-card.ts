@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,7 +71,10 @@ function paintText(ctx: Context, rows: readonly string[], x: number, y: number,
   ctx.font = `${size}px ${font}`;
   ctx.textBaseline = "top";
   ctx.fillStyle = color;
-  for (const [index, row] of rows.entries()) ctx.fillText(row, x, y + index * leading);
+  for (const [index, row] of rows.entries()) {
+    ctx.fillStyle = row.includes("Lotus-Yunzai") ? brandTextColor(ctx, row, x, y + index * leading) : color;
+    ctx.fillText(row, x, y + index * leading);
+  }
 }
 
 function localTime(date: Date, timeZone?: string) {

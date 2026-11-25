@@ -140,7 +140,7 @@ function paintGenshin(ctx: Context, model: DailyNoteReminderCardModel, theme: Th
   text(ctx, "原神", 136, 113, 21, theme.labelFont, "#6e583a");
   text(ctx, "原粹树脂", 136, 167, 26, theme.labelFont, "#444444");
   ratio(ctx, model, theme, 293, 169, 192, 42, model.current >= 159 ? "#b5342a" : "#a9843f", "#715833");
-  text(ctx, "Lotus-Yunzai", 79, 264, 13, theme.labelFont, "#fff");
+  text(ctx, "Lotus-Yunzai", 79, 264, 13, theme.labelFont, "#000");
 }
 
 function paintStarRail(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme) {
@@ -154,7 +154,7 @@ function paintStarRail(ctx: Context, model: DailyNoteReminderCardModel, theme: T
   if (model.current > 0) {
     fillRounded(ctx, 79, 183, 441 * Math.min(1, model.current / model.max), 10, 5, "#b47f4c");
   }
-  text(ctx, "Lotus-Yunzai", 79, 242, 13, theme.labelFont, "#fff");
+  text(ctx, "Lotus-Yunzai", 79, 242, 13, theme.labelFont, "#000");
 }
 
 function paintZenless(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme) {

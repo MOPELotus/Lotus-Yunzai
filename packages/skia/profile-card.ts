@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
@@ -178,7 +179,11 @@ class ProfileLayout {
         ctx.shadowOffsetX = 1;
         ctx.shadowOffsetY = 1;
       }
-      for (const [index, row] of rows.entries()) ctx.fillText(row, x + (center ? w / 2 : 0), y + index * leading);
+      for (const [index, row] of rows.entries()) {
+        const textX = x + (center ? w / 2 : 0), textY = y + index * leading;
+        ctx.fillStyle = row.includes("Lotus-Yunzai") ? brandTextColor(ctx, row, textX, textY) : color;
+        ctx.fillText(row, textX, textY);
+      }
       ctx.restore();
     });
     return rows.length * leading;

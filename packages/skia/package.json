@@ -21,7 +21,8 @@
     "./info-card": "./info-card.ts",
     "./passport-qr": "./passport-qr-card.ts",
     "./profile": "./profile-card.ts",
-    "./status-card": "./status-card.ts"
+    "./status-card": "./status-card.ts",
+    "./brand-color": "./brand-color.ts"
   },
   "dependencies": {
     "@lotus-yunzai/gacha": "workspace:*",

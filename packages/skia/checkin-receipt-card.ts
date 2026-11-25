@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
@@ -103,7 +104,10 @@ function text(ctx: Context, lines: readonly string[], x: number, y: number, font
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
   }
-  for (const [index, line] of lines.entries()) ctx.fillText(line, x, y + index * leading);
+  for (const [index, line] of lines.entries()) {
+    ctx.fillStyle = line.includes("Lotus-Yunzai") ? brandTextColor(ctx, line, x, y + index * leading) : color;
+    ctx.fillText(line, x, y + index * leading);
+  }
   ctx.restore();
 }
 

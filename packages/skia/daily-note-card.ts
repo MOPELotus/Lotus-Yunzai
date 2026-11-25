@@ -345,7 +345,7 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
       drawing.restore();
       if (expeditions) paintExpeditions(drawing, panelY + panelHeight + 7, expeditions, textFont, numberFont, avatars);
     }
-    textAt(drawing, footer, width / 2, bottom + 15, textFont, "#fff", 12, 18, "center");
+    textAt(drawing, footer, width / 2, bottom + 15, textFont, "#000", 12, 18, "center");
   }
 
   function render(renderScale: number) {

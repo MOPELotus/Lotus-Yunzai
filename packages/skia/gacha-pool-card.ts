@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 // The layout follows Miao's gacha/gacha-info template and its common element styles.
 import { constants } from "node:fs";
@@ -118,9 +119,9 @@ function text(ctx: Context, text: string, x: number, y: number, family: string, 
   ctx.font = `${bold ? "700 " : ""}${size}px ${family}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = center ? "center" : "left";
-  ctx.fillStyle = color;
+  ctx.fillStyle = text === "Created By Lotus-Yunzai" ? brandTextColor(ctx, text, x, y) : color;
   if (bold) {
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = ctx.fillStyle;
     ctx.lineWidth = size * 0.024;
     ctx.strokeText(text, x, y);
   }

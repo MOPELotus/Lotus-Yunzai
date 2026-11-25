@@ -1,3 +1,4 @@
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 // Ark's graph layout is based on e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See lib/rank-statistics.LICENSE.
 import { readFile, stat } from "node:fs/promises";
@@ -27,6 +28,7 @@ function label(ctx: Context, value: string, x: number, y: number, size: number, 
   ctx.font = `600 ${size}px ${font}`;
   const width = ctx.measureText(value).width;
   if (width > max) ctx.font = `600 ${Math.floor(size * max / width)}px ${font}`;
+  if (value.includes("Lotus-Yunzai")) ctx.fillStyle = brandTextColor(ctx, value, x, y);
   ctx.fillText(value, x, y);
 }
 
