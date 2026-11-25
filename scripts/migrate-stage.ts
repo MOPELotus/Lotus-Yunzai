@@ -26,6 +26,7 @@ import { stageLegacyGachaDisplayConfig } from "../lib/migration-gacha-display.ts
 import { stageLegacyGenshinWishConfig } from "../lib/migration-genshin-wish.ts";
 import { stageLegacyStarRailIndependentWarp } from "../lib/migration-starrail-independent-warp.ts";
 import { stageLegacyStarRailPersonalPools, stageLegacyStarRailWarpSettings } from "../lib/migration-starrail-warp-settings.ts";
+import { stageMigrationSourceSnapshot } from "../lib/migration-source-snapshot.ts";
 import { applyMigrationDefaultSchedule } from "../lib/migration-default-schedule.ts";
 import { stageLegacyProfiles } from "../lib/migration-profiles.ts";
 import { stageLegacyRedeemState } from "../lib/migration-redeem-state.ts";
@@ -110,10 +111,11 @@ export async function stageMigration(source: string, target: string, signal?: Ab
       source: Bun.pathToFileURL(`${plan.source}/`), signal,
     });
     signal?.throwIfAborted();
+    const sourceSnapshot = await stageMigrationSourceSnapshot(plan.source, state.directory, signal);
     const schedulePolicy = await applyMigrationDefaultSchedule(state.directory, signal, { atlasInitialized: atlas.dataset.status === "staged" });
     const deferredPlugins = plan.plugins.filter(entry =>
       entry.status === "review" || entry.status === "scan-error" || entry.status === "protocol-candidate");
-    return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, schedulePolicy, gameData,
+    return { version: 1, mode: "staged", directory, backup, retained, state, profiles, schedules, schedulePolicy, sourceSnapshot, gameData,
       sharedGameHistory, coreConfig, groupConfig, panelRank, gachaDisplay, genshinWish, trssWish, starRailWarp, starRailIndependentWarp, starRailPersonalPools,
       zzzRecall, zzzChallengeReminder, updateNotice, lolomi, keywords, networkConfig, globalConfig, mediaState, memeState, atlas,
       starRailTheme, starRailReincarnationTheme,

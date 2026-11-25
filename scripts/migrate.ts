@@ -10,6 +10,7 @@ import { exists, move, writeJournal } from "../lib/filesystem-transaction.ts";
 import { publishMigrationPayload } from "../lib/migration-publication.ts";
 import { migrationArguments, type MigrationInputs } from "../lib/migration-trss-wish.ts";
 import { stageMigration } from "./migrate-stage.ts";
+import { migrationSourceSnapshotVersion } from "../lib/migration-source-snapshot.ts";
 import { migrationScheduleVersion } from "../lib/migration-default-schedule.ts";
 
 type Staged = Awaited<ReturnType<typeof stageMigration>>;
@@ -24,6 +25,7 @@ interface PreparedMigration {
     readonly officialBindings?: Staged["officialBindings"];
     readonly schedules: Staged["schedules"];
     readonly schedulePolicy: Staged["schedulePolicy"];
+    readonly sourceSnapshot: Staged["sourceSnapshot"];
     readonly gameData: Staged["gameData"];
     readonly sharedGameHistory: Staged["sharedGameHistory"];
     readonly coreConfig: Staged["coreConfig"];
@@ -67,6 +69,9 @@ async function loadPrepared(directory: string, source: string, target: string): 
       !result.plugins.every(path => typeof path === "string") || !result.report || typeof result.report !== "object") {
     throw new Error($t("scripts.migrate.text_2520464652"));
   }
+  if (result.report.sourceSnapshot?.version !== migrationSourceSnapshotVersion) {
+    throw new Error($t("scripts.migrate.old_data_snapshot"));
+  }
   if (result.report.schedulePolicy?.version !== migrationScheduleVersion) {
     throw new Error($t("scripts.migrate.old_schedule_policy"));
   }
@@ -99,6 +104,7 @@ async function prepare(source: string, target: string, directory: string, inputs
         officialBindings: staged.officialBindings,
         schedules: staged.schedules,
         schedulePolicy: staged.schedulePolicy,
+        sourceSnapshot: staged.sourceSnapshot,
         gameData: staged.gameData,
         sharedGameHistory: staged.sharedGameHistory,
         coreConfig: staged.coreConfig,
