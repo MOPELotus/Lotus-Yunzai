@@ -372,3 +372,31 @@ test("三游 info 顶层空区服是未提供身份，明确异区及嵌套异�
     }
   }
 });
+
+
+test("国服 sign 的 1034/10035 内嵌挑战沿用原账号校验，已提交 proof 不再次抛挑战", async () => {
+  const source = fixture(routes[0]);
+  for (const retcode of [1034, 10035]) {
+    const answer = () => Response.json({ retcode, data: { gt: "fixture-gt", challenge: "fresh-challenge" } },
+      { headers: { "x-rpc-aigis": "verification-required" } });
+    await expect(submitCnGameCheckin(source, async () => answer())).rejects.toBeInstanceOf(GameCheckinChallengeError);
+    try {
+      await submitCnGameCheckin(source, async () => answer(), { proof: {
+        challenge: "fresh-challenge", validate: "fixture-valid", seccode: "fixture-valid|jordan",
+      } });
+      throw Error("must reject");
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(GameCheckinChallengeError);
+      expect(error).toMatchObject({ reason: "risk" });
+    }
+  }
+  for (const retcode of [-100, 10041]) {
+    try {
+      await submitCnGameCheckin(source, async () => Response.json({ retcode, data: { gt: "old-gt", challenge: "old" } }));
+      throw Error("must reject");
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(GameCheckinChallengeError);
+      expect(error).toMatchObject({ reason: retcode === -100 ? "expired" : "account" });
+    }
+  }
+});

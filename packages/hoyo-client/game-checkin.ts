@@ -206,7 +206,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   const code = response.ok ? "api" : "http";
   const subject = `${route.name}签到`;
   const challenge = response.headers.get("x-rpc-aigis")?.trim();
-  if (response.redirected || (challenge && challenge !== "{}") || status === 429 || (!response.ok && status !== 401)) {
+  if (response.redirected || status === 429 || (!response.ok && status !== 401)) {
     void response.body?.cancel().catch(() => undefined);
     await guard();
     if (status === 429) throw new GameRecordRequestError(subject, "rate-limited", "http", status);
@@ -220,7 +220,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   const message = typeof payload?.message === "string" ? payload.message : "";
   const nestedRisk = legacyLuna ? object(data?.gt_result) : undefined;
   const inlineRisk = retcode === 0 && (riskFlag(data) || riskFlag(nestedRisk));
-  if (writing && !legacyLuna && !proof && response.ok && inlineRisk) {
+  if (writing && !legacyLuna && !proof && response.ok && (inlineRisk || retcode === 1034 || retcode === 10035)) {
     const inline = getInlineChallenge(data);
     if (inline && data) {
       checkDataRole(data, uid, region, route);
@@ -228,7 +228,7 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
     }
   }
   if (retcode === 10041) throw new GameRecordRequestError(subject, "account", code, status, retcode);
-  if (retcode === 1034 || retcode === 10035 || /验证码|captcha|geetest|风控/iu.test(message) || inlineRisk) {
+  if ((challenge && challenge !== "{}") || retcode === 1034 || retcode === 10035 || /验证码|captcha|geetest|风控/iu.test(message) || inlineRisk) {
     throw new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
   if (/频繁|too frequent|rate limit/iu.test(message)) {
