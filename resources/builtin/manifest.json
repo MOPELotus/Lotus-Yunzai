@@ -40923,8 +40923,8 @@
     },
     {
       "path": "resources/builtin/games/SOURCES.json",
-      "bytes": 1684033,
-      "sha256": "f078b4f3a7697bae90c2bd7e935357e68e831e17a0cfa3a4878354128d0bc023"
+      "bytes": 1684231,
+      "sha256": "f3a40574980613d0f01678c00b1819c2a044c01c5bf76341ca06c80f3f4d1cf2"
     },
     {
       "path": "resources/builtin/games/flower-fonts/font/HYWH-65W.ttf",
@@ -84460,6 +84460,11 @@
       "path": "resources/builtin/games/zzz/abyss/index.scss",
       "bytes": 8383,
       "sha256": "a2836327edc1f69573c4ae1787cf8e2673c112872cb8bb8be5c603097028202a"
+    },
+    {
+      "path": "resources/builtin/games/zzz/alias.yaml",
+      "bytes": 8230,
+      "sha256": "4bc6123e83f20e1c1dc6561f7b9fb34ca63d219d2c7ef0d50f80d64dafb590e7"
     },
     {
       "path": "resources/builtin/games/zzz/card/images/status.png",

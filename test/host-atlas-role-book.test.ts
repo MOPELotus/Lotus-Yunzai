@@ -81,6 +81,13 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
   try {
     await copyHost(root);
     disableMemberPrewarm(root);
+    for (const [game, aliases] of [["gs", { 芙宁娜: "芙宁,水神" }], ["sr", { 卡芙卡: "卡芙" }]] as const) {
+      const directory = join(root, "resources", "builtin", "games", "miao", `meta-${game}`, "character");
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "alias.js"), `export const alias = ${JSON.stringify(aliases)};`);
+    }
+    await mkdir(join(root, "config", "character-aliases"), { recursive: true });
+    await writeFile(join(root, "config", "character-aliases", "alias_gs.cfg"), "芙宁娜: 剧院水舞者\n");
     const material = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X9uoAAAAASUVORK5CYII=", "base64");
     const materialRoot = join(root, "temp", "material");
     await Promise.all([mkdir(join(materialRoot, "gs", "友人A"), { recursive: true }),
@@ -194,6 +201,8 @@ test("Atlas 角色图册按角色和游戏精确路由并按分组顺序合并�
     await book("#图鉴 原神 芙宁娜", furina);
     await book("#芙宁娜图鉴", furina);
     await book("#芙宁图鉴", furina);
+    await book("#水神图鉴", furina);
+    await book("#剧院水舞者图鉴", furina);
     await section("#芙宁娜命座", 101, 3);
     await section("#芙宁娜命之座", 101, 3);
     await section("#芙宁娜技能", 101, 2);

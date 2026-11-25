@@ -42117,6 +42117,12 @@
         "bytes": 33821,
         "sha256": "2c0434c24a2fd80ef3c0dcca3c12a7618f3b0194b6bf9dc545695be86dc6c8e0",
         "sourcePath": "LICENSE"
+      },
+      {
+        "path": "alias.yaml",
+        "bytes": 8230,
+        "sha256": "4bc6123e83f20e1c1dc6561f7b9fb34ca63d219d2c7ef0d50f80d64dafb590e7",
+        "sourcePath": "defSet/alias.yaml"
       }
     ]
   },

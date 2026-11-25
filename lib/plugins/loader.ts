@@ -163,6 +163,7 @@ interface PluginServices {
   readonly signal: AbortSignal;
   readonly messageStatistics: (argument: string, context: CommandContext) => Promise<string>;
   readonly runtimeVersion: RuntimeVersion;
+  readonly readCharacterAliases?: (game: "gi" | "hsr") => Promise<ReadonlyMap<string, string>>;
   readonly runtimeStatus?: ReturnType<typeof import("../runtime-status.ts").createRuntimeStatus>;
   readonly statusPhotoStorage?: StatusStorage;
   readonly statusMonitorStorage?: StatusStorage;

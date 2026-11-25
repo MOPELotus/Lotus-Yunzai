@@ -1,3 +1,5 @@
+import { builtinResourceDirectory } from "./builtin-resources.ts";
+import { readLiteralObjectExport } from "@lotus-yunzai/gacha/literal-exports";
 import { linkSync, renameSync } from "node:fs";
 import { mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -177,7 +179,7 @@ async function snapshot(root: string, game: Game) {
   const independent = game !== "sr" || (managed && lines.includes(independentDone))
     ? undefined : await independentStarRailSetting(root, "alias.yaml").catch(() => undefined);
   if (!generic && !independent) return { base, legacy: legacy?.source, content };
-  const preset = await readPreset(game);
+  const preset = await readPreset(game, root);
   if (generic) {
     const imported = firstGenshinAliases ? unclaimedAliasRows(generic, preset, lines)
       : yamlAliasRows(generic, preset).map(({ role, labels }) => `${legacyPrefix}${role}：${labels.join("，")}`);
@@ -190,10 +192,17 @@ async function snapshot(root: string, game: Game) {
   return { base, legacy: legacy?.source, content: [...lines, ""].join("\n") };
 }
 
-export async function readGameCharacterAliases(game: Game, root = rootDirectory) {
+export async function readGameCharacterAliases(game: Game, root = rootDirectory, { includePreset = false }: { readonly includePreset?: boolean } = {}) {
   try {
     const source = await snapshot(root, game);
-    return source.content ? parseGameCharacterAliases(await readPreset(game), source.content) : new Map<string, string>();
+    const preset = await readPreset(game, root);
+    const custom = source.content ? parseGameCharacterAliases(preset, source.content) : new Map<string, string>();
+    if (!includePreset) return custom;
+    const resolved = new Map([...preset.matches].flatMap(([key, names]) => names.size === 1 ? [[key, [...names][0]!] as const] : []));
+    for (const [key, role] of custom) resolved.set(key, role);
+    // Official names retain identity even if another alias or manual cfg reuses the spelling.
+    for (const role of preset.displays.keys()) resolved.set(characterAliasKey(role), role);
+    return resolved;
   } catch {
     return new Map<string, string>();
   }
@@ -247,17 +256,41 @@ async function readLegacyPreset(root: string, game: Game, current: Preset) {
   return buildPreset(names);
 }
 
-const presetTables: Partial<Record<Game, Promise<Preset>>> = {};
+const presetTables = new Map<string, Promise<Preset>>();
 
-function readPreset(game: Game): Promise<Preset> {
-  return presetTables[game] ??= (game === "gs"
-    ? import("../plugins/genshin/panel/miao/character-alias.ts").then(({ alias }) => buildPreset(Object.entries(alias)))
-    : Promise.all([
-      import("../plugins/starrail/panel-theme/character-alias.ts"), import("../plugins/starrail/challenge-character-names.json"),
-    ]).then(([{ alias }, { default: characters }]) => buildPreset([
-      ...Object.entries(alias), ...Object.values(characters).map(name => [name, ""] as const),
-    ]))).catch(() => ({ matches: new Map(), displays: new Map() }));
+function readPreset(game: Game, root = rootDirectory): Promise<Preset> {
+  const key = `${root}:${game}`;
+  const cached = presetTables.get(key);
+  if (cached) return cached;
+  const pending = (async () => {
+    const directory = builtinResourceDirectory(`games/miao/meta-${game}/character`, pathToFileURL(root.replace(/\/?$/u, "/")));
+    const [table, index] = await Promise.all([
+      firstAliasFile(root, [join(directory, "alias.js")]),
+      readMigrationSourceFile(root, join(directory, "data.json"), 1024 * 1024).catch(() => undefined),
+    ]);
+    if (table) {
+      const aliases = readLiteralObjectExport(table.content, "alias") ?? {};
+      const characters: unknown = index && JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(index.bytes));
+      const names: (readonly [string, string])[] = Object.entries(aliases).flatMap(([role, labels]) => typeof labels === "string" ? [[role, labels]] : []);
+      for (const value of Object.values(mapping(characters) ?? {})) {
+        const row = mapping(value);
+        if (typeof row?.name !== "string") continue;
+        names.push([row.name, [row.alias, row.abbr].filter((item): item is string => typeof item === "string").join(",")]);
+      }
+      return buildPreset(names);
+    }
+    return game === "gs"
+      ? import("../plugins/genshin/panel/miao/character-alias.ts").then(({ alias }) => buildPreset(Object.entries(alias)))
+      : Promise.all([
+        import("../plugins/starrail/panel-theme/character-alias.ts"), import("../plugins/starrail/challenge-character-names.json"),
+      ]).then(([{ alias }, { default: characters }]) => buildPreset([
+        ...Object.entries(alias), ...Object.values(characters).map(name => [name, ""] as const),
+      ]));
+  })().catch(() => ({ matches: new Map(), displays: new Map() }));
+  presetTables.set(key, pending);
+  return pending;
 }
+
 type AliasContext = {
   readonly user_id?: number;
   readonly isBotMaster?: (user: number) => boolean;
@@ -279,7 +312,7 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
   let atlas: Promise<typeof import("../plugins/atlas/catalog.ts") | undefined> | undefined;
   async function lookup(chosen: readonly Game[], withCatalog: boolean, withLegacy = false) {
     const entries = new Map(await Promise.all(chosen.map(async game => [game, await snapshot(root, game)] as const)));
-    const presets = new Map(await Promise.all(chosen.map(async game => [game, await readPreset(game)] as const)));
+    const presets = new Map(await Promise.all(chosen.map(async game => [game, await readPreset(game, root)] as const)));
     const legacyPresets = new Map(await Promise.all(withLegacy ? chosen.map(async game =>
       [game, await readLegacyPreset(root, game, presets.get(game)!).catch(() => undefined)] as const) : []));
     const lookups = new Map([...entries].map(([game, source]) => [game, parseGameCharacterAliases(presets.get(game)!, source.content)]));

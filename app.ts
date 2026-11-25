@@ -29,6 +29,7 @@ import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/char
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
 import { weatherCommands } from "./lib/weather-command.ts";
 import { legacyCharacterAliasCommands } from "./lib/legacy-character-alias-command.ts";
+import { readGameCharacterAliases } from "./lib/game-character-aliases.ts";
 import { chatFileRelaySource, readQqMessageMedia, readQqMessageSegmentMedia } from "./lib/chat-files.ts";
 import { createImageOcr } from "./lib/image-ocr.ts";
 import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-command.ts";
@@ -3813,6 +3814,8 @@ if (import.meta.main) {
         groupDispatch.allowsScheduledGroup(botId, groupId, ["[media] 米游社官号视频", "media", "@lotus-yunzai/media"]),
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
+      readCharacterAliases: (game: "gi" | "hsr") =>
+        readGameCharacterAliases(game === "gi" ? "gs" : "sr", fileURLToPath(root), { includePreset: true }),
       statusPhotoStorage: statusStorage("status-photo"),
       statusMonitorStorage: statusStorage("status-monitor"),
       statusMonitorRedisClients: valkey === undefined ? undefined : (signal: AbortSignal) =>
