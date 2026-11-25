@@ -1,3 +1,4 @@
+import { genshinResponseRegion } from "./genshin-response-region.ts";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -58,7 +59,7 @@ function verifyIdentity(data: Json, role: { readonly uid: string; readonly regio
     }
   }
   for (const key of ["server", "region"]) {
-    if (Object.hasOwn(data, key) && data[key] !== role.region) {
+    if (Object.hasOwn(data, key) && genshinResponseRegion(data[key]) !== role.region) {
       invalid("原神世界 BOSS 响应的区服与当前档案不一致。");
     }
   }

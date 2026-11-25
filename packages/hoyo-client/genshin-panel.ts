@@ -1,3 +1,4 @@
+import { genshinResponseRegion } from "./genshin-response-region.ts";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -17,10 +18,14 @@ function characterId(value: unknown) {
 }
 
 export function verifyRole(data: Json, uid: string, region: string, label = "原神面板") {
+  if (Object.hasOwn(data, "role") && data.role !== null && !object(data.role)) {
+    throw new HoyoRequestError("response", `${label}响应的角色信息无效。`);
+  }
   for (const row of [data, object(data.role)]) {
     if (!row) continue;
     if (["role_id", "game_uid", "uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
-        ["region", "server"].some(key => Object.hasOwn(row, key) && row[key] !== region)) {
+        ["region", "server"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
+        (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
       throw new HoyoRequestError("response", `${label}响应的角色或服务器不一致。`);
     }
   }
