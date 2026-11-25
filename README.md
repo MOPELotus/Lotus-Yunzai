@@ -1,30 +1,27 @@
 # Lotus-Yunzai
 
-基于 Bun 和 TypeScript 的云崽机器人宿主，支持终端、OneBot 11 和 Milky。
+部署入口与环境要求见 [安装与部署](docs/operator/deployment.md)。
+
+## 依赖
+
+- Bun：需要 `1.4.4` 版本
+- Git：用于拉取源码与子模块
+- tar：Linux 默认托管下载 Valkey 时需要 `tar`，其他平台准备说明见 [安装与部署](docs/operator/deployment.md)
+- 新装无需预先安装 Redis、PM2 或 Node.js；若环境中已有 Redis / Valkey 配置，会优先保留并使用
 
 ## 快速开始
 
-安装 Git 和 Bun 1.4.4，克隆仓库后在仓库根目录执行：
-
-```sh
-bun run bootstrap
+```bash
+git clone https://github.com/MOPELotus/Lotus-Yunzai.git
+cd Lotus-Yunzai
+bun run init
 bun run start
 ```
 
-`bootstrap` 一次完成子模块补拉与固定版本核对、依赖安装、管理面板构建、图鉴与固定模板素材、验证码模型、三游面板图库、攻略及配队资源、FFmpeg 与 TuneWeave 准备。交互终端会询问尚未设置的选项；非交互首次安装默认选择最新版图鉴，也可在同一条命令指定 `bun run bootstrap live` 或 `bun run bootstrap latest`。已有设置和有效缓存会复用。初始化成功后直接启动，不需要另跑 `init`。
+`bun run init` 会处理子模块初始化与依赖安装；后台运行、日志查看与状态管理见 [运行与日常维护](docs/operator/operations.md)。
 
-公共素材与基础数据随仓库提供，初始化逐件核对大小和 SHA256。存储优先使用显式配置，否则检测系统 Valkey；缺失时在项目内安装并以独立本机 Socket 管理，数据保存在 `data/valkey`。完整范围见[独立部署依赖核查](docs/deployment-dependencies.md)。
+## 文档
 
-耗时的初始化与资源维护会显示当前阶段和耗时；可取得总量时显示真实百分比、文件数或下载字节。交互终端实时刷新，重定向到日志时按阶段和间隔输出，长时间处理也会持续报告状态。中断后重新运行同一条初始化命令即可复用有效缓存。
-
-旧安装迁入见[迁移流程](docs/migration.md)。完整日程见[默认定时任务](docs/default-schedule.md)。默认定时按北京时间运行：程序更新 00:30/12:30，三游面板图库 01:00/13:00，初始化后的图鉴 01:30/13:30，配队攻略 02:00/14:00，其余攻略与表格 05:00/17:00。签到默认提前生成次日随机计划；固定模式需手动选择。网易云登录账号存在后，合伙人任务默认于 01:30 执行。显式配置优先。自动群名片只预置后缀，默认关闭，昵称读取当前 QQ 账号；迁移保留原有启用设置。
-
-前台按 Ctrl+C 输出「结束运行」并正常停止；查看日志时按 Ctrl+C 只退出查看器，后台继续运行。Linux 或 macOS 使用初始化安装的项目内 PM2，运行 `bun run start:bg` 后台启动，`bun run stop` 停止，`bun run logs` 查看日志，`bun run status` 查看后台状态。后台宿主就绪后异常退出会自动恢复；开机自启需另行配置。
-
-默认监听 `0.0.0.0:2536`，HTTP 与 OneBot 11 共用端口。协议端反向 WebSocket 地址为 `ws://机器人内网IP:2536/OneBotv11`，内网直连无需令牌；公网接入须配置 `onebot_token`。面板对外地址可在 `config/server.yaml` 设置 `panel_url`（例如 `http://192.168.1.10:2536/`，程序发送的链接自动附加 `panel/`）；`LOTUS_PANEL_PUBLIC_URL` 可覆盖该设置。公网面板使用反代后的 HTTPS 地址，内网 IP 可直接使用 HTTP。HTTPS 可由反向代理提供，程序默认不开启 TLS 端口。隔离测试请覆盖端口，避免与生产冲突。
-
-日志沿用 TRSS 的 `[时间][级别]` 格式；前台、后台及 `bun run logs` 共用日志格式，TTY 按级别着色。默认终端具有主人权限；显式设置的主人列表保持不变。普通启动只检查已有资源，补齐安装请重新运行 `bun run bootstrap`。
-
-输入 `#帮助` 获取使用手册链接，输入 `#状态` 查看运行状态。
-
-开发验证使用 `bun run test`、`bun run typecheck` 和 `bun run i18n:check`。测试入口覆盖宿主、插件、共享包、脚本与管理面板，排除运行数据和历史验证副本；出图测试需要可用的物理显卡及其驱动。
+- 用户指南：[用户指南概览](docs/user/index.md)
+- 主人与开发者文档：[运维与开发概览](docs/operator/index.md)
+- 迁移入口：[迁移指南](docs/operator/migration.md)
