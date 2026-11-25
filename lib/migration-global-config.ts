@@ -11,6 +11,9 @@ import { projectPanelTrialDisplay } from "./migration-panel-trial-display.ts";
 import { projectLegacyMediaConfig } from "./migration-media-config.ts";
 import { projectShowcaseSettings, type ShowcaseArchive } from "./migration-showcase.ts";
 import { configuredSiteIcpNumber } from "./web-icp.ts";
+import { normalizeLegacyCaptchaGlobal, projectLegacyCaptchaConfig, legacyManualCaptchaBase } from "./migration-captcha-config.ts";
+import { updateLocalConfiguration } from "./lotus-global-config-write.ts";
+import { readOptionalLocalConfig } from "./config.ts";
 import { readFirstGenerationGlobal } from "./migration-lotus-v1.ts";
 
 type Config = Record<string, unknown>;
@@ -38,11 +41,12 @@ async function readGlobal(root: string, prefix: string, stage?: string, signal?:
     try {
       const config: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
       if (config === null || config === undefined) return {};
-      if (typeof config === "object" && !Array.isArray(config)) return config as Config;
+      if (typeof config === "object" && !Array.isArray(config)) return normalizeLegacyCaptchaGlobal(config as Config);
     } catch {}
     throw new Error($t("lib.migration-global-config.text_3de67f465a"));
   }
-  return (await readFirstGenerationGlobal(root, prefix, stage, signal))?.projected;
+  const first = (await readFirstGenerationGlobal(root, prefix, stage, signal))?.projected;
+  return first ? normalizeLegacyCaptchaGlobal(first) : undefined;
 }
 
 /** Materialize settings whose running consumers previously reached into rejected plugin directories. */
@@ -59,6 +63,20 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
     ...(Object.keys(trial.config).length && { panel_trial: trial.config }) };
   for (const [key, fields] of Object.entries(supported)) {
     if (Object.hasOwn(effective, key)) projected[key] = projectSettings(effective[key], fields);
+  }
+  const deferredCaptcha: string[] = [];
+  if (Object.hasOwn(effective, "captcha")) {
+    projected.captcha = projectLegacyCaptchaConfig(effective.captcha);
+    const root = Bun.pathToFileURL(stage + "/");
+    const server = await readOptionalLocalConfig(root, "server");
+    if (!(server?.captcha && typeof server.captcha === "object" && Object.hasOwn(server.captcha, "url"))) {
+      const manual = legacyManualCaptchaBase(effective.captcha);
+      deferredCaptcha.push(...manual.deferred);
+      if (manual.url) await updateLocalConfiguration(root, "server", { signal, canWrite: () => true, prepare(content, local) {
+        const value = { ...local, captcha: { ...((local.captcha && typeof local.captcha === "object") ? local.captcha : {}), url: manual.url } };
+        return { yaml: Bun.YAML.stringify(value), value: true };
+      } });
+    }
   }
   const shop = projected.coin_shop;
   if (shop && typeof shop === "object" && Object.hasOwn(shop, "icp_number")) {
@@ -86,7 +104,7 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
     }
     await writeFile(join(directory, "global.yaml"), Bun.YAML.stringify(projected), { flag: "wx", mode: 0o600 });
   }
-  return { sections, deferredMedia: media.deferred,
+  return { sections, deferredMedia: media.deferred, ...(deferredCaptcha.length && { deferredCaptcha }),
     ...(showcase.deferred.length && { deferredShowcase: showcase.deferred }),
     ...(trial.deferred.length && { deferredPanelTrial: trial.deferred }) };
 }

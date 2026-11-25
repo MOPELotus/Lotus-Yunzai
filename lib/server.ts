@@ -154,7 +154,7 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
 
 export function parseServerSettings(config: Readonly<Record<string, unknown>>, env: ServerEnvironment): ServerSettings {
   const configured = port(env.LOTUS_HTTP_PORT ?? config.port, $t("lib.server.text_beff505ae5"));
-  const oneBotOverride = port(env.LOTUS_ONEBOT_PORT, "LOTUS_ONEBOT_PORT");
+  const oneBotOverride = port(env.LOTUS_ONEBOT_PORT ?? config.onebot_port, env.LOTUS_ONEBOT_PORT === undefined ? "onebot_port" : "LOTUS_ONEBOT_PORT");
   const legacyAuth = authHeaders(config.auth);
   const httpAuth = withToken(legacyAuth, env.LOTUS_HTTP_TOKEN, "LOTUS_HTTP_TOKEN");
   const oneBotToken = config.onebot_token;

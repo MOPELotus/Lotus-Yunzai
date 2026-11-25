@@ -75,11 +75,11 @@ export function projectLegacyNetworkConfig(source: NetworkConfig, policy: Networ
   let server = parseServerSettings({}, env);
 
   if (source.server) {
-    const projected = pick(source.server, ["url", "port", "auth", "redirect", "onebot_token"]);
+    const projected = pick(source.server, ["url", "port", "auth", "redirect", "onebot_token", "onebot_port", "onebot_enable", "panel_url", "web_mount", "captcha"]);
     server = parseServerSettings(projected, env);
     if (server.http && server.oneBot) {
       notes.push(server.http.port === server.oneBot.port ? "server.listeners.shared" : "server.listeners.separate");
-    } else if (server.http && !server.oneBot) {
+    } else if (server.http && !server.oneBot && projected.onebot_enable !== false) {
       deferred.push("server.onebot.authorization");
     }
     if ((server.http || server.oneBot) && env.LOTUS_LISTEN_HOST === undefined) notes.push("server.listeners.all-interfaces-default");
