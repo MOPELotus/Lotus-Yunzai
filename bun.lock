@@ -10,6 +10,7 @@
         "@lotus-yunzai/gacha": "workspace:*",
         "@lotus-yunzai/hoyo-client": "workspace:*",
         "@lotus-yunzai/http": "workspace:*",
+        "@lotus-yunzai/i18n": "workspace:*",
         "@lotus-yunzai/skia": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
         "@pixel.js/shotium": "0.12.4",
@@ -64,6 +65,9 @@
     },
     "packages/http": {
       "name": "@lotus-yunzai/http",
+    },
+    "packages/i18n": {
+      "name": "@lotus-yunzai/i18n",
     },
     "packages/skia": {
       "name": "@lotus-yunzai/skia",
@@ -306,6 +310,8 @@
     "@lotus-yunzai/hoyo-client": ["@lotus-yunzai/hoyo-client@workspace:packages/hoyo-client"],
 
     "@lotus-yunzai/http": ["@lotus-yunzai/http@workspace:packages/http"],
+
+    "@lotus-yunzai/i18n": ["@lotus-yunzai/i18n@workspace:packages/i18n"],
 
     "@lotus-yunzai/media": ["@lotus-yunzai/media@workspace:plugins/media"],
 
