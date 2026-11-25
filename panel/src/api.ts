@@ -1,8 +1,10 @@
+
+import { panelText } from './i18n.ts';
 export const pluginStatuses = {
-  loaded: "已加载",
-  rejected: "已拒载",
-  failed: "加载失败",
-  skipped: "已跳过",
+  loaded: panelText('api.6bdcbfd2f6'),
+  rejected: panelText('api.c7b42a66e9'),
+  failed: panelText('api.d1d044826a'),
+  skipped: panelText('api.71e95b289a'),
 } as const;
 
 export type PluginStatus = keyof typeof pluginStatuses;
@@ -38,7 +40,7 @@ export const browserSession: PanelAuth = { kind: "session" };
 
 export function panelFetch(path: string, auth: PanelAuth, options: RequestInit = {}) {
   const url = new URL(path, window.location.href);
-  if (url.origin !== window.location.origin) throw new TypeError("面板请求须使用当前站点。");
+  if (url.origin !== window.location.origin) throw new TypeError(panelText('api.6572eeeb6b'));
   const headers = new Headers(options.headers);
   if (auth.kind === "bearer") headers.set("Authorization", `Bearer ${auth.token}`);
   else headers.set("X-Lotus-Panel-Session", "1");
@@ -49,18 +51,18 @@ export function panelFetch(path: string, auth: PanelAuth, options: RequestInit =
 }
 
 export async function claimPanelSession(ticket: string, signal: AbortSignal) {
-  const expired = "登录链接无效或已过期，请私聊机器人发送 #管理面板 获取新链接。";
+  const expired = panelText('api.43f47f2e61');
   if (!/^[A-Za-z0-9_-]{43}$/u.test(ticket)) throw new CredentialsError(expired);
   const response = await panelFetch(`${import.meta.env.BASE_URL}api/session/claim`, browserSession, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket }), signal,
-  }).catch(() => { throw new Error("暂时无法连接宿主，请重新打开登录链接。"); });
+  }).catch(() => { throw new Error(panelText('api.ae45dd4f47')); });
   if ([400, 401, 403, 410].includes(response.status)) throw new CredentialsError(expired);
-  if (response.status !== 204) throw new Error("宿主未能登录面板，请确认面板访问地址。");
+  if (response.status !== 204) throw new Error(panelText('api.e8453aaa5b'));
 }
 
 export async function logoutPanelSession(signal: AbortSignal) {
   const response = await panelFetch(`${import.meta.env.BASE_URL}api/session/logout`, browserSession, { method: "POST", signal });
-  if (response.status !== 204) throw new Error("宿主未确认退出。");
+  if (response.status !== 204) throw new Error(panelText('api.afc11c3f1e'));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,24 +92,24 @@ export async function readPanel(auth: PanelAuth, signal: AbortSignal): Promise<P
       auth.kind === "session" ? panelFetch(`${import.meta.env.BASE_URL}api/session/current`, auth, { signal }) : undefined,
     ]);
   } catch {
-    throw new Error("暂时无法连接宿主，请重试。");
+    throw new Error(panelText('api.19818d1a03'));
   }
   if (runtimeResponse.status === 401 || pluginsResponse.status === 401 || sessionResponse?.status === 401) {
-    throw new CredentialsError(auth.kind === "bearer" ? "面板令牌无效，请重新输入。" : "登录已失效，请重新获取登录链接。");
+    throw new CredentialsError(auth.kind === "bearer" ? panelText('api.b1788bbaec') : panelText('api.05868cf8ec'));
   }
   if (!runtimeResponse.ok || !pluginsResponse.ok || sessionResponse && !sessionResponse.ok) {
-    throw new Error("宿主未能提供面板数据，请重试。");
+    throw new Error(panelText('api.bdab7045f9'));
   }
   const [runtime, report, session]: unknown[] = await Promise.all([
     runtimeResponse.json(), pluginsResponse.json(), sessionResponse?.json(),
   ]).catch(() => []);
   if (!isRuntime(runtime) || !isRecord(report) || !Array.isArray(report.plugins) || !report.plugins.every(isPlugin)) {
-    throw new Error("宿主返回了无法识别的面板数据。");
+    throw new Error(panelText('api.8d2799ff87'));
   }
   if (auth.kind === "session") {
     if (!isRecord(session) || typeof session.expiresAt !== "number" || !Number.isSafeInteger(session.expiresAt) ||
         typeof session.now !== "number" || !Number.isSafeInteger(session.now) || session.expiresAt <= session.now) {
-      throw new Error("宿主返回了无法识别的登录有效期。");
+      throw new Error(panelText('api.100e93ec91'));
     }
     return { runtime, plugins: report.plugins, session: { expiresAt: session.expiresAt, now: session.now } };
   }

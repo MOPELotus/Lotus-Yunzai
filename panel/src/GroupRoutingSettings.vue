@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { computed, ref, watch } from "vue";
 import { ElButton } from "element-plus";
 
@@ -24,35 +26,35 @@ interface Field {
   hint?: string;
 }
 
-const switches = [{ label: "关闭", value: 0 }, { label: "开启", value: 1 }];
+const switches = [{ label: panelText('GroupRoutingSettings.3fd47edce4'), value: 0 }, { label: panelText('GroupRoutingSettings.8da97ddda9'), value: 1 }];
 const dispatch: readonly Field[] = [
-  { key: "groupCD", label: "群聊冷却（毫秒）", type: "number", max: 2_147_483_647, hint: "填 0 关闭冷却。" },
-  { key: "singleCD", label: "群成员冷却（毫秒）", type: "number", max: 2_147_483_647, hint: "填 0 关闭冷却。" },
-  { key: "onlyReplyAt", label: "处理群消息的条件", type: "choices", choices: [
-    { label: "无需提及", value: 0 },
-    { label: "仅在 @ 机器人或使用别名时回复", value: 1 },
-    { label: "仅在 @ 机器人或使用别名时回复，主人例外", value: 2 },
+  { key: "groupCD", label: panelText('GroupRoutingSettings.562ed688e6'), type: "number", max: 2_147_483_647, hint: panelText('GroupRoutingSettings.363784ad3c') },
+  { key: "singleCD", label: panelText('GroupRoutingSettings.19d4121e61'), type: "number", max: 2_147_483_647, hint: panelText('GroupRoutingSettings.363784ad3c') },
+  { key: "onlyReplyAt", label: panelText('GroupRoutingSettings.9361f5a3a1'), type: "choices", choices: [
+    { label: panelText('GroupRoutingSettings.039802f910'), value: 0 },
+    { label: panelText('GroupRoutingSettings.6401270e3c'), value: 1 },
+    { label: panelText('GroupRoutingSettings.4b58c9a132'), value: 2 },
   ] },
-  { key: "botAlias", label: "机器人别名", type: "list", hint: "每行一个别名。列表留空时没有别名。" },
-  { key: "enable", label: "仅启用指定功能", type: "list", hint: "每行一个功能名。列表留空时不限功能。" },
-  { key: "disable", label: "禁用指定功能", type: "list", hint: "每行一个功能名。列表留空时无禁用项。" },
+  { key: "botAlias", label: panelText('GroupRoutingSettings.1bfe79152d'), type: "list", hint: panelText('GroupRoutingSettings.9e8d6df4d5') },
+  { key: "enable", label: panelText('GroupRoutingSettings.de95a57ca2'), type: "list", hint: panelText('GroupRoutingSettings.b14eccd6eb') },
+  { key: "disable", label: panelText('GroupRoutingSettings.e91ef4c88d'), type: "list", hint: panelText('GroupRoutingSettings.dee1c57c9b') },
 ];
 const keywords: readonly Field[] = [
-  { key: "addLimit", label: "群词条编辑权限", type: "choices", choices: [
-    { label: "不限制", value: 0 }, { label: "仅管理员、群主和主人", value: 1 }, { label: "仅主人", value: 2 },
+  { key: "addLimit", label: panelText('GroupRoutingSettings.96d5d8d473'), type: "choices", choices: [
+    { label: panelText('GroupRoutingSettings.65feea2c2b'), value: 0 }, { label: panelText('GroupRoutingSettings.de90e11ace'), value: 1 }, { label: panelText('GroupRoutingSettings.6fba0dbf5f'), value: 2 },
   ] },
-  { key: "addPrivate", label: "允许私聊管理群词条", type: "choices", choices: switches },
-  { key: "addReply", label: "发送词条时引用原消息", type: "choices", choices: switches },
-  { key: "addAt", label: "发送词条时 @ 发言人", type: "choices", choices: switches },
-  { key: "addRecall", label: "词条回复撤回延时（秒）", type: "number", max: 2_147_483_647,
-    hint: "填 0 不撤回，实际延时最长 120 秒。" },
+  { key: "addPrivate", label: panelText('GroupRoutingSettings.5d6eb0971a'), type: "choices", choices: switches },
+  { key: "addReply", label: panelText('GroupRoutingSettings.47778620d7'), type: "choices", choices: switches },
+  { key: "addAt", label: panelText('GroupRoutingSettings.8c2cc69f87'), type: "choices", choices: switches },
+  { key: "addRecall", label: panelText('GroupRoutingSettings.c45c8f7579'), type: "number", max: 2_147_483_647,
+    hint: panelText('GroupRoutingSettings.924f0898d9') },
 ];
 
 function scopeLabel(key: string) {
-  if (key === "default") return "全局默认";
+  if (key === "default") return panelText('GroupRoutingSettings.419bf8bc14');
   const [first, second] = key.split(":");
-  if (!second) return `群 ${first}`;
-  return second === "default" ? `机器人 ${first} 的默认设置` : `机器人 ${first} · 群 ${second}`;
+  if (!second) return panelText('GroupRoutingSettings.b053cdf42f', { value1: first });
+  return second === "default" ? panelText('GroupRoutingSettings.620523332e', { value1: first }) : panelText('GroupRoutingSettings.ffeb6e6e89', { value1: first, value2: second });
 }
 
 function validId(value: string) {
@@ -123,55 +125,55 @@ function setList(key: string, event: Event) {
 <template>
   <div class="routing">
     <div class="routing-field">
-      <label for="group-routing-scope">编辑范围</label>
+      <label for="group-routing-scope">{{ panelText('GroupRoutingSettings.0d3d6d62a1') }}</label>
       <select id="group-routing-scope" v-model="scope" :disabled="disabled">
         <option v-for="key in scopes" :key="key" :value="key">{{ scopeLabel(key) }}</option>
       </select>
-      <span class="routing-hint">生效顺序由低到高为全局默认、机器人默认、群、机器人与群。</span>
-      <span v-if="legacy && scope === 'default'" class="routing-hint">旧配置有全局默认范围时，会用这个范围替代原有的内置默认项。</span>
-      <span v-if="current === null" class="routing-hint">此范围在配置文件中为空值。</span>
-      <span v-else-if="current && Object.keys(current).length === 0" class="routing-hint">此范围没有在面板中可见的覆盖项。</span>
+      <span class="routing-hint">{{ panelText('GroupRoutingSettings.38453138f0') }}</span>
+      <span v-if="legacy && scope === 'default'" class="routing-hint">{{ panelText('GroupRoutingSettings.09e57e1377') }}</span>
+      <span v-if="current === null" class="routing-hint">{{ panelText('GroupRoutingSettings.82d0da5ccd') }}</span>
+      <span v-else-if="current && Object.keys(current).length === 0" class="routing-hint">{{ panelText('GroupRoutingSettings.9280dbd320') }}</span>
     </div>
     <details>
-      <summary>指定其他范围</summary>
+      <summary>{{ panelText('GroupRoutingSettings.4d0e25b6d2') }}</summary>
       <div class="routing-scope-inputs">
-        <label>范围类型
+        <label>{{ panelText('GroupRoutingSettings.b0984d9882') }}
           <select v-model="scopeKind" :disabled="disabled">
-            <option value="group">群</option>
-            <option value="bot">机器人默认</option>
-            <option value="bot-group">机器人与群</option>
+            <option value="group">{{ panelText('GroupRoutingSettings.0df737cb62') }}</option>
+            <option value="bot">{{ panelText('GroupRoutingSettings.67715b6e17') }}</option>
+            <option value="bot-group">{{ panelText('GroupRoutingSettings.a109dbdfe0') }}</option>
           </select>
         </label>
-        <label v-if="scopeKind !== 'group'">机器人 QQ 号
+        <label v-if="scopeKind !== 'group'">{{ panelText('GroupRoutingSettings.327aea256b') }}
           <input v-model="botId" inputmode="numeric" :disabled="disabled">
         </label>
-        <label v-if="scopeKind !== 'bot'">群号
+        <label v-if="scopeKind !== 'bot'">{{ panelText('GroupRoutingSettings.27c2162469') }}
           <input v-model="groupId" inputmode="numeric" :disabled="disabled">
         </label>
-        <ElButton :disabled="disabled || !newScope" @click="scope = newScope">编辑此范围</ElButton>
+        <ElButton :disabled="disabled || !newScope" @click="scope = newScope">{{ panelText('GroupRoutingSettings.73a9cf6d1f') }}</ElButton>
       </div>
     </details>
-    <fieldset v-for="section in [{ label: '消息处理', fields: dispatch }, { label: '关键词', fields: keywords }]"
+    <fieldset v-for="section in [{ label: panelText('GroupRoutingSettings.782eb2d21c'), fields: dispatch }, { label: panelText('GroupRoutingSettings.1f7f0db90f'), fields: keywords }]"
       :key="section.label" :disabled="disabled">
       <legend>{{ section.label }}</legend>
       <div v-for="field in section.fields" :key="field.key" class="routing-field">
         <label :for="'routing-mode-' + field.key">{{ field.label }}</label>
         <select :id="'routing-mode-' + field.key" :value="mode(field)" @change="setMode(field, $event)">
-          <option value="inherit">{{ legacy && scope === 'default' ? '此处不配置' : '继承' }}</option>
+          <option value="inherit">{{ legacy && scope === 'default' ? panelText('GroupRoutingSettings.733cd5c458') : panelText('GroupRoutingSettings.49f1e2b9d1') }}</option>
           <option v-for="choice in field.choices" :key="choice.value" :value="String(choice.value)">{{ choice.label }}</option>
-          <option v-if="field.type !== 'choices'" value="value">自定义{{ field.type === 'list' ? '列表' : '' }}</option>
-          <option value="null">空值（覆盖上一级）</option>
+          <option v-if="field.type !== 'choices'" value="value">{{ panelText('GroupRoutingSettings.2f6770592f', { value1: field.type === 'list' ? panelText('GroupRoutingSettings.aedd6814ff') : '' }) }}</option>
+          <option value="null">{{ panelText('GroupRoutingSettings.1d43b8a521') }}</option>
         </select>
         <input v-if="field.type === 'number' && mode(field) === 'value'" type="number" min="0" step="1" required
-          :max="field.max" :aria-label="field.label + '数值'" :value="current?.[field.key] as string | number"
+          :max="field.max" :aria-label="field.label + panelText('GroupRoutingSettings.c5500a58e0')" :value="current?.[field.key] as string | number"
           @input="setNumber(field.key, $event)">
         <textarea v-if="field.type === 'list' && mode(field) === 'value'" rows="3"
-          :aria-label="field.label + '列表'" :value="listText(field.key)" @input="setList(field.key, $event)" />
+          :aria-label="field.label + panelText('GroupRoutingSettings.aedd6814ff')" :value="listText(field.key)" @input="setList(field.key, $event)" />
         <span v-if="field.hint" class="routing-hint">{{ field.hint }}</span>
       </div>
     </fieldset>
     <div>
-      <ElButton :disabled="disabled || current === undefined" @click="clearScope">移除此范围的覆盖</ElButton>
+      <ElButton :disabled="disabled || current === undefined" @click="clearScope">{{ panelText('GroupRoutingSettings.c21441f37e') }}</ElButton>
     </div>
   </div>
 </template>

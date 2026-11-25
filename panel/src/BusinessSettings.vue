@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElButton } from "element-plus";
 import { panelFetch, type PanelAuth } from "./api";
@@ -91,25 +93,25 @@ function decode(field: Field) {
     if (field.nullable && !text.trim()) return null;
     const number = Number(text);
     if (!text.trim() || !Number.isFinite(number) || number < (field.min ?? -Infinity) || number > (field.max ?? Infinity)) {
-      throw new Error(`${field.label}的数值无效。`);
+      throw new Error(panelText('BusinessSettings.c683f40b34', { value1: field.label }));
     }
     return number;
   }
   if (field.type === "select") {
     const option = field.options?.find(item => String(item.value) === text);
-    if (!option) throw new Error(`请选择${field.label}。`);
+    if (!option) throw new Error(panelText('BusinessSettings.ebdb7a1e24', { value1: field.label }));
     return option.value;
   }
   if (field.type === "json") {
     try { return text.trim() ? JSON.parse(text) as unknown : null; }
-    catch { throw new Error(`${field.label}的 JSON 格式有误。`); }
+    catch { throw new Error(panelText('BusinessSettings.20d5090a21', { value1: field.label })); }
   }
   if (field.type === "list") {
     const items = text.split(field.separator === "line" ? /\r?\n/u : /[\n,，]+/u)
       .map(item => field.keepWhitespace ? item : item.trim()).filter(Boolean);
     return field.itemType === "number" ? items.map(item => {
       const number = Number(item);
-      if (!Number.isSafeInteger(number)) throw new Error(`${field.label}须填写有效数字。`);
+      if (!Number.isSafeInteger(number)) throw new Error(panelText('BusinessSettings.305b0dd340', { value1: field.label }));
       return number;
     }) : items;
   }
@@ -132,23 +134,23 @@ async function update(save = false) {
       signal: controller.signal,
     });
     if (response.status === 401) { emit("unauthorized"); return; }
-    if (response.status === 409) throw new Error("配置已被修改。请重新读取后保存。");
+    if (response.status === 409) throw new Error(panelText('BusinessSettings.d3f46b1ef7'));
     if (response.status === 400 || response.status === 403 || response.status === 503) {
       const reply = await response.json().catch(() => undefined) as { message?: string } | undefined;
       if (typeof reply?.message === "string" && reply.message) throw new Error(reply.message);
-      if (response.status === 400) throw new Error("请检查设置项的值。");
-      if (response.status === 403) throw new Error("当前会话无权修改或读取此设置。");
+      if (response.status === 400) throw new Error(panelText('BusinessSettings.166bec875b'));
+      if (response.status === 403) throw new Error(panelText('BusinessSettings.50ea66effa'));
     }
-    if (!response.ok) throw new Error(save ? "暂时无法保存设置。" : "暂时无法读取设置。");
+    if (!response.ok) throw new Error(save ? panelText('BusinessSettings.7c52c22c6b') : panelText('BusinessSettings.84e0c99f13'));
     const result = await response.json() as Snapshot;
     if (controller.signal.aborted) return;
     fields.value = result.fields;
     stored.value = result.values;
     defaults.value = result.defaults;
     draft.value = baseline();
-    if (save) feedback.value = result.warning ?? "已保存";
+    if (save) feedback.value = result.warning ?? panelText('BusinessSettings.1bd91a7d0c');
   } catch (error) {
-    if (!controller.signal.aborted) problem.value = error instanceof Error ? error.message : "设置请求失败。";
+    if (!controller.signal.aborted) problem.value = error instanceof Error ? error.message : panelText('BusinessSettings.862018ce56');
   } finally {
     if (active === controller) busy.value = false;
   }
@@ -171,8 +173,8 @@ onBeforeUnmount(() => {
 
 <template>
   <section aria-labelledby="native-settings-title" :aria-busy="busy">
-    <h1 id="native-settings-title" tabindex="-1">业务设置</h1>
-    <nav class="panel-nav" aria-label="业务设置分类">
+    <h1 id="native-settings-title" tabindex="-1">{{ panelText('BusinessSettings.e10d1b5bcf') }}</h1>
+    <nav class="panel-nav" :aria-label="panelText('BusinessSettings.413ce7737f')">
       <ElButton v-for="section in sections" :key="section.key" :disabled="dirty && current !== section.key"
         :type="current === section.key ? 'primary' : 'default'" :aria-current="current === section.key ? 'page' : undefined"
         @click="current = section.key">{{ section.label }}</ElButton>
@@ -195,7 +197,7 @@ onBeforeUnmount(() => {
           </select>
           <textarea v-else-if="field.type === 'list' || field.type === 'json' || field.multiline" :id="'native-' + field.key"
             :value="String(draft[field.key] ?? '')" :rows="field.rows ?? 4" :disabled="busy || field.readonly"
-            :placeholder="field.type === 'list' ? '每行一项' : undefined" @input="changeText(field.key, $event)" />
+            :placeholder="field.type === 'list' ? panelText('BusinessSettings.79d370cd43') : undefined" @input="changeText(field.key, $event)" />
           <input v-else :id="'native-' + field.key" v-model="draft[field.key]" :disabled="busy || field.readonly"
             :inputmode="field.type === 'number' ? 'decimal' : undefined">
           <span v-if="field.hint" class="native-hint">{{ field.hint }}</span>
@@ -204,12 +206,12 @@ onBeforeUnmount(() => {
       <p v-if="problem" class="error" role="alert">{{ problem }}</p>
       <p v-if="feedback" role="status">{{ feedback }}</p>
       <div class="native-actions">
-        <ElButton type="primary" native-type="submit" :disabled="!dirty || busy" :loading="busy && dirty">保存</ElButton>
-        <ElButton :disabled="busy" @click="update()">重新读取</ElButton>
-        <ElButton :disabled="!dirty || busy" @click="draft = baseline()">撤销编辑</ElButton>
+        <ElButton type="primary" native-type="submit" :disabled="!dirty || busy" :loading="busy && dirty">{{ panelText('BusinessSettings.a3030bf8f1') }}</ElButton>
+        <ElButton :disabled="busy" @click="update()">{{ panelText('BusinessSettings.df7392cc96') }}</ElButton>
+        <ElButton :disabled="!dirty || busy" @click="draft = baseline()">{{ panelText('BusinessSettings.ff11b3e4c6') }}</ElButton>
         <template v-if="current === 'starrail-warp' && defaults">
-          <ElButton :disabled="busy" @click="resetWarp(false)">恢复全局默认</ElButton>
-          <ElButton :disabled="busy" @click="resetWarp(true)">恢复默认概率</ElButton>
+          <ElButton :disabled="busy" @click="resetWarp(false)">{{ panelText('BusinessSettings.7e75b808d0') }}</ElButton>
+          <ElButton :disabled="busy" @click="resetWarp(true)">{{ panelText('BusinessSettings.8af594b2b3') }}</ElButton>
         </template>
       </div>
     </form>

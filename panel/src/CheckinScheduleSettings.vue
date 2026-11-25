@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { scheduleCronFields, type CheckinSchedulePanelSettings, type CheckinSchedulePanelSnapshot } from "../../lib/panel-checkin-schedule-schema.ts";
@@ -8,9 +10,9 @@ const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/checkin/schedule`;
 const cronLabels = {
-  plan_generate_cron: "次日计划生成",
-  run_due_cron: "到期任务扫描",
-  catch_up_cron: "缺失计划补偿检查",
+  plan_generate_cron: panelText('CheckinScheduleSettings.9a5ca12de9'),
+  run_due_cron: panelText('CheckinScheduleSettings.6a9a3ba094'),
+  catch_up_cron: panelText('CheckinScheduleSettings.3598ba0047'),
 } as const;
 
 const saved = shallowRef<CheckinSchedulePanelSnapshot>();
@@ -76,15 +78,15 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "签到调度设置已在别处修改。请重新读取后再保存。";
+      error.value = panelText('CheckinScheduleSettings.942c6dcd51');
       return;
     }
     if (response.status === 400) {
-      error.value = "请检查时间及 Cron 表达式。";
+      error.value = panelText('CheckinScheduleSettings.cf094ab144');
       return;
     }
     if (response.status === 422) {
-      error.value = "窗口结束时间不能早于开始时间。";
+      error.value = panelText('CheckinScheduleSettings.e24452eeed');
       return;
     }
     if (!response.ok) throw new Error();
@@ -94,9 +96,9 @@ async function request(method: "GET" | "PUT") {
     saved.value = result;
     draft.value = structuredClone(result.settings);
     conflict.value = false;
-    if (method === "PUT") notice.value = "已保存，重启宿主后生效。";
+    if (method === "PUT") notice.value = panelText('CheckinScheduleSettings.42d8c144a9');
   } catch {
-    if (active === controller) error.value = "暂时无法读取或保存签到调度设置。";
+    if (active === controller) error.value = panelText('CheckinScheduleSettings.fad7e83456');
   } finally {
     if (active === controller) {
       active = undefined;
@@ -121,86 +123,86 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="checkin-schedule-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="checkin-schedule-title" tabindex="-1">签到调度</h1>
-      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
+      <h1 id="checkin-schedule-title" tabindex="-1">{{ panelText('CheckinScheduleSettings.fb3da8820b') }}</h1>
+      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">{{ panelText('CheckinScheduleSettings.df7392cc96') }}</ElButton>
     </div>
     <div v-if="confirmReload" class="schedule-actions" role="alert">
-      <span>重新读取会放弃未保存的改动。</span>
-      <ElButton @click="confirmReload = false">继续编辑</ElButton>
-      <ElButton type="danger" @click="request('GET')">放弃改动并读取</ElButton>
+      <span>{{ panelText('CheckinScheduleSettings.e71b339a4e') }}</span>
+      <ElButton @click="confirmReload = false">{{ panelText('CheckinScheduleSettings.fd4b9e3b6c') }}</ElButton>
+      <ElButton type="danger" @click="request('GET')">{{ panelText('CheckinScheduleSettings.a5831537bd') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="schedule-settings" @submit.prevent="request('PUT')">
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>全局默认</legend>
+        <legend>{{ panelText('CheckinScheduleSettings.419bf8bc14') }}</legend>
         <label class="schedule-toggle">
           <input v-model="draft.enable" type="checkbox" />
-          启用自动调度
+          {{ panelText('CheckinScheduleSettings.b516e9654c') }}
         </label>
         <label>
-          默认签到模式
+          {{ panelText('CheckinScheduleSettings.8a27ee1724') }}
           <select v-model="draft.mode">
-            <option value="fixed">固定时间</option>
-            <option value="random">随机时间</option>
+            <option value="fixed">{{ panelText('CheckinScheduleSettings.09851d162b') }}</option>
+            <option value="random">{{ panelText('CheckinScheduleSettings.177fc24f74') }}</option>
           </select>
         </label>
         <label>
-          固定签到时间
+          {{ panelText('CheckinScheduleSettings.14ce37033d') }}
           <input v-model="draft.fixed_time" type="time" required />
         </label>
       </fieldset>
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>随机签到</legend>
+        <legend>{{ panelText('CheckinScheduleSettings.1b677193ef') }}</legend>
         <div class="schedule-window">
           <label>
-            随机窗口开始
+            {{ panelText('CheckinScheduleSettings.22715e6950') }}
             <input v-model="draft.random.window_start" name="random_window_start" type="time" required />
           </label>
           <label>
-            随机窗口结束
+            {{ panelText('CheckinScheduleSettings.e72b684412') }}
             <input v-model="draft.random.window_end" name="random_window_end" type="time" required />
           </label>
         </div>
         <label class="schedule-toggle">
           <input v-model="draft.random.notify_before" name="random_notify_before" type="checkbox" />
-          生成次日计划后通知用户
+          {{ panelText('CheckinScheduleSettings.9c83661430') }}
         </label>
       </fieldset>
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>补注册</legend>
+        <legend>{{ panelText('CheckinScheduleSettings.b32d18e8f9') }}</legend>
         <label class="schedule-toggle">
           <input v-model="draft.late_registration.enable" name="late_enable" type="checkbox" />
-          允许补注册到已有计划
+          {{ panelText('CheckinScheduleSettings.2b3a0743ff') }}
         </label>
         <div class="schedule-window">
           <label>
-            补注册窗口开始
+            {{ panelText('CheckinScheduleSettings.e0d5325cab') }}
             <input v-model="draft.late_registration.window_start" name="late_window_start" type="time" required />
           </label>
           <label>
-            补注册窗口结束
+            {{ panelText('CheckinScheduleSettings.ae76b910df') }}
             <input v-model="draft.late_registration.window_end" name="late_window_end" type="time" required />
           </label>
         </div>
-        <p>窗口用于分配补注册的随机签到时间。当天随机补注册在窗口结束后关闭，固定时间档案沿用原签到时间。</p>
+        <p>{{ panelText('CheckinScheduleSettings.08dfd9a912') }}</p>
         <label class="schedule-toggle">
           <input v-model="draft.late_registration.notify" name="late_notify" type="checkbox" />
-          补注册后通知签到时间
+          {{ panelText('CheckinScheduleSettings.81f4ce4bfb') }}
         </label>
       </fieldset>
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>定时规则</legend>
+        <legend>{{ panelText('CheckinScheduleSettings.43baa8abe2') }}</legend>
         <label v-for="field in scheduleCronFields" :key="field">
           {{ cronLabels[field] }}
           <input v-model="draft[field]" :name="field" spellcheck="false" autocomplete="off" />
-          <small v-if="saved?.invalidCrons.includes(field)">原规则无效，此处显示运行时使用的默认规则。</small>
+          <small v-if="saved?.invalidCrons.includes(field)">{{ panelText('CheckinScheduleSettings.2ad3e50880') }}</small>
         </label>
-        <p>使用北京时间。留空恢复该项默认规则。</p>
+        <p>{{ panelText('CheckinScheduleSettings.839ed9a719') }}</p>
       </fieldset>
-      <p class="schedule-note">保存后重启宿主生效。保存不会立即改写签到计划。</p>
+      <p class="schedule-note">{{ panelText('CheckinScheduleSettings.865648eb21') }}</p>
       <div class="schedule-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">保存</ElButton>
+          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">{{ panelText('CheckinScheduleSettings.a3030bf8f1') }}</ElButton>
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>

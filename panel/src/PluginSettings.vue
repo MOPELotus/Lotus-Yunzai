@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, provide, reactive, ref, shallowRef, watch } from "vue";
 import GuobaSubform from "./GuobaSubform.vue";
@@ -114,13 +116,13 @@ async function request(path: string, signal: AbortSignal, body?: Record<string, 
   });
   if (!response.ok) {
     const messages: Record<number, string> = {
-      404: "此插件没有可用的配置表单。",
-      409: "子表单已在其他会话更改，请重新读取。",
-      405: "此配置表单只读。",
-      400: "配置值无效，或插件拒绝保存。",
-      422: "插件拒绝保存，请检查配置值。",
+      404: panelText('PluginSettings.593d4aed78'),
+      409: panelText('PluginSettings.6fd73c34cc'),
+      405: panelText('PluginSettings.e982faca97'),
+      400: panelText('PluginSettings.e028c4ca5b'),
+      422: panelText('PluginSettings.04eb76cf55'),
     };
-    throw new RequestError(response.status, messages[response.status] ?? "宿主暂时无法读取或写入插件配置。");
+    throw new RequestError(response.status, messages[response.status] ?? panelText('PluginSettings.6182adeed1'));
   }
   return response.json().catch(() => undefined);
 }
@@ -129,7 +131,7 @@ async function read(plugin: string, signal: AbortSignal): Promise<Snapshot> {
   const data = await request(`${endpoint}/${encodeURIComponent(plugin)}`, signal);
   if (!isRecord(data) || !Array.isArray(data.schemas) || !data.schemas.every(isSchema) || !isRecord(data.values) ||
       !strArray(data.configuredPasswords)) {
-    throw new RequestError(500, "宿主返回了无法识别的配置表单。");
+    throw new RequestError(500, panelText('PluginSettings.8585734f4a'));
   }
   return {
     schemas: data.schemas,
@@ -161,7 +163,7 @@ async function operate(operation: Operation) {
       const result = await request(endpoint, controller.signal);
       if (active !== controller) return;
       if (!isRecord(result) || !strArray(result.plugins)) {
-        throw new RequestError(500, "宿主返回了无法识别的可配置插件清单。");
+        throw new RequestError(500, panelText('PluginSettings.e06688aa36'));
       }
       plugins.value = result.plugins;
       if (!result.plugins.includes(plugin)) {
@@ -178,11 +180,11 @@ async function operate(operation: Operation) {
       const result = await request(`${endpoint}/${encodeURIComponent(plugin)}`, controller.signal, patch);
       if (active !== controller) return;
       if (!isRecord(result) || result.ok !== true) {
-        throw new RequestError(400, "插件未确认保存，请检查配置值。");
+        throw new RequestError(400, panelText('PluginSettings.b024dbaa42'));
       }
       saved = true;
       edits.clear();
-      notice.value = typeof result.message === "string" ? result.message : "配置已保存。";
+      notice.value = typeof result.message === "string" ? result.message : panelText('PluginSettings.09d89ed905');
     }
 
     const data = await read(plugin, controller.signal);
@@ -204,9 +206,9 @@ async function operate(operation: Operation) {
     }
     if (saved) {
       snapshot.value = undefined;
-      error.value = "配置已保存，但暂时无法重新读取。请重新载入。";
+      error.value = panelText('PluginSettings.01a2b17ecc');
     } else {
-      error.value = failure instanceof RequestError ? failure.message : "暂时无法连接宿主，请重试。";
+      error.value = failure instanceof RequestError ? failure.message : panelText('PluginSettings.19818d1a03');
     }
   } finally {
     clearTimeout(timeout);
@@ -240,9 +242,9 @@ async function runAction(button: GuobaButton) {
     const result = await request(`${endpoint}/${encodeURIComponent(plugin)}/action`, controller.signal,
       { button: button.id, revision, fields }, "POST");
     if (active !== controller) return;
-    if (!isRecord(result) || result.ok !== true) throw new RequestError(500, "无法确认插件操作结果，请检查当前状态。");
+    if (!isRecord(result) || result.ok !== true) throw new RequestError(500, panelText('PluginSettings.b542846062'));
     completed = true;
-    notice.value = "插件操作已完成。";
+    notice.value = panelText('PluginSettings.b25927712a');
     const latest = await read(plugin, controller.signal);
     if (active !== controller) return;
     snapshot.value = latest;
@@ -250,10 +252,10 @@ async function runAction(button: GuobaButton) {
   } catch (failure) {
     if (active !== controller) return;
     if (failure instanceof RequestError && failure.status === 401) return emit("unauthorized");
-    error.value = completed ? "暂时无法读取最新配置，请重新载入。" :
-      failure instanceof RequestError && failure.status === 409 ? "插件表单已变更，请重新载入后再操作。" :
-      failure instanceof RequestError && [400, 404, 422].includes(failure.status) ? "插件未确认操作完成，请检查当前状态。" :
-      "无法确认插件操作结果，请先检查当前状态。";
+    error.value = completed ? panelText('PluginSettings.87397d5d8b') :
+      failure instanceof RequestError && failure.status === 409 ? panelText('PluginSettings.9738ec6fd9') :
+      failure instanceof RequestError && [400, 404, 422].includes(failure.status) ? panelText('PluginSettings.194947fa2e') :
+      panelText('PluginSettings.09b30a6bdf');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -378,47 +380,47 @@ onBeforeUnmount(() => {
 <template>
   <section class="plugin-settings" aria-labelledby="plugin-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="plugin-settings-title" tabindex="-1">插件配置</h1>
+      <h1 id="plugin-settings-title" tabindex="-1">{{ panelText('PluginSettings.f782650891') }}</h1>
       <ElButton :loading="busy === 'list'" :disabled="Boolean(busy || pending || pendingAction)"
-        @click="requestNavigation({ kind: 'list' })">重新载入</ElButton>
+        @click="requestNavigation({ kind: 'list' })">{{ panelText('PluginSettings.35588dcb9b') }}</ElButton>
     </div>
 
     <div v-if="plugins.length" class="filters">
       <div>
-        <label for="plugin-module">插件</label>
+        <label for="plugin-module">{{ panelText('PluginSettings.e806fbbe8e') }}</label>
         <select id="plugin-module" :value="selected" :disabled="Boolean(busy || pending || pendingAction)" @change="changePlugin">
-          <option disabled value="">请选择插件</option>
+          <option disabled value="">{{ panelText('PluginSettings.69c36050e6') }}</option>
           <option v-for="plugin in plugins" :key="plugin" :value="plugin">{{ plugin }}</option>
         </select>
       </div>
       <div v-if="snapshot">
-        <label for="plugin-field-search">查找配置项</label>
-        <ElInput id="plugin-field-search" v-model="query" placeholder="分组、标签、字段名或说明" />
+        <label for="plugin-field-search">{{ panelText('PluginSettings.1baae1183e') }}</label>
+        <ElInput id="plugin-field-search" v-model="query" :placeholder="panelText('PluginSettings.f09e0882f3')" />
       </div>
     </div>
     <div v-if="pendingAction" class="plugin-feedback" role="alert">
       <p>{{ pendingAction.confirm }}</p>
       <div class="plugin-actions">
-        <ElButton @click="pendingAction = undefined">取消</ElButton>
-        <ElButton :type="pendingAction.type ?? 'primary'" @click="runAction(pendingAction)">确认{{ pendingAction.label }}</ElButton>
+        <ElButton @click="pendingAction = undefined">{{ panelText('PluginSettings.2cd0f3be87') }}</ElButton>
+        <ElButton :type="pendingAction.type ?? 'primary'" @click="runAction(pendingAction)">{{ panelText('PluginSettings.c447e931ac', { value1: pendingAction.label }) }}</ElButton>
       </div>
     </div>
     <div v-if="pending" class="plugin-feedback" role="alert">
-      <p>当前表单还有未保存的改动。</p>
+      <p>{{ panelText('PluginSettings.35544eda8d') }}</p>
       <div class="plugin-actions">
-        <ElButton @click="pending = undefined">继续编辑</ElButton>
-        <ElButton type="danger" @click="operate(pending)">放弃改动并继续</ElButton>
+        <ElButton @click="pending = undefined">{{ panelText('PluginSettings.fd4b9e3b6c') }}</ElButton>
+        <ElButton type="danger" @click="operate(pending)">{{ panelText('PluginSettings.181e98c7b5') }}</ElButton>
       </div>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
-    <p v-if="busy === 'action'" class="plugin-note" role="status">正在执行插件操作…</p>
-    <p v-if="readOnly && snapshot" class="plugin-note" role="status">此配置表单只读。</p>
-    <p v-if="!snapshot && busy" class="plugin-note" role="status">正在读取配置…</p>
-    <p v-else-if="!plugins.length && !error" class="plugin-note" role="status">当前没有提供配置表单的插件。</p>
+    <p v-if="busy === 'action'" class="plugin-note" role="status">{{ panelText('PluginSettings.fb2ef3080f') }}</p>
+    <p v-if="readOnly && snapshot" class="plugin-note" role="status">{{ panelText('PluginSettings.e982faca97') }}</p>
+    <p v-if="!snapshot && busy" class="plugin-note" role="status">{{ panelText('PluginSettings.8a044dd742') }}</p>
+    <p v-else-if="!plugins.length && !error" class="plugin-note" role="status">{{ panelText('PluginSettings.2bc1b7d0c5') }}</p>
     <p v-if="!snapshot && notice" class="plugin-note" role="status">{{ notice }}</p>
 
     <form v-if="snapshot" @submit.prevent="operate({ kind: 'save' })">
-      <fieldset :disabled="Boolean(busy || pendingAction)" class="schema-grid" aria-label="插件配置项">
+      <fieldset :disabled="Boolean(busy || pendingAction)" class="schema-grid" :aria-label="panelText('PluginSettings.b05d9b7ef4')">
         <template v-for="{ schema, field, id } in rows" :key="id">
           <h2 v-if="schema.component === 'Divider'" class="schema-divider">{{ schema.label }}</h2>
           <fieldset v-else-if="schema.component === 'GSubForm' && field && snapshot.subforms?.[field]"
@@ -443,25 +445,25 @@ onBeforeUnmount(() => {
                 :id="id" type="password" autocomplete="new-password"
                 :model-value="displayText(edits.get(field) as GuobaInput | undefined)"
                 :disabled="Boolean(busy) || readOnly || edits.get(field) === null"
-                placeholder="留空保留现有密码"
+                :placeholder="panelText('PluginSettings.a1087d5221')"
                 @update:model-value="changePassword(field, $event)"
               />
               <div class="password-controls">
                 <template v-if="edits.get(field) === null">
-                  <span>保存后清除</span>
-                  <ElButton @click="edits.delete(field)">撤销清除</ElButton>
+                  <span>{{ panelText('PluginSettings.89461376cb') }}</span>
+                  <ElButton @click="edits.delete(field)">{{ panelText('PluginSettings.ce1a8af929') }}</ElButton>
                 </template>
                 <template v-else-if="clearPending === field">
-                  <span>清除后可能需要重新配置。</span>
-                  <ElButton @click="clearPending = undefined">取消</ElButton>
-                  <ElButton type="danger" :aria-label="`确认清除 ${schema.label}`"
-                    @click="edits.set(field, null); clearPending = undefined">确认清除</ElButton>
+                  <span>{{ panelText('PluginSettings.78e1f45c1e') }}</span>
+                  <ElButton @click="clearPending = undefined">{{ panelText('PluginSettings.2cd0f3be87') }}</ElButton>
+                  <ElButton type="danger" :aria-label="panelText('PluginSettings.c5b5ad2c0e', { value1: schema.label })"
+                    @click="edits.set(field, null); clearPending = undefined">{{ panelText('PluginSettings.a5da1dd8fd') }}</ElButton>
                 </template>
                 <template v-else-if="snapshot.configuredPasswords.includes(field)">
-                  <span>已配置密码</span>
-                  <ElButton :aria-label="`清除 ${schema.label}`" @click="clearPending = field">清除密码</ElButton>
+                  <span>{{ panelText('PluginSettings.dc7f1aad22') }}</span>
+                  <ElButton :aria-label="panelText('PluginSettings.52b841bf13', { value1: schema.label })" @click="clearPending = field">{{ panelText('PluginSettings.a57cdd7b49') }}</ElButton>
                 </template>
-                <span v-else>尚未配置密码</span>
+                <span v-else>{{ panelText('PluginSettings.02db2acbc6') }}</span>
               </div>
             </template>
             <GuobaSpecialField v-else-if="isSpecialGuobaField(schema)" :id="id" :schema="schema" :value="fieldValue(field)"
@@ -490,7 +492,7 @@ onBeforeUnmount(() => {
               <template v-if="schema.componentProps?.mode === 'tags'">
                 <ElInput
                   :id="id" type="textarea" :rows="3" :model-value="tagDrafts.get(field) ?? displayText(fieldValue(field))"
-                  :disabled="Boolean(busy) || (readOnly && !actionFields.has(field))" placeholder="每行一个标签"
+                  :disabled="Boolean(busy) || (readOnly && !actionFields.has(field))" :placeholder="panelText('PluginSettings.e213c5fd9a')"
                   @update:model-value="updateTags(field, schema, $event)"
                 />
               </template>
@@ -503,14 +505,14 @@ onBeforeUnmount(() => {
                     v-if="schema.componentProps?.mode !== 'multiple'"
                     value="" disabled
                     :selected="!schema.componentProps?.options?.some((option) => selectedOption(fieldValue(field), option.value))"
-                  >{{ displayText(fieldValue(field)) || schema.componentProps?.placeholder || "请选择" }}</option>
+                  >{{ displayText(fieldValue(field)) || schema.componentProps?.placeholder || panelText('PluginSettings.da590a8fe3') }}</option>
                   <option
                     v-for="(option, index) in schema.componentProps?.options"
                     :key="index" :value="index" :disabled="option.disabled"
                     :selected="selectedOption(fieldValue(field), option.value)"
                   >{{ option.label }}</option>
                 </select>
-                <p v-if="!schema.componentProps?.options?.length" class="plugin-help">插件未提供可供选择的值。</p>
+                <p v-if="!schema.componentProps?.options?.length" class="plugin-help">{{ panelText('PluginSettings.945835564d') }}</p>
               </template>
             </template>
             <ElInput
@@ -523,20 +525,20 @@ onBeforeUnmount(() => {
             <template v-else>
               <input :id="id" :value="displayText(fieldValue(field))" :placeholder="schema.componentProps?.placeholder"
                 @input="updateText(field, $event)" />
-              <p v-if="schema.component === 'EasyCron'" class="plugin-help">填写插件接受的 Cron 表达式。</p>
+              <p v-if="schema.component === 'EasyCron'" class="plugin-help">{{ panelText('PluginSettings.6f9d38fecb') }}</p>
             </template>
             <p v-if="schema.bottomHelpMessage" class="plugin-help">{{ schema.bottomHelpMessage }}</p>
           </fieldset>
         </template>
-        <p v-if="!rows.length" class="plugin-help">没有符合条件的配置项。</p>
+        <p v-if="!rows.length" class="plugin-help">{{ panelText('PluginSettings.4356c975a3') }}</p>
       </fieldset>
 
       <div class="plugin-feedback save-group">
         <p v-if="notice" role="status">{{ notice }}</p>
-        <p v-if="dirty" role="status">{{ readOnly ? "当前输入仅供插件操作" : "有未保存的改动" }}</p>
+        <p v-if="dirty" role="status">{{ readOnly ? panelText('PluginSettings.98d58781d0') : panelText('PluginSettings.535083c5e5') }}</p>
         <ElButton v-if="!readOnly" type="primary" native-type="submit"
           :loading="busy === 'save'" :disabled="!dirty || Boolean(busy || pending || pendingAction)">
-          保存配置
+          {{ panelText('PluginSettings.6e584e3d5c') }}
         </ElButton>
       </div>
     </form>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { douyinDownloadNumbers, douyinPagePolicies, douyinQualities, type DouyinPanelSettings,
@@ -25,7 +27,7 @@ watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的抖音设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('DouyinSettings.23119d2208'))) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -41,15 +43,15 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('DouyinSettings.bbc6698bf1');
       return;
     }
     if (response.status === 400) {
-      error.value = "请检查抖音设置。时长和下载体积上限可填 0，其余数值须为正整数。";
+      error.value = panelText('DouyinSettings.4b83d140c5');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取抖音设置。" : "宿主未能保存抖音设置。";
+      error.value = mode === "load" ? panelText('DouyinSettings.4657c7a137') : panelText('DouyinSettings.ca207f4ed1');
       return;
     }
     const result = await response.json() as DouyinPanelSnapshot;
@@ -60,14 +62,14 @@ async function sync(mode: "load" | "save") {
         !douyinQualities.some(([value]) => value === result.settings.quality) ||
         !Number.isSafeInteger(result.settings.request_timeout_ms) || result.settings.request_timeout_ms <= 0 ||
         !douyinDownloadNumbers.every(({ key, min }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] >= min)) {
-      error.value = "宿主返回了无法识别的抖音设置。";
+      error.value = panelText('DouyinSettings.8765858676');
       return;
     }
     saved.value = result;
     draft.value = { ...result.settings };
-    if (mode === "save") feedback.value = "已保存，下次解析或下载时生效。";
+    if (mode === "save") feedback.value = panelText('DouyinSettings.b443a51fc1');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('DouyinSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -87,26 +89,26 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="douyin-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="douyin-settings-title" tabindex="-1">抖音设置</h1>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h1 id="douyin-settings-title" tabindex="-1">{{ panelText('DouyinSettings.fa2110c800') }}</h1>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('DouyinSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="douyin-settings" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
-        <legend>解析</legend>
-        <label class="douyin-toggle"><input id="douyin-parse" v-model="draft.enable" type="checkbox" />启用抖音解析</label>
-        <label for="douyin-request-timeout">接口超时（毫秒）</label>
+        <legend>{{ panelText('DouyinSettings.fbff7b5046') }}</legend>
+        <label class="douyin-toggle"><input id="douyin-parse" v-model="draft.enable" type="checkbox" />{{ panelText('DouyinSettings.6c8518b072') }}</label>
+        <label for="douyin-request-timeout">{{ panelText('DouyinSettings.d5e85480ab') }}</label>
         <input id="douyin-request-timeout" v-model.number="draft.request_timeout_ms" type="number" min="1"
           :max="Number.MAX_SAFE_INTEGER" step="1" required />
       </fieldset>
       <fieldset :disabled="Boolean(busy)">
-        <legend>下载</legend>
-        <label class="douyin-toggle"><input id="douyin-download" v-model="draft.download_enabled" type="checkbox" />启用抖音媒体下载</label>
-        <label for="douyin-quality">视频清晰度</label>
+        <legend>{{ panelText('DouyinSettings.4673a23061') }}</legend>
+        <label class="douyin-toggle"><input id="douyin-download" v-model="draft.download_enabled" type="checkbox" />{{ panelText('DouyinSettings.c063d8795b') }}</label>
+        <label for="douyin-quality">{{ panelText('DouyinSettings.b84b8852db') }}</label>
         <select id="douyin-quality" v-model="draft.quality">
           <option v-for="[value, label] in douyinQualities" :key="value" :value="value">{{ label }}</option>
         </select>
-        <label for="douyin-page-policy">多项作品</label>
+        <label for="douyin-page-policy">{{ panelText('DouyinSettings.ac7f0dd13d') }}</label>
         <select id="douyin-page-policy" v-model="draft.multi_page_policy">
           <option v-for="[value, label] in douyinPagePolicies" :key="value" :value="value">{{ label }}</option>
         </select>
@@ -115,10 +117,10 @@ onBeforeUnmount(() => {
           <input :id="`douyin-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.min"
             :max="Number.MAX_SAFE_INTEGER" step="1" required />
         </template>
-        <p class="subtitle">视频超过消息体积上限时会作为文件发送。时长与作品下载体积上限填 0 表示不限。</p>
+        <p class="subtitle">{{ panelText('DouyinSettings.48540559fe') }}</p>
       </fieldset>
       <div class="douyin-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">{{ panelText('DouyinSettings.a3030bf8f1') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mediaEnvironmentGroups, type MediaEnvironmentSettings,
@@ -30,7 +32,7 @@ watch(() => dirty.value || permissionsDirty.value || previewPermissionsDirty.val
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的媒体环境设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('MediaEnvironmentSettings.70081fd60b'))) return;
   const changedFields = Object.keys(changes.value);
   const startsNextBoot = changedFields.includes("update_delay_ms");
   const hasOtherChanges = changedFields.some(field => field !== "update_delay_ms");
@@ -49,34 +51,34 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('MediaEnvironmentSettings.bbc6698bf1');
       return;
     }
     if (response.status === 400) {
-      error.value = "请填写整数，检查延迟可设为 0，其余须大于 0。时间设置最多为 2147483647 毫秒。";
+      error.value = panelText('MediaEnvironmentSettings.460cab4c0c');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取媒体环境设置。" : "宿主未能保存媒体环境设置。";
+      error.value = mode === "load" ? panelText('MediaEnvironmentSettings.577de693a0') : panelText('MediaEnvironmentSettings.7178673551');
       return;
     }
     const result = await response.json() as MediaEnvironmentSnapshot;
     if (active !== controller) return;
     if (typeof result?.revision !== "string" || !result.settings || !mediaEnvironmentGroups.every(group =>
       group.fields.every(({ key, max }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] >= (key === "update_delay_ms" ? 0 : 1) && result.settings[key] <= max))) {
-      error.value = "宿主返回了无法识别的媒体环境设置。";
+      error.value = panelText('MediaEnvironmentSettings.c0618f41b1');
       return;
     }
     saved.value = result;
     draft.value = { ...result.settings };
     if (mode === "save") {
       if (startsNextBoot) feedback.value = hasOtherChanges
-        ? "已保存。维护延迟在下次启动时生效，其余设置在下次安装或请求时生效。"
-        : "已保存，维护延迟在下次启动时生效。";
-      else feedback.value = "已保存，下次工具安装或 TuneWeave 请求时生效。";
+        ? panelText('MediaEnvironmentSettings.d48aed502a')
+        : panelText('MediaEnvironmentSettings.47f7438936');
+      else feedback.value = panelText('MediaEnvironmentSettings.960af22dd2');
     }
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('MediaEnvironmentSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -96,8 +98,8 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="media-environment-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="media-environment-title" tabindex="-1">媒体环境设置</h1>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h1 id="media-environment-title" tabindex="-1">{{ panelText('MediaEnvironmentSettings.8b884a36f7') }}</h1>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('MediaEnvironmentSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="media-environment-settings" @submit.prevent="sync('save')">
@@ -109,12 +111,12 @@ onBeforeUnmount(() => {
             :max="field.max" step="1" required
             :aria-describedby="field.key === 'update_delay_ms' ? 'media-startup-delay-note' : undefined" />
           <p v-if="field.key === 'update_delay_ms'" id="media-startup-delay-note" class="subtitle">
-            宿主重启后，首轮工具与 TuneWeave 环境维护按此时间等待。
+            {{ panelText('MediaEnvironmentSettings.9f60ee48c1') }}
           </p>
         </template>
       </fieldset>
       <div class="media-environment-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">{{ panelText('MediaEnvironmentSettings.a3030bf8f1') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

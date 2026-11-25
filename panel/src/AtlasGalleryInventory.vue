@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, ref } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
@@ -6,7 +8,7 @@ import AtlasGalleryBrowser from "./AtlasGalleryBrowser.vue";
 
 const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: [] }>();
-const gameNames = { gi: "原神", hsr: "星铁", zzz: "绝区零" } as const;
+const gameNames = { gi: panelText('AtlasGalleryInventory.d1597c51ed'), hsr: panelText('AtlasGalleryInventory.a2927891f0'), zzz: panelText('AtlasGalleryInventory.b1110352c9') } as const;
 type Row = { game: keyof typeof gameNames; images: number; bytes: number };
 type Inventory = { version: number | null; rows: Row[] };
 const inventory = ref<Inventory>();
@@ -41,7 +43,7 @@ async function load() {
   } catch {
     if (active === controller) {
       inventory.value = undefined;
-      error.value = "暂时无法读取图鉴图库，请确认图鉴已初始化后重试。";
+      error.value = panelText('AtlasGalleryInventory.acec1a2005');
     }
   } finally {
     if (active === controller) {
@@ -61,20 +63,20 @@ onBeforeUnmount(() => {
   <section class="atlas-inventory" aria-labelledby="atlas-gallery-title" :aria-busy="busy">
     <div class="inventory-heading">
       <div>
-        <h2 id="atlas-gallery-title">图鉴图库</h2>
-        <p v-if="inventory?.version">快照版本 {{ inventory.version }}</p>
+        <h2 id="atlas-gallery-title">{{ panelText('AtlasGalleryInventory.36503291a7') }}</h2>
+        <p v-if="inventory?.version">{{ panelText('AtlasGalleryInventory.2971d30865', { value1: inventory.version }) }}</p>
       </div>
       <div class="inventory-actions">
-        <ElButton :loading="busy" :disabled="busy" @click="load">读取图库统计</ElButton>
+        <ElButton :loading="busy" :disabled="busy" @click="load">{{ panelText('AtlasGalleryInventory.6c373ece78') }}</ElButton>
         <ElButton :aria-expanded="browsing" @click="browsing = !browsing">
-          {{ browsing ? "收起浏览" : "浏览图库" }}
+          {{ browsing ? panelText('AtlasGalleryInventory.03c3ee122d') : panelText('AtlasGalleryInventory.4b2e2e4c84') }}
         </ElButton>
       </div>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <table v-if="inventory" aria-labelledby="atlas-gallery-title">
       <thead>
-        <tr><th scope="col">游戏</th><th scope="col">图片数</th><th scope="col">大小</th></tr>
+        <tr><th scope="col">{{ panelText('AtlasGalleryInventory.847c5f681c') }}</th><th scope="col">{{ panelText('AtlasGalleryInventory.c6a87206b6') }}</th><th scope="col">{{ panelText('AtlasGalleryInventory.50db7447b9') }}</th></tr>
       </thead>
       <tbody>
         <tr v-for="row in inventory.rows" :key="row.game">

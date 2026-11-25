@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import type { WebLoginSettings, WebLoginSnapshot } from "../../lib/panel-web-login-schema.ts";
@@ -9,12 +11,12 @@ const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/web/login`;
 const userDurations = [
-  { key: "ticket_minutes", label: "登录链接有效期（分钟）", step: "1" },
-  { key: "session_hours", label: "登录会话有效期（小时）", step: "any" },
+  { key: "ticket_minutes", label: panelText('WebLoginSettings.1f0400e9ea'), step: "1" },
+  { key: "session_hours", label: panelText('WebLoginSettings.73533dfcc2'), step: "any" },
 ] as const;
 const panelDurations = [
-  { key: "panel_ticket_minutes", label: "管理链接有效期（分钟）", step: "1" },
-  { key: "panel_session_hours", label: "管理会话有效期（小时）", step: "any" },
+  { key: "panel_ticket_minutes", label: panelText('WebLoginSettings.ad9c9e3880'), step: "1" },
+  { key: "panel_session_hours", label: panelText('WebLoginSettings.377a43fbcb'), step: "any" },
 ] as const;
 const durations = [...userDurations, ...panelDurations];
 type Draft = Omit<WebLoginSettings, typeof durations[number]["key"]> & Record<typeof durations[number]["key"], string>;
@@ -76,11 +78,11 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "网页登录设置已在别处修改。请重新读取后再保存。";
+      error.value = panelText('WebLoginSettings.cd92b3cd67');
       return;
     }
     if (response.status === 400 || response.status === 422) {
-      error.value = response.status === 400 ? "请检查访问地址、挂载路径、备案号或有效期。" : "用户网页路径与已配置的 Milky Webhook 冲突。";
+      error.value = response.status === 400 ? panelText('WebLoginSettings.28a01b885e') : panelText('WebLoginSettings.207da41087');
       return;
     }
     if (!response.ok) throw new Error();
@@ -90,9 +92,9 @@ async function request(method: "GET" | "PUT") {
     saved.value = snapshot;
     draft.value = asDraft(snapshot.settings);
     conflict.value = false;
-    if (method === "PUT") notice.value = "已保存。";
+    if (method === "PUT") notice.value = panelText('WebLoginSettings.193f229df3');
   } catch {
-    if (active === controller) error.value = "暂时无法读取或保存网页登录设置。";
+    if (active === controller) error.value = panelText('WebLoginSettings.d746bdeb1e');
   } finally {
     if (active === controller) {
       active = undefined;
@@ -117,28 +119,28 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="web-login-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="web-login-title" tabindex="-1">网页登录</h1>
-      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
+      <h1 id="web-login-title" tabindex="-1">{{ panelText('WebLoginSettings.658333c8c7') }}</h1>
+      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">{{ panelText('WebLoginSettings.df7392cc96') }}</ElButton>
     </div>
     <div v-if="confirmReload" class="login-settings-actions" role="alert">
-      <span>重新读取会放弃未保存的改动。</span>
-      <ElButton @click="confirmReload = false">继续编辑</ElButton>
-      <ElButton type="danger" @click="request('GET')">放弃改动并读取</ElButton>
+      <span>{{ panelText('WebLoginSettings.e71b339a4e') }}</span>
+      <ElButton @click="confirmReload = false">{{ panelText('WebLoginSettings.fd4b9e3b6c') }}</ElButton>
+      <ElButton type="danger" @click="request('GET')">{{ panelText('WebLoginSettings.a5831537bd') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="login-settings" @submit.prevent="request('PUT')">
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>米游社用户网页</legend>
+        <legend>{{ panelText('WebLoginSettings.14c0d006d8') }}</legend>
         <label class="login-toggle">
-          <input v-model="draft.enable" type="checkbox" />启用用户网页
+          <input v-model="draft.enable" type="checkbox" />{{ panelText('WebLoginSettings.113986c4e4') }}
         </label>
         <label>
-          公网访问地址
-          <input v-model="draft.public_url" type="text" inputmode="url" placeholder="留空使用宿主地址" maxlength="2048" />
+          {{ panelText('WebLoginSettings.4c24cd68dd') }}
+          <input v-model="draft.public_url" type="text" inputmode="url" :placeholder="panelText('WebLoginSettings.697f87f94d')" maxlength="2048" />
         </label>
         <label>
-          用户网页挂载路径
-          <input v-model="draft.path" type="text" placeholder="留空按访问地址或默认路径" maxlength="512" />
+          {{ panelText('WebLoginSettings.a1341f45ea') }}
+          <input v-model="draft.path" type="text" :placeholder="panelText('WebLoginSettings.6be3695d99')" maxlength="512" />
         </label>
         <label v-for="field in userDurations" :key="field.key">
           {{ field.label }}
@@ -146,25 +148,25 @@ onBeforeUnmount(() => {
         </label>
       </fieldset>
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>管理面板</legend>
+        <legend>{{ panelText('WebLoginSettings.02f82f9d42') }}</legend>
         <label v-for="field in panelDurations" :key="field.key">
           {{ field.label }}
           <input v-model="draft[field.key]" type="number" :step="field.step" :min="field.step === '1' ? 1 : 0" required />
         </label>
       </fieldset>
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>网页页脚</legend>
+        <legend>{{ panelText('WebLoginSettings.378443ac08') }}</legend>
         <label>
-          ICP 备案号
+          {{ panelText('WebLoginSettings.94a5394702') }}
           <input id="web-icp-number" v-model="draft.icp_number" type="text" :maxlength="siteIcpMaxLength"
-            placeholder="留空不显示" aria-describedby="web-icp-note" />
+            :placeholder="panelText('WebLoginSettings.673940bc65')" aria-describedby="web-icp-note" />
         </label>
-        <p id="web-icp-note" class="login-note">保存后显示在米游社用户网页与此设置页的页脚。</p>
+        <p id="web-icp-note" class="login-note">{{ panelText('WebLoginSettings.dcf37df668') }}</p>
       </fieldset>
-      <p class="login-note">新链接和新登录立即使用保存的有效期。用户网页的启用状态、地址和路径在重启宿主后生效。</p>
+      <p class="login-note">{{ panelText('WebLoginSettings.e104354319') }}</p>
       <div class="login-settings-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">保存</ElButton>
+          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">{{ panelText('WebLoginSettings.a3030bf8f1') }}</ElButton>
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>

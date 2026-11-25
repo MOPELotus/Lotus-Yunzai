@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton, ElInput } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
@@ -10,15 +12,15 @@ const emit = defineEmits<{
 }>();
 
 const toggles = [
-  { key: "enable", label: "启用资料卡点赞", help: "处理群聊和私聊中的点赞指令。" },
-  { key: "cloneAllThumbUp", label: "关闭 #全部赞我", help: "勾选后，#赞我 等其他指令仍按点赞总开关处理。" },
-  { key: "strangeThumbUp", label: "允许向非好友点赞", help: "关闭后，仅处理协议端确认的好友。" },
+  { key: "enable", label: panelText('LikeSettings.af88aef8a5'), help: panelText('LikeSettings.fd4cf86d34') },
+  { key: "cloneAllThumbUp", label: panelText('LikeSettings.e8574dc99e'), help: panelText('LikeSettings.7a3a2f47e1') },
+  { key: "strangeThumbUp", label: panelText('LikeSettings.53ddfe2d56'), help: panelText('LikeSettings.bf132d44f7') },
 ] as const;
 const messages = [
-  { key: "closeTips", label: "功能关闭提示" },
-  { key: "successMsg", label: "点赞成功提示" },
-  { key: "failsMsg", label: "点赞失败提示" },
-  { key: "noFriendMsg", label: "非好友提示" },
+  { key: "closeTips", label: panelText('LikeSettings.a48d2f4e1e') },
+  { key: "successMsg", label: panelText('LikeSettings.6bd445b0e0') },
+  { key: "failsMsg", label: panelText('LikeSettings.2bc04fca5b') },
+  { key: "noFriendMsg", label: panelText('LikeSettings.d62a3bee9d') },
 ] as const;
 type ToggleKey = (typeof toggles)[number]["key"];
 type MessageKey = (typeof messages)[number]["key"];
@@ -28,7 +30,7 @@ interface Snapshot {
   settings: Settings;
   revision: string;
 }
-const placeholderHelp = "{{at}} 提及发送者，{{userId}} 显示「你」，{{doType}} 显示操作名称，{{thumbUpNum}} 显示确认的点赞数。";
+const placeholderHelp = panelText('LikeSettings.9e03f1b1bb');
 const keys = [...toggles.map(({ key }) => key), "count", "recall", ...messages.map(({ key }) => key)] as const;
 const endpoint = `${import.meta.env.BASE_URL}api/settings/group/likes`;
 
@@ -114,29 +116,29 @@ async function request(method: "GET" | "PUT") {
     }
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "配置已被其他操作修改。请重新载入后再修改。";
+      error.value = panelText('LikeSettings.1f7211c562');
       return;
     }
     if (!response.ok) {
-      if (response.status === 400) error.value = "配置值无效，请检查点赞次数、撤回时间和提示文本。";
-      else if (response.status === 404) error.value = "群点赞模块未启用。";
-      else error.value = "宿主暂时无法读取或写入群点赞配置。";
+      if (response.status === 400) error.value = panelText('LikeSettings.ff7b4bf70c');
+      else if (response.status === 404) error.value = panelText('LikeSettings.498148784c');
+      else error.value = panelText('LikeSettings.704b200b93');
       return;
     }
 
     const data: unknown = await response.json().catch(() => undefined);
     if (active !== controller) return;
     if (!isSnapshot(data)) {
-      error.value = "宿主返回了无法识别的群点赞配置。";
+      error.value = panelText('LikeSettings.125ddfcbba');
       return;
     }
     baseline.value = data;
     draft.value = { ...data.settings };
     hiddenMessages.clear();
     conflict.value = false;
-    if (method === "PUT") notice.value = "群点赞配置已保存。";
+    if (method === "PUT") notice.value = panelText('LikeSettings.52c8dd437c');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('LikeSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -175,37 +177,37 @@ onBeforeUnmount(() => {
 <template>
   <section class="group-settings" aria-labelledby="like-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="like-settings-title" tabindex="-1">群点赞配置</h1>
-      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新载入</ElButton>
+      <h1 id="like-settings-title" tabindex="-1">{{ panelText('LikeSettings.7f028f6c2c') }}</h1>
+      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">{{ panelText('LikeSettings.35588dcb9b') }}</ElButton>
     </div>
 
     <div v-if="confirmReload" class="feedback">
-      <p>重新载入会放弃未保存的改动。</p>
+      <p>{{ panelText('LikeSettings.0079325ab9') }}</p>
       <div class="action-group">
-        <ElButton @click="confirmReload = false">取消</ElButton>
-        <ElButton type="danger" @click="request('GET')">放弃改动并重载</ElButton>
+        <ElButton @click="confirmReload = false">{{ panelText('LikeSettings.2cd0f3be87') }}</ElButton>
+        <ElButton type="danger" @click="request('GET')">{{ panelText('LikeSettings.c1364194f7') }}</ElButton>
       </div>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
-    <p v-else-if="!draft && busy" class="placeholder" role="status">正在读取配置…</p>
+    <p v-else-if="!draft && busy" class="placeholder" role="status">{{ panelText('LikeSettings.8a044dd742') }}</p>
 
     <form v-if="draft" novalidate @submit.prevent="request('PUT')">
       <fieldset class="settings-card" aria-labelledby="like-rules-title" :disabled="Boolean(busy)">
-        <div class="card-heading"><h2 id="like-rules-title">点赞规则</h2></div>
+        <div class="card-heading"><h2 id="like-rules-title">{{ panelText('LikeSettings.55e410f30f') }}</h2></div>
         <div v-for="toggle in toggles" :key="toggle.key" class="setting-row">
           <label :for="`like-${toggle.key}`">{{ toggle.label }}</label>
           <p class="setting-help" :id="`like-${toggle.key}-help`">{{ toggle.help }}</p>
           <input :id="`like-${toggle.key}`" v-model="draft[toggle.key]" type="checkbox" :aria-describedby="`like-${toggle.key}-help`" />
         </div>
         <div class="setting-row">
-          <label for="like-count">每次点赞次数</label>
-          <p class="setting-help" id="like-count-help">请输入 1 到 10 的整数。</p>
+          <label for="like-count">{{ panelText('LikeSettings.66aff666a5') }}</label>
+          <p class="setting-help" id="like-count-help">{{ panelText('LikeSettings.395921c5fb') }}</p>
           <input id="like-count" v-model.number="draft.count" type="number" min="1" max="10" step="1"
             required aria-describedby="like-count-help" :aria-invalid="!validCount" />
         </div>
         <div class="setting-row">
-          <label for="like-recall">结果回复撤回时间</label>
-          <p class="setting-help" id="like-recall-help">单位为秒，填 0 保留回复，最长 120 秒。</p>
+          <label for="like-recall">{{ panelText('LikeSettings.2953e4e03d') }}</label>
+          <p class="setting-help" id="like-recall-help">{{ panelText('LikeSettings.e98a77cc38') }}</p>
           <input id="like-recall" v-model.number="draft.recall" type="number" min="0" max="120" step="any"
             required aria-describedby="like-recall-help" :aria-invalid="!validRecall" />
         </div>
@@ -213,7 +215,7 @@ onBeforeUnmount(() => {
 
       <fieldset class="settings-card" aria-labelledby="like-messages-title" :disabled="Boolean(busy)">
         <div class="card-heading">
-          <h2 id="like-messages-title">回复提示</h2>
+          <h2 id="like-messages-title">{{ panelText('LikeSettings.f2933eb9ef') }}</h2>
           <p class="setting-help" v-text="placeholderHelp"></p>
         </div>
         <div class="message-grid">
@@ -223,11 +225,11 @@ onBeforeUnmount(() => {
               <label class="message-toggle">
                 <input
                   type="checkbox"
-                  :aria-label="`发送${field.label}`"
+                  :aria-label="panelText('LikeSettings.b41c191c0b', { value1: field.label })"
                   :checked="draft[field.key] !== false"
                   @change="setMessageEnabled(field.key, ($event.target as HTMLInputElement).checked)"
                 />
-                <span>发送</span>
+                <span>{{ panelText('LikeSettings.edecf0ae6e') }}</span>
               </label>
             </div>
             <ElInput
@@ -236,7 +238,7 @@ onBeforeUnmount(() => {
               :rows="2"
               :model-value="draft[field.key] || ''"
               :disabled="Boolean(busy) || draft[field.key] === false"
-              placeholder="留空时不发送"
+              :placeholder="panelText('LikeSettings.6bad204934')"
               @update:model-value="draft[field.key] = $event"
             />
           </div>
@@ -244,10 +246,10 @@ onBeforeUnmount(() => {
       </fieldset>
 
       <div class="feedback save-bar">
-        <p v-if="notice || dirty" role="status">{{ dirty ? "有未保存的改动" : notice }}</p>
+        <p v-if="notice || dirty" role="status">{{ dirty ? panelText('LikeSettings.535083c5e5') : notice }}</p>
         <ElButton type="primary" native-type="submit"
           :loading="busy === 'PUT'" :disabled="!dirty || !validCount || !validRecall || conflict || Boolean(busy)">
-          保存配置
+          {{ panelText('LikeSettings.6e584e3d5c') }}
         </ElButton>
       </div>
     </form>

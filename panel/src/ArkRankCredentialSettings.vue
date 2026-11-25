@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElButton } from "element-plus";
 import { panelFetch, type PanelAuth } from "./api";
@@ -18,9 +20,9 @@ let active: AbortController | undefined;
 watch(draft, value => emit("dirty-change", value.length > 0));
 const summary = computed(() => {
   switch (snapshot.value?.source) {
-    case "environment": return snapshot.value.usable ? "已从环境变量配置。" : "环境变量中的 Token 格式无效。";
-    case "stored": return snapshot.value.usable ? "已保存 Token。" : "已保存的 Token 格式无效，请替换或清除。";
-    case "none": return "尚未设置 Token。";
+    case "environment": return snapshot.value.usable ? panelText('ArkRankCredentialSettings.df65cb2f67') : panelText('ArkRankCredentialSettings.3ac5f0865f');
+    case "stored": return snapshot.value.usable ? panelText('ArkRankCredentialSettings.fc73469ff6') : panelText('ArkRankCredentialSettings.e431d38f2b');
+    case "none": return panelText('ArkRankCredentialSettings.2d2f202139');
     default: return "";
   }
 });
@@ -41,9 +43,9 @@ async function update(method: "GET" | "PUT" | "DELETE" = "GET") {
     });
     if (active !== request) return;
     if (response.status === 401) { emit("unauthorized"); return; }
-    if (response.status === 400) { error.value = "请输入有效的 Token，最多 2048 个非空格 ASCII 字符。"; return; }
-    if (response.status === 409) { error.value = "当前由部署环境变量控制。请重新读取设置。"; return; }
-    if (!response.ok) { error.value = "无法访问排行榜凭据存储，请检查 Valkey 后重试。"; return; }
+    if (response.status === 400) { error.value = panelText('ArkRankCredentialSettings.0ca938655f'); return; }
+    if (response.status === 409) { error.value = panelText('ArkRankCredentialSettings.9af952ba07'); return; }
+    if (!response.ok) { error.value = panelText('ArkRankCredentialSettings.31de7f1f50'); return; }
     const result = await response.json() as Snapshot;
     if (active !== request) return;
     snapshot.value = result;
@@ -51,10 +53,10 @@ async function update(method: "GET" | "PUT" | "DELETE" = "GET") {
     if (method !== "GET") {
       draft.value = "";
       confirming.value = false;
-      feedback.value = method === "PUT" ? "Token 已保存。" : "Token 已清除。";
+      feedback.value = method === "PUT" ? panelText('ArkRankCredentialSettings.b7116b37ae') : panelText('ArkRankCredentialSettings.17db3d1e85');
     }
   } catch {
-    if (active === request) error.value = "暂时无法读取或修改排行榜凭据。";
+    if (active === request) error.value = panelText('ArkRankCredentialSettings.8743fc8668');
   } finally {
     clearTimeout(timer);
     if (active === request) {
@@ -76,24 +78,24 @@ onBeforeUnmount(() => {
 
 <template>
   <form class="rank-credential-form" aria-labelledby="rank-credential-title" :aria-busy="busy" @submit.prevent="update('PUT')">
-    <h2 id="rank-credential-title">自定义排行榜高级凭据</h2>
+    <h2 id="rank-credential-title">{{ panelText('ArkRankCredentialSettings.06e0c5b5ac') }}</h2>
     <p v-if="feedback || summary" role="status">{{ feedback || summary }}</p>
-    <p v-if="snapshot?.source === 'environment'">请在部署环境变量 LOTUS_ARK_CUSTOM_RANK_TOKEN 中修改。</p>
+    <p v-if="snapshot?.source === 'environment'">{{ panelText('ArkRankCredentialSettings.4d84762ef8') }}</p>
     <div v-if="editable" class="rank-credential-field">
-      <label for="rank-credential-token">替换 Token</label>
+      <label for="rank-credential-token">{{ panelText('ArkRankCredentialSettings.2d9514a869') }}</label>
       <input id="rank-credential-token" v-model="draft" type="password" maxlength="2048" autocomplete="new-password"
         spellcheck="false" :disabled="busy || confirming">
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <div v-if="confirming" class="rank-credential-actions" aria-label="确认清除">
-      <span>清除后，高级排行查询将无法使用此 Token。</span>
-      <ElButton type="danger" :disabled="busy" @click="update('DELETE')">确认清除</ElButton>
-      <ElButton :disabled="busy" @click="confirming = false">取消</ElButton>
+    <div v-if="confirming" class="rank-credential-actions" :aria-label="panelText('ArkRankCredentialSettings.a5da1dd8fd')">
+      <span>{{ panelText('ArkRankCredentialSettings.8d9787bba6') }}</span>
+      <ElButton type="danger" :disabled="busy" @click="update('DELETE')">{{ panelText('ArkRankCredentialSettings.a5da1dd8fd') }}</ElButton>
+      <ElButton :disabled="busy" @click="confirming = false">{{ panelText('ArkRankCredentialSettings.2cd0f3be87') }}</ElButton>
     </div>
     <div v-else class="rank-credential-actions">
-      <ElButton v-if="editable" type="primary" native-type="submit" :disabled="busy || !draft.trim()">保存 Token</ElButton>
-      <ElButton v-if="editable && snapshot?.source === 'stored'" :disabled="busy" @click="confirming = true">清除 Token</ElButton>
-      <ElButton :disabled="busy" @click="update()">重新读取</ElButton>
+      <ElButton v-if="editable" type="primary" native-type="submit" :disabled="busy || !draft.trim()">{{ panelText('ArkRankCredentialSettings.943dcc9cbb') }}</ElButton>
+      <ElButton v-if="editable && snapshot?.source === 'stored'" :disabled="busy" @click="confirming = true">{{ panelText('ArkRankCredentialSettings.9659d31a09') }}</ElButton>
+      <ElButton :disabled="busy" @click="update()">{{ panelText('ArkRankCredentialSettings.df7392cc96') }}</ElButton>
     </div>
   </form>
 </template>

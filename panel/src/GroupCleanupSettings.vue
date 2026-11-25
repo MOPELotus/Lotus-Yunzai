@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { accountScopePolicies, type AccountScopePolicy } from "../../lib/account-scope-policy.ts";
@@ -8,11 +10,11 @@ const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/group/cleanup`;
 const fields = [
-  { key: "dry_run", label: "仅预览清理" },
-  { key: "remove_group_fallback", label: "移除当前群的通知回退" },
+  { key: "dry_run", label: panelText('GroupCleanupSettings.184c17621c') },
+  { key: "remove_group_fallback", label: panelText('GroupCleanupSettings.47ed0d036e') },
 ] as const;
 const policyLabels: Record<AccountScopePolicy, string> = {
-  inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
+  inherit: panelText('GroupCleanupSettings.a979ac4d37'), allow: panelText('GroupCleanupSettings.ce7ef28b67'), deny: panelText('GroupCleanupSettings.136de7a8c4'), master_only: panelText('GroupCleanupSettings.dc138aeaa5'),
 };
 type Settings = Record<typeof fields[number]["key"], boolean>;
 interface Snapshot { settings: Settings; archiveRequested: boolean; scopePolicy: AccountScopePolicy; revision: string }
@@ -55,7 +57,7 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "清理配置已在别处修改。请重新读取后再保存。";
+      error.value = panelText('GroupCleanupSettings.2feb9ffcd0');
       return;
     }
     if (!response.ok) throw new Error();
@@ -68,9 +70,9 @@ async function request(method: "GET" | "PUT") {
     draft.value = { ...result.settings };
     draftPolicy.value = result.scopePolicy;
     conflict.value = false;
-    if (method === "PUT") notice.value = "已保存，下次手动清理时读取。";
+    if (method === "PUT") notice.value = panelText('GroupCleanupSettings.be20c51482');
   } catch {
-    if (active === controller) error.value = "暂时无法读取或保存退群档案清理设置。";
+    if (active === controller) error.value = panelText('GroupCleanupSettings.78f8d28f41');
   } finally {
     if (active === controller) {
       active = undefined;
@@ -92,31 +94,31 @@ onBeforeUnmount(() => { active?.abort(); active = undefined; });
 <template>
   <section class="cleanup-settings" aria-labelledby="group-cleanup-title" :aria-busy="Boolean(busy)">
     <div class="cleanup-heading">
-      <h2 id="group-cleanup-title">退群档案清理</h2>
+      <h2 id="group-cleanup-title">{{ panelText('GroupCleanupSettings.403263b84b') }}</h2>
       <ElButton :disabled="Boolean(busy) || reloadPrompt" :loading="busy === 'GET'"
-        @click="dirty ? reloadPrompt = true : request('GET')">重新读取清理设置</ElButton>
+        @click="dirty ? reloadPrompt = true : request('GET')">{{ panelText('GroupCleanupSettings.063c36ad54') }}</ElButton>
     </div>
     <div v-if="reloadPrompt" class="feedback" role="alert">
-      <p>重新读取会放弃未保存的清理设置。</p>
+      <p>{{ panelText('GroupCleanupSettings.6da69f3b9f') }}</p>
       <div class="action-group">
-        <ElButton @click="reloadPrompt = false">继续编辑</ElButton>
-        <ElButton type="danger" @click="request('GET')">放弃改动并读取</ElButton>
+        <ElButton @click="reloadPrompt = false">{{ panelText('GroupCleanupSettings.fd4b9e3b6c') }}</ElButton>
+        <ElButton type="danger" @click="request('GET')">{{ panelText('GroupCleanupSettings.a5831537bd') }}</ElButton>
       </div>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" @submit.prevent="request('PUT')">
       <fieldset class="settings-card" aria-labelledby="group-cleanup-title" :disabled="Boolean(busy) || reloadPrompt">
-        <p class="subtitle">通过 <code>#群清理退群</code> 手动执行。即使关闭预览，也须在当前群确认目标已离群后才会移除该群的通知回退。</p>
-        <p v-if="saved?.archiveRequested" class="subtitle">旧配置已请求归档。当前只会生成预览，同时保留通知回退。</p>
-        <p v-else class="subtitle">档案归档仅提供预览。</p>
+        <p class="subtitle">{{ panelText('GroupCleanupSettings.1e9f2561b7') }} <code>{{ panelText('GroupCleanupSettings.4c7190f2a3') }}</code> {{ panelText('GroupCleanupSettings.da43880785') }}</p>
+        <p v-if="saved?.archiveRequested" class="subtitle">{{ panelText('GroupCleanupSettings.098353b525') }}</p>
+        <p v-else class="subtitle">{{ panelText('GroupCleanupSettings.89ec461bad') }}</p>
         <label class="cleanup-option cleanup-policy" for="group-cleanup-scope-policy">
-          <span>手动清理权限</span>
+          <span>{{ panelText('GroupCleanupSettings.3fa0315617') }}</span>
           <select id="group-cleanup-scope-policy" v-model="draftPolicy" aria-describedby="group-cleanup-policy-note">
             <option v-for="mode in accountScopePolicies" :key="mode" :value="mode">{{ policyLabels[mode] }}</option>
           </select>
         </label>
         <p id="group-cleanup-policy-note" class="subtitle">
-          用户和群拒绝名单优先。「允许」或继承的全局规则可能准许普通成员使用命令。好友私聊只提供预览。
+          {{ panelText('GroupCleanupSettings.ca45a4ce12') }}
         </p>
         <label v-for="{ key, label } in fields" :key="key" class="cleanup-option">
           <span>{{ label }}</span>
@@ -126,7 +128,7 @@ onBeforeUnmount(() => { active?.abort(); active = undefined; });
       <div class="feedback save-bar">
         <p v-if="notice" role="status">{{ notice }}</p>
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || conflict || Boolean(busy) || reloadPrompt">保存清理设置</ElButton>
+          :disabled="!dirty || conflict || Boolean(busy) || reloadPrompt">{{ panelText('GroupCleanupSettings.95de16c95f') }}</ElButton>
       </div>
     </form>
   </section>

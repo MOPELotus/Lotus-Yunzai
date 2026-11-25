@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, ref, shallowRef, watch } from "vue";
 import type { GuobaEdit, GuobaField, GuobaInput, GuobaSubformEdit, GuobaSubformSnapshot } from "../../lib/panel-guoba.ts";
@@ -144,7 +146,7 @@ function display(input: GuobaInput | undefined, separator = "\n") {
 function rowText(row: Row, field: Field) {
   const input = Object.hasOwn(row.values, field.field) ? row.values[field.field] :
     row.index === null ? undefined : props.saved.rows[row.index]?.values[field.field];
-  if (typeof input === "boolean") return input ? "是" : "否";
+  if (typeof input === "boolean") return input ? panelText('GuobaSubform.b5141d3d19') : panelText('GuobaSubform.0c70665b6e');
   return field.componentProps?.options?.find(option => option.value === input)?.label ?? (display(input as GuobaInput, "、") || "—");
 }
 
@@ -166,7 +168,7 @@ function confirm() {
     const hasPassword = item.component === "InputPassword" && !Object.hasOwn(draft.value, item.field) &&
       stored.value?.configuredPasswords.includes(item.field);
     if (item.required && !hasPassword && (input == null || input === "" || (Array.isArray(input) && !input.length))) {
-      error.value = `请填写「${item.label}」。`;
+      error.value = panelText('GuobaSubform.6899fe6b15', { value1: item.label });
       return;
     }
   }
@@ -187,7 +189,7 @@ function confirm() {
     <h3 :id="`${id}-title`">{{ schema.label }}</h3>
     <p v-if="schema.bottomHelpMessage" class="subform-help">{{ schema.bottomHelpMessage }}</p>
     <template v-if="!single">
-      <p v-if="!rows.length" class="subform-help">暂无数据</p>
+      <p v-if="!rows.length" class="subform-help">{{ panelText('GuobaSubform.497c85690c') }}</p>
       <ul v-else class="subform-rows">
         <li v-for="(row, index) in rows" :key="row.index ?? `new-${index}`">
           <dl>
@@ -196,39 +198,39 @@ function confirm() {
             </div>
           </dl>
           <div class="subform-actions">
-            <ElButton :aria-label="`编辑第 ${index + 1} 条`" @click="open(index)">编辑</ElButton>
+            <ElButton :aria-label="panelText('GuobaSubform.1127fc5484', { value1: index + 1 })" @click="open(index)">{{ panelText('GuobaSubform.0518365699') }}</ElButton>
             <template v-if="pendingRemove === index">
-              <ElButton @click="pendingRemove = undefined">取消</ElButton>
+              <ElButton @click="pendingRemove = undefined">{{ panelText('GuobaSubform.2cd0f3be87') }}</ElButton>
               <ElButton type="danger" @click="publish(rows.filter((_, at) => at !== index)); pendingRemove = undefined">
-                确认删除
+                {{ panelText('GuobaSubform.a3ea3c17b4') }}
               </ElButton>
             </template>
             <ElButton v-else :disabled="rows.length <= (limits.lengthMin ?? 0)"
-              :aria-label="`删除第 ${index + 1} 条`" @click="pendingRemove = index">删除</ElButton>
+              :aria-label="panelText('GuobaSubform.5f0360ec24', { value1: index + 1 })" @click="pendingRemove = index">{{ panelText('GuobaSubform.2f9daa8289') }}</ElButton>
           </div>
         </li>
       </ul>
-      <ElButton :disabled="limits.lengthMax !== undefined && rows.length >= limits.lengthMax" @click="open(null)">新增</ElButton>
+      <ElButton :disabled="limits.lengthMax !== undefined && rows.length >= limits.lengthMax" @click="open(null)">{{ panelText('GuobaSubform.0006d696d8') }}</ElButton>
     </template>
 
     <component :is="single ? 'div' : 'dialog'" ref="editor" :class="{ 'subform-editor': !single }"
       :aria-labelledby="single ? undefined : `${id}-editor-title`"
       @keydown.enter="preventOuterSubmit">
-      <h3 v-if="!single" :id="`${id}-editor-title`">{{ position === null ? "新增" : "编辑" }}{{ heading }}</h3>
+      <h3 v-if="!single" :id="`${id}-editor-title`">{{ position === null ? panelText('GuobaSubform.0006d696d8') : panelText('GuobaSubform.0518365699') }}{{ heading }}</h3>
       <div class="subform-editor-fields">
         <div v-for="(item, index) in fields" :key="item.field" class="subform-field">
           <label v-if="item.component !== 'GSubForm' && item.component !== 'CheckboxGroup'"
-            :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></label>
+            :for="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">{{ panelText('GuobaSubform.94b33f6aad') }}</template></label>
           <GuobaSubform v-if="item.component === 'GSubForm' && nestedSnapshot(item.field)"
             :id="`${id}-child-${index}`" :schema="item" :saved="nestedSnapshot(item.field)!"
             :edited="fieldEdits[item.field] as GuobaSubformEdit | undefined" @update="editNested(item.field, $event)" />
           <template v-else-if="item.component === 'InputPassword'">
             <input :id="`${id}-child-${index}`" type="password" autocomplete="new-password"
-              :value="display(fieldEdits[item.field] as GuobaInput | undefined)" :disabled="fieldEdits[item.field] === null" placeholder="留空保留现有密码"
+              :value="display(fieldEdits[item.field] as GuobaInput | undefined)" :disabled="fieldEdits[item.field] === null" :placeholder="panelText('GuobaSubform.a1087d5221')"
                 :required="required(item) && !stored?.configuredPasswords.includes(item.field)"
               @input="password(item.field, $event)" />
-            <ElButton v-if="fieldEdits[item.field] === null" @click="keepPassword(item.field)">撤销清除</ElButton>
-            <ElButton v-else-if="stored?.configuredPasswords.includes(item.field)" @click="edit(item.field, null)">清除密码</ElButton>
+            <ElButton v-if="fieldEdits[item.field] === null" @click="keepPassword(item.field)">{{ panelText('GuobaSubform.ce1a8af929') }}</ElButton>
+            <ElButton v-else-if="stored?.configuredPasswords.includes(item.field)" @click="edit(item.field, null)">{{ panelText('GuobaSubform.a57cdd7b49') }}</ElButton>
           </template>
           <GuobaSpecialField v-else-if="isSpecialGuobaField(item)" :id="`${id}-child-${index}`" :schema="item"
             :value="value(item.field)" :required="required(item)" @update="edit(item.field, $event)" />
@@ -242,7 +244,7 @@ function confirm() {
           </div>
           <div v-else-if="item.component === 'CheckboxGroup'" class="subform-checkboxes" role="group"
             :aria-labelledby="`${id}-child-${index}`">
-            <span :id="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">（必填）</template></span>
+            <span :id="`${id}-child-${index}`">{{ item.label }}<template v-if="item.required">{{ panelText('GuobaSubform.94b33f6aad') }}</template></span>
             <label v-for="(option, at) in item.componentProps?.options" :key="at">
               <input type="checkbox" :checked="selected(item, option.value)" :disabled="option.disabled"
                 @change="toggle(item, option.value, $event)" />{{ option.label }}
@@ -250,19 +252,19 @@ function confirm() {
           </div>
           <template v-else-if="item.component === 'Select' && item.componentProps?.mode === 'tags'">
             <textarea :id="`${id}-child-${index}`" :value="display(value(item.field))"
-              rows="3" placeholder="每行一个标签" :required="required(item)" @change="tags(item, $event)" />
+              rows="3" :placeholder="panelText('GuobaSubform.e213c5fd9a')" :required="required(item)" @change="tags(item, $event)" />
             <div v-if="item.componentProps.options?.length" class="subform-actions" role="group"
-              :aria-label="`${item.label}预设`">
+              :aria-label="panelText('GuobaSubform.d0be9cf047', { value1: item.label })">
               <ElButton v-for="(option, at) in item.componentProps.options" :key="at" size="small"
                 :disabled="option.disabled || selected(item, option.value)" @click="addTag(item, option.value)">
-                添加 {{ option.label }}
+                {{ panelText('GuobaSubform.1ec67b4460', { value1: option.label }) }}
               </ElButton>
             </div>
           </template>
           <select v-else-if="item.component === 'Select'" :id="`${id}-child-${index}`"
             :multiple="item.componentProps?.mode === 'multiple'" :required="required(item)" @change="select(item, $event)">
             <option v-if="item.componentProps?.mode !== 'multiple'" value="" disabled
-              :selected="!item.componentProps?.options?.some(option => selected(item, option.value))">请选择</option>
+              :selected="!item.componentProps?.options?.some(option => selected(item, option.value))">{{ panelText('GuobaSubform.da590a8fe3') }}</option>
             <option v-for="(option, at) in item.componentProps?.options" :key="at" :value="at"
               :disabled="option.disabled" :selected="selected(item, option.value)">{{ option.label }}</option>
           </select>
@@ -276,8 +278,8 @@ function confirm() {
       </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div v-if="!single" class="subform-actions">
-        <ElButton @click="dialog()?.close()">取消</ElButton>
-        <ElButton type="primary" @click="confirm">确定</ElButton>
+        <ElButton @click="dialog()?.close()">{{ panelText('GuobaSubform.2cd0f3be87') }}</ElButton>
+        <ElButton type="primary" @click="confirm">{{ panelText('GuobaSubform.fac2a67ad8') }}</ElButton>
       </div>
     </component>
   </section>

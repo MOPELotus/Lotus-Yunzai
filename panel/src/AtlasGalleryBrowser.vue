@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { panelFetch, type PanelAuth } from "./api.ts";
@@ -51,7 +53,7 @@ async function browse(page = 1) {
   } catch {
     if (browseRequest === controller) {
       result.value = undefined;
-      browseError.value = "暂时无法读取图库目录。";
+      browseError.value = panelText('AtlasGalleryBrowser.7e3fea2839');
     }
   } finally {
     if (browseRequest === controller) {
@@ -93,14 +95,14 @@ async function preview(item: Item) {
     if (previewRequest !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      previewError.value = "图库快照已变更，请重新查询。";
+      previewError.value = panelText('AtlasGalleryBrowser.0f6e50f8c6');
       return;
     }
     if (!response.ok || response.headers.get("Content-Type") !== "image/png") throw new Error();
     const source = await dataUrl(await response.blob());
     if (previewRequest === controller) thumbnail.value = source;
   } catch {
-    if (previewRequest === controller) previewError.value = "暂时无法预览这张图片。";
+    if (previewRequest === controller) previewError.value = panelText('AtlasGalleryBrowser.940ca5f5c7');
   } finally {
     if (previewRequest === controller) {
       previewRequest = undefined;
@@ -119,36 +121,36 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="atlas-gallery-browser" aria-labelledby="atlas-browser-title">
-    <h3 id="atlas-browser-title">浏览当前图库</h3>
+    <h3 id="atlas-browser-title">{{ panelText('AtlasGalleryBrowser.fd7550427d') }}</h3>
     <form class="gallery-filters" @submit.prevent="browse()">
-      <label>游戏
+      <label>{{ panelText('AtlasGalleryBrowser.847c5f681c') }}
         <select v-model="game" @change="changeGame">
-          <option value="gi">原神</option>
-          <option value="hsr">星铁</option>
-          <option value="zzz">绝区零</option>
+          <option value="gi">{{ panelText('AtlasGalleryBrowser.d1597c51ed') }}</option>
+          <option value="hsr">{{ panelText('AtlasGalleryBrowser.a2927891f0') }}</option>
+          <option value="zzz">{{ panelText('AtlasGalleryBrowser.b1110352c9') }}</option>
         </select>
       </label>
-      <label>目录
+      <label>{{ panelText('AtlasGalleryBrowser.52daa71ebc') }}
         <select v-model="folder" :disabled="loading || !result?.folders.length" @change="browse()">
-          <option value="">全部</option>
+          <option value="">{{ panelText('AtlasGalleryBrowser.5c55a67935') }}</option>
           <option v-for="name in result?.folders" :key="name">{{ name }}</option>
         </select>
       </label>
-      <label>搜索
-        <input v-model="filter" type="search" maxlength="100" placeholder="名称或路径" />
+      <label>{{ panelText('AtlasGalleryBrowser.44ce7ae909') }}
+        <input v-model="filter" type="search" maxlength="100" :placeholder="panelText('AtlasGalleryBrowser.eb7b7b614b')" />
       </label>
-      <ElButton native-type="submit" :loading="loading">查询</ElButton>
+      <ElButton native-type="submit" :loading="loading">{{ panelText('AtlasGalleryBrowser.bcd6771e08') }}</ElButton>
     </form>
     <p v-if="browseError" role="alert">{{ browseError }}</p>
     <template v-if="result">
       <p class="gallery-status" role="status">
-        {{ result.version ? `快照 ${result.version} · ` : "" }}{{ number.format(result.total) }} 张
-        <template v-if="result.total"> · 第 {{ result.page }} / {{ result.pages }} 页</template>
+        {{ result.version ? panelText('AtlasGalleryBrowser.0cfe6da359', { value1: result.version }) : "" }}{{ number.format(result.total) }} {{ panelText('AtlasGalleryBrowser.f56a049fcc') }}
+        <template v-if="result.total"> {{ panelText('AtlasGalleryBrowser.032c36db02', { value1: result.page, value2: result.pages }) }}</template>
       </p>
-      <p v-if="!result.total">没有符合条件的图片。</p>
+      <p v-if="!result.total">{{ panelText('AtlasGalleryBrowser.fa0c482d71') }}</p>
       <div v-else class="gallery-browser-grid" :aria-busy="loading">
         <div>
-          <ul class="gallery-file-list" aria-label="图片列表">
+          <ul class="gallery-file-list" :aria-label="panelText('AtlasGalleryBrowser.5b75727ad9')">
             <li v-for="item in result.items" :key="item.path">
               <button type="button" :disabled="loading" :aria-pressed="selected?.path === item.path" @click="preview(item)">
                 {{ item.path }}
@@ -156,18 +158,18 @@ onBeforeUnmount(() => {
             </li>
           </ul>
           <div v-if="result.pages > 1" class="gallery-pages">
-            <ElButton :disabled="loading || result.page === 1" @click="browse(result.page - 1)">上一页</ElButton>
-            <ElButton :disabled="loading || result.page === result.pages" @click="browse(result.page + 1)">下一页</ElButton>
+            <ElButton :disabled="loading || result.page === 1" @click="browse(result.page - 1)">{{ panelText('AtlasGalleryBrowser.c9b9ae7a61') }}</ElButton>
+            <ElButton :disabled="loading || result.page === result.pages" @click="browse(result.page + 1)">{{ panelText('AtlasGalleryBrowser.8a8542f696') }}</ElButton>
           </div>
         </div>
         <figure v-if="selected" class="gallery-preview" :aria-busy="previewing">
           <figcaption>
             <strong>{{ selected.path }}</strong>
-            <span>{{ number.format(selected.bytes) }} B</span>
+            <span>{{ number.format(selected.bytes) }} {{ panelText('AtlasGalleryBrowser.df7e70e502') }}</span>
           </figcaption>
-          <p v-if="previewing" role="status">正在读取预览…</p>
+          <p v-if="previewing" role="status">{{ panelText('AtlasGalleryBrowser.10454bea3a') }}</p>
           <p v-else-if="previewError" role="alert">{{ previewError }}</p>
-          <img v-else-if="thumbnail" :src="thumbnail" :alt="`预览 ${selected.path}`" />
+          <img v-else-if="thumbnail" :src="thumbnail" :alt="panelText('AtlasGalleryBrowser.f4ba7d3ed1', { value1: selected.path })" />
         </figure>
       </div>
     </template>

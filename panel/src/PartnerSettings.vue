@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { partnerEditableReviewModes, partnerNumbers, partnerResponsesDefaultUrl, partnerReviewModes, partnerScheduleDefault, type PartnerPanelSettings,
@@ -46,7 +48,7 @@ watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的网易云合伙人设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('PartnerSettings.308fe50f57'))) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -62,26 +64,26 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('PartnerSettings.bbc6698bf1');
       return;
     }
     if (response.status === 400) {
       const { field } = await response.json().catch(() => ({})) as { field?: string };
       if (active !== controller) return;
       const messages: Readonly<Record<string, string>> = {
-        schedule: "执行时间的 Cron 表达式无效。",
-        delay_ms_max: "最大操作间隔应不小于最小间隔，填 0 可停用间隔。",
-        review_local: "请先在本机 config/global.yaml 确认乐评来源和 Codex 程序。",
-        review_api_url: "请填写完整的 HTTPS Responses 接口。仅本机回环地址允许 HTTP。地址不应含凭据、查询参数或片段。",
-        review_api_url_key: "更改 Responses 接口时，请同时填写该接口的密钥或明确清除旧密钥。",
-        review_api_key: "Responses 密钥格式无效。填写新密钥和清除原密钥只能选择一项。",
-        review_responses: "启用 Responses 前，请填写模型与密钥，并确认接口地址有效。",
+        schedule: panelText('PartnerSettings.a30f4150d9'),
+        delay_ms_max: panelText('PartnerSettings.f4668f0ea3'),
+        review_local: panelText('PartnerSettings.01626f5e50'),
+        review_api_url: panelText('PartnerSettings.cae55b8fe4'),
+        review_api_url_key: panelText('PartnerSettings.89845238ba'),
+        review_api_key: panelText('PartnerSettings.a0615d30ac'),
+        review_responses: panelText('PartnerSettings.5129e8d81f'),
       };
-      error.value = (field && messages[field]) || "请检查数值范围或评论长度。每条评论最多 500 字，最多 100 条。";
+      error.value = (field && messages[field]) || panelText('PartnerSettings.61f31f5cf9');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取网易云合伙人设置。" : "宿主未能保存网易云合伙人设置。";
+      error.value = mode === "load" ? panelText('PartnerSettings.24a5787be9') : panelText('PartnerSettings.7fa9bf39ff');
       return;
     }
     const result = await response.json() as PartnerPanelSnapshot;
@@ -95,7 +97,7 @@ async function sync(mode: "load" | "save") {
         !Array.isArray(result.settings.comments) || !result.settings.comments.every(value => typeof value === "string") ||
         !partnerNumbers.every(({ key, min, max }) => Number.isSafeInteger(result.settings[key]) &&
           result.settings[key] >= min && result.settings[key] <= max)) {
-      error.value = "宿主返回了无法识别的网易云合伙人设置。";
+      error.value = panelText('PartnerSettings.9e9a1d5ec5');
       return;
     }
     saved.value = result;
@@ -104,9 +106,9 @@ async function sync(mode: "load" | "save") {
     reviewModel.value = result.review.model;
     reviewUrl.value = reviewKey.value = "";
     resetReviewUrl.value = clearReviewKey.value = false;
-    if (mode === "save") feedback.value = "已保存。执行时间和启动补跑设置在下次启动时采用。";
+    if (mode === "save") feedback.value = panelText('PartnerSettings.42b59a0c3b');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('PartnerSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -126,24 +128,24 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="partner-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="partner-settings-title" tabindex="-1">网易云合伙人设置</h1>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h1 id="partner-settings-title" tabindex="-1">{{ panelText('PartnerSettings.6d62da50a0') }}</h1>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('PartnerSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="partner-settings" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
-        <legend>自动任务</legend>
+        <legend>{{ panelText('PartnerSettings.44dc0ac37a') }}</legend>
         <label class="partner-toggle"><input id="partner-enable" v-model="draft.enable" type="checkbox"
-          :disabled="saved?.reviewMode === 'disabled' && !draft.enable" />启用自动任务</label>
-        <label for="partner-schedule">执行时间 Cron</label>
+          :disabled="saved?.reviewMode === 'disabled' && !draft.enable" />{{ panelText('PartnerSettings.fccc127a59') }}</label>
+        <label for="partner-schedule">{{ panelText('PartnerSettings.1748e7a1a1') }}</label>
         <input id="partner-schedule" v-model="draft.schedule" type="text" :placeholder="partnerScheduleDefault"
           maxlength="160" spellcheck="false" autocomplete="off" />
-        <label class="partner-toggle"><input id="partner-catch-up" v-model="draft.auto_catch_up" type="checkbox" />启动后补跑当天任务</label>
-        <p class="subtitle">启动补跑只适用于每天固定时间的任务。执行时间和启动补跑随宿主启动配置，清空时间恢复默认。</p>
-        <label class="partner-toggle"><input id="partner-notify" v-model="draft.notify_master" type="checkbox" />自动任务结束后私聊通知机器人主人</label>
+        <label class="partner-toggle"><input id="partner-catch-up" v-model="draft.auto_catch_up" type="checkbox" />{{ panelText('PartnerSettings.c378904bc1') }}</label>
+        <p class="subtitle">{{ panelText('PartnerSettings.1a67ad2146') }}</p>
+        <label class="partner-toggle"><input id="partner-notify" v-model="draft.notify_master" type="checkbox" />{{ panelText('PartnerSettings.cdeabfb256') }}</label>
       </fieldset>
       <fieldset :disabled="Boolean(busy)">
-        <legend>扫码登录与任务间隔</legend>
+        <legend>{{ panelText('PartnerSettings.0a915af02f') }}</legend>
         <template v-for="field in loginNumbers" :key="field.key">
           <label :for="`partner-${field.key}`">{{ field.label }}</label>
           <input :id="`partner-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.min"
@@ -154,11 +156,11 @@ onBeforeUnmount(() => {
           <input :id="`partner-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.min"
             :max="field.max" step="1" required />
         </template>
-        <p class="subtitle">最大间隔填 0 可停用操作间隔。</p>
+        <p class="subtitle">{{ panelText('PartnerSettings.ffad6802af') }}</p>
       </fieldset>
       <fieldset :disabled="Boolean(busy)">
-        <legend>乐评</legend>
-        <label for="partner-review-mode">乐评来源</label>
+        <legend>{{ panelText('PartnerSettings.abe3447cb1') }}</legend>
+        <label for="partner-review-mode">{{ panelText('PartnerSettings.112659beb7') }}</label>
         <select id="partner-review-mode" v-model="reviewMode" :disabled="saved?.reviewMode === 'disabled'">
           <option v-if="saved?.reviewMode === 'disabled' || saved?.reviewMode === 'unknown'" :value="saved.reviewMode" disabled>
             {{ partnerReviewModes[saved.reviewMode] }}
@@ -167,34 +169,34 @@ onBeforeUnmount(() => {
             :disabled="mode === 'codex' && saved?.review.customCodexCommand && saved.reviewMode !== 'codex'">{{ partnerReviewModes[mode] }}</option>
         </select>
         <p v-if="saved?.reviewMode === 'disabled'" class="subtitle">
-          迁移的外部乐评配置需要在本机 <code>config/global.yaml</code> 确认。确认后重新读取。
+          {{ panelText('PartnerSettings.d76f8fc911') }} <code>{{ panelText('PartnerSettings.04e1aebac7') }}</code> {{ panelText('PartnerSettings.274ed8e444') }}
         </p>
         <p v-else-if="reviewMode === 'codex' || saved?.review.customCodexCommand" class="subtitle">
-          Codex 程序和本机登录由部署者配置。自定义程序请在本机 <code>config/global.yaml</code> 选择。
+          {{ panelText('PartnerSettings.644a7b3e59') }} <code>{{ panelText('PartnerSettings.04e1aebac7') }}</code> {{ panelText('PartnerSettings.a275ef6167') }}
         </p>
         <template v-if="reviewMode === 'responses' || reviewMode === 'codex'">
-          <label for="partner-review-model">乐评模型</label>
-          <input id="partner-review-model" v-model="reviewModel" :placeholder="reviewMode === 'codex' ? '沿用本机 Codex 默认模型' : '填写服务支持的模型'"
+          <label for="partner-review-model">{{ panelText('PartnerSettings.cf8160c5a7') }}</label>
+          <input id="partner-review-model" v-model="reviewModel" :placeholder="reviewMode === 'codex' ? panelText('PartnerSettings.d602f48e20') : panelText('PartnerSettings.6f66ef8029')"
             type="text" maxlength="256" spellcheck="false" autocomplete="off" />
         </template>
         <template v-if="reviewMode === 'responses'">
-          <label for="partner-review-url">Responses API 地址</label>
+          <label for="partner-review-url">{{ panelText('PartnerSettings.50285b885b') }}</label>
           <input id="partner-review-url" v-model="reviewUrl" type="url" maxlength="2048" :disabled="resetReviewUrl"
-            :placeholder="saved?.review.apiUrlConfigured ? '已配置，留空保持' : partnerResponsesDefaultUrl" spellcheck="false" autocomplete="off" />
-          <p v-if="saved?.review.apiUrlConfigured && saved.review.apiOrigin" class="subtitle">当前服务 {{ saved.review.apiOrigin }}</p>
+            :placeholder="saved?.review.apiUrlConfigured ? panelText('PartnerSettings.c21d2ee034') : partnerResponsesDefaultUrl" spellcheck="false" autocomplete="off" />
+          <p v-if="saved?.review.apiUrlConfigured && saved.review.apiOrigin" class="subtitle">{{ panelText('PartnerSettings.70f4913bc5', { value1: saved.review.apiOrigin }) }}</p>
           <label v-if="saved?.review.apiUrlConfigured" class="partner-toggle">
-            <input v-model="resetReviewUrl" id="partner-review-reset-url" type="checkbox" />恢复默认接口
+            <input v-model="resetReviewUrl" id="partner-review-reset-url" type="checkbox" />{{ panelText('PartnerSettings.ba5bc22edd') }}
           </label>
-          <label for="partner-review-key">Responses API 密钥</label>
+          <label for="partner-review-key">{{ panelText('PartnerSettings.20a5f41cd3') }}</label>
           <input id="partner-review-key" v-model="reviewKey" type="password" maxlength="4096" :disabled="clearReviewKey"
-            :placeholder="saved?.review.apiKeyConfigured ? '已配置，留空保持' : '输入密钥'" autocomplete="new-password" />
+            :placeholder="saved?.review.apiKeyConfigured ? panelText('PartnerSettings.c21d2ee034') : panelText('PartnerSettings.90e94e28ac')" autocomplete="new-password" />
           <label v-if="saved?.review.apiKeyConfigured" class="partner-toggle">
-            <input v-model="clearReviewKey" id="partner-review-clear-key" type="checkbox" />清除已保存的密钥
+            <input v-model="clearReviewKey" id="partner-review-clear-key" type="checkbox" />{{ panelText('PartnerSettings.7e6f1c6963') }}
           </label>
         </template>
-        <label for="partner-comments">固定评论库，每行一条</label>
+        <label for="partner-comments">{{ panelText('PartnerSettings.4d74c7ff83') }}</label>
         <textarea id="partner-comments" v-model="commentsText" rows="4" maxlength="16000" />
-        <p class="subtitle">固定评论模式会用这组内容，留空恢复默认。</p>
+        <p class="subtitle">{{ panelText('PartnerSettings.2fa6f6a5b1') }}</p>
         <template v-for="field in reviewNumbers" :key="field.key">
           <label :for="`partner-${field.key}`">{{ field.label }}</label>
           <input :id="`partner-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.min"
@@ -202,7 +204,7 @@ onBeforeUnmount(() => {
         </template>
       </fieldset>
       <div class="partner-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">{{ panelText('PartnerSettings.a3030bf8f1') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

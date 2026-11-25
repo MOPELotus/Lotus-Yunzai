@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { musicNumbers, musicPlatforms, musicQualities, type MusicPanelSettings,
@@ -25,7 +27,7 @@ watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的点歌设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('MusicSettings.bca955b1e3'))) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -41,15 +43,15 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('MusicSettings.bbc6698bf1');
       return;
     }
     if (response.status === 400) {
-      error.value = "请检查点歌设置。每页歌曲数须为 1 到 30，其余数值须为正整数。";
+      error.value = panelText('MusicSettings.fbcaf17391');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取点歌设置。" : "宿主未能保存点歌设置。";
+      error.value = mode === "load" ? panelText('MusicSettings.282699d00e') : panelText('MusicSettings.9072ae8151');
       return;
     }
     const result = await response.json() as MusicPanelSnapshot;
@@ -58,14 +60,14 @@ async function sync(mode: "load" | "save") {
         !musicPlatforms.some(({ value }) => value === result.settings.default_platform) ||
         !musicQualities.some(({ value }) => value === result.settings.quality) ||
         !musicNumbers.every(({ key }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] > 0)) {
-      error.value = "宿主返回了无法识别的点歌设置。";
+      error.value = panelText('MusicSettings.fe5ed7a4b8');
       return;
     }
     saved.value = result;
     draft.value = { ...result.settings };
-    if (mode === "save") feedback.value = "已保存，下次操作时生效。";
+    if (mode === "save") feedback.value = panelText('MusicSettings.105b3ca823');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('MusicSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -85,18 +87,18 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="music-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="music-settings-title" tabindex="-1">点歌设置</h1>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h1 id="music-settings-title" tabindex="-1">{{ panelText('MusicSettings.a06569eff5') }}</h1>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('MusicSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="music-settings" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
-        <label class="music-toggle"><input v-model="draft.enable" type="checkbox" />启用点歌</label>
-        <label for="music-platform">默认音乐平台</label>
+        <label class="music-toggle"><input v-model="draft.enable" type="checkbox" />{{ panelText('MusicSettings.6e8bc1ea6d') }}</label>
+        <label for="music-platform">{{ panelText('MusicSettings.6ba8708460') }}</label>
         <select id="music-platform" v-model="draft.default_platform">
           <option v-for="{ value, label } in musicPlatforms" :key="value" :value="value">{{ label }}</option>
         </select>
-        <label for="music-quality">音乐音质</label>
+        <label for="music-quality">{{ panelText('MusicSettings.3024a0f90b') }}</label>
         <select id="music-quality" v-model="draft.quality">
           <option v-for="{ value, label } in musicQualities" :key="value" :value="value">{{ label }}</option>
         </select>
@@ -106,9 +108,9 @@ onBeforeUnmount(() => {
             :max="'max' in field ? field.max : Number.MAX_SAFE_INTEGER" step="1" required />
         </template>
       </fieldset>
-      <p class="subtitle">下次点歌或打开音乐登录时生效。进行中的会话沿用原设置。</p>
+      <p class="subtitle">{{ panelText('MusicSettings.b5b4cff25f') }}</p>
       <div class="music-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">{{ panelText('MusicSettings.a3030bf8f1') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

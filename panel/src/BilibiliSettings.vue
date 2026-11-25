@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { biliDownloadNumbers, biliPagePolicies, biliResolutions, type BilibiliPanelSettings,
@@ -29,7 +31,7 @@ watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && !dirty.value)) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的B 站视频设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('BilibiliSettings.15ff51c445'))) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -45,15 +47,15 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('BilibiliSettings.bbc6698bf1');
       return;
     }
     if (response.status === 400) {
-      error.value = "请检查B 站视频设置。下载并发须为 1 到 16，预估体积上限可填 0，其余数值须为正整数。";
+      error.value = panelText('BilibiliSettings.421e8f5aee');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取B 站视频设置。" : "宿主未能保存B 站视频设置。";
+      error.value = mode === "load" ? panelText('BilibiliSettings.2d9cbfdf8a') : panelText('BilibiliSettings.ffb4035703');
       return;
     }
     const result = await response.json() as BilibiliPanelSnapshot;
@@ -62,14 +64,14 @@ async function sync(mode: "load" | "save") {
         !biliPagePolicies.some(([value]) => value === result.settings.multi_page_policy) ||
         ![result.settings.search_limit, result.settings.resolution].every(value => Number.isSafeInteger(value) && value > 0) ||
         !biliDownloadNumbers.every(({ key, min }) => Number.isSafeInteger(result.settings[key]) && result.settings[key] >= min)) {
-      error.value = "宿主返回了无法识别的B 站视频设置。";
+      error.value = panelText('BilibiliSettings.02c8239df4');
       return;
     }
     saved.value = result;
     draft.value = { ...result.settings };
-    if (mode === "save") feedback.value = "已保存，下次搜索或下载时生效。";
+    if (mode === "save") feedback.value = panelText('BilibiliSettings.24ba1a3ceb');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('BilibiliSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -89,26 +91,26 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="bilibili-settings-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="bilibili-settings-title" tabindex="-1">B 站视频设置</h1>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h1 id="bilibili-settings-title" tabindex="-1">{{ panelText('BilibiliSettings.49843b388f') }}</h1>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('BilibiliSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="bilibili-settings" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
-        <legend>搜索</legend>
-        <label for="bilibili-search-limit">每页搜索结果数</label>
+        <legend>{{ panelText('BilibiliSettings.44ce7ae909') }}</legend>
+        <label for="bilibili-search-limit">{{ panelText('BilibiliSettings.94f051b7ab') }}</label>
         <input id="bilibili-search-limit" v-model.number="draft.search_limit" type="number" min="1"
           :max="Number.MAX_SAFE_INTEGER" step="1" required />
       </fieldset>
       <fieldset :disabled="Boolean(busy)">
-        <legend>下载</legend>
-        <label class="bilibili-toggle"><input v-model="draft.enable" type="checkbox" />启用 B 站视频下载</label>
-        <label for="bilibili-resolution">优先清晰度上限</label>
+        <legend>{{ panelText('BilibiliSettings.4673a23061') }}</legend>
+        <label class="bilibili-toggle"><input v-model="draft.enable" type="checkbox" />{{ panelText('BilibiliSettings.766a23c56c') }}</label>
+        <label for="bilibili-resolution">{{ panelText('BilibiliSettings.65c0283b80') }}</label>
         <select id="bilibili-resolution" v-model.number="draft.resolution">
-          <option v-if="legacyResolution !== undefined" :value="legacyResolution">当前配置（{{ legacyResolution }}）</option>
+          <option v-if="legacyResolution !== undefined" :value="legacyResolution">{{ panelText('BilibiliSettings.f5294f7943', { value1: legacyResolution }) }}</option>
           <option v-for="[value, label] in biliResolutions" :key="value" :value="value">{{ label }}</option>
         </select>
-        <label for="bilibili-page-policy">多 P 视频</label>
+        <label for="bilibili-page-policy">{{ panelText('BilibiliSettings.9e061e5914') }}</label>
         <select id="bilibili-page-policy" v-model="draft.multi_page_policy">
           <option v-for="[value, label] in biliPagePolicies" :key="value" :value="value">{{ label }}</option>
         </select>
@@ -117,10 +119,10 @@ onBeforeUnmount(() => {
           <input :id="`bilibili-${field.key}`" v-model.number="draft[field.key]" type="number" :min="field.min"
             :max="'max' in field ? field.max : Number.MAX_SAFE_INTEGER" step="1" required />
         </template>
-        <p class="subtitle">视频超过消息体积上限时会作为文件发送。预估和下载体积上限填 0 表示不限。</p>
+        <p class="subtitle">{{ panelText('BilibiliSettings.cdb3d1bf2d') }}</p>
       </fieldset>
       <div class="bilibili-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">保存</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || Boolean(busy)">{{ panelText('BilibiliSettings.a3030bf8f1') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

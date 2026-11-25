@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { globalPermissionLists, globalPermissionPolicies, isPermissionId, sortPermissionIds,
@@ -10,14 +12,14 @@ const props = defineProps<{ auth: PanelAuth }>();
 const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>();
 const endpoint = `${import.meta.env.BASE_URL}api/settings/global/permissions`;
 const labels: Record<GlobalPermissionList, string> = {
-  "users.allow": "允许的 QQ 号",
-  "users.deny": "拒绝的 QQ 号",
-  "groups.allow": "允许的群号",
-  "groups.deny": "拒绝的群号",
+  "users.allow": panelText('GlobalPermissionsSettings.f43124318f'),
+  "users.deny": panelText('GlobalPermissionsSettings.995cb11705'),
+  "groups.allow": panelText('GlobalPermissionsSettings.cb8426d6e9'),
+  "groups.deny": panelText('GlobalPermissionsSettings.4a7a31a535'),
 };
 const groups = [
-  { title: "用户名单", fields: ["users.allow", "users.deny"] as const },
-  { title: "群名单", fields: ["groups.allow", "groups.deny"] as const },
+  { title: panelText('GlobalPermissionsSettings.369b90961c'), fields: ["users.allow", "users.deny"] as const },
+  { title: panelText('GlobalPermissionsSettings.34df589170'), fields: ["groups.allow", "groups.deny"] as const },
 ];
 const saved = shallowRef<GlobalPermissionSnapshot>();
 const policy = ref<GlobalPermissionPolicy>("allow");
@@ -84,11 +86,11 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = "业务权限已在别处修改。请重新读取后再保存。";
+      error.value = panelText('GlobalPermissionsSettings.84544813c5');
       return;
     }
     if (response.status === 422) {
-      error.value = "旧配置固定的号码须保留。请重新读取后再编辑。";
+      error.value = panelText('GlobalPermissionsSettings.48c32a8b02');
       return;
     }
     if (!response.ok) throw new Error();
@@ -101,9 +103,9 @@ async function request(method: "GET" | "PUT") {
       [field, result.settings[field].filter(id => !result.locked[field]?.includes(id)).join("\n")],
     )) as Record<GlobalPermissionList, string>;
     conflict.value = false;
-    if (method === "PUT") notice.value = "业务权限已保存。";
+    if (method === "PUT") notice.value = panelText('GlobalPermissionsSettings.390274a25b');
   } catch {
-    if (active === controller) error.value = "暂时无法读取或保存业务权限。";
+    if (active === controller) error.value = panelText('GlobalPermissionsSettings.4641e717e6');
   } finally {
     if (active === controller) {
       active = undefined;
@@ -128,42 +130,42 @@ onBeforeUnmount(() => {
 <template>
   <section aria-labelledby="global-permissions-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="global-permissions-title" tabindex="-1">业务权限</h1>
-      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
+      <h1 id="global-permissions-title" tabindex="-1">{{ panelText('GlobalPermissionsSettings.3b3f45b021') }}</h1>
+      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">{{ panelText('GlobalPermissionsSettings.df7392cc96') }}</ElButton>
     </div>
     <div v-if="confirmReload" class="permission-actions" role="alert">
-      <span>重新读取会放弃未保存的改动。</span>
-      <ElButton @click="confirmReload = false">继续编辑</ElButton>
-      <ElButton type="danger" @click="request('GET')">放弃改动并读取</ElButton>
+      <span>{{ panelText('GlobalPermissionsSettings.e71b339a4e') }}</span>
+      <ElButton @click="confirmReload = false">{{ panelText('GlobalPermissionsSettings.fd4b9e3b6c') }}</ElButton>
+      <ElButton type="danger" @click="request('GET')">{{ panelText('GlobalPermissionsSettings.a5831537bd') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="saved" class="permission-settings" @submit.prevent="request('PUT')">
       <fieldset :disabled="Boolean(busy) || confirmReload">
-        <legend>继承规则</legend>
-        <label for="global-permission-default">默认策略</label>
+        <legend>{{ panelText('GlobalPermissionsSettings.d2b2ec2237') }}</legend>
+        <label for="global-permission-default">{{ panelText('GlobalPermissionsSettings.8088cc83b2') }}</label>
         <select id="global-permission-default" v-model="policy">
-          <option value="allow">允许</option>
-          <option value="deny">拒绝</option>
+          <option value="allow">{{ panelText('GlobalPermissionsSettings.ce7ef28b67') }}</option>
+          <option value="deny">{{ panelText('GlobalPermissionsSettings.136de7a8c4') }}</option>
         </select>
-        <p>拒绝名单优先。默认策略和允许名单用于设为「继承全局权限」的业务。</p>
+        <p>{{ panelText('GlobalPermissionsSettings.e2908ba393') }}</p>
       </fieldset>
       <div class="permission-lists">
         <fieldset v-for="group in groups" :key="group.title" :disabled="Boolean(busy) || confirmReload">
           <legend>{{ group.title }}</legend>
           <div v-for="field in group.fields" :key="field" class="permission-list">
             <label :for="`global-permission-${field}`">{{ labels[field] }}</label>
-            <textarea :id="`global-permission-${field}`" v-model="draft[field]" rows="3" placeholder="每行一个号码"
+            <textarea :id="`global-permission-${field}`" v-model="draft[field]" rows="3" :placeholder="panelText('GlobalPermissionsSettings.a4f1db3ef0')"
               :aria-invalid="parsed[field] === undefined" spellcheck="false" />
-            <p v-if="parsed[field] === undefined" class="error" role="alert">请填入有效的 QQ 号或群号。</p>
-            <p v-if="saved.locked[field]?.length">旧配置固定号码 {{ saved.locked[field]?.join("、") }}</p>
-            <p v-if="saved.retained[field]">原配置中另有 {{ saved.retained[field] }} 项，将按原值保留。</p>
+            <p v-if="parsed[field] === undefined" class="error" role="alert">{{ panelText('GlobalPermissionsSettings.61b7eaeaa2') }}</p>
+            <p v-if="saved.locked[field]?.length">{{ panelText('GlobalPermissionsSettings.bfafce0000', { value1: saved.locked[field]?.join("、") }) }}</p>
+            <p v-if="saved.retained[field]">{{ panelText('GlobalPermissionsSettings.da71fd4170', { value1: saved.retained[field] }) }}</p>
           </div>
         </fieldset>
       </div>
-      <p>签到注册、登录信息刷新、计划生成和执行在宿主重启后采用新设置。媒体、群清理、群成员导出及聊天中修改调度按下次操作读取。</p>
+      <p>{{ panelText('GlobalPermissionsSettings.10f3e1bbb0') }}</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || invalid || Boolean(busy) || confirmReload || conflict">保存</ElButton>
+          :disabled="!dirty || invalid || Boolean(busy) || confirmReload || conflict">{{ panelText('GlobalPermissionsSettings.a3030bf8f1') }}</ElButton>
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>

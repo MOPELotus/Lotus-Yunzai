@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText, panelLanguage, requestPanelLanguage } from './i18n.ts';
+
 import { ElButton, ElInput } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import {
@@ -20,6 +22,7 @@ import BilibiliSettings from "./BilibiliSettings.vue";
 import DouyinSettings from "./DouyinSettings.vue";
 import PartnerSettings from "./PartnerSettings.vue";
 import MediaEnvironmentSettings from "./MediaEnvironmentSettings.vue";
+import I18nSettings from "./I18nSettings.vue";
 
 const draft = ref("");
 const snapshot = shallowRef<PanelSnapshot>();
@@ -33,7 +36,7 @@ const query = ref("");
 const selectedStatus = ref<PluginStatus | "">("");
 type MediaView = "music" | "bilibili" | "douyin" | "partner" | "media-environment";
 type PanelView = "overview" | "likes" | "notices" | "native-settings" | "plugin-settings" | "atlas" | "web-login" | "checkin-schedule" |
-  "account-permissions" | "global-permissions" | MediaView | "extensions";
+  "account-permissions" | "global-permissions" | "i18n" | MediaView | "extensions";
 const view = ref<PanelView>("overview");
 const mediaSection = ref<MediaView>("bilibili");
 const viewingMedia = computed(() => isMediaView(view.value));
@@ -61,36 +64,36 @@ const hasMedia = computed(() => snapshot.value?.plugins.some((plugin) =>
   plugin.name === "media" && plugin.status === "loaded") ?? false);
 
 const nativeSections = computed(() => [
-  { key: "rank", label: "原神与星铁列表和群榜" },
-  { key: "ark-rank-credentials", label: "自定义排行榜" },
-  { key: "status", label: "状态与监控" },
-  { key: "runtime", label: "宿主运行" },
-  { key: "remote", label: "远程运维" },
-  { key: "process-schedule", label: "停启与更新调度" },
-  { key: "showcase", label: "游戏展柜与战绩" },
-  { key: "genshin-damage", label: "原神伤害计算" },
-  { key: "starrail-warp", label: "星铁模拟跃迁" },
-  { key: "starrail-independent-warp", label: "星铁旧十连规则" },
-  { key: "gacha-display", label: "原神与星铁抽卡显示" },
-  { key: "genshin-wish", label: "原神模拟祈愿" },
-  { key: "zzz-rank", label: "绝区零群榜" },
-  { key: "zzz-panel", label: "绝区零面板与提示" },
-  { key: "zzz-reminders", label: "绝区零挑战提醒" },
-  { key: "daily-note", label: "游戏体力提醒" },
-  { key: "ingress", label: "消息接收与私聊" },
-  { key: "group-routing", label: "群组派发" },
-  { key: "guides", label: "攻略来源与推送" },
-  { key: "genshin-guides", label: "原神攻略" },
-  { key: "starrail-guides", label: "星铁攻略" },
-  { key: "zzz-guides", label: "绝区零攻略" },
-  { key: "calendar", label: "活动日历" },
-  { key: "notice", label: "群公告调度" },
-  { key: "mys-notice", label: "米游社资讯" },
-  { key: "notice-delivery", label: "公告送达与订阅覆盖" },
-  ...(hasGroup.value ? [{ key: "group-moderation", label: "群管权限与入群" },
-    { key: "group-card", label: "自动群名片" }, { key: "group-leave-blacklist", label: "退群拉黑" }] : []),
-  ...(hasMedia.value ? [{ key: "bilibili-subscriptions", label: "B 站订阅对象" },
-    { key: "weibo-subscriptions", label: "微博订阅对象" }] : []),
+  { key: "rank", label: panelText('App.fd19f63382') },
+  { key: "ark-rank-credentials", label: panelText('App.ce7067d3c9') },
+  { key: "status", label: panelText('App.1ccd867a7e') },
+  { key: "runtime", label: panelText('App.0b3fc02f29') },
+  { key: "remote", label: panelText('App.42db987eee') },
+  { key: "process-schedule", label: panelText('App.5ae3df2876') },
+  { key: "showcase", label: panelText('App.2d29780c70') },
+  { key: "genshin-damage", label: panelText('App.fdf1872068') },
+  { key: "starrail-warp", label: panelText('App.739afb8575') },
+  { key: "starrail-independent-warp", label: panelText('App.e94f6f21a3') },
+  { key: "gacha-display", label: panelText('App.80b23e447c') },
+  { key: "genshin-wish", label: panelText('App.93123d3162') },
+  { key: "zzz-rank", label: panelText('App.e8bca90321') },
+  { key: "zzz-panel", label: panelText('App.1a4b99303b') },
+  { key: "zzz-reminders", label: panelText('App.fa816183af') },
+  { key: "daily-note", label: panelText('App.60983f084c') },
+  { key: "ingress", label: panelText('App.a382f9c04c') },
+  { key: "group-routing", label: panelText('App.672fc8e301') },
+  { key: "guides", label: panelText('App.5fcf079e33') },
+  { key: "genshin-guides", label: panelText('App.2c9f240951') },
+  { key: "starrail-guides", label: panelText('App.ff08b27837') },
+  { key: "zzz-guides", label: panelText('App.43fbe5348d') },
+  { key: "calendar", label: panelText('App.6f20ee0d82') },
+  { key: "notice", label: panelText('App.cfd772e1f0') },
+  { key: "mys-notice", label: panelText('App.5d56880517') },
+  { key: "notice-delivery", label: panelText('App.a85da0ae4a') },
+  ...(hasGroup.value ? [{ key: "group-moderation", label: panelText('App.d09b255ab4') },
+    { key: "group-card", label: panelText('App.7473450ca8') }, { key: "group-leave-blacklist", label: panelText('App.6995adc637') }] : []),
+  ...(hasMedia.value ? [{ key: "bilibili-subscriptions", label: panelText('App.fc031bad16') },
+    { key: "weibo-subscriptions", label: panelText('App.71429cd3b0') }] : []),
 ]);
 
 function isMediaView(target: PanelView): target is MediaView {
@@ -130,6 +133,7 @@ function focusView(next: PanelView) {
     "checkin-schedule": "checkin-schedule-title",
     "account-permissions": "account-permissions-title",
     "global-permissions": "global-permissions-title",
+    i18n: "i18n-settings-title",
     music: "music-settings-title",
     bilibili: "bilibili-settings-title",
     douyin: "douyin-settings-title",
@@ -142,7 +146,7 @@ function focusView(next: PanelView) {
 
 function expireSession() {
   reset();
-  error.value = "面板登录已失效，请重新登录。";
+  error.value = panelText('App.b580e22fb1');
 }
 
 function updateDirty(dirty: boolean) {
@@ -159,12 +163,12 @@ const visiblePlugins = computed(() => {
 
 function duration(seconds: number): string {
   const units = [
-    [Math.floor(seconds / 86_400), "天"],
-    [Math.floor(seconds / 3_600) % 24, "小时"],
-    [Math.floor(seconds / 60) % 60, "分钟"],
+    [Math.floor(seconds / 86_400), panelText('App.49da61ceee')],
+    [Math.floor(seconds / 3_600) % 24, panelText('App.3b6fefc50f')],
+    [Math.floor(seconds / 60) % 60, panelText('App.bd957bc497')],
   ] as const;
   return units.filter(([value]) => value > 0).map(([value, label]) => `${value} ${label}`).join(" ") ||
-    `${seconds} 秒`;
+    panelText('App.8e9c8e4d3e', { value1: seconds });
 }
 
 function checkSessionExpiry() {
@@ -207,6 +211,9 @@ async function synchronize(candidate: PanelAuth, purpose: "restore" | "sign-in" 
   try {
     if (ticket !== undefined) await claimPanelSession(ticket, request.signal);
     const incoming = await readPanel(candidate, request.signal);
+    const previousLanguage = panelLanguage.value;
+    await requestPanelLanguage(candidate, { signal: request.signal }).catch(() => undefined);
+    if (previousLanguage !== panelLanguage.value) { window.location.reload(); return; }
     if (activeRequest !== request) return;
 
     auth = candidate;
@@ -226,7 +233,7 @@ async function synchronize(candidate: PanelAuth, purpose: "restore" | "sign-in" 
       if (purpose === "restore") return;
       if (purpose === "refresh") return expireSession();
     }
-    error.value = failure instanceof Error ? failure.message : "读取面板时发生错误。";
+    error.value = failure instanceof Error ? failure.message : panelText('App.0a292df77a');
   } finally {
     clearTimeout(timeout);
     if (activeRequest === request) {
@@ -254,7 +261,7 @@ async function signOut() {
     await logoutPanelSession(AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]));
     if (activeLogout === request) reset();
   } catch {
-    if (activeLogout === request) logoutError.value = "未能确认退出登录，请重试。";
+    if (activeLogout === request) logoutError.value = panelText('App.49f9b4c50d');
   } finally {
     if (activeLogout === request) {
       activeLogout = undefined;
@@ -301,27 +308,27 @@ onBeforeUnmount(() => {
     <div class="header-inner">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>Lotus-Yunzai 管理面板</span>
+        <span>{{ panelText('App.058cedd84e') }}</span>
       </div>
       <div v-if="snapshot" class="session-actions">
         <span v-if="snapshot.session" class="session-expiry">
-          登录有效至 {{ shanghaiTime.format(snapshot.session.expiresAt) }}（北京时间）
+          {{ panelText('App.f70036fba2', { value1: shanghaiTime.format(snapshot.session.expiresAt) }) }}
         </span>
-        <ElButton class="sign-out" :loading="signingOut" :disabled="busy" @click="signOut">退出登录</ElButton>
+        <ElButton class="sign-out" :loading="signingOut" :disabled="busy" @click="signOut">{{ panelText('App.3ab8cc1593') }}</ElButton>
       </div>
     </div>
   </header>
 
   <main v-if="restoring" class="sign-in" aria-busy="true">
-    <section class="sign-in-card" role="status">正在检查登录状态…</section>
+    <section class="sign-in-card" role="status">{{ panelText('App.fd0ddccc89') }}</section>
   </main>
 
   <main v-else-if="!snapshot" class="sign-in">
     <section class="sign-in-card" aria-labelledby="signin-title">
-      <h1 id="signin-title">登录面板</h1>
-      <p>机器人主人可私聊发送 <code>#管理面板</code> 获取登录链接，也可使用宿主配置的面板令牌。</p>
+      <h1 id="signin-title">{{ panelText('App.0d33bea8e6') }}</h1>
+      <p>{{ panelText('App.e64719b784') }} <code>{{ panelText('App.37989c2980') }}</code> {{ panelText('App.64cf1143b1') }}</p>
       <form autocomplete="off" @submit.prevent="signInWithToken">
-        <label for="panel-token">面板令牌</label>
+        <label for="panel-token">{{ panelText('App.9b9fc2fad9') }}</label>
         <ElInput
           id="panel-token"
           v-model="draft"
@@ -333,55 +340,57 @@ onBeforeUnmount(() => {
           :aria-describedby="error ? 'signin-error' : undefined"
         />
         <p v-if="error" id="signin-error" class="error" role="alert">{{ error }}</p>
-        <ElButton type="primary" native-type="submit" :loading="busy" :disabled="!draft.trim()">登录</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy" :disabled="!draft.trim()">{{ panelText('App.1e2df9c307') }}</ElButton>
       </form>
     </section>
   </main>
 
   <main v-else class="dashboard" :inert="signingOut">
     <p v-if="logoutError" class="error refresh-error" role="alert">{{ logoutError }}</p>
-    <nav class="panel-nav" aria-label="面板页面">
+    <nav class="panel-nav" :aria-label="panelText('App.1e0c0dd3d1')">
       <ElButton :type="view === 'overview' ? 'primary' : 'default'"
-        :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">运行概览</ElButton>
+        :aria-current="view === 'overview' ? 'page' : undefined" @click="setView('overview')">{{ panelText('App.17826325a8') }}</ElButton>
       <ElButton v-if="hasGroup" :type="view === 'likes' ? 'primary' : 'default'"
-        :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">群点赞</ElButton>
+        :aria-current="view === 'likes' ? 'page' : undefined" @click="setView('likes')">{{ panelText('App.7ed843b349') }}</ElButton>
       <ElButton v-if="hasGroup" :type="view === 'notices' ? 'primary' : 'default'"
-        :aria-current="view === 'notices' ? 'page' : undefined" @click="setView('notices')">群通知</ElButton>
+        :aria-current="view === 'notices' ? 'page' : undefined" @click="setView('notices')">{{ panelText('App.a6d489ae13') }}</ElButton>
       <ElButton :type="view === 'native-settings' ? 'primary' : 'default'"
-        :aria-current="view === 'native-settings' ? 'page' : undefined" @click="setView('native-settings')">业务设置</ElButton>
+        :aria-current="view === 'native-settings' ? 'page' : undefined" @click="setView('native-settings')">{{ panelText('App.e10d1b5bcf') }}</ElButton>
       <ElButton :type="view === 'plugin-settings' ? 'primary' : 'default'"
-        :aria-current="view === 'plugin-settings' ? 'page' : undefined" @click="setView('plugin-settings')">插件配置</ElButton>
+        :aria-current="view === 'plugin-settings' ? 'page' : undefined" @click="setView('plugin-settings')">{{ panelText('App.f782650891') }}</ElButton>
       <ElButton :type="view === 'atlas' ? 'primary' : 'default'"
-        :aria-current="view === 'atlas' ? 'page' : undefined" @click="setView('atlas')">图鉴设置</ElButton>
+        :aria-current="view === 'atlas' ? 'page' : undefined" @click="setView('atlas')">{{ panelText('App.eda98902b2') }}</ElButton>
       <ElButton :type="view === 'web-login' ? 'primary' : 'default'"
-        :aria-current="view === 'web-login' ? 'page' : undefined" @click="setView('web-login')">网页登录</ElButton>
+        :aria-current="view === 'web-login' ? 'page' : undefined" @click="setView('web-login')">{{ panelText('App.658333c8c7') }}</ElButton>
       <ElButton :type="view === 'checkin-schedule' ? 'primary' : 'default'"
-        :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">签到调度</ElButton>
+        :aria-current="view === 'checkin-schedule' ? 'page' : undefined" @click="setView('checkin-schedule')">{{ panelText('App.fb3da8820b') }}</ElButton>
       <ElButton :type="view === 'account-permissions' ? 'primary' : 'default'"
-        :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">签到权限</ElButton>
+        :aria-current="view === 'account-permissions' ? 'page' : undefined" @click="setView('account-permissions')">{{ panelText('App.cd4bf18b7e') }}</ElButton>
       <ElButton :type="view === 'global-permissions' ? 'primary' : 'default'"
-        :aria-current="view === 'global-permissions' ? 'page' : undefined" @click="setView('global-permissions')">业务权限</ElButton>
+        :aria-current="view === 'global-permissions' ? 'page' : undefined" @click="setView('global-permissions')">{{ panelText('App.3b3f45b021') }}</ElButton>
       <ElButton v-if="hasMedia" :type="viewingMedia ? 'primary' : 'default'"
-        :aria-current="viewingMedia ? 'true' : undefined" @click="setView(mediaSection)">媒体设置</ElButton>
+        :aria-current="viewingMedia ? 'true' : undefined" @click="setView(mediaSection)">{{ panelText('App.f9a9e5236d') }}</ElButton>
       <ElButton :type="view === 'extensions' ? 'primary' : 'default'"
-        :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">扩展页面</ElButton>
+        :aria-current="view === 'extensions' ? 'page' : undefined" @click="setView('extensions')">{{ panelText('App.eccf12cef9') }}</ElButton>
+      <ElButton :type="view === 'i18n' ? 'primary' : 'default'"
+        :aria-current="view === 'i18n' ? 'page' : undefined" @click="setView('i18n')">{{ panelText('App.c1c579a974') }}</ElButton>
     </nav>
-    <nav v-if="hasMedia && viewingMedia" class="panel-nav media-nav" aria-label="媒体设置">
+    <nav v-if="hasMedia && viewingMedia" class="panel-nav media-nav" :aria-label="panelText('App.f9a9e5236d')">
       <ElButton :type="view === 'bilibili' ? 'primary' : 'default'"
-        :aria-current="view === 'bilibili' ? 'page' : undefined" @click="setView('bilibili')">B 站视频</ElButton>
+        :aria-current="view === 'bilibili' ? 'page' : undefined" @click="setView('bilibili')">{{ panelText('App.be20b1c3ef') }}</ElButton>
       <ElButton :type="view === 'douyin' ? 'primary' : 'default'"
-        :aria-current="view === 'douyin' ? 'page' : undefined" @click="setView('douyin')">抖音</ElButton>
+        :aria-current="view === 'douyin' ? 'page' : undefined" @click="setView('douyin')">{{ panelText('App.d077d0b18e') }}</ElButton>
       <ElButton :type="view === 'music' ? 'primary' : 'default'"
-        :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">点歌</ElButton>
+        :aria-current="view === 'music' ? 'page' : undefined" @click="setView('music')">{{ panelText('App.a0c46fa3bd') }}</ElButton>
       <ElButton :type="view === 'partner' ? 'primary' : 'default'"
-        :aria-current="view === 'partner' ? 'page' : undefined" @click="setView('partner')">网易云合伙人</ElButton>
+        :aria-current="view === 'partner' ? 'page' : undefined" @click="setView('partner')">{{ panelText('App.cd6483cb47') }}</ElButton>
       <ElButton :type="view === 'media-environment' ? 'primary' : 'default'"
-        :aria-current="view === 'media-environment' ? 'page' : undefined" @click="setView('media-environment')">媒体环境</ElButton>
+        :aria-current="view === 'media-environment' ? 'page' : undefined" @click="setView('media-environment')">{{ panelText('App.22eeda2814') }}</ElButton>
     </nav>
     <div v-if="discardTo" class="panel-discard" role="alert">
-      <span>当前配置还有未保存的改动。</span>
-      <ElButton id="panel-continue-editing" @click="continueEditing">继续编辑</ElButton>
-      <ElButton type="danger" @click="setView(discardTo!, true)">放弃改动</ElButton>
+      <span>{{ panelText('App.b512d06f0c') }}</span>
+      <ElButton id="panel-continue-editing" @click="continueEditing">{{ panelText('App.fd4b9e3b6c') }}</ElButton>
+      <ElButton type="danger" @click="setView(discardTo!, true)">{{ panelText('App.9d14d6e3fd') }}</ElButton>
     </div>
     <LikeSettings v-if="view === 'likes'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
@@ -411,34 +420,35 @@ onBeforeUnmount(() => {
       @dirty-change="updateDirty" />
     <MediaEnvironmentSettings v-else-if="view === 'media-environment'" :auth="auth" @unauthorized="expireSession"
       @dirty-change="updateDirty" />
+    <I18nSettings v-else-if="view === 'i18n'" :auth="auth" @unauthorized="expireSession" @dirty-change="updateDirty" />
     <ExtensionPages v-else-if="view === 'extensions'" :auth="auth" :preferences="extensionPreferences"
       @unauthorized="expireSession" />
     <template v-else>
       <section aria-labelledby="overview-title" :aria-busy="busy">
         <div class="section-heading">
           <div>
-            <h1 id="overview-title" tabindex="-1">运行概览</h1>
+            <h1 id="overview-title" tabindex="-1">{{ panelText('App.17826325a8') }}</h1>
             <p class="subtitle">{{ snapshot.runtime.name }}</p>
           </div>
-          <ElButton :loading="busy" :disabled="signingOut" @click="synchronize(auth, 'refresh')">刷新数据</ElButton>
+          <ElButton :loading="busy" :disabled="signingOut" @click="synchronize(auth, 'refresh')">{{ panelText('App.0468ee76ee') }}</ElButton>
         </div>
 
-        <p v-if="error" class="error refresh-error" role="alert">{{ error }} 当前仍显示上次读取的数据。</p>
+        <p v-if="error" class="error refresh-error" role="alert">{{ panelText('App.f3792e5475', { value1: error }) }}</p>
 
         <dl class="metrics">
           <div>
-            <dt>运行状态</dt>
+            <dt>{{ panelText('App.e46b0272bd') }}</dt>
             <dd class="runtime-status" :class="{ online: snapshot.runtime.status === 'ok' }">
               <span aria-hidden="true"></span>
-              {{ snapshot.runtime.status === "ok" ? "运行中" : snapshot.runtime.status }}
+              {{ snapshot.runtime.status === "ok" ? panelText('App.1f0eb99b7e') : snapshot.runtime.status }}
             </dd>
           </div>
           <div>
-            <dt>运行时长</dt>
+            <dt>{{ panelText('App.b1e3a96e54') }}</dt>
             <dd>{{ duration(snapshot.runtime.uptime) }}</dd>
           </div>
           <div>
-            <dt>Bun 版本</dt>
+            <dt>{{ panelText('App.1287cd7bae') }}</dt>
             <dd class="technical">{{ snapshot.runtime.bun }}</dd>
           </div>
         </dl>
@@ -446,16 +456,16 @@ onBeforeUnmount(() => {
 
       <section class="plugins" aria-labelledby="plugins-title" :aria-busy="busy">
         <div class="plugins-heading">
-          <h2 id="plugins-title">插件清单</h2>
-          <p class="updated" role="status">更新于 {{ updatedAt }}</p>
+          <h2 id="plugins-title">{{ panelText('App.2f64470077') }}</h2>
+          <p class="updated" role="status">{{ panelText('App.f987642f0d', { value1: updatedAt }) }}</p>
         </div>
 
         <div v-if="snapshot.plugins.length" class="filters">
-          <label for="plugin-search" class="visually-hidden">搜索插件</label>
-          <ElInput id="plugin-search" v-model="query" placeholder="搜索插件" />
-          <label for="plugin-status" class="visually-hidden">按状态筛选</label>
+          <label for="plugin-search" class="visually-hidden">{{ panelText('App.44891fe35f') }}</label>
+          <ElInput id="plugin-search" v-model="query" :placeholder="panelText('App.44891fe35f')" />
+          <label for="plugin-status" class="visually-hidden">{{ panelText('App.df92cab4c6') }}</label>
           <select id="plugin-status" v-model="selectedStatus">
-            <option value="">全部状态</option>
+            <option value="">{{ panelText('App.0a379c1e73') }}</option>
             <option v-for="(label, status) in pluginStatuses" :key="status" :value="status">{{ label }}</option>
           </select>
         </div>
@@ -463,7 +473,7 @@ onBeforeUnmount(() => {
         <div v-if="visiblePlugins.length" class="plugin-results">
           <table aria-labelledby="plugins-title">
             <thead>
-              <tr><th scope="col">插件</th><th scope="col">状态</th><th scope="col">说明</th></tr>
+              <tr><th scope="col">{{ panelText('App.e806fbbe8e') }}</th><th scope="col">{{ panelText('App.6320b4a872') }}</th><th scope="col">{{ panelText('App.4262c45dc7') }}</th></tr>
             </thead>
             <tbody>
               <tr v-for="plugin in visiblePlugins" :key="`${plugin.status}:${plugin.name}`">
@@ -474,7 +484,7 @@ onBeforeUnmount(() => {
             </tbody>
           </table>
         </div>
-        <p v-else class="empty" role="status">{{ snapshot.plugins.length ? "没有符合条件的插件。" : "当前没有插件记录。" }}</p>
+        <p v-else class="empty" role="status">{{ snapshot.plugins.length ? panelText('App.b77a7a928c') : panelText('App.9bee9df502') }}</p>
       </section>
     </template>
   </main>

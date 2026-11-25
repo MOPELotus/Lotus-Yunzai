@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AtlasScopeField, AtlasScopePatch, AtlasScopeSelections } from "../../lib/panel-atlas-scope-schema.ts";
@@ -20,17 +22,17 @@ interface Snapshot {
   searchLimit?: number;
 }
 
-const scopeLabels: Record<AtlasScopeField, string> = { update_args: "版本更新范围", challenge_args: "挑战刷新范围" };
+const scopeLabels: Record<AtlasScopeField, string> = { update_args: panelText('AtlasUpdateSettings.041ba096bd'), challenge_args: panelText('AtlasUpdateSettings.ab5e61e0cc') };
 const scopeFields = ["update_args", "challenge_args"] as const;
-const gameLabels = { gi: "原神", hsr: "崩坏：星穹铁道", zzz: "绝区零" };
+const gameLabels = { gi: panelText('AtlasUpdateSettings.d1597c51ed'), hsr: panelText('AtlasUpdateSettings.8cfc959b53'), zzz: panelText('AtlasUpdateSettings.b1110352c9') };
 const games = Object.entries(gameLabels);
 const pages: Readonly<Record<string, string>> = {
-  character: "角色", artifact: "圣遗物", monster: "敌人", weapon: "武器", "zzz/weapon": "音擎",
-  "achievement/achievement": "成就", leyline: "地脉", rolecombat: "幻想真境剧诗", tower: "深境螺旋",
-  lightcone: "光锥", relicset: "遗器", maze_boss: "末日幻影", maze: "混沌回忆", maze_peak: "异相仲裁",
-  maze_extra: "虚构叙事", monstervalue: "敌人数值", EliteGroup: "精英敌人组", HardLevelGroup: "关卡敌人组",
-  InfiniteEliteGroup: "虚构敌人组", bangboo: "邦布", equipment: "驱动盘", boss: "危局强袭战",
-  shiyu: "式舆防卫战", gcg: "七圣召唤",
+  character: panelText('AtlasUpdateSettings.c47b54e84e'), artifact: panelText('AtlasUpdateSettings.fc2ee58f3d'), monster: panelText('AtlasUpdateSettings.40a2cbbcce'), weapon: panelText('AtlasUpdateSettings.4fe131173e'), "zzz/weapon": panelText('AtlasUpdateSettings.2ce0392ca1'),
+  "achievement/achievement": panelText('AtlasUpdateSettings.52b0e1703d'), leyline: panelText('AtlasUpdateSettings.b7e6b57c67'), rolecombat: panelText('AtlasUpdateSettings.8cb870ae6a'), tower: panelText('AtlasUpdateSettings.82f72c6585'),
+  lightcone: panelText('AtlasUpdateSettings.e733238b28'), relicset: panelText('AtlasUpdateSettings.2f2b17beb4'), maze_boss: panelText('AtlasUpdateSettings.8dae72d970'), maze: panelText('AtlasUpdateSettings.59977c7f79'), maze_peak: panelText('AtlasUpdateSettings.fdc6c58c58'),
+  maze_extra: panelText('AtlasUpdateSettings.d66b949b63'), monstervalue: panelText('AtlasUpdateSettings.a1c6f7a65f'), EliteGroup: panelText('AtlasUpdateSettings.c9324dfa3b'), HardLevelGroup: panelText('AtlasUpdateSettings.9e8644e621'),
+  InfiniteEliteGroup: panelText('AtlasUpdateSettings.8205043afb'), bangboo: panelText('AtlasUpdateSettings.aa46a7c35b'), equipment: panelText('AtlasUpdateSettings.d245c1825d'), boss: panelText('AtlasUpdateSettings.4b7b8e83d9'),
+  shiyu: panelText('AtlasUpdateSettings.f718dc4321'), gcg: panelText('AtlasUpdateSettings.8c8df27f6c'),
 };
 
 const props = defineProps<{ auth: PanelAuth }>();
@@ -42,10 +44,10 @@ const scopeDraft = ref<AtlasScopePatch>({});
 const searchLimit = ref<number>();
 const roleDraft = ref(readAtlasRoleSettings(undefined));
 const roleLabels: Record<keyof AtlasRoleSettings, string> = {
-  role_wiki: "角色图鉴和资料",
-  role_talent: "角色天赋、技能、行迹和命座／星魂",
-  role_photo: "角色照片和写真",
-  role_q_face: "角色资料图使用 Q 版头像",
+  role_wiki: panelText('AtlasUpdateSettings.0d20b94ab6'),
+  role_talent: panelText('AtlasUpdateSettings.08e11020f8'),
+  role_photo: panelText('AtlasUpdateSettings.e8629739ec'),
+  role_q_face: panelText('AtlasUpdateSettings.e866d68dbe'),
 };
 const roleChanges = computed(() => Object.fromEntries(atlasRoleFields.flatMap(field =>
   saved.value?.roleQueries && saved.value.roleQueries[field] !== roleDraft.value[field] ? [[field, roleDraft.value[field]]] : [],
@@ -80,7 +82,7 @@ watch(dirty, value => emit("dirty-change", value));
 
 async function sync(mode: "load" | "save") {
   if (active || (mode === "save" && (!dirty.value || scopeInvalid.value || searchInvalid.value))) return;
-  if (mode === "load" && dirty.value && !window.confirm("放弃未保存的图鉴设置？")) return;
+  if (mode === "load" && dirty.value && !window.confirm(panelText('AtlasUpdateSettings.377a4f5014'))) return;
   const controller = new AbortController();
   active = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -103,26 +105,26 @@ async function sync(mode: "load" | "save") {
     if (active !== controller) return;
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
-      error.value = "设置已在其他会话更新，请重新读取后再保存。";
+      error.value = panelText('AtlasUpdateSettings.bbc6698bf1');
       return;
     }
     if (response.status === 422) {
       const { field } = await response.json().catch(() => ({})) as { field?: AtlasScopeField };
       if (active !== controller) return;
       const label = field && scopeLabels[field];
-      error.value = `无法安全改写${label ?? "图鉴分类范围"}。请在本机配置中调整原参数，并重新读取。`;
+      error.value = panelText('AtlasUpdateSettings.a45b5e096c', { value1: label ?? panelText('AtlasUpdateSettings.scope_fallback') });
       return;
     }
     if (response.status === 400) {
       const { field } = await response.json().catch(() => ({})) as { field?: string };
       if (active !== controller) return;
-      error.value = field === "check_cron" ? "版本检查的 Cron 表达式无效。" : field === "challenge_cron"
-        ? "挑战刷新的 Cron 表达式无效。" : field === "searchLimit"
-          ? "查询条数须为有效的正整数。" : field === "locale" ? "请选择图鉴语言。" : "请检查图鉴设置。";
+      error.value = field === "check_cron" ? panelText('AtlasUpdateSettings.11793f5855') : field === "challenge_cron"
+        ? panelText('AtlasUpdateSettings.0c669fb0bf') : field === "searchLimit"
+          ? panelText('AtlasUpdateSettings.2926403b7f') : field === "locale" ? panelText('AtlasUpdateSettings.950c687353') : panelText('AtlasUpdateSettings.3252e75012');
       return;
     }
     if (!response.ok) {
-      error.value = mode === "load" ? "宿主未能读取图鉴设置。" : "宿主未能保存图鉴设置。";
+      error.value = mode === "load" ? panelText('AtlasUpdateSettings.41206763e5') : panelText('AtlasUpdateSettings.88f8ab20d8');
       return;
     }
     const result = await response.json() as Snapshot;
@@ -133,7 +135,7 @@ async function sync(mode: "load" | "save") {
         typeof result.settings.run_on_missing_data !== "boolean" ||
         typeof result.settings.check_cron !== "string" || typeof result.settings.challenge_cron !== "string" ||
         (result.searchLimit !== undefined && (typeof result.searchLimit !== "number" || parseAtlasSearchLimit(result.searchLimit) === undefined))) {
-      error.value = "宿主返回了无法识别的图鉴设置。";
+      error.value = panelText('AtlasUpdateSettings.f918aea48d');
       return;
     }
     saved.value = result;
@@ -148,9 +150,9 @@ async function sync(mode: "load" | "save") {
       const selected = result.scopes?.[field].selected;
       return selected ? [[field, [...selected]]] : [];
     }));
-    if (mode === "save") feedback.value = "已保存，重启宿主后生效。";
+    if (mode === "save") feedback.value = panelText('AtlasUpdateSettings.42d8c144a9');
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('AtlasUpdateSettings.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -170,76 +172,76 @@ onBeforeUnmount(() => {
 <template>
   <section class="atlas-update" aria-labelledby="atlas-update-title" :aria-busy="Boolean(busy)">
     <div class="update-heading">
-      <h2 id="atlas-update-title">查询与自动更新</h2>
-      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">重新读取</ElButton>
+      <h2 id="atlas-update-title">{{ panelText('AtlasUpdateSettings.01e6daa4ef') }}</h2>
+      <ElButton :loading="busy === 'load'" :disabled="Boolean(busy)" @click="sync('load')">{{ panelText('AtlasUpdateSettings.df7392cc96') }}</ElButton>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <form v-if="saved" @submit.prevent="sync('save')">
       <fieldset :disabled="Boolean(busy)">
-        <label for="atlas-locale">图鉴语言</label>
+        <label for="atlas-locale">{{ panelText('AtlasUpdateSettings.389c832f9d') }}</label>
         <select id="atlas-locale" v-model="locale" aria-describedby="atlas-locale-note">
           <option v-for="(language, id) in atlasLocales" :key="id" :value="id">{{ language.folder }}</option>
         </select>
         <p id="atlas-locale-note" class="subtitle toggle-note">
-          重启后生效。更换语言后可发送 #更新图鉴 下载对应资料。繁體中文使用自备图鉴目录。
+          {{ panelText('AtlasUpdateSettings.c6d1cc350a') }}
         </p>
         <template v-if="saved.searchLimit !== undefined">
-          <label for="atlas-search-limit">每次查询最多返回</label>
+          <label for="atlas-search-limit">{{ panelText('AtlasUpdateSettings.61de27040d') }}</label>
           <input id="atlas-search-limit" v-model.number="searchLimit" type="number" min="1" step="1" required
             aria-describedby="atlas-search-limit-note" />
-          <p id="atlas-search-limit-note" class="subtitle toggle-note">控制同名或模糊查询返回的条目数。</p>
+          <p id="atlas-search-limit-note" class="subtitle toggle-note">{{ panelText('AtlasUpdateSettings.c5ca3114e6') }}</p>
         </template>
         <template v-if="saved.roleQueries">
-          <h3 id="atlas-role-queries">原神和星铁角色查询</h3>
+          <h3 id="atlas-role-queries">{{ panelText('AtlasUpdateSettings.736130609d') }}</h3>
           <label v-for="field in atlasRoleFields" :key="field" class="update-toggle">
             <input :id="'atlas-' + field" v-model="roleDraft[field]" type="checkbox" aria-describedby="atlas-role-queries-note" />
             {{ roleLabels[field] }}
           </label>
-          <p id="atlas-role-queries-note" class="subtitle toggle-note">重启后生效，默认开启。头像选项适用于原神和星铁的天赋／星魂图、面板列表、角色名册及抽卡详情和统计。</p>
+          <p id="atlas-role-queries-note" class="subtitle toggle-note">{{ panelText('AtlasUpdateSettings.263a95fbfd') }}</p>
         </template>
-        <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />启用图鉴定时更新</label>
+        <label class="update-toggle"><input v-model="draft.enable" type="checkbox" />{{ panelText('AtlasUpdateSettings.d2c38c765d') }}</label>
         <label class="update-toggle">
           <input id="atlas-sync-after-update" v-model="syncAfterUpdate" type="checkbox" aria-describedby="atlas-sync-after-update-note" />
-          下载校验后发布图鉴
+          {{ panelText('AtlasUpdateSettings.f70814ad3f') }}
         </label>
         <p id="atlas-sync-after-update-note" class="subtitle toggle-note">
-          关闭后，手动和定时更新仅保存已校验的候选，当前查询继续使用现有资料。
+          {{ panelText('AtlasUpdateSettings.63d84214a2') }}
         </p>
         <label class="update-toggle">
           <input id="atlas-sync-gallery" v-model="syncGallery" type="checkbox" aria-describedby="atlas-sync-gallery-note" />
-          发布图鉴时同步插图
+          {{ panelText('AtlasUpdateSettings.afbf3cb128') }}
         </label>
         <p id="atlas-sync-gallery-note" class="subtitle toggle-note">
-          关闭后，发布新条目时沿用已有图鉴插图。恢复后可发送 #全量更新图鉴 补齐图片。
+          {{ panelText('AtlasUpdateSettings.8f7298e7b1') }}
         </p>
         <label class="update-toggle">
           <input id="atlas-sync-character-gallery" v-model="syncCharacterGallery" type="checkbox"
             aria-describedby="atlas-sync-character-gallery-note" />
-          自动同步三游角色图库
+          {{ panelText('AtlasUpdateSettings.fe26dd5e1e') }}
         </label>
         <p id="atlas-sync-character-gallery-note" class="subtitle toggle-note">
-          每 12 小时检查原神、星铁和绝区零的角色图片。关闭后保留已同步的图片。
+          {{ panelText('AtlasUpdateSettings.5ceb4a5110') }}
         </p>
-        <label for="atlas-check-cron">版本检查 Cron</label>
+        <label for="atlas-check-cron">{{ panelText('AtlasUpdateSettings.000d7c7f12') }}</label>
         <input id="atlas-check-cron" v-model="draft.check_cron" type="text" maxlength="160" autocomplete="off"
-          spellcheck="false" placeholder="0 0 */6 * * ? *" />
-        <label for="atlas-challenge-cron">挑战刷新 Cron</label>
+          spellcheck="false" :placeholder="panelText('AtlasUpdateSettings.fb2553fbaf')" />
+        <label for="atlas-challenge-cron">{{ panelText('AtlasUpdateSettings.15fd113c8a') }}</label>
         <input id="atlas-challenge-cron" v-model="draft.challenge_cron" type="text" maxlength="160" autocomplete="off"
-          spellcheck="false" placeholder="0 15 */2 * * ? *" />
+          spellcheck="false" :placeholder="panelText('AtlasUpdateSettings.58a842bfb1')" />
         <label class="update-toggle">
           <input id="atlas-initialize-missing" v-model="draft.run_on_missing_data" type="checkbox"
-            aria-describedby="atlas-initialize-missing-note" />受管数据为空时补齐
+            aria-describedby="atlas-initialize-missing-note" />{{ panelText('AtlasUpdateSettings.9e26797447') }}
         </label>
         <p id="atlas-initialize-missing-note" class="subtitle toggle-note">
-          选定版本渠道后，定时版本检查和主人普通更新均可补齐受管空目录。停用定时更新仍可手动执行。
+          {{ panelText('AtlasUpdateSettings.3e3cbccb23') }}
         </p>
         <details v-for="field in scopeFields" v-show="saved.scopes" :key="field" class="scope-editor">
           <summary>{{ scopeLabels[field] }}
-            <span v-if="scopeDraft[field]" class="subtitle">已选 {{ scopeDraft[field]?.length }} 项</span>
-            <span v-else class="subtitle">需在本机编辑</span>
+            <span v-if="scopeDraft[field]" class="subtitle">{{ panelText('AtlasUpdateSettings.c762e88370', { value1: scopeDraft[field]?.length }) }}</span>
+            <span v-else class="subtitle">{{ panelText('AtlasUpdateSettings.ff2ceb23b3') }}</span>
           </summary>
           <template v-if="saved.scopes?.[field].selected">
-            <ElButton size="small" @click="scopeDraft[field] = [...saved.scopes[field].available]">全部选中</ElButton>
+            <ElButton size="small" @click="scopeDraft[field] = [...saved.scopes[field].available]">{{ panelText('AtlasUpdateSettings.557dac75ff') }}</ElButton>
             <fieldset v-for="[game, gameLabel] in games" :key="game" class="scope-game">
               <legend>{{ gameLabel }}</legend>
               <label v-for="item in saved.scopes[field].available.filter(value => value.startsWith(game + '/'))"
@@ -248,14 +250,14 @@ onBeforeUnmount(() => {
                 {{ pages[item] ?? pages[item.slice(game.length + 1)] ?? item.slice(game.length + 1) }}
               </label>
             </fieldset>
-            <p v-if="!scopeDraft[field]?.length" class="error">请至少选择一类资料。</p>
+            <p v-if="!scopeDraft[field]?.length" class="error">{{ panelText('AtlasUpdateSettings.9da43eb340') }}</p>
           </template>
-          <p v-else class="subtitle">现有参数无法在页面中安全编辑，已保留原配置。请在本机 YAML 中调整。</p>
+          <p v-else class="subtitle">{{ panelText('AtlasUpdateSettings.8969fc95ab') }}</p>
         </details>
       </fieldset>
-      <p class="subtitle">清空时间表可恢复默认频率。保存后重启宿主生效。</p>
+      <p class="subtitle">{{ panelText('AtlasUpdateSettings.c1433240e2') }}</p>
       <div class="update-actions">
-        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || scopeInvalid || searchInvalid || Boolean(busy)">保存图鉴设置</ElButton>
+        <ElButton type="primary" native-type="submit" :loading="busy === 'save'" :disabled="!dirty || scopeInvalid || searchInvalid || Boolean(busy)">{{ panelText('AtlasUpdateSettings.a02acd08ff') }}</ElButton>
         <span v-if="feedback" role="status">{{ feedback }}</span>
       </div>
     </form>

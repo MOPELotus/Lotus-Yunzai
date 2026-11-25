@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { ElButton } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { accountScopePolicies, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies, mediaOwnerScopes, mediaPreviewScopes,
@@ -11,50 +13,50 @@ const emit = defineEmits<{ unauthorized: []; "dirty-change": [dirty: boolean] }>
 type Scope = AccountScope | MediaDownloadScope | MediaPreviewScope | MediaOwnerScope | GroupExportScope;
 type Snapshot = ScopePolicySnapshot<Scope>;
 const sections = {
-  account: { title: "签到权限", id: "account-permissions", path: "checkin/permissions", scopes: accountScopes },
-  "media-download": { title: "媒体下载权限", id: "media-download-permissions", path: "media/download-permissions", scopes: mediaDownloadScopes },
-  "media-preview": { title: "媒体预览权限", id: "media-preview-permissions", path: "media/preview-permissions", scopes: mediaPreviewScopes },
-  "media-owner": { title: "媒体主人权限", id: "media-owner-permissions", path: "media/owner-permissions", scopes: mediaOwnerScopes },
-  "group-export": { title: "群成员导出权限", id: "group-export-permissions", path: "group/export-permissions", scopes: groupExportScopes },
+  account: { title: panelText('AccountPermissionsSettings.cd4bf18b7e'), id: "account-permissions", path: "checkin/permissions", scopes: accountScopes },
+  "media-download": { title: panelText('AccountPermissionsSettings.09b88616b3'), id: "media-download-permissions", path: "media/download-permissions", scopes: mediaDownloadScopes },
+  "media-preview": { title: panelText('AccountPermissionsSettings.75f47bf371'), id: "media-preview-permissions", path: "media/preview-permissions", scopes: mediaPreviewScopes },
+  "media-owner": { title: panelText('AccountPermissionsSettings.6f13b28a19'), id: "media-owner-permissions", path: "media/owner-permissions", scopes: mediaOwnerScopes },
+  "group-export": { title: panelText('AccountPermissionsSettings.5f8fd6fc1f'), id: "group-export-permissions", path: "group/export-permissions", scopes: groupExportScopes },
 } as const;
 const section = props.section ?? "account";
 const { title, id, path, scopes } = sections[section];
 const heading = `${id}-title`;
 const endpoint = `${import.meta.env.BASE_URL}api/settings/${path}`;
 const labels: Record<Scope, string> = {
-  "checkin.register": "注册签到",
-  "checkin.refresh": "刷新登录信息",
-  "checkin.group_register": "批量注册本群签到",
-  "scheduler.generate": "生成全局签到计划",
-  "scheduler.run_due": "执行到期签到",
-  "scheduler.manage": "聊天中修改调度",
-  "bilibili.download": "B 站视频下载",
-  "douyin.download": "抖音媒体下载",
-  "acfun.play": "AcFun 视频播放",
-  "pipixia.download": "皮皮虾视频下载",
-  "weishi.play": "微视视频播放",
-  "zuiyou.play": "最右视频播放",
-  "kuaishou.download": "快手视频下载",
-  "acfun.preview": "AcFun 预览",
-  "weishi.preview": "微视预览",
-  "zuiyou.preview": "最右预览",
-  "wxchannels.preview": "视频号预览",
-  "xigua.preview": "西瓜视频预览",
-  "xhs.preview": "小红书预览",
-  "xhh.preview": "小黑盒游戏预览",
-  "bilibili.login": "B 站扫码登录",
-  "tools.install": "初始化及按需安装媒体工具",
-  "netease.partner": "合伙人手动操作及 TuneWeave 指令",
-  "group.members.export": "#群成员",
+  "checkin.register": panelText('AccountPermissionsSettings.258539c0a7'),
+  "checkin.refresh": panelText('AccountPermissionsSettings.b868cf2955'),
+  "checkin.group_register": panelText('AccountPermissionsSettings.a62305e581'),
+  "scheduler.generate": panelText('AccountPermissionsSettings.a3dbe0a672'),
+  "scheduler.run_due": panelText('AccountPermissionsSettings.b0cbb6c39c'),
+  "scheduler.manage": panelText('AccountPermissionsSettings.639b37f931'),
+  "bilibili.download": panelText('AccountPermissionsSettings.f29adfb070'),
+  "douyin.download": panelText('AccountPermissionsSettings.ee5601417f'),
+  "acfun.play": panelText('AccountPermissionsSettings.a6a4b81e7b'),
+  "pipixia.download": panelText('AccountPermissionsSettings.49b461e64a'),
+  "weishi.play": panelText('AccountPermissionsSettings.38eadb0b09'),
+  "zuiyou.play": panelText('AccountPermissionsSettings.377022ba68'),
+  "kuaishou.download": panelText('AccountPermissionsSettings.06963c8504'),
+  "acfun.preview": panelText('AccountPermissionsSettings.ebcf57bc30'),
+  "weishi.preview": panelText('AccountPermissionsSettings.3da512f609'),
+  "zuiyou.preview": panelText('AccountPermissionsSettings.f6ebaab462'),
+  "wxchannels.preview": panelText('AccountPermissionsSettings.c4eacfe7d1'),
+  "xigua.preview": panelText('AccountPermissionsSettings.f8ea6c144a'),
+  "xhs.preview": panelText('AccountPermissionsSettings.a8aca28230'),
+  "xhh.preview": panelText('AccountPermissionsSettings.9b463f30f6'),
+  "bilibili.login": panelText('AccountPermissionsSettings.4b3685556b'),
+  "tools.install": panelText('AccountPermissionsSettings.41dbd0caac'),
+  "netease.partner": panelText('AccountPermissionsSettings.d75457cb15'),
+  "group.members.export": panelText('AccountPermissionsSettings.be3754f2d4'),
 };
 const policyLabels: Record<AccountScopePolicy, string> = {
-  inherit: "继承全局权限", allow: "允许", deny: "拒绝", master_only: "仅机器人主人",
+  inherit: panelText('AccountPermissionsSettings.a979ac4d37'), allow: panelText('AccountPermissionsSettings.ce7ef28b67'), deny: panelText('AccountPermissionsSettings.136de7a8c4'), master_only: panelText('AccountPermissionsSettings.dc138aeaa5'),
 };
 const groups = section === "account" ? [
-  { title: "档案与签到", scopes: accountScopes.slice(0, 3) },
-  { title: "调度指令", scopes: accountScopes.slice(3) },
-] : [{ title: section === "media-download" ? "下载策略" : section === "media-preview" ? "预览策略" :
-  section === "group-export" ? "CSV 导出" : "主人指令", scopes }];
+  { title: panelText('AccountPermissionsSettings.b75732fe7c'), scopes: accountScopes.slice(0, 3) },
+  { title: panelText('AccountPermissionsSettings.87587dbb42'), scopes: accountScopes.slice(3) },
+] : [{ title: section === "media-download" ? panelText('AccountPermissionsSettings.47d6816892') : section === "media-preview" ? panelText('AccountPermissionsSettings.33d25ad43c') :
+  section === "group-export" ? panelText('AccountPermissionsSettings.d52f5ac766') : panelText('AccountPermissionsSettings.b6368439a2'), scopes }];
 function choices(scope: Scope) {
   const ownerScope = mediaOwnerScopes.find(name => name === scope);
   return ownerScope ? mediaOwnerScopePolicies(ownerScope) : accountScopePolicies;
@@ -107,7 +109,7 @@ async function request(method: "GET" | "PUT") {
     if (response.status === 401) return emit("unauthorized");
     if (response.status === 409) {
       conflict.value = true;
-      error.value = `${title}已在别处修改。请重新读取后再保存。`;
+      error.value = panelText('AccountPermissionsSettings.bd4bbeb4ad', { value1: title });
       return;
     }
     if (!response.ok) throw new Error();
@@ -117,9 +119,9 @@ async function request(method: "GET" | "PUT") {
     saved.value = result;
     draft.value = { ...result.settings };
     conflict.value = false;
-    if (method === "PUT") notice.value = "权限设置已保存。";
+    if (method === "PUT") notice.value = panelText('AccountPermissionsSettings.0e89429981');
   } catch {
-    if (active === controller) error.value = `暂时无法读取或保存${title}。`;
+    if (active === controller) error.value = panelText('AccountPermissionsSettings.da32a9846a', { value1: title });
   } finally {
     if (active === controller) {
       active = undefined;
@@ -146,12 +148,12 @@ onBeforeUnmount(() => {
     <div class="section-heading">
       <h2 v-if="props.section" :id="heading">{{ title }}</h2>
       <h1 v-else :id="heading" tabindex="-1">{{ title }}</h1>
-      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">重新读取</ElButton>
+      <ElButton :loading="busy === 'GET'" :disabled="Boolean(busy) || confirmReload" @click="reload">{{ panelText('AccountPermissionsSettings.df7392cc96') }}</ElButton>
     </div>
     <div v-if="confirmReload" class="permission-actions" role="alert">
-      <span>重新读取会放弃未保存的改动。</span>
-      <ElButton @click="confirmReload = false">继续编辑</ElButton>
-      <ElButton type="danger" @click="request('GET')">放弃改动并读取</ElButton>
+      <span>{{ panelText('AccountPermissionsSettings.e71b339a4e') }}</span>
+      <ElButton @click="confirmReload = false">{{ panelText('AccountPermissionsSettings.fd4b9e3b6c') }}</ElButton>
+      <ElButton type="danger" @click="request('GET')">{{ panelText('AccountPermissionsSettings.a5831537bd') }}</ElButton>
     </div>
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
     <form v-if="draft" class="permission-settings" @submit.prevent="request('PUT')">
@@ -164,14 +166,14 @@ onBeforeUnmount(() => {
           </select>
         </label>
       </fieldset>
-      <p v-if="section === 'media-download'">用户和群拒绝名单优先。下次需要下载权限的操作会采用新设置。</p>
-      <p v-else-if="section === 'media-preview'">用户和群拒绝名单优先。下次解析分享时采用新设置。</p>
-      <p v-else-if="section === 'media-owner'">用户和群拒绝名单优先。这些指令始终要求机器人主人，涉及扫码和合伙人日志时还要求好友私聊。保存后从下一次手动操作开始生效。</p>
-      <p v-else-if="section === 'group-export'">用户和群拒绝名单优先。给普通成员放行时，仍须核对此人在目标群内。保存后下次导出生效。</p>
-      <p v-else>用户和群拒绝名单仍优先。聊天中修改调度的权限在下次操作时生效，其余项目重启宿主后生效。</p>
+      <p v-if="section === 'media-download'">{{ panelText('AccountPermissionsSettings.b68feae8f5') }}</p>
+      <p v-else-if="section === 'media-preview'">{{ panelText('AccountPermissionsSettings.cd53781ccf') }}</p>
+      <p v-else-if="section === 'media-owner'">{{ panelText('AccountPermissionsSettings.665a0f2d46') }}</p>
+      <p v-else-if="section === 'group-export'">{{ panelText('AccountPermissionsSettings.451a8de93d') }}</p>
+      <p v-else>{{ panelText('AccountPermissionsSettings.111901642a') }}</p>
       <div class="permission-actions">
         <ElButton type="primary" native-type="submit" :loading="busy === 'PUT'"
-          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">保存</ElButton>
+          :disabled="!dirty || Boolean(busy) || confirmReload || conflict">{{ panelText('AccountPermissionsSettings.a3030bf8f1') }}</ElButton>
         <span v-if="notice" role="status">{{ notice }}</span>
       </div>
     </form>

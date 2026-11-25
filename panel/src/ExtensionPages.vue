@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { mdiLanConnect, mdiPuzzleOutline } from "@mdi/js";
 import { ElButton } from "element-plus";
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
@@ -26,8 +28,8 @@ const extensionIconPaths = new Map([
   ["mdi:lan-connect", mdiLanConnect],
 ]);
 const issueLabels = {
-  invalid: "页面注册失败或资源无效",
-  "duplicate-id": "页面 ID 重复",
+  invalid: panelText('ExtensionPages.77a3f7bb72'),
+  "duplicate-id": panelText('ExtensionPages.3eb15db771'),
 } as const satisfies Record<Issue["kind"], string>;
 
 const props = defineProps<{ auth: PanelAuth; preferences: Map<string, string> }>();
@@ -171,8 +173,8 @@ async function load(page?: ExtensionPage, rescan = false) {
     }
     if (!response.ok) {
       error.value = response.status === 404
-        ? (page ? "此扩展页面已不可用。" : "宿主尚未启用扩展页面。")
-        : (page ? "宿主暂时无法打开此扩展页面。" : "宿主暂时无法读取扩展清单。");
+        ? (page ? panelText('ExtensionPages.5a8e4a8b24') : panelText('ExtensionPages.8a574c1e2f'))
+        : (page ? panelText('ExtensionPages.12254e14c8') : panelText('ExtensionPages.63caf91006'));
       return;
     }
 
@@ -181,14 +183,14 @@ async function load(page?: ExtensionPage, rescan = false) {
     if (page) {
       const url = isRecord(data) ? scopedUrl(data.url, page.id) : undefined;
       if (!url) {
-        error.value = "宿主未返回可用的站内扩展页面地址。";
+        error.value = panelText('ExtensionPages.302c94b0eb');
         return;
       }
       openFrame(url, page);
     } else {
       if (!isRecord(data) || !Array.isArray(data.pages) || !data.pages.every(isPage) ||
           !Array.isArray(data.issues) || !data.issues.every(isIssue)) {
-        error.value = "宿主返回了无法识别的扩展清单。";
+        error.value = panelText('ExtensionPages.42838d494f');
         return;
       }
       catalog.value = { pages: data.pages, issues: data.issues };
@@ -199,7 +201,7 @@ async function load(page?: ExtensionPage, rescan = false) {
       if (rescan) reopen = opened;
     }
   } catch {
-    if (active === controller) error.value = "暂时无法连接宿主，请重试。";
+    if (active === controller) error.value = panelText('ExtensionPages.19818d1a03');
   } finally {
     clearTimeout(timeout);
     if (active === controller) {
@@ -233,15 +235,15 @@ onBeforeUnmount(() => {
 <template>
   <section class="extensions" aria-labelledby="extensions-title" :aria-busy="Boolean(busy)">
     <div class="section-heading">
-      <h1 id="extensions-title" tabindex="-1">扩展页面</h1>
-      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy)" @click="load(undefined, true)">重新扫描</ElButton>
+      <h1 id="extensions-title" tabindex="-1">{{ panelText('ExtensionPages.eccf12cef9') }}</h1>
+      <ElButton :loading="busy === 'list'" :disabled="Boolean(busy)" @click="load(undefined, true)">{{ panelText('ExtensionPages.daf5103f90') }}</ElButton>
     </div>
 
     <p v-if="error" class="error refresh-error" role="alert">{{ error }}</p>
-    <p v-if="busy === 'list' && !catalog" class="extension-note" role="status">正在读取扩展清单…</p>
+    <p v-if="busy === 'list' && !catalog" class="extension-note" role="status">{{ panelText('ExtensionPages.5aa1ee9ec8') }}</p>
 
     <div v-if="catalog?.pages.length" class="extension-layout">
-      <nav class="extension-nav" aria-label="已发现的扩展页面">
+      <nav class="extension-nav" :aria-label="panelText('ExtensionPages.ef24959da1')">
         <button
           v-for="page in catalog.pages"
           :key="page.id"
@@ -264,21 +266,21 @@ onBeforeUnmount(() => {
       <div v-if="selected" class="extension-view" aria-labelledby="extension-current-title">
         <div class="section-heading extension-view-header">
           <h2 id="extension-current-title">{{ selected.title }}</h2>
-          <ElButton :loading="busy === 'open'" :disabled="Boolean(busy)" @click="load(selected)">刷新页面</ElButton>
+          <ElButton :loading="busy === 'open'" :disabled="Boolean(busy)" @click="load(selected)">{{ panelText('ExtensionPages.9366e1784d') }}</ElButton>
         </div>
         <iframe v-if="frameUrl" ref="frame" :src="frameUrl" :title="selected.title"
           :sandbox="selected.servicePreview ? 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox' : 'allow-scripts allow-forms'"
           referrerpolicy="no-referrer" />
-        <p v-else-if="busy === 'open'" class="extension-note" role="status">正在打开页面…</p>
+        <p v-else-if="busy === 'open'" class="extension-note" role="status">{{ panelText('ExtensionPages.6b5799d00a') }}</p>
       </div>
-      <div v-else class="extension-view extension-placeholder">选择要打开的扩展页面。</div>
+      <div v-else class="extension-view extension-placeholder">{{ panelText('ExtensionPages.1f38fe0aad') }}</div>
     </div>
     <p v-else-if="catalog && !catalog.issues.length && !busy" class="extension-note" role="status">
-      当前没有可打开的扩展页面。
+      {{ panelText('ExtensionPages.f463efe798') }}
     </p>
 
     <section v-if="catalog?.issues.length" class="extension-issues" aria-labelledby="extension-issues-title">
-      <h2 id="extension-issues-title">未加载的扩展</h2>
+      <h2 id="extension-issues-title">{{ panelText('ExtensionPages.54aac220ef') }}</h2>
       <ul>
         <li v-for="(issue, index) in catalog.issues" :key="index">
           <strong>{{ issue.plugin }}</strong>

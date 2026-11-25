@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { panelText } from './i18n.ts';
+
 import { computed, ref } from "vue";
 import { ElButton } from "element-plus";
 
 const fields = [
-  { key: "special", label: "群每日专票数", min: 0, max: 10_000 },
-  { key: "regular", label: "群每日通票数", min: 0, max: 10_000 },
-  { key: "recallSeconds", label: "群结果图撤回延时（秒）", min: 0, max: 120 },
+  { key: "special", label: panelText('GroupWarpSettings.d8df41f12e'), min: 0, max: 10_000 },
+  { key: "regular", label: panelText('GroupWarpSettings.caab68b6bc'), min: 0, max: 10_000 },
+  { key: "recallSeconds", label: panelText('GroupWarpSettings.30d31a25ad'), min: 0, max: 120 },
 ] as const;
 type AllowanceKey = typeof fields[number]["key"];
 type Allowance = Partial<Record<AllowanceKey, number | string>>;
@@ -40,27 +42,27 @@ function clearGroup() {
 
 <template>
   <fieldset class="warp-groups" :disabled="props.disabled">
-    <legend>按群覆盖</legend>
+    <legend>{{ panelText('GroupWarpSettings.0d7583d991') }}</legend>
     <div class="warp-row">
-      <label>编辑已有群
+      <label>{{ panelText('GroupWarpSettings.3f7a035931') }}
         <select v-model="scope">
-          <option value="">选择群</option>
+          <option value="">{{ panelText('GroupWarpSettings.ad7025f890') }}</option>
           <option v-for="id in choices" :key="id" :value="id">{{ id }}</option>
         </select>
       </label>
-      <label>指定其他群号
+      <label>{{ panelText('GroupWarpSettings.f5d8b09091') }}
         <input v-model="groupId" inputmode="numeric" maxlength="16">
       </label>
-      <ElButton :disabled="!canSelect || props.disabled" @click="scope = other">编辑群</ElButton>
+      <ElButton :disabled="!canSelect || props.disabled" @click="scope = other">{{ panelText('GroupWarpSettings.fab4a63cc5') }}</ElButton>
     </div>
-    <p class="warp-hint">留空时继承全局设置。票数填 0 时停发该种票，已领余额保留。撤回填 0 时保留消息。</p>
+    <p class="warp-hint">{{ panelText('GroupWarpSettings.f88c7ea90a') }}</p>
     <div v-if="scope" class="warp-fields">
       <label v-for="field in fields" :key="field.key">{{ field.label }}
         <input :value="current?.[field.key]" type="number" :min="field.min" :max="field.max" step="1"
           :placeholder="String(props.allowance[field.key] ?? '')" @input="setField(field.key, $event)">
       </label>
       <div>
-        <ElButton :disabled="!current || props.disabled" @click="clearGroup">移除此群覆盖</ElButton>
+        <ElButton :disabled="!current || props.disabled" @click="clearGroup">{{ panelText('GroupWarpSettings.a942355f91') }}</ElButton>
       </div>
     </div>
   </fieldset>
