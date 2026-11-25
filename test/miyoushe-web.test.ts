@@ -101,17 +101,35 @@ test("米游社网页按原脚本地址提供 Bun 转译后的浏览器资源，
     async overview() { throw new Error("脚本请求不读取账号。"); },
   });
   try {
-    await writeFile(join(root, "app.ts"), 'const version: number = 42; document.body.dataset.version = String(version);');
+    await writeFile(join(root, "index.html"), await readFile(new URL("../web/miyoushe/index.html", import.meta.url), "utf8"));
+    const html = await site.handle(request(""));
+    expect(html?.status).toBe(200);
+    expect(html?.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await html?.text()).toMatch(/<script\b[^>]*src="app\.js"[^>]*type="module"[^>]*>/u);
+    await writeFile(join(root, "app.ts"), 'import { marker } from "./intent-id.js"; const version: number = 42; document.body.dataset.version = String(version) + marker;');
     const response = await site.handle(request("app.js"));
     expect(response?.status).toBe(200);
     expect(response?.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
     const text = await response?.text();
     expect(text).toContain("document.body.dataset.version");
+    expect(text).toContain('from "./intent-id.js"');
     expect(text).not.toContain(": number");
     const head = await site.handle(request("app.js", { method: "HEAD" }));
     expect(head?.status).toBe(200);
     expect(await head?.text()).toBe("");
     expect((await site.handle(request("app.ts")))?.status).toBe(404);
+    await writeFile(join(root, "intent-id.ts"), 'export const marker: string = "secure-random-helper";');
+    const helper = await site.handle(request("intent-id.js"));
+    expect(helper?.status).toBe(200);
+    expect(helper?.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    expect(await helper?.text()).toContain('export');
+    const helperHead = await site.handle(request("intent-id.js", { method: "HEAD" }));
+    expect(helperHead?.status).toBe(200);
+    expect(await helperHead?.text()).toBe("");
+    expect((await site.handle(request("intent-id.js", { method: "POST" })))?.status).toBe(405);
+    for (const name of ["intent-id.ts", "other.js", "intent-id.js/extra"]) {
+      expect((await site.handle(request(name)))?.status).toBe(404);
+    }
   } finally {
     site.close();
     await rm(root, { recursive: true, force: true });
@@ -729,5 +747,16 @@ test("退出米游社网页后，迟到的过期响应不换票或重读原档�
   } finally {
     web.close();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test("米游社网页接受明确内网 HTTP 地址，公网 HTTP 与带凭据地址仍拒绝", () => {
+  for (const host of ["10.10.10.18", "192.168.1.2", "172.16.0.8", "[fd00::8]", "127.0.0.1", "localhost"]) {
+    expect(miyousheWebSettings({ public_url: `http://${host}:43206/miyoushe/` }).origin?.href)
+      .toBe(`http://${host}:43206/`);
+  }
+  for (const value of ["http://203.0.113.8/miyoushe/", "http://public.example/miyoushe/", "http://user:pass@10.0.0.1/miyoushe/"]) {
+    expect(miyousheWebSettings({ public_url: value }).origin).toBeUndefined();
   }
 });

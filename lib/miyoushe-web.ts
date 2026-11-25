@@ -1,3 +1,4 @@
+import { isInternalAddress } from "./network-access.ts";
 import { renderSiteIcpFooter } from "./web-icp.ts";
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
@@ -156,7 +157,8 @@ function error(status: number) { return new Response(null, { status, headers });
 
 export function miyousheWebPublicUrl(base: URL | null | undefined) {
   if (!base || base.username || base.password || base.search || base.hash) return;
-  if (base.protocol === "https:" || (base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname))) return base;
+  const host = base.hostname.replace(/^\[|\]$/gu, "");
+  if (base.protocol === "https:" || (base.protocol === "http:" && (host === "localhost" || isInternalAddress(host)))) return base;
 }
 
 export function miyousheWebMountPath(value: unknown) {
@@ -206,7 +208,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
   const stopJobs = new AbortController();
   const jobsSignal = AbortSignal.any([signal, stopJobs.signal]);
   const shopSignal = shopVerificationSignal ? AbortSignal.any([jobsSignal, shopVerificationSignal]) : jobsSignal;
-  let browserScript: Promise<string> | undefined;
+  const browserScripts = new Map<string, Promise<string>>();
 
   function publicPage() {
     const base = miyousheWebPublicUrl(publicBase());
@@ -331,19 +333,20 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
     const settingsRoute = previewRoute || checkinRoute;
     const editingPlans = plans && (planAction || trackingAction ||
       ((part === "api/plans" || part === "api/trackers") && method !== "GET"));
-    if (part === "" || part === "style.css" || part === "app.js") {
+    if (part === "" || part === "style.css" || part === "app.js" || part === "intent-id.js") {
       if (!isRead) return error(405);
       const contentType = part === "" ? "text/html" : part === "style.css" ? "text/css" : "text/javascript";
       const assetHeaders = { ...headers, "Content-Type": `${contentType}; charset=utf-8` };
-      if (part === "app.js") {
-        const source = Bun.file(join(assetDirectory, "app.ts"));
+      if (part === "app.js" || part === "intent-id.js") {
+        const source = Bun.file(join(assetDirectory, part === "app.js" ? "app.ts" : "intent-id.ts"));
         if (await source.exists()) {
           if (method === "HEAD") return new Response(null, { headers: assetHeaders });
-          const compiled = browserScript ??= source.text().then(text => new Bun.Transpiler({ loader: "ts", target: "browser" }).transform(text));
+          const compiled = browserScripts.get(part) ?? source.text().then(text => new Bun.Transpiler({ loader: "ts", target: "browser" }).transform(text));
+          browserScripts.set(part, compiled);
           try {
             return new Response(await compiled, { headers: assetHeaders });
           } catch {
-            if (browserScript === compiled) browserScript = undefined;
+            if (browserScripts.get(part) === compiled) browserScripts.delete(part);
             return error(500);
           }
         }

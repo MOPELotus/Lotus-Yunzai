@@ -724,3 +724,91 @@ test("商城最终绑定检查跨过关窗，由原客户端返回明确未派�
     expect((await engine.list(target)).plans).toEqual([expect.objectContaining({ id: plan.id, status: "missed", attempts: 0 })]);
   });
 });
+
+test("米游社社区虚拟商品以当前账号为目标，立即与预约执行均不伪造游戏角色", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let at = startTime;
+    let scheduled = false;
+    const submitted: unknown[] = [];
+    const good = { ...mockGood, price: 1, game: "bbs", gameBiz: "bbs_cn" };
+    const shop = createMiyousheShopPlans({ file, profileDirectory, now: () => at,
+      inspect: async () => ({ good: { ...good, status: scheduled ? "scheduled" : "available",
+        opensAt: scheduled ? startTime + 60_000 : null }, balance: 10, roles: [] }),
+      async submit(plan) { submitted.push({ accountId: plan.accountId, gameBiz: plan.gameBiz, type: plan.type,
+        role: plan.role, addressId: plan.addressId }); return "succeeded"; },
+    });
+    await shop.reserve(target, { confirmed: true, goodsId: "27", immediate: true, expectedPrice: 1 });
+    await shop.scan();
+    scheduled = true;
+    await shop.reserve(target, { confirmed: true, goodsId: "27", immediate: false, expectedPrice: 1 });
+    at += 60_000;
+    scheduled = false;
+    await shop.scan();
+    expect(submitted).toEqual(Array(2).fill({ accountId: "123", gameBiz: "bbs_cn", type: 2, role: null, addressId: "" }));
+    expect((await shop.list(target)).plans.every(plan => plan.status === "succeeded")).toBe(true);
+  });
+});
+
+test("社区账号目标拒绝任何调用方UID、区服、地址，伪装game或gameBiz不能绕过游戏角色校验", async () => {
+  await fixture(async ({ file, profileDirectory }) => {
+    let good = { ...mockGood, game: "bbs", gameBiz: "bbs_cn" };
+    const shop = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime,
+      inspect: async () => ({ good, balance: 500, roles: [] }), async submit() { throw new Error("不得提交"); } });
+    const input = { confirmed: true, goodsId: "27", immediate: true };
+    for (const destination of [{ uid: "123" }, { uid: "" }, { region: "cn_gf01" }, { region: "" },
+      { addressId: "123" }, { addressId: "" }]) {
+      await expect(shop.reserve(target, { ...input, ...destination })).rejects.toMatchObject({ status: 400 });
+    }
+    for (const otherGood of [{ ...good, game: "hk4e" }, { ...good, gameBiz: "hk4e_cn" }]) {
+      good = otherGood;
+      await expect(shop.reserve(target, input)).rejects.toMatchObject({ status: 400 });
+    }
+    expect((await shop.list(target)).plans).toEqual([]);
+  });
+});
+
+test("社区商品执行前再次核对实际商品类型与账号，变成游戏商品时不得提交", async () => {
+  await fixture(async ({ file, profileDirectory, profile }) => {
+    let good = { ...mockGood, game: "bbs", gameBiz: "bbs_cn" };
+    let posts = 0;
+    const shop = createMiyousheShopPlans({ file, profileDirectory, now: () => startTime,
+      inspect: async () => ({ good, balance: 500, roles: [] }), async submit() { posts++; return "succeeded"; } });
+    const input = { confirmed: true, goodsId: "27", immediate: true };
+    await shop.reserve(target, input);
+    good = { ...good, game: "hk4e" };
+    await shop.scan();
+    expect(posts).toBe(0);
+    expect((await shop.list(target)).plans[0]?.status).toBe("failed");
+    good = { ...good, game: "bbs" };
+    await shop.reserve(target, input);
+    await profile(target.qq, target.profileId, "456");
+    await shop.scan();
+    expect(posts).toBe(0);
+    expect((await shop.list(target)).plans.every(plan => plan.status === "failed")).toBe(true);
+  });
+});
+
+test("社区商品V4续接复核当前账号目标与余额，未知结果重启不重放", async () => {
+  for (const changed of [false, true]) await fixture(async ({ file, profileDirectory }) => {
+    let game = "bbs", posts = 0;
+    const options = { file, profileDirectory, now: () => startTime,
+      inspect: async () => ({ good: { ...mockGood, game, gameBiz: "bbs_cn", price: 1 }, balance: 2, roles: [] }),
+      async submit(_plan: unknown, _signal?: AbortSignal, _verify?: () => Promise<void>,
+        manual?: { prepareResume(): Promise<void> }) {
+        posts++;
+        expect(manual).toBeDefined();
+        if (changed) game = "hk4e";
+        try { await manual!.prepareResume(); } catch { return "verification" as const; }
+        posts++;
+        return "unknown" as const;
+      },
+    };
+    const shop = createMiyousheShopPlans(options);
+    await shop.reserve(target, { confirmed: true, goodsId: "27", immediate: true });
+    await shop.scan(new AbortController().signal);
+    expect(posts).toBe(changed ? 1 : 2);
+    expect((await shop.list(target)).plans[0]?.status).toBe(changed ? "failed" : "unknown");
+    await createMiyousheShopPlans(options).scan(new AbortController().signal);
+    expect(posts).toBe(changed ? 1 : 2);
+  });
+});

@@ -288,6 +288,16 @@ export async function readMiyousheShopBalance(transport: HoyoTransport, profile:
   return balance;
 }
 
+/** Authenticated community identity used by the official community-shop's bbs goods. */
+export async function readMiyousheShopCommunityUid(transport: HoyoTransport, profile: ProfileAccountContext,
+  signal?: AbortSignal, verify?: Verify) {
+  const data = await read(transport, new URL("/user/wapi/getUserFullInfo", shopOrigin), profile, signal, verify);
+  const user = object(data.user_info);
+  const uid = typeof user?.uid === "number" && Number.isSafeInteger(user.uid) ? String(user.uid) : user?.uid;
+  if (typeof uid !== "string" || !idPattern.test(uid)) throw readError();
+  return uid;
+}
+
 export async function readMiyousheShopAddresses(transport: HoyoTransport, profile: ProfileAccountContext,
   signal?: AbortSignal, verify?: Verify) {
   const url = new URL("/account/address/list", addressOrigin);
@@ -316,7 +326,13 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
   let body;
   if (order.type === 1 && !order.role && idPattern.test(order.addressId) && Number.isSafeInteger(Number(order.addressId))) {
     body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: Number(order.addressId) };
-  } else if (order.type === 2 && !order.addressId && order.role && idPattern.test(order.role.uid) &&
+  } else if (order.type === 2 && order.gameBiz === "bbs_cn" && !order.role && !order.addressId) {
+    // Official community-shop uses the signed-in community UID and game_biz=bbs.
+    // It has no game role or region; resolve the authenticated user, never accept a caller UID.
+    requestHeaders(profile, true);
+    const uid = await readMiyousheShopCommunityUid(transport, profile, signal, verify);
+    body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: 0, uid, game_biz: "bbs" };
+  } else if (order.type === 2 && !order.addressId && order.role && order.gameBiz !== "bbs_cn" && idPattern.test(order.role.uid) &&
       codePattern.test(order.role.region) && codePattern.test(order.gameBiz) && order.role.gameBiz === order.gameBiz) {
     body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: 0,
       uid: order.role.uid, region: order.role.region, game_biz: order.gameBiz };

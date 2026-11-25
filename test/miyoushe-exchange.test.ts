@@ -403,3 +403,71 @@ test("商城自动验证码每次新建 v4 挑战，二次校验拒绝后不提�
     expect([creates, accepts, orders]).toEqual([2, 2, 2]);
   } finally { setDefaultCaptchaSolver(undefined); }
 });
+
+test("米游社挂件从本人接口读取社区 UID，发送 bbs 目标且不拼造游戏区服", async () => {
+  const order = { goodsId: "424245", type: 2, gameBiz: "bbs_cn", role: null, addressId: "" } as const;
+  const calls: string[] = [];
+  const result = await submitMiyousheShopExchange(async (url, init) => {
+    calls.push(url.pathname);
+    if (url.pathname === "/user/wapi/getUserFullInfo") {
+      expect(init.method).toBe("GET");
+      expect(url.search).toBe("");
+      return Response.json({ retcode: 0, data: { user_info: { uid: "4567" } } });
+    }
+    expect(url.pathname).toBe("/common/homushop/v1/web/goods/exchange");
+    expect(JSON.parse(String(init.body))).toEqual({ app_id: 1, point_sn: "myb", goods_id: "424245",
+      exchange_num: 1, address_id: 0, uid: "4567", game_biz: "bbs" });
+    return Response.json({ retcode: 0, data: {} });
+  }, profile, order);
+  expect(result).toBe("succeeded");
+  expect(calls).toHaveLength(2);
+  for (const invalid of [{ ...order, role: virtual.role }, { ...order, addressId: "123" }]) {
+    await expect(submitMiyousheShopExchange(async () => { throw Error("must not dispatch"); }, profile, invalid))
+      .rejects.toMatchObject({ reason: "invalid" });
+  }
+});
+
+test("社区本人查询失败、身份无效或换绑时不提交挂件兑换", async () => {
+  const order = { goodsId: "424245", type: 2, gameBiz: "bbs_cn", role: null, addressId: "" } as const;
+  for (const data of [{}, { user_info: { uid: "" } }, { user_info: { uid: "123&other=1" } }]) {
+    let calls = 0;
+    await expect(submitMiyousheShopExchange(async url => {
+      calls++;
+      expect(url.pathname).toBe("/user/wapi/getUserFullInfo");
+      return Response.json({ retcode: 0, data });
+    }, profile, order)).rejects.toMatchObject({ reason: "failed" });
+    expect(calls).toBe(1);
+  }
+  let valid = true, calls = 0;
+  await expect(submitMiyousheShopExchange(async () => {
+    calls++; valid = false;
+    return Response.json({ retcode: 0, data: { user_info: { uid: "4567" } } });
+  }, profile, order, undefined, async () => { if (!valid) throw Error("profile changed"); }))
+    .rejects.toThrow("profile changed");
+  expect(calls).toBe(1);
+});
+
+test("社区挂件遇到 v4 仍沿用本人 UID 和同一原订单，校验后续交一次", async () => {
+  const order = { goodsId: "424245", type: 2, gameBiz: "bbs_cn", role: null, addressId: "" } as const;
+  const bodies: string[] = [];
+  let checks = 0;
+  const result = await submitMiyousheShopExchange(async (url, init) => {
+    if (url.pathname === "/user/wapi/getUserFullInfo") return Response.json({ retcode: 0, data: { user_info: { uid: "4567" } } });
+    if (url.pathname.endsWith("/goods/exchange")) {
+      bodies.push(String(init.body));
+      if (bodies.length === 1) return Response.json({ retcode: 1034 });
+      expect(new Headers(init.headers).get("x-rpc-challenge")).toBe("official-token");
+      return Response.json({ retcode: 0 });
+    }
+    if (url.pathname.endsWith("createVerification")) return Response.json({ retcode: 0, data: { captcha_id: "fixture-shop", risk_type: "slide" } });
+    expect(url.pathname).toBe("/misc/wapi/verifyVerfication");
+    return Response.json({ retcode: 0, data: { challenge: "official-token" } });
+  }, profile, order, new AbortController().signal, async () => {}, {
+    async waitForProof() { return v4Proof; },
+    async prepareResume() { checks++; },
+  });
+  expect(result).toBe("succeeded");
+  expect(checks).toBe(1);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toBe(bodies[0]!);
+});

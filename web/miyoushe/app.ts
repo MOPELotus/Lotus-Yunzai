@@ -1,6 +1,7 @@
 import type { MiyousheOverview } from "../../lib/miyoushe-overview.ts";
 import type { createMiyousheShopCatalog } from "../../lib/miyoushe-shop-catalog.ts";
 import type { createMiyousheShopPlans } from "../../lib/miyoushe-shop-plans.ts";
+import { createIntentId } from "./intent-id.js";
 import type {
   MiyousheCheckinSettings,
   MiyousheCheckinSettingsPatch,
@@ -624,12 +625,16 @@ async function loadCatalog(page = shop.page, game = shop.game) {
   }
 }
 
+function communityAccountGood(good: Good) {
+  return good.type === 2 && good.game === "bbs" && good.gameBiz === "bbs_cn";
+}
+
 function detailContent({ good, roles, roleError, addresses, accountQuota }: Detail) {
   const blocks: HTMLElement[] = [add("h3", "", good.name), statusBadge(good.status),
     add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true, accountQuota),
     add("h4", "", "兑换条件"), add("p", "detail-copy", good.requirements || "官方暂未提供额外兑换说明。")];
   if (good.type === 1) blocks.push(add("p", "muted", "实物商品需要米游社收货地址。"));
-  if (good.type === 2) {
+  if (good.type === 2 && !communityAccountGood(good)) {
     if (roleError || !roles.length) {
       blocks.push(add("h4", "", "当前档案绑定的角色"), add("p", "muted", roleError || "没有找到此商品对应的绑定角色。"));
     } else if (!plans.data?.canSubmit || (!plans.intents.has(good.id) && !["available", "scheduled"].includes(good.status))) {
@@ -809,8 +814,11 @@ function loadPlans(background = false) {
           if (!current.has(plan.id) && ["succeeded", "failed", "cancelled", "missed"].includes(plan.status)) plans.older.set(plan.id, plan);
         }
       }
+      const exchanged = plans.data && data.plans.some(plan => plan.status === "succeeded" &&
+        plans.data!.plans.some(previous => previous.id === plan.id && previous.status !== "succeeded"));
       plans.data = data;
       if (rowsChanged) renderPlans();
+      if (exchanged) void refresh();
       const messages = [];
       if (!data.canSubmit) messages.push("预约兑换服务暂未启用。");
       if (plans.intents.size) messages.push("另有提交待确认，可返回商品详情重试原请求。");
@@ -1075,12 +1083,14 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
     return panel;
   }
   const targets = good.type === 2 ? roles : good.type === 1 && Array.isArray(addresses) ? addresses : [];
-  if (!saved && targets.length === 0) return panel;
+  const community = communityAccountGood(good);
+  if (!saved && !community && targets.length === 0) return panel;
 
   const selector = add("select", "", "");
   selector.id = "reservation-target";
-  selector.required = true;
-  const targetField = add("label", "reservation-target", good.type === 2 ? "接收奖励的游戏角色" : "收货地址");
+  selector.required = !community;
+  selector.hidden = community;
+  const targetField = add("label", "reservation-target", community ? "兑换至当前米游社账号" : good.type === 2 ? "接收奖励的游戏角色" : "收货地址");
   selector.append(new Option("请选择兑换目标", ""), ...targets.map((target, index) =>
     new Option(good.type === 2 ? "UID " + (target as Role).uid + " · " + roleLabel(target as Role) : (target as Address).label, String(index))));
   if (targets.length === 1) selector.value = "0";
@@ -1107,7 +1117,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
     const submitting = draft?.submitting === true;
     selector.disabled = Boolean(draft);
     confirm.disabled = Boolean(draft);
-    submit.disabled = submitting || (!draft && (!confirm.checked || !selector.value));
+    submit.disabled = submitting || (!draft && (!confirm.checked || (!community && !selector.value)));
     submit.textContent = submitting ? "正在提交…" : draft ? "重试原请求" : immediate ? "确认立即兑换" : "创建兑换预约";
     if (draft) message.textContent = draft.note || "";
   }
@@ -1131,18 +1141,19 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
     let draft = plans.intents.get(good.id);
     if (!draft) {
       const target = targets[Number(selector.value)];
-      if (!confirm.checked || !selector.value || !target) return;
+      if (!confirm.checked || (!community && (!selector.value || !target))) return;
       if (!immediate && good.opensAt! <= Date.now() + shop.nowOffset) {
         message.textContent = "商品开放时间已到，请刷新商城后重新确认。";
         return;
       }
-      if (typeof crypto.randomUUID !== "function") {
-        message.textContent = "当前浏览器无法生成兑换确认，请通过 HTTPS 页面重试。";
+      const intentId = createIntentId();
+      if (!intentId) {
+        message.textContent = "当前浏览器不支持安全随机数，无法生成兑换确认，请更换浏览器重试。";
         return;
       }
-      const destination = good.type === 2 ? { uid: (target as Role).uid, region: (target as Role).region } : { addressId: (target as Address).id };
+      const destination = community ? {} : good.type === 2 ? { uid: (target as Role).uid, region: (target as Role).region } : { addressId: (target as Address).id };
       draft = { body: { goodsId: good.id, expectedPrice: good.price, immediate, confirmed: true,
-        ...destination, intentId: crypto.randomUUID() } };
+        ...destination, intentId } };
       plans.intents.set(good.id, draft);
     }
     const currentForm = () => plans.activeForm?.id === good.id ? plans.activeForm : null;
@@ -1180,6 +1191,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
         switchTab("plans");
       }
       renderPlans();
+      if (plan.status === "succeeded") void refresh();
       planNote(plan.immediate ? "已创建兑换计划，处理结果见下方记录。" : "预约已创建，结果见下方记录。");
       if (tab === "plans") void loadPlans();
     } catch {

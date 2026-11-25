@@ -341,6 +341,17 @@ function validateInspection({ good, balance }: MiyousheShopInspection, goodsId: 
   return { ...good, type: good.type as 1 | 2 };
 }
 
+function communityAccountGood(good: TrackingGood) {
+  return good.type === 2 && good.game === "bbs" && good.gameBiz === "bbs_cn";
+}
+
+function inspectionHasDestination(plan: MiyousheShopPlan, snapshot: MiyousheShopInspection) {
+  if (communityAccountGood(snapshot.good)) return plan.type === 2 && plan.role === null && plan.addressId === "";
+  return plan.type === 2
+    ? !!plan.role && !plan.addressId && !!snapshot.roles?.some(role => role.uid === plan.role?.uid && role.region === plan.role.region)
+    : !plan.role && !!snapshot.addresses?.some(address => address.id === plan.addressId);
+}
+
 function conflictsWithCycle(plan: MiyousheShopPlan, cycleKey: string | undefined) {
   if (plan.status !== "succeeded") return false;
   if (!plan.cycleKey || plan.cycleKey === cycleKey) return true;
@@ -773,8 +784,7 @@ export function createMiyousheShopPlans({
           if (good.price !== plan.price || good.type !== plan.type || good.gameBiz !== plan.gameBiz ||
             (plan.trackingId && (good.id !== plan.goodsId || !natural(snapshot.balance) || snapshot.balance < plan.price ||
               (!trackingStatus && trackingCycle(good, now()) !== plan.cycleKey))) ||
-            (plan.role ? !snapshot.roles?.some(role => role.uid === plan.role?.uid && role.region === plan.role?.region)
-              : !snapshot.addresses?.some(address => address.id === plan.addressId))) conflict(details.conditions);
+            !inspectionHasDestination(plan, snapshot)) conflict(details.conditions);
           message = details.changed;
           await verifyBinding();
           return good;
@@ -1145,10 +1155,12 @@ export function createMiyousheShopPlans({
       const snapshot = await inspect(target, input.goodsId, signal, verifyBinding);
       const good = validateInspection(snapshot, input.goodsId, input.immediate);
       if (input.expectedPrice !== undefined && input.expectedPrice !== good.price) conflict("商品价格已变化，请刷新后重新确认。");
-      const role = good.type === 2 ? snapshot.roles?.find(item => item.uid === input.uid &&
+      const community = communityAccountGood(good);
+      const role = good.type === 2 && !community ? snapshot.roles?.find(item => item.uid === input.uid &&
         (!input.region || item.region === input.region) && matching(item.region, code)) : undefined;
       const address = good.type === 1 ? snapshot.addresses?.find(item => item.id === input.addressId) : undefined;
-      if (good.type === 2 ? !role || input.addressId : !address || input.uid || input.region) bad("兑换目标不属于当前档案。");
+      if (community ? input.uid !== undefined || input.region !== undefined || input.addressId !== undefined
+        : good.type === 2 ? !role || input.addressId : !address || input.uid || input.region) bad("兑换目标不属于当前档案。");
       let createdSessionPlan: string | undefined;
       const plan = await store.change(async data => {
         await verifyBinding();
