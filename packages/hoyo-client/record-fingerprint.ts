@@ -17,10 +17,10 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
     headers.set("x-rpc-device_fp", saved.fp);
     return;
   }
-  const body = JSON.stringify({ seed_id: randomBytes(8).toString("hex"), device_id: id.toUpperCase(),
+  const body = JSON.stringify({ seed_id: randomBytes(8).toString("hex"), device_id: id,
     platform: "1", seed_time: String(Date.now()), app_name: "bbs_cn", device_fp: seed,
     ext_fields: JSON.stringify({ proxyStatus: "0", accelerometer: "-0.159515x-0.830887x-0.682495",
-      ramCapacity: "3746", IDFV: id.toUpperCase(), gyroscope: "-0.191951x-0.112927x0.632637",
+      ramCapacity: "3746", IDFV: id, gyroscope: "-0.191951x-0.112927x0.632637",
       isJailBreak: "0", model: "iPhone12,5", ramRemain: "115", chargeStatus: "1", networkType: "WIFI",
       vendor: "--", osVersion: "17.0.2", batteryStatus: "50", screenSize: "414×896", cpuCores: "6",
       appMemory: "55", romCapacity: "488153", romRemain: "157348", cpuType: "CPU_TYPE_ARM64",
@@ -32,7 +32,7 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
     await verify();
     let response: Response;
     try {
-      response = await transport(endpoint, { method: "POST", headers: { "Content-Type": "application/json" },
+      response = await transport(endpoint, { method: "POST", headers: { "User-Agent": "okhttp/4.9.3", "Content-Type": "application/json" },
         body, signal, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
     } catch {
       signal.throwIfAborted();
@@ -55,7 +55,7 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
     const issued = data as Record<string, unknown>;
     if (Number(issued.code) !== 200 || typeof issued.device_fp !== "string" ||
         !/^[a-f0-9]{13}$/iu.test(issued.device_fp) || issued.device_fp.toLowerCase() === seed ||
-        (issued.device_id !== undefined && issued.device_id !== id.toUpperCase())) throw failed();
+        (issued.device_id !== undefined && issued.device_id !== id)) throw failed();
     signal.throwIfAborted();
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
     cache.set(id, { fp: issued.device_fp, expires: Date.now() + 24 * 60 * 60 * 1000 });

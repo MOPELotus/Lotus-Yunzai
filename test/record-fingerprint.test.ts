@@ -5,13 +5,14 @@ import { readStarRailPanel } from "../packages/hoyo-client/starrail-panel.ts";
 import type { ProfileRequestContext } from "../packages/account/index.ts";
 
 test("查询自动申请并复用同一设备的官方 FP，不向指纹接口发送账号 Cookie", async () => {
-  const id = randomUUID().replaceAll("-", "").toUpperCase();
+  const id = randomUUID().replaceAll("-", "");
   const signal = new AbortController().signal;
   let calls = 0;
   const transport = async (url: URL, init: RequestInit) => {
     calls++;
     expect(url.href).toBe("https://public-data-api.mihoyo.com/device-fp/api/getFp");
     expect(new Headers(init.headers).has("Cookie")).toBe(false);
+    expect(new Headers(init.headers).get("User-Agent")).toBe("okhttp/4.9.3");
     const body = JSON.parse(String(init.body));
     expect(body.device_id).toBe(id);
     expect(body.platform).toBe("1");
